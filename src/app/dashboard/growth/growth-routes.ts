@@ -15,8 +15,8 @@
 
 export const GROWTH_SECTION_KEYS = [
   "overview",
-  // Read-only customer data used by Growth. CRM remains the canonical owner;
-  // this section is a projection, not a second customer system.
+  // Growth's own customers screen: the shared record with Growth's columns,
+  // managed here — not a second customer system, and not a redirect to CRM.
   "customers",
   "campaigns",
   "gift-cards",
@@ -45,8 +45,8 @@ export function growthSectionHref(key: GrowthSectionKey): string {
  * in.
  */
 export function canViewGrowthSection(role: string, key: GrowthSectionKey): boolean {
-  // Customer data is read-only here. Accountants reach it from A/R, while
-  // customer edits and the 360° file remain CRM-owned.
+  // The customers screen is managed here on the shared record. Accountants keep
+  // their read of it; only the 360° file (notes, tags, timeline) remains CRM's.
   if (key === "customers") return ["owner", "manager", "accountant"].includes(role);
   if (role === "cashier") return key === "loyalty";
   return ["owner", "manager"].includes(role);

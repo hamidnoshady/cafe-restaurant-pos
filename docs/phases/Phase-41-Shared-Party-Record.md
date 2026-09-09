@@ -22,7 +22,7 @@ same section with a scope.
 | `accounting-customers` | Accounting → مشتریان | Customer | **editable** | yes |
 | `operations` | Inventory | Supplier | read-only | yes |
 | `team` | Settings → team | Employee | read-only | yes |
-| `growth` | Growth | Customer | hidden | no — links to `crm` |
+| `growth` | Growth | Customer | hidden | yes — Growth's own columns, same form |
 | `sales` | Orders | Customer | hidden | no — links to `crm` |
 
 `accounting-customers` is the destination of the A/R customer actions: an accountant looking
@@ -68,7 +68,9 @@ wants to be added is a row there, not a fork of the directory in another app.
   the scoped list (search, category filter, archived toggle, paging, per-scope columns,
   A/R statement for the members who may see it) and the form (root fields, four tabs,
   inline category creation, draft autosave). Mounted by the CRM's directory, the store's
-  supplier tab, the team's personnel card and Accounting's new «طرف‌حساب‌ها» tab.
+  supplier tab, the team's personnel card, Accounting's «اشخاص» tab and Growth's
+  customers screen (which keeps its own lifecycle/loyalty columns and opens the
+  same form for add/edit).
 - **`src/lib/party-drafts.ts`** — per-business localStorage drafts (cap 20, corrupt JSON
   reads as empty, never a crash), so a half-typed party survives a closed tab without
   becoming a database row nobody asked for.
@@ -76,10 +78,13 @@ wants to be added is a row there, not a fork of the directory in another app.
 ## Decisions
 
 - **The ledger's fields need `ledger.view`.** `accountingCode`, `accountingCodeMode`,
-  `general_info.taxPercentage`, `financial_info` and the two identity numbers are gated on
-  the *body*, on top of `parties.manage` — which a manager and a cashier both hold. An
-  owner who lets the till edit phone numbers must not be silently giving it the invoice's
-  VAT rate. A client that only needs to round-trip an unchanged value omits the key.
+  `general_info.taxPercentage` and `financial_info` are gated on the *body*, on top of
+  `parties.manage` — which a manager and a cashier both hold. An owner who lets the till
+  edit phone numbers must not be silently giving it the invoice's VAT rate. The two
+  identity numbers stay writable with `parties.manage` alone: they answer «who the
+  person is», which is the CRM's half of the record. A client that only needs to
+  round-trip an unchanged value omits the key — which is what the party form does
+  outside the Accounting app, so a cashier's save never trips the ledger gate.
 - **PUT is patch-shaped.** A tab the request does not name is left exactly as stored; `{}`
   means cleared. This is what makes the directory's archive toggle safe to send as
   `{ status: false }`, and what the old form-shaped PUT could not promise.

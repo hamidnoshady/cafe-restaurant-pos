@@ -60,7 +60,7 @@ interface PartyOption {
  * for itself, and the picker that links a party the CRM or Accounting already
  * created. Rows with no `partyId` are the pre-link legacy ones; they still work and
  * still take a name edit, because there is no shared record to be loyal to yet —
- * the row says «پیوند به طرف‌حساب» so a person can give it one.
+ * the row is badged «بدون پروندهٔ مشترک» so a person can link one.
  */
 function BranchSupplierLinks({
   suppliers,
@@ -88,7 +88,7 @@ function BranchSupplierLinks({
     <section className={`min-w-0 ${cardClass} p-5`}>
       <h2 className="mb-1 font-semibold">تأمین‌کنندگان این شعبه</h2>
       <p className="mb-3 text-xs text-muted-foreground">
-        خریدها به همین فهرست ثبت می‌شوند؛ نام و تلفن از پروندهٔ مشترک طرف‌حساب خوانده می‌شود و اینجا فقط یادداشت و وضعیت
+        خریدها به همین فهرست ثبت می‌شوند؛ نام و تلفن از پروندهٔ مشترک اشخاص خوانده می‌شود و اینجا فقط یادداشت و وضعیت
         فعال‌بودنِ همین شعبه است.
       </p>
 
@@ -102,7 +102,7 @@ function BranchSupplierLinks({
       </ul>
 
       <div className="grid min-w-0 gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-        <Field label="افزودن طرف‌حساب تأمین‌کننده به این شعبه">
+        <Field label="افزودن تأمین‌کننده به این شعبه">
           <input
             className={inputClass}
             value={linkQuery}
@@ -149,7 +149,7 @@ function BranchSupplierLinks({
       ) : null}
       {parties && parties.length === 0 ? (
         <p className="mt-2 text-xs text-muted-foreground">
-          طرف‌حساب تأمین‌کننده‌ای پیدا نشد؛ با دکمهٔ «افزودن تأمین‌کننده» در فهرست بالا یکی بسازید.
+          تأمین‌کننده‌ای در اشخاص پیدا نشد؛ با دکمهٔ «افزودن تأمین‌کننده» در فهرست بالا یکی بسازید.
         </p>
       ) : null}
     </section>
@@ -231,7 +231,7 @@ function BranchSupplierRow({ supplier, busy, run }: { supplier: Supplier; busy: 
             <SecondaryButton
               disabled={busy}
               onClick={() => {
-                if (!window.confirm(`«${name}» از این شعبه حذف شود؟ (پروندهٔ طرف‌حساب دست‌نخورده می‌ماند.)`)) return;
+                if (!window.confirm(`«${name}» از این شعبه حذف شود؟ (پروندهٔ شخص در اشخاص دست‌نخورده می‌ماند.)`)) return;
                 void run(() => api(`/api/inventory/suppliers/${supplier.id}`, { method: "DELETE" }));
               }}
             >

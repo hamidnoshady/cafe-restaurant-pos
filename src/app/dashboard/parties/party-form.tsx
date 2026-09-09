@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The party form — the one place a «طرف‌حساب» is created or edited.
+ * The party form — the one place a «شخص» is created or edited.
  *
  * One component, every app: the CRM opens it with the customer scope (so the role
  * arrives preset and the accounting tab is read-only), the store opens it with the
@@ -35,6 +35,7 @@ import {
   PARTY_ROLES,
   PARTY_ROLE_LABELS,
   asciiDigits,
+  buildNonAccountingPayload,
   buildPartyPayload,
   formStateFromParty,
   partyFieldErrorMessage,
@@ -204,7 +205,14 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
    * (the same `validatePartyForm` the route runs, so a field is red before a
    * request leaves), the route's `fieldErrors` (which can know things the browser
    * cannot — a کد ملی already held by somebody else), and any other backend error
-   * (a 403 from the ledger gate, a 404 on a stale edit) which is shown whole.
+   * (a 403 from a permission the member lacks, a 404 on a stale edit) which is
+   * shown whole.
+   *
+   * Outside the Accounting app the ledger's numbers are shown read-only (or not
+   * at all), so they are not sent back either: the route gates those keys on
+   * `ledger.view`, and a round-tripped tax rate would turn a cashier's
+   * phone-number fix into a 403. An omitted key means «leave it» on the server,
+   * so stripping them changes nothing that is stored.
    */
   async function submit() {
     const found = validatePartyForm(state);
@@ -216,7 +224,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
     setErrors({});
     setBusy(true);
     setFormError("");
-    const payload = buildPartyPayload(state);
+    const payload = accountingEditable ? buildPartyPayload(state) : buildNonAccountingPayload(state);
     const { ok, data } = partyId
       ? await api<{ party?: PartyApiRecord; error?: string; fieldErrors?: Record<string, string> }>(
           `/api/parties/${encodeURIComponent(partyId)}`,
@@ -293,7 +301,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
           <DialogHeader>
             <DialogTitle>در حال بارگذاری پرونده…</DialogTitle>
           </DialogHeader>
-          <LoadingSkeleton rows={4} label="در حال بارگذاری پروندهٔ طرف‌حساب" />
+          <LoadingSkeleton rows={4} label="در حال بارگذاری پروندهٔ شخص" />
         </DialogContent>
       </Dialog>
     );
@@ -301,10 +309,10 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
 
   return (
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl lg:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
-            {partyId ? `ویرایش ${state.displayName || "طرف‌حساب"}` : `طرف‌حساب جدید — ${PARTY_ROLE_LABELS[scope.defaultRole]}`}
+            {partyId ? `ویرایش ${state.displayName || "شخص"}` : `شخص جدید — ${PARTY_ROLE_LABELS[scope.defaultRole]}`}
           </DialogTitle>
         </DialogHeader>
 
@@ -326,7 +334,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
               </span>
             </label>
             <span className="text-xs text-muted-foreground">
-              طرف‌حساب غیرفعال در انتخاب‌گرهای فروش و خرید نمایش داده نمی‌شود؛ سوابق او دست‌نخورده می‌ماند.
+              شخص غیرفعال در انتخاب‌گرهای فروش و خرید نمایش داده نمی‌شود؛ سوابق او دست‌نخورده می‌ماند.
             </span>
           </div>
 
@@ -445,9 +453,9 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
           {accountingVisible ? (
             <div className="sm:col-span-2 grid min-w-0 gap-3 rounded-xl border border-border/80 bg-muted/40 p-3 sm:grid-cols-2">
               <Field label="کد حسابداری">
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <select
-                    className={`${inputClass} max-w-32`}
+                    className={`${inputClass} sm:max-w-32 sm:shrink-0`}
                     value={state.accountingCodeMode}
                     disabled={!accountingEditable}
                     onChange={(event) =>
@@ -461,7 +469,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
                     ))}
                   </select>
                   <input
-                    className={inputClass}
+                    className={`${inputClass} sm:flex-1`}
                     dir="ltr"
                     inputMode="numeric"
                     maxLength={24}
@@ -499,7 +507,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
         {/* ---------------- tabs ---------------- */}
         <TabBar
           idPrefix="party-form"
-          label="بخش‌های فرم طرف‌حساب"
+          label="بخش‌های فرم شخص"
           tabs={TAB_KEYS.map((key) => ({ key, label: TAB_LABELS[key] }))}
           active={tab}
           onChange={setTab}
@@ -895,8 +903,12 @@ function CategorySelect({
 
   if (!adding) {
     return (
-      <div className="flex gap-2">
-        <select className={inputClass} value={value} onChange={(event) => onChange(event.target.value)}>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <select
+          className={`${inputClass} sm:flex-1`}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        >
           <option value="">بدون دسته</option>
           {categories.map((category) => (
             <option key={category.id} value={category.id}>
@@ -904,7 +916,7 @@ function CategorySelect({
             </option>
           ))}
         </select>
-        <Button type="button" variant="outline" size="sm" onClick={() => setAdding(true)}>
+        <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setAdding(true)}>
           + دسته
         </Button>
       </div>
@@ -913,20 +925,22 @@ function CategorySelect({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <input
-          className={inputClass}
+          className={`${inputClass} sm:flex-1`}
           maxLength={80}
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
           placeholder="نام دستهٔ جدید"
         />
-        <Button type="button" size="sm" onClick={addCategory} disabled={!newName.trim()}>
-          افزودن
-        </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
-          انصراف
-        </Button>
+        <div className="flex gap-2">
+          <Button type="button" size="sm" className="flex-1 sm:flex-none" onClick={addCategory} disabled={!newName.trim()}>
+            افزودن
+          </Button>
+          <Button type="button" variant="ghost" size="sm" className="flex-1 sm:flex-none" onClick={() => setAdding(false)}>
+            انصراف
+          </Button>
+        </div>
       </div>
       {error ? <span className="text-xs text-destructive">{error}</span> : null}
     </div>

@@ -43,7 +43,7 @@ export const GROWTH_NAV_ITEMS: readonly GrowthNavItem[] = [
   {
     key: "customers",
     label: "مشتریان",
-    description: "دادهٔ مشتری برای استفادهٔ رشد",
+    description: "چرخهٔ حیات و خرید — با افزودن و ویرایش",
     icon: UsersIcon,
   },
   {

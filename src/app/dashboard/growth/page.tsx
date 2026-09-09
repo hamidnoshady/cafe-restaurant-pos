@@ -16,5 +16,5 @@ export default async function GrowthOverviewPage() {
   if (session.role === "accountant") redirect("/dashboard/growth/customers");
   if (!["owner", "manager"].includes(session.role)) redirect("/dashboard");
 
-  return <GrowthSection section="overview" />;
+  return <GrowthSection section="overview" role={session.role} />;
 }

@@ -9,5 +9,5 @@ export default async function GrowthCommissionPage() {
   if (session.role === "cashier") redirect("/dashboard/growth/loyalty");
   if (!["owner", "manager"].includes(session.role)) redirect("/dashboard");
 
-  return <GrowthSection section="commission" />;
+  return <GrowthSection section="commission" role={session.role} />;
 }

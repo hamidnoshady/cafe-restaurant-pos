@@ -9,5 +9,5 @@ export default async function GrowthGiftCardsPage() {
   if (session.role === "cashier") redirect("/dashboard/growth/loyalty");
   if (!["owner", "manager"].includes(session.role)) redirect("/dashboard");
 
-  return <GrowthSection section="gift-cards" />;
+  return <GrowthSection section="gift-cards" role={session.role} />;
 }

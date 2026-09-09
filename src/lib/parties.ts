@@ -1,7 +1,7 @@
 /**
  * Parties — the one record for everyone the business keeps a ledger about.
  *
- * «طرف‌حساب» is the word an Iranian accountant uses for *any* counterparty:
+ * «شخص» (plural «اشخاص») is the word the product uses for *any* counterparty:
  * the customer who owes money, the supplier who is owed it, the employee whose
  * مساعده runs through حساب جاری کارکنان. They are three roles over one kind of
  * record — an identity, a place, a way to reach them, and the numbers that make
@@ -652,6 +652,38 @@ export function buildPartyPayload(state: PartyFormState): PartyPayload {
     contact_info: compactTab({ ...state.contactInfo }),
     financial_info: compactTab({ ...state.financialInfo }),
   };
+}
+
+/**
+ * The payload for a scope that shows the ledger's numbers read-only (or hides
+ * them): everything `buildPartyPayload` emits except the keys the route gates
+ * on `ledger.view` — the accounting code and its mode, the tax rate and the
+ * bank tab. The identity numbers stay: they are «who the person is», writable
+ * with `parties.manage` alone.
+ *
+ * An omitted key means «leave it» on the server, so a form that never let the
+ * member type a tax rate sends nothing for it, and a cashier's save no longer
+ * round-trips its way into a 403.
+ */
+export type NonAccountingPartyPayload = Omit<
+  PartyPayload,
+  "accountingCode" | "accountingCodeMode" | "financial_info" | "general_info"
+> & {
+  general_info: {
+    nationalId: string | null;
+    economicCode: string | null;
+  } & Record<string, unknown>;
+};
+
+export function buildNonAccountingPayload(state: PartyFormState): NonAccountingPartyPayload {
+  const full = buildPartyPayload(state);
+  const { accountingCode: _code, accountingCodeMode: _mode, financial_info: _bank, ...rest } = full;
+  void _code;
+  void _mode;
+  void _bank;
+  const { taxPercentage: _tax, ...general } = full.general_info;
+  void _tax;
+  return { ...rest, general_info: general };
 }
 
 /**

@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { GrowthCustomersSection } from "../customers-section";
 import { canViewGrowthSection } from "../growth-routes";
 
-/** Growth's read-only customer projection; CRM owns customer edits and files. */
+/** Growth's own customers screen — its lifecycle/purchase columns, managed here on the shared record. */
 export default async function GrowthCustomersPage({
   searchParams,
 }: {
@@ -14,5 +14,5 @@ export default async function GrowthCustomersPage({
   if (!canViewGrowthSection(session.role, "customers")) redirect("/dashboard/growth/loyalty");
 
   const { customerId } = await searchParams;
-  return <GrowthCustomersSection selectedCustomerId={customerId} />;
+  return <GrowthCustomersSection selectedCustomerId={customerId} role={session.role} />;
 }

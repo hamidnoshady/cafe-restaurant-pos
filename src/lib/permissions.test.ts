@@ -30,12 +30,16 @@ describe("role presets", () => {
     expect(cashier.has(PERMISSIONS.accountsEdit)).toBe(false);
   });
 
-  it("lets managers and cashiers manage the customer directory, but keeps the accountant view-only", () => {
+  it("lets managers, cashiers and accountants manage the persons file, each from their own app", () => {
+    // The record is one thing (`parties`) but every app manages it from its own
+    // screen: the floor from the CRM directory, the accountant from Accounting's
+    // «اشخاص» view. Keeping the accountant view-only here while the ledger's own
+    // tabs offer «افزودن شخص» would be a button that only ever answers 403.
     expect(new Set(roleBasePermissions("manager")).has(PERMISSIONS.partiesManage)).toBe(true);
     expect(new Set(roleBasePermissions("cashier")).has(PERMISSIONS.partiesManage)).toBe(true);
     const accountant = new Set(roleBasePermissions("accountant"));
     expect(accountant.has(PERMISSIONS.partiesView)).toBe(true);
-    expect(accountant.has(PERMISSIONS.partiesManage)).toBe(false);
+    expect(accountant.has(PERMISSIONS.partiesManage)).toBe(true);
   });
 
   it("restricts kitchen and waiter to their own surfaces", () => {
