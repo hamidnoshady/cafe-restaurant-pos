@@ -10,6 +10,7 @@ import {
   zoSearch,
   zoStreams,
 } from "@/lib/observability";
+import { cmsLogStream } from "@/lib/cms/observability";
 
 /**
  * The console's window into OpenObserve — read-only, capability-gated.
@@ -27,6 +28,13 @@ import {
  *   stats   — row counts grouped by level for the toolbar chips
  *   logs    — the newest rows matching {start,end,level,q,host,from,size}
  *
+ * `?source=cms` selects the website platform's stream instead of this app's own
+ * (`OPENOBSERVE_CMS_STREAM`, default `cms_events` — see
+ * `src/lib/cms/observability.ts` for why they are deliberately two streams). Both
+ * sources share this one proxy rather than growing a second: the credential, the
+ * capability gate, the window clamp and the level vocabulary are identical, and a
+ * parallel route is how those four drift apart.
+ *
  * Times are epoch milliseconds; the search window is clamped to 31 days
  * (docs/openobserve.md explains why the fleet caps it that low).
  */
@@ -42,6 +50,7 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
 
   const cfg = observabilityConfig();
   const mode = request.nextUrl.searchParams.get("mode") ?? "config";
+  const source = request.nextUrl.searchParams.get("source") === "cms" ? "cms" : "app";
   if (!cfg) {
     // `config` answers honestly even when disabled so the UI can render its
     // setup guide; every other mode needs a collector to talk to.
@@ -54,11 +63,14 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
   const endMs = Number(request.nextUrl.searchParams.get("end"));
   const now = Date.now();
 
+  const stream = source === "cms" ? cmsLogStream() : cfg.stream;
+
   if (mode === "config") {
     return NextResponse.json({
       enabled: true,
       org: cfg.org,
-      stream: cfg.stream,
+      source,
+      stream,
       service: cfg.service,
       environment: cfg.environment,
       publicUrl: cfg.publicUrl,
@@ -79,7 +91,7 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
     if (!LOG_LEVELS.has(level)) return bad("invalid_level");
     const q = (request.nextUrl.searchParams.get("q") ?? "").slice(0, 120);
     const host = (request.nextUrl.searchParams.get("host") ?? "").slice(0, 200);
-    const filters = { stream: cfg.stream, level, q: q || undefined, host: host || undefined };
+    const filters = { stream, level, q: q || undefined, host: host || undefined };
 
     if (mode === "stats") {
       const win = clampWindow(startMs, endMs, now);

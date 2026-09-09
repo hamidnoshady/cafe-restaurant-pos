@@ -115,7 +115,17 @@ function sharedStats(): ShipperStats {
 }
 
 const stats: ShipperStats = sharedStats();
-let buffer: Record<string, unknown>[] = [];
+/**
+ * Buffered per stream, not one flat array.
+ *
+ * A record's stream is part of the ingest *URL* (`/api/{org}/{stream}/_json`), so a
+ * batch can only hold records for one stream. The app writes to two: its own
+ * `pos_app_logs`, and `cms_events` for the website platform's tail (see
+ * `src/lib/cms/observability.ts` for why those are deliberately not one stream).
+ * Keying the buffer is what lets a caller name a stream without every other
+ * caller having to.
+ */
+const buffers = new Map<string, Record<string, unknown>[]>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 let installed = false;
 let capturing = false; // re-entrancy guard: the flush path must not feed itself
@@ -128,13 +138,31 @@ function nowMicros(): number {
   return Math.floor(Date.now() * 1000);
 }
 
-/** Queue one structured record. Non-blocking; silently counts drops. */
-export function shipEvent(fields: Record<string, unknown>): void {
+function buffered(): number {
+  let total = 0;
+  for (const batch of buffers.values()) total += batch.length;
+  return total;
+}
+
+/**
+ * Queue one structured record. Non-blocking; silently counts drops.
+ *
+ * `stream` overrides the configured default for this record only. Passing a
+ * `_stream` field inside `fields` does the same thing and is stripped before the
+ * record is sent — that form exists so a pure record builder (which has no reason
+ * to know about this module's signature) can name its own stream.
+ */
+export function shipEvent(fields: Record<string, unknown>, stream?: string): void {
   const cfg = observabilityConfig();
   if (!cfg) return;
-  buffer.push({ _timestamp: nowMicros(), service: cfg.service, environment: cfg.environment, ...fields });
+  const { _stream, ...rest } = fields as { _stream?: unknown } & Record<string, unknown>;
+  const target =
+    (stream ?? (typeof _stream === "string" ? _stream : "")).trim() || cfg.stream;
+  const batch = buffers.get(target) ?? [];
+  batch.push({ _timestamp: nowMicros(), service: cfg.service, environment: cfg.environment, ...rest });
+  buffers.set(target, batch);
   stats.enqueued += 1;
-  if (buffer.length >= cfg.maxBatch) void flush(cfg);
+  if (buffered() >= cfg.maxBatch) void flush(cfg);
   else if (!timer) timer = setTimeout(() => void flush(), cfg.flushIntervalMs);
 }
 
@@ -143,30 +171,36 @@ async function flush(cfg: ObservabilityConfig | null = observabilityConfig()): P
     clearTimeout(timer);
     timer = null;
   }
-  if (!cfg || buffer.length === 0) return;
-  const batch = buffer;
-  buffer = [];
+  if (!cfg || buffers.size === 0) return;
+  const pending = [...buffers.entries()].filter(([, batch]) => batch.length > 0);
+  buffers.clear();
+  if (pending.length === 0) return;
   capturing = true; // never let the failure log below recurse into shipEvent
   try {
-    const res = await fetch(`${cfg.baseUrl}/api/${cfg.org}/${cfg.stream}/_json`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: cfg.auth },
-      body: JSON.stringify(batch),
-      signal: AbortSignal.timeout(6000),
-    });
-    if (res.ok) {
-      stats.sent += batch.length;
-      stats.lastFlushAt = new Date().toISOString();
-      stats.lastError = null;
-    } else {
-      stats.dropped += batch.length;
-      stats.lastError = `ingest ${res.status}`;
+    for (const [stream, batch] of pending) {
+      try {
+        const res = await fetch(`${cfg.baseUrl}/api/${cfg.org}/${stream}/_json`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: cfg.auth },
+          body: JSON.stringify(batch),
+          signal: AbortSignal.timeout(6000),
+        });
+        if (res.ok) {
+          stats.sent += batch.length;
+          stats.lastFlushAt = new Date().toISOString();
+          stats.lastError = null;
+        } else {
+          stats.dropped += batch.length;
+          stats.lastError = `ingest ${res.status}`;
+        }
+      } catch (err) {
+        // Collector down / network partition: this batch is dropped, the app
+        // goes on. The next tick retries — an offline café is a normal state.
+        // One stream failing must not drop the other's batch with it.
+        stats.dropped += batch.length;
+        stats.lastError = String((err as Error)?.message ?? err);
+      }
     }
-  } catch (err) {
-    // Collector down / network partition: this batch is dropped, the app
-    // goes on. The next tick retries — an offline café is a normal state.
-    stats.dropped += batch.length;
-    stats.lastError = String((err as Error)?.message ?? err);
   } finally {
     capturing = false;
   }

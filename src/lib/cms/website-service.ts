@@ -40,7 +40,13 @@ import {
   type CmsConfig,
 } from "./client";
 import { simpleLexicalRoot, type CmsOrder, type CmsPage, type CmsPost, type CmsProduct, type SiteDescriptor } from "./types";
-import { cmsPlatformConfig } from "./config";
+// Migration 0139: the platform credential now lives in `platform_cms_config`
+// (encrypted, editable in the super-admin console) with the ESHOBE_CMS_* env pair
+// as the fallback for deployments configured before it. `resolvePlatformCmsConfig`
+// is that resolution in one place; `cmsPlatformConfig(process.env)` is the env half
+// and is no longer called directly, so a rotated key is a form submission rather
+// than a redeploy.
+import { resolvePlatformCmsConfig } from "./platform-control-service";
 import { dnsHint, ipsOverlap, type DnsCheck } from "./dns";
 import {
   CmsConnectionError,
@@ -132,7 +138,7 @@ export async function provisionCmsWebsite(
   businessId: string,
   input: WebsiteProvisionInput,
 ): Promise<WebsiteResult<{ site: Provisioned; connection: CmsConnectionSummary }>> {
-  const platform = cmsPlatformConfig(process.env);
+  const platform = await resolvePlatformCmsConfig();
   if (!platform) return { ok: false, error: "cms_not_configured" };
 
   const name = input.name.trim();
@@ -582,7 +588,7 @@ export async function cmsDomainQuote(
   try {
     config = await getCmsConfigForBusiness(businessId);
   } catch {
-    config = cmsPlatformConfig(process.env);
+    config = await resolvePlatformCmsConfig();
   }
   if (!config) return { ok: false, error: "cms_not_configured" };
 

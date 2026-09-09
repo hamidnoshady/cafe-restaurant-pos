@@ -34,7 +34,7 @@ runtime wholesale").
 | Key | Role | Issued by | Used for |
 |---|---|---|---|
 | Site key | `site` | `POST /api/api-keys/issue {siteId, name, role:"site"}` | That one site: pages, posts, products, categories, media, orders (status changes only). Reads include drafts (it is the builder's editor token). |
-| Platform key | `platform` | issue endpoint, `{role:"platform"}` | `POST /api/provision-site` and key lifecycle only. **Cannot read site content** (least privilege). |
+| Platform key | `platform` | issue endpoint, `{role:"platform"}` | Provisioning, key lifecycle, and (since migration 0139) the whole operator surface `/api/platform/*` — the fleet report, a site's lifecycle, and content snapshots in both directions. It is the **deployment's root credential**; §7.2 explains why the old "cannot read site content" line was a shape rather than a boundary. |
 
 Both are stored hashed on the CMS (`keyHash` — sha256, never the raw key);
 the raw key is shown once at issue time, same pattern as this app's WooCommerce
@@ -87,7 +87,7 @@ ESHOBE_CMS_PLATFORM_API_KEY=                 # optional platform key (provisioni
    (`provisionSite`, `issueSiteApiKey`, …) carry no `siteDomain`, so they keep
    `Host` as the control plane's own name and need no carve-out at all.
 2. **API keys (CMS side)**: the WAVE-9 §9.4 feature is delivered by
-   `eshobe-cms-api-keys.patch` (see §5). After applying it:
+   `eshobe-cms-api-keys.patch` (see §6). After applying it:
    - `pnpm install && pnpm generate:types && pnpm typecheck && pnpm test:int`
    - Issue keys: `POST /api/api-keys/issue` (platform-admin session or a
      platform key).
@@ -260,7 +260,7 @@ All owner/manager, all server-side — the browser never sees a CMS key.
 On the CMS, the site descriptor (`GET /api/site`) also returns `id` so the
 connect flow can record which site the key belongs to.
 
-## 5. The CMS side (WAVE-9 §9.4, `eshobe-cms`)
+## 6. The CMS side (WAVE-9 §9.4, `eshobe-cms`)
 
 Landed directly in the `eshobe-cms` repo (not a patch to apply):
 
@@ -335,7 +335,139 @@ updates; revoking is immediate (`disabledAt`); platform keys cannot read or
 write site content; the raw key is never stored and never
 returned twice.
 
-## 6. Failure handling
+## 7. «سایت‌ساز» — the operator's side, in the super-admin console (migration 0139)
+
+> **کارِ مشتری در «مدیریت وب‌سایت» است؛ کارِ سکو در کنسول.** §5 is the business's
+> own manager: one owner, one site. This section is its counterpart for the
+> *platform operator*: every superadmin function of eshobe-cms and every
+> fleet-wide report about it, inside the console that already administers
+> businesses, billing, backups and observability — reached from **one CMS address
+> and one `role: "platform"` key**.
+
+Before this, an operator administering the website platform opened its own
+`/admin` on another host, behind another login, where nothing they did produced a
+`platform_audit_log` row here and no cross-site question had an answer at all.
+The console's own rule says it plainly: functionality that supervises clients
+*across* businesses belongs in `src/app/platform/**`.
+
+### 7.1 What is where
+
+| Page | Route | What it does |
+|---|---|---|
+| میز فرمان | `/platform/cms` | The fleet report: sites by status and type, verified vs not, content counts, orders, **paid money per currency**, the gateway table, object storage, the jobs queue, and the findings row above it. |
+| سایت‌ها | `…/cms/sites` | Every site with its own counts; a panel per site for its lifecycle (suspend/reactivate, rename, type, locales, tick domain verification), its keys (issue/revoke), and provisioning a new site. |
+| همگام‌سازی | `…/cms/sync` | Mirror refresh, event poll, and content **pull/push** with a dry run; plus the log of every run. |
+| پایش | `…/cms/logs` | The CMS's log tail in OpenObserve (§6.4). |
+| اتصال | `…/cms/connection` | The CMS address, the platform key, verification, and the two background switches. |
+
+| Route | What it does |
+|---|---|
+| `GET`/`PUT`/`POST /api/platform/cms/config` | Read the masked connection, save it, verify it against the CMS. |
+| `GET /api/platform/cms/overview` | The live report *and* the mirror, with `overviewError` when the CMS did not answer. |
+| `GET`/`POST /api/platform/cms/sites` | The mirrored list; provision a new site (optionally issuing its key). |
+| `GET`/`PATCH /api/platform/cms/sites/[id]` | One site live (falling back to the mirror); its lifecycle. |
+| `GET`/`POST`/`DELETE /api/platform/cms/keys` | A site's keys: list (masked by the CMS), issue, revoke. |
+| `POST /api/platform/cms/sync` | `{ kind: "mirror" \| "events" \| "pull" \| "push" }`. |
+| `GET /api/platform/cms/runs` | The sync log. |
+| `GET /api/platform/observability?source=cms` | The CMS log stream, through the existing proxy. |
+
+The CMS side is `/api/platform/*` over there — see
+[`docs/platform-control-api.md`](https://github.com/hamidnoshady/eshobe-cms/blob/main/docs/platform-control-api.md)
+in that repo for the endpoint contract and its own rules.
+
+### 7.2 The credential, and what it now reaches
+
+The address and key live in `platform_cms_config` (a singleton, the same shape as
+`platform_update_config` / `platform_message_config`), the key AES-256-GCM at rest
+through `src/lib/integrations/secrets.ts`. Three rules:
+
+* **The key is never returned by anything.** The console reads a masked view whose
+  only trace of it is the last four characters. There is no route that returns it.
+* **An empty submission means *unchanged*, never *delete*.** The field renders
+  empty, so every save posts it empty; «حذف کلید» (`clearApiKey: true`) is the
+  explicit door. Treating empty as deletion would wipe the platform's root
+  credential for its own website platform the moment somebody fixed a typo in a
+  label.
+* **`ESHOBE_CMS_URL` / `ESHOBE_CMS_PLATFORM_API_KEY` remain the fallback.**
+  `resolvePlatformCmsConfig()` prefers the stored row and falls back to the env
+  pair, so a deployment configured before 0139 keeps working and a rotation is a
+  form submission rather than a redeploy.
+
+Writes need the new **`cms.manage`** capability (engineer + owner — the same
+reasoning as `backup.manage`: keeping the fleet's websites serving is ordinary
+operations). Reading the report rides `system.read`, which every role holds:
+knowing that four domains are unverified is not privileged information.
+
+§5's rule — *never put a platform key where a site key belongs* — still holds for
+site content in the tenant flows. What changed is honest and worth stating: the
+platform key now also *reaches* every site's content, through the CMS's snapshot
+export. That is not new authority. A platform key could already issue itself a
+`role: "site"` key for any site (`/api/api-keys/issue` takes a `siteId`) and read
+that site's drafts. The split between the two roles was always a shape, never a
+boundary; the boundary is that a *site* key still reaches exactly one site.
+
+### 7.3 The mirror, and why there is one
+
+`platform_cms_sites` is a **cache of somebody else's model**, refreshed by the
+tick and by the console's «به‌روزرسانی» button, and stamped with when it was read.
+Two reasons it exists: a fleet-wide question answers from one local query instead
+of N calls across the network, and the console keeps rendering real figures with
+an honest caveat while the CMS restarts — rather than an empty screen with an
+error on it. `business_id` is filled by joining this platform's own
+`eshobe_cms_connections`, so «whose site is this?» is answered here; the CMS has
+no idea who bills for it, and a site nobody here bills for shows as
+«بدون کسب‌وکار متصل» — a finding, not an error.
+
+Its delete pass is why the client pages through the *whole* list: a site removed
+from the CMS is the one state a pure upsert cannot represent, and a console still
+showing a deleted customer's site is worse than one showing none.
+
+### 7.4 Syncing content, both directions
+
+`pull` exports one site's content (`GET …/snapshot` on the CMS) and `push` applies
+a snapshot back. Four properties:
+
+* **A push is a dry run first.** The plan («۴ به‌روزرسانی، ۱ ساخت») is shown and
+  the apply button appears after it. A count that arrives after the write is not a
+  decision.
+* **The counts reported are the CMS's own**, from its import plan — a write is
+  applied only to the extent the other side says it was.
+* **The snapshot is the operator's artefact.** It downloads as JSON and this
+  deployment keeps no copy: a second store of every customer's content, with no
+  retention policy behind it, is not something to acquire by accident.
+* **An import of another site's snapshot is refused** unless `force` is ticked,
+  because its relationship values (a hero image, a category) are the source site's
+  document ids. Media is not in a snapshot at all — the files are in object storage
+  and a JSON document that listed them without their bytes would read as a backup.
+
+Every run — mirror, events, pull, push — writes a `platform_cms_sync_runs` row with
+what it touched and how long it took, success or failure. A content restore nobody
+can point at afterwards is an incident, not an operation.
+
+### 7.5 OpenObserve: the CMS's own logs, here
+
+`docs/openobserve.md` made *this* deployment observable. The CMS is a second
+deployment whose `console.error` lives for one container's lifetime, whose jobs
+queue stopping is silent, and whose failed gateway self-test is a row nobody
+queries. Two producers now fill a dedicated stream (`OPENOBSERVE_CMS_STREAM`,
+default `cms_events`) with **no collector credential on the CMS at all**:
+
+1. **Every control call this console makes** — operation, outcome, latency and
+   failure class (`src/lib/cms/platform-client.ts` wraps each one). A network error
+   is `error` and an API refusal is `warn`, deliberately: a CMS that refused
+   answered, and a CMS that did not answer is the outage.
+2. **The CMS's own event feed** — `GET /api/platform/events` polled on a cursor by
+   the tick: site changes, unverified domains, orders, gateway self-tests, keys
+   issued. Each record keeps the CMS's `id` (so a duplicate from an overlapping
+   poll is findable) and its own `source_at` (so a feed polled every ten minutes
+   does not show every record as having happened at poll time).
+
+The cursor advances to **the newest record actually received**, never to `now` — a
+CMS row written while the poll was in flight must still be reachable next time.
+Both halves are opt-in and default off, so a deployment with no CMS makes no
+network call because a migration ran.
+
+## 8. Failure handling
 
 - The client throws `CmsApiError` (HTTP 4xx/5xx with the Payload error body)
   or `CmsNetworkError` (timeout/DNS — default 8s timeout).

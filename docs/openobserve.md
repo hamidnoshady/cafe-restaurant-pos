@@ -68,6 +68,46 @@ Record fields to care about in queries: `service` (which host/site — set
 `OPENOBSERVE_SERVICE` per box!), `environment`, `level`, `host` (request Host
 header → which tenant origin was hit), `status`, `duration_ms`.
 
+### A second stream: the website platform (`cms_events`)
+
+Migration 0139 made the sibling **eshobe-cms** deployment observable from here too,
+without putting a collector credential on it. Two producers, one stream
+(`OPENOBSERVE_CMS_STREAM`, default `cms_events`), read back by
+«سایت‌ساز ← پایش» through the same proxy with `?source=cms`:
+
+| source | fields | notes |
+|---|---|---|
+| every control call the console makes | `logger:"cms", cms_operation, cms_outcome, duration_ms, status, site_id` | `src/lib/cms/platform-client.ts` wraps each one. A **network** error is `error`, an API refusal is `warn`: a CMS that refused answered, a CMS that did not answer is the outage, and a level filter must not conflate them. |
+| the CMS's own event feed | `logger:"cms-event", cms_kind, cms_event_id, cms_site_domain, source_at, cms_*` | `GET /api/platform/events` on the CMS, polled on a cursor by the server tick: site changes, unverified domains, orders, gateway self-tests, keys issued. |
+
+Why a separate stream rather than `pos_app_logs`: a retention window or an alert
+that is right for this app's own request log is not necessarily right for another
+product's audit tail, and one stream would mean tuning either tunes both.
+
+Two details the shipper depends on. `cms_event_id` is the CMS's own id, carried
+verbatim, so a duplicate from an overlapping poll is *findable* rather than merely
+indistinguishable. `source_at` is the CMS's own instant, kept beside the ingest
+time the collector stamps — a feed polled every ten minutes would otherwise show
+every record as having happened at poll time.
+
+Both halves are opt-in on «سایت‌ساز ← اتصال» and default off, so a deployment with
+no CMS ships nothing and calls nothing.
+
+Alert recipes worth having on this stream:
+
+```sql
+-- a merchant's gateway failing its self-test, anywhere on the fleet
+SELECT cms_site_domain, message FROM "cms_events"
+WHERE cms_kind = 'gateway.selftest' AND level = 'error'
+
+-- the console losing its connection to the website platform
+SELECT count(*) AS n FROM "cms_events"
+WHERE logger = 'cms' AND cms_outcome = 'network_error'
+
+-- a key issued for any site (the record you most want to find later)
+SELECT * FROM "cms_events" WHERE cms_kind = 'key.issued' ORDER BY _timestamp DESC
+```
+
 ## Installing it
 
 ### A. Central server (Komodo / archive/deploy/docker-compose.komodo.yml — retired)
