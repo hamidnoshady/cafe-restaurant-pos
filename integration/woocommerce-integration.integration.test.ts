@@ -21,6 +21,7 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db") | undefined;
 let ingest: typeof import("../src/lib/integrations/webhook-ingest-service");
+let connections: typeof import("../src/lib/integrations/connections-service");
 
 const KEY = "ab".repeat(32);
 const webhookSecret = "test-webhook-secret";
@@ -71,6 +72,7 @@ beforeAll(async () => {
   process.env.INTEGRATIONS_ENCRYPTION_KEY = KEY;
   dbLib = await import("../src/lib/db");
   ingest = await import("../src/lib/integrations/webhook-ingest-service");
+  connections = await import("../src/lib/integrations/connections-service");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -410,5 +412,153 @@ describe("WooCommerce webhook ingest", () => {
       [biz.id],
     );
     expect(returns.rows[0].n).toBe(1); // only the resolvable refund created a return
+  });
+});
+
+describe("delivery retries and unpaid orders", () => {
+  /** An order body whose status is overridable, for the gate tests. */
+  function orderBodyWithStatus(id: number, status: string, total = "10000", tax = "1000") {
+    const payload = JSON.parse(orderPayload(id, total, tax));
+    payload.status = status;
+    payload.line_items[0].price = String(Number(total) / 2);
+    return JSON.stringify(payload);
+  }
+
+  async function countOrders(): Promise<number> {
+    const { rows } = await db.query<{ n: number }>("SELECT count(*)::int AS n FROM orders WHERE location_id = $1", [
+      biz.locationId,
+    ]);
+    return rows[0].n;
+  }
+
+  it("retries a delivery that failed instead of treating the re-send as a duplicate", async () => {
+    // The exact data-loss bug this guards: the plugin (and the scheduled
+    // pull) re-send the SAME delivery id after a failure. Until the retry
+    // fix, the re-delivery hit the inbox's unique key, was answered
+    // "duplicate" — which the plugin counts as success — and the event was
+    // gone forever: no order, no payment, no journal entry, and the failed
+    // inbox row rewritten to look like a duplicate.
+    const before = await countOrders();
+    const deliveryId = `retry-${randomUUID()}`;
+
+    // First attempt: a payload the ingest rejects (tax larger than total).
+    const bad = orderBodyWithStatus(501, "processing", "1000", "5000");
+    const first = await ingest.handleWooCommerceWebhook(
+      biz.connectionId,
+      bad,
+      signedHeaders(bad, "order.created", deliveryId),
+    );
+    expect(first.status).toBe(500);
+    let inbox = await db.query<{ status: string; error: string }>(
+      "SELECT status, error FROM integration_webhook_events WHERE connection_id = $1 AND delivery_id = $2",
+      [biz.connectionId, deliveryId],
+    );
+    expect(inbox.rows[0]).toMatchObject({ status: "failed" });
+    expect(inbox.rows[0].error).toBe("tax_exceeds_total");
+    expect(await countOrders()).toBe(before);
+
+    // The sender's retry: same delivery id, corrected payload.
+    const good = orderBodyWithStatus(501, "processing", "10000", "1000");
+    const second = await ingest.handleWooCommerceWebhook(
+      biz.connectionId,
+      good,
+      signedHeaders(good, "order.created", deliveryId),
+    );
+    expect(second.status).toBe(200);
+    inbox = await db.query<{ status: string; error: string }>(
+      "SELECT status, error FROM integration_webhook_events WHERE connection_id = $1 AND delivery_id = $2",
+      [biz.connectionId, deliveryId],
+    );
+    expect(inbox.rows[0]).toMatchObject({ status: "processed", error: null });
+    expect(await countOrders()).toBe(before + 1);
+
+    // And a third delivery of the now-processed id is still a cheap no-op.
+    const third = await ingest.handleWooCommerceWebhook(
+      biz.connectionId,
+      good,
+      signedHeaders(good, "order.created", deliveryId),
+    );
+    expect(third.status).toBe(200);
+    expect(await countOrders()).toBe(before + 1);
+  });
+
+  it("retries a failed plugin push the same way — the plugin's re-send is not a free pass to drop it", async () => {
+    // The plugin door in particular: POS_Connector_Queue keeps its row and
+    // re-pushes it with the same delivery_id after a backoff, up to eight
+    // attempts. If the app answered "duplicate" after the first failure, the
+    // plugin would mark_sent its row and the catalogue or sale would never
+    // arrive.
+    const before = await countOrders();
+    const connection = await dbLib!.withTenant(biz.id, () => connections.getConnection(biz.id, biz.connectionId));
+    if (!connection) throw new Error("connection not found");
+    const deliveryId = `plugin-retry-${randomUUID()}`;
+
+    const bad = JSON.parse(orderBodyWithStatus(502, "processing", "1000", "5000"));
+    const first = await dbLib!.withTenant(biz.id, () =>
+      ingest.ingestPluginEvent(connection, { topic: "order.created", deliveryId, payload: bad }),
+    );
+    expect(first.status).toBe("failed");
+
+    const good = JSON.parse(orderBodyWithStatus(502, "processing", "10000", "1000"));
+    const second = await dbLib!.withTenant(biz.id, () =>
+      ingest.ingestPluginEvent(connection, { topic: "order.created", deliveryId, payload: good }),
+    );
+    expect(second.status).toBe("processed");
+    expect(await countOrders()).toBe(before + 1);
+  });
+
+  it("does not import an unpaid order, and imports it when the store says it was paid", async () => {
+    const before = await countOrders();
+
+    // A pending cart: acknowledged so the sender does not retry it, but no
+    // sale, no payment, no journal entry. Before the status gate every one
+    // of these (abandoned checkouts included) landed as a completed, paid
+    // order with revenue.
+    const pending = orderBodyWithStatus(503, "pending");
+    const first = await ingest.handleWooCommerceWebhook(
+      biz.connectionId,
+      pending,
+      signedHeaders(pending, "order.created", `pending-${randomUUID()}`),
+    );
+    expect(first.status).toBe(200);
+    expect(await countOrders()).toBe(before);
+    const mapping = await db.query(
+      "SELECT 1 FROM integration_mappings WHERE connection_id = $1 AND entity_type = 'order' AND remote_id = '503'",
+      [biz.connectionId],
+    );
+    expect(mapping.rowCount).toBe(0);
+
+    // The same order, paid — a different delivery, because the event that
+    // moved it to a paid state is a different thing that happened.
+    const paid = orderBodyWithStatus(503, "processing");
+    const second = await ingest.handleWooCommerceWebhook(
+      biz.connectionId,
+      paid,
+      signedHeaders(paid, "order.created", `paid-${randomUUID()}`),
+    );
+    expect(second.status).toBe(200);
+    expect(await countOrders()).toBe(before + 1);
+
+    // Cancelled and failed orders are not sales either.
+    for (const status of ["cancelled", "failed", "on-hold"]) {
+      const body = orderBodyWithStatus(504, status);
+      const res = await ingest.handleWooCommerceWebhook(
+        biz.connectionId,
+        body,
+        signedHeaders(body, "order.created", `${status}-${randomUUID()}`),
+      );
+      expect(res.status).toBe(200);
+    }
+    expect(await countOrders()).toBe(before + 1);
+
+    // But a refunded order WAS a sale — its refund arrives as its own event.
+    const refunded = orderBodyWithStatus(505, "refunded");
+    const res = await ingest.handleWooCommerceWebhook(
+      biz.connectionId,
+      refunded,
+      signedHeaders(refunded, "order.updated", `refunded-${randomUUID()}`),
+    );
+    expect(res.status).toBe(200);
+    expect(await countOrders()).toBe(before + 2);
   });
 });
