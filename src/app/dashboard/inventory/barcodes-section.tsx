@@ -38,9 +38,7 @@ interface PendingItem {
   unit: string;
 }
 
-const inventoryInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
-const actionClass =
-  "min-h-[52px] border-border bg-card px-4 text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-foreground";
+
 
 export function BarcodesSection({
   items,
@@ -143,7 +141,12 @@ export function BarcodesSection({
   return (
     <div className="space-y-6">
       <SectionCard
-        title="آماده‌سازی انبار برای شمارش"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">آماده‌سازی</p>
+            <h2 className="mt-1 font-semibold text-foreground">آماده‌سازی انبار برای شمارش</h2>
+          </div>
+        }
         description="شمارش با بارکدخوان تنها برای اقلامی کار می‌کند که بارکد داشته باشند. اقلامی که هنوز بارکد ندارند در فهرست زیر می‌آیند؛ با یک دکمه برای همهٔ آن‌ها بارکد داخلی تولید کنید و سپس لیبل‌ها را چاپ و روی قفسه‌ها نصب کنید."
       >
         {pending === null ? (
@@ -161,7 +164,7 @@ export function BarcodesSection({
               <Button
                 type="button"
                 disabled={busy}
-                className={actionClass}
+                variant="outline" size="lg"
                 onClick={() => void mintAll()}
               >
                 تولید بارکد برای همه
@@ -182,12 +185,17 @@ export function BarcodesSection({
       </SectionCard>
 
       <SectionCard
-        title="بارکد یک قلم"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت بارکد</p>
+            <h2 className="mt-1 font-semibold text-foreground">بارکد یک قلم</h2>
+          </div>
+        }
         description="اگر بسته‌بندی تأمین‌کننده بارکد چاپی دارد، همان را ثبت کنید تا نیازی به لیبل تازه نباشد."
       >
         <Field label="قلم انبار">
           <select
-            className={inventoryInputClass}
+            className={inputClass}
             value={itemId}
             onChange={(e) => setItemId(e.target.value)}
           >
@@ -203,7 +211,7 @@ export function BarcodesSection({
         </Field>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_auto_auto]">
           <input
-            className={inventoryInputClass}
+            className={inputClass}
             dir="ltr"
             value={manualCode}
             onChange={(e) => setManualCode(e.target.value)}
@@ -212,7 +220,7 @@ export function BarcodesSection({
           <CameraScanTrigger
             label="دوربین"
             disabled={busy || !selected}
-            className={`${actionClass} gap-1.5`}
+            className="gap-1.5 min-h-[44px] border-border px-4 text-foreground/80"
             title="خواندن بارکد تأمین‌کننده"
             description="بارکد روی بسته‌بندی را با دوربین بخوانید تا روی این قلم ثبت شود."
             onScan={(scanned) => setManualCode(scanned)}
@@ -220,7 +228,7 @@ export function BarcodesSection({
           <Button
             type="button"
             disabled={busy || !selected || !manualCode.trim()}
-            className={actionClass}
+            variant="outline" size="lg"
             onClick={() => void assign(false)}
           >
             ثبت
@@ -229,7 +237,7 @@ export function BarcodesSection({
         <Button
           type="button"
           disabled={busy || !selected}
-          className={`${actionClass} mt-2 w-full`}
+          variant="outline" size="lg" className="mt-2 w-full"
           onClick={() => void assign(true)}
         >
           تولید بارکد داخلی

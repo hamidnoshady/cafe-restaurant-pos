@@ -9,11 +9,7 @@ import { useInventorySearch } from "@/lib/inventory-search";
 import { useMoney } from "@/components/money/money-context";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
-import { cardClass } from "../page-chrome";
-
-const inventoryInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
-const secondaryActionClass =
-  "min-h-[52px] border-border bg-card px-4 text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40";
+import { EmptyState, SectionCard } from "../page-chrome";
 
 export function ItemsSection({
   items,
@@ -61,30 +57,26 @@ export function ItemsSection({
 
   return (
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-      <section
-        aria-labelledby="inventory-items-heading"
-        className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
-      >
-        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
-          <h2
-            id="inventory-items-heading"
-            className="font-semibold text-foreground"
-          >
-            اقلام انبار (مواد اولیه)
-          </h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            فهرست مواد اولیه و تنظیمات واحدهای خرید آن‌ها.
-          </p>
-          <div className="relative mt-3">
-            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              className={`${inventoryInputClass} ps-9`}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="جستجوی قلم (نام، کد، واحد)…"
-              aria-label="جستجوی قلم انبار"
-            />
+      <SectionCard
+        className="order-2 md:order-1"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت موجودی</p>
+            <h2 className="mt-1 font-semibold text-foreground">اقلام انبار (مواد اولیه)</h2>
           </div>
+        }
+        description="فهرست مواد اولیه و تنظیمات واحدهای خرید آن‌ها."
+        flush
+      >
+        <div className="relative border-b border-border/80 px-4 pb-4 sm:px-5">
+          <SearchIcon className="pointer-events-none absolute start-7 top-1/2 size-4 -translate-y-1/2 text-muted-foreground sm:start-8" />
+          <input
+            className={`${inputClass} ps-9`}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="جستجوی قلم (نام، کد، واحد)…"
+            aria-label="جستجوی قلم انبار"
+          />
         </div>
 
         <ul className="divide-y divide-border/80">
@@ -92,8 +84,8 @@ export function ItemsSection({
             <ItemRow key={it.id} item={it} busy={busy} run={run} />
           ))}
           {items.length === 0 ? (
-            <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
-              قلمی ثبت نشده است.
+            <li className="px-4 py-5 sm:px-5">
+              <EmptyState>هنوز قلمی در انبار ثبت نشده است.</EmptyState>
             </li>
           ) : visibleItems.length === 0 ? (
             <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
@@ -101,19 +93,23 @@ export function ItemsSection({
             </li>
           ) : null}
         </ul>
-      </section>
+      </SectionCard>
 
       <aside className="order-1 min-w-0 md:order-2">
-        <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
-          <h2 className="font-semibold text-foreground">افزودن قلم انبار</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            اطلاعات پایهٔ قلم را وارد کنید؛ آستانه سفارش مجدد اختیاری است.
-          </p>
-
-          <form onSubmit={add} className="mt-4">
+        <SectionCard
+          className="md:sticky md:top-4"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">افزودن</p>
+              <h2 className="mt-1 font-semibold text-foreground">قلم انبار جدید</h2>
+            </div>
+          }
+          description="اطلاعات پایهٔ قلم را وارد کنید؛ آستانه سفارش مجدد اختیاری است."
+        >
+          <form onSubmit={add} className="space-y-1">
             <Field label="نام قلم">
               <input
-                className={inventoryInputClass}
+                className={inputClass}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="مثلاً قهوه"
@@ -122,7 +118,7 @@ export function ItemsSection({
             </Field>
             <Field label="واحد پایه">
               <input
-                className={inventoryInputClass}
+                className={inputClass}
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="g، ml، عدد…"
@@ -131,7 +127,7 @@ export function ItemsSection({
             </Field>
             <Field label="آستانه سفارش مجدد">
               <PersianNumberInput
-                className={inventoryInputClass}
+                className={inputClass}
                 dir="ltr"
                 inputMode="decimal"
                 value={reorderLevel}
@@ -141,7 +137,7 @@ export function ItemsSection({
             </Field>
             <Field label="واحد خرید">
               <input
-                className={inventoryInputClass}
+                className={inputClass}
                 value={purchaseUnit}
                 onChange={(e) => setPurchaseUnit(e.target.value)}
                 placeholder="اختیاری؛ مثلاً kg"
@@ -149,7 +145,7 @@ export function ItemsSection({
             </Field>
             <Field label="ضریب تبدیل واحد خرید">
               <PersianNumberInput
-                className={inventoryInputClass}
+                className={inputClass}
                 dir="ltr"
                 inputMode="decimal"
                 value={purchaseFactor}
@@ -161,12 +157,12 @@ export function ItemsSection({
               type="submit"
               disabled={busy}
               size="lg"
-              className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40"
+              className="w-full px-5 font-semibold"
             >
-              افزودن
+              افزودن قلم
             </Button>
           </form>
-        </div>
+        </SectionCard>
       </aside>
     </div>
   );
@@ -181,10 +177,7 @@ function ItemRow({
   busy: boolean;
   run: Runner;
 }) {
-  const money = useMoney();
   const [editing, setEditing] = useState(false);
-  const reorderLevel =
-    item.reorder_level === null ? null : Number(item.reorder_level);
 
   if (editing) {
     return (
@@ -196,6 +189,9 @@ function ItemRow({
       />
     );
   }
+
+  const reorderLevel =
+    item.reorder_level === null ? null : Number(item.reorder_level);
 
   return (
     <li className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-start lg:justify-between">
@@ -209,11 +205,6 @@ function ItemRow({
           {item.sku ? (
             <span className="text-xs text-muted-foreground">({item.sku})</span>
           ) : null}
-          {/*
-            Not editable here, by design: the flag is set when a production
-            formula names this item as its output, so a checkbox could only
-            ever contradict the formulas that actually exist.
-          */}
           {item.is_produced ? (
             <span className="rounded-full bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 text-[0.7rem] font-medium text-amber-950 dark:text-amber-200">
               ساخت داخلی
@@ -239,17 +230,16 @@ function ItemRow({
             {formatQuantity(item.stock)} {item.unit}
           </MetaItem>
           <MetaItem label="میانگین بها">
-            {money.format(Number(item.avg_cost))}
+            <ItemCost item={item} />
           </MetaItem>
         </dl>
       </div>
 
-      <div className="grid shrink-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap lg:justify-end">
+      <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
         <Button
           type="button"
           variant="outline"
-          size="lg"
-          className={secondaryActionClass}
+          size="sm"
           disabled={busy}
           onClick={() => setEditing(true)}
         >
@@ -258,8 +248,7 @@ function ItemRow({
         <Button
           type="button"
           variant="outline"
-          size="lg"
-          className={secondaryActionClass}
+          size="sm"
           disabled={busy}
           onClick={() =>
             void run(() =>
@@ -274,9 +263,9 @@ function ItemRow({
         </Button>
         <Button
           type="button"
-          variant="outline"
-          size="lg"
-          className="min-h-[52px] border-destructive/25 bg-card px-4 text-destructive hover:border-destructive/40 hover:bg-destructive/5 focus-visible:border-destructive/40 focus-visible:ring-destructive/20"
+          variant="ghost"
+          size="sm"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
           disabled={busy}
           onClick={() => {
             if (
@@ -295,6 +284,11 @@ function ItemRow({
       </div>
     </li>
   );
+}
+
+function ItemCost({ item }: { item: InventoryItem }) {
+  const money = useMoney();
+  return <>{money.format(Number(item.avg_cost))}</>;
 }
 
 function MetaItem({
@@ -363,7 +357,7 @@ function EditItemRow({
       >
         <Field label="نام قلم">
           <input
-            className={inventoryInputClass}
+            className={inputClass}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -371,7 +365,7 @@ function EditItemRow({
         </Field>
         <Field label="واحد پایه">
           <input
-            className={inventoryInputClass}
+            className={inputClass}
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
             required
@@ -379,7 +373,7 @@ function EditItemRow({
         </Field>
         <Field label="آستانه سفارش مجدد">
           <PersianNumberInput
-            className={inventoryInputClass}
+            className={inputClass}
             dir="ltr"
             inputMode="decimal"
             value={reorderLevel}
@@ -389,7 +383,7 @@ function EditItemRow({
         </Field>
         <Field label="واحد خرید">
           <input
-            className={inventoryInputClass}
+            className={inputClass}
             value={purchaseUnit}
             onChange={(e) => setPurchaseUnit(e.target.value)}
             placeholder="اختیاری؛ مثلاً kg"
@@ -397,7 +391,7 @@ function EditItemRow({
         </Field>
         <Field label="ضریب تبدیل واحد خرید">
           <PersianNumberInput
-            className={inventoryInputClass}
+            className={inputClass}
             dir="ltr"
             inputMode="decimal"
             value={purchaseFactor}
@@ -409,15 +403,13 @@ function EditItemRow({
             type="submit"
             disabled={busy}
             size="lg"
-            className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40 sm:w-40"
+            className="px-5 font-semibold sm:w-40"
           >
             ذخیره
           </Button>
           <Button
             type="button"
             variant="outline"
-            size="lg"
-            className={secondaryActionClass}
             disabled={busy}
             onClick={onDone}
           >

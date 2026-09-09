@@ -16,6 +16,7 @@ import { PurchasesSection } from "./purchases-section";
 import { WasteSection } from "./waste-section";
 import { StockCountsSection } from "./stock-counts-section";
 import { BarcodesSection } from "./barcodes-section";
+import { TransfersSection } from "./transfers-section";
 import styles from "./inventory-workspace.module.css";
 
 export interface InventoryItem {
@@ -94,6 +95,7 @@ const TABS = [
   { key: "suppliers", label: "تأمین‌کنندگان" },
   { key: "purchases", label: "خرید" },
   { key: "waste", label: "ضایعات" },
+  { key: "transfers", label: "انتقال بین انبارها" },
   { key: "counts", label: "شمارش انبار" },
   { key: "barcodes", label: "بارکد و لیبل" },
 ] as const;
@@ -207,6 +209,9 @@ export function InventoryManager({ role }: { role: string }) {
         ) : null}
         {tab === "waste" ? (
           <WasteSection items={data.items} busy={busy} run={run} />
+        ) : null}
+        {tab === "transfers" ? (
+          <TransfersSection items={data.items} busy={busy} run={run} />
         ) : null}
         {tab === "counts" ? (
           <StockCountsSection items={data.items} busy={busy} run={run} />
