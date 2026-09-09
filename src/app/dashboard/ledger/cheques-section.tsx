@@ -383,12 +383,12 @@ export function ChequesSection({
               </div>
               <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-muted">
                 {kpis.overdueCount > 0 ? <span className="bg-destructive" style={{ width: `${Math.max(6, (kpis.overdueCount / Math.max(1, kpis.totalCount)) * 100)}%` }} /> : null}
-                {kpis.dueSoonCount > 0 ? <span className="bg-amber-500" style={{ width: `${Math.max(6, (kpis.dueSoonCount / Math.max(1, Math.min(kpis.totalCount, 12))) * 35)}%` }} /> : null}
+                {kpis.dueSoonCount > 0 ? <span className="bg-amber-500 dark:bg-amber-400" style={{ width: `${Math.max(6, (kpis.dueSoonCount / Math.max(1, Math.min(kpis.totalCount, 12))) * 35)}%` }} /> : null}
                 <span className="flex-1 bg-primary/20" />
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-destructive" /> سررسید گذشته</span>
-                <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500" /> هفته جاری</span>
+                <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500 dark:bg-amber-400" /> هفته جاری</span>
                 <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-primary/40" /> آتی</span>
               </div>
             </div>
