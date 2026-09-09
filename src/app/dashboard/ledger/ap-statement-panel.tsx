@@ -59,7 +59,7 @@ export function ApStatementPanel({
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات حساب</p>
             <h3 id="ap-statement-heading" className="mt-1 text-lg font-bold">صورتحساب {supplierName}</h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 text-sm font-medium text-muted-foreground">
+          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground">
             بستن
           </button>
         </header>
@@ -67,21 +67,21 @@ export function ApStatementPanel({
         {lines === null ? (
           <LoadingSkeleton rows={3} />
         ) : lines.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
             هنوز فعالیتی برای این تأمین‌کننده ثبت نشده است.
           </p>
         ) : (
           <>
-            <div className="hidden overflow-x-auto rounded-xl border border-border lg:block">
+            <div className="hidden overflow-x-auto rounded-xl border border-border/80 lg:block">
               <table className="min-w-[700px] w-full text-sm">
-                <thead className="bg-muted">
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th scope="col" className="px-3 py-3 text-start font-semibold">تاریخ</th>
-                    <th scope="col" className="px-3 py-3 text-start font-semibold">نوع</th>
-                    <th scope="col" className="px-3 py-3 text-start font-semibold">شرح</th>
-                    <th scope="col" className="px-3 py-3 text-start font-semibold">بدهکار</th>
-                    <th scope="col" className="px-3 py-3 text-start font-semibold">بستانکار</th>
-                    <th scope="col" className="px-3 py-3 text-start font-semibold">مانده</th>
+                <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                  <tr className="border-b border-border">
+                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
+                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">نوع</th>
+                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">شرح</th>
+                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">بدهکار</th>
+                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">بستانکار</th>
+                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">مانده</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -89,10 +89,10 @@ export function ApStatementPanel({
                     <tr key={i} className="border-b border-border last:border-b-0">
                       <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</td>
                       <td className="px-3 py-3 text-muted-foreground">{TYPE_LABELS[l.type]}</td>
-                      <td className="px-3 py-3">{l.description}</td>
-                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{l.debit ? money.format(l.debit) : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{l.credit ? money.format(l.credit) : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums">{money.format(l.balance)}</td>
+                      <td className="px-3 py-3 text-foreground">{l.description}</td>
+                      <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.debit ? money.format(l.debit) : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.credit ? money.format(l.credit) : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums text-foreground">{money.format(l.balance)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -101,26 +101,26 @@ export function ApStatementPanel({
 
             <div className="space-y-3 lg:hidden">
               {lines.map((l, i) => (
-                <article key={i} className="rounded-xl border border-border bg-muted p-4">
+                <article key={i} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
                       <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>
-                      <h4 className="mt-1 font-semibold">{l.description}</h4>
+                      <h4 className="mt-1 font-semibold text-foreground">{l.description}</h4>
                     </div>
                     <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{TYPE_LABELS[l.type]}</span>
                   </div>
                   <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3 text-sm">
                     <div>
                       <dt className="text-xs text-muted-foreground">بدهکار</dt>
-                      <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums">{l.debit ? money.format(l.debit) : "—"}</dd>
+                      <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums text-foreground">{l.debit ? money.format(l.debit) : "—"}</dd>
                     </div>
                     <div>
                       <dt className="text-xs text-muted-foreground">بستانکار</dt>
-                      <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums">{l.credit ? money.format(l.credit) : "—"}</dd>
+                      <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums text-foreground">{l.credit ? money.format(l.credit) : "—"}</dd>
                     </div>
                     <div>
                       <dt className="text-xs text-muted-foreground">مانده</dt>
-                      <dd className="mt-1 whitespace-nowrap font-bold tabular-nums">{money.format(l.balance)}</dd>
+                      <dd className="mt-1 whitespace-nowrap font-bold tabular-nums text-foreground">{money.format(l.balance)}</dd>
                     </div>
                   </dl>
                 </article>

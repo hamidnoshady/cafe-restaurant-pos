@@ -113,13 +113,14 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
   return (
     <div className="space-y-5">
-      <section aria-labelledby="payroll-wages-heading" className={`${cardClass} p-4 sm:p-5`}>
-        <header className="mb-5 border-b border-border pb-4">
+      <section aria-labelledby="payroll-wages-heading" className={cardClass}>
+        <header className="border-b border-border/80 px-4 py-4 sm:px-5">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تنظیمات حقوق</p>
-          <h2 id="payroll-wages-heading" className="mt-1 text-lg font-bold">حقوق ماهانه کارکنان</h2>
-          <p className="mt-1 text-sm text-muted-foreground">مبلغ حقوق هر کارمند را به تومان وارد و ذخیره کنید.</p>
+          <h2 id="payroll-wages-heading" className="mt-1 text-base font-semibold text-foreground">حقوق ماهانه کارکنان</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">مبلغ حقوق هر کارمند را به تومان وارد و ذخیره کنید.</p>
         </header>
 
+        <div className="p-4 sm:p-5">
         {localError ? (
           <p role="alert" className="mb-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
             {localError}
@@ -127,16 +128,16 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         ) : null}
 
         {staff.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
             عضو فعالی یافت نشد.
           </p>
         ) : (
           <div className="space-y-3">
             {staff.map((s) => (
-              <div key={s.id} className="grid gap-3 rounded-xl border border-border bg-muted p-4 md:grid-cols-[minmax(10rem,1fr)_minmax(12rem,15rem)_auto] md:items-end">
+              <div key={s.id} className="grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30 md:grid-cols-[minmax(10rem,1fr)_minmax(12rem,15rem)_auto] md:items-end">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">کارمند</p>
-                  <p className="mt-1 font-semibold">{s.fullName}</p>
+                  <p className="mt-1 font-semibold text-foreground">{s.fullName}</p>
                 </div>
                 <label className="block text-sm font-medium">
                   <span className="mb-1.5 block text-xs text-muted-foreground">حقوق ماهانه ({money.unitLabel})</span>
@@ -159,15 +160,16 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
             ))}
           </div>
         )}
+        </div>
       </section>
 
-      <section aria-labelledby="payroll-accrual-heading" className={`${cardClass} p-4 sm:p-5`}>
-        <header className="mb-5 border-b border-border pb-4">
+      <section aria-labelledby="payroll-accrual-heading" className={cardClass}>
+        <header className="border-b border-border/80 px-4 py-4 sm:px-5">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ثبت دوره</p>
-          <h2 id="payroll-accrual-heading" className="mt-1 text-lg font-bold">تعهد حقوق و دستمزد جدید</h2>
-          <p className="mt-1 text-sm text-muted-foreground">ثبت تعهد، همان گردش سندداری موجود را اجرا می‌کند.</p>
+          <h2 id="payroll-accrual-heading" className="mt-1 text-base font-semibold text-foreground">تعهد حقوق و دستمزد جدید</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">ثبت تعهد، همان گردش سندداری موجود را اجرا می‌کند.</p>
         </header>
-        <form onSubmit={accrue} className="grid gap-4 md:grid-cols-[minmax(14rem,1fr)_12rem_auto] md:items-end">
+        <form onSubmit={accrue} className="grid gap-4 p-4 sm:p-5 md:grid-cols-[minmax(14rem,1fr)_12rem_auto] md:items-end">
           <label className="block text-sm font-medium">
             <span className="mb-1.5 block text-xs text-muted-foreground">دوره</span>
             <input
@@ -188,28 +190,29 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         </form>
       </section>
 
-      <section aria-labelledby="payroll-history-heading" className={`${cardClass} p-4 sm:p-5`}>
-        <header className="mb-5 border-b border-border pb-4">
+      <section aria-labelledby="payroll-history-heading" className={cardClass}>
+        <header className="border-b border-border/80 px-4 py-4 sm:px-5">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سوابق</p>
-          <h2 id="payroll-history-heading" className="mt-1 text-lg font-bold">تاریخچه حقوق و دستمزد</h2>
+          <h2 id="payroll-history-heading" className="mt-1 text-base font-semibold text-foreground">تاریخچه حقوق و دستمزد</h2>
         </header>
 
+        <div className="p-4 sm:p-5">
         {runs.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
             هنوز تعهدی ثبت نشده است.
           </p>
         ) : (
           <ul className="space-y-3">
             {runs.map((r) => (
-              <li key={r.id} className="rounded-xl border border-border bg-muted p-4">
+              <li key={r.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
                   <div>
-                    <h3 className="font-semibold">{r.periodLabel}</h3>
+                    <h3 className="font-semibold text-foreground">{r.periodLabel}</h3>
                     <p className="mt-1 text-xs text-muted-foreground">{toPersianDigits(formatJalali(r.accrualDate))}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold tabular-nums">{money.format(r.totalAmount)}</span>
-                    <span className={"rounded-full px-2.5 py-1 text-xs font-semibold " + (r.status === "paid" ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200" : "bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300")}>
+                    <span className="font-bold tabular-nums text-foreground">{money.format(r.totalAmount)}</span>
+                    <span className={"rounded-full px-2.5 py-1 text-xs font-semibold " + (r.status === "paid" ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200" : "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200")}>
                       {r.status === "paid" ? "پرداخت‌شده" : "تعهدشده"}
                     </span>
                   </div>
@@ -217,9 +220,9 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {r.lines.map((l, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2.5 text-sm">
+                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 px-3 py-2.5 text-sm dark:bg-stone-800/40">
                       <span className="min-w-0 truncate text-muted-foreground">{l.fullName ?? "—"}</span>
-                      <span className="shrink-0 font-semibold tabular-nums">{money.format(l.amount)}</span>
+                      <span className="shrink-0 font-semibold tabular-nums text-foreground">{money.format(l.amount)}</span>
                     </div>
                   ))}
                 </div>
@@ -235,6 +238,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
             ))}
           </ul>
         )}
+        </div>
       </section>
     </div>
   );

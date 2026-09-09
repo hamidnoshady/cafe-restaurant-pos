@@ -65,11 +65,11 @@ const ACTION_LABELS: Record<ChequeAction, string> = {
 
 /** A live cheque reads as neutral, a cleared one as settled, a bounced one as a problem. */
 const STATUS_CLASS: Record<ChequeStatus, string> = {
-  on_hand: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300",
-  in_collection: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300",
-  endorsed: "bg-primary/10 text-primary",
-  issued: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300",
-  cleared: "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  on_hand: "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200",
+  in_collection: "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200",
+  endorsed: "bg-primary/10 text-primary dark:text-primary",
+  issued: "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200",
+  cleared: "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200",
   bounced: "bg-destructive/10 text-destructive",
   cancelled: "bg-muted text-muted-foreground",
 };
@@ -132,12 +132,12 @@ export function ChequesSection({
     <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className={`${cardClass} p-4 sm:p-5`}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className={cardClass}>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">اسناد دریافتنی و پرداختنی</p>
-            <h2 className="mt-1">چک‌ها</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <h2 className="mt-1 text-base font-semibold text-foreground">چک‌ها</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
               چک‌های دریافتی و صادرشده، سررسیدشان، و هر مرحله از وصول یا ظهرنویسی — هر مرحله سند حسابداری خودش را ثبت می‌کند.
             </p>
           </div>
@@ -151,10 +151,10 @@ export function ChequesSection({
                   setDirection(value);
                   setAdding(false);
                 }}
-                className={`min-h-12 rounded-xl border px-3 text-sm ${
+                className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${
                   direction === value
-                    ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300"
-                    : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-muted"
+                    ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
+                    : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"
                 }`}
               >
                 {value === "receivable" ? "چک‌های دریافتی" : "چک‌های صادرشده"}
@@ -163,17 +163,17 @@ export function ChequesSection({
           </div>
         </div>
 
-        <div className="mt-5">
+        <div className="p-4 sm:p-5">
           {cheques === null ? (
             <LoadingSkeleton rows={3} />
           ) : cheques.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
+            <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
               چکی ثبت نشده است.
             </p>
           ) : (
             <ul className="space-y-2">
               {cheques.map((cheque) => (
-                <li key={cheque.id} className="rounded-xl border border-border/80 bg-muted p-4">
+                <li key={cheque.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-semibold text-foreground">{cheque.counterpartyName}</p>
@@ -212,7 +212,7 @@ export function ChequesSection({
           )}
         </div>
 
-        <div className="mt-5 border-t border-border pt-4">
+        <div className="border-t border-border/80 bg-stone-50/60 px-4 py-3 dark:bg-stone-800/30 sm:px-5">
           {adding ? (
             <ChequeForm
               direction={direction}
@@ -297,16 +297,16 @@ function ChequeForm({
         });
       }}
     >
-      <label className="grid gap-1 text-sm">
-        <span>شماره چک</span>
+      <label className="grid gap-1 text-sm font-medium">
+        <span className="text-xs text-muted-foreground">شماره چک</span>
         <input className={inputClass} value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required />
       </label>
-      <label className="grid gap-1 text-sm">
-        <span>بانک</span>
+      <label className="grid gap-1 text-sm font-medium">
+        <span className="text-xs text-muted-foreground">بانک</span>
         <input className={inputClass} value={bankName} onChange={(e) => setBankName(e.target.value)} required />
       </label>
-      <label className="grid gap-1 text-sm">
-        <span>شناسه صیاد (اختیاری)</span>
+      <label className="grid gap-1 text-sm font-medium">
+        <span className="text-xs text-muted-foreground">شناسه صیاد (اختیاری)</span>
         <PersianNumberInput
           className={inputClass}
           value={sayadId}
@@ -316,16 +316,16 @@ function ChequeForm({
           allowNegative={false}
         />
       </label>
-      <label className="grid gap-1 text-sm">
-        <span>مبلغ ({money.unitLabel})</span>
+      <label className="grid gap-1 text-sm font-medium">
+        <span className="text-xs text-muted-foreground">مبلغ ({money.unitLabel})</span>
         <PersianNumberInput className={inputClass} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" required />
       </label>
-      <label className="grid gap-1 text-sm">
-        <span>سررسید</span>
+      <label className="grid gap-1 text-sm font-medium">
+        <span className="text-xs text-muted-foreground">سررسید</span>
         <JalaliDatePicker className={inputClass} value={dueDate} onChange={setDueDate} />
       </label>
-      <div className="grid gap-1 text-sm">
-        <span>{direction === "receivable" ? "مشتری" : "تأمین‌کننده"}</span>
+      <div className="grid gap-1 text-sm font-medium">
+        <span className="text-xs text-muted-foreground">{direction === "receivable" ? "مشتری" : "تأمین‌کننده"}</span>
         <SearchableSelect
           value={counterpartyId}
           onChange={setCounterpartyId}
@@ -333,12 +333,12 @@ function ChequeForm({
           ariaLabel={direction === "receivable" ? "مشتری" : "تأمین‌کننده"}
         />
       </div>
-      <label className="grid gap-1 text-sm">
-        <span>نام صاحب چک (در صورت تفاوت)</span>
+      <label className="grid gap-1 text-sm font-medium">
+        <span className="text-xs text-muted-foreground">نام صاحب چک (در صورت تفاوت)</span>
         <input className={inputClass} value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder={selected?.name ?? ""} />
       </label>
-      <label className="grid gap-1 text-sm sm:col-span-2">
-        <span>توضیح</span>
+      <label className="grid gap-1 text-sm font-medium sm:col-span-2">
+        <span className="text-xs text-muted-foreground">توضیح</span>
         <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
       </label>
       <div className="grid gap-2 sm:grid-cols-2 sm:col-span-2">
@@ -374,43 +374,47 @@ function EndorseDialog({
   const [occurredOn, setOccurredOn] = useState("");
 
   return (
-    <div className={`${cardClass} p-4 sm:p-5`}>
-      <h3 className="font-semibold text-foreground">
-        ظهرنویسی چک {toPersianDigits(cheque.serialNumber)} — {money.format(cheque.amount)}
-      </h3>
-      <p className="mt-1 text-sm text-muted-foreground">
-        چک به تأمین‌کننده واگذار می‌شود و بدهی او به همین مبلغ کم می‌شود. اگر چک برگشت بخورد، بدهی دوباره برمی‌گردد.
-      </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="grid gap-1 text-sm">
-          <span>تأمین‌کننده</span>
-          <SearchableSelect
-            value={supplierId}
-            onChange={setSupplierId}
-            options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-            ariaLabel="تأمین‌کننده"
-          />
+    <div className={cardClass}>
+      <header className="border-b border-border/80 px-4 py-4 sm:px-5">
+        <h3 className="font-semibold text-foreground">
+          ظهرنویسی چک {toPersianDigits(cheque.serialNumber)} — {money.format(cheque.amount)}
+        </h3>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          چک به تأمین‌کننده واگذار می‌شود و بدهی او به همین مبلغ کم می‌شود. اگر چک برگشت بخورد، بدهی دوباره برمی‌گردد.
+        </p>
+      </header>
+      <div className="p-4 sm:p-5">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1 text-sm font-medium">
+            <span className="text-xs text-muted-foreground">تأمین‌کننده</span>
+            <SearchableSelect
+              value={supplierId}
+              onChange={setSupplierId}
+              options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+              ariaLabel="تأمین‌کننده"
+            />
+          </div>
+          <label className="grid gap-1 text-sm font-medium">
+            <span className="text-xs text-muted-foreground">تاریخ واگذاری</span>
+            <JalaliDatePicker className={inputClass} value={occurredOn} onChange={setOccurredOn} />
+          </label>
         </div>
-        <label className="grid gap-1 text-sm">
-          <span>تاریخ واگذاری</span>
-          <JalaliDatePicker className={inputClass} value={occurredOn} onChange={setOccurredOn} />
-        </label>
-      </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        <PrimaryButton
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            if (!supplierId) {
-              onError("انتخاب تأمین‌کننده الزامی است.");
-              return;
-            }
-            onConfirm(supplierId, occurredOn || undefined);
-          }}
-        >
-          ثبت ظهرنویسی
-        </PrimaryButton>
-        <SecondaryButton onClick={onCancel}>انصراف</SecondaryButton>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <PrimaryButton
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (!supplierId) {
+                onError("انتخاب تأمین‌کننده الزامی است.");
+                return;
+              }
+              onConfirm(supplierId, occurredOn || undefined);
+            }}
+          >
+            ثبت ظهرنویسی
+          </PrimaryButton>
+          <SecondaryButton onClick={onCancel}>انصراف</SecondaryButton>
+        </div>
       </div>
     </div>
   );

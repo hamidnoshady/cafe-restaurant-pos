@@ -79,7 +79,7 @@ export function AccountHistoryPanel({
               {accountCode} — {accountName}
             </h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 text-sm font-medium text-muted-foreground">
+          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground">
             بستن
           </button>
         </header>
@@ -87,19 +87,19 @@ export function AccountHistoryPanel({
         {entries === null ? (
           <LoadingSkeleton rows={3} />
         ) : entries.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
             هیچ تغییری برای این حساب ثبت نشده است.
           </p>
         ) : (
           <ul className="space-y-2">
             {entries.map((entry) => (
-              <li key={entry.id} className="rounded-xl border border-border bg-muted p-3 text-sm">
+              <li key={entry.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-3 text-sm dark:bg-stone-800/30">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-semibold">{auditActionLabel(entry.action)}</p>
+                  <p className="font-semibold text-foreground">{auditActionLabel(entry.action)}</p>
                   <p className="text-xs text-muted-foreground">{formatTime(entry.createdAt)}</p>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{entry.actorName ?? "سیستم"}</p>
-                {changeDetail(entry) ? <p className="mt-2">{changeDetail(entry)}</p> : null}
+                {changeDetail(entry) ? <p className="mt-2 text-foreground">{changeDetail(entry)}</p> : null}
               </li>
             ))}
           </ul>
