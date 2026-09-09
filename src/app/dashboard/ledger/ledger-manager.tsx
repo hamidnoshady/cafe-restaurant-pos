@@ -23,6 +23,8 @@ import { ManualEntrySection } from "./manual-entry-section";
 import { FiscalPeriodsSection } from "./fiscal-periods-section";
 import { ArSection } from "./ar-section";
 import { ApSection } from "./ap-section";
+import { ReceiptsPaymentsSection } from "./receipts-payments-section";
+import { InstallmentsSection } from "./installments-section";
 import { ChequesSection } from "./cheques-section";
 import { ReconciliationSection } from "./reconciliation-section";
 import { ChartOfAccountsSection } from "./chart-of-accounts-section";
@@ -51,6 +53,8 @@ const TABS = [
   { key: "customers", label: "مشتریان", icon: UsersIcon },
   { key: "ar", label: "حساب‌های دریافتنی", icon: UsersIcon },
   { key: "ap", label: "حساب‌های پرداختنی", icon: UsersIcon },
+  { key: "receipts", label: "دریافت و پرداخت", icon: ScrollTextIcon },
+  { key: "installments", label: "اقساط", icon: CalendarDaysIcon },
   { key: "cheques", label: "چک‌ها", icon: ScrollTextIcon },
   { key: "reconciliation", label: "تطبیق بانکی", icon: CircleIcon },
   { key: "chart-of-accounts", label: "سرفصل حساب‌ها", icon: CalculatorIcon },
@@ -167,6 +171,8 @@ export function LedgerManager({ role }: { role: string }) {
           ) : null}
           {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
           {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
+          {tab === "receipts" ? <ReceiptsPaymentsSection /> : null}
+          {tab === "installments" ? <InstallmentsSection /> : null}
           {tab === "cheques" ? <ChequesSection busy={busy} run={run} /> : null}
           {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
           {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}

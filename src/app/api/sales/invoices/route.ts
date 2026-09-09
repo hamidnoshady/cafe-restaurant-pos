@@ -103,7 +103,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
 });
 
-/** This branch's retail invoices, newest first — the sales history the shop never had. */
+/**
+ * This branch's retail invoices, newest first — the sales history the shop
+ * never had, and the data behind the «مدیریت فاکتورها» view: searchable by
+ * customer or invoice number, filterable by settlement method, paginated.
+ */
 export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "accountant");
   if (error) return error;
@@ -113,7 +117,12 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") ?? 50) || 50, 200);
+  const params = request.nextUrl.searchParams;
+  const q = params.get("q")?.trim() ?? "";
+  const method = params.get("method") ?? ""; // cash | bank | credit | "" = all
+  const page = Math.max(Number(params.get("page") ?? 1) || 1, 1);
+  const pageSize = Math.min(Math.max(Number(params.get("pageSize") ?? 20) || 20, 5), 100);
+
   const { rows } = await query<{
     id: string;
     order_number: string;
@@ -121,25 +130,35 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     closed_at: string;
     customer_name: string | null;
     line_count: string;
+    pay_method: string | null;
   }>(
     `SELECT o.id, o.order_number, o.total, o.closed_at, c.name AS customer_name,
-            (SELECT count(*) FROM order_items oi WHERE oi.order_id = o.id) AS line_count
+            (SELECT count(*) FROM order_items oi WHERE oi.order_id = o.id) AS line_count,
+            (SELECT p.method::text FROM payments p WHERE p.order_id = o.id ORDER BY p.received_at LIMIT 1) AS pay_method
        FROM orders o
        LEFT JOIN parties c ON c.id = o.customer_id
       WHERE o.location_id = $1 AND o.type = 'retail'
-      ORDER BY o.order_number DESC
-      LIMIT $2`,
-    [location.id, limit],
+      ORDER BY o.order_number DESC`,
+    [location.id],
   );
 
-  return NextResponse.json({
-    invoices: rows.map((r) => ({
-      id: r.id,
-      orderNumber: Number(r.order_number),
-      total: Number(r.total),
-      closedAt: r.closed_at,
-      customerName: r.customer_name,
-      lineCount: Number(r.line_count),
-    })),
-  });
+  let invoices = rows.map((r) => ({
+    id: r.id,
+    orderNumber: Number(r.order_number),
+    total: Number(r.total),
+    closedAt: r.closed_at,
+    customerName: r.customer_name,
+    lineCount: Number(r.line_count),
+    paymentMethod: r.pay_method,
+  }));
+  if (q) {
+    invoices = invoices.filter(
+      (inv) => (inv.customerName ?? "").includes(q) || String(inv.orderNumber).includes(q),
+    );
+  }
+  if (method) invoices = invoices.filter((inv) => inv.paymentMethod === method);
+
+  const count = invoices.length;
+  const start = (page - 1) * pageSize;
+  return NextResponse.json({ invoices: invoices.slice(start, start + pageSize), count });
 });
