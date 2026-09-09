@@ -306,6 +306,23 @@ const ERROR_MESSAGES: Record<string, string> = {
     category_name_required: "نام دسته الزامی است.",
     category_name_too_long: "نام دسته بیش از ۸۰ نویسه است.",
     category_in_use: "این دسته در حال استفاده است و فقط غیرفعال می‌شود.",
+    // Installments (کارت اقساط) — src/lib/installments-service.ts.
+    invalid_down_payment: "پیش‌پرداخت نمی‌تواند منفی باشد.",
+    down_payment_exceeds_principal: "پیش‌پرداخت از مبلغ کل بیشتر است.",
+    invalid_installment_count: "تعداد اقساط معتبر نیست.",
+    invalid_interval: "فاصله اقساط معتبر نیست.",
+    invalid_due_date: "تاریخ اولین بازپرداخت را انتخاب کنید.",
+    invalid_percent: "درصد سود/جریمه باید بین ۰ تا ۱۰۰ باشد.",
+    invoice_required: "فاکتور را انتخاب کنید.",
+    invoice_not_found: "فاکتور انتخاب‌شده پیدا نشد.",
+    invoice_has_no_customer: "این فاکتور مشتری ندارد؛ اقساط فاکتوری فقط برای فاکتورهای دارای مشتری است.",
+    party_required: "شخص را انتخاب کنید.",
+    plan_not_found: "برنامه قسطی پیدا نشد.",
+    plan_has_no_party: "این برنامه شخص طرف‌حساب ندارد.",
+    already_paid: "این قسط قبلاً تسویه شده است.",
+    supplier_record_missing: "این شخص در فهرست تأمین‌کنندگان ثبت نشده است؛ ابتدا او را به‌عنوان تأمین‌کننده ثبت کنید.",
+    installment_amount_too_small: "مبلغ هر قسط بسیار کم است؛ تعداد اقساط را کاهش دهید.",
+    item_required: "قسط را انتخاب کنید.",
 };
 
 export function errorMessage(code: string | undefined): string {

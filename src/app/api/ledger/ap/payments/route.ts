@@ -2,7 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { ApError, MissingLedgerAccountError, payBill } from "@/lib/ap-service";
+import { listPayments } from "@/lib/installments-service";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
+
+/** The «پرداخت‌ها» ledger slice — every payment voucher, newest first. */
+export const GET = withTenantScope(async (request: NextRequest) => {
+  const { session, error } = await requireRole("owner", "manager", "accountant");
+  if (error) return error;
+  const q = request.nextUrl.searchParams.get("q") ?? undefined;
+  const payments = await listPayments(session.businessId, q);
+  return NextResponse.json({ payments });
+});
 
 interface PaymentBody {
   supplierId?: string;
