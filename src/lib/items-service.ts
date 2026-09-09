@@ -181,6 +181,59 @@ export async function createVariantChild(
   }
 }
 
+/**
+ * Phase 42 — the products workspace's add/edit form writes the additive
+ * product columns (barcode, units, ordering hints, tax percents, sellability)
+ * that 0140 added to the shared item core. Only the named fields move; the
+ * receipt/sale paths' columns (kind, tracking, stock) stay with their own
+ * writers.
+ */
+export interface ItemMetaPatch {
+  name?: string;
+  sku?: string | null;
+  barcode?: string | null;
+  unit?: string | null;
+  subUnit?: string | null;
+  conversionFactor?: number | null;
+  minOrderQty?: number | null;
+  reorderReminderQty?: number | null;
+  leadTimeDays?: number | null;
+  storageLocation?: string | null;
+  taxSalePercent?: number | null;
+  taxPurchasePercent?: number | null;
+  isSellable?: boolean;
+}
+
+export async function updateItemMeta(id: string, patch: ItemMetaPatch): Promise<Item | null> {
+  const sets: string[] = [];
+  const params: unknown[] = [id];
+  const push = (column: string, value: unknown) => {
+    params.push(value);
+    sets.push(`${column} = $${params.length}`);
+  };
+  if (patch.name !== undefined) push("name", patch.name.trim());
+  if (patch.sku !== undefined) push("sku", patch.sku);
+  if (patch.barcode !== undefined) push("barcode", patch.barcode);
+  if (patch.unit !== undefined) push("unit", patch.unit);
+  if (patch.subUnit !== undefined) push("sub_unit", patch.subUnit);
+  if (patch.conversionFactor !== undefined) push("conversion_factor", patch.conversionFactor);
+  if (patch.minOrderQty !== undefined) push("min_order_qty", patch.minOrderQty);
+  if (patch.reorderReminderQty !== undefined) push("reorder_reminder_qty", patch.reorderReminderQty);
+  if (patch.leadTimeDays !== undefined) push("lead_time_days", patch.leadTimeDays);
+  if (patch.storageLocation !== undefined) push("storage_location", patch.storageLocation);
+  if (patch.taxSalePercent !== undefined) push("tax_sale_percent", patch.taxSalePercent);
+  if (patch.taxPurchasePercent !== undefined) push("tax_purchase_percent", patch.taxPurchasePercent);
+  if (patch.isSellable !== undefined) push("is_sellable", patch.isSellable);
+  if (sets.length === 0) return getItem(id);
+  sets.push(`updated_at = now()`);
+
+  const { rows } = await query<ItemRow>(
+    `UPDATE items SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
+    params,
+  );
+  return rows[0] ? mapItem(rows[0]) : null;
+}
+
 export async function listItems(locationId: string): Promise<Item[]> {
   const { rows } = await query<ItemRow>(
     `SELECT * FROM items WHERE location_id = $1 ORDER BY name`,

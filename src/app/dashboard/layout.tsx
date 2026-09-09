@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { appForModule } from "@/lib/apps";
+import {
+  isProductWorkspaceIndustry,
+  PRODUCT_WORKSPACE_SECTIONS,
+} from "@/lib/product-workspace";
 import { effectiveAppAvailability } from "@/lib/app-availability-service";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures, isLockableFeature } from "@/lib/features";
@@ -90,11 +94,31 @@ function navItemsFor(industry: Industry): NavItem[] {
     { label: "انبار", module: "inventory", href: "/dashboard/inventory", roles: ["owner", "manager"], flag: "inventory" },
     { label: INDUSTRY_LABELS.jewelry, module: "jewelry", href: "/dashboard/jewelry", roles: ["owner", "manager"] },
     { label: INDUSTRY_LABELS.watch, module: "watch", href: "/dashboard/watch", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.accessories, module: "accessories", href: "/dashboard/accessories", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.cosmetics, module: "cosmetics", href: "/dashboard/cosmetics", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.wholesale, module: "wholesale", href: "/dashboard/wholesale", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.tools_fittings, module: "tools_fittings", href: "/dashboard/tools-fittings", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.haberdashery, module: "haberdashery", href: "/dashboard/haberdashery", roles: ["owner", "manager"] },
+    // Phase 42 — the retail trade-goods trades manage their catalogue in the
+    // shared products workspace: a collapsible sidebar group — افزودن محصول،
+    // لیست محصولات، لیست قیمت، ویژگی محصول، الگوی بارکد وزنی and the trade's
+    // own گزارش‌ها — instead of five flat trade entries. The old trade pages
+    // forward into the workspace; cosmetics alone keeps its own entry for the
+    // sections only it has (بچ‌ها و انقضا، برند و ماتریس).
+    ...(isProductWorkspaceIndustry(industry)
+      ? [
+          {
+            label: "محصولات",
+            module: industry,
+            iconKey: "/dashboard/products",
+            roles: ["owner", "manager"],
+            children: PRODUCT_WORKSPACE_SECTIONS.map((section) => ({
+              label: section.label,
+              module: industry,
+              href: section.href,
+              roles: ["owner", "manager"],
+            })),
+          },
+        ]
+      : []),
+    ...(industry === "cosmetics"
+      ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: "/dashboard/cosmetics", roles: ["owner", "manager"] }]
+      : []),
     { label: "حسابداری", module: "ledger", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
     // The «اتصال‌های فنی» hub — every technical connection in the product
     // (desktop, WordPress/WooCommerce, the CMS site, Holoo, the remote server
@@ -183,6 +207,15 @@ export default async function DashboardLayout({
   const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features, industry });
   const profile = industryProfile(industry);
   const navItems = navItemsFor(industry)
+    // Phase 42 — group children go through the same role/module/permission
+    // gate as their parent; a group whose children all filtered out is gone
+    // rather than an empty disclosure.
+    .map((item) =>
+      item.children
+        ? { ...item, children: item.children.filter((child) => canSee(child, member.role, permissions, features, industry)) }
+        : item,
+    )
+    .filter((item) => !item.children || item.children.length > 0)
     .filter((item) => canSee(item, member.role, permissions, features, industry))
     .filter((item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0)
     .map((item) => {
