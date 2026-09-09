@@ -56,11 +56,11 @@ const PERMISSION_LABELS: Record<string, string> = {
   "inventory.view": "مشاهدهٔ انبار",
   "inventory.adjust": "اصلاح موجودی",
   "purchases.manage": "مدیریت خرید",
-  // The party permission covers all three roles, so the label says «طرف‌حساب» — a
+  // The party permission covers all three roles, so the label says «اشخاص» — a
   // manager granting it to a cashier is also letting them edit suppliers and
   // personnel, and the label must not hide that.
-  "parties.view": "مشاهدهٔ طرف‌حساب‌ها",
-  "parties.manage": "مدیریت طرف‌حساب‌ها",
+  "parties.view": "مشاهدهٔ اشخاص",
+  "parties.manage": "مدیریت اشخاص",
   "ledger.view": "مشاهدهٔ دفتر",
   "ledger.post": "ثبت سند",
   "ledger.approve": "تأیید سند",

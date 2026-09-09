@@ -17,11 +17,12 @@ import {
 /**
  * The per-app view of one shared record.
  *
- * These assertions are the contract the four party screens are built on, so they
+ * These assertions are the contract the party screens are built on, so they
  * are written as the promise each app makes: who it lists, what it shows about the
- * ledger, and — most importantly — that only one app may *write* a given role.
- * A scope that drifts (Growth growing an edit path again, the store keeping a
- * private supplier name) is exactly the bug this file exists to refuse.
+ * ledger, and — most importantly — that every app writes through the *same* form
+ * and endpoint. A scope that drifts (the store keeping a private supplier name,
+ * an app inventing its own party table) is exactly the bug this file exists to
+ * refuse.
  */
 
 const byKey = new Map(PARTY_SCOPES_DEF.map((def) => [def.key, def]));

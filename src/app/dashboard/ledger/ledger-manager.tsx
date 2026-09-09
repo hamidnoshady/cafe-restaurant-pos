@@ -47,7 +47,7 @@ const TABS = [
   { key: "manual", label: "ثبت سند دستی", icon: ClipboardListIcon },
   { key: "expenses", label: "هزینه‌ها", icon: CircleIcon },
   { key: "fiscal-periods", label: "دوره‌های مالی", icon: CalendarDaysIcon },
-  { key: "parties", label: "طرف‌حساب‌ها", icon: UsersIcon },
+  { key: "parties", label: "اشخاص", icon: UsersIcon },
   { key: "customers", label: "مشتریان", icon: UsersIcon },
   { key: "ar", label: "حساب‌های دریافتنی", icon: UsersIcon },
   { key: "ap", label: "حساب‌های پرداختنی", icon: UsersIcon },
@@ -66,16 +66,18 @@ export function LedgerManager({ role }: { role: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   /*
-   * «طرف‌حساب‌ها» is Accounting's own view of the same table the CRM, the store and
-   * the team look at (`../parties/parties-section.tsx`, scope `accounting`) — the
-   * one place a party's ledger code and national/economic codes are written.
+   * «اشخاص» is Accounting's own view of the same table the CRM, the store and
+   * the team look at (`../parties/parties-section.tsx`, scope `accounting`) —
+   * customers, suppliers and staff with the ledger's own columns, managed here
+   * rather than by sending the accountant into the CRM. It is also the one place
+   * a party's ledger code is written.
    *
    * «مشتریان» is the customers-only slice (`scope accounting-customers`): it is the
    * destination the A/R customer actions point at, so an accountant looking at a
    * receivable lands on the customers they can settle with, not on Growth's
-   * marketing projection and not on the supplier/staff rows of the party file.
+   * marketing projection and not on the supplier/staff rows of the persons file.
    *
-   * A `?party=<id>` link from another app (the CRM's read-only row, an AI answer, a
+   * A `?party=<id>` link from another app (a CRM row, an AI answer, a
    * notification) lands on a tab with that one file open, the way `?customer=`
    * lands on the CRM's. A named `?tab=` wins, so `?tab=customers&party=<id>` opens
    * the accounting customer file rather than the whole counterparty list. The tabs

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The party directory — the section every app mounts for «طرف‌حساب‌ها».
+ * The party directory — the section every app mounts for «اشخاص».
  *
  * There is exactly one of this component in the platform, and it is mounted for
  * every scope: the CRM's customers, the store's suppliers, the team's personnel,
@@ -213,17 +213,17 @@ export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: Par
     }
     setInfo(
       data.result === "archived"
-        ? "این طرف‌حساب سابقهٔ مالی یا شعبه‌ای دارد؛ برای حفظ صورتحساب‌ها به‌جای حذف، بایگانی شد."
-        : "طرف‌حساب حذف شد.",
+        ? "این شخص سابقهٔ مالی یا شعبه‌ای دارد؛ برای حفظ صورتحساب‌ها به‌جای حذف، بایگانی شد."
+        : "شخص حذف شد.",
     );
     setRefreshKey((key) => key + 1);
   }
 
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   const addLabel =
-    scope.roles.length > 1 ? "افزودن طرف‌حساب" : `افزودن ${PARTY_ROLE_LABELS[scope.defaultRole]}`;
+    scope.roles.length > 1 ? "افزودن شخص" : `افزودن ${PARTY_ROLE_LABELS[scope.defaultRole]}`;
   const emptyLabel =
-    scope.roles.length > 1 ? "طرف‌حسابی پیدا نشد." : `${PARTY_ROLE_LABELS[scope.defaultRole]} ای پیدا نشد.`;
+    scope.roles.length > 1 ? "شخصی پیدا نشد." : `${PARTY_ROLE_LABELS[scope.defaultRole]} ای پیدا نشد.`;
 
   return (
     <div className="min-w-0 space-y-4">
@@ -242,7 +242,7 @@ export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: Par
             ? "نمای خواندنی از پروندهٔ مشترک؛ ویرایش در بخش مالک این رکورد انجام می‌شود."
             : canManage
               ? "روی هر ردیف بزنید تا پروندهٔ کاملش باز شود."
-              : "در این بخش فقط خوانده می‌شود؛ برای ویرایش، دسترسی «مدیریت طرف‌حساب‌ها» لازم است."
+              : "در این بخش فقط خوانده می‌شود؛ برای ویرایش، دسترسی «مدیریت اشخاص» لازم است."
         }
         actions={
           <div className="flex flex-wrap gap-2">
@@ -423,7 +423,7 @@ export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: Par
           onClose={() => setForm(null)}
           onSaved={() => {
             setForm(null);
-            setInfo("طرف‌حساب ذخیره شد.");
+            setInfo("شخص ذخیره شد.");
             setRefreshKey((key) => key + 1);
           }}
         />
@@ -612,7 +612,7 @@ function PartyCategoriesDialog({
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>دسته‌های طرف‌حساب‌ها</DialogTitle>
+          <DialogTitle>دسته‌های اشخاص</DialogTitle>
         </DialogHeader>
         <p className="mb-3 text-xs text-muted-foreground">
           دسته‌ها برای همین فهرست‌اند: یک گروه می‌تواند فقط برای مشتریان باشد، فقط برای تأمین‌کنندگان، یا برای هر سه.

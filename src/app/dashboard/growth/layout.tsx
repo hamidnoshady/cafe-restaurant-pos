@@ -20,7 +20,7 @@ import { GrowthAppShell } from "./growth-app-shell";
  *
  * The role gate stays here, server-side: a member who has no Growth surface
  * never lands in the app at all. Accountants are admitted only for the
- * read-only customer projection, whose link comes from Accounting's A/R view.
+ * customers screen with Growth's own columns, managed here on the shared record.
  */
 export default async function GrowthLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();

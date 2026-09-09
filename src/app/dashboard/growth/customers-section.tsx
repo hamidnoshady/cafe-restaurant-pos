@@ -3,52 +3,72 @@
 /**
  * Growth's customer view.
  *
- * The customer record is owned by CRM. Growth does not create a second customer
- * table or a second edit path; it reads the shared customer service so campaign
- * and loyalty work with the same person Accounting and Sales see. What makes this
- * *Growth's* column set rather than Accounting's or CRM's is the data Growth acts
- * on: lifecycle/RFM stage, loyalty points and purchase history, not ledger codes
- * and tax rates.
+ * The customer *row* is the shared `parties` record — Growth keeps no second
+ * customer table. What makes this *Growth's* screen rather than Accounting's or
+ * CRM's is the columns it answers against (lifecycle/RFM stage, loyalty points
+ * and purchase history, not ledger codes and tax rates) and the fact that it is
+ * managed here: adding and editing open the same party form every other app
+ * writes with, so a name fixed here is fixed everywhere. Only the 360° file
+ * (notes, tags, timeline) lives in the CRM, and the customer name links to it.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ContactIcon, ExternalLinkIcon } from "lucide-react";
+import { ContactIcon } from "lucide-react";
 import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { LIFECYCLE_STAGES, type LifecycleStage } from "@/lib/crm-scoring";
+import { partyScopeFor } from "@/lib/parties-scopes";
 import type { GrowthCustomer } from "@/app/api/growth/customers/route";
-import { crmCustomerHref, crmSectionHref } from "../crm/crm-routes";
-import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "../page-chrome";
-import { api, ErrorBox, inputClass } from "../ui";
+import { Button } from "@/components/ui/button";
+import { crmCustomerHref } from "../crm/crm-routes";
+import { EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "../page-chrome";
+import { PartyFormDialog } from "../parties/party-form";
+import { api, ErrorBox, InfoBox, inputClass } from "../ui";
 
 function stageLabel(stage: string | null): string {
   if (!stage) return "—";
   return LIFECYCLE_STAGES[stage as LifecycleStage]?.label ?? stage;
 }
 
-/** A read-only projection for Growth; edits stay in CRM. */
-export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustomerId?: string }) {
+/** Growth's own customers screen: its columns, its add/edit, the shared record. */
+export function GrowthCustomersSection({
+  selectedCustomerId,
+  role,
+}: {
+  selectedCustomerId?: string;
+  role: string;
+}) {
   const money = useMoney();
+  // The page admits owner/manager/accountant; all three hold `parties.manage`,
+  // so the buttons below are drawn for everyone who can open this screen.
+  const canManage = ["owner", "manager", "accountant"].includes(role);
   const [customers, setCustomers] = useState<GrowthCustomer[] | null>(null);
+  const [businessId, setBusinessId] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [form, setForm] = useState<{ partyId?: string } | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
-      api<{ customers: GrowthCustomer[] }>(`/api/growth/customers?${params}`).then(({ ok, data }) => {
-        if (ok) {
-          setCustomers(data.customers ?? []);
-          setError("");
-        } else {
-          setCustomers([]);
-          setError("بارگذاری مشتریان ممکن نشد.");
-        }
-      });
+      api<{ customers: GrowthCustomer[]; businessId?: string }>(`/api/growth/customers?${params}`).then(
+        ({ ok, data }) => {
+          if (ok) {
+            setCustomers(data.customers ?? []);
+            setBusinessId(data.businessId ?? "");
+            setError("");
+          } else {
+            setCustomers([]);
+            setError("بارگذاری مشتریان ممکن نشد.");
+          }
+        },
+      );
     }, 200);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [query, refreshKey]);
 
   // A/R used to deep-link into this projection by `selectedCustomerId`. The
   // projection is paginated at the source, so a linked customer may be outside
@@ -77,6 +97,7 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
   return (
     <div className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
+      {info ? <InfoBox>{info}</InfoBox> : null}
       <SectionCard
         title={
           <div>
@@ -84,15 +105,13 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
             <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان</h2>
           </div>
         }
-        description="این نمای رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ستون‌ها برای کار رشد‌اند — چرخهٔ حیات، امتیاز و خرید — و ویرایش و پروندهٔ کامل در CRM انجام می‌شود."
+        description="این فهرست رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ستون‌ها برای کار رشد‌اند — چرخهٔ حیات، امتیاز و خرید. افزودن و ویرایش در همین بخش انجام می‌شود و پروندهٔ کامل (یادداشت‌ها و تاریخچه) در CRM است."
         actions={
-          <Link
-            href={crmSectionHref("directory")}
-            className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-          >
-            مدیریت در CRM
-            <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
-          </Link>
+          canManage ? (
+            <Button type="button" onClick={() => setForm({})}>
+              افزودن مشتری
+            </Button>
+          ) : null
         }
       >
         <label className="block max-w-sm">
@@ -119,7 +138,8 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
                     <th className="py-2 pe-3 text-start font-medium">خریدها</th>
                     <th className="py-2 pe-3 text-start font-medium">مجموع خرید</th>
                     <th className="py-2 pe-3 text-start font-medium">امتیاز وفاداری</th>
-                    <th className="py-2 text-start font-medium">وضعیت</th>
+                    <th className={`py-2 text-start font-medium ${canManage ? "pe-3" : ""}`}>وضعیت</th>
+                    {canManage ? <th className="py-2 text-start font-medium">عملیات</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/80">
@@ -139,11 +159,18 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
                       <td className="py-3 pe-3 tabular-nums">{formatPersianNumber(customer.orderCount)}</td>
                       <td className="py-3 pe-3 tabular-nums font-semibold">{money.format(customer.totalSpentRial)}</td>
                       <td className="py-3 pe-3 tabular-nums">{formatPersianNumber(customer.points)}</td>
-                      <td className="py-3">
+                      <td className={canManage ? "py-3 pe-3" : "py-3"}>
                         <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
                           {customer.isActive ? "فعال" : "آرشیو"}
                         </StatusBadge>
                       </td>
+                      {canManage ? (
+                        <td className="py-3">
+                          <Button type="button" variant="ghost" size="xs" onClick={() => setForm({ partyId: customer.id })}>
+                            ویرایش
+                          </Button>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -186,12 +213,33 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
                       <dd className="mt-1 font-medium tabular-nums">{money.format(customer.totalSpentRial)}</dd>
                     </div>
                   </dl>
+                  {canManage ? (
+                    <div className="mt-3 border-t border-border/80 pt-2">
+                      <Button type="button" variant="ghost" size="xs" onClick={() => setForm({ partyId: customer.id })}>
+                        ویرایش
+                      </Button>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>
           </>
         )}
       </SectionCard>
+
+      {form ? (
+        <PartyFormDialog
+          scope={partyScopeFor("growth")}
+          partyId={form.partyId ?? null}
+          businessId={businessId}
+          onClose={() => setForm(null)}
+          onSaved={() => {
+            setForm(null);
+            setInfo("مشتری ذخیره شد.");
+            setRefreshKey((key) => key + 1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

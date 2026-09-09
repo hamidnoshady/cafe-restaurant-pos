@@ -57,7 +57,7 @@ export const PERMISSIONS = {
   purchasesManage: "purchases.manage",
 
   /**
-   * Parties — «طرف‌حساب‌ها»: the one record behind a customer, a supplier and a
+   * Parties — «اشخاص»: the one record behind a customer, a supplier and a
    * member of staff (migration 0137 renamed `customers` to `parties`, and this
    * permission is why the ledger can hand a supplier file to the same screen as a
    * customer's). `parties.view` is the read of the record and of the pickers that
@@ -131,13 +131,15 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     ledgerView, reportsView, reportsExport,
     settingsManage, backupManage,
   ],
-  // Phase 16's role: the books, and only the books. No till, no floor. Sees
-  // the customer directory (it's where AR balances are attributed) but does
-  // not manage customer records — that's a front-of-house task.
+  // Phase 16's role: the books, and only the books. No till, no floor. Manages
+  // the «اشخاص» file inside the Accounting app (its own customers, suppliers
+  // and staff view with the ledger's columns) — the CRM app itself stays
+  // closed to this role, so the 360° file, segments and notes are not a back
+  // door into customer PII without an accounting reason.
   accountant: [
     menuView,
     inventoryView,
-    partiesView,
+    partiesView, partiesManage,
     ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
     reportsView, reportsExport,
   ],

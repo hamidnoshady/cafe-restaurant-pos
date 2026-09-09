@@ -18,12 +18,12 @@ import { CommissionSection } from "./commission-section";
 import { GrowthCustomersSection } from "./customers-section";
 import { growthSectionHref, type GrowthSectionKey } from "./growth-routes";
 
-export function GrowthSection({ section }: { section: GrowthSectionKey }) {
+export function GrowthSection({ section, role }: { section: GrowthSectionKey; role: string }) {
   const router = useRouter();
   const goToSection = (key: GrowthSectionKey) => router.push(growthSectionHref(key));
 
   if (section === "overview") return <OverviewSection onGoToSection={goToSection} />;
-  if (section === "customers") return <GrowthCustomersSection />;
+  if (section === "customers") return <GrowthCustomersSection role={role} />;
   if (section === "campaigns") return <CampaignsSection />;
   if (section === "gift-cards") return <GiftCardsSection />;
   if (section === "loyalty") return <LoyaltySection />;
