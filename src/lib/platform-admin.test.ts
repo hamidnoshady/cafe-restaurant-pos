@@ -100,6 +100,23 @@ describe("platformCan — role → capability presets", () => {
     }
   });
 
+  it("administering the website platform is operations, reading it is not gated at all", () => {
+    // Migration 0139. An engineer keeps the fleet's websites serving — suspending a
+    // site, re-issuing a key, pushing content back after a bad edit — for the same
+    // reason they run backups: the alternative is opening the CMS's own admin on
+    // another host, where none of it is audited here.
+    for (const role of ["engineer", "owner"] as const) {
+      expect(platformCan(role, "cms.manage"), role).toBe(true);
+    }
+    expect(platformCan("support", "cms.manage")).toBe(false);
+    // The CMS report itself rides `system.read`, which every role holds: a support
+    // operator answering «سایت مشتری بالا هست؟» must be able to look without being
+    // able to change anything.
+    for (const role of PLATFORM_ADMIN_ROLES) {
+      expect(platformCan(role, "system.read"), role).toBe(true);
+    }
+  });
+
   it("higher roles are supersets of lower ones", () => {
     for (const cap of CAPABILITIES_FOR("support")) {
       expect(platformCan("engineer", cap), cap).toBe(true);

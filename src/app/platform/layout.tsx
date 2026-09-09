@@ -69,6 +69,22 @@ const NAV: NavItem[] = [
       { label: "پایش", href: "/platform/system/logs" },
     ],
   },
+  // Migration 0139 — the website platform (eshobe-cms) administered from here:
+  // the fleet report, every site's lifecycle, content sync in both directions and
+  // its own log tail. Visible to every admin because the report is not privileged
+  // information; each page hides the controls an operator without `cms.manage`
+  // could not use, and every route re-checks it.
+  {
+    label: "سایت‌ساز",
+    href: "/platform/cms",
+    children: [
+      { label: "میز فرمان", href: "/platform/cms", exact: true },
+      { label: "سایت‌ها", href: "/platform/cms/sites" },
+      { label: "همگام‌سازی", href: "/platform/cms/sync" },
+      { label: "پایش", href: "/platform/cms/logs" },
+      { label: "اتصال", href: "/platform/cms/connection" },
+    ],
+  },
   {
     label: "هوش مصنوعی",
     href: "/platform/ai",

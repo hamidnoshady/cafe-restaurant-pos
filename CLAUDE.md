@@ -559,6 +559,60 @@ either side.
   the registrar **quote**, which places no order and writes no row, so the wizard can price a
   domain before the site exists.
 
+### The operator's side: «سایت‌ساز» in the super-admin console (migration 0139)
+
+> **کارِ مشتری در «مدیریت وب‌سایت» است؛ کارِ سکو در کنسول.** The section above is the
+> business's own manager — one owner, one site. Every **superadmin** function of
+> eshobe-cms and every fleet-wide report about it lives in the super-admin console
+> instead, at `/platform/cms`, driven by one CMS address and one `role: "platform"`
+> key. That follows the repository-layout rule: functionality that supervises
+> clients *across* businesses belongs in `src/app/platform/**`.
+
+Five pages (`میز فرمان / سایت‌ها / همگام‌سازی / پایش / اتصال`), the routes under
+`/api/platform/cms/*`, `src/lib/cms/platform-{control,control-service,client,sync}.ts`,
+and the CMS-side surface `/api/platform/*` (its own
+`docs/platform-control-api.md`). Full contract:
+[docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md) §7.
+
+- **The credential is never returned, and an empty submission means *unchanged*.**
+  `platform_cms_config` is a singleton in the shape of `platform_update_config`; the
+  platform key is AES-256-GCM at rest and read back only as its last four
+  characters. The form renders empty and therefore posts empty on every save, so
+  treating that as deletion would wipe the platform's root credential for its own
+  website platform — `clearApiKey: true` is the explicit door. The
+  `ESHOBE_CMS_URL`/`ESHOBE_CMS_PLATFORM_API_KEY` pair stays as the fallback, so
+  rotation is a form submission rather than a redeploy.
+- **`cms.manage` is the write capability** (engineer + owner, the same reasoning as
+  `backup.manage`); reading the report rides `system.read`, because "four domains
+  are unverified" is not privileged information.
+- **A platform key now reaches every site's content** through the snapshot export.
+  Say this plainly rather than pretending otherwise: it is not new authority,
+  because a platform key could already issue itself a site key for any site. The
+  boundary that matters — a *site* key reaches exactly one site — is unchanged.
+- **`platform_cms_sites` is a cache of somebody else's model**, never a second
+  source of truth. It exists so a fleet question is one local query and so the
+  console keeps showing real figures (stamped with when they were read) while the
+  CMS restarts. Its delete pass is why the client pages the *whole* list: a site
+  removed from the CMS is the one state an upsert cannot express.
+- **A push is a dry run first, and the counts reported are the CMS's own.** A count
+  that arrives after the write is not a decision, and a write is applied only to the
+  extent the other side says it was. An import of another site's snapshot is refused
+  unless forced (its relationships are that site's document ids), and media is never
+  in a snapshot — the files are in object storage.
+- **Every sync writes a `platform_cms_sync_runs` row, success or failure.** A content
+  restore nobody can point at afterwards is an incident, not an operation.
+- **The CMS's logs land in OpenObserve without a collector credential on the CMS.**
+  Two producers fill a dedicated stream (`OPENOBSERVE_CMS_STREAM`, default
+  `cms_events`, read back through `?source=cms` on the existing proxy): every control
+  call this console makes, and the CMS's own event feed polled on a cursor. The
+  cursor advances to the newest record *received*, never to `now`. Both halves are
+  opt-in and default off — a migration must not turn a POS into an HTTP client for a
+  service it has never heard of.
+- **`domain` is not editable from the console.** On the CMS its one write path resets
+  `domainVerified` and re-checks uniqueness across primaries *and* aliases; a second
+  door would be a second place to forget that. Moving a connected site's domain
+  stays the business's own «تنظیمات و همگام‌سازی» flow.
+
 ### Building a site, and paying for it (migration 0138)
 
 > **سایت‌ساز کار سایت را می‌کند؛ پول را این‌جا می‌گیریم.** The CMS renders and

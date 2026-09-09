@@ -61,6 +61,8 @@ app.prepare().then(async () => {
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
   const { runWebsiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/website/sync-service");
+  const { runCmsControlTick } = await import("./src/lib/cms/platform-sync");
+  const { inPlatformScope } = await import("./src/lib/cms/platform-control-service");
   const { runHolooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/pull-service");
   const { runHolooPushTick, HOLOO_PUSH_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/push-service");
   const { runHolooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/reconciliation-service");
@@ -166,6 +168,25 @@ app.prepare().then(async () => {
     runWebsiteBillingTick().catch((err) => console.error("website billing tick failed:", err));
   setInterval(websiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS).unref();
   setTimeout(websiteBillingTick, 90_000).unref();
+
+  // Migration 0139: the website platform's control plane. Two jobs in one tick —
+  // refresh the mirror of every site on eshobe-cms (on the operator's configured
+  // interval, so the console's report answers from one local query and keeps
+  // answering when the CMS is unreachable), and poll the CMS's own event feed into
+  // OpenObserve so its site changes, orders, failed gateway self-tests and issued
+  // keys are readable beside this deployment's own logs.
+  //
+  // Both halves are opt-in and default off (`mirror_enabled`,
+  // `log_shipping_enabled`), so a deployment with no CMS makes no network call at
+  // all: a migration must not turn a POS into an HTTP client for a service it has
+  // never heard of. It runs under the platform bypass because there is no session
+  // to derive a tenant from and none of the three tables is tenant data.
+  const cmsControlTick = () =>
+    inPlatformScope(() => runCmsControlTick()).catch((err) =>
+      console.error("cms control tick failed:", err),
+    );
+  setInterval(cmsControlTick, 5 * 60_000).unref();
+  setTimeout(cmsControlTick, 110_000).unref();
 
   // Phase 26 (issue #125) Wave 7: mirror Holoo base data for companion-mode
   // businesses. Polling (Holoo cannot call back), gated on holoo_companion,

@@ -113,6 +113,17 @@ export const EXEMPT_TABLES = new Set([
   "platform_backup_tokens",
   "platform_backup_peers",
   "platform_restore_runs",
+  // Migration 0139 — the console's CMS control plane: the eshobe-cms address and
+  // its `role: "platform"` key (encrypted), the mirror of every site on that
+  // deployment, and the log of every sync in either direction. Deployment-wide by
+  // definition — one CMS serves every business, and the credential is the
+  // operator's root credential for the platform that hosts every customer's
+  // website, so a tenant connection must not be able to reach any of it. The
+  // per-business half of the same integration (eshobe_cms_connections, migration
+  // 0122) is RLS-protected and deliberately NOT in this list.
+  "platform_cms_config",
+  "platform_cms_sites",
+  "platform_cms_sync_runs",
 ]);
 
 export interface ForeignKeyEdge {

@@ -40,6 +40,15 @@ export type PlatformCapability =
   // is ordinary operations, like flags and suspension: it reads everything and
   // overwrites nothing. …
   | "backup.manage"
+  // Migration 0139 — administering the website platform (eshobe-cms) from this
+  // console: its address and platform key, a site's lifecycle, issuing and revoking
+  // site keys, and syncing content in either direction. An engineer holds it for the
+  // same reason they hold `backup.manage`: keeping the fleet's websites serving is
+  // ordinary operations, and the alternative is an operator opening the CMS's own
+  // admin on another host, where nothing this console does is audited. Reading the
+  // CMS report rides `system.read` — knowing that four domains are unverified is not
+  // privileged information.
+  | "cms.manage"
   | "business.suspend"
   | "ai.credits.manage"
   // Platform billing: gateway config, credit packages, plan builder, wallet
@@ -95,6 +104,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "impersonate.revoke",
     "knowledge.manage",
     "backup.manage",
+    "cms.manage",
   ],
   owner: [
     ...READ,
@@ -107,6 +117,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "impersonate.revoke",
     "knowledge.manage",
     "backup.manage",
+    "cms.manage",
     "backup.restore",
     "impersonate.full",
     "business.provision",
