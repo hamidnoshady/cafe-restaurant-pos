@@ -6,10 +6,17 @@ import { useEffect, useState } from "react";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { Runner } from "./accounting-manager";
-import { ACCOUNT_LEVEL_LABELS, WELL_KNOWN_CODES, type AccountLevel, type NormalBalance } from "@/lib/coa-template";
+import {
+  ACCOUNT_LEVEL_LABELS,
+  WELL_KNOWN_CODES,
+  nextAccountLevel,
+  type AccountLevel,
+  type NormalBalance,
+} from "@/lib/coa-template";
 import { AccountHistoryPanel } from "./account-history-panel";
 import { AccountStatementPanel } from "./account-statement-panel";
-import { cardClass } from "../page-chrome";
+import { cardClass, overlayPanelClass } from "../page-chrome";
+import { useOverlayEscape } from "./use-overlay-escape";
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
 
@@ -78,14 +85,28 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
   const [reload, setReload] = useState(0);
   const [statementAccount, setStatementAccount] = useState<{ id: string; code: string; name: string } | null>(null);
   const [historyAccount, setHistoryAccount] = useState<{ id: string; code: string; name: string } | null>(null);
+  /*
+   * «ویرایش» — renaming and reparenting.
+   *
+   * `PATCH /api/ledger/accounts/:id` has supported both since Phase 16, the
+   * audit trail records both (`account.renamed` / `account.reparented`, shown by
+   * `AccountHistoryPanel`) and this component's own doc comment claimed both,
+   * but the screen only ever offered archive and delete: a mistyped account
+   * name could be read, audited and reverted — just not corrected.
+   */
+  const [editing, setEditing] = useState<AccountRow | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     api<{ accounts: AccountRow[] }>("/api/ledger/accounts?all=1").then(({ ok, data }) => {
       if (ok) setAccounts(data.accounts);
+      // An endless skeleton reads as "still loading"; name the failure instead.
+      else setLoadFailed(true);
     });
   }, [reload]);
 
   function refresh() {
+    setLoadFailed(false);
     setReload((n) => n + 1);
   }
 
@@ -120,10 +141,24 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
   }
 
   if (!accounts) {
+    if (loadFailed) {
+      return (
+        <div className="space-y-3">
+          <p className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            بارگذاری سرفصل حساب‌ها ناموفق بود.
+          </p>
+          <div className="max-w-xs">
+            <SecondaryButton onClick={refresh}>تلاش دوباره</SecondaryButton>
+          </div>
+        </div>
+      );
+    }
     return <SectionCardSkeleton rows={4} />;
   }
 
-  const parentOptions = accounts.filter((a) => a.isActive);
+  // Only an account that can still take a child: a «تفصیلی» parent is refused
+  // server-side (`parent_too_deep`), so offering it is offering an error.
+  const parentOptions = accounts.filter((a) => a.isActive && nextAccountLevel(a.level) !== null);
 
   return (
     <div className="space-y-4">
@@ -200,7 +235,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{a.parentCode ?? "—"}</td>
                       <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span></td>
-                      <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div></td>
+                      <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => { setLocalError(""); setEditing(a); }} disabled={busy}>ویرایش</SecondaryButton><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div></td>
                     </tr>
                   ))}
                 </tbody>
@@ -227,7 +262,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                   <div><dt className="text-xs text-muted-foreground">ماهیت</dt><dd className="mt-1 text-foreground">{NORMAL_BALANCE_LABELS[a.normalBalance]}{a.isContra ? " (کاهنده)" : ""}</dd></div>
                   <div><dt className="text-xs text-muted-foreground">والد</dt><dd className="mt-1 text-foreground">{a.parentCode ?? "—"}</dd></div>
                 </dl>
-                <div className="mt-3 flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div>
+                <div className="mt-3 flex flex-wrap gap-2"><SecondaryButton onClick={() => { setLocalError(""); setEditing(a); }} disabled={busy}>ویرایش</SecondaryButton><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div>
               </article>
             ))}
           </div>
@@ -243,6 +278,19 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
         />
       ) : null}
 
+      {editing ? (
+        <EditAccountPanel
+          account={editing}
+          parentOptions={parentOptions.filter((candidate) => candidate.id !== editing.id)}
+          busy={busy}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            refresh();
+          }}
+        />
+      ) : null}
+
       {historyAccount ? (
         <AccountHistoryPanel
           accountId={historyAccount.id}
@@ -251,6 +299,125 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
           onClose={() => setHistoryAccount(null)}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Rename an account, move it under another, or both.
+ *
+ * One PATCH covers both edits (`renameAccount` / `reparentAccount` behind the
+ * same route), and only the fields that actually changed are sent — the route
+ * treats a present `parentId` as an instruction, so sending an unchanged one
+ * would write an audit row saying it moved when it did not.
+ *
+ * `code` and `type` are deliberately absent: the auto-posting engine looks
+ * accounts up *by code* (`WELL_KNOWN_CODES`), and the account's type decides
+ * which side of the statements it lands on. Neither is a rename — changing
+ * either is a new account plus a reclassifying entry, which is a different
+ * (and audited) operation.
+ */
+function EditAccountPanel({
+  account,
+  parentOptions,
+  busy,
+  onClose,
+  onSaved,
+}: {
+  account: AccountRow;
+  parentOptions: AccountRow[];
+  busy: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(account.name);
+  const [parentId, setParentId] = useState(account.parentId ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useOverlayEscape(onClose);
+
+  const nameChanged = name.trim() !== account.name;
+  const parentChanged = (parentId || null) !== (account.parentId ?? null);
+  const canSave = !!name.trim() && (nameChanged || parentChanged);
+
+  async function save() {
+    if (!canSave) return;
+    setSaving(true);
+    setError("");
+    const body: { name?: string; parentId?: string | null } = {};
+    if (nameChanged) body.name = name.trim();
+    if (parentChanged) body.parentId = parentId || null;
+    const { ok, data } = await api<{ error?: string }>(`/api/ledger/accounts/${account.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    setSaving(false);
+    if (!ok) {
+      const code = (data as { error?: string }).error;
+      setError(errorLabels[code ?? ""] ?? errorMessage(code));
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-account-heading"
+        className={`${overlayPanelClass} w-full max-w-md p-4 sm:p-5`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="mb-4 border-b border-border pb-4">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ویرایش حساب</p>
+          <h3 id="edit-account-heading" className="mt-1 text-lg font-bold">
+            {account.code} — {account.name}
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            کد و نوع حساب قابل تغییر نیستند؛ سندهای خودکار حساب‌ها را با کد پیدا می‌کنند.
+          </p>
+        </header>
+
+        {error ? (
+          <p role="alert" className="mb-3 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="space-y-3">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">نام حساب</span>
+            <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام حساب" />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">حساب والد</span>
+            <SearchableSelect
+              value={parentId}
+              onChange={setParentId}
+              ariaLabel="حساب والد"
+              options={[
+                { value: "", label: "بدون والد (سطح گروه)" },
+                ...parentOptions.map((a) => ({ value: a.id, label: `${a.code} — ${a.name} (${ACCOUNT_LEVEL_LABELS[a.level]})` })),
+              ]}
+            />
+            {account.hasChildren ? (
+              <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">
+                زیرمجموعه‌های این حساب هم همراه آن جابه‌جا می‌شوند.
+              </span>
+            ) : null}
+          </label>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <SecondaryButton onClick={onClose} disabled={saving || busy}>
+            انصراف
+          </SecondaryButton>
+          <PrimaryButton onClick={() => void save()} disabled={saving || busy || !canSave}>
+            {saving ? "در حال ذخیره…" : "ذخیره تغییرات"}
+          </PrimaryButton>
+        </div>
+      </section>
     </div>
   );
 }

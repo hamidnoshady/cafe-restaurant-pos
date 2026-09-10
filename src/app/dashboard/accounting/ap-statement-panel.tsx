@@ -8,6 +8,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
 import { overlayPanelClass } from "../page-chrome";
+import { useOverlayEscape } from "./use-overlay-escape";
 
 interface ApStatementLine {
   date: string;
@@ -37,6 +38,7 @@ export function ApStatementPanel({
 }) {
   const money = useMoney();
   const [lines, setLines] = useState<ApStatementLine[] | null>(null);
+  useOverlayEscape(onClose);
 
   useEffect(() => {
     setLines(null);

@@ -4,7 +4,7 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useEffect, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
-import { api } from "../ui";
+import { api, ErrorBox } from "../ui";
 import { cardClass } from "../page-chrome";
 
 interface TrialBalanceRow {
@@ -12,6 +12,8 @@ interface TrialBalanceRow {
   code: string;
   name: string;
   type: "asset" | "liability" | "equity" | "revenue" | "expense";
+  /** False for an archived account. It still reports the postings it received. */
+  isActive?: boolean;
   debit: string | number;
   credit: string | number;
 }
@@ -34,15 +36,25 @@ const TYPE_LABELS: Record<TrialBalanceRow["type"], string> = {
 export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
   const money = useMoney();
   const [data, setData] = useState<TrialBalanceData | null>(null);
+  // A failed fetch used to leave the skeleton on screen for ever, which reads
+  // as "still loading" rather than "this did not load".
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    setError("");
     api<TrialBalanceData>("/api/ledger/trial-balance").then(({ ok, data }) => {
       if (ok) setData(data);
+      else setError("بارگذاری تراز آزمایشی ناموفق بود. صفحه را دوباره باز کنید.");
     });
   }, [refreshKey]);
 
   if (!data) {
-    return <SectionCardSkeleton rows={4} label="در حال بارگذاری تراز آزمایشی" />;
+    return (
+      <>
+        <ErrorBox>{error}</ErrorBox>
+        {error ? null : <SectionCardSkeleton rows={4} label="در حال بارگذاری تراز آزمایشی" />}
+      </>
+    );
   }
 
   // Keep the API response as the financial source of truth. This UI only
@@ -98,7 +110,14 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                 {rows.map((a) => (
                   <tr key={a.id} className="border-b border-border last:border-b-0">
                     <td className="whitespace-nowrap px-4 py-3.5 font-medium text-muted-foreground">{a.code}</td>
-                    <td className="px-4 py-3.5 font-medium text-foreground">{a.name}</td>
+                    <td className="px-4 py-3.5 font-medium text-foreground">
+                      {a.name}
+                      {a.isActive === false ? (
+                        <span className="ms-2 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                          غیرفعال
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3.5 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
                     <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-foreground">
                       {money.format(Number(a.debit))}
@@ -136,6 +155,9 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-muted-foreground">{a.code}</p>
                   <h3 className="mt-1 truncate text-sm font-semibold text-foreground">{a.name}</h3>
+                  {a.isActive === false ? (
+                    <p className="mt-1 text-xs font-semibold text-muted-foreground">غیرفعال</p>
+                  ) : null}
                 </div>
                 <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
                   {TYPE_LABELS[a.type]}

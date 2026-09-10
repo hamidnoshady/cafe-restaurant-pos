@@ -14,6 +14,9 @@
  * aging.test.ts covers. Covered here by integration/ar.integration.test.ts.
  */
 import { getPool, query } from "./db";
+import { businessToday } from "./business-day-service";
+import { isUuid } from "./uuid";
+import { PARTY_ROLE_STORAGE } from "./parties";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
 import { ageOpenItems, summarizeAging, UNKNOWN_CUSTOMER_KEY, type AgingSummary } from "./aging";
@@ -76,6 +79,38 @@ export interface CustomerBalance {
   customerName: string;
   customerPhone: string | null;
   balance: number;
+}
+
+/**
+ * Every customer *record*, with whatever A/R balance it carries — the picker's
+ * list, as opposed to {@link listCustomerBalances}'s report.
+ *
+ * The two are different questions and were being answered by one function: a
+ * receipt, a cheque or an installment plan can perfectly well name a customer
+ * who owes nothing right now (an advance, a first cheque, a plan agreed before
+ * the first invoice), and the balances list contains no such row. It also
+ * contains one row that is not a customer at all — the `UNKNOWN_CUSTOMER_KEY`
+ * bucket for unattributed lines — which a picker would happily submit to a
+ * write endpoint. Neither problem exists here: real parties only, every one of
+ * them, ordered by name.
+ */
+export async function listCustomerDirectory(businessId: string): Promise<CustomerBalance[]> {
+  const { rows } = await query<{ id: string; name: string; phone: string | null }>(
+    // A merged duplicate keeps its row so it can still be found, but it must
+    // not be offered as a fresh counterparty (crm merge, migration 0118).
+    `SELECT id, name, phone
+       FROM parties
+      WHERE business_id = $1 AND role = $2 AND is_active AND merged_into_id IS NULL
+      ORDER BY name`,
+    [businessId, PARTY_ROLE_STORAGE.Customer],
+  );
+  const balances = new Map((await listCustomerBalances(businessId)).map((c) => [c.customerId, c.balance]));
+  return rows.map((r) => ({
+    customerId: r.id,
+    customerName: r.name,
+    customerPhone: r.phone,
+    balance: balances.get(r.id) ?? 0,
+  }));
 }
 
 /** Every customer with a nonzero AR balance, largest first. */
@@ -180,9 +215,19 @@ export interface AgingReport {
   totals: AgingSummary;
 }
 
-/** Standard 30/60/90-day AR aging, per customer, as of `asOfDate` (defaults to today). */
+/**
+ * Standard 30/60/90-day AR aging, per customer, as of `asOfDate` (defaults to
+ * the *business's* today).
+ *
+ * `new Date().toISOString().slice(0, 10)` — what this used to default to — is
+ * today in UTC, which is yesterday for the first three and a half hours of
+ * every Tehran day and for the whole late shift of a café trading 18:00→03:00.
+ * An invoice raised in those hours aged into the wrong bucket, and the
+ * «۳۱-۶۰ روز» column moved a day early. `businessToday` answers the same
+ * question the branch's own calendar does.
+ */
 export async function getArAging(businessId: string, asOfDate?: string): Promise<AgingReport> {
-  const effectiveAsOf = asOfDate ?? new Date().toISOString().slice(0, 10);
+  const effectiveAsOf = asOfDate ?? (await businessToday(businessId));
   const accountId = await arAccountId(businessId);
   if (!accountId) return { asOfDate: effectiveAsOf, rows: [], totals: { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 } };
 
@@ -245,6 +290,10 @@ export async function receivePayment(params: {
   if (!Number.isSafeInteger(params.amount) || params.amount <= 0) {
     throw new ArError("invalid_amount");
   }
+
+  // A non-uuid customer id cannot match a row, and asking Postgres anyway
+  // raises a syntax error rather than returning none — see `isUuid`.
+  if (!isUuid(params.customerId)) throw new ArError("customer_not_found", 404);
 
   const client = await getPool().connect();
   try {

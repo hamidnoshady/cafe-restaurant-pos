@@ -8,7 +8,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
-import { api, inputClass, PrimaryButton } from "../ui";
+import { api, ErrorBox, inputClass, PrimaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { AccountRow, Runner } from "./accounting-manager";
 import { cardClass } from "../page-chrome";
@@ -56,10 +56,17 @@ export function ExpenseSection({
   const [vendor, setVendor] = useState("");
   const [memo, setMemo] = useState("");
   const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    setLoadError("");
     api<{ expenses: ExpenseRow[] }>("/api/ledger/expenses").then(({ ok, data }) => {
       if (ok) setExpenses(data.expenses);
+      // An endless skeleton reads as "still loading"; name the failure.
+      else {
+        setExpenses([]);
+        setLoadError("بارگذاری فهرست هزینه‌ها ناموفق بود.");
+      }
     });
   }, [refreshKey]);
 
@@ -163,6 +170,7 @@ export function ExpenseSection({
           <h2 className="mt-1 text-base font-semibold text-foreground">هزینه‌های اخیر</h2>
         </header>
         <div className="p-4 sm:p-5">
+          <ErrorBox>{loadError}</ErrorBox>
           {!expenses ? (
             <LoadingSkeleton rows={3} />
           ) : expenses.length === 0 ? (
@@ -207,6 +215,12 @@ export function ExpenseSection({
                   </table>
                 </div>
               </div>
+              <p className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
+                <span className="text-muted-foreground">جمع هزینه‌های این فهرست</span>
+                <span className="font-bold tabular-nums text-foreground">
+                  {money.format(expenses.reduce((sum, e) => sum + e.amount, 0))}
+                </span>
+              </p>
               <div className="space-y-3 lg:hidden">
                 {expenses.map((e) => (
                   <article key={e.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
