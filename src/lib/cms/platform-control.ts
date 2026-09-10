@@ -9,7 +9,7 @@
  * store is `platform-control-service.ts` and the HTTP client is
  * `platform-client.ts`.
  *
- * Two rules this file exists to hold:
+ * Three rules this file exists to hold:
  *
  *  - **An empty credential submission means "unchanged", never "delete".** The
  *    console renders the key masked (it is never returned), so every save posts it
@@ -23,6 +23,10 @@
  *    network and a mistake over the public internet, so it needs the operator to
  *    say which — the same distinction `normalizePeerBaseUrl` draws for a backup
  *    peer's address.
+ *  - **`verified_at` is derived, never submitted.** It is reset by whatever edit
+ *    makes the stored proof false, and `cmsConfigSetClause` guarantees the whole
+ *    save still says each column exactly once (Postgres refuses a duplicate
+ *    `SET` target outright).
  */
 
 // ---------------------------------------------------------------------------
@@ -233,6 +237,129 @@ export function parseCmsConfigPatch(
   if (errors.length) return { errors, ok: false };
   if (Object.keys(changes).length === 0) return { errors: ["nothing_to_change"], ok: false };
   return { changes, ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// The write: a validated patch → one UPDATE's SET list
+// ---------------------------------------------------------------------------
+
+/**
+ * One intended assignment to `platform_cms_config`.
+ *
+ * `value` is bound as a parameter; `literal` is server-side SQL for the cases
+ * where the value is not data (`NULL`, `''`, `now()`).
+ */
+export type CmsConfigAssignment =
+  | { column: string; literal: string }
+  | { column: string; value: unknown };
+
+/** The service-only half of writing the config, injected so this stays pure. */
+export interface CmsConfigWriteContext {
+  /** Who saved it — `null` when no admin is attached to the write. */
+  adminId: null | string;
+  /** AES-256-GCM at rest; the key material lives in the service, not here. */
+  encryptApiKey: (apiKey: string) => string;
+}
+
+/**
+ * Which columns one console save touches.
+ *
+ * `platform_cms_config` is a single row with two kinds of column, and the
+ * distinction is the whole function: an *edited* column takes the submitted
+ * value, and a *derived* column (`verified_at`, `verify_error`) is reset by every
+ * edit that makes the stored proof meaningless — a new address, a new credential,
+ * a cleared one. The proof was made against a different server, so keeping it
+ * beside the new value would show an operator a verification that is not about
+ * what is now on screen.
+ *
+ * An untouched field is absent from `changes` and therefore absent from the
+ * result: the form posts the whole (masked) config on every save, and the
+ * credential in particular must never be inferred from an empty field.
+ */
+export function cmsConfigUpdateAssignments(
+  changes: ValidatedCmsPatch,
+  context: CmsConfigWriteContext,
+): CmsConfigAssignment[] {
+  const bind = (column: string, value: unknown): CmsConfigAssignment => ({ column, value });
+  const raw = (column: string, literal: string): CmsConfigAssignment => ({ column, literal });
+  /** The address or the credential moved, so the last verification is about neither. */
+  const invalidated = (): CmsConfigAssignment[] => [
+    raw("verified_at", "NULL"),
+    raw("verify_error", "NULL"),
+  ];
+
+  const assignments: CmsConfigAssignment[] = [];
+
+  if (changes.baseUrl !== undefined) {
+    assignments.push(bind("base_url", changes.baseUrl), ...invalidated());
+  }
+  if (changes.label !== undefined) assignments.push(bind("label", changes.label));
+  if (changes.allowInsecure !== undefined) {
+    assignments.push(bind("allow_insecure", changes.allowInsecure));
+  }
+  if (changes.mirrorEnabled !== undefined) {
+    assignments.push(bind("mirror_enabled", changes.mirrorEnabled));
+  }
+  if (changes.mirrorIntervalMinutes !== undefined) {
+    assignments.push(bind("mirror_interval_minutes", changes.mirrorIntervalMinutes));
+  }
+  if (changes.logShippingEnabled !== undefined) {
+    assignments.push(bind("log_shipping_enabled", changes.logShippingEnabled));
+  }
+
+  if (changes.clearApiKey) {
+    assignments.push(
+      raw("api_key_ciphertext", "NULL"),
+      raw("api_key_hint", "''"),
+      ...invalidated(),
+    );
+  } else if (changes.apiKey) {
+    // A stored-but-unverified key is the state «اتصال» exists to surface, so the
+    // error that came with the old key is dropped with the old key's proof.
+    assignments.push(
+      bind("api_key_ciphertext", context.encryptApiKey(changes.apiKey)),
+      bind("api_key_hint", cmsKeyHint(changes.apiKey)),
+      ...invalidated(),
+    );
+  }
+
+  assignments.push(bind("updated_by", context.adminId), raw("updated_at", "now()"));
+  return assignments;
+}
+
+/**
+ * Fold intended assignments into the `SET` list of a single UPDATE.
+ *
+ * The fold is the point. Several rules above land on the same column routinely —
+ * a changed address and a rotated credential each clear the last verification, and
+ * the console posts both in one save — and Postgres does not merge a column named
+ * twice in one `UPDATE`: it refuses the statement with
+ * `42601 multiple assignments to same column "verified_at"`. That is exactly how
+ * every save that touched the key came back as a 500 instead of a saved form.
+ *
+ * So: one assignment per column, the last one wins (the rules are ordered, and
+ * the credential's is the more specific), and the `$n` placeholders are numbered
+ * *after* the fold — a value dropped by a later rule must not stay in the
+ * parameter list and shift every value after it onto the wrong column.
+ */
+export function cmsConfigSetClause(assignments: readonly CmsConfigAssignment[]): {
+  sets: string[];
+  values: unknown[];
+} {
+  const byColumn = new Map<string, CmsConfigAssignment>();
+  for (const assignment of assignments) byColumn.set(assignment.column, assignment);
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const assignment of byColumn.values()) {
+    if ("literal" in assignment) {
+      sets.push(`${assignment.column} = ${assignment.literal}`);
+      continue;
+    }
+    values.push(assignment.value);
+    sets.push(`${assignment.column} = $${values.length}`);
+  }
+  return { sets, values };
 }
 
 // ---------------------------------------------------------------------------
