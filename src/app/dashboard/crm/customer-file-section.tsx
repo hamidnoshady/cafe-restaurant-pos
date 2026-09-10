@@ -48,7 +48,7 @@ import {
 import type { CustomerFile } from "@/lib/crm-service";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
-import { crmSectionHref } from "./crm-routes";
+import { crmCustomerHref, crmSectionHref } from "./crm-routes";
 
 interface Note {
   id: string;
@@ -161,7 +161,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
           description="محتوای آن به پروندهٔ دیگری منتقل شده و اینجا فقط برای سابقه نگه داشته می‌شود."
         >
           <Button asChild variant="outline">
-            <Link href={`/dashboard/crm/customers/${file.mergedIntoId}`}>رفتن به پروندهٔ اصلی</Link>
+            <Link href={crmCustomerHref(file.mergedIntoId)}>رفتن به پروندهٔ اصلی</Link>
           </Button>
         </SectionCard>
       ) : null}
