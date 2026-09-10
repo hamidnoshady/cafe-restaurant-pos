@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import {
   ArmchairIcon,
   BarChart3Icon,
@@ -55,7 +55,7 @@ import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { AppStateBadge } from "./app-availability-gate";
 import { CreditBadge } from "./credit-badge";
-import { APP_NAV_BUTTON_CLASS } from "./sidebar-nav-styles";
+import { APP_NAV_BUTTON_CLASS, BACK_TO_WORKSPACE_BUTTON_CLASS } from "./sidebar-nav-styles";
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
@@ -139,6 +139,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/tools-fittings": PackageIcon,
   "/dashboard/haberdashery": SparklesIcon,
   "/dashboard/ledger": CalculatorIcon,
+  "/dashboard/connections": PlugIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
   "/dashboard/billing": WalletIcon,
@@ -284,9 +285,25 @@ interface SidebarProps {
   industry?: Industry;
 }
 
-function isActive(path: string, href: string): boolean {
-  if (href === "/dashboard") return path === "/dashboard";
-  return path === href || path.startsWith(`${href}/`);
+/**
+ * Whether a nav href is the current location.
+ *
+ * A bare href (no `?`) is a section's home and is active on its whole path
+ * prefix, the way the flat nav always behaved — so a group's parent link stays
+ * lit on every one of its query-string tabs. A `?tab=` href is a *named* sub-
+ * section: it matches only that tab (other query params, like a `party=` deep
+ * link, are ignored so the «مشتریان» entry stays lit on one customer's file).
+ */
+function isActive(pathname: string, href: string, search?: ReadonlyURLSearchParams | null): boolean {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  const q = href.indexOf("?");
+  if (q >= 0) {
+    const hrefPath = href.slice(0, q);
+    if (pathname !== hrefPath) return false;
+    const hrefTab = new URLSearchParams(href.slice(q + 1)).get("tab");
+    return (search?.get("tab") ?? null) === hrefTab;
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /** Which collapsible nav groups the member left open, per device. */
@@ -312,40 +329,93 @@ function readOpenGroups(): Record<string, boolean> {
 function NavGroupItem({
   item,
   pathname,
+  search,
   onNavigate,
   open,
   onToggle,
 }: {
   item: NavItem & { children: NavItem[] };
   pathname: string;
+  search: ReadonlyURLSearchParams | null;
   onNavigate: () => void;
   open: boolean;
   onToggle: () => void;
 }) {
-  const Icon = NAV_ICONS[item.iconKey ?? ""] ?? CircleIcon;
-  const childActive = item.children.some((child) => child.href && isActive(pathname, child.href));
+  const Icon = NAV_ICONS[item.iconKey ?? item.href ?? ""] ?? CircleIcon;
+  const childActive = item.children.some((child) => child.href && isActive(pathname, child.href, search));
+  const hrefActive = item.href ? isActive(pathname, item.href, search) : false;
+  const active = childActive || hrefActive;
+  // A group that *has* a home keeps its label a link to that home («حسابداری»
+  // → the dashboard) and puts the disclosure on a separate chevron, so tapping
+  // the section still opens its main page — while a pure group («محصولات»)
+  // toggles on the whole row, exactly as before.
+  const hasHref = Boolean(item.href);
+
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        asChild={false}
-        isActive={childActive}
-        tooltip={item.label}
-        className={APP_NAV_BUTTON_CLASS}
-        aria-expanded={open}
-        onClick={onToggle}
-      >
-        <Icon aria-hidden="true" className="size-5 shrink-0" />
-        <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
-        <ChevronDownIcon
-          aria-hidden="true"
-          className={`ms-auto size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-data-[state=collapsed]/sidebar:hidden ${open ? "" : "-rotate-90"}`}
-        />
-      </SidebarMenuButton>
+      <div className="relative">
+        <SidebarMenuButton
+          asChild={hasHref}
+          isActive={active}
+          tooltip={item.label}
+          className={`${APP_NAV_BUTTON_CLASS} ${hasHref ? "pe-9" : ""}`}
+          aria-expanded={hasHref ? undefined : open}
+          onClick={hasHref ? undefined : onToggle}
+        >
+          {hasHref ? (
+            <Link
+              href={item.href!}
+              onClick={onNavigate}
+              aria-current={hrefActive ? "page" : undefined}
+            >
+              <Icon aria-hidden="true" className="size-5 shrink-0" />
+              <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+              {item.appState ? (
+                <AppStateBadge
+                  state={item.appState.state}
+                  label={item.appState.label}
+                  className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                />
+              ) : null}
+            </Link>
+          ) : (
+            <>
+              <Icon aria-hidden="true" className="size-5 shrink-0" />
+              <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+              {item.appState ? (
+                <AppStateBadge
+                  state={item.appState.state}
+                  label={item.appState.label}
+                  className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                />
+              ) : null}
+              <ChevronDownIcon
+                aria-hidden="true"
+                className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-data-[state=collapsed]/sidebar:hidden ${item.appState ? "ms-1.5" : "ms-auto"}`}
+              />
+            </>
+          )}
+        </SidebarMenuButton>
+        {hasHref ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            aria-label={`باز و بسته کردن زیربخش‌های ${item.label}`}
+            className="absolute end-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-amber-500/20 dark:hover:text-amber-300 group-data-[state=collapsed]/sidebar:hidden"
+          >
+            <ChevronDownIcon
+              aria-hidden="true"
+              className={`size-4 transition-transform duration-200 ease-out ${open ? "" : "-rotate-90"}`}
+            />
+          </button>
+        ) : null}
+      </div>
       {open ? (
         <ul className="ms-6 mt-1 space-y-0.5 group-data-[state=collapsed]/sidebar:hidden">
           {item.children.map((child) => {
             if (!child.href) return null;
-            const active = isActive(pathname, child.href);
+            const active = isActive(pathname, child.href, search);
             return (
               <li key={child.href}>
                 <Link
@@ -378,6 +448,7 @@ function NavLinks({
   /** True while the business has the workspace shell: adds a «میز کار» entry back to the chat home. */
   showWorkspaceHome?: boolean;
 }) {
+  const search = useSearchParams();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   useEffect(() => setOpenGroups(readOpenGroups()), []);
   const toggleGroup = useCallback((label: string) => {
@@ -393,33 +464,42 @@ function NavLinks({
   }, []);
   return (
     <SidebarContent className="px-3 py-4">
-      <nav aria-label="ناوبری داشبورد">
+      <nav aria-label="ناوبری داشبورد" className="space-y-3">
+        {showWorkspaceHome ? (
+          <>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/dashboard"}
+                  tooltip="بازگشت به میز کار"
+                  className={BACK_TO_WORKSPACE_BUTTON_CLASS}
+                >
+                  <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
+                    <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
+                    <span className="group-data-[state=collapsed]/sidebar:hidden">بازگشت به میز کار</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+            {/* The way out is a control, not a menu entry: separate it from the
+                sections below so it reads as "leave this app" rather than as
+                another page. */}
+            <div aria-hidden="true" className="border-t border-border/80" />
+          </>
+        ) : null}
         <SidebarMenu className="space-y-1.5">
-          {showWorkspaceHome ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname === "/dashboard"}
-                tooltip="میز کار"
-                className={APP_NAV_BUTTON_CLASS}
-              >
-                <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
-                  <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
-                  <span className="group-data-[state=collapsed]/sidebar:hidden">میز کار</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ) : null}
           {navItems.map((item) => {
             if (item.children && item.children.length > 0) {
-              const holdsActive = item.children.some(
-                (child) => child.href && isActive(pathname, child.href),
-              );
+              const holdsActive =
+                (item.href ? isActive(pathname, item.href, search) : false) ||
+                item.children.some((child) => child.href && isActive(pathname, child.href, search));
               return (
                 <NavGroupItem
                   key={item.label}
                   item={item as NavItem & { children: NavItem[] }}
                   pathname={pathname}
+                  search={search}
                   onNavigate={onNavigate}
                   open={Boolean(openGroups[item.label]) || holdsActive}
                   onToggle={() => toggleGroup(item.label)}
@@ -428,7 +508,7 @@ function NavLinks({
             }
             if (!item.href) return null;
             const Icon = NAV_ICONS[item.href] ?? CircleIcon;
-            const active = isActive(pathname, item.href);
+            const active = isActive(pathname, item.href, search);
             return (
               <SidebarMenuItem key={item.label}>
                 <SidebarMenuButton
