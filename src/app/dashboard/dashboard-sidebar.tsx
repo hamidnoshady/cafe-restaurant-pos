@@ -32,6 +32,7 @@ import {
   TrendingUpIcon,
   TruckIcon,
   UsersIcon,
+  PersonsIcon,
   WalletIcon,
   WatchIcon,
   type LucideIcon,
@@ -122,7 +123,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/overview": LayoutDashboardIcon,
   "/dashboard/orders": ClipboardListIcon,
   "/dashboard/pos": ShoppingCartIcon,
-  "/dashboard/customers": UsersIcon,
+  "/dashboard/persons": PersonsIcon,
   "/dashboard/floor": ArmchairIcon,
   "/dashboard/waiter": ArmchairIcon,
   "/dashboard/kitchen": ChefHatIcon,
@@ -146,7 +147,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   // Phase 36b — the Growth & Marketing app's home; the trend glyph the
   // workspace rail already uses for «رشد و بازاریابی».
   "/dashboard/growth": TrendingUpIcon,
-  // Phase 36 — the CRM app's home. `/dashboard/customers` keeps the plain
+  // Phase 36 — the CRM app's home. `/dashboard/persons` keeps the plain
   // people glyph above; this is the app that now owns that record.
   "/dashboard/crm": ContactIcon,
   // «مدیریت وب‌سایت» — one app for both website systems (the Eshobe CMS site
@@ -196,9 +197,9 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     key: "crm",
     label: "ارتباط با مشتری",
     icon: ContactIcon,
-    // `/dashboard/customers` redirects into the app's directory, so a business
+    // `/dashboard/persons` redirects into the app's directory, so a business
     // that has customers but has never opened the CRM still gets the launcher.
-    hrefs: ["/dashboard/crm", "/dashboard/customers"],
+    hrefs: ["/dashboard/crm", "/dashboard/persons"],
   },
   {
     key: "growth",
