@@ -146,13 +146,6 @@ export const WELL_KNOWN_CODES = {
   // baking period and understate it at sale).
   appliedConversionCost: "5180",
   inventoryCountGain: "4910",
-  // Phase 42 — warehouse documents (رسید/حواله انبار). Every industry's COA
-  // template seeds «سایر درآمدها» (4900) and «سایر هزینه‌ها» (5900), so the
-  // generic in/out document posts against them without a per-industry lookup:
-  // a receipt is stock received without an invoice (other income), an issue
-  // is stock sent out without a sale (other expense).
-  otherIncome: "4900",
-  otherExpense: "5900",
   // Phase 22 Wave 4 — cost of using a third-party online-ordering platform
   // (e.g. a delivery marketplace's cut of the sale). Settled via the manual-
   // journal workflow, the same "new well-known account, not deep posting-path

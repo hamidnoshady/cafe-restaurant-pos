@@ -1,30 +1,5 @@
 "use client";
 
-/**
- * The inventory workspace.
- *
- * Phase 42 reshaped the menu around the warehouse module's own terms — the
- * same order the module's screens follow: the warehouses themselves (list +
- * add), the warehouse stock level, the warehouse documents (register and
- * list), and the physical count (انبارگردانی). The pre-existing F&B
- * sections (items, recipes, production, suppliers, purchases, waste,
- * transfers, barcodes) keep their place under «اقلام و عملیات».
- */
-import {
-  ArrowLeftRightIcon,
-  BarcodeIcon,
-  BookOpenIcon,
-  BoxesIcon,
-  ClipboardCheckIcon,
-  FactoryIcon,
-  FilePlus2Icon,
-  FileTextIcon,
-  PackageIcon,
-  ShoppingCartIcon,
-  Trash2Icon,
-  TruckIcon,
-  WarehouseIcon,
-} from "lucide-react";
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useCallback, useEffect, useState } from "react";
@@ -42,10 +17,6 @@ import { WasteSection } from "./waste-section";
 import { StockCountsSection } from "./stock-counts-section";
 import { BarcodesSection } from "./barcodes-section";
 import { TransfersSection } from "./transfers-section";
-import { WarehousesSection } from "./warehouses-section";
-import { DocumentFormSection } from "./document-form-section";
-import { DocumentsSection } from "./documents-section";
-import { StockSection } from "./stock-section";
 import styles from "./inventory-workspace.module.css";
 
 export interface InventoryItem {
@@ -118,30 +89,17 @@ interface LowStockItem {
 }
 
 const TABS = [
-  { key: "warehouses", label: "لیست انبارها", icon: WarehouseIcon },
-  { key: "stock", label: "موجودی انبار", icon: BoxesIcon },
-  { key: "counts", label: "انبارگردانی", icon: ClipboardCheckIcon },
-  { key: "documents-new", label: "ثبت رسید انبار/حواله", icon: FilePlus2Icon },
-  { key: "documents", label: "رسید و حواله‌های انبار", icon: FileTextIcon },
-  { key: "items", label: "اقلام انبار", icon: PackageIcon },
-  { key: "production", label: "تولید", icon: FactoryIcon },
-  { key: "recipes", label: "دستورالعمل مصرف", icon: BookOpenIcon },
-  { key: "suppliers", label: "تأمین‌کنندگان", icon: TruckIcon },
-  { key: "purchases", label: "خرید", icon: ShoppingCartIcon },
-  { key: "waste", label: "ضایعات", icon: Trash2Icon },
-  { key: "transfers", label: "انتقال بین انبارها", icon: ArrowLeftRightIcon },
-  { key: "barcodes", label: "بارکد و لیبل", icon: BarcodeIcon },
+  { key: "items", label: "اقلام انبار" },
+  { key: "production", label: "تولید" },
+  { key: "recipes", label: "دستورالعمل مصرف" },
+  { key: "suppliers", label: "تأمین‌کنندگان" },
+  { key: "purchases", label: "خرید" },
+  { key: "waste", label: "ضایعات" },
+  { key: "transfers", label: "انتقال بین انبارها" },
+  { key: "counts", label: "شمارش انبار" },
+  { key: "barcodes", label: "بارکد و لیبل" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
-
-const GROUPS = [
-  { label: "انبارها", keys: ["warehouses", "stock", "counts"] as const },
-  { label: "سند انبار", keys: ["documents-new", "documents"] as const },
-  {
-    label: "اقلام و عملیات",
-    keys: ["items", "production", "recipes", "suppliers", "purchases", "waste", "transfers", "barcodes"] as const,
-  },
-];
 
 export function InventoryManager({ role }: { role: string }) {
   const [data, setData] = useState<InventoryData | null>(null);
@@ -151,10 +109,7 @@ export function InventoryManager({ role }: { role: string }) {
   // shared party directory links here for a supplier's branch aliases); an unknown
   // name is ignored rather than opening a section that does not exist.
   const tabParam = useSearchParams().get("tab");
-  const [tab, setTab] = useState<TabKey>(() => (TABS.find((item) => item.key === tabParam)?.key ?? "warehouses"));
-  // The warehouse the «موجودی انبار» panel is pointed at; the warehouses list
-  // jumps here when a row is opened.
-  const [stockLocationId, setStockLocationId] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>(() => (TABS.find((item) => item.key === tabParam)?.key ?? "items"));
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
 
   // An error from one tab shouldn't keep showing once the user has moved on
@@ -169,9 +124,11 @@ export function InventoryManager({ role }: { role: string }) {
   useEffect(load, [load]);
 
   const loadLowStock = useCallback(() => {
-    api<{ items: LowStockItem[] }>("/api/inventory/low-stock").then(({ ok, data }) => {
-      if (ok) setLowStock(data.items);
-    });
+    api<{ items: LowStockItem[] }>("/api/inventory/low-stock").then(
+      ({ ok, data }) => {
+        if (ok) setLowStock(data.items);
+      },
+    );
   }, []);
   useEffect(loadLowStock, [loadLowStock]);
 
@@ -221,35 +178,7 @@ export function InventoryManager({ role }: { role: string }) {
         </div>
       ) : null}
 
-      <SectionNav
-        idPrefix="inventory"
-        label="بخش‌های انبار"
-        sections={TABS}
-        groups={GROUPS}
-        variant="rail"
-        active={tab}
-        onChange={setTab}
-      >
-        {tab === "warehouses" ? (
-          <WarehousesSection
-            onOpenStock={(locationId) => {
-              setStockLocationId(locationId);
-              setTab("stock");
-            }}
-          />
-        ) : null}
-        {tab === "stock" ? <StockSection locationId={stockLocationId} /> : null}
-        {tab === "counts" ? <StockCountsSection items={data.items} busy={busy} run={run} /> : null}
-        {tab === "documents-new" ? (
-          <DocumentFormSection
-            onCreated={() => {
-              load();
-              loadLowStock();
-              setTab("documents");
-            }}
-          />
-        ) : null}
-        {tab === "documents" ? <DocumentsSection /> : null}
+      <SectionNav idPrefix="inventory" label="بخش‌های انبار" sections={TABS} active={tab} onChange={setTab}>
         {tab === "items" ? (
           <ItemsSection items={data.items} busy={busy} run={run} />
         ) : null}
@@ -283,6 +212,9 @@ export function InventoryManager({ role }: { role: string }) {
         ) : null}
         {tab === "transfers" ? (
           <TransfersSection items={data.items} busy={busy} run={run} />
+        ) : null}
+        {tab === "counts" ? (
+          <StockCountsSection items={data.items} busy={busy} run={run} />
         ) : null}
         {tab === "barcodes" ? (
           <BarcodesSection items={data.items} busy={busy} run={run} />
@@ -341,10 +273,6 @@ function errorMessage(code: string | undefined): string {
     consumption_layer_settled:
       "کسری یکی از مواد این تولید با خرید بعدی تسویه شده است و برگشت آن ممکن نیست.",
     production_reversal_inconsistent: "برگشت این تولید با ارقام ثبت‌شده هم‌خوان نیست.",
-    // Phase 42 — warehouse documents
-    invalid_line: "یکی از سندها کامل نیست؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",
-    location_not_found: "انبار انتخاب‌شده پیدا نشد.",
-    location_inactive: "این انبار غیرفعال است؛ انبار دیگری را انتخاب کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",

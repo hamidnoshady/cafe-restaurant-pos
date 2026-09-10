@@ -18,7 +18,7 @@ export default async function InventoryPage() {
     <PageShell>
       <PageHeader
         title="انبار"
-        description="انبارها و موجودی آن‌ها، انبارگردانی، سندهای رسید و حواله، اقلام، دستورالعمل مصرف، خرید، ضایعات و سایر عملیات انبار."
+        description="اقلام انبار، دستورالعمل مصرف (رسپی)، تأمین‌کنندگان، خرید، ضایعات و شمارش فیزیکی."
         actions={<KnowledgeHelpButton section="inventory" />}
       />
       <InventoryManager role={session.role} />
