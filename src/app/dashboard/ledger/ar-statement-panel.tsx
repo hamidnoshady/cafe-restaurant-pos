@@ -10,6 +10,7 @@ import { api } from "../ui";
 import { accountingCustomerHref } from "./ledger-routes";
 import { UNKNOWN_CUSTOMER_KEY } from "@/lib/aging";
 import { overlayPanelClass } from "../page-chrome";
+import { useOverlayEscape } from "./use-overlay-escape";
 
 interface ArStatementLine {
   date: string;
@@ -38,6 +39,7 @@ export function ArStatementPanel({
 }) {
   const money = useMoney();
   const [lines, setLines] = useState<ArStatementLine[] | null>(null);
+  useOverlayEscape(onClose);
 
   useEffect(() => {
     setLines(null);

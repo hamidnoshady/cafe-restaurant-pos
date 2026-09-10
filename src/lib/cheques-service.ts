@@ -39,6 +39,7 @@
 import type { PoolClient } from "pg";
 import { getPool, query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
+import { isUuid } from "./uuid";
 import { accountIdsByCode, postJournalEntry } from "./ledger-service";
 import {
   initialStatus,
@@ -172,6 +173,11 @@ export async function getChequeHistory(businessId: string, chequeId: string): Pr
 
 /** A supplier belongs to this business through its (mandatory) location — `suppliers` has no business_id. */
 async function assertSupplier(client: PoolClient, businessId: string, supplierId: string): Promise<void> {
+  // `suppliers.id` is a uuid: a non-uuid raises a Postgres syntax error rather
+  // than matching nothing, so it has to be answered before the query (see
+  // `isUuid`). The A/P balance list's «بدون تأمین‌کننده مشخص» bucket carries the
+  // id `"unknown"`, and a picker built from that list could submit it.
+  if (!isUuid(supplierId)) throw new ChequeError("supplier_not_found", 404);
   const { rows } = await client.query(
     `SELECT 1 FROM suppliers s JOIN locations l ON l.id = s.location_id
       WHERE s.id = $1 AND l.business_id = $2`,
@@ -181,6 +187,7 @@ async function assertSupplier(client: PoolClient, businessId: string, supplierId
 }
 
 async function assertCustomer(client: PoolClient, businessId: string, customerId: string): Promise<void> {
+  if (!isUuid(customerId)) throw new ChequeError("customer_not_found", 404);
   const { rows } = await client.query(`SELECT 1 FROM parties WHERE id = $1 AND business_id = $2`, [
     customerId,
     businessId,

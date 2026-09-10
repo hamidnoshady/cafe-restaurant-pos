@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { createReconciliation, ReconciliationError, listReconciliations, type ReconcilableAccount } from "@/lib/reconciliation-service";
+import {
+  createReconciliation,
+  ReconciliationError,
+  listReconciliations,
+  RECONCILABLE_ACCOUNTS,
+  type ReconcilableAccount,
+} from "@/lib/reconciliation-service";
 
-const ACCOUNT_CODES: ReconcilableAccount[] = ["cash", "bankClearing"];
+/**
+ * The reconcilable set lives in the service (`RECONCILABLE_ACCOUNTS`) so the
+ * route cannot fall behind it — the local copy here was still two entries long
+ * after بانک became a posted-to account.
+ */
+const ACCOUNT_CODES: readonly ReconcilableAccount[] = RECONCILABLE_ACCOUNTS;
 
-/** A reconciliation history, or the current one, for ?accountCode=cash|bankClearing. */
+/** A reconciliation history, or the current one, for ?accountCode=cash|bank|bankClearing. */
 export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;

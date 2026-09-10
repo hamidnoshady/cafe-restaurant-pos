@@ -67,6 +67,11 @@ export function ManualEntrySection({
   useEffect(() => {
     api<{ drafts: JournalDraft[] }>("/api/ledger/entries/drafts").then(({ ok, data }) => {
       if (ok) setDrafts(data.drafts);
+      // An endless skeleton reads as "still loading"; say what happened instead.
+      else {
+        setDrafts([]);
+        setLocalError("بارگذاری پیش‌نویس‌ها ناموفق بود.");
+      }
     });
   }, [refreshKey]);
 
@@ -80,38 +85,48 @@ export function ManualEntrySection({
     setLines((prev) => prev.filter((_, i) => i !== index));
   }
 
+  /*
+   * The totals count only the rows that will actually be *submitted* — a row
+   * needs both an account and an amount to become a line.
+   *
+   * Counting every row instead let the screen say «متوازن» for a document the
+   * server was bound to refuse: type an amount, forget the account, and the
+   * amount joined the total on screen but was filtered out of the payload, so
+   * pressing «ثبت پیش‌نویس» returned `not_balanced` with the summary above it
+   * still reading balanced. `incompleteLines` names that state instead.
+   */
+  function amountOf(line: DraftLineInput): number {
+    try {
+      return money.parse(line.amount || "0");
+    } catch {
+      return 0;
+    }
+  }
+  const payloadLines = lines.filter((l) => l.accountId && l.amount.trim());
+  const incompleteLines = lines.filter(
+    (l) => (l.accountId && !l.amount.trim()) || (!l.accountId && l.amount.trim()),
+  ).length;
+
   let totalDebit = 0;
   let totalCredit = 0;
-  for (const l of lines) {
-    let rial = 0;
-    try {
-      rial = money.parse(l.amount || "0");
-    } catch {
-      rial = 0;
-    }
+  for (const l of payloadLines) {
+    const rial = amountOf(l);
     if (l.side === "debit") totalDebit += rial;
     else totalCredit += rial;
   }
-  const balanced = totalDebit > 0 && totalDebit === totalCredit;
+  const balanced = totalDebit > 0 && totalDebit === totalCredit && payloadLines.length >= 2;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!memo.trim() || !balanced) return;
-    const payloadLines = lines
-      .filter((l) => l.accountId && l.amount.trim())
-      .map((l) => {
-        let rial = 0;
-        try {
-          rial = money.parse(l.amount);
-        } catch {
-          rial = 0;
-        }
-        return { accountId: l.accountId, debit: l.side === "debit" ? rial : 0, credit: l.side === "credit" ? rial : 0 };
-      });
+    const body = payloadLines.map((l) => {
+      const rial = amountOf(l);
+      return { accountId: l.accountId, debit: l.side === "debit" ? rial : 0, credit: l.side === "credit" ? rial : 0 };
+    });
     const ok = await run(() =>
       api("/api/ledger/entries/drafts", {
         method: "POST",
-        body: JSON.stringify({ memo, entryDate: entryDate || undefined, lines: payloadLines }),
+        body: JSON.stringify({ memo, entryDate: entryDate || undefined, lines: body }),
       }),
     );
     if (ok) {
@@ -223,6 +238,11 @@ export function ManualEntrySection({
                 <dd className={`mt-1 font-bold ${balanced ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"}`}>
                   {balanced ? "متوازن" : "در انتظار توازن"}
                 </dd>
+                {incompleteLines > 0 ? (
+                  <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                    {toPersianDigits(String(incompleteLines))} ردیف ناقص است (حساب یا مبلغ ندارد) و در سند ثبت نمی‌شود.
+                  </p>
+                ) : null}
               </div>
             </dl>
           </div>

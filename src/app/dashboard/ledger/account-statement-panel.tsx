@@ -9,6 +9,8 @@ import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
 import { overlayPanelClass } from "../page-chrome";
+import { useOverlayEscape } from "./use-overlay-escape";
+import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 
 interface AccountStatementLine {
   entryId: string;
@@ -51,14 +53,18 @@ export function AccountStatementPanel({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [statement, setStatement] = useState<AccountStatement | null>(null);
+  const [error, setError] = useState("");
+  useOverlayEscape(onClose);
 
   useEffect(() => {
     setStatement(null);
     const params = new URLSearchParams();
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
+    setError("");
     api<AccountStatement>(`/api/ledger/accounts/${accountId}/statement?${params}`).then(({ ok, data }) => {
       if (ok) setStatement(data);
+      else setError("بارگذاری گردش این حساب ناموفق بود.");
     });
   }, [accountId, dateFrom, dateTo]);
 
@@ -95,7 +101,11 @@ export function AccountStatementPanel({
           </label>
         </div>
 
-        {statement === null ? (
+        {error ? (
+          <p role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : statement === null ? (
           <LoadingSkeleton rows={3} />
         ) : (
           <div className="mt-4">
@@ -122,10 +132,17 @@ export function AccountStatementPanel({
                       </tr>
                     </thead>
                     <tbody>
-                      {statement.lines.map((l) => (
-                        <tr key={l.entryId} className="border-b border-border last:border-b-0">
+                      {/* An entry can post two lines to the same account, so the
+                          entry id alone is not a unique key. */}
+                      {statement.lines.map((l, i) => (
+                        <tr key={`${l.entryId}-${i}`} className="border-b border-border last:border-b-0">
                           <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</td>
-                          <td className="px-3 py-3 text-foreground">{l.memo ?? "—"}</td>
+                          <td className="px-3 py-3 text-foreground">
+                            {l.memo ?? "—"}
+                            {/* `sourceType` was fetched and then dropped; naming what
+                                posted a line is most of what makes a معین readable. */}
+                            <span className="ms-2 text-xs text-muted-foreground">{ledgerSourceLabel(l.sourceType)}</span>
+                          </td>
                           <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.debit ? money.format(l.debit) : "—"}</td>
                           <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.credit ? money.format(l.credit) : "—"}</td>
                           <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums text-foreground">{money.format(l.balance)}</td>
@@ -136,12 +153,13 @@ export function AccountStatementPanel({
                 </div>
 
                 <div className="space-y-3 lg:hidden">
-                  {statement.lines.map((l) => (
-                    <article key={l.entryId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                  {statement.lines.map((l, i) => (
+                    <article key={`${l.entryId}-${i}`} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>
                       </div>
                       <h4 className="mt-1 font-semibold text-foreground">{l.memo ?? "—"}</h4>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{ledgerSourceLabel(l.sourceType)}</p>
                       <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3 text-sm">
                         <div>
                           <dt className="text-xs text-muted-foreground">بدهکار</dt>

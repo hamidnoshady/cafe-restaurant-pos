@@ -60,6 +60,11 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
   function refresh() {
     api<{ fixedAssets: FixedAssetRow[] }>("/api/ledger/fixed-assets").then(({ ok, data }) => {
       if (ok) setAssets(data.fixedAssets);
+      // An endless skeleton reads as "still loading"; name the failure.
+      else {
+        setAssets([]);
+        setLocalError("بارگذاری فهرست دارایی‌های ثابت ناموفق بود.");
+      }
     });
   }
   useEffect(refresh, [refreshKey]);

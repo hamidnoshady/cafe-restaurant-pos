@@ -6,10 +6,13 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { ArStatementPanel } from "./ar-statement-panel";
+import { useOverlayEscape } from "./use-overlay-escape";
 import { accountingCustomersHref } from "./ledger-routes";
 import { cardClass, overlayPanelClass } from "../page-chrome";
 
@@ -53,19 +56,39 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
   const [receiveTarget, setReceiveTarget] = useState<CustomerBalance | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState("");
+  /*
+   * «تا تاریخ» — the aging report's as-of date.
+   *
+   * `GET /api/ledger/ar/aging?asOfDate=` has always accepted one and the report
+   * has always answered with the date it used, but the screen neither sent nor
+   * showed it: the buckets were silently "as of today" and there was no way to
+   * ask what the ageing looked like at a period end.
+   */
+  const [asOfDate, setAsOfDate] = useState("");
 
   useEffect(() => {
     api<{ customers: CustomerBalance[] }>("/api/ledger/ar/customers").then(({ ok, data }) => {
       if (ok) setCustomers(data.customers);
+      // Not `null` for ever: an unending skeleton claims the request is still
+      // running. An empty list plus the reason is the honest answer.
+      else {
+        setCustomers([]);
+        setError("بارگذاری مانده‌های دریافتنی ناموفق بود.");
+      }
     });
   }, [refreshKey]);
 
   useEffect(() => {
     if (view !== "aging") return;
-    api<AgingReport>("/api/ledger/ar/aging").then(({ ok, data }) => {
+    setAging(null);
+    api<AgingReport>(`/api/ledger/ar/aging${asOfDate ? `?asOfDate=${asOfDate}` : ""}`).then(({ ok, data }) => {
       if (ok) setAging(data);
+      else {
+        setAging({ asOfDate: "", rows: [], totals: { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 } });
+        setError("بارگذاری نمای سنی بدهی‌ها ناموفق بود.");
+      }
     });
-  }, [view, refreshKey]);
+  }, [view, asOfDate, refreshKey]);
 
   if (!customers) {
     return <SectionCardSkeleton rows={4} />;
@@ -84,15 +107,17 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
               مانده حساب‌ها و نمای سنی بدهی مشتریان، بر پایه ثبت‌های فعلی.
             </p>
           </div>
-          <Link
-            href={accountingCustomersHref()}
-            className="inline-flex min-h-10 items-center rounded-lg border border-border px-3 text-xs font-semibold text-primary transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
-          >
-            مشتریان در حسابداری
-          </Link>
-          <div className="grid min-w-full grid-cols-2 gap-2 sm:min-w-0">
-            <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
-            <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
+          <div className="flex min-w-full flex-col items-stretch gap-2 sm:min-w-0 sm:items-end">
+            <Link
+              href={accountingCustomersHref()}
+              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-primary transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
+            >
+              مشتریان در حسابداری
+            </Link>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
+              <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
+            </div>
           </div>
         </div>
 
@@ -136,6 +161,17 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
           </div>
         ) : (
           <div>
+            <div className="mb-4 grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 sm:grid-cols-[minmax(0,14rem)_1fr] sm:items-end dark:bg-stone-800/30">
+              <label className="block">
+                <span className="mb-1.5 block text-xs text-muted-foreground">نمای سنی تا تاریخ</span>
+                <JalaliDatePicker value={asOfDate} onChange={setAsOfDate} placeholder="امروز" />
+              </label>
+              {aging?.asOfDate ? (
+                <p className="text-xs leading-6 text-muted-foreground">
+                  محاسبه‌شده تا {toPersianDigits(formatJalali(aging.asOfDate))}
+                </p>
+              ) : null}
+            </div>
             {!aging ? (
               <LoadingSkeleton rows={3} />
             ) : aging.rows.length === 0 ? (
@@ -207,6 +243,7 @@ function ReceivePaymentDialog({
   const [method, setMethod] = useState<"cash" | "bank">("cash");
   const [memo, setMemo] = useState("");
   const [localError, setLocalError] = useState("");
+  useOverlayEscape(onClose);
 
   async function submit() {
     let rial: number;

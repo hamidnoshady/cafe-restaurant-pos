@@ -316,6 +316,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     invoice_required: "فاکتور را انتخاب کنید.",
     invoice_not_found: "فاکتور انتخاب‌شده پیدا نشد.",
     invoice_has_no_customer: "این فاکتور مشتری ندارد؛ اقساط فاکتوری فقط برای فاکتورهای دارای مشتری است.",
+    invoice_not_on_credit: "این فاکتور نسیه نیست و بدهی‌ای برای قسط‌بندی ندارد؛ فقط فاکتورهای نسیه قابل قسط‌بندی‌اند.",
     party_required: "شخص را انتخاب کنید.",
     plan_not_found: "برنامه قسطی پیدا نشد.",
     plan_has_no_party: "این برنامه شخص طرف‌حساب ندارد.",

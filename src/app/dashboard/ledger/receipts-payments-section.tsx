@@ -9,13 +9,14 @@ import {
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { isoDateToJalali } from "@/lib/jalali";
+import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { ArrowDownLeftIcon, ArrowUpRightIcon, DownloadIcon, PlusIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { Button } from "@/components/ui/button";
+import { useOverlayEscape } from "./use-overlay-escape";
 
 /**
  * «دریافت و پرداخت» — the voucher ledger slice. The reference software keeps
@@ -37,12 +38,27 @@ interface Voucher {
 
 type Side = "receipts" | "payments";
 
+/**
+ * `formatJalali` rather than a local re-implementation of the conversion: the
+ * repo has one Shamsi formatter on purpose, and a second spelling of it is how
+ * two screens end up disagreeing about a date.
+ */
 function fmtJalali(iso: string | null): string {
   if (!iso) return "—";
-  const j = isoDateToJalali(iso.slice(0, 10));
-  if (!j) return "—";
-  return toPersianDigits(`${j.jy}/${String(j.jm).padStart(2, "0")}/${String(j.jd).padStart(2, "0")}`);
+  return toPersianDigits(formatJalali(iso.slice(0, 10)));
 }
+
+const METHOD_LABELS: Record<Voucher["method"], string> = {
+  cash: "نقدی",
+  bank: "بانکی",
+};
+
+/**
+ * How many vouchers the list draws. Both breakpoints used to slice differently
+ * (100 on desktop, 50 on mobile) under a heading that counted *all* of them, so
+ * «۳۲۰ سند» sat above a list of fifty with nothing said about the rest.
+ */
+const VISIBLE_ROWS = 100;
 
 const chipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${
@@ -75,10 +91,23 @@ export function ReceiptsPaymentsSection() {
     return () => clearTimeout(t);
   }, [load, q, refreshKey]);
 
+  /*
+   * The export obeys the same Shamsi rule the screen does: a CSV is read by a
+   * person, so its date column is Jalali rather than the stored ISO/Gregorian
+   * string this used to write out. The amount column names the unit actually in
+   * use instead of asserting Rial while the screen shows Toman — as an ASCII
+   * number, because a spreadsheet has to be able to add the column up.
+   */
   function downloadCsv() {
     if (!rows) return;
-    const head = ["تاریخ", "شخص", "شرح", "روش", "مبلغ (ریال)"];
-    const body = rows.map((r) => [r.date, r.partyName, r.memo ?? "", r.method === "cash" ? "نقدی" : "بانکی", String(r.amount)]);
+    const head = ["تاریخ", "شخص", "شرح", "روش", `مبلغ (${money.unitLabel})`];
+    const body = rows.map((r) => [
+      fmtJalali(r.date),
+      r.partyName,
+      r.memo ?? "",
+      METHOD_LABELS[r.method],
+      String(money.toInput(r.amount)),
+    ]);
     const csv = [head, ...body].map((line) => line.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
@@ -159,7 +188,9 @@ export function ReceiptsPaymentsSection() {
           ) : (
             <>
               <p className="mb-2 text-xs text-muted-foreground">
-                {toPersianDigits(rows.length)} سند
+                {rows.length > VISIBLE_ROWS
+                  ? `${toPersianDigits(VISIBLE_ROWS)} سند از ${toPersianDigits(rows.length)} سند — برای دیدن بقیه جست‌وجو کنید`
+                  : `${toPersianDigits(rows.length)} سند`}
               </p>
               <div className="hidden overflow-x-auto rounded-xl border border-stone-200/80 dark:border-stone-500/30 lg:block">
                 <table className="w-full text-sm">
@@ -174,12 +205,12 @@ export function ReceiptsPaymentsSection() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.slice(0, 100).map((r, index) => (
+                    {rows.slice(0, VISIBLE_ROWS).map((r, index) => (
                       <tr key={r.id} className="border-b border-border transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-500/10">
                         <td className="py-3 pe-3 ps-4 text-muted-foreground">{toPersianDigits(index + 1)}</td>
                         <td className="max-w-48 truncate py-3 pe-3 font-medium">{r.partyName}</td>
                         <td className="max-w-64 truncate py-3 pe-3 text-muted-foreground">{r.memo ?? "—"}</td>
-                        <td className="py-3 pe-3 text-muted-foreground">{r.method === "cash" ? "نقدی" : "بانکی"}</td>
+                        <td className="py-3 pe-3 text-muted-foreground">{METHOD_LABELS[r.method]}</td>
                         <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{fmtJalali(r.date)}</td>
                         <td className="whitespace-nowrap py-3 pe-4 font-semibold">{money.format(r.amount)}</td>
                       </tr>
@@ -188,7 +219,7 @@ export function ReceiptsPaymentsSection() {
                 </table>
               </div>
               <div className="space-y-3 lg:hidden">
-                {rows.slice(0, 50).map((r) => (
+                {rows.slice(0, VISIBLE_ROWS).map((r) => (
                   <article key={r.id} className="rounded-xl border border-border/80 bg-muted p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -198,7 +229,7 @@ export function ReceiptsPaymentsSection() {
                       <span className="whitespace-nowrap font-bold">{money.format(r.amount)}</span>
                     </div>
                     <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
-                      {fmtJalali(r.date)} · {r.method === "cash" ? "نقدی" : "بانکی"}
+                      {fmtJalali(r.date)} · {METHOD_LABELS[r.method]}
                     </p>
                   </article>
                 ))}
@@ -232,18 +263,29 @@ function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => 
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useOverlayEscape(onClose);
 
+  /*
+   * `?scope=directory`, not the open-balance list. A voucher is not always a
+   * settlement of an existing debt — an advance from a customer, a deposit to a
+   * supplier — and the balance list additionally carries the «بدون … مشخص»
+   * bucket, whose id is the sentinel `"unknown"`; submitting that used to fail
+   * with an unexplained server error rather than a message.
+   */
   useEffect(() => {
-    if (side === "receipts") {
-      // Same list the A/R section settles against — parties with an open balance.
-      api<{ customers?: { customerId: string; customerName: string }[] }>("/api/ledger/ar/customers").then(({ ok, data }) => {
-        if (ok) setParties((data.customers ?? []).map((c) => ({ id: c.customerId, name: c.customerName })));
-      });
-    } else {
-      api<{ suppliers?: { supplierId: string; supplierName: string }[] }>("/api/ledger/ap/suppliers").then(({ ok, data }) => {
-        if (ok) setParties((data.suppliers ?? []).map((s) => ({ id: s.supplierId, name: s.supplierName })));
-      });
-    }
+    const url =
+      side === "receipts" ? "/api/ledger/ar/customers?scope=directory" : "/api/ledger/ap/suppliers?scope=directory";
+    api<{
+      customers?: { customerId: string; customerName: string }[];
+      suppliers?: { supplierId: string; supplierName: string }[];
+    }>(url).then(({ ok, data }) => {
+      if (!ok) return;
+      setParties(
+        side === "receipts"
+          ? (data.customers ?? []).map((c) => ({ id: c.customerId, name: c.customerName }))
+          : (data.suppliers ?? []).map((s) => ({ id: s.supplierId, name: s.supplierName })),
+      );
+    });
   }, [side]);
 
   async function submit() {

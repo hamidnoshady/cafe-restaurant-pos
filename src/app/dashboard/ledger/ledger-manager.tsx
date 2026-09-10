@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { SectionNav } from "../section-nav";
-import { api, ErrorBox } from "../ui";
+import { api, ErrorBox, SecondaryButton } from "../ui";
 import { useSearchParams } from "next/navigation";
 import { partyScopeFor } from "@/lib/parties-scopes";
 import { PartiesSection } from "../parties/parties-section";
@@ -120,9 +120,15 @@ export function LedgerManager({ role }: { role: string }) {
   // comes from `ledger-nav.ts`, the same source the sidebar reads.
   const tabs = ledgerTabsForRole(role).map((t) => ({ ...t, icon: TAB_ICONS[t.key] }));
 
+  const [loadFailed, setLoadFailed] = useState(false);
   const loadAccounts = useCallback(() => {
+    setLoadFailed(false);
     api<{ accounts: AccountRow[] }>("/api/ledger/accounts").then(({ ok, data }) => {
       if (ok) setAccounts(data.accounts);
+      // Without this the whole workspace sat on a skeleton for ever whenever
+      // the chart of accounts failed to load — indistinguishable from a slow
+      // network, and with no way to retry.
+      else setLoadFailed(true);
     });
   }, []);
   useEffect(loadAccounts, [loadAccounts]);
@@ -141,6 +147,16 @@ export function LedgerManager({ role }: { role: string }) {
   }
 
   if (!accounts) {
+    if (loadFailed) {
+      return (
+        <div className="space-y-3">
+          <ErrorBox>بارگذاری سرفصل حساب‌ها ناموفق بود؛ بخش‌های حسابداری بدون آن باز نمی‌شوند.</ErrorBox>
+          <div className="max-w-xs">
+            <SecondaryButton onClick={loadAccounts}>تلاش دوباره</SecondaryButton>
+          </div>
+        </div>
+      );
+    }
     return (
       <SectionCardSkeleton rows={4} />
     );
@@ -253,6 +269,29 @@ function errorMessage(code: string | undefined): string {
     invalid_expense_account: "دسته هزینه انتخاب‌شده یک حساب هزینه معتبر نیست.",
     invalid_payment_account: "حساب پرداخت انتخاب‌شده معتبر نیست.",
     same_account: "دسته هزینه و حساب پرداخت نمی‌توانند یکسان باشند.",
+    // Chart of accounts (accounts-service.ts) — these reach here whenever a
+    // section routes an accounts error through `run` rather than its own map.
+    code_required: "کد حساب الزامی است.",
+    name_required: "نام حساب الزامی است.",
+    invalid_type: "نوع حساب معتبر نیست.",
+    code_in_use: "این کد حساب قبلاً استفاده شده است.",
+    parent_not_found: "حساب والد پیدا نشد.",
+    parent_cycle: "حساب نمی‌تواند والد خودش یا زیرمجموعه‌اش باشد.",
+    parent_too_deep: "حساب والد از سطح «تفصیلی» است و نمی‌تواند زیرمجموعه داشته باشد.",
+    hierarchy_too_deep: "این جابه‌جایی باعث می‌شود ساختار حساب از سطح «تفصیلی» عمیق‌تر شود.",
+    account_has_postings: "این حساب سند خورده و قابل حذف نیست؛ می‌توانید آن را غیرفعال کنید.",
+    account_has_draft_postings: "این حساب در یک پیش‌نویس استفاده شده و قابل حذف نیست.",
+    account_has_children: "ابتدا زیرمجموعه‌های این حساب را جابه‌جا یا حذف کنید.",
+    // Fiscal years and periods (fiscal-periods-service.ts)
+    invalid_year: "سال شمسی نامعتبر است.",
+    fiscal_year_exists: "این سال مالی قبلاً تعریف شده است.",
+    fiscal_year_not_found: "سال مالی یافت نشد.",
+    fiscal_year_closed: "سال مالی این دوره بسته شده و دیگر قابل بازگشایی نیست.",
+    fiscal_year_already_closed: "این سال مالی قبلاً بسته شده است.",
+    periods_not_ready: "برای بستن سال مالی، ابتدا همه دوره‌های آن را به‌صورت موقت ببندید.",
+    period_locked_for_closing: "دوره پایانی سال قفل است؛ ابتدا آن را بازگشایی و دوباره بسته‌ی موقت کنید.",
+    period_not_found: "دوره یافت نشد.",
+    invalid_transition: "این تغییر وضعیت مجاز نیست.",
     // Phase 16 — payroll entries
     user_not_found: "عضو موردنظر پیدا نشد.",
     no_wages_set: "هیچ عضو فعالی حقوق تعیین‌شده ندارد.",

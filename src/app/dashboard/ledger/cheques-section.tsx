@@ -66,7 +66,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali } from "@/lib/jalali";
+import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { availableActions, type ChequeAction, type ChequeDirection, type ChequeStatus } from "@/lib/cheques";
 import { api } from "../ui";
@@ -161,8 +161,14 @@ function daysBetween(a: string, b: string): number {
   return Math.floor((db - da) / 86_400_000);
 }
 
+/**
+ * Today, as the reader's own calendar names it. `new Date().toISOString()` is
+ * the date in *UTC*, which is still yesterday for the first three and a half
+ * hours of every Tehran day — so a cheque due today read «۱ روز گذشته» to
+ * anyone opening the register before 03:30.
+ */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
 }
 
 function dueState(dueDate: string, status: ChequeStatus): "overdue" | "due_soon" | "ok" | "terminal" {
@@ -197,7 +203,9 @@ function errorMessage(code: string | undefined): string {
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
   };
-  return map[code ?? ""] ?? (code ? code : "خطای غیرمنتظره. دوباره تلاش کنید.");
+  // Never fall back to the raw code: `duplicate_cheque` is an instruction, but
+  // an unmapped English identifier is noise a treasurer cannot act on.
+  return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
 
 // ---------------------------------------------------------------------------
@@ -230,23 +238,42 @@ export function ChequesSection({
   const [action, setAction] = useState<{ cheque: Cheque; act: ChequeAction } | null>(null);
 
   const [localError, setLocalError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   // Fetch
   useEffect(() => {
     setCheques(null);
+    setLoadError("");
     api<{ cheques: Cheque[] }>(`/api/ledger/cheques?direction=${direction}`).then(({ ok, data }) => {
+      // A failed load used to become an empty register — "you have no cheques"
+      // is the one answer this screen must never invent.
       if (ok) setCheques(data.cheques);
-      else setCheques([]);
+      else {
+        setCheques([]);
+        setLoadError("بارگذاری فهرست چک‌ها ناموفق بود؛ این فهرست ممکن است کامل نباشد.");
+      }
     });
   }, [direction, refreshKey]);
 
+  /*
+   * `?scope=directory` — every customer and every supplier record, not only the
+   * ones carrying an open balance. A cheque is very often the *first* document
+   * with a counterparty (a deposit cheque from a new customer, a cheque written
+   * to a supplier we owe nothing to yet), and the balances list also carries the
+   * «بدون … مشخص» bucket, whose id is the sentinel `"unknown"` rather than a
+   * uuid — picking it used to fail with an unexplained server error.
+   */
   useEffect(() => {
-    api<{ customers: { customerId: string; customerName: string }[] }>("/api/ledger/ar/customers").then(({ ok, data }) => {
-      if (ok) setCustomers(data.customers.map((c) => ({ id: c.customerId, name: c.customerName })));
-    });
-    api<{ suppliers: { supplierId: string; supplierName: string }[] }>("/api/ledger/ap/suppliers").then(({ ok, data }) => {
-      if (ok) setSuppliers(data.suppliers.map((s) => ({ id: s.supplierId, name: s.supplierName })));
-    });
+    api<{ customers: { customerId: string; customerName: string }[] }>("/api/ledger/ar/customers?scope=directory").then(
+      ({ ok, data }) => {
+        if (ok) setCustomers(data.customers.map((c) => ({ id: c.customerId, name: c.customerName })));
+      },
+    );
+    api<{ suppliers: { supplierId: string; supplierName: string }[] }>("/api/ledger/ap/suppliers?scope=directory").then(
+      ({ ok, data }) => {
+        if (ok) setSuppliers(data.suppliers.map((s) => ({ id: s.supplierId, name: s.supplierName })));
+      },
+    );
   }, [refreshKey]);
 
   const banks = useMemo(() => {
@@ -489,11 +516,11 @@ export function ChequesSection({
             </TabsList>
 
             <TabsContent value={direction} className="mt-4 space-y-3">
-              {localError ? (
+              {localError || loadError ? (
                 <Alert variant="destructive">
                   <AlertTriangleIcon className="size-4" />
                   <AlertTitle>خطا</AlertTitle>
-                  <AlertDescription>{localError}</AlertDescription>
+                  <AlertDescription>{localError || loadError}</AlertDescription>
                 </Alert>
               ) : null}
 
@@ -905,10 +932,12 @@ function ChequeDetailDialog({
 
   useEffect(() => {
     // History is optional — if the endpoint is missing we still show the cheque.
-    api<{ events: ChequeEvent[] }>(`/api/ledger/cheques/${cheque.id}/history`).then(({ ok, data }) => {
-      if (ok) setEvents((data as any).events ?? (data as any).history ?? []);
-      else setEvents([]);
-    });
+    api<{ events?: ChequeEvent[]; history?: ChequeEvent[] }>(`/api/ledger/cheques/${cheque.id}/history`).then(
+      ({ ok, data }) => {
+        if (ok) setEvents(data.events ?? data.history ?? []);
+        else setEvents([]);
+      },
+    );
   }, [cheque.id]);
 
   const actions = availableActions(cheque.direction, cheque.status);
@@ -1002,11 +1031,14 @@ function ChequeDetailDialog({
                           {eventLabel(e.event)}
                         </Badge>
                         <span className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(e.occurredOn))}</span>
-                        {e.entryId ? <span className="text-xs text-muted-foreground">· سند {e.entryId.slice(0, 8)}</span> : null}
+                        {e.entryId ? <span className="text-xs text-muted-foreground">· سند حسابداری ثبت شد</span> : null}
                       </div>
                       {e.memo ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{e.memo}</p> : null}
                       {e.endorsedToSupplierId ? (
-                        <p className="mt-1 text-xs text-muted-foreground">واگذاری به تأمین‌کننده {e.endorsedToSupplierId.slice(0, 8)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          واگذاری به{" "}
+                          {suppliers.find((s) => s.id === e.endorsedToSupplierId)?.name ?? "تأمین‌کننده"}
+                        </p>
                       ) : null}
                     </li>
                   ))}
@@ -1284,7 +1316,9 @@ function ChequeActionDialog({
   const money = useMoney();
   const [occurredOn, setOccurredOn] = useState(todayIso());
   const [memo, setMemo] = useState("");
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
+  // No default: preselecting `suppliers[0]` meant one careless «ظهرنویسی»
+  // handed a customer's cheque to whichever supplier sorted first.
+  const [supplierId, setSupplierId] = useState("");
 
   const isEndorse = action === "endorse";
   const isDestructive = action === "bounce" || action === "cancel";

@@ -5,7 +5,7 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 import { useEffect, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
-import { api } from "../ui";
+import { api, ErrorBox } from "../ui";
 import { cardClass } from "../page-chrome";
 
 interface VatReport {
@@ -30,13 +30,17 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [report, setReport] = useState<VatReport | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
+    setError("");
     api<{ report: VatReport }>("/api/ledger/vat?" + params).then(({ ok, data }) => {
       if (ok) setReport(data.report);
+      // Otherwise the skeleton outlives the request and reads as "still loading".
+      else setError("بارگذاری گزارش مالیات بر ارزش افزوده ناموفق بود.");
     });
   }, [dateFrom, dateTo, refreshKey]);
 
@@ -63,7 +67,11 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
           </label>
         </div>
 
-        {!report ? (
+        {error ? (
+          <div className="mt-5">
+            <ErrorBox>{error}</ErrorBox>
+          </div>
+        ) : !report ? (
           <LoadingSkeleton rows={3} className="mt-5" />
         ) : (
           <div className="mt-5 space-y-5">

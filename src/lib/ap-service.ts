@@ -20,6 +20,8 @@
  * integration/ap.integration.test.ts.
  */
 import { getPool, query } from "./db";
+import { businessToday } from "./business-day-service";
+import { isUuid } from "./uuid";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
 import { ageOpenItems, summarizeAging, type AgingSummary } from "./aging";
@@ -58,10 +60,22 @@ interface ApLineRow extends Record<string, unknown> {
   credit: string;
 }
 
-/** Every journal line posted to the AP account, oldest first, with whatever supplier it's attributable to. */
+/**
+ * Every journal line posted to the AP account, oldest first, with whatever
+ * supplier it's attributable to.
+ *
+ * The name and phone come from the *party* when the branch alias is linked to
+ * one, falling back to the alias's own copy — the same single COALESCE
+ * `getInventoryOverview` uses, and what the one-party rule requires: `suppliers`
+ * keeps a copy of the name only so an unlinked legacy row still displays, and
+ * reading it in preference to the party's meant renaming a counterparty in
+ * «طرف‌حساب‌ها» left A/P showing the old name for ever.
+ */
 async function apLines(businessId: string, accountId: string): Promise<ApLineRow[]> {
   const { rows } = await query<ApLineRow>(
-    `SELECT s.id AS supplier_id, s.name AS supplier_name, s.phone AS supplier_phone,
+    `SELECT s.id AS supplier_id,
+            COALESCE(pa.name, s.name) AS supplier_name,
+            COALESCE(pa.phone, s.phone) AS supplier_phone,
             je.entry_date::text AS entry_date, je.source_type,
             COALESCE(p.note, p2.note) AS note, je.memo,
             jl.debit, jl.credit
@@ -72,6 +86,7 @@ async function apLines(businessId: string, accountId: string): Promise<ApLineRow
        LEFT JOIN purchases p2 ON sr.purchase_id = p2.id
        LEFT JOIN ap_payments ap ON je.source_type = 'ap_payment' AND ap.id = je.source_id
        LEFT JOIN suppliers s ON s.id = COALESCE(p.supplier_id, p2.supplier_id, ap.supplier_id)
+       LEFT JOIN parties pa ON pa.id = s.party_id
       WHERE je.business_id = $1 AND jl.account_id = $2
       ORDER BY je.entry_date, je.posted_at`,
     [businessId, accountId],
@@ -84,6 +99,36 @@ export interface SupplierBalance {
   supplierName: string;
   supplierPhone: string | null;
   balance: number;
+}
+
+/**
+ * Every supplier *record* of this business, with whatever A/P balance it
+ * carries — the picker's list, as opposed to {@link listSupplierBalances}'s
+ * report. See `listCustomerDirectory` in ar-service.ts for the reasoning: a
+ * cheque written to a supplier we owe nothing to yet is ordinary, and the
+ * balances list also carries the `UNKNOWN_SUPPLIER_KEY` bucket, which is not a
+ * supplier at all.
+ *
+ * The id is the branch alias's (`suppliers.id`) because that is what every A/P
+ * write references; the name is the party's when there is one.
+ */
+export async function listSupplierDirectory(businessId: string): Promise<SupplierBalance[]> {
+  const { rows } = await query<{ id: string; name: string; phone: string | null }>(
+    `SELECT s.id, COALESCE(pa.name, s.name) AS name, COALESCE(pa.phone, s.phone) AS phone
+       FROM suppliers s
+       JOIN locations l ON l.id = s.location_id
+       LEFT JOIN parties pa ON pa.id = s.party_id
+      WHERE l.business_id = $1 AND s.is_active
+      ORDER BY COALESCE(pa.name, s.name)`,
+    [businessId],
+  );
+  const balances = new Map((await listSupplierBalances(businessId)).map((s) => [s.supplierId, s.balance]));
+  return rows.map((r) => ({
+    supplierId: r.id,
+    supplierName: r.name,
+    supplierPhone: r.phone,
+    balance: balances.get(r.id) ?? 0,
+  }));
 }
 
 /** Every supplier with a nonzero AP balance, largest first. */
@@ -154,9 +199,13 @@ export interface AgingReport {
   totals: AgingSummary;
 }
 
-/** Standard 30/60/90-day AP aging, per supplier, as of `asOfDate` (defaults to today). */
+/**
+ * Standard 30/60/90-day AP aging, per supplier, as of `asOfDate` (defaults to
+ * the *business's* today — see `getArAging` for why a UTC date slice put the
+ * late shift's documents in the wrong bucket).
+ */
 export async function getApAging(businessId: string, asOfDate?: string): Promise<AgingReport> {
-  const effectiveAsOf = asOfDate ?? new Date().toISOString().slice(0, 10);
+  const effectiveAsOf = asOfDate ?? (await businessToday(businessId));
   const accountId = await apAccountId(businessId);
   if (!accountId) return { asOfDate: effectiveAsOf, rows: [], totals: { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 } };
 
@@ -221,6 +270,9 @@ export async function payBill(params: {
   if (!Number.isSafeInteger(params.amount) || params.amount <= 0) {
     throw new ApError("invalid_amount");
   }
+  // A non-uuid supplier id cannot match a row, and asking Postgres anyway
+  // raises a syntax error rather than returning none — see `isUuid`.
+  if (!isUuid(params.supplierId)) throw new ApError("supplier_not_found", 404);
 
   const client = await getPool().connect();
   try {

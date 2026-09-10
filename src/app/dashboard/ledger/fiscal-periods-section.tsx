@@ -5,9 +5,9 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { todayJalali } from "@/lib/jalali";
+import { formatJalali, todayJalali } from "@/lib/jalali";
 import { Button } from "@/components/ui/button";
-import { api, ErrorBox, inputClass, PrimaryButton } from "../ui";
+import { api, ErrorBox, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { Runner } from "./ledger-manager";
 import { cardClass } from "../page-chrome";
 
@@ -79,10 +79,18 @@ export function FiscalPeriodsSection({
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [closing, setClosing] = useState(false);
+  const [creatingYear, setCreatingYear] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     api<{ fiscalYears: FiscalYear[] }>("/api/ledger/fiscal-years").then(({ ok, data }) => {
-      if (!ok) return;
+      // `return` alone left the skeleton up for ever, which reads as "still
+      // loading" rather than "this did not load".
+      if (!ok) {
+        setYears([]);
+        setLoadFailed(true);
+        return;
+      }
       setYears(data.fiscalYears);
       setSelectedYearId((prev) => prev ?? data.fiscalYears[0]?.id ?? null);
     });
@@ -96,16 +104,31 @@ export function FiscalPeriodsSection({
     api<{ periods: FiscalPeriod[] }>(`/api/ledger/fiscal-years/${selectedYearId}/periods`).then(
       ({ ok, data }) => {
         if (ok) setPeriods(data.periods);
+        else {
+          setPeriods([]);
+          setError("بارگذاری دوره‌های این سال مالی ناموفق بود.");
+        }
       },
     );
   }, [selectedYearId, refreshKey]);
 
+  /*
+   * Posted directly rather than through `run`, so the answer comes back through
+   * this section's own map: the workspace-wide one has no entry for
+   * `fiscal_year_exists` or `invalid_year`, and defining a year twice therefore
+   * reported «خطای غیرمنتظره» instead of saying the year already exists.
+   */
   async function createYear() {
     setError("");
-    const ok = await run(() =>
-      api("/api/ledger/fiscal-years", { method: "POST", body: JSON.stringify({ year: Number(newYear) }) }),
-    );
-    if (!ok) return;
+    const year = Number(newYear);
+    if (!Number.isInteger(year)) return setError(errorMessage("invalid_year"));
+    setCreatingYear(true);
+    const { ok, data } = await api("/api/ledger/fiscal-years", {
+      method: "POST",
+      body: JSON.stringify({ year }),
+    });
+    setCreatingYear(false);
+    if (!ok) return setError(errorMessage((data as { error?: string }).error));
     setRefreshKey((k) => k + 1);
   }
 
@@ -136,6 +159,16 @@ export function FiscalPeriodsSection({
   }
 
   if (!years) return <LoadingSkeleton rows={3} />;
+  if (loadFailed && years.length === 0) {
+    return (
+      <div className="space-y-3">
+        <ErrorBox>بارگذاری سال‌های مالی ناموفق بود.</ErrorBox>
+        <div className="max-w-xs">
+          <SecondaryButton onClick={() => setRefreshKey((k) => k + 1)}>تلاش دوباره</SecondaryButton>
+        </div>
+      </div>
+    );
+  }
 
   const selectedYear = years.find((y) => y.id === selectedYearId) ?? null;
   const allPeriodsSoftClosed = (periods?.length ?? 0) > 0 && periods!.every((p) => p.status === "soft_closed");
@@ -166,7 +199,9 @@ export function FiscalPeriodsSection({
               />
             </label>
             <div className="max-w-[13rem]">
-              <PrimaryButton onClick={createYear} disabled={busy}>تعریف سال مالی</PrimaryButton>
+              <PrimaryButton onClick={createYear} disabled={busy || creatingYear}>
+                {creatingYear ? "در حال ثبت…" : "تعریف سال مالی"}
+              </PrimaryButton>
             </div>
           </div>
 
@@ -240,7 +275,13 @@ export function FiscalPeriodsSection({
                     <tbody>
                       {periods.map((p) => (
                         <tr key={p.id} className="border-b border-border last:border-b-0">
-                          <td className="px-4 py-3 font-medium text-foreground">{toPersianDigits(p.name)}</td>
+                          <td className="px-4 py-3 font-medium text-foreground">
+                            {toPersianDigits(p.name)}
+                            {/* «دوره ۵» alone does not say which days it covers. */}
+                            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                              {toPersianDigits(formatJalali(p.startsOn))} تا {toPersianDigits(formatJalali(p.endsOn))}
+                            </span>
+                          </td>
                           <td className="px-4 py-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>{STATUS_LABELS[p.status]}</span></td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-2">
@@ -265,7 +306,12 @@ export function FiscalPeriodsSection({
                 {periods.map((p) => (
                   <article key={p.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                     <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-foreground">{toPersianDigits(p.name)}</h3>
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold text-foreground">{toPersianDigits(p.name)}</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {toPersianDigits(formatJalali(p.startsOn))} تا {toPersianDigits(formatJalali(p.endsOn))}
+                        </p>
+                      </div>
                       <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>{STATUS_LABELS[p.status]}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">

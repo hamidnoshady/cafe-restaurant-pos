@@ -52,7 +52,12 @@ import { runAccountingReview } from "./accounting-review-service";
 import { summarizeFindings } from "./accounting-review";
 import { countPendingCoworkerRuns, listCoworkerJobs } from "./ai-coworker-service";
 import { ACTION_CATALOG, ACTION_TYPES } from "./ai";
-import { WASTE_REASON_LABELS, labelFor, moneyFields } from "./ai-labels";
+import { RECONCILABLE_ACCOUNT_LABELS, WASTE_REASON_LABELS, labelFor, moneyFields } from "./ai-labels";
+import {
+  RECONCILABLE_ACCOUNTS,
+  RECONCILABLE_ACCOUNT_CODES,
+  type ReconcilableAccount,
+} from "./reconciliation-service";
 import { isFeatureEnabled } from "./features";
 import { INDUSTRY_LABELS, type Industry } from "./industries";
 import { industryProfile, labelFor as industryLabelFor } from "./industry-profile";
@@ -916,10 +921,14 @@ async function findCustomersTool(businessId: string, args: Record<string, unknow
 // ---------------------------------------------------------------------------
 
 async function unreconciledBankLines(businessId: string) {
-  const accountCodes: { code: string; label: "cash" | "bankClearing" }[] = [
-    { code: WELL_KNOWN_CODES.cash, label: "cash" },
-    { code: WELL_KNOWN_CODES.bankClearing, label: "bankClearing" },
-  ];
+  // Same three accounts «تطبیق بانکی» itself reconciles — بانک included, since
+  // a cheque clears into it (Phase 30) and its unreconciled movements were
+  // invisible to the assistant while the screen could not reconcile them
+  // either.
+  const accountCodes: { code: string; label: ReconcilableAccount }[] = RECONCILABLE_ACCOUNTS.map((label) => ({
+    code: RECONCILABLE_ACCOUNT_CODES[label],
+    label,
+  }));
   const results: Record<string, unknown>[] = [];
   for (const { code, label } of accountCodes) {
     const { rows } = await query<{
@@ -947,6 +956,7 @@ async function unreconciledBankLines(businessId: string) {
     }));
     results.push({
       account: label,
+      accountLabel: labelFor(RECONCILABLE_ACCOUNT_LABELS, label),
       unreconciledCount: lines.length,
       netAmount: lines.reduce((sum, l) => sum + l.debit - l.credit, 0),
       lines: cap(lines, 20),

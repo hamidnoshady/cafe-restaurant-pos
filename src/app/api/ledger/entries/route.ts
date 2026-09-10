@@ -1,19 +1,47 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 
 /**
- * Recent journal entries (auto-posted + manual), newest first, with their
- * lines. Manual entries are no longer posted directly from this route —
- * see /api/ledger/entries/drafts for the draft -> review -> post workflow,
- * and /api/ledger/entries/[id]/reverse for reversing a posted one — but
- * every entry, however it was posted, still shows up here, including its
- * reversal linkage (reversesEntryId / reversedAt) so the UI can show both
- * sides of a reversal.
+ * Journal entries (auto-posted + manual), newest first, with their lines.
+ * Manual entries are no longer posted directly from this route — see
+ * /api/ledger/entries/drafts for the draft -> review -> post workflow, and
+ * /api/ledger/entries/[id]/reverse for reversing a posted one — but every
+ * entry, however it was posted, still shows up here, including its reversal
+ * linkage (reversesEntryId / reversedAt) so the UI can show both sides of a
+ * reversal.
+ *
+ * Filters, because «دفتر روزنامه» is a book an accountant *searches*: a date
+ * range (`dateFrom`/`dateTo`, ISO — the storage contract; the screen shows
+ * Shamsi), one `sourceType`, and a free-text `q` over the memo, the poster's
+ * name and the account codes/names of its lines. Without them the screen was
+ * a silent «آخرین ۱۰۰ سند» with no way to reach the 101st. `hasMore` says
+ * whether the window is cutting anything off, so the UI can say so instead of
+ * pretending the book ends there.
+ *
+ * Ordering is `entry_date DESC, posted_at DESC` — the document's own date
+ * first, then when it was recorded. A journal is read by document date, and a
+ * sale recorded after the fact (`/api/orders/backdated`) carries the date it
+ * happened, so ordering purely by `posted_at` filed it at the top of today
+ * instead of on its own day. The accounting dashboard's «اسناد اخیر» still
+ * orders by `posted_at`: that list answers "what was entered last", which is a
+ * different question.
  */
-export const GET = withTenantScope(async () => {
+const DEFAULT_LIMIT = 100;
+const MAX_LIMIT = 500;
+
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
+
+  const params = request.nextUrl.searchParams;
+  const isoDate = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
+  const dateFrom = isoDate(params.get("dateFrom"));
+  const dateTo = isoDate(params.get("dateTo"));
+  const sourceType = params.get("sourceType")?.trim() || null;
+  const q = params.get("q")?.trim() || null;
+  const requestedLimit = Number(params.get("limit"));
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, MAX_LIMIT) : DEFAULT_LIMIT;
 
   interface EntryRow extends Record<string, unknown> {
     id: string;
@@ -35,21 +63,39 @@ export const GET = withTenantScope(async () => {
     credit: string;
   }
 
+  // One row over the window, so "there is more" is a fact rather than a guess
+  // from `length === limit`.
   const { rows: entries } = await query<EntryRow>(
     `SELECT je.id, je.entry_date, je.memo, je.source_type, je.source_id, je.posted_at,
             u.full_name AS created_by_name, je.reverses_entry_id, je.reversed_at
        FROM journal_entries je LEFT JOIN users u ON u.id = je.created_by
       WHERE je.business_id = $1
-      ORDER BY je.posted_at DESC LIMIT 100`,
-    [session.businessId],
+        AND ($2::date IS NULL OR je.entry_date >= $2::date)
+        AND ($3::date IS NULL OR je.entry_date <= $3::date)
+        AND ($4::text IS NULL OR je.source_type = $4::text)
+        AND (
+          $5::text IS NULL
+          OR je.memo ILIKE '%' || $5::text || '%'
+          OR u.full_name ILIKE '%' || $5::text || '%'
+          OR EXISTS (
+            SELECT 1 FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+             WHERE jl.entry_id = je.id
+               AND (a.code ILIKE '%' || $5::text || '%' OR a.name ILIKE '%' || $5::text || '%')
+          )
+        )
+      ORDER BY je.entry_date DESC, je.posted_at DESC
+      LIMIT $6`,
+    [session.businessId, dateFrom, dateTo, sourceType, q, limit + 1],
   );
-  if (entries.length === 0) return NextResponse.json({ entries: [] });
+  const hasMore = entries.length > limit;
+  const page = hasMore ? entries.slice(0, limit) : entries;
+  if (page.length === 0) return NextResponse.json({ entries: [], hasMore: false });
 
   const { rows: lines } = await query<LineRow>(
     `SELECT jl.entry_id, jl.account_id, a.code AS account_code, a.name AS account_name, jl.debit, jl.credit
        FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
       WHERE jl.entry_id = ANY($1::uuid[]) ORDER BY jl.id`,
-    [entries.map((e) => e.id)],
+    [page.map((e) => e.id)],
   );
   const linesByEntry = new Map<string, LineRow[]>();
   for (const l of lines) {
@@ -59,6 +105,7 @@ export const GET = withTenantScope(async () => {
   }
 
   return NextResponse.json({
-    entries: entries.map((e) => ({ ...e, lines: linesByEntry.get(e.id) ?? [] })),
+    entries: page.map((e) => ({ ...e, lines: linesByEntry.get(e.id) ?? [] })),
+    hasMore,
   });
 });
