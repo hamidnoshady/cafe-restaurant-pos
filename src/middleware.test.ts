@@ -4,6 +4,7 @@ import {
   isPeerBackupPath,
   isPublicPath,
   isStaffRosterPath,
+  isStrayServerActionCall,
   unknownHostAllowedPath,
 } from "./middleware";
 
@@ -155,5 +156,59 @@ describe("the staff picker's roster read — bucketed apart from the credentials
     // ...and the roster is not smuggled in as a near-miss of either name.
     expect(isStaffRosterPath("/api/auth/pin-login")).toBe(false);
     expect(isStaffRosterPath("/api/auth/pin-login/rosters")).toBe(false);
+  });
+});
+
+describe("a POST aimed at a server action this app does not have", () => {
+  const id = "0123456789abcdef0123456789abcdef0123456789"; // 42 hex: Next's own shape
+  const page = "/platform/cms/connection";
+
+  it("refuses the malformed ids that Next only warns about", () => {
+    // The noise this removes: `next-action: 0` and friends are a scanner probing
+    // the Server Action surface, and Next answers one with a 404 *and* a logged
+    // error with a stack, once per request — which buries the deployment log an
+    // operator reads to find a broken café. Middleware says the same 4xx in one
+    // line and stays quiet.
+    for (const probed of ["", "0", "1", "x", "action"]) {
+      expect(isStrayServerActionCall("POST", page, probed), probed).toBe(true);
+    }
+    expect(isStrayServerActionCall("POST", page, `${id}deadbeef`)).toBe(true);
+    // Right length, wrong alphabet: a hash is hex, a probe is anything.
+    expect(isStrayServerActionCall("POST", page, "z".repeat(42))).toBe(true);
+  });
+
+  it("passes a well-formed id through, so a future action still resolves normally", () => {
+    // Middleware cannot read the body, so it cannot tell a real action from a
+    // forged id of the right shape — and it must not try. Next's own manifest
+    // lookup ("Failed to find Server Action … from an older or newer deployment")
+    // is the correct answer for that case, and a guard here would break the day
+    // someone adds the app's first server action.
+    expect(isStrayServerActionCall("POST", page, id)).toBe(false);
+    expect(isStrayServerActionCall("POST", page, null)).toBe(false);
+  });
+
+  it("stays out of /api/**, where the header is not read and nothing is logged", () => {
+    // A route handler answers on its own terms, so this guard exists purely for
+    // the page render path. Applying it to the documented public API, the print
+    // agent or a peer server would change their behaviour to silence a log line
+    // they never write.
+    expect(isStrayServerActionCall("POST", "/api/v1/orders", "x")).toBe(false);
+    expect(isStrayServerActionCall("POST", "/api/health", "x")).toBe(false);
+    expect(isStrayServerActionCall("POST", "/api/auth/login", "x")).toBe(false);
+    // ...and the exemption is the prefix, not anything that merely starts with
+    // the letters: `/apix` is a page path like any other.
+    expect(isStrayServerActionCall("POST", "/apix", "x")).toBe(true);
+  });
+
+  it("does not touch a method that cannot be an action", () => {
+    // Next's own gate is `POST + a next-action header`, so nothing else is
+    // examined here: a GET carrying the header is an ordinary page request.
+    // Refusing it would be a new behaviour, not a quieter one.
+    expect(isStrayServerActionCall("GET", page, "x")).toBe(false);
+    expect(isStrayServerActionCall("HEAD", page, "x")).toBe(false);
+    for (const method of ["PUT", "PATCH", "DELETE"]) {
+      expect(isStrayServerActionCall(method, page, "x")).toBe(false);
+    }
+    expect(isStrayServerActionCall("POST", page, "x")).toBe(true);
   });
 });
