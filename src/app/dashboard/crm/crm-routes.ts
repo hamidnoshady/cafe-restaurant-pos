@@ -10,7 +10,7 @@
  * different. Growth gates on *compensation*; the CRM gates on **who the
  * customer is**:
  *
- * - `directory`, `customers` (the 360° file) and `activities` are floor work —
+ * - `directory`, `persons` (the 360° file) and `activities` are floor work —
  *   a cashier takes a phone number, adds a note, ticks off a callback. They are
  *   the surfaces the old flat «مشتریان» page already gave them.
  * - `cases` is floor work too: the person who hears the complaint is the person
@@ -48,7 +48,7 @@ export function crmSectionHref(key: CrmSectionKey): string {
 
 /** The route of one customer's 360° file. */
 export function crmCustomerHref(customerId: string): string {
-  return `/dashboard/crm/customers/${customerId}`;
+  return `/dashboard/crm/persons/${customerId}`;
 }
 
 /**
@@ -83,11 +83,21 @@ export function crmFallbackHref(role: string): string {
  * Whether a dashboard path is a given section — the sidebar's idea of "you are
  * here". The overview is the app root, so it matches exactly and nothing else;
  * every other section also owns what nests under it, which is how a customer's
- * file (`/dashboard/crm/customers/<id>`) keeps «پروندهٔ مشتری» lit.
+ * file (`/dashboard/crm/persons/<id>`) keeps «پروندهٔ مشتری» lit.
+ *
+ * The old `/dashboard/crm/customers/*` path is kept as an alias for `persons`
+ * so bookmarks and external links do not break after the rename.
  */
 export function isCrmSectionPathname(pathname: string, key: CrmSectionKey): boolean {
   const href = crmSectionHref(key);
-  return key === "overview"
-    ? pathname === href
-    : pathname === href || pathname.startsWith(`${href}/`);
+  if (key === "overview") return pathname === href;
+  if (key === "persons") {
+    return (
+      pathname === href ||
+      pathname.startsWith(`${href}/`) ||
+      pathname === "/dashboard/crm/customers" ||
+      pathname.startsWith("/dashboard/crm/customers/")
+    );
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
