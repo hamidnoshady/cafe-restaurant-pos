@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   CMS_FINDING_LABELS,
+  cmsConfigSetClause,
+  cmsConfigUpdateAssignments,
   cmsFleetFindings,
   cmsKeyHint,
   isSyncKind,
@@ -15,6 +17,7 @@ import {
   SYNC_KINDS,
   type CmsControlConfig,
   type MirroredCmsSite,
+  type ValidatedCmsPatch,
 } from "./platform-control";
 
 const config = (over: Partial<CmsControlConfig> = {}): CmsControlConfig => ({
@@ -192,6 +195,82 @@ describe("parseCmsConfigPatch", () => {
         mirrorIntervalMinutes: 15,
       });
     }
+  });
+});
+
+describe("the console save's UPDATE", () => {
+  const write = (changes: ValidatedCmsPatch) =>
+    cmsConfigSetClause(
+      cmsConfigUpdateAssignments(changes, { adminId: "padmin-1", encryptApiKey: (k) => `enc(${k})` }),
+    );
+  const targetOf = (assignment: string) => assignment.trim().split(/ =/)[0];
+
+  it("names each column once when an address change and a new key arrive together", () => {
+    // The regression this pins: both rules clear the last verification, and
+    // Postgres refuses a column twice in one UPDATE
+    // (`42601 multiple assignments to same column "verified_at"`) rather than
+    // merging them — which made every save from «اتصال» that touched the
+    // credential a 500, because the form always posts the address with it.
+    const { sets } = write({ apiKey: "eshobe_live_0123456789abcd", baseUrl: "https://cms.eshobe.com" });
+    const targets = sets.map(targetOf);
+    expect(new Set(targets).size).toBe(targets.length);
+    expect(targets.filter((column) => column === "verified_at")).toHaveLength(1);
+    expect(sets).toContain("verified_at = NULL");
+    expect(sets).toContain("verify_error = NULL");
+    expect(sets).toContain("base_url = $1");
+    expect(sets).toContain("api_key_ciphertext = $2");
+    expect(sets).toContain("api_key_hint = $3");
+  });
+
+  it("collapses a cleared key onto the same verification reset", () => {
+    // The «پاک کردن کلید» button posts the address too, and this is the second
+    // pair of rules that used to collide.
+    const { sets, values } = write({ baseUrl: "https://cms.eshobe.com", clearApiKey: true });
+    expect(sets).toContain("api_key_ciphertext = NULL");
+    expect(sets).toContain("api_key_hint = ''");
+    expect(new Set(sets.map(targetOf)).size).toBe(sets.length);
+    // Nothing bound for a column a later rule replaced with a literal.
+    expect(values).toEqual(["https://cms.eshobe.com", "padmin-1"]);
+  });
+
+  it("leaves the verification alone when the edit cannot invalidate it", () => {
+    // Fixing a typo in the label must not throw away a proof that still stands,
+    // and must not silently keep one that no longer does: the derived columns
+    // appear exactly when the address or the credential moved.
+    const labelOnly = write({ label: "CMS اصلی" });
+    expect(labelOnly.sets).not.toContain("verified_at = NULL");
+    expect(labelOnly.sets).not.toContain("verify_error = NULL");
+    expect(labelOnly.sets).toContain("label = $1");
+
+    const addressOnly = write({ baseUrl: "https://cms2.eshobe.com" });
+    expect(addressOnly.sets).toContain("verified_at = NULL");
+  });
+
+  it("numbers the placeholders from the folded list, so values cannot shift", () => {
+    // The invariant the fold exists to protect: every `$n` in the SET list has a
+    // value at that position, and every value is used. A duplicate dropped from
+    // the list but left in the parameters would write one column's value into
+    // another — silently, with a 200 and a saved form.
+    const { sets, values } = write({
+      allowInsecure: true,
+      apiKey: "eshobe_live_0123456789abcd",
+      baseUrl: "https://cms.eshobe.com",
+      label: "CMS",
+      logShippingEnabled: true,
+      mirrorEnabled: true,
+      mirrorIntervalMinutes: 15,
+    });
+    const placeholders = sets
+      .map((assignment) => /^\w+ = \$(\d+)$/.exec(assignment)?.[1])
+      .filter((n): n is string => n !== undefined)
+      .map(Number);
+    // Contiguous from $1 in the order the columns appear, which is the only
+    // numbering that cannot misalign the two lists.
+    expect(placeholders).toEqual(placeholders.map((_, index) => index + 1));
+    expect(values).toHaveLength(placeholders.length);
+    expect(values[0]).toBe("https://cms.eshobe.com");
+    expect(values[values.length - 1]).toBe("padmin-1");
+    expect(sets[sets.length - 1]).toBe("updated_at = now()");
   });
 });
 

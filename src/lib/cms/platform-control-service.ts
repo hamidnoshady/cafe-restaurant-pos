@@ -27,7 +27,8 @@ import { decryptSecret, encryptSecret, resolveEncryptionKey } from "../integrati
 import type { CmsConfig } from "./client";
 import { normalizeCmsBaseUrl } from "./client";
 import {
-  cmsKeyHint,
+  cmsConfigSetClause,
+  cmsConfigUpdateAssignments,
   maskCmsControlConfig,
   type CmsControlConfig,
   type CmsSiteRow,
@@ -147,40 +148,17 @@ export async function saveCmsControlConfig(
   changes: ValidatedCmsPatch,
   adminId: null | string,
 ): Promise<MaskedCmsControlConfig> {
-  const sets: string[] = [];
-  const values: unknown[] = [];
-  const push = (sql: string, value: unknown) => {
-    values.push(value);
-    sets.push(`${sql} = $${values.length}`);
-  };
-
-  if (changes.baseUrl !== undefined) {
-    push("base_url", changes.baseUrl);
-    // A changed address invalidates the last verification: the old proof was
-    // about a different server, and showing it next to a new URL is a lie.
-    sets.push("verified_at = NULL", "verify_error = NULL");
-  }
-  if (changes.label !== undefined) push("label", changes.label);
-  if (changes.allowInsecure !== undefined) push("allow_insecure", changes.allowInsecure);
-  if (changes.mirrorEnabled !== undefined) push("mirror_enabled", changes.mirrorEnabled);
-  if (changes.mirrorIntervalMinutes !== undefined) {
-    push("mirror_interval_minutes", changes.mirrorIntervalMinutes);
-  }
-  if (changes.logShippingEnabled !== undefined) {
-    push("log_shipping_enabled", changes.logShippingEnabled);
-  }
-
-  if (changes.clearApiKey) {
-    sets.push("api_key_ciphertext = NULL", "api_key_hint = ''", "verified_at = NULL");
-  } else if (changes.apiKey) {
-    const key = resolveEncryptionKey(process.env);
-    push("api_key_ciphertext", encryptSecret(changes.apiKey, key));
-    push("api_key_hint", cmsKeyHint(changes.apiKey));
-    sets.push("verified_at = NULL", "verify_error = NULL");
-  }
-
-  push("updated_by", adminId);
-  sets.push("updated_at = now()");
+  // Which column each edit touches, and how it is folded into one UPDATE, is
+  // `platform-control.ts`'s decision — see `cmsConfigUpdateAssignments`. It lives
+  // there so the interesting case (a save that changes the address *and* the key,
+  // and so clears the same proof twice) is unit-tested rather than discovered on
+  // a console at 1am.
+  const { sets, values } = cmsConfigSetClause(
+    cmsConfigUpdateAssignments(changes, {
+      adminId,
+      encryptApiKey: (apiKey) => encryptSecret(apiKey, resolveEncryptionKey(process.env)),
+    }),
+  );
 
   await query(`UPDATE platform_cms_config SET ${sets.join(", ")} WHERE id = true`, values);
   return getCmsControlConfig();
