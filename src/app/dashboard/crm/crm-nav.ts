@@ -44,13 +44,13 @@ export const CRM_NAV_ITEMS: readonly CrmNavItem[] = [
   },
   {
     key: "directory",
-    label: "مشتریان",
+    label: "اشخاص",
     description: "جست‌وجو، افزودن و ویرایش",
     icon: UsersIcon,
   },
   {
-    key: "customers",
-    label: "پروندهٔ مشتری",
+    key: "persons",
+    label: "پروندهٔ شخص",
     description: "تاریخچهٔ کامل یک مشتری",
     icon: ContactIcon,
   },
@@ -80,7 +80,7 @@ export const CRM_NAV_ITEMS: readonly CrmNavItem[] = [
   },
   {
     key: "duplicates",
-    label: "مشتریان تکراری",
+    label: "اشخاص تکراری",
     description: "یافتن و ادغام پرونده‌های دوتایی",
     icon: CopyCheckIcon,
   },

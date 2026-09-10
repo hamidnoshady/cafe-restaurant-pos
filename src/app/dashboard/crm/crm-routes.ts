@@ -30,7 +30,7 @@
 export const CRM_SECTION_KEYS = [
   "overview",
   "directory",
-  "customers",
+  "persons",
   "segments",
   "deals",
   "activities",
@@ -56,7 +56,7 @@ export function crmCustomerHref(customerId: string): string {
  * named list rather than inline in the predicate so the reason above and the
  * rule below cannot drift.
  */
-const CASHIER_SECTIONS: readonly CrmSectionKey[] = ["directory", "customers", "activities", "cases"];
+const CASHIER_SECTIONS: readonly CrmSectionKey[] = ["directory", "persons", "activities", "cases"];
 
 /** Whether a given role may open a section. */
 export function canViewCrmSection(role: string, key: CrmSectionKey): boolean {
