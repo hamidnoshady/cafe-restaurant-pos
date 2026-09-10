@@ -139,6 +139,10 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/tools-fittings": PackageIcon,
   "/dashboard/haberdashery": SparklesIcon,
   "/dashboard/ledger": CalculatorIcon,
+  // The Accounting app's own home (`/dashboard/accounting`); the old ledger
+  // address above still forwards into it, and keeps its glyph for any saved
+  // bottom-nav slot that still points there.
+  "/dashboard/accounting": CalculatorIcon,
   "/dashboard/connections": PlugIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
@@ -188,10 +192,12 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     key: "accounting",
     label: "حسابداری",
     icon: CalculatorIcon,
-    // The app's own pages first: opening «حسابداری» lands on the ledger, not
-    // on the sales overview. The overview is only the fallback for a member
-    // whose role cannot open the ledger or the reports at all.
-    hrefs: ["/dashboard/ledger", "/dashboard/reports", "/dashboard/overview"],
+    // The app's own pages first: opening «حسابداری» lands on the app's home
+    // (`/dashboard/accounting`), not on the sales overview. The overview is
+    // only the fallback for a member whose role cannot open the accounting
+    // pages or the reports at all; the old `/dashboard/ledger` address stays
+    // as a preference-list entry for any surface still holding it.
+    hrefs: ["/dashboard/accounting", "/dashboard/ledger", "/dashboard/reports", "/dashboard/overview"],
   },
   {
     key: "crm",

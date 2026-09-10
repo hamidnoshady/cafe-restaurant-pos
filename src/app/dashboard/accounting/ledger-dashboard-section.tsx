@@ -8,7 +8,7 @@ import { formatPersianNumber } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "../page-chrome";
 import { api, ErrorBox } from "../ui";
-import type { LedgerTabKey } from "./ledger-nav";
+import type { AccountingSectionKey } from "./accounting-routes";
 
 /**
  * The Accounting app's dashboard (Phase «حسابداری» home) — its «داشبورد».
@@ -56,7 +56,7 @@ export function LedgerDashboardSection({
   onGoToTab,
   refreshKey,
 }: {
-  onGoToTab: (key: LedgerTabKey) => void;
+  onGoToTab: (key: AccountingSectionKey) => void;
   refreshKey: number;
 }) {
   const money = useMoney();

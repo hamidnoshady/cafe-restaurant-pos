@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { canOpenCrm } from "../crm/crm-routes";
-import { accountingCustomersHref } from "../ledger/ledger-routes";
+import { accountingCustomersHref } from "../accounting/accounting-routes";
 
 /**
  * `/dashboard/customers` → each role's own persons screen.
@@ -14,8 +14,9 @@ import { accountingCustomersHref } from "../ledger/ledger-routes";
  * The target depends on who is asking, because every app manages the shared
  * record from its own screen: the floor and the managers land on the CRM
  * directory, while the accountant — whom the CRM app does not admit — lands
- * on Accounting's own customers slice instead of being bounced out to the
- * dashboard from a screen their own nav offered them.
+ * on Accounting's own customers slice (`/dashboard/accounting/customers`)
+ * instead of being bounced out to the dashboard from a screen their own nav
+ * offered them.
  */
 export default async function CustomersPage() {
   const session = await getSession();

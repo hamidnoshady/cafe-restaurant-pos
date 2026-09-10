@@ -8,7 +8,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { todayJalali } from "@/lib/jalali";
 import { Button } from "@/components/ui/button";
 import { api, ErrorBox, inputClass, PrimaryButton } from "../ui";
-import type { Runner } from "./ledger-manager";
+import type { Runner } from "./accounting-manager";
 import { cardClass } from "../page-chrome";
 
 interface FiscalYear {

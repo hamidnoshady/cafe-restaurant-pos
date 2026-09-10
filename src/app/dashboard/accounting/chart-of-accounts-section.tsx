@@ -5,7 +5,7 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { useEffect, useState } from "react";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import type { Runner } from "./ledger-manager";
+import type { Runner } from "./accounting-manager";
 import { ACCOUNT_LEVEL_LABELS, WELL_KNOWN_CODES, type AccountLevel, type NormalBalance } from "@/lib/coa-template";
 import { AccountHistoryPanel } from "./account-history-panel";
 import { AccountStatementPanel } from "./account-statement-panel";

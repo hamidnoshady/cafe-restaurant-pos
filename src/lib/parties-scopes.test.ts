@@ -86,12 +86,21 @@ describe("who each app lists", () => {
   it("accounting also has a customers-only view for the customer links", () => {
     // A/R links used to open Growth's customer projection. Now they open an
     // accounting customers screen — same shared record, only customers, with
-    // the ledger fields an accountant needs.
+    // the ledger fields an accountant needs — at the Accounting app's own
+    // route, never a redirect into the CRM.
     expect(accountingCustomers.roles).toEqual(["Customer"]);
     expect(accountingCustomers.app).toBe("accounting");
-    expect(accountingCustomers.href).toBe("/dashboard/ledger?tab=customers");
+    expect(accountingCustomers.href).toBe("/dashboard/accounting/customers");
     expect(accountingCustomers.columns).toContain("accountingCode");
     expect(accountingCustomers.columns).toContain("balance");
+  });
+
+  it("accounting's persons directory lives at the app's own route", () => {
+    // The Accounting app has its own prefix now (`/dashboard/accounting/…`);
+    // its «اشخاص» section is its persons directory — managed there, never by
+    // sending the accountant into the CRM's.
+    expect(accounting.app).toBe("accounting");
+    expect(accounting.href).toBe("/dashboard/accounting/directory");
   });
 
   it("filters a shared list to what the scope is about", () => {

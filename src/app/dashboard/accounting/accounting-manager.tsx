@@ -3,6 +3,7 @@
 import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarDaysIcon,
   CalculatorIcon,
@@ -16,11 +17,14 @@ import {
 } from "lucide-react";
 import { SectionNav } from "../section-nav";
 import { api, ErrorBox } from "../ui";
-import { useSearchParams } from "next/navigation";
 import { partyScopeFor } from "@/lib/parties-scopes";
 import { PartiesSection } from "../parties/parties-section";
 import { LedgerDashboardSection } from "./ledger-dashboard-section";
-import { isLedgerTabKey, ledgerTabsForRole, type LedgerTabKey } from "./ledger-nav";
+import {
+  accountingSectionHref,
+  type AccountingSectionKey,
+} from "./accounting-routes";
+import { accountingSectionsForRole } from "./accounting-nav";
 import { TrialBalanceSection } from "./trial-balance-section";
 import { EntriesSection } from "./entries-section";
 import { ManualEntrySection } from "./manual-entry-section";
@@ -49,17 +53,17 @@ export interface AccountRow {
 
 /**
  * The in-page rail's glyphs. Icons stay here (a client concern) while the
- * section *list* lives in `ledger-nav.ts`, which the server-side sidebar also
- * reads — the same split `growth-nav.ts` and `crm-nav.ts` keep.
+ * section *list* lives in `accounting-nav.ts`, which the server-side sidebar
+ * also reads — the same split `crm-nav.ts` and `growth-nav.ts` keep.
  */
-const TAB_ICONS: Record<LedgerTabKey, LucideIcon> = {
+const SECTION_ICONS: Record<AccountingSectionKey, LucideIcon> = {
   dashboard: LayoutDashboardIcon,
   "trial-balance": CalculatorIcon,
   entries: ClipboardListIcon,
   manual: ClipboardListIcon,
   expenses: CircleIcon,
   "fiscal-periods": CalendarDaysIcon,
-  parties: UsersIcon,
+  directory: UsersIcon,
   customers: UsersIcon,
   ar: UsersIcon,
   ap: UsersIcon,
@@ -74,51 +78,50 @@ const TAB_ICONS: Record<LedgerTabKey, LucideIcon> = {
   growth: TrendingUpIcon,
 };
 
-type TabKey = LedgerTabKey;
-
-export function LedgerManager({ role }: { role: string }) {
+export function AccountingManager({ role, section }: { role: string; section: AccountingSectionKey }) {
   const [accounts, setAccounts] = useState<AccountRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   /*
-   * «اشخاص» is Accounting's own view of the same table the CRM, the store and
-   * the team look at (`../parties/parties-section.tsx`, scope `accounting`) —
-   * customers, suppliers and staff with the ledger's own columns, managed here
-   * rather than by sending the accountant into the CRM. It is also the one place
-   * a party's ledger code is written.
+   * «اشخاص» (the directory) is Accounting's own view of the same table the
+   * CRM, the store and the team look at (`../parties/parties-section.tsx`,
+   * scope `accounting`) — customers, suppliers and staff with the ledger's own
+   * columns, managed here rather than by sending the accountant into the CRM.
+   * It is also the one place a party's ledger code is written.
    *
-   * «مشتریان» is the customers-only slice (`scope accounting-customers`): it is the
-   * destination the A/R customer actions point at, so an accountant looking at a
-   * receivable lands on the customers they can settle with, not on Growth's
-   * marketing projection and not on the supplier/staff rows of the persons file.
+   * «مشتریان» is the customers-only slice (`scope accounting-customers`): it
+   * is the destination the A/R customer actions point at, so an accountant
+   * looking at a receivable lands on the customers they can settle with — an
+   * accounting page, never a redirect into the CRM.
    *
-   * A `?party=<id>` link from another app (a CRM row, an AI answer, a
-   * notification) lands on a tab with that one file open, the way `?customer=`
-   * lands on the CRM's. A named `?tab=` wins, so `?tab=customers&party=<id>` opens
-   * the accounting customer file rather than the whole counterparty list. The tabs
-   * are only *reachable* from those links, so the default tab is unchanged: the
-   * ledger's front door stays the dashboard.
+   * A `?party=<id>` link from another app (an A/R row, an AI answer, a
+   * notification) lands on the section's route with that one file open, the
+   * way `?customer=` lands on the CRM's file.
    */
+  const router = useRouter();
   const searchParams = useSearchParams();
   const partyParam = searchParams.get("party");
-  // A named tab wins over `?party=`'s implicit one, and both are checked against
-  // the section list so a stale bookmark cannot park the page on a section that
-  // no longer exists (the state type is `TabKey`, and an unchecked cast is how
-  // it would lie).
-  const requestedTab = searchParams.get("tab");
-  const tabParam = isLedgerTabKey(requestedTab) ? requestedTab : undefined;
-  const [tab, setTab] = useState<TabKey>(() => tabParam ?? (partyParam ? "parties" : "dashboard"));
   const [editPartyId, setEditPartyId] = useState<string | null>(partyParam);
   useEffect(() => {
-    if (!partyParam) return;
-    setTab(tabParam ?? "parties");
     setEditPartyId(partyParam);
-  }, [partyParam, tabParam]);
+  }, [partyParam]);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Every section is a route now, so the rail navigates rather than switching
+  // local state — a section a person lands on is a URL they can keep.
+  const goToSection = useCallback(
+    (key: AccountingSectionKey) => {
+      router.push(accountingSectionHref(key));
+    },
+    [router],
+  );
+
   // Wages are compensation data — restricted to owner + accountant; the list
-  // comes from `ledger-nav.ts`, the same source the sidebar reads.
-  const tabs = ledgerTabsForRole(role).map((t) => ({ ...t, icon: TAB_ICONS[t.key] }));
+  // comes from `accounting-nav.ts`, the same source the sidebar reads.
+  const sections = accountingSectionsForRole(role).map((s) => ({
+    ...s,
+    icon: SECTION_ICONS[s.key],
+  }));
 
   const loadAccounts = useCallback(() => {
     api<{ accounts: AccountRow[] }>("/api/ledger/accounts").then(({ ok, data }) => {
@@ -151,47 +154,47 @@ export function LedgerManager({ role }: { role: string }) {
       <ErrorBox>{error}</ErrorBox>
 
       <SectionNav
-        idPrefix="ledger"
+        idPrefix="accounting"
         label="بخش‌های حسابداری"
         title="فضای کار حسابداری"
         description="ثبت، بررسی و گزارش‌های مالی"
         variant="rail"
-        sections={tabs}
-        active={tab}
-        onChange={setTab}
+        sections={sections}
+        active={section}
+        onChange={goToSection}
       >
         <div className={`${styles.content} min-w-0`}>
-          {tab === "dashboard" ? <LedgerDashboardSection onGoToTab={setTab} refreshKey={refreshKey} /> : null}
-          {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
-          {tab === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
-          {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
-          {tab === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
-          {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
-          {tab === "parties" ? (
+          {section === "dashboard" ? <LedgerDashboardSection onGoToTab={goToSection} refreshKey={refreshKey} /> : null}
+          {section === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
+          {section === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
+          {section === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
+          {section === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
+          {section === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
+          {section === "directory" ? (
             <PartiesSection
               scope={partyScopeFor("accounting")}
               role={role}
               editPartyId={editPartyId}
             />
           ) : null}
-          {tab === "customers" ? (
+          {section === "customers" ? (
             <PartiesSection
               scope={partyScopeFor("accounting-customers")}
               role={role}
               editPartyId={editPartyId}
             />
           ) : null}
-          {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
-          {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
-          {tab === "receipts" ? <ReceiptsPaymentsSection /> : null}
-          {tab === "installments" ? <InstallmentsSection /> : null}
-          {tab === "cheques" ? <ChequesSection busy={busy} run={run} /> : null}
-          {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
-          {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
-          {tab === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
-          {tab === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
-          {tab === "fixed-assets" ? <FixedAssetsSection busy={busy} refreshKey={refreshKey} /> : null}
-          {tab === "growth" ? <GrowthAccountingView /> : null}
+          {section === "ar" ? <ArSection busy={busy} run={run} /> : null}
+          {section === "ap" ? <ApSection busy={busy} run={run} /> : null}
+          {section === "receipts" ? <ReceiptsPaymentsSection /> : null}
+          {section === "installments" ? <InstallmentsSection /> : null}
+          {section === "cheques" ? <ChequesSection busy={busy} run={run} /> : null}
+          {section === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
+          {section === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
+          {section === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
+          {section === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
+          {section === "fixed-assets" ? <FixedAssetsSection busy={busy} refreshKey={refreshKey} /> : null}
+          {section === "growth" ? <GrowthAccountingView /> : null}
         </div>
       </SectionNav>
     </div>

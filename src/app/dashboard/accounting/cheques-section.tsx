@@ -1143,7 +1143,7 @@ function CreateChequeDialog({
     const ok = await run(() => api("/api/ledger/cheques", { method: "POST", body: JSON.stringify(body) }));
     if (ok) onCreated();
     else {
-      // run already surfaces via ledger-manager ErrorBox, but also keep local for dialog
+      // run already surfaces via the manager's ErrorBox, but also keep local for dialog
     }
   }
 
