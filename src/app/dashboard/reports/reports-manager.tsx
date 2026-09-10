@@ -1,27 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { SectionNav } from "../section-nav";
 import { BranchOverviewSection } from "./branch-overview-section";
 import { ReportBuilderSection } from "./report-builder-section";
 import { ShiftOrdersSection } from "./shift-orders-section";
 import { StandardReportsSection } from "./standard-reports-section";
 import { GrowthAccountingView } from "@/components/growth/growth-accounting-view";
-
-const BASE_TABS = [
-  { key: "standard", label: "گزارش‌های آماده" },
-  { key: "shift-orders", label: "سفارش‌های شیفت" },
-  { key: "builder", label: "گزارش‌ساز" },
-  { key: "growth", label: "رشد و بازاریابی" },
-] as const;
-/** Owner-only: matches /api/reports/business-overview's guard. */
-const BRANCH_TAB = { key: "branches", label: "مقایسهٔ شعب" } as const;
-
-type TabKey = (typeof BASE_TABS)[number]["key"] | typeof BRANCH_TAB.key;
+import { isReportsTabKey, reportsTabsForRole, type ReportsTabKey } from "./reports-nav";
 
 export function ReportsManager({ role, canExplain }: { role: string; canExplain: boolean }) {
-  const [tab, setTab] = useState<TabKey>("standard");
-  const tabs = role === "owner" ? [...BASE_TABS, BRANCH_TAB] : BASE_TABS;
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const tabs = reportsTabsForRole(role);
+
+  // The phone shows the section list first; a `?tab=` link asked for one
+  // section by name, so that link opens it rather than the list around it.
+  const [tab, setTab] = useState<ReportsTabKey>(() =>
+    isReportsTabKey(requestedTab) ? requestedTab : "standard",
+  );
+
+  // Follow client-side navigations that only changed the query string.
+  useEffect(() => {
+    if (isReportsTabKey(requestedTab)) setTab(requestedTab);
+  }, [requestedTab]);
 
   return (
     <SectionNav

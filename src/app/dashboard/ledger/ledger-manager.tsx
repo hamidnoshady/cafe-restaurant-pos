@@ -8,15 +8,19 @@ import {
   CalculatorIcon,
   CircleIcon,
   ClipboardListIcon,
+  LayoutDashboardIcon,
   ScrollTextIcon,
   TrendingUpIcon,
   UsersIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { SectionNav } from "../section-nav";
 import { api, ErrorBox } from "../ui";
 import { useSearchParams } from "next/navigation";
 import { partyScopeFor } from "@/lib/parties-scopes";
 import { PartiesSection } from "../parties/parties-section";
+import { LedgerDashboardSection } from "./ledger-dashboard-section";
+import { isLedgerTabKey, ledgerTabsForRole, type LedgerTabKey } from "./ledger-nav";
 import { TrialBalanceSection } from "./trial-balance-section";
 import { EntriesSection } from "./entries-section";
 import { ManualEntrySection } from "./manual-entry-section";
@@ -43,27 +47,34 @@ export interface AccountRow {
   parent_code: string | null;
 }
 
-const TABS = [
-  { key: "trial-balance", label: "تراز آزمایشی", icon: CalculatorIcon },
-  { key: "entries", label: "دفتر روزنامه", icon: ClipboardListIcon },
-  { key: "manual", label: "ثبت سند دستی", icon: ClipboardListIcon },
-  { key: "expenses", label: "هزینه‌ها", icon: CircleIcon },
-  { key: "fiscal-periods", label: "دوره‌های مالی", icon: CalendarDaysIcon },
-  { key: "parties", label: "اشخاص", icon: UsersIcon },
-  { key: "customers", label: "مشتریان", icon: UsersIcon },
-  { key: "ar", label: "حساب‌های دریافتنی", icon: UsersIcon },
-  { key: "ap", label: "حساب‌های پرداختنی", icon: UsersIcon },
-  { key: "receipts", label: "دریافت و پرداخت", icon: ScrollTextIcon },
-  { key: "installments", label: "اقساط", icon: CalendarDaysIcon },
-  { key: "cheques", label: "چک‌ها", icon: ScrollTextIcon },
-  { key: "reconciliation", label: "تطبیق بانکی", icon: CircleIcon },
-  { key: "chart-of-accounts", label: "سرفصل حساب‌ها", icon: CalculatorIcon },
-  { key: "payroll", label: "حقوق و دستمزد", icon: UsersIcon },
-  { key: "vat", label: "گزارش مالیات", icon: CircleIcon },
-  { key: "fixed-assets", label: "دارایی‌های ثابت", icon: CircleIcon },
-  { key: "growth", label: "رشد و بازاریابی", icon: TrendingUpIcon },
-] as const;
-type TabKey = (typeof TABS)[number]["key"];
+/**
+ * The in-page rail's glyphs. Icons stay here (a client concern) while the
+ * section *list* lives in `ledger-nav.ts`, which the server-side sidebar also
+ * reads — the same split `growth-nav.ts` and `crm-nav.ts` keep.
+ */
+const TAB_ICONS: Record<LedgerTabKey, LucideIcon> = {
+  dashboard: LayoutDashboardIcon,
+  "trial-balance": CalculatorIcon,
+  entries: ClipboardListIcon,
+  manual: ClipboardListIcon,
+  expenses: CircleIcon,
+  "fiscal-periods": CalendarDaysIcon,
+  parties: UsersIcon,
+  customers: UsersIcon,
+  ar: UsersIcon,
+  ap: UsersIcon,
+  receipts: ScrollTextIcon,
+  installments: CalendarDaysIcon,
+  cheques: ScrollTextIcon,
+  reconciliation: CircleIcon,
+  "chart-of-accounts": CalculatorIcon,
+  payroll: UsersIcon,
+  vat: CircleIcon,
+  "fixed-assets": CircleIcon,
+  growth: TrendingUpIcon,
+};
+
+type TabKey = LedgerTabKey;
 
 export function LedgerManager({ role }: { role: string }) {
   const [accounts, setAccounts] = useState<AccountRow[] | null>(null);
@@ -86,17 +97,17 @@ export function LedgerManager({ role }: { role: string }) {
    * lands on the CRM's. A named `?tab=` wins, so `?tab=customers&party=<id>` opens
    * the accounting customer file rather than the whole counterparty list. The tabs
    * are only *reachable* from those links, so the default tab is unchanged: the
-   * ledger's front door stays the trial balance.
+   * ledger's front door stays the dashboard.
    */
   const searchParams = useSearchParams();
   const partyParam = searchParams.get("party");
   // A named tab wins over `?party=`'s implicit one, and both are checked against
-  // `TABS` so a stale bookmark cannot park the page on a section that no longer
-  // exists (the state type is `TabKey`, and an unchecked cast is how it would lie).
-  const tabParam = TABS.find((item) => item.key === searchParams.get("tab"))?.key;
-  const [tab, setTab] = useState<TabKey>(() =>
-    tabParam ?? (partyParam ? "parties" : "trial-balance"),
-  );
+  // the section list so a stale bookmark cannot park the page on a section that
+  // no longer exists (the state type is `TabKey`, and an unchecked cast is how
+  // it would lie).
+  const requestedTab = searchParams.get("tab");
+  const tabParam = isLedgerTabKey(requestedTab) ? requestedTab : undefined;
+  const [tab, setTab] = useState<TabKey>(() => tabParam ?? (partyParam ? "parties" : "dashboard"));
   const [editPartyId, setEditPartyId] = useState<string | null>(partyParam);
   useEffect(() => {
     if (!partyParam) return;
@@ -105,9 +116,9 @@ export function LedgerManager({ role }: { role: string }) {
   }, [partyParam, tabParam]);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Wages are compensation data — restricted to owner + accountant, unlike
-  // every other tab here (owner/manager/accountant).
-  const tabs = TABS.filter((t) => t.key !== "payroll" || role === "owner" || role === "accountant");
+  // Wages are compensation data — restricted to owner + accountant; the list
+  // comes from `ledger-nav.ts`, the same source the sidebar reads.
+  const tabs = ledgerTabsForRole(role).map((t) => ({ ...t, icon: TAB_ICONS[t.key] }));
 
   const loadAccounts = useCallback(() => {
     api<{ accounts: AccountRow[] }>("/api/ledger/accounts").then(({ ok, data }) => {
@@ -150,6 +161,7 @@ export function LedgerManager({ role }: { role: string }) {
         onChange={setTab}
       >
         <div className={`${styles.content} min-w-0`}>
+          {tab === "dashboard" ? <LedgerDashboardSection onGoToTab={setTab} refreshKey={refreshKey} /> : null}
           {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
           {tab === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
           {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}

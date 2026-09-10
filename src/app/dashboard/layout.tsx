@@ -5,6 +5,9 @@ import {
   isProductWorkspaceIndustry,
   PRODUCT_WORKSPACE_SECTIONS,
 } from "@/lib/product-workspace";
+import { visibleConnectionKinds, type ConnectionKind } from "@/lib/connection-kinds";
+import { LEDGER_TABS, ledgerTabHref } from "./ledger/ledger-nav";
+import { REPORTS_TABS, reportsTabHref } from "./reports/reports-nav";
 import { effectiveAppAvailability } from "@/lib/app-availability-service";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures, isLockableFeature } from "@/lib/features";
@@ -12,7 +15,7 @@ import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { hasModule, industryProfile, labelFor } from "@/lib/industry-profile";
 import { effectivePermissions, parseOverrides, type Permission } from "@/lib/permissions";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
-import { visibleSettingsTabs } from "@/lib/settings-tabs";
+import { visibleSettingsTabs, type ResolvedSettingsTab } from "@/lib/settings-tabs";
 import { MoneyProvider } from "@/components/money/money-context";
 import { BugReportProvider } from "@/components/bug-report/bug-report-provider";
 import { LockProvider } from "./lock-screen";
@@ -33,7 +36,14 @@ import { AppAvailabilityGate } from "./app-availability-gate";
  * constant the console and the /welcome picker use, so a business's type is
  * called one thing across the whole product.
  */
-function navItemsFor(industry: Industry): NavItem[] {
+interface NavContext {
+  /** The settings tabs this member may open (already role/permission/feature-filtered). */
+  settingsTabs: ResolvedSettingsTab[];
+  /** The connection kinds this member may open (already role/module-filtered). */
+  connectionKinds: ConnectionKind[];
+}
+
+function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
   return [
     // Phase 35 Wave 2: the dashboard itself moved to /dashboard/overview; the
     // bare /dashboard route is now the chat home. Links that meant "the
@@ -119,7 +129,23 @@ function navItemsFor(industry: Industry): NavItem[] {
     ...(industry === "cosmetics"
       ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: "/dashboard/cosmetics", roles: ["owner", "manager"] }]
       : []),
-    { label: "حسابداری", module: "ledger", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
+    // Phase «حسابداری» sub-menu — the ledger's in-page sections are now a
+    // collapsible sidebar group (the same shape «محصولات» uses), with the
+    // app's dashboard as its first entry. The parent keeps its href so the
+    // section is still one tap away and still pinnable to the bottom bar.
+    {
+      label: "حسابداری",
+      module: "ledger",
+      href: "/dashboard/ledger",
+      roles: ["owner", "manager", "accountant"],
+      flag: "ledger",
+      children: LEDGER_TABS.map((tab) => ({
+        label: tab.label,
+        module: "ledger" as const,
+        href: ledgerTabHref(tab.key),
+        roles: tab.roles ?? ["owner", "manager", "accountant"],
+      })),
+    },
     // The «اتصال‌های فنی» hub — every technical connection in the product
     // (desktop, WordPress/WooCommerce, the CMS site, Holoo, the remote server
     // sync, MCP, API keys). A shell utility, not an app: its module is
@@ -128,13 +154,46 @@ function navItemsFor(industry: Industry): NavItem[] {
     // inside «مدیریت وب‌سایت» above, and the old `/dashboard/wp` prefix
     // forwards there (its connection screen forwards to this hub instead), so
     // one door stays one door.
-    { label: "اتصال‌های فنی", module: "connections", href: "/dashboard/connections", roles: ["owner", "manager"] },
-    { label: "گزارش‌ها", module: "reports", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
+    {
+      label: "اتصال‌های فنی",
+      module: "connections",
+      href: "/dashboard/connections",
+      roles: ["owner", "manager"],
+      children: ctx.connectionKinds.map((kind) => ({
+        label: kind.label,
+        module: "connections" as const,
+        href: `/dashboard/connections?tab=${kind.key}`,
+      })),
+    },
+    {
+      label: "گزارش‌ها",
+      module: "reports",
+      href: "/dashboard/reports",
+      roles: ["owner", "manager", "accountant"],
+      flag: "reporting",
+      children: REPORTS_TABS.map((tab) => ({
+        label: tab.label,
+        module: "reports" as const,
+        href: reportsTabHref(tab.key),
+        roles: tab.roles ?? ["owner", "manager", "accountant"],
+      })),
+    },
     { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
     // Wallet/credits & plans. The small credit badge in the chrome links here
     // too; the nav entry gives owners/managers a permanent door.
     { label: "اعتبار و پرداخت‌ها", module: "settings", href: "/dashboard/billing", roles: ["owner", "manager"] },
-    { label: "تنظیمات", module: "settings", href: "/dashboard/settings" },
+    // Settings tabs are already role/permission/feature-filtered server-side
+    // (`visibleSettingsTabs`), so they carry no further gate here.
+    {
+      label: "تنظیمات",
+      module: "settings",
+      href: "/dashboard/settings",
+      children: ctx.settingsTabs.map((tab) => ({
+        label: tab.label,
+        module: "settings" as const,
+        href: `/dashboard/settings?tab=${tab.key}`,
+      })),
+    },
     // Migration 0131 — the in-product knowledge base («مرکز آموزش»): every
     // member learns the platform here, so like the support desk it has no
     // role gate; the `settings` module anchors it because every trade has it.
@@ -205,8 +264,9 @@ export default async function DashboardLayout({
   const industry = bizRows[0]?.industry ?? "food_service";
   const permissions = effectivePermissions(member.role, parseOverrides(member.permissions));
   const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features, industry });
+  const connectionKinds = visibleConnectionKinds({ role: member.role, industry });
   const profile = industryProfile(industry);
-  const navItems = navItemsFor(industry)
+  const navItems = navItemsFor(industry, { settingsTabs, connectionKinds })
     // Phase 42 — group children go through the same role/module/permission
     // gate as their parent; a group whose children all filtered out is gone
     // rather than an empty disclosure.
