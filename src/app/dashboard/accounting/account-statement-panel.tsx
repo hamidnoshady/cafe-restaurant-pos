@@ -8,6 +8,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
+import { Button } from "@/components/ui/button";
 import { overlayPanelClass } from "../page-chrome";
 import { useOverlayEscape } from "./use-overlay-escape";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
@@ -62,10 +63,12 @@ export function AccountStatementPanel({
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
     setError("");
-    api<AccountStatement>(`/api/ledger/accounts/${accountId}/statement?${params}`).then(({ ok, data }) => {
-      if (ok) setStatement(data);
-      else setError("بارگذاری گردش این حساب ناموفق بود.");
-    });
+    void api<AccountStatement>(`/api/ledger/accounts/${accountId}/statement?${params}`)
+      .then(({ ok, data }) => {
+        if (ok) setStatement(data);
+        else setError("بارگذاری گردش این حساب ناموفق بود.");
+      })
+      .catch(() => setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید."));
   }, [accountId, dateFrom, dateTo]);
 
   return (
@@ -81,12 +84,12 @@ export function AccountStatementPanel({
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گردش حساب (دفتر معین)</p>
             <h3 id="account-statement-heading" className="mt-1 text-lg font-bold">
-              {accountCode} — {accountName}
+              <span dir="ltr">{accountCode}</span> — {accountName}
             </h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             بستن
-          </button>
+          </Button>
         </header>
 
         <div className="grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4 dark:bg-stone-800/30">

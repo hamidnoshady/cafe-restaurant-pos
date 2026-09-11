@@ -1,159 +1,60 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
-
-import { useCallback, useEffect, useState } from "react";
-import { ACCOUNT_TYPES, FNB_COA_TEMPLATE, type AccountType, type TemplateAccount } from "@/lib/coa-template";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { ErrorBox, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
+import { useCallback, useState } from "react";
+import { ChartOfAccountsSection } from "../accounting/chart-of-accounts-section";
+import type { Runner } from "../accounting/accounting-manager";
+import { ErrorBox, InfoBox, errorMessage } from "../ui";
 import { SectionCard } from "../page-chrome";
 
-const TYPE_LABELS: Record<AccountType, string> = {
-  asset: "دارایی",
-  liability: "بدهی",
-  equity: "حقوق صاحبان سرمایه",
-  revenue: "درآمد",
-  expense: "هزینه",
-};
-
-interface ExistingAccount {
-  code: string;
-  name: string;
-  type: AccountType;
-  parent_code: string | null;
-}
-
-interface AccountsResponse {
-  template?: TemplateAccount[];
-  existing?: ExistingAccount[];
-  error?: string;
-}
-
-function normalise(accounts: TemplateAccount[]): TemplateAccount[] {
-  return accounts.map((account) => ({
-    code: String(account.code ?? ""),
-    name: String(account.name ?? ""),
-    type: account.type,
-    parentCode: account.parentCode || undefined,
-  }));
-}
-
-/** Editable chart of accounts. Replacement is blocked after journals reference it. */
+/**
+ * Accounting settings is the administration surface for the chart of accounts.
+ *
+ * This used to be a second, destructive "replace the entire chart" editor. It
+ * also had an unrelated payment-method heading and hid the account features
+ * that already existed in the Accounting workspace (archive, re-parent,
+ * statements and audit history). Keeping two editors meant the settings page
+ * and the ledger page could disagree about what an account was.
+ *
+ * The chart editor is now shared with Accounting so both entry points expose
+ * the same guarded operations and the same RTL-first design language.
+ */
 export function AccountsSettings() {
-  const [accounts, setAccounts] = useState<TemplateAccount[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { ok, data } = await api<AccountsResponse>("/api/settings/accounts");
-    if (ok) {
-      const existing = data.existing ?? [];
-      setAccounts(
-        existing.length > 0
-          ? normalise(existing.map(({ code, name, type, parent_code }) => ({ code, name, type, parentCode: parent_code ?? undefined })))
-          : normalise(data.template ?? FNB_COA_TEMPLATE),
-      );
-      setError("");
-    } else {
-      setError(errorMessage(data.error));
+  const run = useCallback<Runner>(async (operation) => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await operation();
+      if (!result.ok) {
+        setError(errorMessage(result.data.error));
+        return false;
+      }
+      return true;
+    } catch {
+      setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.");
+      return false;
+    } finally {
+      setBusy(false);
     }
-    setLoading(false);
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  function change(index: number, patch: Partial<TemplateAccount>) {
-    setSaved(false);
-    setAccounts((current) => current.map((account, row) => (row === index ? { ...account, ...patch } : account)));
-  }
-
-  function add() {
-    setSaved(false);
-    setAccounts((current) => [...current, { code: "", name: "", type: "asset" }]);
-  }
-
-  function remove(index: number) {
-    setSaved(false);
-    setAccounts((current) => current.filter((_, row) => row !== index));
-  }
-
-  async function save() {
-    setSaving(true);
-    setError("");
-    setSaved(false);
-    const { ok, data } = await api<{ error?: string; messages?: string[] }>("/api/settings/accounts", {
-      method: "PUT",
-      body: JSON.stringify({ accounts: normalise(accounts) }),
-    });
-    setSaving(false);
-    if (!ok) {
-      setError(data.messages?.join(" ") || errorMessage(data.error));
-      return;
-    }
-    setSaved(true);
-  }
-
-  if (loading) return <LoadingSkeleton rows={3} />;
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <ErrorBox>{error}</ErrorBox>
-      {saved ? <InfoBox>سرفصل حساب‌ها ذخیره شد.</InfoBox> : null}
-
+      <InfoBox>
+        در این بخش ساختار حساب‌ها را مدیریت می‌کنید. برای حفظ سوابق، حساب‌های دارای سند حذف نمی‌شوند و فقط می‌توان آن‌ها را غیرفعال کرد؛ حساب‌های سیستمی نیز همیشه محافظت می‌شوند.
+      </InfoBox>
       <SectionCard
-        title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">درگاه‌ها و روش‌ها</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">روش‌های دریافت وجه</h2>
-          </div>
-        }
-        description="همین فهرست و همین ترتیب در صندوق فروش و صفحهٔ سفارش‌ها نمایش داده می‌شود. صندوق‌دار می‌تواند مبلغ یک فاکتور را بین چند روش تقسیم کند؛ مثلاً بخشی نقدی و بخشی با کارت‌خوان."
+        title="تنظیمات حسابداری"
+        description="افزودن، ویرایش، جابه‌جایی و بایگانی سرفصل‌ها، همراه با گردش حساب و تاریخچهٔ تغییرات."
       >
-        <div className="mb-4 flex flex-wrap gap-2">
-          <SecondaryButton onClick={() => { setAccounts(normalise(FNB_COA_TEMPLATE)); setSaved(false); }}>
-            بازگردانی الگوی کافه و رستوران
-          </SecondaryButton>
-          <SecondaryButton onClick={add}>افزودن سرفصل</SecondaryButton>
-        </div>
-
-        <div className="space-y-3">
-          {accounts.map((account, index) => (
-            <div key={`${account.code}-${index}`} className="grid gap-2 rounded-xl border border-border/80 p-3 md:grid-cols-[7rem_1fr_9rem_1fr_auto]">
-              <input className={inputClass} dir="ltr" value={account.code} onChange={(e) => change(index, { code: e.target.value })} placeholder="کد" aria-label="کد حساب" />
-              <input className={inputClass} value={account.name} onChange={(e) => change(index, { name: e.target.value })} placeholder="نام حساب" aria-label="نام حساب" />
-              <SearchableSelect
-                value={account.type}
-                onChange={(value) => change(index, { type: value as AccountType })}
-                ariaLabel="نوع حساب"
-                options={ACCOUNT_TYPES.map((type) => ({ value: type, label: TYPE_LABELS[type] }))}
-              />
-              <SearchableSelect
-                value={account.parentCode ?? ""}
-                onChange={(value) => change(index, { parentCode: value || undefined })}
-                ariaLabel="حساب والد"
-                dir="ltr"
-                options={[
-                  { value: "", label: "بدون والد" },
-                  ...accounts
-                    .filter((candidate, candidateIndex) => candidateIndex !== index && candidate.code)
-                    .map((candidate) => ({ value: candidate.code, label: `${candidate.code} — ${candidate.name || "بدون نام"}` })),
-                ]}
-              />
-              <SecondaryButton onClick={() => remove(index)}>حذف</SecondaryButton>
-            </div>
-          ))}
-        </div>
-        {accounts.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">حداقل یک سرفصل اضافه کنید.</p> : null}
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+          کد و نوع حساب پس از ایجاد ثابت می‌ماند تا ثبت‌های خودکار و گزارش‌های مالی پایدار بمانند. برای شخصی‌سازی، نام یا حساب والد را ویرایش کنید و برای حساب‌های قدیمی از بایگانی استفاده کنید.
+        </p>
       </SectionCard>
-
-      <div className="max-w-xs">
-        <PrimaryButton onClick={save} type="button" disabled={saving}>{saving ? "در حال ذخیره…" : "ذخیرهٔ سرفصل‌ها"}</PrimaryButton>
-      </div>
+      <ChartOfAccountsSection busy={busy} run={run} />
     </div>
   );
 }
