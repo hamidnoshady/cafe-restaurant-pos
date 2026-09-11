@@ -46,6 +46,9 @@ const NAV: NavItem[] = [
   // payments ledger. Read surfaces are visible to any admin; the pages hide
   // their own write controls from operators without `billing.manage`.
   { label: "پرداخت‌ها", href: "/platform/billing" },
+  // Phase 37b — provider credentials and credits are platform-owned, so they
+  // belong beside billing rather than on any individual business profile.
+  { label: "پیام‌رسانی", href: "/platform/messaging" },
   { label: "پلن‌ساز", href: "/platform/plans" },
   // Migration 0128 — the deployment-wide app switchboard («به‌زودی»، «در حال
   // تعمیر»، …). Readable by any admin; the page hides its own write controls

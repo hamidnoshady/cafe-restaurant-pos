@@ -19,6 +19,9 @@ export const GROWTH_SECTION_KEYS = [
   // managed here — not a second customer system, and not a redirect to CRM.
   "customers",
   "campaigns",
+  // Phase 37b — consent-aware SMS/email templates, outbox campaigns and
+  // message-credit statements. It stays in Growth, beside its audience work.
+  "messaging",
   "gift-cards",
   "loyalty",
   "commission",

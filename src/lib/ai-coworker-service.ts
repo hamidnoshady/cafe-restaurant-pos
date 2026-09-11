@@ -62,6 +62,7 @@ import {
 import { compactProactiveFacts, type LocalBusinessClock } from "./ai-proactive";
 import { runAccountingReview } from "./accounting-review-service";
 import { query } from "./db";
+import { recordCoworkerEvent } from "./ai-coworker-events";
 import { isFeatureEnabled } from "./features";
 // Phase 35 — a job that fires at 02:00 and then waits for approval is the
 // clearest case in the product of something the owner cannot be expected to
@@ -173,6 +174,9 @@ async function validateForTemplate(
   const template = COWORKER_TEMPLATES[input.templateKey];
   if (input.triggerKind && !template.triggers.includes(input.triggerKind)) {
     errors.push("coworker_trigger_unsupported");
+  }
+  if (template.key === "customer_event_message" && !["customer_birthday", "customer_inactive_3_months", "order_ready"].includes(input.eventKind ?? "")) {
+    errors.push("coworker_event_required");
   }
   // The same gate the API guard applies: a module the trade does not have is
   // refused, not merely hidden — see CLAUDE.md's industry-module note.
@@ -290,7 +294,7 @@ export async function deleteCoworkerJob(businessId: string, id: string): Promise
 // ---------------------------------------------------------------------------
 
 /** Re-exported so callers of this service have one import for the whole feature. */
-export { recordCoworkerEvent } from "./ai-coworker-events";
+export { recordCoworkerEvent };
 
 // ---------------------------------------------------------------------------
 // Runs
@@ -746,6 +750,8 @@ export async function fireCoworkerJob(input: {
   locationId: string | null;
   triggerSource: CoworkerTriggerKind;
   dedupeKey: string;
+  /** Durable event payload; only the matching customer-event template reads it. */
+  eventPayload?: Record<string, unknown>;
 }): Promise<string | null> {
   const { businessId, job, locationId, triggerSource, dedupeKey } = input;
   const template = COWORKER_TEMPLATES[job.templateKey];
@@ -756,6 +762,16 @@ export async function fireCoworkerJob(input: {
 
   try {
     const facts = await loadFacts(businessId, locationId, template.facts);
+    if (template.key === "customer_event_message") {
+      const customerId = input.eventPayload?.customerId;
+      const eventKind = input.eventPayload?.eventKind;
+      if (typeof customerId === "string" && (eventKind === "customer_birthday" || eventKind === "customer_inactive_3_months" || eventKind === "order_ready")) {
+        facts.triggerCustomer = {
+          customerId, eventKind,
+          ...(typeof input.eventPayload?.orderId === "string" ? { orderId: input.eventPayload.orderId } : {}),
+        };
+      }
+    }
     const built = buildCoworkerActions(job.templateKey, job.params, facts);
 
     // A run that legitimately had nothing to do is `skipped`, not `failed`, and
@@ -956,6 +972,50 @@ async function touchJob(businessId: string, jobId: string): Promise<void> {
   ]);
 }
 
+/**
+ * Produce the two calendar-driven customer events only while an owner has an
+ * eligible event job. The stable source key makes an hourly tick idempotent:
+ * birthday is once per customer/local date; inactivity is once per customer's
+ * last completed purchase date, until they buy again.
+ */
+async function enqueueLifecycleCustomerEvents(
+  businessId: string,
+  clock: LocalBusinessClock,
+  wanted: ReadonlySet<CoworkerEventKind>,
+): Promise<void> {
+  if (wanted.has("customer_birthday")) {
+    const [year, month, day] = clock.dateKey.split("-").map(Number);
+    if (year && month && day) {
+      const { rows } = await query<{ id: string }>(
+        `SELECT id FROM parties
+          WHERE business_id = $1 AND role = 'customer' AND is_active AND merged_into_id IS NULL
+            AND birthday IS NOT NULL AND EXTRACT(MONTH FROM birthday) = $2 AND EXTRACT(DAY FROM birthday) = $3
+          LIMIT 500`, [businessId, month, day],
+      );
+      for (const customer of rows) await recordCoworkerEvent({
+        businessId, locationId: null, kind: "customer_birthday", payload: { customerId: customer.id },
+        dedupeKey: `birthday:${customer.id}:${clock.dateKey}`,
+      });
+    }
+  }
+  if (wanted.has("customer_inactive_3_months")) {
+    const { rows } = await query<{ id: string; last_purchase_date: string }>(
+      `SELECT p.id, max(app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes))::text AS last_purchase_date
+         FROM parties p
+         JOIN orders o ON o.customer_id = p.id AND o.status = 'completed' AND o.closed_at IS NOT NULL
+         JOIN locations l ON l.id = o.location_id
+        WHERE p.business_id = $1 AND p.role = 'customer' AND p.is_active AND p.merged_into_id IS NULL
+        GROUP BY p.id
+       HAVING max(app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes)) <= ($2::date - interval '3 months')::date
+        LIMIT 500`, [businessId, clock.dateKey],
+    );
+    for (const customer of rows) await recordCoworkerEvent({
+      businessId, locationId: null, kind: "customer_inactive_3_months", payload: { customerId: customer.id },
+      dedupeKey: `inactive-3m:${customer.id}:${customer.last_purchase_date}`,
+    });
+  }
+}
+
 async function activeLocationIds(businessId: string): Promise<string[]> {
   const { rows } = await query<{ id: string }>(
     `SELECT id FROM locations WHERE business_id = $1 AND is_active ORDER BY created_at`,
@@ -1015,10 +1075,14 @@ export async function runCoworkerTick(
 
   let fired = 0;
   const eventJobs = jobs.filter((job) => job.enabled && job.triggerKind === "event");
+  const lifecycleKinds = new Set(eventJobs
+    .filter((job) => job.templateKey === "customer_event_message" && job.eventKind !== null)
+    .map((job) => job.eventKind!));
+  await enqueueLifecycleCustomerEvents(businessId, clock, lifecycleKinds);
 
   if (eventJobs.length > 0) {
-    const { rows: events } = await query<{ id: string; location_id: string | null; kind: string }>(
-      `SELECT id, location_id, kind FROM ai_coworker_events
+    const { rows: events } = await query<{ id: string; location_id: string | null; kind: string; payload: Record<string, unknown> }>(
+      `SELECT id, location_id, kind, payload FROM ai_coworker_events
         WHERE business_id = $1 AND processed_at IS NULL
         ORDER BY occurred_at
         LIMIT 100`,
@@ -1036,6 +1100,7 @@ export async function runCoworkerTick(
           locationId: template.scope === "business" ? null : event.location_id,
           triggerSource: "event",
           dedupeKey: dedupeKeyForEvent(event.id),
+          eventPayload: { ...(event.payload ?? {}), eventKind: event.kind },
         });
         if (runId) fired += 1;
       }

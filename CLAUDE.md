@@ -895,6 +895,7 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
 > platform-owned, encrypted at rest, and never returned to a business.
 >
 > **مدل نمی‌فرستد.** Phase 31 stands: the model may draft a template/campaign but
-> pressing send is a human action. The only planned exception is a pre-authorised
-> coworker-triggered job, still bounded by the Phase 31 batch caps — and even that
-> is not yet shipped (see `docs/phases/Phase-37-Messaging.md` Wave 5).
+> pressing send is a human action. The only exception is a pre-authorised deterministic
+> coworker event job, still bounded by the Phase 31 messaging caps and exact rendered
+> message cost. It creates only campaign/recipient/outbox rows; the tick remains the
+> sole path to reserve credit, contact a provider, settle and post cost.

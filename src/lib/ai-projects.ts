@@ -28,6 +28,8 @@ export {
   clampInstructions,
 } from "./ai-projects-shared";
 
+export type AiProjectStatus = "active" | "paused" | "completed";
+
 export interface AiProject {
   id: string;
   name: string;
@@ -35,6 +37,20 @@ export interface AiProject {
   createdBy: string;
   archivedAt: string | null;
   createdAt: string;
+  /** Operational fields added when a project became a marketing cost centre. */
+  status: AiProjectStatus;
+  ownerUserId: string | null;
+  ownerName: string | null;
+  budgetRial: number | null;
+  updatedAt: string;
+}
+
+export interface AiProjectCostSummary {
+  projectId: string;
+  spentRial: number;
+  budgetRial: number | null;
+  remainingBudgetRial: number | null;
+  campaigns: number;
 }
 
 export interface AiProjectNote {
@@ -56,6 +72,25 @@ interface Owner {
   actorUserId: string;
 }
 
+type ProjectRow = {
+  id: string; name: string; instructions: string; created_by: string;
+  archived_at: string | null; created_at: string; status: string;
+  owner_user_id: string | null; owner_name: string | null;
+  budget_rial: string | number | null; updated_at: string;
+};
+
+const PROJECT_COLUMNS = `p.id, p.name, p.instructions, p.created_by, p.archived_at, p.created_at,
+  p.status, p.owner_user_id, u.full_name AS owner_name, p.budget_rial, p.updated_at`;
+
+function toProject(row: ProjectRow): AiProject {
+  return {
+    id: row.id, name: row.name, instructions: row.instructions, createdBy: row.created_by,
+    archivedAt: row.archived_at, createdAt: row.created_at,
+    status: row.status as AiProjectStatus, ownerUserId: row.owner_user_id, ownerName: row.owner_name,
+    budgetRial: row.budget_rial === null ? null : Number(row.budget_rial), updatedAt: row.updated_at,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // DB operations
 // ---------------------------------------------------------------------------
@@ -70,27 +105,18 @@ export async function createProject(
   if (isOverInstructionLimit(instructionWeight(instructions, []))) {
     throw new Error("Instructions exceed the character limit");
   }
-  const { rows } = await query<{
-    id: string;
-    name: string;
-    instructions: string;
-    created_by: string;
-    archived_at: string | null;
-    created_at: string;
-  }>(
-    `INSERT INTO ai_projects (business_id, name, instructions, created_by)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, name, instructions, created_by, archived_at, created_at`,
+  const { rows } = await query<ProjectRow>(
+    `WITH inserted AS (
+       INSERT INTO ai_projects (business_id, name, instructions, created_by, owner_user_id)
+       VALUES ($1, $2, $3, $4, $4)
+       RETURNING *
+     )
+     SELECT i.id, i.name, i.instructions, i.created_by, i.archived_at, i.created_at,
+            i.status, i.owner_user_id, u.full_name AS owner_name, i.budget_rial, i.updated_at
+       FROM inserted i LEFT JOIN users u ON u.id = i.owner_user_id AND u.business_id = $1`,
     [owner.businessId, name, instructions, owner.actorUserId],
   );
-  return {
-    id: rows[0].id,
-    name: rows[0].name,
-    instructions: rows[0].instructions,
-    createdBy: rows[0].created_by,
-    archivedAt: rows[0].archived_at,
-    createdAt: rows[0].created_at,
-  };
+  return toProject(rows[0]);
 }
 
 export async function listProjects(
@@ -98,66 +124,40 @@ export async function listProjects(
   options: { includeArchived?: boolean } = {},
 ): Promise<AiProjectWithNoteCount[]> {
   const archivedClause = options.includeArchived ? "" : "AND p.archived_at IS NULL";
-  const { rows } = await query<{
-    id: string;
-    name: string;
-    instructions: string;
-    created_by: string;
-    archived_at: string | null;
-    created_at: string;
-    note_count: string;
-    conversation_count: string;
-  }>(
-    `SELECT p.id, p.name, p.instructions, p.created_by, p.archived_at, p.created_at,
+  const { rows } = await query<ProjectRow & { note_count: string; conversation_count: string }>(
+    `SELECT ${PROJECT_COLUMNS},
             (SELECT count(*) FROM ai_project_notes n WHERE n.project_id = p.id) AS note_count,
             (SELECT count(*) FROM ai_conversations c WHERE c.project_id = p.id) AS conversation_count
        FROM ai_projects p
+       LEFT JOIN users u ON u.id = p.owner_user_id AND u.business_id = p.business_id
       WHERE p.business_id = $1 ${archivedClause}
       ORDER BY p.created_at DESC`,
     [owner.businessId],
   );
   return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    instructions: row.instructions,
-    createdBy: row.created_by,
-    archivedAt: row.archived_at,
-    createdAt: row.created_at,
-    noteCount: Number(row.note_count),
-    conversationCount: Number(row.conversation_count),
+    ...toProject(row), noteCount: Number(row.note_count), conversationCount: Number(row.conversation_count),
   }));
 }
 
 export async function getProject(
   owner: Owner & { projectId: string },
 ): Promise<AiProject | null> {
-  const { rows } = await query<{
-    id: string;
-    name: string;
-    instructions: string;
-    created_by: string;
-    archived_at: string | null;
-    created_at: string;
-  }>(
-    `SELECT id, name, instructions, created_by, archived_at, created_at
-       FROM ai_projects
-      WHERE id = $1 AND business_id = $2`,
+  const { rows } = await query<ProjectRow>(
+    `SELECT ${PROJECT_COLUMNS}
+       FROM ai_projects p
+       LEFT JOIN users u ON u.id = p.owner_user_id AND u.business_id = p.business_id
+      WHERE p.id = $1 AND p.business_id = $2`,
     [owner.projectId, owner.businessId],
   );
-  if (!rows[0]) return null;
-  return {
-    id: rows[0].id,
-    name: rows[0].name,
-    instructions: rows[0].instructions,
-    createdBy: rows[0].created_by,
-    archivedAt: rows[0].archived_at,
-    createdAt: rows[0].created_at,
-  };
+  return rows[0] ? toProject(rows[0]) : null;
 }
 
 export async function updateProject(
   owner: Owner & { projectId: string },
-  input: { name?: string; instructions?: string },
+  input: {
+    name?: string; instructions?: string; status?: AiProjectStatus;
+    ownerUserId?: string | null; budgetRial?: number | null;
+  },
 ): Promise<AiProject | null> {
   const existing = await getProject(owner);
   if (!existing) return null;
@@ -165,6 +165,18 @@ export async function updateProject(
   const name = input.name?.trim() ?? existing.name;
   if (!name) throw new Error("Project name is required");
   const instructions = input.instructions?.trim() ?? existing.instructions;
+  const status = input.status ?? existing.status;
+  const budgetRial = input.budgetRial === undefined ? existing.budgetRial : input.budgetRial;
+  const ownerUserId = input.ownerUserId === undefined ? existing.ownerUserId : input.ownerUserId;
+  if (!["active", "paused", "completed"].includes(status)) throw new Error("invalid_project_status");
+  if (budgetRial !== null && (!Number.isSafeInteger(budgetRial) || budgetRial < 0)) throw new Error("invalid_project_budget");
+  if (ownerUserId) {
+    const { rows: members } = await query<{ id: string }>(
+      `SELECT id FROM users WHERE id = $1 AND business_id = $2 AND is_active`,
+      [ownerUserId, owner.businessId],
+    );
+    if (!members[0]) throw new Error("project_owner_not_found");
+  }
 
   // Check instruction limit against existing note titles
   const { rows: noteRows } = await query<{ title: string }>(
@@ -176,36 +188,27 @@ export async function updateProject(
     throw new Error("Instructions exceed the character limit");
   }
 
-  const { rows } = await query<{
-    id: string;
-    name: string;
-    instructions: string;
-    created_by: string;
-    archived_at: string | null;
-    created_at: string;
-  }>(
-    `UPDATE ai_projects
-        SET name = $3, instructions = $4
-      WHERE id = $1 AND business_id = $2
-      RETURNING id, name, instructions, created_by, archived_at, created_at`,
-    [owner.projectId, owner.businessId, name, instructions],
+  const { rows } = await query<ProjectRow>(
+    `WITH updated AS (
+       UPDATE ai_projects
+          SET name = $3, instructions = $4, status = $5, owner_user_id = $6,
+              budget_rial = $7, updated_at = now()
+        WHERE id = $1 AND business_id = $2
+        RETURNING *
+     )
+     SELECT p.id, p.name, p.instructions, p.created_by, p.archived_at, p.created_at,
+            p.status, p.owner_user_id, u.full_name AS owner_name, p.budget_rial, p.updated_at
+       FROM updated p LEFT JOIN users u ON u.id = p.owner_user_id AND u.business_id = $2`,
+    [owner.projectId, owner.businessId, name, instructions, status, ownerUserId, budgetRial],
   );
-  if (!rows[0]) return null;
-  return {
-    id: rows[0].id,
-    name: rows[0].name,
-    instructions: rows[0].instructions,
-    createdBy: rows[0].created_by,
-    archivedAt: rows[0].archived_at,
-    createdAt: rows[0].created_at,
-  };
+  return rows[0] ? toProject(rows[0]) : null;
 }
 
 export async function archiveProject(
   owner: Owner & { projectId: string },
 ): Promise<boolean> {
   const { rowCount } = await query(
-    `UPDATE ai_projects SET archived_at = now()
+    `UPDATE ai_projects SET archived_at = now(), updated_at = now()
       WHERE id = $1 AND business_id = $2 AND archived_at IS NULL`,
     [owner.projectId, owner.businessId],
   );
@@ -216,11 +219,78 @@ export async function unarchiveProject(
   owner: Owner & { projectId: string },
 ): Promise<boolean> {
   const { rowCount } = await query(
-    `UPDATE ai_projects SET archived_at = NULL
+    `UPDATE ai_projects SET archived_at = NULL, updated_at = now()
       WHERE id = $1 AND business_id = $2 AND archived_at IS NOT NULL`,
     [owner.projectId, owner.businessId],
   );
   return (rowCount ?? 0) > 0;
+}
+
+/**
+ * The operating view of a project: spend comes from posted accounting entries,
+ * not campaign counters or message-credit reservations. This keeps a project
+ * budget in step with the general ledger even after retry/settlement paths.
+ */
+export async function listProjectAssignableOwners(owner: Owner): Promise<{ id: string; fullName: string }[]> {
+  const { rows } = await query<{ id: string; full_name: string }>(
+    `SELECT id, full_name FROM users WHERE business_id = $1 AND is_active ORDER BY full_name`,
+    [owner.businessId],
+  );
+  return rows.map((row) => ({ id: row.id, fullName: row.full_name }));
+}
+
+export interface AiProjectCostReportRow extends AiProjectCostSummary {
+  name: string;
+  status: AiProjectStatus;
+  ownerName: string | null;
+}
+
+/** Ledger-backed cost report for all projects in one tenant-scoped query. */
+export async function listProjectCostReport(owner: Owner): Promise<AiProjectCostReportRow[]> {
+  const { rows } = await query<{
+    project_id: string; name: string; status: string; owner_name: string | null; budget_rial: string | number | null;
+    spent_rial: string | number; campaigns: string | number;
+  }>(
+    `SELECT p.id AS project_id, p.name, p.status, u.full_name AS owner_name, p.budget_rial,
+            coalesce(sum(jl.debit) FILTER (WHERE je.posting_kind = 'marketing_campaign_cost'), 0) AS spent_rial,
+            (SELECT count(*) FROM message_campaigns c WHERE c.business_id = p.business_id AND c.project_id = p.id) AS campaigns
+       FROM ai_projects p
+       LEFT JOIN users u ON u.id = p.owner_user_id AND u.business_id = p.business_id
+       LEFT JOIN journal_entries je ON je.project_id = p.id AND je.business_id = p.business_id
+       LEFT JOIN journal_lines jl ON jl.entry_id = je.id
+      WHERE p.business_id = $1 AND p.archived_at IS NULL
+      GROUP BY p.id, u.full_name
+      ORDER BY p.created_at DESC`,
+    [owner.businessId],
+  );
+  return rows.map((row) => {
+    const budgetRial = row.budget_rial === null ? null : Number(row.budget_rial);
+    const spentRial = Number(row.spent_rial);
+    return { projectId: row.project_id, name: row.name, status: row.status as AiProjectStatus, ownerName: row.owner_name, budgetRial, spentRial, remainingBudgetRial: budgetRial === null ? null : budgetRial - spentRial, campaigns: Number(row.campaigns) };
+  });
+}
+
+export async function getProjectCostSummary(
+  owner: Owner & { projectId: string },
+): Promise<AiProjectCostSummary | null> {
+  const { rows } = await query<{
+    project_id: string; budget_rial: string | number | null; spent_rial: string | number; campaigns: string | number;
+  }>(
+    `SELECT p.id AS project_id, p.budget_rial,
+            coalesce(sum(jl.debit) FILTER (WHERE je.posting_kind = 'marketing_campaign_cost'), 0) AS spent_rial,
+            (SELECT count(*) FROM message_campaigns c WHERE c.business_id = p.business_id AND c.project_id = p.id) AS campaigns
+       FROM ai_projects p
+       LEFT JOIN journal_entries je ON je.project_id = p.id AND je.business_id = p.business_id
+       LEFT JOIN journal_lines jl ON jl.entry_id = je.id
+      WHERE p.id = $1 AND p.business_id = $2
+      GROUP BY p.id, p.budget_rial`,
+    [owner.projectId, owner.businessId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const budgetRial = row.budget_rial === null ? null : Number(row.budget_rial);
+  const spentRial = Number(row.spent_rial);
+  return { projectId: row.project_id, budgetRial, spentRial, remainingBudgetRial: budgetRial === null ? null : budgetRial - spentRial, campaigns: Number(row.campaigns) };
 }
 
 // ---------------------------------------------------------------------------

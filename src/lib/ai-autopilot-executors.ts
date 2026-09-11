@@ -29,6 +29,7 @@ import { isWasteReason, recordWaste } from "./waste-service";
 import { recordProductionRun, reverseProductionRun, ProductionError } from "./production-service";
 import { positiveQuantityText, type QuantityText, type RialText } from "./inventory-exact";
 import { draftWebsitePost, updateWebsitePost, upsertWebsiteProduct } from "./website/content-service";
+import { queueTriggeredMessageCampaign } from "./message-campaigns-service";
 import type { PurchaseItemInput } from "./purchase-lines";
 
 export interface AutopilotExecutionResult {
@@ -542,6 +543,25 @@ const websiteProductUpsert: AutopilotExecutor = async (ctx) => {
   return { ok: true, result: { remoteId: result.data.id, title: result.data.title, priceRial: result.data.priceRial } };
 };
 
+/** Coworker-only: create an outbox-backed single-recipient campaign, never provider I/O. */
+const triggeredMessageCampaign: AutopilotExecutor = async (ctx) => {
+  const customerId = str(ctx.payload.customerId);
+  const templateId = str(ctx.payload.templateId);
+  const channel = ctx.payload.channel === "sms" || ctx.payload.channel === "email" ? ctx.payload.channel : null;
+  const eventKind = str(ctx.payload.eventKind);
+  if (!customerId || !templateId || !channel || !eventKind) return fail("invalid_payload");
+  try {
+    const queued = await queueTriggeredMessageCampaign({
+      businessId: ctx.businessId, customerId, templateId, channel,
+      projectId: str(ctx.payload.projectId) ?? undefined,
+      triggerLabel: `پیام رویدادی: ${eventKind}`,
+    });
+    return { ok: true, result: { campaignId: queued.campaignId, costRial: queued.costRial, queued: true } };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "message_queue_failed");
+  }
+};
+
 export const AUTOPILOT_EXECUTORS: Record<AutopilotExecutorKey, AutopilotExecutor> = {
   menuItemPatch,
   stockCount,
@@ -557,6 +577,7 @@ export const AUTOPILOT_EXECUTORS: Record<AutopilotExecutorKey, AutopilotExecutor
   websitePostDraft,
   websitePostUpdate,
   websiteProductUpsert,
+  triggeredMessageCampaign,
 };
 
 // ---------------------------------------------------------------------------

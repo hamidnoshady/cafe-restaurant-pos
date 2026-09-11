@@ -83,6 +83,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
   const [approvalMode, setApprovalMode] = useState<CoworkerApprovalMode>("ask");
   const [note, setNote] = useState("");
   const [minSeverity, setMinSeverity] = useState("medium");
+  const [messageChannel, setMessageChannel] = useState<"sms" | "email">("sms");
+  const [messageTemplateId, setMessageTemplateId] = useState("");
+  const [messageProjectId, setMessageProjectId] = useState("");
   const [wasteLines, setWasteLines] = useState<WasteLine[]>([]);
   const [formulaLines, setFormulaLines] = useState<FormulaLine[]>([]);
   const [topUpLines, setTopUpLines] = useState<TopUpLine[]>([]);
@@ -124,6 +127,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
     setApprovalMode("ask");
     setNote("");
     setMinSeverity("medium");
+    setMessageChannel("sms"); setMessageTemplateId(""); setMessageProjectId("");
     setWasteLines([{ inventoryItemId: "", mode: "remaining", quantity: "", reason: "spoilage" }]);
     setFormulaLines([{ formulaId: "", batches: "1" }]);
     setTopUpLines([{ inventoryItemId: "", purchaseQty: "", totalCostRial: "" }]);
@@ -166,6 +170,8 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
         return { note: note || undefined };
       case "accounting_review":
         return { minSeverity };
+      case "customer_event_message":
+        return { channel: messageChannel, templateId: messageTemplateId, ...(messageProjectId ? { projectId: messageProjectId } : {}) };
     }
   }
 
@@ -582,6 +588,14 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
               </div>
             ) : null}
 
+            {draftTemplate.key === "customer_event_message" ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="کانال"><select className={inputClass} value={messageChannel} onChange={(event) => { setMessageChannel(event.target.value as "sms" | "email"); setMessageTemplateId(""); }}><option value="sms">پیامک</option><option value="email">ایمیل</option></select></Field>
+                <Field label="الگوی پیام"><select className={inputClass} value={messageTemplateId} onChange={(event) => setMessageTemplateId(event.target.value)} required><option value="">انتخاب الگو</option>{(catalogue?.options.messageTemplates ?? []).filter((template) => template.channel === messageChannel).map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select></Field>
+                <Field label="پروژه / مرکز هزینه (اختیاری)"><select className={inputClass} value={messageProjectId} onChange={(event) => setMessageProjectId(event.target.value)}><option value="">بدون پروژه</option>{(catalogue?.options.projects ?? []).map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></Field>
+              </div>
+            ) : null}
+
             {draftTemplate.key === "accounting_review" ? (
               <Field label="کمترین درجهٔ اهمیت برای گزارش">
                 <select
@@ -596,7 +610,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
               </Field>
             ) : null}
 
-            {draftTemplate.key !== "accounting_review" ? (
+            {draftTemplate.key !== "accounting_review" && draftTemplate.key !== "customer_event_message" ? (
               <Field label="یادداشت (اختیاری)">
                 <input className={inputClass} value={note} onChange={(event) => setNote(event.target.value)} />
               </Field>

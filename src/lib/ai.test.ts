@@ -375,6 +375,9 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
         "journal.manual.propose",
         "menu.item.disable",
         "menu.item.priceUpdate",
+        // A deterministic, coworker-only campaign materialiser; models/MCP
+        // cannot call it and its executor queues rather than sends.
+        "messaging.campaign.trigger",
         "order.discount.apply",
         // Phase 32 additions. `inventory.waste.log` is also `coworkerOnly`,
         // which is the whole distinction: eligible for an unattended write,
@@ -424,10 +427,13 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
 
   it("keeps waste out of an autopilot run's own catalogue — only a human-authored job may log it", () => {
     const coworkerOnly = ACTION_TYPES.filter((t) => ACTION_CATALOG[t].coworkerOnly);
-    expect(coworkerOnly).toEqual(["inventory.waste.log"]);
+    expect(coworkerOnly).toEqual(["inventory.waste.log", "messaging.campaign.trigger"]);
     // Phase 31's reasoning — "why did this stock leave" is a fact only a person
     // in the room has — still holds for a model deciding on its own.
     expect(actionTypesForCategory("waste")).toEqual([]);
+    // Customer-facing sends get the same model boundary: only the owner-authored
+    // coworker template can reach this category, and even it only queues a row.
+    expect(actionTypesForCategory("messaging")).toEqual([]);
   });
 
   it("tags category, executor and revertible together — never half of them", () => {

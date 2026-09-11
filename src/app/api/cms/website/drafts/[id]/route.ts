@@ -8,7 +8,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, ctx: { params:
   if (error) return error;
 
   const { id } = await ctx.params;
-  let body: { title?: unknown; body?: unknown; excerpt?: unknown };
+  let body: { title?: unknown; body?: unknown; slug?: unknown; excerpt?: unknown; featuredImageId?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -18,7 +18,9 @@ export const PATCH = withTenantScope(async (request: NextRequest, ctx: { params:
   const result = await updateWebsitePost(session.businessId, id, {
     ...(typeof body.title === "string" ? { title: body.title } : {}),
     ...(typeof body.body === "string" ? { body: body.body } : {}),
+    ...(typeof body.slug === "string" ? { slug: body.slug } : {}),
     ...(typeof body.excerpt === "string" ? { excerpt: body.excerpt } : {}),
+    ...(typeof body.featuredImageId === "string" || body.featuredImageId === null ? { featuredImageId: body.featuredImageId } : {}),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: websiteStatusFor(result.error) });
   return NextResponse.json({ post: result.data });

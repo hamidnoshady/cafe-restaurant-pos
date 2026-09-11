@@ -22,6 +22,7 @@ import {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
   instructionWeight,
 } from "@/lib/ai-projects-shared";
+import { formatPersianNumber } from "@/lib/digits";
 
 interface Project {
   id: string;
@@ -30,7 +31,14 @@ interface Project {
   createdBy: string;
   archivedAt: string | null;
   createdAt: string;
+  status: "active" | "paused" | "completed";
+  ownerUserId: string | null;
+  ownerName: string | null;
+  budgetRial: number | null;
+  updatedAt: string;
 }
+interface Cost { spentRial: number; budgetRial: number | null; remainingBudgetRial: number | null; campaigns: number }
+interface OwnerOption { id: string; fullName: string }
 
 interface Note {
   id: string;
@@ -54,6 +62,12 @@ export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
+  const [cost, setCost] = useState<Cost | null>(null);
+  const [owners, setOwners] = useState<OwnerOption[]>([]);
+  const [editingOperations, setEditingOperations] = useState(false);
+  const [statusDraft, setStatusDraft] = useState<Project["status"]>("active");
+  const [ownerDraft, setOwnerDraft] = useState("");
+  const [budgetDraft, setBudgetDraft] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [editingInstructions, setEditingInstructions] = useState(false);
@@ -65,11 +79,15 @@ export default function ProjectDetailPage() {
 
   const load = useCallback(async () => {
     const [projRes, notesRes, convsRes] = await Promise.all([
-      api<{ project: Project }>(`/api/ai/projects/${id}`),
+      api<{ project: Project; cost: Cost; owners: OwnerOption[] }>(`/api/ai/projects/${id}`),
       api<{ notes: Note[] }>(`/api/ai/projects/${id}/notes`),
       api<{ conversations: Conversation[] }>(`/api/ai/conversations?limit=50`),
     ]);
-    if (projRes.ok) setProject(projRes.data.project);
+    if (projRes.ok) {
+      setProject(projRes.data.project);
+      setCost(projRes.data.cost);
+      setOwners(projRes.data.owners);
+    }
     if (notesRes.ok) setNotes(notesRes.data.notes);
     if (convsRes.ok) {
       setConversations(
@@ -98,6 +116,28 @@ export default function ProjectDetailPage() {
       const err = data as unknown as Record<string, string>;
       setError(err.error ?? "خطا در ذخیره");
     }
+  }
+
+  function beginOperationsEdit() {
+    if (!project) return;
+    setStatusDraft(project.status);
+    setOwnerDraft(project.ownerUserId ?? "");
+    setBudgetDraft(project.budgetRial === null ? "" : String(project.budgetRial));
+    setEditingOperations(true);
+  }
+
+  async function handleSaveOperations() {
+    if (!project) return;
+    setError("");
+    const budgetRial = budgetDraft.trim() === "" ? null : Number(budgetDraft);
+    const { ok, data } = await api<{ project: Project; error?: string }>(`/api/ai/projects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: statusDraft, ownerUserId: ownerDraft || null, budgetRial }),
+    });
+    if (!ok) { setError(data.error ?? "خطا در ذخیرهٔ تنظیمات پروژه"); return; }
+    setProject(data.project);
+    setEditingOperations(false);
+    await load();
   }
 
   async function handleAddNote() {
@@ -250,8 +290,28 @@ export default function ProjectDetailPage() {
           </SectionCard>
         </div>
 
-        {/* Notes sidebar */}
-        <div className="space-y-3">
+        {/* Operating ownership, budget and ledger-backed project cost centre. */}
+        <aside className="space-y-3">
+          <SectionCard
+            title="مرکز هزینهٔ پروژه"
+            description="خرج از اسناد قطعی هزینهٔ کمپین خوانده می‌شود، نه از برآورد صف ارسال."
+            actions={!editingOperations ? <Button variant="outline" size="sm" onClick={beginOperationsEdit}><PencilIcon className="size-3" /> ویرایش</Button> : undefined}
+          >
+            <div className="space-y-3 p-4 text-sm">
+              {editingOperations ? <>
+                <label className="grid gap-1 text-xs text-muted-foreground">وضعیت<select className={inputClass} value={statusDraft} onChange={(e) => setStatusDraft(e.target.value as Project["status"])}><option value="active">فعال</option><option value="paused">متوقف</option><option value="completed">تکمیل‌شده</option></select></label>
+                <label className="grid gap-1 text-xs text-muted-foreground">مالک<select className={inputClass} value={ownerDraft} onChange={(e) => setOwnerDraft(e.target.value)}><option value="">بدون مالک</option>{owners.map((member) => <option value={member.id} key={member.id}>{member.fullName}</option>)}</select></label>
+                <label className="grid gap-1 text-xs text-muted-foreground">بودجه (ریال)<input className={inputClass} type="number" min="0" step="1" value={budgetDraft} onChange={(e) => setBudgetDraft(e.target.value)} placeholder="بدون سقف" /></label>
+                <div className="flex gap-2"><Button size="sm" onClick={handleSaveOperations}><SaveIcon className="size-3" /> ذخیره</Button><Button variant="outline" size="sm" onClick={() => setEditingOperations(false)}>انصراف</Button></div>
+              </> : <>
+                <p>وضعیت: <b>{project.status === "active" ? "فعال" : project.status === "paused" ? "متوقف" : "تکمیل‌شده"}</b></p>
+                <p>مالک: <b>{project.ownerName ?? "تعیین نشده"}</b></p>
+                <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">خرج تا امروز</p><b className="text-base">{formatPersianNumber(cost?.spentRial ?? 0)} ریال</b><p className="mt-2 text-xs text-muted-foreground">بودجه: {cost?.budgetRial === null || cost?.budgetRial === undefined ? "تعریف نشده" : `${formatPersianNumber(cost.budgetRial)} ریال`}</p>{cost?.remainingBudgetRial !== null && cost?.remainingBudgetRial !== undefined ? <p className="text-xs text-muted-foreground">ماندهٔ بودجه: {formatPersianNumber(cost.remainingBudgetRial)} ریال</p> : null}<p className="mt-2 text-xs text-muted-foreground">{formatPersianNumber(cost?.campaigns ?? 0)} کمپین مرتبط</p></div>
+              </>}
+            </div>
+          </SectionCard>
+
+          {/* Notes sidebar */}
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-foreground">
               یادداشت‌ها ({notes.length})
@@ -334,7 +394,7 @@ export default function ProjectDetailPage() {
               ))}
             </div>
           )}
-        </div>
+        </aside>
       </div>
     </PageShell>
   );

@@ -16,6 +16,7 @@ import { GiftCardsSection } from "./gift-cards-section";
 import { LoyaltySection } from "./loyalty-section";
 import { CommissionSection } from "./commission-section";
 import { GrowthCustomersSection } from "./customers-section";
+import { MessagingSection } from "./messaging-section";
 import { growthSectionHref, type GrowthSectionKey } from "./growth-routes";
 
 export function GrowthSection({ section, role }: { section: GrowthSectionKey; role: string }) {
@@ -25,6 +26,7 @@ export function GrowthSection({ section, role }: { section: GrowthSectionKey; ro
   if (section === "overview") return <OverviewSection onGoToSection={goToSection} />;
   if (section === "customers") return <GrowthCustomersSection role={role} />;
   if (section === "campaigns") return <CampaignsSection />;
+  if (section === "messaging") return <MessagingSection />;
   if (section === "gift-cards") return <GiftCardsSection />;
   if (section === "loyalty") return <LoyaltySection />;
   return <CommissionSection />;
