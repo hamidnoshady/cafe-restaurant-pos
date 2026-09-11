@@ -57,6 +57,7 @@ import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { AppStateBadge } from "./app-availability-gate";
 import { CreditBadge } from "./credit-badge";
+import { popoverPanelClass } from "./page-chrome";
 import {
   APP_NAV_BUTTON_CLASS,
   BACK_TO_WORKSPACE_BUTTON_CLASS,
@@ -944,7 +945,7 @@ function PlatformUserMenu({ role, fullName }: { role: string; fullName: string }
         <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="absolute inset-x-0 bottom-full z-50 mb-2 rounded-xl border border-border bg-popover p-1.5 shadow-xl" role="menu">
+        <div className={`absolute inset-x-0 bottom-full z-50 mb-2 p-1.5 ${popoverPanelClass}`} role="menu">
           <Link href="/settings" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">تنظیمات پلتفرم</Link>
           <Link href="/dashboard/knowledge" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">پایگاه دانش</Link>
           <Link href="/dashboard/connections" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">اتصال‌ها</Link>

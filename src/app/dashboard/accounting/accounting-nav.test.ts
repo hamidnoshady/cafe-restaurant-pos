@@ -31,27 +31,27 @@ describe("ACCOUNTING_SECTIONS", () => {
   });
 
   it("points every section at the app's own route prefix", () => {
-    // The Accounting app has its own address now — `/dashboard/accounting/…` —
+    // The Accounting app has its own address now — `/accounting/…` —
     // one real route per section, never a `?tab=` on the old ledger page and
     // never another app's page.
     for (const section of ACCOUNTING_SECTIONS) {
       const href = accountingSectionHref(section.key);
       if (section.key === "dashboard") {
-        expect(href).toBe("/dashboard/accounting");
+        expect(href).toBe("/accounting/overview");
       } else {
-        expect(href.startsWith("/dashboard/accounting/")).toBe(true);
+        expect(href.startsWith("/accounting/")).toBe(true);
         expect(href).not.toContain("?");
       }
     }
   });
 
   it("names the persons section the directory route, inside accounting", () => {
-    expect(accountingSectionHref("directory")).toBe("/dashboard/accounting/directory");
+    expect(accountingSectionHref("directory")).toBe("/accounting/directory");
     // The customers-only slice is accounting's own page too — the A/R customer
     // links land here, never on a CRM redirect.
-    expect(accountingSectionHref("customers")).toBe("/dashboard/accounting/customers");
-    expect(accountingCustomersHref()).toBe("/dashboard/accounting/customers");
-    expect(accountingCustomerHref("p1")).toBe("/dashboard/accounting/customers?party=p1");
+    expect(accountingSectionHref("customers")).toBe("/accounting/customers");
+    expect(accountingCustomersHref()).toBe("/accounting/customers");
+    expect(accountingCustomerHref("p1")).toBe("/accounting/customers?party=p1");
   });
 });
 
@@ -111,11 +111,11 @@ describe("accountingSectionForLegacyTab", () => {
 
 describe("isAccountingSectionPathname", () => {
   it("lights the dashboard only on the app root, sections on their own routes", () => {
-    expect(isAccountingSectionPathname("/dashboard/accounting", "dashboard")).toBe(true);
-    expect(isAccountingSectionPathname("/dashboard/accounting/directory", "dashboard")).toBe(false);
-    expect(isAccountingSectionPathname("/dashboard/accounting/directory", "directory")).toBe(true);
+    expect(isAccountingSectionPathname("/accounting/overview", "dashboard")).toBe(true);
+    expect(isAccountingSectionPathname("/accounting/directory", "dashboard")).toBe(false);
+    expect(isAccountingSectionPathname("/accounting/directory", "directory")).toBe(true);
     // What nests under a section is that section's.
-    expect(isAccountingSectionPathname("/dashboard/accounting/customers/x", "customers")).toBe(true);
+    expect(isAccountingSectionPathname("/accounting/customers/x", "customers")).toBe(true);
     // …and the old address never lights a section.
     expect(isAccountingSectionPathname("/dashboard/ledger", "directory")).toBe(false);
   });
