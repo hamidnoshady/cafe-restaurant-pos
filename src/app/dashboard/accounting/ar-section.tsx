@@ -10,7 +10,7 @@ import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { ArStatementPanel } from "./ar-statement-panel";
-import { accountingCustomersHref } from "./ledger-routes";
+import { accountingCustomersHref } from "./accounting-routes";
 import { cardClass, overlayPanelClass } from "../page-chrome";
 
 interface CustomerBalance {

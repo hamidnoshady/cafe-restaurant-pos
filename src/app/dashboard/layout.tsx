@@ -6,7 +6,8 @@ import {
   PRODUCT_WORKSPACE_SECTIONS,
 } from "@/lib/product-workspace";
 import { visibleConnectionKinds, type ConnectionKind } from "@/lib/connection-kinds";
-import { LEDGER_TABS, ledgerTabHref } from "./ledger/ledger-nav";
+import { ACCOUNTING_ROLES, ACCOUNTING_SECTIONS } from "./accounting/accounting-nav";
+import { accountingSectionHref } from "./accounting/accounting-routes";
 import { REPORTS_TABS, reportsTabHref } from "./reports/reports-nav";
 import { effectiveAppAvailability } from "@/lib/app-availability-service";
 import { query, withTenant } from "@/lib/db";
@@ -129,21 +130,23 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     ...(industry === "cosmetics"
       ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: "/dashboard/cosmetics", roles: ["owner", "manager"] }]
       : []),
-    // Phase «حسابداری» sub-menu — the ledger's in-page sections are now a
-    // collapsible sidebar group (the same shape «محصولات» uses), with the
-    // app's dashboard as its first entry. The parent keeps its href so the
-    // section is still one tap away and still pinnable to the bottom bar.
+    // The «حسابداری» sub-menu — the Accounting app's sections, each a real
+    // route under the app's own prefix (`/dashboard/accounting/…`), drawn as a
+    // collapsible sidebar group (the same shape «محصولات» uses) with the app's
+    // dashboard as its first entry. The parent keeps its href so the section is
+    // still one tap away and still pinnable to the bottom bar; the app's old
+    // `/dashboard/ledger?tab=…` addresses forward to these routes.
     {
       label: "حسابداری",
       module: "ledger",
-      href: "/dashboard/ledger",
-      roles: ["owner", "manager", "accountant"],
+      href: "/dashboard/accounting",
+      roles: [...ACCOUNTING_ROLES],
       flag: "ledger",
-      children: LEDGER_TABS.map((tab) => ({
-        label: tab.label,
+      children: ACCOUNTING_SECTIONS.map((section) => ({
+        label: section.label,
         module: "ledger" as const,
-        href: ledgerTabHref(tab.key),
-        roles: tab.roles ?? ["owner", "manager", "accountant"],
+        href: accountingSectionHref(section.key),
+        roles: [...(section.roles ?? ACCOUNTING_ROLES)],
       })),
     },
     // The «اتصال‌های فنی» hub — every technical connection in the product

@@ -397,7 +397,11 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // answers the module question without ever blocking the page.
   ["/dashboard/connections", "connections"],
   ["/dashboard/stock", "stock"],
-  // The accounting suite's own pages.
+  // The accounting suite's own pages. The Accounting app lives at
+  // `/dashboard/accounting/*` now; the old `/dashboard/ledger` address
+  // forwards into it but is mapped too, so the gate answers on both sides of
+  // the forward.
+  ["/dashboard/accounting", "ledger"],
   ["/dashboard/ledger", "ledger"],
   ["/dashboard/reports", "reports"],
   // Settings and everything anchored on it (billing, support, the knowledge

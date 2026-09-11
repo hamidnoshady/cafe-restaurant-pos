@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "../page-chrome";
 import { api, errorMessage, ErrorBox, Field, InfoBox, inputClass } from "../ui";
-import { ArStatementPanel } from "../ledger/ar-statement-panel";
+import { ArStatementPanel } from "../accounting/ar-statement-panel";
 import { crmCustomerHref } from "../crm/crm-routes";
 import { PartyFormDialog } from "./party-form";
 

@@ -94,6 +94,9 @@ export function featureForApiPath(pathname: string): string | null {
 /** Dashboard page prefix -> the flag that gates it, for the nav list and each gated page's own redirect. */
 export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   ["/dashboard/inventory", "inventory"],
+  // The Accounting app's own prefix; the old `/dashboard/ledger` address below
+  // forwards into it, so both halves stay entitlement-gated.
+  ["/dashboard/accounting", "ledger"],
   ["/dashboard/ledger", "ledger"],
   ["/dashboard/reservations", "reservations"],
   ["/dashboard/floor", "reservations"],
