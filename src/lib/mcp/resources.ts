@@ -16,7 +16,8 @@
  * full by most clients, so length here is a cost paid on every conversation.
  */
 import { runReadTool } from "../ai-tools";
-import { STANDARD_REPORTS } from "../reports";
+import { getBusinessIndustry } from "../industry-guard";
+import { standardReportsFor } from "../reports";
 
 export interface McpResourceDescriptor {
   uri: string;
@@ -145,16 +146,26 @@ export async function readMcpResource(
     }
     case "pos://app/conventions":
       return { uri, mimeType: "text/markdown", text: CONVENTIONS };
-    case "pos://reports/catalog":
+    // This trade's catalogue, not the whole library: a connected model that
+    // reads a report this business cannot run would ask for it, get a 404, and
+    // have no way to tell "not for this trade" from "broken".
+    case "pos://reports/catalog": {
+      const industry = await getBusinessIndustry(businessId);
       return {
         uri,
         mimeType: "application/json",
         text: JSON.stringify(
-          STANDARD_REPORTS.map((report) => ({ key: report.key, label: report.label })),
+          standardReportsFor(industry).map((report) => ({
+            key: report.key,
+            label: report.label,
+            group: report.group,
+            description: report.description ?? null,
+          })),
           null,
           2,
         ),
       };
+    }
     default:
       return null;
   }

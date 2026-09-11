@@ -1,6 +1,6 @@
 "use client";
 
-import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { EmptyState, SectionCard, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useCallback, useEffect, useState } from "react";
 import { ChevronDownIcon, RefreshCwIcon, ShoppingBagIcon } from "lucide-react";
@@ -13,8 +13,8 @@ import { formatQueueLabel } from "@/lib/orders";
 import { PAYMENT_METHOD_LABELS } from "@/lib/receipt-template";
 import type { ShiftOrder, ShiftOrderLine } from "@/lib/shift-orders";
 import { ModifierBadges } from "../modifier-badges";
+import { Button } from "@/components/ui/button";
 import { api, inputClass } from "../ui";
-import { cardClass } from "../page-chrome";
 
 /** Mirrors shift-orders-service.ts's ShiftOrdersReport — declared here rather than imported so the client bundle never reaches a module that imports db.ts. */
 interface ShiftOption {
@@ -344,24 +344,15 @@ export function ShiftOrdersSection() {
   }
 
   return (
-    <section
-      aria-labelledby="shift-orders-heading"
-      className={`${cardClass}`}
-    >
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4 sm:p-5">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات قلم‌به‌قلم</p>
-          <h2 id="shift-orders-heading" className="mt-1 font-bold text-foreground">
-            سفارش‌های شیفت
-          </h2>
-          {report ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {shiftLabel(report.shift)}
-              {` · ${toPersianDigits(report.orders.length)} سفارش`}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <SectionCard
+      title="سفارش‌های شیفت"
+      description={
+        report
+          ? `${shiftLabel(report.shift)} · ${toPersianDigits(report.orders.length)} سفارش`
+          : "هر سفارش این شیفت، قلم‌به‌قلم."
+      }
+      actions={
+        <>
           {report && report.shifts.length > 1 ? (
             <SearchableSelect
               className={`${inputClass} w-auto max-w-full text-xs`}
@@ -372,40 +363,33 @@ export function ShiftOrdersSection() {
               options={report.shifts.map((option) => ({ value: option.id, label: shiftLabel(option) }))}
             />
           ) : null}
-          <button
-            type="button"
-            onClick={() => void load(shiftId)}
-            disabled={refreshing}
-            className="flex min-h-11 items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-60"
-          >
-            <RefreshCwIcon className="size-4" aria-hidden="true" />
+          <Button type="button" variant="outline" onClick={() => void load(shiftId)} disabled={refreshing}>
+            <RefreshCwIcon aria-hidden="true" />
             به‌روزرسانی
-          </button>
-        </div>
-      </header>
-
+          </Button>
+        </>
+      }
+      flush
+    >
       {error ? (
-        <p role="status" className="border-b border-border bg-amber-50 dark:bg-amber-500/15 px-4 py-2 text-xs text-muted-foreground">
+        <p role="status" className="border-b border-border bg-amber-50 px-4 py-2 text-xs text-muted-foreground dark:bg-amber-500/15">
           {error}
         </p>
       ) : null}
 
       {!report ? (
         <div className="flex min-h-48 flex-col items-center justify-center p-6 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
             <ShoppingBagIcon className="size-5" aria-hidden="true" />
           </span>
-          <p className="mt-4 text-sm font-bold text-foreground">شیفتی برای این شعبه ثبت نشده است</p>
+          <p className="mt-4 text-sm font-semibold text-foreground">شیفتی برای این شعبه ثبت نشده است</p>
           <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">
             با شروع نخستین شیفت، سفارش‌های هر شیفت قلم‌به‌قلم در این بخش نمایش داده می‌شود.
           </p>
         </div>
       ) : report.orders.length === 0 ? (
-        <div className="flex min-h-48 flex-col items-center justify-center p-6 text-center">
-          <p className="text-sm font-bold text-foreground">سفارشی در این شیفت ثبت نشده است</p>
-          <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">
-            سفارش‌های ثبت‌شده از شروع این شیفت اینجا فهرست می‌شوند.
-          </p>
+        <div className="p-4 sm:p-5">
+          <EmptyState>سفارش‌های ثبت‌شده از شروع این شیفت اینجا فهرست می‌شوند.</EmptyState>
         </div>
       ) : (
         <ul className="divide-y divide-border">
@@ -414,6 +398,6 @@ export function ShiftOrdersSection() {
           ))}
         </ul>
       )}
-    </section>
+    </SectionCard>
   );
 }

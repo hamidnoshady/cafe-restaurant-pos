@@ -8,6 +8,7 @@ import {
   type ChartDatum,
 } from "../charts";
 import { toPersianDigits } from "@/lib/digits";
+import { ReportTable } from "./report-table";
 import type { ChartType } from "./report-ui";
 
 export function ChartPreview({
@@ -33,6 +34,14 @@ export function ChartPreview({
   return <BarChart data={data} height={260} />;
 }
 
+/**
+ * A built report's rows: one dimension, one measure.
+ *
+ * This was a hand-rolled table plus a hand-rolled card list — the same pair
+ * `ReportTable` now owns — so it is a thin declaration over that instead. It
+ * expects to sit inside a `flush` SectionCard, which supplies the card edges
+ * this used to draw for itself.
+ */
 export function DataTable({
   columns,
   data,
@@ -41,92 +50,21 @@ export function DataTable({
   data: ChartDatum[];
 }) {
   return (
-    <section aria-label="داده‌های گزارش">
-      <div className="hidden overflow-hidden rounded-xl border border-border/80 bg-card sm:block">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <caption className="sr-only">داده‌های گزارش</caption>
-            <thead className="bg-muted text-muted-foreground">
-              <tr className="border-b border-border/80">
-                <th
-                  scope="col"
-                  className="px-4 py-3 text-start text-xs font-semibold"
-                >
-                  {columns[0]}
-                </th>
-                <th
-                  scope="col"
-                  className="px-4 py-3 text-start text-xs font-semibold"
-                >
-                  {columns[1]}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((datum, index) => (
-                <tr
-                  key={index}
-                  className="border-b border-border last:border-b-0"
-                >
-                  <td className="px-4 py-3.5 font-medium text-foreground">
-                    {datum.label}
-                  </td>
-                  <td className="px-4 py-3.5 tabular-nums text-foreground">
-                    {toPersianDigits(
-                      Math.round(datum.value).toLocaleString("en-US"),
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {data.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={2}
-                    className="px-4 py-10 text-center text-sm text-muted-foreground"
-                  >
-                    داده‌ای یافت نشد.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <ul className="space-y-2 sm:hidden">
-        {data.map((datum, index) => (
-          <li
-            key={index}
-            className="rounded-xl border border-border/80 bg-muted p-4"
-          >
-            <dl className="space-y-2">
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">
-                  {columns[0]}
-                </dt>
-                <dd className="mt-1 break-words font-semibold text-foreground">
-                  {datum.label}
-                </dd>
-              </div>
-              <div className="border-t border-border pt-2">
-                <dt className="text-xs font-medium text-muted-foreground">
-                  {columns[1]}
-                </dt>
-                <dd className="mt-1 tabular-nums font-bold text-foreground">
-                  {toPersianDigits(
-                    Math.round(datum.value).toLocaleString("en-US"),
-                  )}
-                </dd>
-              </div>
-            </dl>
-          </li>
-        ))}
-        {data.length === 0 ? (
-          <li className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-10 text-center text-sm text-muted-foreground">
-            داده‌ای یافت نشد.
-          </li>
-        ) : null}
-      </ul>
-    </section>
+    <ReportTable
+      caption="داده‌های گزارش"
+      rows={data}
+      rowKey={(_, index) => String(index)}
+      cardTitle={(datum) => datum.label}
+      columns={[
+        { key: "label", header: columns[0], cell: (datum) => datum.label },
+        {
+          key: "value",
+          header: columns[1],
+          align: "end",
+          numeric: true,
+          cell: (datum) => toPersianDigits(Math.round(datum.value).toLocaleString("en-US")),
+        },
+      ]}
+    />
   );
 }

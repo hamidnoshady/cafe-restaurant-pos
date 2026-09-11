@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { REPORT_VIEWS } from "@/lib/reports";
+import { getBusinessIndustry } from "@/lib/industry-guard";
+import { reportViewsFor } from "@/lib/reports";
 
-/** The view whitelist (dimensions/metrics/filters), for the custom report builder's source/metric/dimension pickers. */
+/**
+ * The view whitelist (dimensions/metrics/filters), for the custom report
+ * builder's source/metric/dimension pickers.
+ *
+ * Scoped to the caller's trade, like every other reporting surface: this list
+ * used to be the whole of REPORT_VIEWS, so a jeweller's builder offered «چرخش
+ * میزها» and «عملکرد پیک‌ها» as sources and produced a permanently empty report
+ * from either. `reportViewsFor` applies the same requirement filter
+ * `standardReportsFor` does, so the builder cannot offer a source the ready-made
+ * list already hides.
+ */
 export const GET = withTenantScope(async () => {
-  const { error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
-  const views = Object.entries(REPORT_VIEWS).map(([key, view]) => ({
+  const industry = await getBusinessIndustry(session.businessId);
+  const views = reportViewsFor(industry).map(({ key, view }) => ({
     key,
     label: view.label,
     hasDateColumn: view.dateColumn !== null,
