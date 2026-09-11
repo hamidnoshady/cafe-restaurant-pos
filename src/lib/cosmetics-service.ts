@@ -149,25 +149,38 @@ export async function receiveBatch(
   );
   const batch = mapBatch(rows[0]);
 
-  // Roll the average forward across the whole item, then set quantity to the
-  // authoritative sum of batches rather than an independent increment.
+  await rollItemStockToBatches(client, input.itemId);
+
+  return batch;
+}
+
+/**
+ * Rolls an item's `item_stock` forward to the 0078 invariant: quantity is the
+ * authoritative SUM of the item's batches and unit cost the weighted average
+ * across them (falling back to the existing stock cost when no batch carries
+ * quantity). Runs in the caller's transaction.
+ *
+ * Extracted from `receiveBatch` (Phase 42b) so the retail warehouse document
+ * flow relieves and receives lots through the *same* rollup write — one
+ * invariant, one implementation, whether the batches were touched by a
+ * purchase, a sale or a warehouse document.
+ */
+export async function rollItemStockToBatches(client: PoolClient, itemId: string): Promise<void> {
   const { rows: existingRows } = await client.query<StockRow>(
     `SELECT * FROM item_stock WHERE item_id = $1 FOR UPDATE`,
-    [input.itemId],
+    [itemId],
   );
   const existing = existingRows[0] ? mapStock(existingRows[0]) : null;
   const unitCost = Number(
-    await averageAcrossBatches(client, input.itemId, existing?.unitCost ?? null),
+    await averageAcrossBatches(client, itemId, existing?.unitCost ?? null),
   );
   await client.query(
     `INSERT INTO item_stock (item_id, quantity, unit_cost)
      VALUES ($1, (SELECT COALESCE(SUM(quantity), 0) FROM item_batches WHERE item_id = $1), $2)
      ON CONFLICT (item_id) DO UPDATE
        SET quantity = EXCLUDED.quantity, unit_cost = EXCLUDED.unit_cost, updated_at = now()`,
-    [input.itemId, unitCost],
+    [itemId, unitCost],
   );
-
-  return batch;
 }
 
 /**
