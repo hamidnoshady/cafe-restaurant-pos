@@ -6,7 +6,7 @@ import {
 } from "./inventory-exact";
 import { postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
-import { getCostingMethod } from "./inventory-service";
+import { getCostingMethod, getInventorySystem } from "./inventory-service";
 
 export async function createSupplierReturn(client:PoolClient,params:{
  businessId:string;locationId:string;purchaseId:string;settlementMethod:"accounts_payable"|"cash"|"bank"|"supplier_receivable";
@@ -32,6 +32,9 @@ export async function createSupplierReturn(client:PoolClient,params:{
    (business_id,location_id,event_type,source_type,source_id,created_by,costing_version,idempotency_key)
    VALUES($1,$2,'supplier_return','supplier_return',$3,$4,2,$5) RETURNING id`,
  [params.businessId,params.locationId,headers[0].id,params.createdBy,`supplier-return:${params.idempotencyKey}`]);
+ // ادواری: a supplier return of a journal-only purchase is a manual credit
+ // note against 5105 — this perpetual path (lots/carrying value) can't model it.
+ if((await getInventorySystem(params.businessId,client))==="periodic")throw new Error("periodic_system_unsupported");
  const method=await getCostingMethod(params.businessId,client);
  let total=0n;
  for(const line of params.lines){

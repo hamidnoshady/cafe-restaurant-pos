@@ -12,7 +12,8 @@ import {
   type QuantityText,
   type RialText,
 } from "./inventory-exact";
-import { getCostingMethod } from "./inventory-service";
+import { isLotBased, lotConsumptionOrderClause } from "./inventory-costing";
+import { getCostingMethod, getInventorySystem } from "./inventory-service";
 
 export interface ExactConsumptionResult {
   postedCost: RialText;
@@ -59,6 +60,14 @@ export async function consumeInventoryExact(
     occurredAt?: string | null;
   },
 ): Promise<ExactConsumptionResult> {
+  // سیستم ادواری keeps no per-movement cost: nothing may consume stock
+  // through the exact path. deductForOrder already returns early for a
+  // periodic business; this guard catches every other caller (waste,
+  // adjustments, production, warehouse issues) that would otherwise write a
+  // stock movement no period-close accounts for.
+  if ((await getInventorySystem(input.businessId, client)) === "periodic") {
+    throw new Error("periodic_system_unsupported");
+  }
   const quantity = positiveQuantityText(input.quantity);
   const { rows: itemRows } = await client.query<{
     avg_cost: string;
@@ -87,7 +96,7 @@ export async function consumeInventoryExact(
     : new Decimal(rawAvgCost).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
   let fallbackUnitCost = unitCostText(safeAvgCost);
 
-  if (method === "fifo") {
+  if (isLotBased(method)) {
     let needed = quantity;
     const { rows: lots } = await client.query<{
       id: string;
@@ -95,10 +104,12 @@ export async function consumeInventoryExact(
       remaining_value_rial: string | null;
       unit_cost: string;
     }>(
+      // FIFO drains oldest lots first, LIFO newest first — the only
+      // difference between the two lot-based methods on this path.
       `SELECT id,remaining_qty::text,remaining_value_rial::text,unit_cost::text
          FROM inventory_lots
         WHERE inventory_item_id=$1 AND remaining_qty>0
-        ORDER BY received_at,id FOR UPDATE`,
+        ORDER BY ${lotConsumptionOrderClause(method)} FOR UPDATE`,
       [input.inventoryItemId],
     );
     for (const lot of lots) {

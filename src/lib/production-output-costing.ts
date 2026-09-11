@@ -34,6 +34,7 @@ import {
   type QuantityText,
   type RialText,
 } from "./inventory-exact";
+import { isLotBased } from "./inventory-costing";
 import { getCostingMethod } from "./inventory-service";
 
 export interface ProductionOutputResult {
@@ -157,7 +158,7 @@ export async function applyProductionOutputCosting(
           difference.toString(),
         ],
       );
-    } else if (method === "fifo") {
+    } else if (isLotBased(method)) {
       await client.query(
         `INSERT INTO inventory_lots
            (location_id,inventory_item_id,remaining_qty,unit_cost,source_type,source_id,received_at,inventory_event_id,

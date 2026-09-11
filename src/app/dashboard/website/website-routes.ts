@@ -30,7 +30,7 @@
  */
 import { WP_SECTION_KEYS, type WpSectionKey } from "./wp/wp-routes";
 
-export const WEBSITE_HOME = "/dashboard/website";
+export const WEBSITE_HOME = "/websites";
 
 export const WEBSITE_MANAGER_KEYS = ["cms", "wp"] as const;
 export type WebsiteManagerKey = (typeof WEBSITE_MANAGER_KEYS)[number];

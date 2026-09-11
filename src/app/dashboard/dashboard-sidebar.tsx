@@ -146,24 +146,24 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/tools-fittings": PackageIcon,
   "/dashboard/haberdashery": SparklesIcon,
   "/dashboard/ledger": CalculatorIcon,
-  // The Accounting app's own home (`/dashboard/accounting`); the old ledger
+  // The Accounting app's own home (`/accounting`); the old ledger
   // address above still forwards into it, and keeps its glyph for any saved
   // bottom-nav slot that still points there.
-  "/dashboard/accounting": CalculatorIcon,
+  "/accounting": CalculatorIcon,
   "/dashboard/connections": PlugIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
   "/dashboard/billing": WalletIcon,
-  "/dashboard/settings": SettingsIcon,
+  "/settings": SettingsIcon,
   // Phase 36b — the Growth & Marketing app's home; the trend glyph the
   // workspace rail already uses for «رشد و بازاریابی».
-  "/dashboard/growth": TrendingUpIcon,
+  "/growth": TrendingUpIcon,
   // Phase 36 — the CRM app's home. `/dashboard/persons` keeps the plain
   // people glyph above; this is the app that now owns that record.
-  "/dashboard/crm": ContactIcon,
+  "/crm": ContactIcon,
   // «مدیریت وب‌سایت» — one app for both website systems (the Eshobe CMS site
   // builder and the WordPress/WooCommerce manager, each its own section).
-  "/dashboard/website": GlobeIcon,
+  "/websites": GlobeIcon,
   // Migration 0130 — the support desk.
   "/dashboard/support": LifeBuoyIcon,
   // Migration 0131 — the in-product knowledge base («مرکز آموزش»).
@@ -200,11 +200,11 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     label: "حسابداری",
     icon: CalculatorIcon,
     // The app's own pages first: opening «حسابداری» lands on the app's home
-    // (`/dashboard/accounting`), not on the sales overview. The overview is
+    // (`/accounting`), not on the sales overview. The overview is
     // only the fallback for a member whose role cannot open the accounting
     // pages or the reports at all; the old `/dashboard/ledger` address stays
     // as a preference-list entry for any surface still holding it.
-    hrefs: ["/dashboard/accounting", "/dashboard/ledger", "/dashboard/reports", "/dashboard/overview"],
+    hrefs: ["/accounting/overview", "/dashboard/ledger", "/dashboard/reports", "/dashboard/overview"],
   },
   {
     key: "crm",
@@ -212,14 +212,14 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     icon: ContactIcon,
     // `/dashboard/persons` redirects into the app's directory, so a business
     // that has customers but has never opened the CRM still gets the launcher.
-    hrefs: ["/dashboard/crm", "/dashboard/persons"],
+    hrefs: ["/crm/overview", "/dashboard/persons"],
   },
   {
     key: "growth",
     label: "رشد و بازاریابی",
     icon: TrendingUpIcon,
     hrefs: [
-      "/dashboard/growth",
+      "/growth/overview",
       "/dashboard/loyalty",
       "/dashboard/promotions",
       "/dashboard/commission",
@@ -235,7 +235,7 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     // a launcher fallback either.) Do not fall back to the technical
     // connection hub: that would put the site managers back behind the
     // Accounting/Connections door.
-    hrefs: ["/dashboard/website"],
+    hrefs: ["/websites/overview"],
   },
   {
     key: "connections",
@@ -708,11 +708,11 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              isActive={pathname.startsWith("/dashboard/projects")}
+              isActive={pathname.startsWith("/projects")}
               tooltip="پروژه‌ها"
               className={APP_NAV_BUTTON_CLASS}
             >
-              <Link href="/dashboard/projects">
+              <Link href="/projects">
                 <FolderIcon aria-hidden="true" className="size-5 shrink-0" />
                 <span className={NAV_LABEL_CLASS}>پروژه‌ها</span>
               </Link>
@@ -927,6 +927,37 @@ function BottomNavSettings({
 }
 
 
+function PlatformUserMenu({ role, fullName }: { role: string; fullName: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative mb-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between rounded-xl border border-border/80 bg-background px-3 py-2.5 text-start transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
+      >
+        <span className="min-w-0">
+          <span className="block truncate font-semibold text-foreground">{fullName}</span>
+          <span className="block text-xs text-muted-foreground">{ROLE_LABELS[role] ?? role}</span>
+        </span>
+        <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="absolute inset-x-0 bottom-full z-50 mb-2 rounded-xl border border-border bg-popover p-1.5 shadow-xl" role="menu">
+          <Link href="/settings" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">تنظیمات پلتفرم</Link>
+          <Link href="/dashboard/knowledge" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">پایگاه دانش</Link>
+          <Link href="/dashboard/connections" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">اتصال‌ها</Link>
+          <Link href="/dashboard/support" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">پشتیبانی</Link>
+          <div className="px-1 py-1"><BugReportFooterButton /></div>
+          <div className="my-1 border-t border-border" />
+          <LogoutButton returnTo={PIN_ROLES.includes(role) ? "/login" : "/admin"} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DashboardSidebarFooter({
   role,
   fullName,
@@ -948,14 +979,11 @@ function DashboardSidebarFooter({
     <SidebarFooter className="border-border/80 bg-card group-data-[state=collapsed]/sidebar:p-2">
       <div className="space-y-2 group-data-[state=collapsed]/sidebar:hidden">
         <BranchSwitcher />
-        {/* The member's own row: a name that can be long, and their role. Both
-            truncate rather than pushing the footer's controls out of the rail. */}
-        <div className="min-w-0">
-          <p className="truncate font-semibold text-foreground" title={fullName}>
-            {fullName}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">{roleLabel}</p>
-        </div>
+        {/* #541's user menu owns the member's identity and the way out. It is
+            kept as the one identity control; the truncation below is this
+            branch's fix, since a long name used to push the chevron out of the
+            rail. */}
+        <PlatformUserMenu role={role} fullName={fullName} />
         <div className="md:hidden"><ThemeToggle /></div>
         <BottomNavSettings
           navItems={navItems}
@@ -965,14 +993,14 @@ function DashboardSidebarFooter({
         {isPinRole && <ShiftButton />}
         {isPinRole && <BiometricSettingsButton />}
         {isPinRole && <LockButton />}
-        <LogoutButton returnTo={isPinRole ? "/login" : "/admin"} />
       </div>
 
       {/*
-        Collapsed, the whole footer used to be `hidden` — which took the sign-out
-        button with it, so the only way off a locked-down POS rail was to expand
-        it first and hunt. The rail keeps the two things that must never be more
-        than one click away: who you are (widens the rail back out) and the exit.
+        Collapsed, the whole footer used to be `hidden` — and #541's user menu,
+        which now owns sign-out, is inside that hidden block, so the exit from a
+        locked-down POS rail still meant expanding the rail first and hunting.
+        The rail keeps the two things that must never be more than one click
+        away: who you are (widens the rail back out) and the exit.
       */}
       <div className="hidden flex-col items-center gap-1 group-data-[state=collapsed]/sidebar:flex">
         <button
@@ -985,9 +1013,8 @@ function DashboardSidebarFooter({
           <UsersIcon aria-hidden="true" className="size-4" />
         </button>
         <LogoutButton returnTo={isPinRole ? "/login" : "/admin"} compact />
-      </div>
-
-      <div className="mt-2 flex group-data-[state=collapsed]/sidebar:justify-center">
+        {/* The expanded rail reaches this through the user menu above, so it is
+            only drawn here — one bug-report control, not two. */}
         <BugReportFooterButton />
       </div>
     </SidebarFooter>
@@ -1362,7 +1389,7 @@ export function DashboardSidebar({
   // route has a shell of its own (رشد و بازاریابی), or it is the business's flat
   // nav, which is what the accounting suite is.
   const showWorkspaceRail =
-    workspaceShell && (pathname === "/dashboard" || pathname.startsWith("/dashboard/projects"));
+    workspaceShell && (pathname === "/dashboard" || pathname.startsWith("/projects"));
   // The app whose routes own the sidebar slot, if this route is one of them.
   // `app-shells.ts` is the registry, so adding a separate app never means
   // editing this file again.

@@ -157,6 +157,117 @@ export async function postExactPurchaseEntry(
 }
 
 /**
+ * سیستم ادواری — a received purchase under the periodic system. Debits
+ * «خرید طی دوره» (5105) instead of the inventory asset; the credit side is
+ * the same cash/bank-clearing/AP choice as the perpetual entry. No stock
+ * movement or lot accompanies it — the period-close document is what
+ * restates 1300 and recognises COGS.
+ */
+export async function postPeriodicPurchaseEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    purchaseId: string;
+    createdBy: string | null;
+    total: RialText;
+    settlementMethod: SettlementMethod;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [
+    WELL_KNOWN_CODES.periodicPurchases,
+    WELL_KNOWN_CODES.accountsPayable,
+    WELL_KNOWN_CODES.cash,
+    WELL_KNOWN_CODES.bankClearing,
+  ]);
+  const creditCode =
+    params.settlementMethod === "cash"
+      ? WELL_KNOWN_CODES.cash
+      : params.settlementMethod === "bank"
+        ? WELL_KNOWN_CODES.bankClearing
+        : WELL_KNOWN_CODES.accountsPayable;
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    memo: "خرید طی دوره (سیستم ادواری)",
+    sourceType: "purchase",
+    sourceId: params.purchaseId,
+    createdBy: params.createdBy,
+    postingKind: "periodic_purchase",
+    lines: [
+      { accountId: accounts.get(WELL_KNOWN_CODES.periodicPurchases)!, debit: params.total, credit: "0" as RialText },
+      { accountId: accounts.get(creditCode)!, debit: "0" as RialText, credit: params.total },
+    ],
+  });
+}
+
+/**
+ * سیستم ادواری — the period-close entry. Recognises
+ * COGS = beginning + purchases − ending in one compound entry:
+ *
+ *   Debit  5100 COGS            (بهای تمام‌شده دوره)
+ *   Debit  1300 Inventory       ending value (restate the asset)
+ *   Credit 1300 Inventory       beginning value (remove last period's asset)
+ *   Credit 5105 خرید طی دوره    purchases value (close it to zero)
+ *
+ * The two 1300 legs are posted net (one line, signed by direction) so the
+ * entry reads as a restatement, not an inflate-then-deflate. When the count
+ * finds more than B + P (negative COGS), the COGS leg flips to a credit.
+ */
+export async function postPeriodicClosingEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    closingId: string;
+    createdBy: string | null;
+    entryDate: string;
+    beginningValue: RialText;
+    purchasesValue: RialText;
+    endingValue: RialText;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [
+    WELL_KNOWN_CODES.cogs,
+    WELL_KNOWN_CODES.inventory,
+    WELL_KNOWN_CODES.periodicPurchases,
+  ]);
+  const zero = "0" as RialText;
+  const beginning = rialBigInt(params.beginningValue);
+  const purchases = rialBigInt(params.purchasesValue);
+  const ending = rialBigInt(params.endingValue);
+  const cogs = beginning + purchases - ending;
+  const inventoryDelta = ending - beginning; // net 1300 restatement
+  const lines: ExactJournalLine[] = [];
+  if (cogs >= 0n) {
+    lines.push({ accountId: accounts.get(WELL_KNOWN_CODES.cogs)!, debit: cogs.toString() as RialText, credit: zero });
+  } else {
+    lines.push({ accountId: accounts.get(WELL_KNOWN_CODES.cogs)!, debit: zero, credit: (-cogs).toString() as RialText });
+  }
+  if (inventoryDelta >= 0n) {
+    lines.push({ accountId: accounts.get(WELL_KNOWN_CODES.inventory)!, debit: inventoryDelta.toString() as RialText, credit: zero });
+  } else {
+    lines.push({ accountId: accounts.get(WELL_KNOWN_CODES.inventory)!, debit: zero, credit: (-inventoryDelta).toString() as RialText });
+  }
+  lines.push({
+    accountId: accounts.get(WELL_KNOWN_CODES.periodicPurchases)!,
+    debit: zero,
+    credit: purchases.toString() as RialText,
+  });
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    entryDate: params.entryDate,
+    memo: "بستن دوره انبار (سیستم ادواری)",
+    sourceType: "periodic_closing",
+    sourceId: params.closingId,
+    createdBy: params.createdBy,
+    postingKind: "periodic_closing",
+    lines,
+  });
+}
+
+/**
  * Corrects provisional COGS to the value actually assigned when an incoming
  * quantity closes a negative layer. Shared by purchase receipts and by
  * stock-count surpluses, which settle layers on the same terms.

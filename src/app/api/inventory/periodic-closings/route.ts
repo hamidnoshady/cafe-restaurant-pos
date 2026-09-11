@@ -1,40 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { getPool, query } from "@/lib/db";
+import { getPool } from "@/lib/db";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
+import {
+  createPeriodicClosing,
+  listPeriodicClosings,
+  type PeriodicClosingLineInput,
+} from "@/lib/periodic-closing-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { createStockCount, type StockCountLineInput } from "@/lib/stock-count-service";
 
+/**
+ * سیستم ادواری — بستن دوره انبار. GET lists posted closings for the active
+ * branch; POST counts ending stock, values it under the locked method and
+ * posts COGS = اول دوره + خرید − پایان دوره (periodic-closing-service.ts).
+ */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
-  if (!location) return NextResponse.json({ counts: [] });
+  if (!location) return NextResponse.json({ closings: [] });
 
-  const { rows: counts } = await query(
-    `SELECT sc.id, sc.note, sc.counted_at, u.full_name AS counted_by_name,
-            (SELECT count(*) FROM stock_count_lines WHERE stock_count_id = sc.id) AS line_count
-       FROM stock_counts sc LEFT JOIN users u ON u.id = sc.counted_by
-      WHERE sc.location_id = $1 AND sc.reversal_of IS NULL
-      ORDER BY sc.counted_at DESC LIMIT 50`,
-    [location.id],
-  );
-  return NextResponse.json({ counts });
+  const client = await getPool().connect();
+  try {
+    const closings = await listPeriodicClosings(client, location.id);
+    return NextResponse.json({ closings });
+  } finally {
+    client.release();
+  }
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { note?: string; lines?: StockCountLineInput[] };
+  let body: { periodEnd?: string; note?: string; lines?: PeriodicClosingLineInput[] };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-
   const lines = body.lines ?? [];
+  if (!body.periodEnd) return NextResponse.json({ error: "invalid_period_end" }, { status: 400 });
   if (lines.length === 0) return NextResponse.json({ error: "no_items" }, { status: 400 });
 
   const location = await resolveActiveLocation(session);
@@ -43,25 +50,33 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const result = await createStockCount(client, {
+    const result = await createPeriodicClosing(client, {
       businessId: session.businessId,
       locationId: location.id,
+      periodEnd: body.periodEnd,
       note: body.note,
       lines,
       createdBy: session.sub,
     });
     await client.query("COMMIT");
-    return NextResponse.json({ ok: true, id: result.id });
+    return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     await client.query("ROLLBACK");
     if (err instanceof MissingLedgerAccountError) {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
     if (err instanceof Error) {
-      const known = ["no_items", "invalid_item", "item_not_found"];
-      if (known.includes(err.message)) return NextResponse.json({ error: err.message }, { status: 400 });
-      if (err.message === "periodic_system_unsupported") {
-        return NextResponse.json({ error: err.message }, { status: 409 });
+      const status: Record<string, number> = {
+        invalid_period_end: 400,
+        no_items: 400,
+        invalid_item: 400,
+        item_not_found: 400,
+        not_periodic_system: 409,
+        period_end_not_after_previous: 409,
+      };
+      if (err.message in status) return NextResponse.json({ error: err.message }, { status: status[err.message] });
+      if (err.message.startsWith("count_line_missing")) {
+        return NextResponse.json({ error: "count_line_missing" }, { status: 400 });
       }
     }
     throw err;

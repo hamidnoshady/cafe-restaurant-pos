@@ -122,6 +122,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         item_not_found: 404,
         no_items: 400,
         invalid_line: 400,
+        periodic_system_unsupported: 409,
       };
       const status = known[err.message];
       if (status) return NextResponse.json({ error: err.message }, { status });

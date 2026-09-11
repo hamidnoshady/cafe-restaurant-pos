@@ -24,8 +24,15 @@ import {
   Trash2Icon,
   TruckIcon,
   WarehouseIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import {
+  INVENTORY_TABS,
+  INVENTORY_TAB_GROUPS,
+  visibleInventoryTabs,
+  type InventoryTabKey as TabKey,
+} from "./inventory-nav";
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -46,6 +53,7 @@ import { WarehousesSection } from "./warehouses-section";
 import { DocumentFormSection } from "./document-form-section";
 import { DocumentsSection } from "./documents-section";
 import { StockSection } from "./stock-section";
+import { PeriodicClosingsSection } from "./periodic-closings-section";
 import styles from "./inventory-workspace.module.css";
 
 export interface InventoryItem {
@@ -106,7 +114,8 @@ interface InventoryData {
   modifiers: ModifierRef[];
   recipes: RecipeLink[];
   modifierRecipes: ModifierRecipeLink[];
-  costingMethod: "fifo" | "weighted_average" | null;
+  costingMethod: "fifo" | "lifo" | "weighted_average" | null;
+  inventorySystem: "perpetual" | "periodic" | null;
 }
 
 interface LowStockItem {
@@ -117,31 +126,34 @@ interface LowStockItem {
   stock: number;
 }
 
-const TABS = [
-  { key: "warehouses", label: "لیست انبارها", icon: WarehouseIcon },
-  { key: "stock", label: "موجودی انبار", icon: BoxesIcon },
-  { key: "counts", label: "انبارگردانی", icon: ClipboardCheckIcon },
-  { key: "documents-new", label: "ثبت رسید انبار/حواله", icon: FilePlus2Icon },
-  { key: "documents", label: "رسید و حواله‌های انبار", icon: FileTextIcon },
-  { key: "items", label: "اقلام انبار", icon: PackageIcon },
-  { key: "production", label: "تولید", icon: FactoryIcon },
-  { key: "recipes", label: "دستورالعمل مصرف", icon: BookOpenIcon },
-  { key: "suppliers", label: "تأمین‌کنندگان", icon: TruckIcon },
-  { key: "purchases", label: "خرید", icon: ShoppingCartIcon },
-  { key: "waste", label: "ضایعات", icon: Trash2Icon },
-  { key: "transfers", label: "انتقال بین انبارها", icon: ArrowLeftRightIcon },
-  { key: "barcodes", label: "بارکد و لیبل", icon: BarcodeIcon },
-] as const;
-type TabKey = (typeof TABS)[number]["key"];
+// The section list and the دائمی/ادواری visibility rule live framework-free
+// in inventory-nav.ts (unit-tested there); this component only dresses the
+// entries with their icons, the way accounting-manager keeps its own icon map.
+const TAB_ICONS: Record<TabKey, LucideIcon> = {
+  warehouses: WarehouseIcon,
+  stock: BoxesIcon,
+  counts: ClipboardCheckIcon,
+  "periodic-closings": ClipboardCheckIcon,
+  "documents-new": FilePlus2Icon,
+  documents: FileTextIcon,
+  items: PackageIcon,
+  production: FactoryIcon,
+  recipes: BookOpenIcon,
+  suppliers: TruckIcon,
+  purchases: ShoppingCartIcon,
+  waste: Trash2Icon,
+  transfers: ArrowLeftRightIcon,
+  barcodes: BarcodeIcon,
+};
 
-const GROUPS = [
-  { label: "انبارها", keys: ["warehouses", "stock", "counts"] as const },
-  { label: "سند انبار", keys: ["documents-new", "documents"] as const },
-  {
-    label: "اقلام و عملیات",
-    keys: ["items", "production", "recipes", "suppliers", "purchases", "waste", "transfers", "barcodes"] as const,
-  },
-];
+const TABS = INVENTORY_TABS.map((tab) => ({ ...tab, icon: TAB_ICONS[tab.key] }));
+
+function visibleTabs(system: "perpetual" | "periodic" | null) {
+  const visible = new Set(visibleInventoryTabs(system).map((t) => t.key));
+  return TABS.filter((t) => visible.has(t.key));
+}
+
+const GROUPS = INVENTORY_TAB_GROUPS;
 
 export function InventoryManager({ role }: { role: string }) {
   const [data, setData] = useState<InventoryData | null>(null);
@@ -224,7 +236,7 @@ export function InventoryManager({ role }: { role: string }) {
       <SectionNav
         idPrefix="inventory"
         label="بخش‌های انبار"
-        sections={TABS}
+        sections={visibleTabs(data.inventorySystem)}
         groups={GROUPS}
         variant="rail"
         active={tab}
@@ -240,6 +252,7 @@ export function InventoryManager({ role }: { role: string }) {
         ) : null}
         {tab === "stock" ? <StockSection locationId={stockLocationId} /> : null}
         {tab === "counts" ? <StockCountsSection items={data.items} busy={busy} run={run} /> : null}
+        {tab === "periodic-closings" ? <PeriodicClosingsSection items={data.items} busy={busy} run={run} /> : null}
         {tab === "documents-new" ? (
           <DocumentFormSection
             onCreated={() => {

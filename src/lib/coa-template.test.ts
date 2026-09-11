@@ -363,6 +363,16 @@ describe("costOfSalesCodesForIndustry", () => {
     expect(costOfSalesCodesForIndustry("accessories")).not.toContain(WELL_KNOWN_CODES.wasteExpense);
   });
 
+  it("counts خرید طی دوره (5105) as cost of sales in every industry", () => {
+    // Under سیستم ادواری the balance of 5105 between closes IS the period's
+    // yet-unclosed cost of goods, and each close credits it back to zero — so
+    // the gross-profit line stays honest mid-period in any trade. Perpetual
+    // businesses never post to it, so counting it costs them nothing.
+    for (const industry of INDUSTRIES) {
+      expect(costOfSalesCodesForIndustry(industry)).toContain(WELL_KNOWN_CODES.periodicPurchases);
+    }
+  });
+
   it("answers for every industry", () => {
     for (const industry of INDUSTRIES) {
       expect(costOfSalesCodesForIndustry(industry).length).toBeGreaterThan(0);

@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   calculateNewAverageCost,
   fifoCostingStrategy,
+  getCostingStrategy,
+  isLotBased,
+  lifoCostingStrategy,
+  lotConsumptionOrderClause,
   weightedAverageCostingStrategy,
   type Lot,
 } from "./inventory-costing";
@@ -64,6 +68,51 @@ describe("fifoCostingStrategy.calculateCOGS", () => {
     const result = fifoCostingStrategy.calculateCOGS([], 200, 90);
     expect(result.lines).toEqual([{ lotId: null, quantity: 200, unitCost: 90, lineCost: 18_000 }]);
     expect(result.shortfall).toBe(200);
+  });
+});
+
+describe("lifoCostingStrategy.calculateCOGS", () => {
+  // LIFO consumes `lots` in the order given — the caller sorts them
+  // newest-received-first (lotConsumptionOrderClause("lifo")).
+  const newestFirst = [...lots].reverse();
+
+  it("consumes the newest lot first, spilling into older lots at their own cost", () => {
+    // 500 from lot-3 @150 + 300 from lot-2 @120
+    const result = lifoCostingStrategy.calculateCOGS(newestFirst, 800, 999);
+    expect(result.lines).toEqual([
+      { lotId: "lot-3", quantity: 500, unitCost: 150, lineCost: 75_000 },
+      { lotId: "lot-2", quantity: 300, unitCost: 120, lineCost: 36_000 },
+    ]);
+    expect(result.totalCost).toBe(111_000);
+    expect(result.shortfall).toBe(0);
+  });
+
+  it("costs any shortfall beyond total lot stock at the last-consumed (oldest) lot's cost", () => {
+    const result = lifoCostingStrategy.calculateCOGS(newestFirst, 1_600, 999);
+    const shortfallLine = result.lines[result.lines.length - 1];
+    expect(shortfallLine).toEqual({ lotId: null, quantity: 100, unitCost: 100, lineCost: 10_000 });
+    expect(result.shortfall).toBe(100);
+    expect(result.totalCost).toBe(75_000 + 60_000 + 50_000 + 10_000);
+  });
+});
+
+describe("method helpers", () => {
+  it("isLotBased: fifo and lifo keep lots, weighted average does not", () => {
+    expect(isLotBased("fifo")).toBe(true);
+    expect(isLotBased("lifo")).toBe(true);
+    expect(isLotBased("weighted_average")).toBe(false);
+  });
+
+  it("lotConsumptionOrderClause: oldest-first for FIFO, newest-first for LIFO", () => {
+    expect(lotConsumptionOrderClause("fifo")).toBe("received_at, id");
+    expect(lotConsumptionOrderClause("weighted_average")).toBe("received_at, id");
+    expect(lotConsumptionOrderClause("lifo")).toBe("received_at DESC, id DESC");
+  });
+
+  it("getCostingStrategy returns the matching strategy object", () => {
+    expect(getCostingStrategy("fifo")).toBe(fifoCostingStrategy);
+    expect(getCostingStrategy("lifo")).toBe(lifoCostingStrategy);
+    expect(getCostingStrategy("weighted_average")).toBe(weightedAverageCostingStrategy);
   });
 });
 

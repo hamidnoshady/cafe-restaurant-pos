@@ -9,7 +9,7 @@
  */
 import type { PoolClient } from "pg";
 import { query } from "./db";
-import { type CostingMethod } from "./inventory-costing";
+import { type CostingMethod, type InventorySystem } from "./inventory-costing";
 import { computeIngredientRequirements } from "./inventory";
 import { getSetting, SETTING_KEYS } from "./settings";
 import type { CostingSetting } from "./setup-state";
@@ -27,6 +27,23 @@ export async function getCostingMethod(businessId: string, client?: PoolClient):
   }
   const costing = await getSetting<CostingSetting>(businessId, SETTING_KEYS.costing);
   return costing?.method ?? "fifo";
+}
+
+/**
+ * سیستم دائمی/ادواری. Settings written before the periodic system existed
+ * have no `system` field and mean "perpetual" — the only behaviour back then.
+ */
+export async function getInventorySystem(businessId: string, client?: PoolClient): Promise<InventorySystem> {
+  if (client) {
+    const { rows } = await client.query<{ value: CostingSetting }>(
+      `SELECT value FROM settings
+        WHERE business_id=$1 AND location_id IS NULL AND key=$2`,
+      [businessId, SETTING_KEYS.costing],
+    );
+    return rows[0]?.value?.system ?? "perpetual";
+  }
+  const costing = await getSetting<CostingSetting>(businessId, SETTING_KEYS.costing);
+  return costing?.system ?? "perpetual";
 }
 
 /** Current on-hand quantity for one inventory item, from the append-only stock ledger. */
@@ -58,6 +75,7 @@ export interface InventoryOverview {
   recipes: Record<string, unknown>[];
   modifierRecipes: Record<string, unknown>[];
   costingMethod: CostingMethod;
+  inventorySystem: InventorySystem;
 }
 
 /**
@@ -78,6 +96,7 @@ export async function getInventoryOverview(
     { rows: modifierRecipes },
     stockLevels,
     costingMethod,
+    inventorySystem,
   ] = await Promise.all([
     query(
       "SELECT id, name, sku, unit, reorder_level, avg_cost, purchase_unit, purchase_unit_factor, is_active, is_produced FROM inventory_items WHERE location_id = $1 ORDER BY name",
@@ -122,6 +141,7 @@ export async function getInventoryOverview(
     ),
     getStockLevels(locationId),
     getCostingMethod(businessId),
+    getInventorySystem(businessId),
   ]);
 
   const itemsWithStock = items.map((item) => ({
@@ -137,6 +157,7 @@ export async function getInventoryOverview(
     recipes,
     modifierRecipes,
     costingMethod,
+    inventorySystem,
   };
 }
 
@@ -160,6 +181,13 @@ export async function deductForOrder(
    */
   occurredAt?: string | null,
 ): Promise<{ totalCost: RialText }> {
+  // سیستم ادواری: no per-sale consumption or COGS — the sale posts revenue
+  // only, and cost is recognised by the period-close document
+  // (periodic-closing-service.ts). Zero cost also means postExactCogsEntry
+  // drops all lines and posts nothing, so no guard is needed downstream.
+  if ((await getInventorySystem(businessId, client)) === "periodic") {
+    return { totalCost: rialText("0") };
+  }
   const { rows: items } = await client.query<{ id: string; menu_item_id: string | null; quantity: number }>(
     "SELECT id, menu_item_id, quantity FROM order_items WHERE order_id = $1 AND status != 'voided'",
     [orderId],

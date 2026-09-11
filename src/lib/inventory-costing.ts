@@ -86,6 +86,18 @@ export const fifoCostingStrategy: InventoryCostingStrategy = {
   },
 };
 
+/**
+ * LIFO — the same lot-consumption arithmetic as FIFO (the strategy consumes
+ * `lots` in the order given), but the caller must sort newest-received-first.
+ * Kept as its own strategy object (not an alias) so call sites read as the
+ * method they implement and so the two can diverge later without a rename.
+ */
+export const lifoCostingStrategy: InventoryCostingStrategy = {
+  calculateCOGS(lots, quantityNeeded, fallbackUnitCost) {
+    return fifoCostingStrategy.calculateCOGS(lots, quantityNeeded, fallbackUnitCost);
+  },
+};
+
 export const weightedAverageCostingStrategy: InventoryCostingStrategy = {
   calculateCOGS(_lots, quantityNeeded, fallbackUnitCost) {
     const lineCost = roundCost(quantityNeeded * fallbackUnitCost);
@@ -97,10 +109,38 @@ export const weightedAverageCostingStrategy: InventoryCostingStrategy = {
   },
 };
 
-export type CostingMethod = "fifo" | "weighted_average";
+export type CostingMethod = "fifo" | "lifo" | "weighted_average";
+
+/**
+ * Which bookkeeping *system* runs the inventory ledger (سیستم دائمی/ادواری):
+ *
+ *   - perpetual: every sale/waste/count consumes stock and posts COGS in
+ *     real time — the behaviour this codebase has always had.
+ *   - periodic: no per-movement costing at all. Sales post revenue only;
+ *     purchases debit «خرید طی دوره» (5105) instead of the inventory asset;
+ *     COGS is recognised once per period by a closing entry
+ *     (اول دوره + خرید − پایان دوره) — see periodic-closing-service.ts.
+ */
+export type InventorySystem = "perpetual" | "periodic";
+
+/** FIFO and LIFO both keep per-receipt lots; weighted average keeps one running value. */
+export function isLotBased(method: CostingMethod): boolean {
+  return method === "fifo" || method === "lifo";
+}
+
+/**
+ * ORDER BY clause for drawing down `inventory_lots` under `method` — oldest
+ * first for FIFO, newest first for LIFO. A constant string (never
+ * interpolated user input), safe to splice into SQL.
+ */
+export function lotConsumptionOrderClause(method: CostingMethod): string {
+  return method === "lifo" ? "received_at DESC, id DESC" : "received_at, id";
+}
 
 export function getCostingStrategy(method: CostingMethod): InventoryCostingStrategy {
-  return method === "fifo" ? fifoCostingStrategy : weightedAverageCostingStrategy;
+  if (method === "fifo") return fifoCostingStrategy;
+  if (method === "lifo") return lifoCostingStrategy;
+  return weightedAverageCostingStrategy;
 }
 
 /**
