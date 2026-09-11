@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
-import { Loader2Icon, WalletIcon } from "lucide-react";
+import { Loader2Icon, SparklesIcon, WalletIcon } from "lucide-react";
 import { formatJalali } from "@/lib/jalali";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass } from "../../../ui";
@@ -41,6 +41,25 @@ interface BusinessBillingData {
     createdAt: string;
   }[];
   usage: { featureKey: string; usedCount: number; chargedCount: number; spentRial: number }[];
+  litellm?: LiteLlmSpend;
+}
+
+interface LiteLlmSpend {
+  costingEnabled: boolean;
+  usdRialRate: number | null;
+  totalSpendUsd: number;
+  totalSpendRial: number;
+  keys: {
+    locationId: string | null;
+    keyAlias: string | null;
+    effectiveModel: string;
+    hasVirtualKey: boolean;
+    spendUsd: number;
+    spendRial: number;
+    maxBudgetUsd: number | null;
+    syncedAt: string | null;
+    syncError: string | null;
+  }[];
 }
 
 function toman(rial: number): string {
@@ -68,6 +87,7 @@ export default function BusinessBillingPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [amountToman, setAmountToman] = useState("");
   const [note, setNote] = useState("");
 
@@ -109,6 +129,23 @@ export default function BusinessBillingPage() {
       void load();
     } else {
       setError(res.error === "insufficient_credits" ? "موجودی برای کسر این مبلغ کافی نیست." : "عملیات انجام نشد.");
+    }
+  }
+
+  async function syncLiteLlm() {
+    setSyncing(true);
+    setError("");
+    setInfo("");
+    const { ok, data: res } = await api<{ litellm?: LiteLlmSpend; error?: string }>(
+      `/api/platform/billing/businesses/${businessId}`,
+      { method: "POST", body: JSON.stringify({ action: "sync_litellm_spend" }) },
+    );
+    setSyncing(false);
+    if (ok && res.litellm) {
+      setData((current) => (current ? { ...current, litellm: res.litellm } : current));
+      setInfo("مصرف LiteLLM به‌روزرسانی شد.");
+    } else {
+      setError(res.error ?? "به‌روزرسانی مصرف LiteLLM انجام نشد.");
     }
   }
 
@@ -159,6 +196,87 @@ export default function BusinessBillingPage() {
             {busy ? <Loader2Icon className="size-4 animate-spin" /> : "اعمال شارژ/کسر"}
           </Button>
         </form>
+        <p className="mt-3 text-xs text-muted-foreground">
+          هزینهٔ هوش مصنوعی به‌صورت خودکار توسط LiteLLM محاسبه و از همین اعتبار کسر می‌شود؛ برای افزایش یا
+          کاهش دستی مصرف کاربر از فرم بالا استفاده کنید.
+        </p>
+      </Card>
+
+      <Card title="مصرف هوش مصنوعی (LiteLLM)">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex size-11 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
+              <SparklesIcon className="size-5" />
+            </span>
+            <div>
+              <p className="text-lg font-extrabold tabular-nums text-foreground">
+                {data.litellm && data.litellm.usdRialRate
+                  ? `${toman(data.litellm.totalSpendRial)} تومان`
+                  : "—"}
+                <span className="mr-2 text-xs font-normal text-muted-foreground" dir="ltr">
+                  {toPersianDigits((data.litellm?.totalSpendUsd ?? 0).toFixed(4))} $
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                هزینهٔ گزارش‌شدهٔ LiteLLM برای این کسب‌وکار
+                {data.litellm?.costingEnabled
+                  ? " · تسویه بر پایهٔ LiteLLM فعال است"
+                  : " · تسویه بر پایهٔ LiteLLM غیرفعال است"}
+              </p>
+            </div>
+          </div>
+          <Button type="button" onClick={() => void syncLiteLlm()} disabled={syncing}>
+            {syncing ? <Loader2Icon className="size-4 animate-spin" /> : "به‌روزرسانی مصرف"}
+          </Button>
+        </div>
+
+        {!data.litellm || data.litellm.keys.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            هنوز کلید مجازی LiteLLM برای این کسب‌وکار صادر نشده است.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-right text-xs text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="py-2 pr-1">کلید / شعبه</th>
+                  <th className="py-2">مدل</th>
+                  <th className="py-2">هزینه ($)</th>
+                  <th className="py-2">هزینه (تومان)</th>
+                  <th className="py-2">به‌روزرسانی</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.litellm.keys.map((k, idx) => (
+                  <tr key={`${k.keyAlias ?? "biz"}-${k.locationId ?? "all"}-${idx}`} className="border-b border-border">
+                    <td className="py-2 pr-1">
+                      <span dir="ltr" className="font-medium text-foreground">
+                        {k.keyAlias ?? "—"}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {k.locationId ? `شعبه: ${k.locationId.slice(0, 8)}` : "کل کسب‌وکار"}
+                      </span>
+                    </td>
+                    <td className="py-2" dir="ltr">{k.effectiveModel}</td>
+                    <td className="py-2 tabular-nums" dir="ltr">{toPersianDigits(k.spendUsd.toFixed(4))}</td>
+                    <td className="py-2 tabular-nums">
+                      {data.litellm?.usdRialRate ? `${toman(k.spendRial)} ت` : "—"}
+                    </td>
+                    <td className="py-2 text-xs text-muted-foreground">
+                      {k.syncError ? (
+                        <span className="text-red-700 dark:text-red-300">{k.syncError}</span>
+                      ) : k.syncedAt ? (
+                        formatJalali(k.syncedAt, { withMonthName: true, withTime: true })
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       <Card title="قابلیت‌های فعال (اشتراک/خرید/هدیه)">

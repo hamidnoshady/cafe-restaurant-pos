@@ -99,15 +99,33 @@ export interface AiGatewayConfig {
   usdRialRate: number | null;
   /** Phase 38b — settle turns on the gateway's own reported cost. */
   gatewayCostingEnabled: boolean;
+  /**
+   * Optional extra margin the platform adds on top of LiteLLM's reported cost,
+   * in percent. Normally 0: cost-plus-margin pricing is configured inside
+   * LiteLLM itself, and the platform only converts and decrements. Kept here
+   * so an operator can still add a platform-side markup without touching the
+   * gateway config.
+   */
+  revenueMarginPercent: number;
+  /**
+   * The Rial ceiling reserved from a business's credit for one assistant turn,
+   * released back down to LiteLLM's actual reported cost at settlement.
+   */
+  maxTurnRial: number;
   /** Phase 38b — whether the proxy may front MCP servers at all. */
   mcpEnabled: boolean;
   /** Phase 38b — the MCP servers the proxy may front (agentic tools). */
   mcpServers: GatewayMcpServer[];
 }
 
-/** Gateway config with the master key replaced by a boolean, as `platform_ai_config` does. */
-export interface PublicAiGatewayConfig
-  extends Omit<AiGatewayConfig, "masterKey" | "usdRialRate" | "gatewayCostingEnabled"> {
+/**
+ * Gateway config with the master key replaced by a boolean.
+ *
+ * Only the master key is a bearer credential and stays server-side; the costing
+ * fields (conversion rate, margin, ceilings) are operator settings the LiteLLM
+ * console must show and edit.
+ */
+export interface PublicAiGatewayConfig extends Omit<AiGatewayConfig, "masterKey"> {
   hasMasterKey: boolean;
 }
 
@@ -128,6 +146,8 @@ export interface AiGatewayInput {
   defaultRpmLimit?: number | null;
   usdRialRate?: number | null;
   gatewayCostingEnabled?: boolean;
+  revenueMarginPercent?: number | null;
+  maxTurnRial?: number | null;
   mcpEnabled?: boolean;
   mcpServers?: unknown;
 }
@@ -210,6 +230,8 @@ export function defaultGatewayConfig(): AiGatewayConfig {
     defaultRpmLimit: null,
     usdRialRate: null,
     gatewayCostingEnabled: false,
+    revenueMarginPercent: 0,
+    maxTurnRial: 0,
     mcpEnabled: false,
     mcpServers: [],
   };
@@ -363,7 +385,7 @@ function positiveIntOrNull(value: unknown): number | null {
 }
 
 export function toPublicGatewayConfig(config: AiGatewayConfig): PublicAiGatewayConfig {
-  const { masterKey, usdRialRate, gatewayCostingEnabled, ...rest } = config;
+  const { masterKey, ...rest } = config;
   return { ...rest, hasMasterKey: masterKey.length > 0 };
 }
 
@@ -701,6 +723,20 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   }
   if (input.gatewayCostingEnabled && !(Number(input.usdRialRate) > 0)) {
     errors.push("ai_gateway_costing_needs_rate");
+  }
+  if (
+    input.revenueMarginPercent !== undefined &&
+    input.revenueMarginPercent !== null &&
+    !(Number.isFinite(input.revenueMarginPercent) && input.revenueMarginPercent >= 0)
+  ) {
+    errors.push("ai_gateway_bad_margin");
+  }
+  if (
+    input.maxTurnRial !== undefined &&
+    input.maxTurnRial !== null &&
+    !(Number.isFinite(input.maxTurnRial) && input.maxTurnRial >= 0)
+  ) {
+    errors.push("ai_gateway_bad_max_turn");
   }
   if (input.mcpServers !== undefined && !Array.isArray(input.mcpServers)) {
     errors.push("ai_gateway_bad_mcp_servers");

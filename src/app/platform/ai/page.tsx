@@ -3,10 +3,17 @@
 /**
  * The super-admin's AI settings — LiteLLM, and only LiteLLM.
  *
- * This single page manages the platform-wide LiteLLM gateway: the master key,
- * model aliases, routing, budgets, and per-business/per-branch virtual keys
- * and model overrides. Provider costing, prompt management, subscriptions and
- * credit handling are deliberately not part of this console anymore.
+ * This single page is the whole AI control surface: the platform hands every
+ * AI function to LiteLLM and only talks to LiteLLM. It manages the platform-wide
+ * LiteLLM gateway (master key, model aliases, routing, budgets, MCP tools) and
+ * the per-business/per-branch virtual keys and model overrides.
+ *
+ * Costing is LiteLLM's job too. Cost-plus-margin per model is configured inside
+ * LiteLLM; this console only sets how the platform reads that price back — the
+ * USD→Rial conversion rate, an optional platform-side margin, and the per-turn
+ * reservation ceiling — and every turn's price is then simply decremented from
+ * the business's Rial credit. The per-business wallet, top-ups and manual
+ * increase/decrease of usage live on each business's billing page.
  */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { formatPersianNumber } from "@/lib/digits";
@@ -29,6 +36,10 @@ interface GatewayConfig {
   defaultBudgetDuration: string;
   defaultTpmLimit: number | null;
   defaultRpmLimit: number | null;
+  gatewayCostingEnabled: boolean;
+  usdRialRate: number | null;
+  revenueMarginPercent: number;
+  maxTurnRial: number;
   mcpEnabled: boolean;
   mcpServers: { name: string; label: string; url: string }[];
   hasMasterKey: boolean;
@@ -467,6 +478,65 @@ export default function PlatformAiPage() {
                 min="0"
                 value={draft.defaultRpmLimit ?? ""}
                 onChange={(event) => setDraft({ ...draft, defaultRpmLimit: numericOrNull(event.target.value) })}
+              />
+            </Field>
+
+            <div className="lg:col-span-2 border-t border-border pt-4">
+              <h3 className="mb-1 text-sm font-semibold text-foreground">هزینه‌گذاری و اعتبار (بر پایهٔ LiteLLM)</h3>
+              <p className="mb-3 text-xs text-muted-foreground">
+                قیمت هر مدل به‌همراه حاشیهٔ سود درون خودِ LiteLLM تعریف می‌شود. پلتفرم فقط قیمت گزارش‌شدهٔ
+                LiteLLM را به ریال تبدیل و از اعتبار کسب‌وکار کم می‌کند. برای فعال‌سازی این حالت، «تسویه بر
+                پایهٔ هزینهٔ دروازه» را روشن کنید و نرخ تبدیل دلار به ریال را وارد کنید.
+              </p>
+            </div>
+            <div className="lg:col-span-2">
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={draft.gatewayCostingEnabled}
+                  onChange={(event) => setDraft({ ...draft, gatewayCostingEnabled: event.target.checked })}
+                />
+                تسویهٔ هزینه بر پایهٔ قیمت گزارش‌شدهٔ LiteLLM (پیشنهادی)
+              </label>
+            </div>
+            <Field
+              label="نرخ تبدیل دلار به ریال"
+              hint="قیمت دلاری هر درخواست که LiteLLM گزارش می‌کند با این نرخ به ریال تبدیل و از اعتبار کسب‌وکار کسر می‌شود. برای فعال بودن تسویهٔ دروازه الزامی است."
+            >
+              <PersianNumberInput
+                className={inputClass}
+                type="number"
+                min="0"
+                value={draft.usdRialRate ?? ""}
+                onChange={(event) => setDraft({ ...draft, usdRialRate: numericOrNull(event.target.value) })}
+              />
+            </Field>
+            <Field
+              label="حاشیهٔ سود پلتفرم (٪)"
+              hint="افزون بر حاشیهٔ تعریف‌شده در LiteLLM. معمولاً صفر است؛ اگر بخواهید مارک‌آپ سمت پلتفرم اضافه کنید مقدار بدهید."
+            >
+              <PersianNumberInput
+                className={inputClass}
+                type="number"
+                min="0"
+                value={draft.revenueMarginPercent || ""}
+                onChange={(event) =>
+                  setDraft({ ...draft, revenueMarginPercent: Number(event.target.value.replace(/[٬,\s]/g, "")) || 0 })
+                }
+              />
+            </Field>
+            <Field
+              label="سقف رزرو اعتبار هر درخواست (ریال)"
+              hint="مبلغی که پیش از هر درخواست از اعتبار کسب‌وکار رزرو می‌شود و پس از تسویه تا هزینهٔ واقعی LiteLLM بازگردانده می‌شود. باید بزرگ‌تر از صفر باشد."
+            >
+              <PersianNumberInput
+                className={inputClass}
+                type="number"
+                min="0"
+                value={draft.maxTurnRial || ""}
+                onChange={(event) =>
+                  setDraft({ ...draft, maxTurnRial: Number(event.target.value.replace(/[٬,\s]/g, "")) || 0 })
+                }
               />
             </Field>
             <div className="space-y-2">
