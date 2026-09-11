@@ -39,3 +39,7 @@
 **Vulnerability:** Directly extracting `x-forwarded-for` header can allow an attacker to spoof their IP address.
 **Learning:** Blindly trusting the `x-forwarded-for` or `x-real-ip` headers can lead to IP address spoofing vulnerabilities.
 **Prevention:** Instead of reading the header blindly, use a centralized IP extraction mechanism (e.g. `clientIpFrom`) that securely navigates proxy chains and validates IPs.
+## 2026-08-25 - Off-by-one IP Spoofing via X-Forwarded-For Trusted Hops
+**Vulnerability:** Rate limiter `clientIpFrom` index calculation had an off-by-one error `parts.length - 1 - trustedHops`, resolving to the IP before the actual client IP.
+**Learning:** When navigating `X-Forwarded-For` from right-to-left based on a `trustedHops` count, the correct index of the first untrusted IP is `parts.length - trustedHops`. Off-by-one errors here mean the system trusts an attacker-provided proxy IP instead of locking onto the true client, effectively granting IP spoofing capabilities even when `trustedHops` is correctly configured.
+**Prevention:** When skipping N trusted proxies in `X-Forwarded-For` arrays, index by `length - N` to find the last untrusted origin.
