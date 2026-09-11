@@ -42,7 +42,12 @@ const ERROR_MESSAGES: Record<string, string> = {
     parse_failed: "خواندن فایل ممکن نشد.",
     nothing_to_import: "آیتمی برای ورود پیدا نشد.",
     invalid_import: "فایل برای ورود آماده نیست.",
-    invalid_printer: "اطلاعات چاپگر معتبر نیست؛ نام، IP، پورت و عرض کاغذ را بررسی کنید.",
+    invalid_printer: "اطلاعات چاپگر معتبر نیست؛ نام و اطلاعات اتصال (IP و پورت، نام چاپگر ویندوز یا مسیر USB) را بررسی کنید.",
+    // چاپ و فاکتور — the print template designer and the business logo.
+    invalid_template: "قالب معتبر نیست؛ نام، کاغذ و بخش‌های قالب را بررسی کنید.",
+    duplicate_template_name: "قالبی با این نام از قبل وجود دارد.",
+    template_not_found: "قالب پیدا نشد یا قبلاً حذف شده است.",
+    invalid_logo: "فایل لوگو معتبر نیست؛ تصویر PNG، JPEG، WebP یا SVG با حجم مجاز انتخاب کنید.",
     invalid_label: "نام دستگاه باید بین ۱ تا ۸۰ کاراکتر باشد.",
     device_not_found: "دستگاه پیدا نشد یا قبلاً حذف شده است.",
     employee_not_found: "کارمند پیدا نشد.",

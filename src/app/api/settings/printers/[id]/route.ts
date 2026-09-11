@@ -3,6 +3,7 @@ import { requirePermission, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
 import type { PrinterConnection } from "@/lib/printer-connection";
+import { parsePrinterInput } from "@/lib/printer-input";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 interface StoredPrinter extends Record<string, unknown> {
@@ -11,30 +12,6 @@ interface StoredPrinter extends Record<string, unknown> {
   kind: "receipt" | "kitchen";
   connection: PrinterConnection;
   is_active: boolean;
-}
-
-function parseInput(body: Record<string, unknown>, fallback: StoredPrinter) {
-  const nameValue = body.name ?? fallback.name;
-  const name = typeof nameValue === "string" ? nameValue.trim() : "";
-  const kindValue = body.kind ?? fallback.kind;
-  const kind = kindValue === "kitchen" ? "kitchen" : kindValue === "receipt" ? "receipt" : null;
-  const connection: PrinterConnection = fallback.connection ?? {};
-  const ipValue = body.ip ?? connection.ip;
-  const ip = typeof ipValue === "string" ? ipValue.trim() : "";
-  const port = Number(body.port ?? connection.port ?? 9100);
-  const paperWidthMm = Number(body.paperWidthMm ?? connection.paperWidthMm ?? 80);
-  const isActive = typeof body.isActive === "boolean" ? body.isActive : fallback.is_active;
-  const isDefault = (typeof body.isDefault === "boolean" ? body.isDefault : connection.isDefault === true) && isActive;
-  if (!name || !kind || !ip || ip.length > 255 || !Number.isInteger(port) || port < 1 || port > 65535 || (paperWidthMm !== 58 && paperWidthMm !== 80)) {
-    return null;
-  }
-  return {
-    name,
-    kind,
-    isActive,
-    isDefault,
-    connection: { ...connection, ip, port, paperWidthMm: paperWidthMm as 58 | 80, isDefault },
-  };
 }
 
 async function scopedPrinter(id: string, locationId: string): Promise<StoredPrinter | null> {
@@ -59,7 +36,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  const input = parseInput(body, existing);
+  const input = parsePrinterInput(body, existing);
   if (!input) return NextResponse.json({ error: "invalid_printer" }, { status: 400 });
 
   if (input.isDefault) {

@@ -36,7 +36,7 @@ import { NotificationSettings } from "./notification-settings";
 import { OnlinePlatformsSettings } from "./online-platforms-settings";
 import { PaymentMethodsSettings } from "./payment-methods-settings";
 import { PricingSettings } from "./pricing-settings";
-import { PrinterSettings } from "./printer-settings";
+import { PrintingManager } from "./printing/printing-manager";
 import { SecurityCenterSettings } from "./security-center-settings";
 import { TwoFactorSettings } from "./two-factor-settings";
 import { BusinessDaySettings } from "./business-day-settings";
@@ -156,7 +156,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner, role }
       {activeTab === "accounts" ? <AccountsSettings /> : null}
       {activeTab === "team" ? <TeamManager currentUserId={currentUserId} role={role} /> : null}
       {activeTab === "menu" ? <MenuSettings /> : null}
-      {activeTab === "printers" ? <PrinterSettings /> : null}
+      {activeTab === "printers" ? <PrintingManager /> : null}
       {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}
       {activeTab === "devices" ? <DeviceSettings /> : null}
       {activeTab === "notifications" ? <NotificationSettings /> : null}
