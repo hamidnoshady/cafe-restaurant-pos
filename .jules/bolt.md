@@ -11,3 +11,6 @@
 ## 2024-11-20 - Memoizing Options Arrays Driven by Input State
 **Learning:** In React list views or search dialogs, arrays that require string normalization (like `toPersianDigits`) or regex operations for each item can become a severe performance bottleneck if recreated on every keystroke. Specifically, in `src/app/dashboard/floor/session-panel.tsx`, `customerOptions` was recomputed on every render (driven by a `customerQuery` input state), which caused jank on large datasets.
 **Action:** When an options array relies on a base dataset (like `customers`) but the component has rapid state updates (like text inputs), wrap the array creation in a `useMemo` dependent only on the base dataset (e.g. `[customers]`). Ensure you extract any expensive string normalization into the memoized block.
+## 2026-09-11 - Documenting useDeferredValue Intentions
+**Learning:** When using `useDeferredValue` and a precomputed search index as a React list view performance optimization, missing comments on these mechanisms can be rejected in code review because it violates 'Bolt' persona rules about code documentation.
+**Action:** Always add inline comments explaining the `useDeferredValue` deferral and the O(N) pre-computation index optimizations directly in the code to ensure intent is clear.

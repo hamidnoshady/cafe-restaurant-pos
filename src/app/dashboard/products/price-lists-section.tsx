@@ -8,7 +8,7 @@
  * amount with an optional round, and the lists modal adds/renames/deletes the
  * named lists themselves.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { FileSpreadsheetIcon, PencilIcon, PlusIcon, RefreshCwIcon, SaveIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +35,7 @@ export function PriceListsSection({ apiBase }: { apiBase: string }) {
   const [cells, setCells] = useState<Record<string, Record<ColumnKey, string>>>({});
   const [initial, setInitial] = useState<Record<string, Record<ColumnKey, string>>>({});
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -70,12 +71,31 @@ export function PriceListsSection({ apiBase }: { apiBase: string }) {
   }, [apiBase, money]);
   useEffect(load, [load]);
 
-  const filtered = useMemo(() => {
+  // Performance optimization: Pre-compute lowercased search strings to avoid O(N) recalculations
+  // per keystroke. This index depends only on the base dataset.
+  const searchIndex = useMemo(() => {
     if (!items) return null;
-    const needle = search.trim();
+    return items.map((item) => ({
+      item,
+      normalized: [
+        item.name.toLowerCase(),
+        item.sku?.toLowerCase() ?? "",
+        item.barcode?.toLowerCase() ?? "",
+      ].filter(Boolean),
+    }));
+  }, [items]);
+
+  // Performance optimization: We depend on deferredSearch so typing remains snappy while
+  // filtering happens in the background. We match against the pre-normalized index and check
+  // individual fields to avoid false-positive cross-boundary matches.
+  const filtered = useMemo(() => {
+    if (!items || !searchIndex) return null;
+    const needle = deferredSearch.trim().toLowerCase();
     if (!needle) return items;
-    return items.filter((item) => [item.name, item.sku ?? "", item.barcode ?? ""].join(" ").includes(needle));
-  }, [items, search]);
+    return searchIndex
+      .filter(({ normalized }) => normalized.some((field) => field.includes(needle)))
+      .map(({ item }) => item);
+  }, [items, searchIndex, deferredSearch]);
 
   function setCell(itemId: string, column: ColumnKey, value: string) {
     setCells((current) => ({
