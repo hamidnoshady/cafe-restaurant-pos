@@ -56,6 +56,7 @@ export const LEDGER_SOURCE_LABELS: Record<string, string> = {
   inventory_transfer_cancel: "لغو انتقال انبار",
   inventory_write_down: "کاهش ارزش موجودی",
   warehouse_issue: "حوالهٔ انبار",
+  retail_warehouse_document: "سند انبار فروشگاهی",
   opening_inventory: "موجودی افتتاحیه",
   cosmetic_tester: "تستر و کالای منقضی",
   cosmetic_write_off: "امحای کالای آرایشی",
