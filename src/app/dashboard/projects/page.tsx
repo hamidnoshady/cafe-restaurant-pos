@@ -168,7 +168,8 @@ export default function ProjectsPage() {
                     e.stopPropagation();
                     handleArchive(project.id, false);
                   }}
-                  className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-muted group-hover:opacity-100"
+                  aria-label={"بایگانی پروژه " + project.name}
+                  className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-muted group-hover:opacity-100 outline-none focus-visible:ring focus-visible:ring-ring/50 focus-visible:opacity-100"
                   title="بایگانی"
                 >
                   <ArchiveIcon className="size-4" />
@@ -217,7 +218,8 @@ export default function ProjectsPage() {
                     <button
                       type="button"
                       onClick={() => handleArchive(project.id, true)}
-                      className="rounded p-1 text-muted-foreground hover:bg-muted"
+                      aria-label={"بازگردانی پروژه " + project.name}
+                      className="rounded p-1 text-muted-foreground hover:bg-muted outline-none focus-visible:ring focus-visible:ring-ring/50"
                       title="بازگردانی"
                     >
                       <ArchiveRestoreIcon className="size-4" />
