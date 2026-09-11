@@ -63,11 +63,31 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       href: "/dashboard/pos",
       roles: ["owner", "manager", "cashier"],
     },
+    // The CRM app's door (Phase 36 — it is its own app, not a section of any
+    // other). It is anchored on the `customers` module — core for every trade,
+    // so a business that has customers has a CRM — and points at the app's own
+    // home (`/crm/overview`), the same way «رشد و بازاریابی» points at
+    // `/growth/overview` and «مدیریت وب‌سایت» at `/websites/overview`. The old
+    // flat href `/dashboard/customers` is kept only as a redirect page for
+    // saved bookmarks; using it here made two things go wrong at once:
+    //   1. the workspace rail's CRM launcher (which looks for `/crm/overview`)
+    //      never matched, so «ارتباط با مشتری» was missing from the rail's
+    //      «برنامه‌ها» list while Growth and the Website app were present; and
+    //   2. because the href was not inside any app shell prefix, the entry was
+    //      not filtered out of the flat business nav in the workspace shell, so
+    //      it kept surfacing (as «مشتریان», redirecting into the CRM directory)
+    //      while the member was inside another app such as حسابداری — the CRM
+    //      leaking into Accounting instead of Accounting keeping its own
+    //      «اشخاص»/«مشتریان» sections.
+    // The accountant is deliberately not here: the CRM app does not admit them
+    // (see `canOpenCrm`); they manage the shared customer record from
+    // Accounting's own «اشخاص» and «مشتریان» sections, and `/dashboard/customers`
+    // still redirects an accountant there for any old bookmark.
     {
-      label: "مشتریان",
+      label: "ارتباط با مشتری",
       module: "customers",
-      href: "/dashboard/customers",
-      roles: ["owner", "manager", "cashier", "accountant"],
+      href: "/crm/overview",
+      roles: ["owner", "manager", "cashier"],
     },
     // Phase 36b — loyalty, campaigns/gift cards and commission are one app
     // now («رشد و بازاریابی», /growth), with its own dashboard the
