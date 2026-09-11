@@ -133,11 +133,20 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
 
       - name: Verify the published image is live
-        if: github.ref_type == 'branch'
+        # Production health verification is opt-in. The repository currently
+        # has no PRODUCTION_HEALTH_URL variable, and pos.eshobe.com is not a
+        # reachable deployment endpoint. Defaulting to that hostname made every
+        # otherwise-successful publish wait eleven minutes and fail after the
+        # image had already been built, pushed, and accepted by Coolify.
+        #
+        # Once the deployed service has a public /api/health endpoint, set the
+        # repository variable PRODUCTION_HEALTH_URL to enable exact-SHA rollout
+        # verification without another workflow change.
+        if: github.ref_type == 'branch' && vars.PRODUCTION_HEALTH_URL != ''
         timeout-minutes: 12
         env:
           EXPECTED_SHA: ${{ steps.sha.outputs.short }}
-          HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL || 'https://pos.eshobe.com/api/health' }}
+          HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
         run: |
           # The restart API is asynchronous. A 200 from it means "queued", not
           # "deployed", and an immediate health request can be answered by the
