@@ -30,7 +30,15 @@ export const dynamic = "force-dynamic";
 
 export function GET() {
   return NextResponse.json(
-    { ok: true, at: new Date().toISOString() },
+    {
+      ok: true,
+      // Baked into production images by Dockerfile's GIT_SHA build argument.
+      // Returning it turns the post-publish health probe into a deployment
+      // check: a healthy response from the previous container is not mistaken
+      // for proof that the newly published image went live.
+      version: process.env.APP_IMAGE_SHA || "unknown",
+      at: new Date().toISOString(),
+    },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
   );
 }

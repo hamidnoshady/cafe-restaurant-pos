@@ -21,21 +21,24 @@ export async function enforceOrderControl(
     discountPercent?: number;
   },
 ): Promise<void> {
-  const [{ rows: settings }, { rows: kitchen }] = await Promise.all([
-    client.query<{ value: unknown }>(
-      `SELECT value FROM settings
-        WHERE business_id = $1 AND location_id IS NULL AND key = 'orders.controls'`,
-      [input.actor.businessId],
-    ),
-    client.query<{ kitchen_started: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM order_items
-          WHERE order_id = $1
-            AND status IN ('preparing', 'ready', 'served')
-       ) AS kitchen_started`,
-      [input.orderId],
-    ),
-  ]);
+  // A PoolClient is one Postgres connection, not a pool. node-postgres 8.19+
+  // warns when a second query is queued while the first is in flight, and pg 9
+  // will reject it outright. These checks are part of the caller's transaction,
+  // so keep them on this client and await them in wire order instead of using
+  // Promise.all (which only helps when each query can acquire its own client).
+  const { rows: settings } = await client.query<{ value: unknown }>(
+    `SELECT value FROM settings
+      WHERE business_id = $1 AND location_id IS NULL AND key = 'orders.controls'`,
+    [input.actor.businessId],
+  );
+  const { rows: kitchen } = await client.query<{ kitchen_started: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM order_items
+        WHERE order_id = $1
+          AND status IN ('preparing', 'ready', 'served')
+     ) AS kitchen_started`,
+    [input.orderId],
+  );
   assertOrderControl({
     policy: parseOrderControlPolicy(settings[0]?.value),
     actorRole: input.actor.role,

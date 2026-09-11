@@ -161,6 +161,19 @@ export function getPool(): Pool {
   return globalForPg.pgPool;
 }
 
+/**
+ * Drain and close the shared pool during an intentional server shutdown.
+ *
+ * Do not call getPool() here: a process that failed before its first database
+ * checkout should not create a connection merely in order to close it.
+ */
+export async function closeDatabasePool(): Promise<void> {
+  const pool = globalForPg.pgPool;
+  if (!pool) return;
+  await pool.end();
+  if (globalForPg.pgPool === pool) globalForPg.pgPool = undefined;
+}
+
 export async function query<T extends Record<string, unknown> = Record<string, unknown>>(
   text: string,
   params?: unknown[],

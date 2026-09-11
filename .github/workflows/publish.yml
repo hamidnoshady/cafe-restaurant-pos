@@ -1,4 +1,6 @@
-# Builds the production image and publishes it to GHCR, on every push to main.
+# Builds the production image and publishes it to GHCR on every push to main.
+# A v* tag also publishes an immutable release tag for pinned site installs,
+# but does not restart production a second time.
 #
 # This is the one automatic workflow in the repo, and deliberately so: it is
 # what deployment consumes. `test.yml` and `build-and-push.yml` stay manual
@@ -19,12 +21,13 @@
 # (docker-compose.srv1.yml). build-and-push.yml is kept as-is for anyone still
 # pulling the Docker Hub tag; it is not the deploy path.
 #
-# Tag shape is load-bearing: `sha-<short>` plus `latest`, matching
-# imageRefFor() in src/lib/app-update-status.ts. A long-sha tag (the shape
-# eshobe-cms uses) would leave the café laptop's update check looking for a
-# tag that does not exist. GIT_SHA is passed as a build arg because the
-# Dockerfile bakes it into APP_IMAGE_SHA, which is how a running container
-# knows which build it is.
+# Tag shape is load-bearing: main publishes `sha-<short>` plus `latest`,
+# matching imageRefFor() in src/lib/app-update-status.ts; a v* ref additionally
+# publishes its release name for POS_IMAGE_TAG pins. A long-sha tag (the shape
+# eshobe-cms uses) would leave the café laptop's update check looking for a tag
+# that does not exist. GIT_SHA is passed as a build arg because the Dockerfile
+# bakes it into APP_IMAGE_SHA, which is how a running container knows which
+# build it is.
 #
 # The image is gated, not blind: `gates` re-runs the static half of the local
 # checklist (type check, unit tests, production build) on the exact merge
@@ -48,7 +51,9 @@ on:
 # Never cancel: a half-published image is worse than a slow queue, and two
 # merges in a row must each produce their own tag.
 concurrency:
-  group: publish-${{ github.ref }}
+  # Main and release-tag events write to the same package. Keep one global
+  # queue so two refs cannot race a tag update or a production restart.
+  group: publish-production
   cancel-in-progress: false
 
 env:
@@ -107,14 +112,56 @@ jobs:
             GIT_SHA=${{ steps.sha.outputs.short }}
           tags: |
             ghcr.io/${{ github.repository }}:sha-${{ steps.sha.outputs.short }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
 
       - name: Trigger Coolify redeploy
+        if: github.ref_type == 'branch'
         run: |
-          curl -sf -X POST \
+          # `latest=true` is load-bearing for a Docker-image service: a plain
+          # restart would recreate the old local image and report success.
+          # Do not automatically retry this POST — Coolify may have queued the
+          # restart before a response is lost, and a retry would cause the
+          # duplicate restarts visible in the production logs.
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            -X POST \
             "https://manage.eshobe.com/api/v1/services/jrfpvt0rctfkmzpw1ao5c1cb/restart?latest=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
+
+      - name: Verify the published image is live
+        if: github.ref_type == 'branch'
+        timeout-minutes: 12
+        env:
+          EXPECTED_SHA: ${{ steps.sha.outputs.short }}
+          HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL || 'https://pos.eshobe.com/api/health' }}
+        run: |
+          # The restart API is asynchronous. A 200 from it means "queued", not
+          # "deployed", and an immediate health request can be answered by the
+          # old container. /api/health includes APP_IMAGE_SHA, so wait for this
+          # exact build instead of turning a stale image or failed migration
+          # into a green workflow.
+          last_response=""
+          for attempt in $(seq 1 60); do
+            if last_response=$(curl --fail --silent --show-error \
+              --connect-timeout 5 --max-time 10 \
+              -H 'Cache-Control: no-cache' \
+              "$HEALTH_URL" 2>/dev/null); then
+              live_sha=$(printf '%s' "$last_response" | jq -r '.version // empty')
+              if [ "$live_sha" = "$EXPECTED_SHA" ]; then
+                echo "Verified production image $EXPECTED_SHA on attempt $attempt."
+                exit 0
+              fi
+              echo "Attempt $attempt: healthy image is ${live_sha:-unknown}; waiting for $EXPECTED_SHA ..."
+            else
+              echo "Attempt $attempt: production is restarting or not healthy yet ..."
+            fi
+            sleep 10
+          done
+
+          echo "Production never reported image $EXPECTED_SHA at $HEALTH_URL." >&2
+          echo "Last health response: ${last_response:-<none>}" >&2
+          exit 1
