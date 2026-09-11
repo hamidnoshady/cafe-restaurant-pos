@@ -326,7 +326,7 @@ export function BackupManager() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">پشتیبان‌گیری کامل سیستم</h1>
-          <p className="mt-1 text-xs text-white/35">
+          <p className="mt-1 text-xs text-muted-foreground">
             یک نسخه از تمام پایگاه‌داده — همهٔ کسب‌وکارها، تنظیمات پلت‌فرمن و خودِ ساختار —
             با زمان‌بندی خودتان؛ و بازیابی همان نسخه روی سروری دیگر، فقط با وارد کردن آدرس.
           </p>
@@ -562,7 +562,7 @@ function ConfigCard({
               onChange={(e) => setForm({ ...form, intervalHours: Number(e.target.value) })}
             >
               {INTERVALS.map((h) => (
-                <option key={h} value={h} className="bg-slate-900">
+                <option key={h} value={h} className="bg-popover">
                   هر {toPersianDigits(h)} ساعت
                 </option>
               ))}
@@ -648,7 +648,7 @@ function ConfigCard({
           {config.hasPassphrase || clearSecrets.passphrase ? (
             <button
               type="button"
-              className="mb-3 text-xs text-white/45 underline decoration-white/20 hover:text-white/70"
+              className="mb-3 text-xs text-muted-foreground underline decoration-border hover:text-foreground"
               onClick={() => setClearSecrets((s) => ({ ...s, passphrase: !s.passphrase }))}
             >
               {clearSecrets.passphrase ? "لغو پاک‌کردن عبارت عبور" : "پاک کردن عبارت عبور ذخیره‌شده"}
@@ -657,7 +657,7 @@ function ConfigCard({
         </div>
       </div>
 
-      <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mt-4 border-t border-border pt-4">
         <Toggle
           label="ارسال نسخه‌ها به فضای ابری (S3)"
           checked={form.cloud.enabled}
@@ -687,7 +687,7 @@ function ConfigCard({
         {form.cloud.hasSecretAccessKey ? (
           <button
             type="button"
-            className="text-xs text-white/45 underline decoration-white/20 hover:text-white/70"
+            className="text-xs text-muted-foreground underline decoration-border hover:text-foreground"
             onClick={() => setClearSecrets((s) => ({ ...s, cloudSecret: !s.cloudSecret }))}
           >
             {clearSecrets.cloudSecret ? "لغو پاک‌کردن کلید محرمانه" : "پاک کردن کلید محرمانهٔ ذخیره‌شده"}
@@ -701,7 +701,7 @@ function ConfigCard({
           ذخیرهٔ تنظیمات
         </Button>
         {dirty ? (
-          <button type="button" className="text-xs text-white/40 hover:text-white/70" onClick={() => { setForm(config); setClearSecrets({ passphrase: false, cloudSecret: false }); }}>
+          <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => { setForm(config); setClearSecrets({ passphrase: false, cloudSecret: false }); }}>
             بازگردانی تغییرات این فرم
           </button>
         ) : null}
@@ -770,21 +770,21 @@ function ServingCard({
             : "خاموش = مسیرها ۴۰۴ پاسخ می‌دهند، انگار وجود ندارند"
         }
       />
-      {busy === "serving" ? <p className="text-xs text-white/40">در حال ذخیره…</p> : null}
+      {busy === "serving" ? <p className="text-xs text-muted-foreground">در حال ذخیره…</p> : null}
 
       {issued ? (
         <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
-          <p className="mb-2 text-xs text-emerald-200/80">
+          <p className="mb-2 text-xs text-emerald-800/80 dark:text-emerald-200/80">
             همین حالا کپی کنید — این تنها بار است که کلید کامل نشان داده می‌شود. در سرور جدید، در
             بخش «بازیابی از آدرس»، همان را در فیلد کلید وارد کنید.
           </p>
           <div className="flex items-center gap-2">
-            <code dir="ltr" className="min-w-0 flex-1 truncate rounded-lg bg-black/40 px-2 py-1.5 text-xs">
+            <code dir="ltr" className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2 py-1.5 text-xs">
               {issued}
             </code>
             <CopyButton value={issued} />
           </div>
-          <button type="button" className="mt-2 text-xs text-white/45 hover:text-white/70" onClick={() => setIssued(null)}>
+          <button type="button" className="mt-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => setIssued(null)}>
             دیدم، پنهانش کن
           </button>
         </div>
@@ -814,7 +814,7 @@ function ServingCard({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[46rem] text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-xs text-white/40">
+              <tr className="border-b border-border text-xs text-muted-foreground">
                 <th className="py-2 text-start font-medium">نام</th>
                 <th className="py-2 text-start font-medium">کلید</th>
                 <th className="py-2 text-start font-medium">ساخته</th>
@@ -827,21 +827,21 @@ function ServingCard({
             <tbody>
               {tokens.map((t) => {
                 return (
-                  <tr key={t.id} className="border-b border-white/5 last:border-0">
+                  <tr key={t.id} className="border-b border-border last:border-0">
                     <td className="py-2">{t.label}</td>
-                    <td className="py-2 font-mono text-xs text-white/50" dir="ltr">{t.hint}</td>
-                    <td className="py-2 text-xs text-white/50">{fmtDate(t.createdAt)}</td>
-                    <td className="py-2 text-xs text-white/50">{t.lastUsedAt ? fmtDate(t.lastUsedAt) : "هرگز"}</td>
-                    <td className="py-2 text-xs tabular-nums text-white/50">{toPersianDigits(t.uses)}</td>
-                    <td className="py-2 text-xs text-white/50">{t.expiresAt ? fmtDate(t.expiresAt, true) : "ندارد"}</td>
+                    <td className="py-2 font-mono text-xs text-muted-foreground" dir="ltr">{t.hint}</td>
+                    <td className="py-2 text-xs text-muted-foreground">{fmtDate(t.createdAt)}</td>
+                    <td className="py-2 text-xs text-muted-foreground">{t.lastUsedAt ? fmtDate(t.lastUsedAt) : "هرگز"}</td>
+                    <td className="py-2 text-xs tabular-nums text-muted-foreground">{toPersianDigits(t.uses)}</td>
+                    <td className="py-2 text-xs text-muted-foreground">{t.expiresAt ? fmtDate(t.expiresAt, true) : "ندارد"}</td>
                     <td className="py-2 text-end">
                       {t.revokedAt ? (
-                        <span className="text-xs text-white/30">لغو شده</span>
+                        <span className="text-xs text-muted-foreground">لغو شده</span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => void revoke(t.id)}
-                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-red-300/80 transition-colors hover:bg-red-500/10"
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-red-700/80 dark:text-red-300/80 transition-colors hover:bg-red-500/10"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           لغو
@@ -1034,15 +1034,15 @@ function RestoreCard({
               <label
                 key={p.id}
                 className={`flex cursor-pointer flex-wrap items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${
-                  selected === p.id ? "border-sky-400/50 bg-sky-500/10" : "border-white/10 hover:bg-white/5"
+                  selected === p.id ? "border-sky-400/50 bg-sky-500/10" : "border-border hover:bg-muted"
                 }`}
               >
                 <input type="radio" name="peer" className="accent-sky-500" checked={selected === p.id} onChange={() => setSelected(p.id)} />
                 <span className="min-w-0 flex-1 truncate text-sm">{p.label}</span>
-                <code dir="ltr" className="truncate text-xs text-white/40">{p.baseUrl}</code>
-                {!p.hasToken ? <span className="text-xs text-amber-300">کلید ندارد</span> : null}
-                {!p.secure ? <span className="text-xs text-amber-300">http</span> : null}
-                <span className="text-xs text-white/35">
+                <code dir="ltr" className="truncate text-xs text-muted-foreground">{p.baseUrl}</code>
+                {!p.hasToken ? <span className="text-xs text-amber-700 dark:text-amber-300">کلید ندارد</span> : null}
+                {!p.secure ? <span className="text-xs text-amber-700 dark:text-amber-300">http</span> : null}
+                <span className="text-xs text-muted-foreground">
                   {p.lastCheckAt ? `بررسی: ${fmtDate(p.lastCheckAt)}` : "بررسی نشده"}
                   {p.lastCheckStatus === "failed" ? " · ناموفق" : ""}
                 </span>
@@ -1057,7 +1057,7 @@ function RestoreCard({
                         e.preventDefault();
                         void togglePeer(p.id, !p.enabled);
                       }}
-                      className="text-xs text-white/45 hover:text-white/70"
+                      className="text-xs text-muted-foreground hover:text-foreground"
                     >
                       {p.enabled ? "غیرفعال" : "فعال"}
                     </button>
@@ -1068,7 +1068,7 @@ function RestoreCard({
                         void removePeer(p.id);
                       }}
                       aria-label={`حذف ${p.label}`}
-                      className="text-white/35 transition-colors hover:text-red-300"
+                      className="text-muted-foreground transition-colors hover:text-red-700 dark:hover:text-red-300"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -1098,7 +1098,7 @@ function RestoreCard({
               بررسی اتصال و خواندن فهرست
             </Button>
             {check ? (
-              <span className="text-xs text-white/45">
+              <span className="text-xs text-muted-foreground">
                 {toPersianDigits(check.manifest.artifacts.length)} نسخه · {toPersianDigits(check.manifest.schemaMigrations)} مهاجرت ·
                 Postgres {toPersianDigits(check.manifest.pgServerMajor)} · {toPersianDigits(check.manifest.businessCount)} کسب‌وکار
               </span>
@@ -1117,12 +1117,12 @@ function RestoreCard({
           ) : null}
 
           {check && canManage ? (
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="rounded-xl border border-border bg-muted p-3">
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-white/45">نسخه</span>
+                <span className="text-xs text-muted-foreground">نسخه</span>
                 <select className={`${selectClass} h-9 w-auto min-w-[22rem]`} value={artifact} onChange={(e) => setArtifact(e.target.value)}>
                   {check.manifest.artifacts.map((a) => (
-                    <option key={a.artifact} value={a.artifact} className="bg-slate-900">
+                    <option key={a.artifact} value={a.artifact} className="bg-popover">
                       {a.artifact} — {bytes(a.sizeBytes)}
                       {a.encrypted ? " (رمزشده)" : ""}
                     </option>
@@ -1130,7 +1130,7 @@ function RestoreCard({
                 </select>
               </div>
               {chosen?.sha256 ? (
-                <p className="mb-2 text-[11px] text-white/35" dir="ltr">
+                <p className="mb-2 text-[11px] text-muted-foreground" dir="ltr">
                   sha256: {chosen.sha256.slice(0, 32)}…
                 </p>
               ) : null}
@@ -1169,7 +1169,7 @@ function RestoreCard({
             </div>
           ) : null}
 
-          <p className="text-[11px] text-white/35">
+          <p className="text-[11px] text-muted-foreground">
             اگر رمزنگاری محلی روشن باشد ولی عبارت عبور این سرور خالی باشد، فایل رمزگشایی نمی‌شود و
             بازگردانی پیش از هر تغییری می‌ایستد. آن را در همان پاکت بسته‌بندی نگه دارید که رمز عبور
             مالک در آن است.
@@ -1177,7 +1177,7 @@ function RestoreCard({
         </div>
       )}
 
-      <p className="mt-3 text-[11px] text-white/35">
+      <p className="mt-3 text-[11px] text-muted-foreground">
         سروری که http دارد فقط وقتی بررسی می‌شود که «اجازهٔ اتصال ناامن» در تنظیمات روشن باشد —
         روی شبکهٔ داخلی، همان NAS که فایل‌ها روی آن است، همین لازم است.
       </p>
@@ -1191,11 +1191,11 @@ function RestoreResult({ result }: { result: { status?: string; summary?: unknow
     | undefined;
   return (
     <div className={`mt-3 rounded-xl border p-3 ${result.status === "applied" ? "border-amber-500/30 bg-amber-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
-      <p className="text-sm font-medium text-white/85">
+      <p className="text-sm font-medium text-foreground">
         {result.status === "applied" ? "بازگردانی انجام شد" : "اعتبارسنجی موفق بود — چیزی تغییر نکرد"}
       </p>
       {summary ? (
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/55">
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span>{toPersianDigits(summary.migrations ?? 0)} مهاجرت</span>
           {summary.latestMigration ? <span dir="ltr">تازه‌ترین: {summary.latestMigration}</span> : null}
           {(summary.tables ?? []).map((t) => (
@@ -1205,7 +1205,7 @@ function RestoreResult({ result }: { result: { status?: string; summary?: unknow
           ))}
         </div>
       ) : null}
-      {result.notice ? <p className="mt-2 text-xs leading-6 text-amber-200/80">{result.notice}</p> : null}
+      {result.notice ? <p className="mt-2 text-xs leading-6 text-amber-800/80 dark:text-amber-200/80">{result.notice}</p> : null}
     </div>
   );
 }
@@ -1261,7 +1261,7 @@ function HistoryCard({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[40rem] text-sm">
               <thead>
-                <tr className="border-b border-white/10 text-xs text-white/40">
+                <tr className="border-b border-border text-xs text-muted-foreground">
                   <th className="py-2 text-start font-medium">شروع</th>
                   <th className="py-2 text-start font-medium">نوع</th>
                   <th className="py-2 text-start font-medium">وضعیت</th>
@@ -1271,33 +1271,33 @@ function HistoryCard({
               </thead>
               <tbody>
                 {runs.map((r) => (
-                  <tr key={r.id} className="border-b border-white/5 align-top last:border-0">
-                    <td className="py-2 text-xs text-white/55">{fmtDate(r.startedAt)}</td>
+                  <tr key={r.id} className="border-b border-border align-top last:border-0">
+                    <td className="py-2 text-xs text-muted-foreground">{fmtDate(r.startedAt)}</td>
                     <td className="py-2 text-xs">
                       {r.kind === "local" ? "محلی" : "ابر"} · {TRIGGER_LABELS[r.trigger] ?? r.trigger}
                     </td>
                     <td className="py-2 text-xs">
                       <RunBadge status={r.status} />
                       {r.status === "failed" && r.error ? (
-                        <span className="mt-1 block max-w-[18rem] truncate text-[11px] text-red-300/70" title={r.error}>
+                        <span className="mt-1 block max-w-[18rem] truncate text-[11px] text-red-700/70 dark:text-red-300/70" title={r.error}>
                           {r.error.slice(0, 90)}
                         </span>
                       ) : null}
                     </td>
-                    <td className="py-2 text-xs tabular-nums text-white/55">{bytes(r.sizeBytes)}</td>
+                    <td className="py-2 text-xs tabular-nums text-muted-foreground">{bytes(r.sizeBytes)}</td>
                     <td className="py-2">
                       {r.artifact ? (
                         <button
                           type="button"
                           onClick={() => void copy(r.artifact!)}
-                          className="inline-flex max-w-[16rem] items-center gap-1 truncate font-mono text-[11px] text-white/45 transition-colors hover:text-white/80"
+                          className="inline-flex max-w-[16rem] items-center gap-1 truncate font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                           title="کپی نام فایل"
                         >
                           <span dir="ltr" className="truncate">{r.artifact}</span>
-                          {copied === r.artifact ? <Check className="h-3 w-3 text-emerald-300" /> : <Copy className="h-3 w-3" />}
+                          {copied === r.artifact ? <Check className="h-3 w-3 text-emerald-700 dark:text-emerald-300" /> : <Copy className="h-3 w-3" />}
                         </button>
                       ) : (
-                        <span className="text-[11px] text-white/25">—</span>
+                        <span className="text-[11px] text-muted-foreground">—</span>
                       )}
                     </td>
                   </tr>
@@ -1317,15 +1317,15 @@ function HistoryCard({
               {local.map((a) => (
                 <li key={a.artifact} className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <code dir="ltr" className="min-w-0 flex-1 truncate text-white/70">{a.artifact}</code>
-                    <span className="tabular-nums text-white/40">{bytes(a.sizeBytes)}</span>
-                    {a.encrypted ? <span className="rounded-full border border-white/15 px-1.5 text-[10px] text-white/45">رمزشده</span> : null}
-                    {a.exists ? null : <span className="rounded-full border border-amber-500/30 px-1.5 text-[10px] text-amber-300">حذف‌شده</span>}
+                    <code dir="ltr" className="min-w-0 flex-1 truncate text-foreground">{a.artifact}</code>
+                    <span className="tabular-nums text-muted-foreground">{bytes(a.sizeBytes)}</span>
+                    {a.encrypted ? <span className="rounded-full border border-border px-1.5 text-[10px] text-muted-foreground">رمزشده</span> : null}
+                    {a.exists ? null : <span className="rounded-full border border-amber-500/30 px-1.5 text-[10px] text-amber-700 dark:text-amber-300">حذف‌شده</span>}
                     {a.exists ? (
                       <button
                         type="button"
                         onClick={() => setOpenFor(openFor === a.artifact ? null : a.artifact)}
-                        className="rounded-lg border border-white/15 px-2 py-0.5 text-[11px] text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+                        className="rounded-lg border border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       >
                         {openFor === a.artifact ? "بستن" : "بازیابی این نسخه"}
                       </button>
@@ -1353,12 +1353,12 @@ function HistoryCard({
             <ul className="space-y-1.5">
               {restores.map((r) => (
                 <li key={r.id} className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-white/55">{fmtDate(r.startedAt)}</span>
-                  <span className="text-white/70">{r.mode === "apply" ? "بازگردانی کامل" : "اعتبارسنجی"}</span>
-                  <span className="text-white/40">{SOURCE_LABELS[r.source] ?? r.source}</span>
-                  <code dir="ltr" className="min-w-0 flex-1 truncate text-white/45">{r.artifact}</code>
+                  <span className="text-muted-foreground">{fmtDate(r.startedAt)}</span>
+                  <span className="text-foreground">{r.mode === "apply" ? "بازگردانی کامل" : "اعتبارسنجی"}</span>
+                  <span className="text-muted-foreground">{SOURCE_LABELS[r.source] ?? r.source}</span>
+                  <code dir="ltr" className="min-w-0 flex-1 truncate text-muted-foreground">{r.artifact}</code>
                   <RunBadge status={r.status} />
-                  {r.error ? <span className="w-full truncate text-[11px] text-red-300/70">{r.error.slice(0, 120)}</span> : null}
+                  {r.error ? <span className="w-full truncate text-[11px] text-red-700/70 dark:text-red-300/70">{r.error.slice(0, 120)}</span> : null}
                 </li>
               ))}
             </ul>
@@ -1376,12 +1376,12 @@ function HistoryCard({
  */
 function RunBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    running: { label: "در حال اجرا", cls: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
-    success: { label: "موفق", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
-    failed: { label: "ناموفق", cls: "bg-red-500/15 text-red-300 border-red-500/30" },
-    ok: { label: "موفق", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+    running: { label: "در حال اجرا", cls: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30" },
+    success: { label: "موفق", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
+    failed: { label: "ناموفق", cls: "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30" },
+    ok: { label: "موفق", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
   };
-  const s = map[status] ?? { label: status, cls: "bg-white/10 text-white/50 border-white/20" };
+  const s = map[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border" };
   return (
     <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-medium ${s.cls}`}>
       {s.label}
@@ -1459,7 +1459,7 @@ function LocalRestore({
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+    <div className="rounded-xl border border-border bg-muted p-3">
       <div className="grid gap-x-3 md:grid-cols-2">
         <Field
           label="عبارت عبور"
@@ -1495,7 +1495,7 @@ function LocalRestore({
             بازگردانی کامل روی این سرور
           </Button>
         ) : (
-          <span className="text-[11px] text-white/35">بازگردانی کامل فقط برای نقش «مدیر ارشد» است.</span>
+          <span className="text-[11px] text-muted-foreground">بازگردانی کامل فقط برای نقش «مدیر ارشد» است.</span>
         )}
       </div>
       {error ? <ErrorBox>{error}</ErrorBox> : null}
@@ -1525,8 +1525,8 @@ function Toggle({
         onChange={(e) => onChange(e.target.checked)}
       />
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-white/80">{label}</span>
-        {hint ? <span className="mt-0.5 block text-xs leading-5 text-white/40">{hint}</span> : null}
+        <span className="block text-sm font-medium text-foreground">{label}</span>
+        {hint ? <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{hint}</span> : null}
       </span>
     </label>
   );
@@ -1546,9 +1546,9 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 px-2.5 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/5"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
       {label ?? (copied ? "کپی شد" : "کپی")}
     </button>
   );

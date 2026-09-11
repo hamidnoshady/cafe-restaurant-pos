@@ -14,6 +14,7 @@ import { useState } from "react";
 import { useAiChat } from "@/components/ai/use-ai-chat";
 import { AiChatHub } from "./ai-chat-hub";
 import { AiSidebar } from "./ai-sidebar";
+import { overlayPanelClass } from "../page-chrome";
 
 export function AiWorkspace() {
   const chat = useAiChat({ mode: "dashboard" });
@@ -35,7 +36,7 @@ export function AiWorkspace() {
             className="absolute inset-0 bg-black/40"
             onClick={() => setNavOpen(false)}
           />
-          <div className="absolute inset-y-0 right-0 w-[82%] max-w-xs shadow-[0_1px_2px_rgb(41_37_36/0.035)]">
+          <div className={`absolute inset-y-0 right-0 w-[82%] max-w-xs ${overlayPanelClass} rounded-none border-y-0 border-e-0`}>
             <AiSidebar chat={chat} onNavigate={() => setNavOpen(false)} />
           </div>
         </div>

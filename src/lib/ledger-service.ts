@@ -91,8 +91,8 @@ export async function postExactJournalEntry(
 
   const { rows } = await client.query<{ id: string }>(
     `INSERT INTO journal_entries
-       (business_id,location_id,entry_date,memo,source_type,source_id,created_by,posting_kind,inventory_event_id)
-     VALUES($1,$2,COALESCE($3,CURRENT_DATE),$4,$5,$6,$7,$8,$9)
+       (business_id,location_id,entry_date,memo,source_type,source_id,created_by,posting_kind,inventory_event_id,project_id)
+     VALUES($1,$2,COALESCE($3,CURRENT_DATE),$4,$5,$6,$7,$8,$9,$10)
      RETURNING id`,
     [
       input.businessId,
@@ -104,6 +104,7 @@ export async function postExactJournalEntry(
       input.createdBy,
       input.postingKind ?? null,
       input.inventoryEventId ?? null,
+      input.projectId ?? null,
     ],
   );
   for (const line of lines) {
@@ -777,6 +778,8 @@ export interface PostJournalEntryInput {
   createdBy: string | null;
   postingKind?: string | null;
   inventoryEventId?: string | null;
+  /** Optional operating dimension. The caller must establish tenant affinity. */
+  projectId?: string | null;
 }
 
 /**
@@ -798,9 +801,9 @@ export async function postJournalEntry(client: PoolClient, input: PostJournalEnt
   }
 
   const { rows } = await client.query<{ id: string }>(
-    `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type, source_id, created_by, posting_kind, inventory_event_id)
-     VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9) RETURNING id`,
-    [input.businessId, input.locationId, input.entryDate ?? null, input.memo, input.sourceType, input.sourceId, input.createdBy, input.postingKind ?? null, input.inventoryEventId ?? null],
+    `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type, source_id, created_by, posting_kind, inventory_event_id, project_id)
+     VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+    [input.businessId, input.locationId, input.entryDate ?? null, input.memo, input.sourceType, input.sourceId, input.createdBy, input.postingKind ?? null, input.inventoryEventId ?? null, input.projectId ?? null],
   );
   const entryId = rows[0].id;
   for (const l of lines) {

@@ -71,13 +71,13 @@ function levelCls(level: string): string {
   switch (level) {
     case "error":
     case "fatal":
-      return "border-red-500/30 bg-red-500/10 text-red-300";
+      return "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300";
     case "warn":
-      return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+      return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
     case "info":
-      return "border-sky-500/30 bg-sky-500/10 text-sky-300";
+      return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300";
     default:
-      return "border-white/15 bg-white/5 text-white/50";
+      return "border-border bg-muted text-muted-foreground";
   }
 }
 
@@ -163,7 +163,7 @@ export default function CmsLogsPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[12rem] flex-1">
-          <Search className="pointer-events-none absolute inset-y-0 my-auto ms-3 size-4 text-white/30" />
+          <Search className="pointer-events-none absolute inset-y-0 my-auto ms-3 size-4 text-muted-foreground" />
           <input
             className={`${inputClass} ps-9`}
             onChange={(event) => setQ(event.target.value)}
@@ -176,8 +176,8 @@ export default function CmsLogsPage() {
             <button
               className={
                 level === item.value
-                  ? "rounded-lg bg-sky-500/15 px-3 py-2 text-sm font-medium text-sky-300"
-                  : "rounded-lg px-3 py-2 text-sm text-white/55 hover:bg-white/5"
+                  ? "rounded-lg bg-sky-500/15 px-3 py-2 text-sm font-medium text-sky-700 dark:text-sky-300"
+                  : "rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
               }
               key={item.value}
               onClick={() => setLevel(item.value)}
@@ -197,8 +197,8 @@ export default function CmsLogsPage() {
             <button
               className={
                 rangeIdx === index
-                  ? "rounded-lg bg-white/10 px-2.5 py-2 text-xs font-medium text-white"
-                  : "rounded-lg px-2.5 py-2 text-xs text-white/45 hover:bg-white/5"
+                  ? "rounded-lg bg-muted px-2.5 py-2 text-xs font-medium text-foreground"
+                  : "rounded-lg px-2.5 py-2 text-xs text-muted-foreground hover:bg-muted"
               }
               key={range.label}
               onClick={() => setRangeIdx(index)}
@@ -221,7 +221,7 @@ export default function CmsLogsPage() {
         منبع می‌آیند: تماس‌های این کنسول با سایت‌ساز، و خوراک رویدادهای خودِ سایت‌ساز.
         {config?.publicUrl ? (
           <a
-            className="ms-2 inline-flex items-center gap-1 text-sky-300 hover:underline"
+            className="ms-2 inline-flex items-center gap-1 text-sky-700 dark:text-sky-300 hover:underline"
             href={config.publicUrl}
             rel="noreferrer"
             target="_blank"
@@ -239,7 +239,7 @@ export default function CmsLogsPage() {
         />
       ) : (
         <Card>
-          <ul className="divide-y divide-white/5">
+          <ul className="divide-y divide-border">
             {rows.map((row, index) => (
               <li className="py-2" key={`${row.cms_event_id ?? index}-${row._timestamp ?? index}`}>
                 <div className="flex flex-wrap items-baseline gap-2">
@@ -248,7 +248,7 @@ export default function CmsLogsPage() {
                   >
                     {String(row.level ?? "info")}
                   </span>
-                  <span className="text-xs text-white/35">
+                  <span className="text-xs text-muted-foreground">
                     {row._timestamp
                       ? fmtDate(new Date(Math.floor(Number(row._timestamp) / 1000)).toISOString())
                       : row.source_at
@@ -256,23 +256,23 @@ export default function CmsLogsPage() {
                         : "—"}
                   </span>
                   {row.cms_site_domain ? (
-                    <span className="text-xs text-white/45" dir="ltr">
+                    <span className="text-xs text-muted-foreground" dir="ltr">
                       {row.cms_site_domain}
                     </span>
                   ) : null}
                   {row.cms_kind ? (
-                    <span className="text-xs text-white/45">{row.cms_kind}</span>
+                    <span className="text-xs text-muted-foreground">{row.cms_kind}</span>
                   ) : null}
                   {row.cms_operation ? (
-                    <span className="text-xs text-white/45">{row.cms_operation}</span>
+                    <span className="text-xs text-muted-foreground">{row.cms_operation}</span>
                   ) : null}
                   {row.duration_ms !== undefined ? (
-                    <span className="text-xs tabular-nums text-white/30">
+                    <span className="text-xs tabular-nums text-muted-foreground">
                       {toPersianDigits(Number(row.duration_ms))}‏ms
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-1 break-words text-sm text-white/75">{String(row.message ?? "")}</p>
+                <p className="mt-1 break-words text-sm text-foreground">{String(row.message ?? "")}</p>
               </li>
             ))}
           </ul>

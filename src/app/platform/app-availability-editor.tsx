@@ -61,11 +61,11 @@ interface Draft {
 }
 
 const STATE_TONE: Record<AppAvailabilityState, string> = {
-  available: "border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
-  beta: "border-sky-500/30 bg-sky-500/15 text-sky-300",
-  coming_soon: "border-amber-500/30 bg-amber-500/15 text-amber-300",
-  maintenance: "border-amber-500/30 bg-amber-500/15 text-amber-300",
-  disabled: "border-white/20 bg-white/10 text-white/60",
+  available: "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  beta: "border-sky-500/30 bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  coming_soon: "border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  maintenance: "border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  disabled: "border-border bg-muted text-muted-foreground",
 };
 
 export function AppStateChip({ state }: { state: AppAvailabilityState }) {
@@ -150,8 +150,8 @@ export function AppAvailabilityEditor({
 
   return (
     <Card title={title}>
-      {description ? <p className="mb-4 -mt-1 text-xs leading-6 text-white/45">{description}</p> : null}
-      <p className="mb-4 -mt-1 text-[11px] leading-5 text-white/35">
+      {description ? <p className="mb-4 -mt-1 text-xs leading-6 text-muted-foreground">{description}</p> : null}
+      <p className="mb-4 -mt-1 text-[11px] leading-5 text-muted-foreground">
         این وضعیت برای کلِ «برنامه» تنظیم می‌شود، نه برای بخش‌های داخل آن. هر بخش (آیتم منو) درونِ یک
         برنامه، از وضعیت همان برنامه پیروی می‌کند. فعال/غیرفعال کردن تنها در سطح سکو (مدیر سکو) انجام
         می‌شود و برای کسب‌وکارها ارائه نمی‌شود.
@@ -175,7 +175,7 @@ export function AppAvailabilityEditor({
             return (
               <div
                 key={row.app}
-                className="rounded-lg border border-white/10 bg-white/2 p-3 sm:p-4"
+                className="rounded-lg border border-border bg-card p-3 sm:p-4"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -183,12 +183,12 @@ export function AppAvailabilityEditor({
                       <p className="text-sm font-medium">{row.label}</p>
                       <AppStateChip state={row.state} />
                       {scope === "business" && row.overridden ? (
-                        <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] text-white/60">
+                        <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
                           ویژهٔ این کسب‌وکار
                         </span>
                       ) : null}
                       {scope === "business" && !row.overridden ? (
-                        <span className="text-[11px] text-white/35">
+                        <span className="text-[11px] text-muted-foreground">
                           پیرو سکو (
                           {(APP_AVAILABILITY_META[row.platformState ?? "available"] ??
                             APP_AVAILABILITY_META.available).label}
@@ -196,35 +196,35 @@ export function AppAvailabilityEditor({
                         </span>
                       ) : null}
                       {scope === "platform" && (row.overrideCount ?? 0) > 0 ? (
-                        <span className="text-[11px] text-white/35">
+                        <span className="text-[11px] text-muted-foreground">
                           {formatPersianNumber(row.overrideCount ?? 0)} کسب‌وکار وضعیت اختصاصی دارند
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-1 text-xs text-white/30" dir="ltr">
+                    <p className="mt-1 text-xs text-muted-foreground" dir="ltr">
                       {row.app}
                     </p>
                     {row.notice ? (
-                      <p className="mt-1 max-w-xl text-xs leading-6 text-white/45">
+                      <p className="mt-1 max-w-xl text-xs leading-6 text-muted-foreground">
                         پیام کاربر: {row.notice}
                       </p>
                     ) : null}
                     {row.availableFrom ? (
-                      <p className="mt-1 text-xs text-white/40">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         زمان در دسترس بودن:{" "}
                         {toPersianDigits(formatJalali(row.availableFrom, { withMonthName: true }))}
                       </p>
                     ) : null}
                   </div>
                   {saved === row.app && !dirty ? (
-                    <span className="text-xs text-emerald-300">ذخیره شد</span>
+                    <span className="text-xs text-emerald-700 dark:text-emerald-300">ذخیره شد</span>
                   ) : null}
                 </div>
 
                 {editable ? (
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
                     <label className="block">
-                      <span className="mb-1 block text-xs text-white/50">وضعیت</span>
+                      <span className="mb-1 block text-xs text-muted-foreground">وضعیت</span>
                       <select
                         className={selectClass}
                         value={draft.state}
@@ -238,12 +238,12 @@ export function AppAvailabilityEditor({
                           </option>
                         ))}
                       </select>
-                      <span className="mt-1 block text-[11px] leading-5 text-white/35">
+                      <span className="mt-1 block text-[11px] leading-5 text-muted-foreground">
                         {meta.hint}
                       </span>
                     </label>
                     <label className="block">
-                      <span className="mb-1 block text-xs text-white/50">
+                      <span className="mb-1 block text-xs text-muted-foreground">
                         پیامی که کاربر می‌بیند (اختیاری)
                       </span>
                       <input
@@ -255,14 +255,14 @@ export function AppAvailabilityEditor({
                       />
                     </label>
                     <label className="block">
-                      <span className="mb-1 block text-xs text-white/50">
+                      <span className="mb-1 block text-xs text-muted-foreground">
                         زمان در دسترس بودن (اختیاری)
                       </span>
                       <JalaliDatePicker
                         value={draft.availableFrom}
                         onChange={(iso) => patchDraft(row.app, { availableFrom: iso })}
                         className={inputClass}
-                        popoverClass="border-white/15 bg-slate-900 text-white"
+                        popoverClass="border-border bg-popover text-foreground"
                       />
                     </label>
                   </div>

@@ -173,7 +173,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     <div className="grid gap-4 md:grid-cols-[minmax(12.5rem,15rem)_minmax(0,1fr)] md:items-start lg:gap-5">
       <aside
         aria-labelledby="prepared-reports-heading"
-        className={`min-w-0 ${cardClass} p-3 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:sticky md:top-5`}
+        className={`min-w-0 ${cardClass} p-3 md:sticky md:top-5`}
       >
         <div className="border-b border-border px-2 pb-3">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
@@ -218,7 +218,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
       <section
         aria-live="polite"
         aria-labelledby="prepared-report-preview-heading"
-        className={`min-w-0 ${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`}
+        className={`min-w-0 ${cardClass} p-4 sm:p-5`}
       >
         {!selected ? (
           <div className="flex min-h-48 items-center rounded-xl border border-dashed border-border/80 bg-muted px-5 text-sm text-muted-foreground">

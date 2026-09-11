@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0143_periodic_inventory_lifo.sql — سیستم ادواری (Periodic) + LIFO
+-- 0144_periodic_inventory_lifo.sql — سیستم ادواری (Periodic) + LIFO
 --
 -- Two additions to the inventory-costing surface:
 --

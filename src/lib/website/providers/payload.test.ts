@@ -9,6 +9,7 @@ import {
   buildPostPatch,
   buildProductBody,
   cursorFromPage,
+  mapPayloadMedia,
   mapPayloadPost,
   mapPayloadProduct,
   pageFromCursor,
@@ -91,6 +92,12 @@ describe("Phase 38 Wave 2 — Payload adapter, the pure half", () => {
     expect(published.url).toBe("https://cafe.example.test/blog/قهوه-تازه");
   });
 
+  it("maps a Payload media response to a safe absolute URL", () => {
+    expect(mapPayloadMedia({ id: "m1", filename: "hero.webp", alt: "قهوه", url: "/media/hero.webp" }, "https://cdn.example.test")).toEqual({
+      id: "m1", filename: "hero.webp", alt: "قهوه", url: "https://cdn.example.test/media/hero.webp",
+    });
+  });
+
   it("maps a Payload product with the price in Rial and stock only when tracked", () => {
     expect(mapPayloadProduct(productDoc, ctx)).toMatchObject({ priceRial: 850_000, stock: 4, status: "published" });
     expect(mapPayloadProduct({ ...productDoc, trackInventory: false }, ctx).stock).toBeNull();
@@ -153,6 +160,20 @@ describe("Phase 38 Wave 2 — Payload adapter against recorded fixtures (no live
     expect((seen[0].body as { _status: string })._status).toBe("draft");
     expect(post.status).toBe("draft");
     expect(post.body).toBe("# قهوه\n\nمتن **مهم**");
+  });
+
+  it("uploads a featured image as multipart data and maps its returned media", async () => {
+    let form: FormData | null = null;
+    const { fetchImpl, seen } = fakeFetch({
+      "/api/media": (init) => { form = init.body as FormData; return { body: { id: "m2", filename: "hero.png", alt: "قهوه", url: "/media/hero.png" } }; },
+    });
+    const adapter = new PayloadWebsiteAdapter({ config, currency: "IRT", fetchImpl });
+    const media = await adapter.uploadMedia({ filename: "hero.png", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]), alt: "قهوه" });
+    expect(seen[0].method).toBe("POST");
+    expect(form).not.toBeNull();
+    expect(form!.get("file")).toBeInstanceOf(File);
+    expect(form!.get("alt")).toBe("قهوه");
+    expect(media).toMatchObject({ id: "m2", url: "https://cafe.example.test/media/hero.png" });
   });
 
   it("lists posts newest first with a status filter", async () => {

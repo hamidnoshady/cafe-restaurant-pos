@@ -191,12 +191,12 @@ export default function PlatformBillingPage() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 sm:space-y-6">
       <header className="flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-sky-500/15 text-sky-300">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-sky-500/15 text-sky-700 dark:text-sky-300">
           <WalletIcon className="size-5" />
         </span>
         <div>
-          <h1 className="text-lg font-bold text-white">پرداخت‌ها و اعتبارها</h1>
-          <p className="text-sm text-white/50">
+          <h1 className="text-lg font-bold text-foreground">پرداخت‌ها و اعتبارها</h1>
+          <p className="text-sm text-muted-foreground">
             درگاه پرداخت، بسته‌های شارژ اعتبار و رسیدهای پرداخت کسب‌وکارها
           </p>
         </div>
@@ -240,7 +240,7 @@ export default function PlatformBillingPage() {
                 placeholder="https://app.example.com/dashboard/billing"
               />
             </Field>
-            <label className="flex items-center gap-2 text-sm text-white/80">
+            <label className="flex items-center gap-2 text-sm text-foreground">
               <input type="checkbox" name="sandbox" defaultChecked={config.sandbox} className="size-4" />
               حالت تست (Sandbox) — پرداخت واقعی انجام نمی‌شود
             </label>
@@ -273,8 +273,8 @@ export default function PlatformBillingPage() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-right text-xs text-white/40">
-                <tr className="border-b border-white/10">
+              <thead className="text-right text-xs text-muted-foreground">
+                <tr className="border-b border-border">
                   <th className="py-2 pr-1">نام</th>
                   <th className="py-2">قیمت</th>
                   <th className="py-2">اعتبار</th>
@@ -284,13 +284,13 @@ export default function PlatformBillingPage() {
               </thead>
               <tbody>
                 {packages.map((pkg) => (
-                  <tr key={pkg.id} className="border-b border-white/5">
-                    <td className="py-2 pr-1 font-medium text-white/90">{pkg.name}</td>
+                  <tr key={pkg.id} className="border-b border-border">
+                    <td className="py-2 pr-1 font-medium text-foreground">{pkg.name}</td>
                     <td className="py-2 tabular-nums">{toman(pkg.priceRial)} ت</td>
                     <td className="py-2 tabular-nums">
                       {toman(pkg.creditRial)} ت
                       {pkg.creditRial > pkg.priceRial && (
-                        <span className="mr-1 text-xs text-emerald-300">
+                        <span className="mr-1 text-xs text-emerald-700 dark:text-emerald-300">
                           (+{toman(pkg.creditRial - pkg.priceRial)})
                         </span>
                       )}
@@ -302,8 +302,8 @@ export default function PlatformBillingPage() {
                         disabled={busy?.startsWith("pkg")}
                         className={`rounded-full border px-2 py-0.5 text-xs ${
                           pkg.isActive
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                            : "border-white/15 bg-white/5 text-white/50"
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            : "border-border bg-muted text-muted-foreground"
                         }`}
                       >
                         {pkg.isActive ? "فعال" : "غیرفعال"}
@@ -314,7 +314,7 @@ export default function PlatformBillingPage() {
                         type="button"
                         onClick={() => void deletePackage(pkg.id)}
                         disabled={busy?.startsWith("pkg")}
-                        className="text-red-300 hover:text-red-200"
+                        className="text-red-700 dark:text-red-300 hover:text-red-800 dark:hover:text-red-200"
                         aria-label="حذف بسته"
                       >
                         <Trash2Icon className="size-4" />
@@ -323,7 +323,7 @@ export default function PlatformBillingPage() {
                   </tr>
                 ))}
                 {packages.length === 0 && (
-                  <tr><td colSpan={5} className="py-6 text-center text-white/40">بسته‌ای تعریف نشده است.</td></tr>
+                  <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">بسته‌ای تعریف نشده است.</td></tr>
                 )}
               </tbody>
             </table>
@@ -345,8 +345,8 @@ export default function PlatformBillingPage() {
               onClick={() => setFilter(key)}
               className={`rounded-full border px-3 py-1 transition ${
                 filter === key
-                  ? "border-sky-400/50 bg-sky-500/15 text-sky-200"
-                  : "border-white/15 text-white/60 hover:bg-white/5"
+                  ? "border-sky-400/50 bg-sky-500/15 text-sky-800 dark:text-sky-200"
+                  : "border-border text-muted-foreground hover:bg-muted"
               }`}
             >
               {label}
@@ -357,21 +357,21 @@ export default function PlatformBillingPage() {
           {payments.map((p) => (
             <div
               key={p.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/3 px-3 py-2.5"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-white/90">
+                <p className="truncate text-sm font-medium text-foreground">
                   {p.businessName ? (
-                    <Link href={`/platform/businesses/${p.businessId}/billing`} className="hover:text-sky-300">
+                    <Link href={`/platform/businesses/${p.businessId}/billing`} className="hover:text-sky-700 dark:hover:text-sky-300">
                       {p.businessName}
                     </Link>
                   ) : (
                     "کسب‌وکار"
                   )}
-                  <span className="mx-2 text-white/30">·</span>
+                  <span className="mx-2 text-muted-foreground">·</span>
                   {p.description || STATUS_LABELS[p.status]}
                 </p>
-                <p className="text-xs text-white/40">
+                <p className="text-xs text-muted-foreground">
                   {formatJalali(p.createdAt, { withMonthName: true, withTime: true })}
                   {p.gatewayRef ? ` · کد پیگیری: ${toPersianDigits(p.gatewayRef)}` : ""}
                   {p.gateway === "manual" ? " · پرداخت دستی" : " · زرین‌پال"}
@@ -380,16 +380,16 @@ export default function PlatformBillingPage() {
               <div className="flex shrink-0 items-center gap-3">
                 <span className="text-sm font-semibold tabular-nums">{toman(p.amountRial)} تومان</span>
                 {p.status === "verified" ? (
-                  <CheckCircle2Icon className="size-5 text-emerald-400" />
+                  <CheckCircle2Icon className="size-5 text-emerald-600 dark:text-emerald-400" />
                 ) : p.status === "failed" || p.status === "cancelled" ? (
-                  <XCircleIcon className="size-5 text-red-400" />
+                  <XCircleIcon className="size-5 text-red-600 dark:text-red-400" />
                 ) : canManage ? (
                   <span className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => void review(p.id, "approve")}
                       disabled={busy === `pay-${p.id}`}
-                      className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                      className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-emerald-500 disabled:opacity-50"
                     >
                       تأیید
                     </button>
@@ -397,13 +397,13 @@ export default function PlatformBillingPage() {
                       type="button"
                       onClick={() => void review(p.id, "reject")}
                       disabled={busy === `pay-${p.id}`}
-                      className="rounded-lg border border-red-500/40 px-2.5 py-1 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                      className="rounded-lg border border-red-500/40 px-2.5 py-1 text-xs text-red-700 dark:text-red-300 hover:bg-red-500/10 disabled:opacity-50"
                     >
                       رد
                     </button>
                   </span>
                 ) : (
-                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
                     {STATUS_LABELS[p.status]}
                   </span>
                 )}
@@ -411,7 +411,7 @@ export default function PlatformBillingPage() {
             </div>
           ))}
           {payments.length === 0 && (
-            <p className="py-8 text-center text-sm text-white/40">پرداختی در این فهرست نیست.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">پرداختی در این فهرست نیست.</p>
           )}
         </div>
       </Card>

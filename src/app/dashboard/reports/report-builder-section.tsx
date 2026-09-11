@@ -203,7 +203,7 @@ export function ReportBuilderSection() {
       <section
         aria-labelledby="report-builder-heading"
         aria-busy={busy}
-        className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`}
+        className={`${cardClass} p-4 sm:p-5`}
       >
         <header className="border-b border-border pb-4">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش سفارشی</p>
@@ -408,7 +408,7 @@ export function ReportBuilderSection() {
 
       <section
         aria-labelledby="saved-reports-heading"
-        className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`}
+        className={`${cardClass} p-4 sm:p-5`}
       >
         <header className="border-b border-border pb-4">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش‌های شخصی</p>

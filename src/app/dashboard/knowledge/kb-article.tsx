@@ -18,6 +18,7 @@ import {
   TagIcon,
 } from "lucide-react";
 import { KbMarkdown, KbToc, KbVideo } from "@/components/knowledge/kb-markdown";
+import { Skeleton } from "@/components/ui/skeleton";
 import { kbHeadings, type KbArticleDetail, type KbCataloguePayload } from "@/lib/knowledge";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -30,16 +31,12 @@ function KbArticleSkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="در حال آماده‌سازی راهنما" className="space-y-4">
       <div aria-hidden="true" className="space-y-3">
-        <div className="h-8 w-2/3 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />
-        <div className="h-4 w-1/3 animate-pulse rounded bg-muted/70 motion-reduce:animate-none" />
+        <Skeleton className="h-8 w-2/3 rounded-lg" />
+        <Skeleton className="h-4 w-1/3" />
       </div>
       <div aria-hidden="true" className={`${cardClass} space-y-3 p-5`}>
         {[90, 100, 96, 80, 100, 60].map((w, i) => (
-          <div
-            key={i}
-            style={{ width: `${w}%` }}
-            className="h-3.5 animate-pulse rounded bg-muted/70 motion-reduce:animate-none"
-          />
+          <Skeleton key={i} style={{ width: `${w}%` }} className="h-3.5" />
         ))}
       </div>
     </div>

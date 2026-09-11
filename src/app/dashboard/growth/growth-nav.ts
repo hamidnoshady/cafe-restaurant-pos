@@ -18,6 +18,7 @@ import {
   HandCoinsIcon,
   HeartIcon,
   MegaphoneIcon,
+  MessageCircleIcon,
   TrendingUpIcon,
   UsersIcon,
   type LucideIcon,
@@ -51,6 +52,12 @@ export const GROWTH_NAV_ITEMS: readonly GrowthNavItem[] = [
     label: "کمپین‌ها",
     description: "موتور تخفیف و اثربخشی",
     icon: MegaphoneIcon,
+  },
+  {
+    key: "messaging",
+    label: "پیام‌رسانی",
+    description: "پیامک و ایمیل رضایت‌محور، اعتبار و صف ارسال",
+    icon: MessageCircleIcon,
   },
   {
     key: "gift-cards",

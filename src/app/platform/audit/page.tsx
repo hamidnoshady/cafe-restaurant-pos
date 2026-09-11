@@ -83,12 +83,12 @@ const ACTION_META: Record<string, ActionMeta> = {
 };
 
 const TONE_CLS: Record<Tone, { text: string; ring: string; bg: string; dot: string }> = {
-  ok: { text: "text-emerald-300", ring: "border-emerald-500/30", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
-  warn: { text: "text-amber-300", ring: "border-amber-500/30", bg: "bg-amber-500/10", dot: "bg-amber-400" },
-  bad: { text: "text-red-300", ring: "border-red-500/30", bg: "bg-red-500/10", dot: "bg-red-400" },
-  info: { text: "text-sky-300", ring: "border-sky-500/30", bg: "bg-sky-500/10", dot: "bg-sky-400" },
-  key: { text: "text-violet-300", ring: "border-violet-500/30", bg: "bg-violet-500/10", dot: "bg-violet-400" },
-  muted: { text: "text-white/50", ring: "border-white/15", bg: "bg-white/5", dot: "bg-white/30" },
+  ok: { text: "text-emerald-700 dark:text-emerald-300", ring: "border-emerald-500/30", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
+  warn: { text: "text-amber-700 dark:text-amber-300", ring: "border-amber-500/30", bg: "bg-amber-500/10", dot: "bg-amber-400" },
+  bad: { text: "text-red-700 dark:text-red-300", ring: "border-red-500/30", bg: "bg-red-500/10", dot: "bg-red-400" },
+  info: { text: "text-sky-700 dark:text-sky-300", ring: "border-sky-500/30", bg: "bg-sky-500/10", dot: "bg-sky-400" },
+  key: { text: "text-violet-700 dark:text-violet-300", ring: "border-violet-500/30", bg: "bg-violet-500/10", dot: "bg-violet-400" },
+  muted: { text: "text-muted-foreground", ring: "border-border", bg: "bg-muted", dot: "bg-muted" },
 };
 
 function metaFor(action: string): ActionMeta {
@@ -288,7 +288,7 @@ function AuditTimeline() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">رویدادها</h1>
-          <p className="mt-1 text-sm text-white/40">
+          <p className="mt-1 text-sm text-muted-foreground">
             هر اقدام مدیریتی روی کسب‌وکارها — چه کسی، روی کدام کسب‌وکار، چه زمانی.
             {entries ? ` ${formatPersianNumber(entries.length)} رویداد اخیر.` : ""}
           </p>
@@ -317,7 +317,7 @@ function AuditTimeline() {
           <Card>
             <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
               <div className="relative">
-                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
                   value={q}
                   onChange={(e) => {
@@ -369,7 +369,7 @@ function AuditTimeline() {
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-white/35">بازه زمانی:</span>
+              <span className="text-xs text-muted-foreground">بازه زمانی:</span>
               {DATE_PRESETS.map((p) => (
                 <button
                   key={p.days}
@@ -382,19 +382,19 @@ function AuditTimeline() {
                   }}
                   className={
                     preset === p.days && !from && !to
-                      ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-300"
-                      : "rounded-full border border-white/15 px-3 py-1 text-xs text-white/55 transition-colors hover:bg-white/5 hover:text-white"
+                      ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-700 dark:text-sky-300"
+                      : "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   }
                 >
                   {p.label}
                 </button>
               ))}
-              <span className="mx-1 h-5 w-px bg-white/10" aria-hidden />
-              <label className="flex items-center gap-1 text-xs text-white/45">
+              <span className="mx-1 h-5 w-px bg-muted" aria-hidden />
+              <label className="flex items-center gap-1 text-xs text-muted-foreground">
                 از
                 <JalaliDatePicker
                   className={`${inputClass} !h-8 w-[9rem] text-xs`}
-                  popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                  popoverClass="absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground"
                   value={from}
                   onChange={(v) => {
                     setFrom(v);
@@ -403,11 +403,11 @@ function AuditTimeline() {
                   }}
                 />
               </label>
-              <label className="flex items-center gap-1 text-xs text-white/45">
+              <label className="flex items-center gap-1 text-xs text-muted-foreground">
                 تا
                 <JalaliDatePicker
                   className={`${inputClass} !h-8 w-[9rem] text-xs`}
-                  popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                  popoverClass="absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground"
                   value={to}
                   onChange={(v) => {
                     setTo(v);
@@ -422,14 +422,14 @@ function AuditTimeline() {
           <div className="space-y-5">
             {groups.map((g) => (
               <section key={g.dayTs}>
-                <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-white/60">
+                <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                   <span className="h-1.5 w-1.5 rounded-full bg-sky-400/70" aria-hidden />
                   {dayLabel(g.dayTs)}
-                  <span className="text-xs font-normal text-white/30">
+                  <span className="text-xs font-normal text-muted-foreground">
                     {formatPersianNumber(g.items.length)} رویداد
                   </span>
                 </h2>
-                <div className="overflow-hidden rounded-xl border border-white/10">
+                <div className="overflow-hidden rounded-xl border border-border">
                   {g.items.map((e, idx) => {
                     const m = metaFor(e.action);
                     const tone = TONE_CLS[m.tone];
@@ -438,7 +438,7 @@ function AuditTimeline() {
                     return (
                       <div
                         key={e.id}
-                        className={`flex gap-3 bg-white/2 px-3 py-2.5 sm:px-4 ${idx > 0 ? "border-t border-white/5" : ""}`}
+                        className={`flex gap-3 bg-card px-3 py-2.5 sm:px-4 ${idx > 0 ? "border-t border-border" : ""}`}
                       >
                         <span
                           className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${tone.ring} ${tone.bg} ${tone.text}`}
@@ -452,29 +452,29 @@ function AuditTimeline() {
                             {e.businessId ? (
                               <Link
                                 href={`/platform/businesses/${e.businessId}`}
-                                className="truncate text-sm text-sky-300 hover:underline"
+                                className="truncate text-sm text-sky-700 dark:text-sky-300 hover:underline"
                               >
                                 {e.businessName ?? e.businessId}
                               </Link>
                             ) : e.businessName ? (
-                              <span className="text-sm text-white/50">{e.businessName}</span>
+                              <span className="text-sm text-muted-foreground">{e.businessName}</span>
                             ) : (
-                              <span className="text-sm text-white/30">بدون کسب‌وکار</span>
+                              <span className="text-sm text-muted-foreground">بدون کسب‌وکار</span>
                             )}
-                            <span className="ms-auto flex items-center gap-2 whitespace-nowrap text-[11px] text-white/35">
+                            <span className="ms-auto flex items-center gap-2 whitespace-nowrap text-[11px] text-muted-foreground">
                               <span title={relativeTime(e.createdAt)}>{relativeTime(e.createdAt)}</span>
                               <span dir="ltr" className="tabular-nums">
                                 {fmtTime(e.createdAt)}
                               </span>
                             </span>
                           </div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-white/40">
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                             <span>
-                              مدیر: <span className="text-white/60">{e.adminName ?? "سیستم"}</span>
+                              مدیر: <span className="text-muted-foreground">{e.adminName ?? "سیستم"}</span>
                             </span>
                             {e.entity ? (
                               <span>
-                                موجودیت: <span className="text-white/55">{e.entity}</span>
+                                موجودیت: <span className="text-muted-foreground">{e.entity}</span>
                               </span>
                             ) : null}
                             {e.payload !== null && e.payload !== undefined ? (
@@ -483,8 +483,8 @@ function AuditTimeline() {
                                 onClick={() => toggle(e.id)}
                                 className={`rounded border px-1.5 py-0.5 text-[11px] transition-colors ${
                                   open
-                                    ? "border-sky-400/40 text-sky-300"
-                                    : "border-white/15 text-white/45 hover:bg-white/5 hover:text-white/75"
+                                    ? "border-sky-400/40 text-sky-700 dark:text-sky-300"
+                                    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                                 }`}
                                 aria-expanded={open}
                               >
@@ -495,7 +495,7 @@ function AuditTimeline() {
                           {open ? (
                             <pre
                               dir="ltr"
-                              className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-white/10 bg-black/25 p-3 text-start text-[11px] leading-5 text-white/70"
+                              className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-muted p-3 text-start text-[11px] leading-5 text-foreground"
                             >
                               {JSON.stringify(e.payload, null, 2) ?? "null"}
                             </pre>
@@ -515,7 +515,7 @@ function AuditTimeline() {
                 نمایش بیشتر ({formatPersianNumber(Math.min(PAGE, visible.length - limit))} مورد بعدی)
               </Button>
             ) : (
-              <p className="text-xs text-white/30">
+              <p className="text-xs text-muted-foreground">
                 {visible.length === 0
                   ? "رویدادی با این فیلترها نیست."
                   : `همه ${formatPersianNumber(visible.length)} رویدادِ منطبق نمایش داده شد.`}

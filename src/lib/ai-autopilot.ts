@@ -7,7 +7,7 @@
 
 import { ACTION_CATALOG, type ActionMeta, type ActionType } from "./ai";
 
-export const AUTOPILOT_CATEGORIES = ["inventory", "pricing", "money", "customer", "waste", "website"] as const;
+export const AUTOPILOT_CATEGORIES = ["inventory", "pricing", "money", "customer", "waste", "website", "messaging"] as const;
 export type AutopilotCategory = (typeof AUTOPILOT_CATEGORIES)[number];
 
 export interface AutopilotCategorySetting {
@@ -45,6 +45,10 @@ export const AUTOPILOT_CEILINGS: Record<AutopilotCategory, AutopilotCategorySett
   // public until a human publishes it, and *publishing* is deliberately in no
   // category at all (see `website.post.publish` in ACTION_CATALOG).
   website: { enabled: true, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 5, dailyActionLimit: 5 },
+  // One event maps to one customer. This is deliberately a small daily cap and
+  // a real Rial ceiling (the configured send rate), not an exemption hidden in
+  // `customer` where a send's platform cost would be unmeasured.
+  messaging: { enabled: true, maxAmountRial: 5_000_000, maxPercent: null, maxItemsPerRun: 1, dailyActionLimit: 20 },
 };
 
 /**
@@ -58,6 +62,7 @@ export const AUTOPILOT_DEFAULTS: Record<AutopilotCategory, AutopilotCategorySett
   customer: { enabled: false, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 10, dailyActionLimit: 10 },
   waste: { enabled: false, maxAmountRial: 2_000_000, maxPercent: null, maxItemsPerRun: 5, dailyActionLimit: 2 },
   website: { enabled: false, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 2, dailyActionLimit: 2 },
+  messaging: { enabled: false, maxAmountRial: 500_000, maxPercent: null, maxItemsPerRun: 1, dailyActionLimit: 5 },
 };
 
 export const AUTOPILOT_CATEGORY_LABELS: Record<AutopilotCategory, string> = {
@@ -67,6 +72,7 @@ export const AUTOPILOT_CATEGORY_LABELS: Record<AutopilotCategory, string> = {
   customer: "پروندهٔ مشتری",
   waste: "ضایعات",
   website: "وب‌سایت",
+  messaging: "پیام‌های رویدادی مشتری",
 };
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -115,6 +121,8 @@ export interface AutopilotAmountContext {
   orderSubtotalRial?: number;
   /** inventory.*: the computed value of the document, integer Rial. */
   documentValueRial?: number;
+  /** messaging.campaign.trigger: current configured price of the rendered one-recipient message. */
+  messageCostRial?: number;
 }
 
 const REASONS: Record<string, string> = {
@@ -256,6 +264,15 @@ export function evaluateAutopilotProposal(input: {
       const value = context.documentValueRial;
       if (value === undefined) return defer("missing_context");
       if (setting.maxAmountRial !== null && value > setting.maxAmountRial) return defer("amount_over_cap");
+      return { decision: "auto_apply" };
+    }
+
+    case "messaging.campaign.trigger": {
+      if (typeof payload.customerId !== "string" || typeof payload.templateId !== "string" ||
+          (payload.channel !== "sms" && payload.channel !== "email")) return defer("invalid_payload");
+      const cost = context.messageCostRial;
+      if (cost === undefined) return defer("missing_context");
+      if (setting.maxAmountRial !== null && cost > setting.maxAmountRial) return defer("amount_over_cap");
       return { decision: "auto_apply" };
     }
 

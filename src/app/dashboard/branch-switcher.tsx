@@ -84,7 +84,7 @@ export function BranchSwitcher({ compact = false }: { compact?: boolean }) {
     <div className={compact ? "" : "mb-3"}>
       {!compact ? <label className="mb-1 block text-xs text-muted-foreground">شعبهٔ فعال</label> : null}
       <SearchableSelect
-        className={compact ? "min-h-11 max-w-40 rounded-xl border border-border/80 bg-card px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45" : "w-full rounded-md border bg-background px-2 py-1.5 text-sm"}
+        className={compact ? "min-h-11 max-w-40 rounded-xl border border-border/80 bg-card px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45" : "w-full rounded-lg border bg-background px-2 py-1.5 text-sm"}
         value={state.active.id}
         disabled={busy}
         onChange={(value) => void switchTo(value)}

@@ -57,6 +57,8 @@ export interface CoworkerOptions {
   inventoryItems: { id: string; name: string; unit: string; quantity: string }[];
   formulas: { id: string; name: string; outputName: string }[];
   branches: { id: string; name: string }[];
+  messageTemplates: { id: string; name: string; channel: "sms" | "email" }[];
+  projects: { id: string; name: string }[];
 }
 
 export interface CoworkerCatalogue {

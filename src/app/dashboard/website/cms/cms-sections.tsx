@@ -36,8 +36,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPersianNumber, toLatinDigits, toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import type { CmsConnectionSummary } from "@/lib/cms/connections";
-import { lexicalToPlainText, type CmsOrder, type CmsPost, type CmsProduct, type SiteDescriptor } from "@/lib/cms/types";
+import { lexicalToPlainText, type CmsMedia, type CmsOrder, type CmsPost, type CmsProduct, type SiteDescriptor } from "@/lib/cms/types";
+import { lexicalToMarkdown } from "@/lib/website/providers/payload-content";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   cardClass,
@@ -309,6 +311,25 @@ export function CmsOverviewSection() {
 export function CmsContentSection() {
   const site = useCmsSite();
   const [editingPost, setEditingPost] = useState<CmsPost | "new" | null>(null);
+  const [publishingPost, setPublishingPost] = useState("");
+  const [contentPosts, setContentPosts] = useState<CmsPost[] | null>(null);
+  const [contentError, setContentError] = useState("");
+  const loadPosts = useCallback(async () => {
+    const { ok, data } = await api<{ posts?: CmsPost[]; error?: string }>("/api/cms/website/drafts");
+    if (!ok || !data.posts) { setContentError(errorMessageOrRaw(data.error)); return; }
+    setContentError(""); setContentPosts(data.posts);
+  }, []);
+  useEffect(() => { if (site.connection) void loadPosts(); }, [site.connection, loadPosts]);
+
+  async function publish(post: CmsPost) {
+    setPublishingPost(post.id);
+    const { ok, data } = await api<{ error?: string }>(`/api/cms/website/drafts/${post.id}/publish`, { method: "POST" });
+    setPublishingPost("");
+    if (!ok) { toast.error(errorMessageOrRaw(data.error)); return; }
+    toast.success("نوشته منتشر شد.");
+    void loadPosts();
+    site.loadOverview();
+  }
 
   if (site.loading) return <SectionCardSkeleton rows={4} />;
   if (!site.connection) return <NoSiteYet what="محتوای سایت" />;
@@ -343,7 +364,7 @@ export function CmsContentSection() {
 
       <SectionCard
         title="نوشته‌ها"
-        description="مطالب وبلاگ سایت (۲۰ نوشتهٔ آخر). یک نوشتهٔ ساخته‌شده از این‌جا به‌صورت پیش‌نویس ذخیره می‌شود؛ انتشار آن از پنل سایت‌ساز انجام می‌شود."
+        description="مطالب وبلاگ سایت (۲۰ نوشتهٔ آخر). ذخیره همیشه پیش‌نویس است و انتشار فقط با دکمهٔ جداگانه انجام می‌شود."
         actions={
           <SecondaryButton onClick={() => setEditingPost("new")}>
             <PlusIcon className="size-4" />
@@ -351,24 +372,27 @@ export function CmsContentSection() {
           </SecondaryButton>
         }
       >
-        {!site.overview ? (
+        <ErrorBox>{contentError}</ErrorBox>
+        {!contentPosts ? (
           <LoadingSkeleton rows={3} compact label="در حال بارگذاری نوشته‌ها" />
-        ) : site.overview.posts.length === 0 ? (
+        ) : contentPosts.length === 0 ? (
           <EmptyState>هنوز نوشته‌ای ساخته نشده است.</EmptyState>
         ) : (
           <ul className="divide-y divide-border">
-            {site.overview.posts.map((post) => (
+            {contentPosts.map((post) => (
               <li key={post.id} className="flex items-center justify-between gap-3 py-2.5">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{post.title}</p>
                   <p dir="ltr" className="truncate text-xs text-muted-foreground">
                     /{post.slug}
                   </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{toPersianDigits(formatJalali(post.updatedAt))}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <StatusBadge tone={post._status === "published" ? "positive" : "active"}>
                     {STATUS_LABELS[post._status ?? "draft"]}
                   </StatusBadge>
+                  {post._status === "published" ? (site.overview?.site.domain ? <Button type="button" variant="outline" size="icon" onClick={() => window.open(`https://${site.overview!.site.domain}/blog/${post.slug}`, "_blank", "noopener")} aria-label={`دیدن ${post.title}`}><ExternalLinkIcon className="size-4" /></Button> : null) : <Button type="button" variant="outline" size="sm" disabled={publishingPost === post.id} onClick={() => void publish(post)}>{publishingPost === post.id ? "در حال انتشار…" : "انتشار"}</Button>}
                   <Button
                     type="button"
                     variant="outline"
@@ -391,6 +415,7 @@ export function CmsContentSection() {
           onClose={() => setEditingPost(null)}
           onSaved={() => {
             setEditingPost(null);
+            void loadPosts();
             site.loadOverview();
           }}
         />
@@ -816,16 +841,37 @@ export function PostDialog({
   onSaved: () => void;
 }) {
   const [title, setTitle] = useState(post?.title ?? "");
-  const [content, setContent] = useState(lexicalToPlainText(post?.content));
+  // New editor contract is Markdown. Existing CMS posts come back from the
+  // same Lexical shape, so translating them here preserves the supported rich
+  // formatting instead of flattening every heading/list on the next save.
+  const [content, setContent] = useState(lexicalToMarkdown(post?.content));
+  const [slug, setSlug] = useState(post?.slug ?? "");
+  const [excerpt, setExcerpt] = useState((post as (CmsPost & { excerpt?: string | null }) | null)?.excerpt ?? "");
+  const initialHero = post?.heroImage;
+  const [heroImageId, setHeroImageId] = useState(typeof initialHero === "string" ? initialHero : initialHero?.id ?? "");
+  const [heroImageUrl, setHeroImageUrl] = useState(typeof initialHero === "object" ? initialHero?.url ?? "" : "");
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const uploadHeroImage = async (file: File | null) => {
+    if (!file) return;
+    setUploadingImage(true); setError("");
+    const form = new FormData();
+    form.set("file", file);
+    const { ok, data } = await api<{ media?: { id: string; url: string | null }; error?: string }>("/api/cms/website/media", { method: "POST", body: form });
+    setUploadingImage(false);
+    if (!ok || !data.media) { setError(errorMessageOrRaw(data.error)); return; }
+    setHeroImageId(data.media.id);
+    setHeroImageUrl(data.media.url ?? "");
+  };
 
   const save = async () => {
     setBusy(true);
     setError("");
     const { ok, data } = await api<{ error?: string }>(
-      post ? `/api/cms/website/posts/${post.id}` : "/api/cms/website/posts",
-      { method: post ? "PATCH" : "POST", body: JSON.stringify({ title: title.trim(), content }) },
+      post ? `/api/cms/website/drafts/${post.id}` : "/api/cms/website/drafts",
+      { method: post ? "PATCH" : "POST", body: JSON.stringify({ title: title.trim(), body: content, slug: slug.trim() || undefined, excerpt: excerpt.trim() || undefined, featuredImageId: heroImageId || undefined }) },
     );
     setBusy(false);
     if (!ok) {
@@ -860,8 +906,17 @@ export function PostDialog({
         <Field label="عنوان">
           <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
-        <Field label="متن نوشته" hint="هر خط، یک پاراگراف می‌شود. برای قالب‌بندی پیشرفته از پنل CMS استفاده کنید.">
-          <textarea className={inputClass} rows={8} value={content} onChange={(e) => setContent(e.target.value)} />
+        <Field label="نشانک (slug)" hint="آدرس نوشته؛ فقط حروف، عدد و خط تیره. خالی = ساخت خودکار از عنوان.">
+          <input dir="ltr" className={inputClass} value={slug} onChange={(e) => setSlug(e.target.value)} />
+        </Field>
+        <Field label="خلاصه" hint="برای کارت‌ها و نتایج جست‌وجوی سایت.">
+          <textarea className={inputClass} rows={2} value={excerpt} onChange={(e) => setExcerpt(e.target.value)} />
+        </Field>
+        <Field label="تصویر شاخص" hint="JPG، PNG، WebP یا GIF تا ۵ مگابایت؛ اعتبارسنجی روی سرور انجام می‌شود.">
+          <div className="space-y-2"><input className={inputClass} type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploadingImage || busy} onChange={(e) => void uploadHeroImage(e.target.files?.[0] ?? null)} />{uploadingImage ? <LoadingSkeleton aria-label="در حال بارگذاری تصویر" className="h-4 w-36" /> : null}{heroImageUrl ? <img src={heroImageUrl} alt="پیش‌نمایش تصویر شاخص" className="h-28 w-full rounded-lg object-cover" /> : heroImageId ? <p className="text-xs text-muted-foreground">تصویر شاخص وصل شده است.</p> : <p className="text-xs text-muted-foreground">تصویری انتخاب نشده است.</p>}</div>
+        </Field>
+        <Field label="متن Markdown" hint="پیش‌نویس و انتشار جدا هستند؛ ذخیره هرگز نوشته را عمومی نمی‌کند.">
+          <textarea className={`${inputClass} font-mono`} dir="auto" rows={10} value={content} onChange={(e) => setContent(e.target.value)} />
         </Field>
 
         <DialogFooter>

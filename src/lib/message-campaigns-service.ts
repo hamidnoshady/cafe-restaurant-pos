@@ -24,6 +24,8 @@ import {
 } from "./message-template";
 import { formatTomanText } from "./money";
 import { toPersianDigits } from "./digits";
+import { getPublicMessageConfig } from "./messaging-billing";
+import { messageCostRial } from "./messaging-billing-pure";
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested)
@@ -207,6 +209,7 @@ export interface CampaignSummary {
   templateId: string | null;
   segmentId: string | null;
   projectId: string | null;
+  promotionId: string | null;
   status: string;
   triggeredBy: string;
   totalRecipients: number;
@@ -220,7 +223,7 @@ export interface CampaignSummary {
 
 const CAMPAIGN_COLUMNS = `id, business_id AS "businessId", channel, name,
   template_id AS "templateId", segment_id AS "segmentId", project_id AS "projectId",
-  status, triggered_by AS "triggeredBy", total_recipients AS "totalRecipients",
+  promotion_id AS "promotionId", status, triggered_by AS "triggeredBy", total_recipients AS "totalRecipients",
   sent_count AS "sentCount", delivered_count AS "deliveredCount",
   failed_count AS "failedCount", created_at AS "createdAt",
   started_at AS "startedAt", completed_at AS "completedAt"`;
@@ -233,6 +236,7 @@ function toCampaign(r: {
   templateId: string | null;
   segmentId: string | null;
   projectId: string | null;
+  promotionId: string | null;
   status: string;
   triggeredBy: string;
   totalRecipients: number;
@@ -251,6 +255,7 @@ function toCampaign(r: {
     templateId: r.templateId,
     segmentId: r.segmentId,
     projectId: r.projectId,
+    promotionId: r.promotionId,
     status: r.status,
     triggeredBy: r.triggeredBy,
     totalRecipients: r.totalRecipients,
@@ -286,6 +291,7 @@ export interface CreateCampaignInput {
   templateId: string;
   segmentId: string | null;
   projectId?: string | null;
+  promotionId?: string | null;
   scheduledAt?: string | null;
   triggeredBy?: string;
 }
@@ -298,8 +304,8 @@ export async function createMessageCampaign(
   if (!name) throw new Error("invalid_campaign_name");
   const { rows } = await query<Parameters<typeof toCampaign>[0]>(
     `INSERT INTO message_campaigns
-       (business_id, channel, name, template_id, segment_id, project_id, scheduled_at, triggered_by, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft')
+       (business_id, channel, name, template_id, segment_id, project_id, promotion_id, scheduled_at, triggered_by, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft')
      RETURNING ${CAMPAIGN_COLUMNS}`,
     [
       businessId,
@@ -308,6 +314,7 @@ export async function createMessageCampaign(
       input.templateId,
       input.segmentId,
       input.projectId ?? null,
+      input.promotionId ?? null,
       input.scheduledAt ?? null,
       input.triggeredBy ?? "",
     ],
@@ -427,6 +434,113 @@ export async function launchMessageCampaign(
   };
 }
 
+interface TriggeredMessageInput {
+  businessId: string;
+  customerId: string;
+  templateId: string;
+  channel: CampaignChannel;
+  projectId?: string;
+  triggerLabel: string;
+}
+
+interface PreparedTriggeredMessage {
+  subject: string;
+  recipient: MessageRecipientInput;
+  template: MessageTemplateRecord;
+}
+
+/** Re-read the target's consent/contact and the template at firing time. */
+async function prepareTriggeredMessage(input: TriggeredMessageInput): Promise<PreparedTriggeredMessage> {
+  const template = await getMessageTemplate(input.businessId, input.templateId);
+  if (!template || template.channel !== input.channel) throw new Error("template_not_found");
+  const { rows: customers } = await query<{
+    id: string; name: string; phone: string | null; phone_e164: string | null; email: string | null;
+    sms_consent: boolean; marketing_consent: boolean;
+  }>(
+    `SELECT id, name, phone, phone_e164, email, sms_consent, marketing_consent
+       FROM parties
+      WHERE business_id = $1 AND id = $2 AND role = 'customer' AND is_active AND merged_into_id IS NULL`,
+    [input.businessId, input.customerId],
+  );
+  const customer = customers[0];
+  if (!customer) throw new Error("customer_not_found");
+  // This is the triggered counterpart of audienceForSegment's SQL predicate:
+  // no stored job can bypass a customer's current consent by carrying an old address.
+  if ((input.channel === "sms" && !customer.sms_consent) || (input.channel === "email" && !customer.marketing_consent)) {
+    throw new Error("customer_consent_missing");
+  }
+  const member: AudienceMember = {
+    id: customer.id, name: customer.name, phone: customer.phone, phoneE164: customer.phone_e164,
+    email: customer.email, smsConsent: customer.sms_consent, marketingConsent: customer.marketing_consent,
+  };
+  const address = recipientAddressFor(member, input.channel);
+  if (!address) throw new Error("customer_contact_missing");
+  const business = await query<{ name: string }>("SELECT name FROM businesses WHERE id = $1", [input.businessId]);
+  const points = templateVariableTokens(template.body).includes("امتیاز")
+    ? (await loadPointsMap(input.businessId, [customer.id])).get(customer.id) ?? 0
+    : 0;
+  const values = buildMessageVariables({ name: customer.name, shopName: business.rows[0]?.name ?? "", points });
+  return {
+    template,
+    subject: template.channel === "email" ? renderRecipientBody(template.subject, values) : "",
+    recipient: { customerId: customer.id, address, subject: template.channel === "email" ? renderRecipientBody(template.subject, values) : "", body: renderRecipientBody(template.body, values) },
+  };
+}
+
+/** Read the current rate plus the fully rendered one-recipient body for the cap gate. */
+export async function estimateTriggeredMessageCost(input: TriggeredMessageInput): Promise<number> {
+  const prepared = await prepareTriggeredMessage(input);
+  const config = await getPublicMessageConfig();
+  if (!config.enabled || !config.configured) throw new Error("messaging_not_configured");
+  return messageCostRial(input.channel, prepared.recipient.body, config.rate);
+}
+
+/**
+ * Queue one event message. This is intentionally the furthest this executor
+ * goes: it writes campaign/recipient/outbox rows and lets runMessagingTick
+ * own credit reservation, provider I/O, retry and accounting.
+ */
+export async function queueTriggeredMessageCampaign(input: TriggeredMessageInput): Promise<{ campaignId: string; costRial: number }> {
+  const prepared = await prepareTriggeredMessage(input);
+  const config = await getPublicMessageConfig();
+  if (!config.enabled || !config.configured) throw new Error("messaging_not_configured");
+  let projectId: string | null = null;
+  if (input.projectId) {
+    const { rows } = await query<{ id: string }>(
+      `SELECT id FROM ai_projects WHERE business_id = $1 AND id = $2 AND archived_at IS NULL`, [input.businessId, input.projectId],
+    );
+    if (!rows[0]) throw new Error("project_not_found");
+    projectId = rows[0].id;
+  }
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: campaigns } = await client.query<{ id: string }>(
+      `INSERT INTO message_campaigns
+         (business_id, channel, name, template_id, segment_id, project_id, triggered_by, status, total_recipients, started_at)
+       VALUES ($1, $2, $3, $4, NULL, $5, $6, 'sending', 1, now()) RETURNING id`,
+      [input.businessId, input.channel, input.triggerLabel.slice(0, 200), prepared.template.id, projectId, "همکار هوشمند"],
+    );
+    const campaignId = campaigns[0].id;
+    const { rows: recipients } = await client.query<{ id: string }>(
+      `INSERT INTO message_recipients (business_id, campaign_id, customer_id, channel, address, subject, body)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [input.businessId, campaignId, prepared.recipient.customerId, input.channel, prepared.recipient.address, prepared.recipient.subject, prepared.recipient.body],
+    );
+    await client.query(
+      `INSERT INTO message_outbox (business_id, recipient_id, campaign_id, status, next_attempt_at)
+       VALUES ($1, $2, $3, 'queued', now())`, [input.businessId, recipients[0].id, campaignId],
+    );
+    await client.query("COMMIT");
+    return { campaignId, costRial: messageCostRial(input.channel, prepared.recipient.body, config.rate) };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function loadPointsMap(businessId: string, customerIds: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   if (customerIds.length === 0) return map;
@@ -448,4 +562,106 @@ export async function pauseMessageCampaign(businessId: string, campaignId: strin
       WHERE business_id = $1 AND id = $2 AND status = 'sending'`,
     [businessId, campaignId],
   );
+}
+
+/** Continue only the untouched queue rows of a paused campaign; recipients are never rebuilt. */
+export async function resumeMessageCampaign(businessId: string, campaignId: string): Promise<void> {
+  await query(
+    `UPDATE message_campaigns SET status = 'sending', updated_at = now()
+      WHERE business_id = $1 AND id = $2 AND status = 'paused'
+        AND EXISTS (SELECT 1 FROM message_outbox o
+                     WHERE o.business_id = message_campaigns.business_id
+                       AND o.campaign_id = message_campaigns.id
+                       AND o.status = 'queued')`,
+    [businessId, campaignId],
+  );
+}
+
+/**
+ * The attributable commercial result of message campaigns. A row appears only
+ * when the campaign owns a dedicated promotion: this is the anti-guessing
+ * boundary for ROI. A recipient, segment match, coupon-looking body, or later
+ * purchase is never evidence that a campaign caused that purchase.
+ *
+ * Spend is read from the posted accounting document rather than recalculated
+ * from today's provider rate. Revenue is the net total of completed sales that
+ * actually applied the campaign's dedicated promotion after the campaign was
+ * started; a sale is counted once even where the promotion touched many lines.
+ */
+export interface MessageCampaignRoiRow {
+  campaignId: string;
+  campaignName: string;
+  promotionId: string;
+  promotionName: string;
+  sentCount: number;
+  spentRial: number;
+  attributableSales: number;
+  attributableRevenueRial: number;
+  discountRial: number;
+  roiPercent: number | null;
+}
+
+export async function listMessageCampaignRoiReport(businessId: string): Promise<MessageCampaignRoiRow[]> {
+  const { rows } = await query<{
+    campaignId: string;
+    campaignName: string;
+    promotionId: string;
+    promotionName: string;
+    sentCount: number;
+    spentRial: string;
+    attributableSales: string;
+    attributableRevenueRial: string;
+    discountRial: string;
+  }>(
+    `SELECT c.id AS "campaignId", c.name AS "campaignName",
+            p.id AS "promotionId", p.name AS "promotionName", c.sent_count AS "sentCount",
+            COALESCE(cost.spent_rial, 0)::text AS "spentRial",
+            COALESCE(attribution.sales, 0)::text AS "attributableSales",
+            COALESCE(attribution.revenue_rial, 0)::text AS "attributableRevenueRial",
+            COALESCE(attribution.discount_rial, 0)::text AS "discountRial"
+       FROM message_campaigns c
+       JOIN promotions p ON p.id = c.promotion_id AND p.business_id = c.business_id
+       LEFT JOIN LATERAL (
+         SELECT SUM(jl.debit - jl.credit) AS spent_rial
+           FROM journal_entries je
+           JOIN journal_lines jl ON jl.entry_id = je.id
+           JOIN accounts a ON a.id = jl.account_id
+          WHERE je.business_id = c.business_id
+            AND je.source_type = 'message_campaign' AND je.source_id = c.id
+            AND a.code = '5600'
+       ) cost ON true
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS sales, COALESCE(SUM(o.total), 0) AS revenue_rial,
+                COALESCE(SUM(applied.discount_rial), 0) AS discount_rial
+           FROM (
+             SELECT pa.source_id, SUM(pa.discount_rial) AS discount_rial
+               FROM promotion_applications pa
+              WHERE pa.business_id = c.business_id AND pa.promotion_id = c.promotion_id
+                AND pa.created_at >= COALESCE(c.started_at, c.created_at)
+              GROUP BY pa.source_id
+           ) applied
+           JOIN orders o ON o.id = applied.source_id AND o.status = 'completed'
+                         AND o.closed_at IS NOT NULL
+       ) attribution ON true
+      WHERE c.business_id = $1 AND c.promotion_id IS NOT NULL
+      ORDER BY c.created_at DESC
+      LIMIT 200`,
+    [businessId],
+  );
+  return rows.map((row) => {
+    const spentRial = Number(row.spentRial);
+    const attributableRevenueRial = Number(row.attributableRevenueRial);
+    return {
+      campaignId: row.campaignId,
+      campaignName: row.campaignName,
+      promotionId: row.promotionId,
+      promotionName: row.promotionName,
+      sentCount: Number(row.sentCount),
+      spentRial,
+      attributableSales: Number(row.attributableSales),
+      attributableRevenueRial,
+      discountRial: Number(row.discountRial),
+      roiPercent: spentRial > 0 ? Math.round(((attributableRevenueRial - spentRial) / spentRial) * 10000) / 100 : null,
+    };
+  });
 }

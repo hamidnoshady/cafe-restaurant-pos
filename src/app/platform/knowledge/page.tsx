@@ -65,12 +65,12 @@ export default function KnowledgePage() {
   return (
     <div className="mx-auto w-full max-w-7xl">
       <div className="mb-5 flex items-start gap-3">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-300">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-700 dark:text-sky-300">
           <BookOpenIcon className="size-5" aria-hidden="true" />
         </span>
         <div className="min-w-0">
           <h1 className="text-xl font-bold">پایگاه دانش</h1>
-          <p className="mt-1 text-sm text-white/40">
+          <p className="mt-1 text-sm text-muted-foreground">
             محتوای «مرکز آموزش» کاربران را اینجا بسازید: مقاله، دسته، برچسب — و برای هر بخشِ
             برنامه، پیوند صفحهٔ آموزشی خارجی.
             {canManage ? "" : " (فقط مشاهده — تغییر در اختیار مهندس و مدیر ارشد است.)"}
@@ -78,7 +78,7 @@ export default function KnowledgePage() {
         </div>
       </div>
 
-      <nav aria-label="بخش‌های پایگاه دانش" className="mb-5 flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-white/2 p-1">
+      <nav aria-label="بخش‌های پایگاه دانش" className="mb-5 flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -92,8 +92,8 @@ export default function KnowledgePage() {
             aria-current={tab === key ? "page" : undefined}
             className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
               tab === key
-                ? "bg-sky-500/15 text-sky-300"
-                : "text-white/60 hover:bg-white/5 hover:text-white"
+                ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <Icon className="size-4" aria-hidden="true" />

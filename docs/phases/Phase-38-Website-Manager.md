@@ -5,14 +5,14 @@
 > and is filed as **38w** in the index, the same way 23b/18b/37b keep collisions
 > apart.
 
-Status: **Waves 1, 3 and 4 implemented.** Wave 2 (a content adapter written from
-scratch) was deliberately not built: by the time this phase was picked up the
-website app (`/dashboard/website`, `src/lib/cms/*`, migration `0122`) already
-held the one credential and the one HTTP client that talks to
-[`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms). Wave 1 therefore
-*wraps* that client as the first `WebsiteAdapter` rather than replacing it, and
-the issue's proposed `website_connections` table became a forward-only extension
-of `eshobe_cms_connections` — one connection, one credential store.
+Status: **Waves 1–4 implemented.** The pre-existing website app
+(`/dashboard/website`, `src/lib/cms/*`, migration `0122`) already held the one
+credential and one HTTP client that talks to
+[`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms). Wave 2 completes that
+content path by extending the first `WebsiteAdapter` and this same encrypted
+connection — it does not introduce the issue's hypothetical second
+`website_connections` table. `eshobe_cms_connections` remains the one connection
+and credential store.
 
 The sentence the phase is built around, now also a CLAUDE.md rule:
 
@@ -26,6 +26,12 @@ The sentence the phase is built around, now also a CLAUDE.md rule:
   an in-memory mock provider for tests, and the Payload provider over the
   existing CMS client. A `website` connection kind in the Connections hub,
   owner-only, gated on `integrations`; test-before-save; the key never returned.
+- **Wave 2 (#380)** — content: the CMS tab lists posts with Persian dates and
+  status, saves a Markdown title/slug/excerpt/image edit as a draft, and exposes
+  a separate explicit publish action. `uploadMedia` sends multipart data only
+  from the server using the existing encrypted site key. The server checks the
+  image MIME allow-list, 5 MB limit, and matching file signature before reading
+  it into the adapter; the UI shows a Persian error without taking down the app.
 - **Wave 3 (#381)** — one-way product/stock/price push: `website_product_map`,
   `website_outbox`, `runWebsiteSyncTick()` in `server.ts`, per-product opt-in,
   independent price/stock switches, a queue page with retry.

@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { draftWebsitePost, websiteStatusFor } from "@/lib/website/content-service";
+import { draftWebsitePost, listWebsitePostsTool, websiteStatusFor } from "@/lib/website/content-service";
+import { markdownToLexical } from "@/lib/website/providers/payload-content";
+
+/** Adapter-backed post list for the CMS content screen — no credential reaches it. */
+export const GET = withTenantScope(async (_request: NextRequest) => {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+  const result = await listWebsitePostsTool(session.businessId, { limit: 20 });
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: websiteStatusFor(result.error) });
+  // Keep this content-screen response compatible with the older CmsPost UI
+  // while making the read itself go through the timeout/breaker adapter path.
+  return NextResponse.json({
+    hasMore: result.data.hasMore,
+    posts: result.data.posts.map((post) => ({
+      id: post.id, title: post.title, slug: post.slug, content: markdownToLexical(post.body),
+      heroImage: post.featuredImageUrl ? { id: "", url: post.featuredImageUrl } : null,
+      publishedAt: post.publishedAt, updatedAt: post.updatedAt, createdAt: post.createdAt,
+      _status: post.status, excerpt: post.excerpt,
+    })),
+  });
+});
 
 /**
  * Phase 38 (issue #382) — `POST /api/cms/website/drafts`: the assistant's
@@ -12,7 +32,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { title?: unknown; body?: unknown; excerpt?: unknown };
+  let body: { title?: unknown; body?: unknown; slug?: unknown; excerpt?: unknown; featuredImageId?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -22,7 +42,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const result = await draftWebsitePost(session.businessId, {
     title: typeof body.title === "string" ? body.title : "",
     body: typeof body.body === "string" ? body.body : "",
+    slug: typeof body.slug === "string" ? body.slug : undefined,
     excerpt: typeof body.excerpt === "string" ? body.excerpt : undefined,
+    featuredImageId: typeof body.featuredImageId === "string" ? body.featuredImageId : undefined,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: websiteStatusFor(result.error) });
   return NextResponse.json({ post: result.data }, { status: 201 });

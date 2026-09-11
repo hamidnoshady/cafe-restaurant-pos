@@ -123,7 +123,7 @@ export function useCan(): (cap: PlatformCapability) => boolean {
 export function ErrorBox({ children }: { children: React.ReactNode }) {
   if (!children) return null;
   return (
-    <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+    <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
       {children}
     </div>
   );
@@ -132,14 +132,14 @@ export function ErrorBox({ children }: { children: React.ReactNode }) {
 export function InfoBox({ children }: { children: React.ReactNode }) {
   if (!children) return null;
   return (
-    <div className="mb-4 rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">
+    <div className="mb-4 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
       {children}
     </div>
   );
 }
 
 export const inputClass =
-  "h-10 w-full min-w-0 rounded-lg border border-white/15 bg-white/5 px-3 py-1 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/20 disabled:opacity-50";
+  "h-10 w-full min-w-0 rounded-lg border border-border bg-transparent px-3 py-1 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50";
 
 export function Field({
   label,
@@ -152,9 +152,9 @@ export function Field({
 }) {
   return (
     <label className="mb-4 block">
-      <span className="mb-1 block text-sm font-medium text-white/80">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-foreground">{label}</span>
       {children}
-      {hint ? <span className="mt-1 block text-xs text-white/40">{hint}</span> : null}
+      {hint ? <span className="mt-1 block text-xs text-muted-foreground">{hint}</span> : null}
     </label>
   );
 }
@@ -177,9 +177,9 @@ export function Button({
   title?: string;
 }) {
   const styles = {
-    primary: "bg-sky-500 text-white hover:bg-sky-400",
-    danger: "bg-red-600 text-white hover:bg-red-500",
-    ghost: "border border-white/15 text-white/80 hover:bg-white/5",
+    primary: "bg-primary text-primary-foreground hover:bg-primary/80",
+    danger: "bg-destructive text-primary-foreground hover:bg-destructive/80",
+    ghost: "border border-border text-foreground hover:bg-muted",
   }[variant];
   return (
     <button
@@ -197,11 +197,11 @@ export function Button({
 /** A labelled status pill for the three business lifecycle states. */
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    active: { label: "فعال", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
-    suspended: { label: "معلق", cls: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
-    archived: { label: "بایگانی", cls: "bg-white/10 text-white/50 border-white/20" },
+    active: { label: "فعال", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
+    suspended: { label: "معلق", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30" },
+    archived: { label: "بایگانی", cls: "bg-card/10 text-card-foreground border-border/20" },
   };
-  const s = map[status] ?? { label: status, cls: "bg-white/10 text-white/60 border-white/20" };
+  const s = map[status] ?? { label: status, cls: "bg-card/10 text-card-foreground border-border/20" };
   return (
     <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium ${s.cls}`}>
       {s.label}
@@ -211,8 +211,8 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function Card({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/3 p-4 sm:p-5">
-      {title ? <h2 className="mb-4 text-sm font-semibold text-white/90">{title}</h2> : null}
+    <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
+      {title ? <h2 className="mb-4 text-sm font-semibold text-card-foreground">{title}</h2> : null}
       {children}
     </div>
   );
@@ -235,18 +235,18 @@ export function planLabel(key: string, names?: Record<string, string> | null): s
 
 export function PlanBadge({ plan, names }: { plan: string; names?: Record<string, string> | null }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-200">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-800 dark:text-indigo-200">
       {planLabel(plan, names)}
-      <span className="text-[10px] text-indigo-200/40" dir="ltr">
+      <span className="text-[10px] text-indigo-800/40 dark:text-indigo-200/40" dir="ltr">
         {plan}
       </span>
     </span>
   );
 }
 
-/** The styled-native look the filter toolbars use; keeps RTL + the dark theme. */
+/** The styled-native look the filter toolbars use; keeps RTL in either theme. */
 export const selectClass =
-  "h-10 w-full min-w-0 cursor-pointer rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors hover:border-white/25 focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/20";
+  "h-10 w-full min-w-0 cursor-pointer rounded-lg border border-border bg-transparent px-3 text-sm text-foreground outline-none transition-colors hover:border-border/25 focus:border-ring/60 focus:ring-2 focus:ring-ring/20 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * A sub-navigation strip shared by every section of the console that has
@@ -262,7 +262,7 @@ export function SubNav({
   return (
     <nav
       aria-label="بخش‌های این صفحه"
-      className="flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-white/2 p-1"
+      className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1"
     >
       {items.map((item) => {
         const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -273,8 +273,8 @@ export function SubNav({
             aria-current={active ? "page" : undefined}
             className={
               active
-                ? "shrink-0 whitespace-nowrap rounded-lg bg-sky-500/15 px-3.5 py-2 text-sm font-medium text-sky-300"
-                : "shrink-0 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+                ? "shrink-0 whitespace-nowrap rounded-lg bg-sky-500/15 px-3.5 py-2 text-sm font-medium text-sky-700 dark:text-sky-300"
+                : "shrink-0 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             }
           >
             {item.label}
@@ -307,7 +307,7 @@ export function SkeletonRows({
         {Array.from({ length: rows }).map((_, i) => (
           <div
             key={i}
-            className="h-12 animate-pulse rounded-xl border border-white/5 bg-white/3 motion-reduce:animate-none"
+            className="h-12 animate-pulse rounded-xl border border-border bg-card motion-reduce:animate-none"
             style={{ animationDelay: `${i * 90}ms` }}
           />
         ))}
@@ -320,29 +320,29 @@ export function SkeletonRows({
 export function PlatformPageSkeleton({ fullScreen = false }: { fullScreen?: boolean }) {
   return (
     <div
-      className={fullScreen ? "min-h-screen bg-slate-950 p-4 sm:p-8" : "min-w-0"}
+      className={fullScreen ? "min-h-screen bg-background p-4 sm:p-8" : "min-w-0"}
       role="status"
       aria-live="polite"
       aria-busy="true"
       aria-label="در حال بارگذاری صفحه مدیریت"
     >
       <div className="mx-auto w-full max-w-6xl" aria-hidden="true">
-        <div className="mb-6 flex items-start justify-between gap-4 border-b border-white/10 pb-5">
+        <div className="mb-6 flex items-start justify-between gap-4 border-b border-border pb-5">
           <div className="min-w-0 flex-1 space-y-3">
-            <div className="h-7 w-48 animate-pulse rounded-lg bg-white/8 motion-reduce:animate-none" />
-            <div className="h-3.5 w-[30rem] max-w-full animate-pulse rounded bg-white/5 motion-reduce:animate-none" />
+            <div className="h-7 w-48 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />
+            <div className="h-3.5 w-[30rem] max-w-full animate-pulse rounded bg-muted motion-reduce:animate-none" />
           </div>
-          <div className="h-9 w-24 shrink-0 animate-pulse rounded-lg bg-white/8 motion-reduce:animate-none" />
+          <div className="h-9 w-24 shrink-0 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />
         </div>
         <div className="mb-5 grid gap-3 sm:grid-cols-3">
           {[0, 1, 2].map((item) => (
-            <div key={item} className="space-y-3 rounded-xl border border-white/10 bg-white/3 p-4">
-              <div className="h-3 w-20 animate-pulse rounded bg-white/5 motion-reduce:animate-none" />
-              <div className="h-7 w-24 animate-pulse rounded bg-white/8 motion-reduce:animate-none" />
+            <div key={item} className="space-y-3 rounded-xl border border-border bg-card p-4">
+              <div className="h-3 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+              <div className="h-7 w-24 animate-pulse rounded bg-muted motion-reduce:animate-none" />
             </div>
           ))}
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/3 p-4 sm:p-5">
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
           <SkeletonRows rows={6} />
         </div>
       </div>
@@ -360,9 +360,9 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/2 px-4 py-12 text-center">
-      <p className="text-sm font-medium text-white/70">{title}</p>
-      {hint ? <p className="max-w-sm text-xs leading-6 text-white/40">{hint}</p> : null}
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-card px-4 py-12 text-center">
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      {hint ? <p className="max-w-sm text-xs leading-6 text-muted-foreground">{hint}</p> : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>
   );
@@ -383,19 +383,19 @@ export function StatCard({
   icon?: React.ReactNode;
 }) {
   const toneCls = {
-    neutral: "border-white/10 text-white",
-    ok: "border-emerald-500/25 text-emerald-300",
-    warn: "border-amber-500/25 text-amber-300",
-    bad: "border-red-500/25 text-red-300",
+    neutral: "border-border text-foreground",
+    ok: "border-emerald-500/25 text-emerald-700 dark:text-emerald-300",
+    warn: "border-amber-500/25 text-amber-700 dark:text-amber-300",
+    bad: "border-red-500/25 text-red-700 dark:text-red-300",
   }[tone];
   return (
-    <div className={`rounded-xl border bg-white/2 p-4 ${toneCls}`}>
+    <div className={`rounded-xl border bg-card p-4 ${toneCls}`}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-white/45">{label}</p>
-        {icon ? <span className="text-white/30">{icon}</span> : null}
+        <p className="text-xs text-muted-foreground">{label}</p>
+        {icon ? <span className="text-muted-foreground">{icon}</span> : null}
       </div>
       <p className="mt-1 text-2xl font-bold tabular-nums">{value}</p>
-      {hint ? <p className="mt-1 text-[11px] leading-5 text-white/35">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

@@ -23,10 +23,11 @@ import { popoverPanelClass } from "./page-chrome";
 
 // The control class, kept here (not imported from ./ui) so this component stays
 // theme-agnostic and can be dropped into the super-admin/platform console as
-// well as the dashboard. It matches the dashboard `inputClass` minus the
-// dark-mode variant — the dashboard is light-only and the design-lint bans that
-// token in this tree. The platform passes its own dark-theme `inputClass` via
-// `className` instead; a caller can always override with `className`.
+// well as the dashboard without dragging ./ui's API layer along. It is the same
+// recipe as the dashboard `inputClass`, written from the theme tokens
+// (`border-input`, `bg-transparent`, `ring-ring`) so it flips with dark mode on
+// its own. The platform passes its own dark-theme `inputClass` via `className`
+// instead; a caller can always override with `className`.
 const DEFAULT_INPUT_CLASS =
   "h-10 w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -155,7 +156,7 @@ export function JalaliDatePicker({
               type="button"
               onClick={() => shiftMonth(-1)}
               aria-label="ماه قبل"
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronRightIcon className="size-4" />
             </button>
@@ -166,7 +167,7 @@ export function JalaliDatePicker({
               type="button"
               onClick={() => shiftMonth(1)}
               aria-label="ماه بعد"
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronLeftIcon className="size-4" />
             </button>
@@ -193,7 +194,7 @@ export function JalaliDatePicker({
                   type="button"
                   onClick={() => pick(d)}
                   aria-selected={isSelected || undefined}
-                  className={`flex h-8 items-center justify-center rounded-md text-sm transition-colors ${
+                  className={`flex h-8 items-center justify-center rounded-lg text-sm transition-colors ${
                     isSelected
                       ? "bg-primary font-semibold text-primary-foreground"
                       : isToday

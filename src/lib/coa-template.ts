@@ -121,7 +121,7 @@ export const WELL_KNOWN_CODES = {
   salesReturns: "4400",
   cogs: "5100",
   // سیستم ادواری — the periodic system's «خرید طی دوره» account (migration
-  // 0143). A business whose setup chose `system: "periodic"` debits every
+  // 0144). A business whose setup chose `system: "periodic"` debits every
   // received purchase here instead of 1300; the period-close entry credits
   // it back to zero and moves B + P − E into COGS. Perpetual businesses
   // never post to it, but it is seeded on every chart so the posting rule

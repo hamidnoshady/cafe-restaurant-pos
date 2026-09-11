@@ -32,7 +32,7 @@ export const GET = withTenantScope(async () => {
   // `multi_location` entitlements, and a business can hold `ai_assistant`
   // without either. One call, one entitlement, no cross-feature dependency.
   const location = await resolveActiveLocation(guard.session);
-  const [items, formulas, branches] = await Promise.all([
+  const [items, formulas, branches, messageTemplates, projects] = await Promise.all([
     location
       ? query<{ id: string; name: string; unit: string; quantity: string }>(
           `SELECT i.id, i.name, i.unit, trim_scale(COALESCE(sm.total, 0))::text AS quantity
@@ -59,6 +59,14 @@ export const GET = withTenantScope(async () => {
       `SELECT id, name FROM locations WHERE business_id = $1 AND is_active ORDER BY created_at`,
       [guard.session.businessId],
     ),
+    query<{ id: string; name: string; channel: "sms" | "email" }>(
+      `SELECT id, name, channel FROM message_templates WHERE business_id = $1 ORDER BY created_at DESC`,
+      [guard.session.businessId],
+    ),
+    query<{ id: string; name: string }>(
+      `SELECT id, name FROM ai_projects WHERE business_id = $1 AND archived_at IS NULL AND status = 'active' ORDER BY name`,
+      [guard.session.businessId],
+    ),
   ]);
 
   return NextResponse.json({
@@ -68,6 +76,8 @@ export const GET = withTenantScope(async () => {
       inventoryItems: items.rows,
       formulas: formulas.rows.map((row) => ({ id: row.id, name: row.name, outputName: row.output_name })),
       branches: branches.rows,
+      messageTemplates: messageTemplates.rows,
+      projects: projects.rows,
     },
     labels: {
       triggers: COWORKER_TRIGGER_LABELS,

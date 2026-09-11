@@ -64,6 +64,8 @@ export interface PostingResult {
   postingKind?: string | null;
   /** Links the posted entry back to the inventory_events row that caused it, when there is one. */
   inventoryEventId?: string | null;
+  /** Operating cost centre carried to the accounting document. */
+  projectId?: string | null;
 }
 
 export type PostingRule = (event: DomainEvent, client: PoolClient) => Promise<PostingResult | null>;
@@ -169,6 +171,7 @@ export async function dispatchDomainEvent(
     createdBy: event.createdBy,
     postingKind: result.postingKind ?? null,
     inventoryEventId: result.inventoryEventId ?? null,
+    projectId: result.projectId ?? null,
   });
 
   if (entryId) {

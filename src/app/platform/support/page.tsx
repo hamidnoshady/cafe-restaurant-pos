@@ -98,18 +98,18 @@ interface TicketStats {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  open: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  in_progress: "border-sky-500/30 bg-sky-500/10 text-sky-300",
-  waiting_customer: "border-violet-500/30 bg-violet-500/10 text-violet-300",
-  resolved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  closed: "border-white/15 bg-white/5 text-white/50",
+  open: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  in_progress: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  waiting_customer: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  resolved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  closed: "border-border bg-muted text-muted-foreground",
 };
 
 const PRIORITY_STYLES: Record<string, string> = {
-  low: "border-white/15 bg-white/5 text-white/50",
-  normal: "border-white/15 bg-white/5 text-white/65",
-  high: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  urgent: "border-red-500/40 bg-red-500/10 text-red-300",
+  low: "border-border bg-muted text-muted-foreground",
+  normal: "border-border bg-muted text-foreground",
+  high: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  urgent: "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300",
 };
 
 /** A pill whose colour comes from the wire value but whose text is the Persian label. */
@@ -125,7 +125,7 @@ function Chip({
   return (
     <span
       className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-        styles[wireValue] ?? "border-white/15 bg-white/5 text-white/60"
+        styles[wireValue] ?? "border-border bg-muted text-muted-foreground"
       }`}
     >
       {label}
@@ -215,7 +215,7 @@ export default function PlatformSupportPage() {
           </span>
           <div className="min-w-0">
             <h1 className="text-xl font-bold">تیکت‌های پشتیبانی</h1>
-            <p className="mt-1 text-sm text-white/40">
+            <p className="mt-1 text-sm text-muted-foreground">
               درخواست‌های پشتیبانی همهٔ کسب‌وکارها؛ پاسخ‌دهی، اولویت‌بندی و ارجاع به همکاران.
             </p>
           </div>
@@ -257,7 +257,7 @@ export default function PlatformSupportPage() {
           <div className="relative min-w-0">
             <SearchIcon
               aria-hidden="true"
-              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-white/30"
+              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
             <input
               type="search"
@@ -291,7 +291,7 @@ export default function PlatformSupportPage() {
               </option>
             ))}
           </select>
-          <label className="flex cursor-pointer items-center gap-2 text-xs text-white/55">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
               checked={assignedToMe}
@@ -326,13 +326,13 @@ export default function PlatformSupportPage() {
                 className={`block w-full rounded-xl border p-4 text-start transition-colors ${
                   selectedId === ticket.id
                     ? "border-sky-400/50 bg-sky-500/10"
-                    : "border-white/10 bg-white/3 hover:border-white/20 hover:bg-white/5"
+                    : "border-border bg-card hover:border-border hover:bg-muted"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-white/90">{ticket.subject}</p>
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/45">
+                    <p className="truncate font-semibold text-foreground">{ticket.subject}</p>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <StoreIcon className="size-3" aria-hidden="true" />
                         {ticket.businessName}
@@ -347,10 +347,10 @@ export default function PlatformSupportPage() {
                     <Chip wireValue={ticket.status} label={TICKET_STATUS_LABELS[ticket.status as keyof typeof TICKET_STATUS_LABELS] ?? ticket.status} styles={STATUS_STYLES} />
                   </div>
                 </div>
-                <p className="mt-3 line-clamp-2 text-sm leading-6 text-white/70">
+                <p className="mt-3 line-clamp-2 text-sm leading-6 text-foreground">
                   {ticket.lastMessagePreview ?? "بدون پیام"}
                 </p>
-                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/35">
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                   <span>{fmtDate(ticket.updatedAt)}</span>
                   <span>{toPersianDigits(ticket.messageCount)} پیام</span>
                   {ticket.assignedAdminName ? <span>• پاسخ‌دهنده: {ticket.assignedAdminName}</span> : null}
@@ -410,7 +410,7 @@ function SupportTicketPanel({
   if (!summary) {
     return (
       <Card>
-        <div className="flex min-h-56 flex-col items-center justify-center text-center text-white/35">
+        <div className="flex min-h-56 flex-col items-center justify-center text-center text-muted-foreground">
           <LifeBuoyIcon className="mb-3 size-8" aria-hidden="true" />
           <p className="text-sm">یک تیکت را برای مشاهدهٔ گفت‌وگو و پاسخ انتخاب کنید.</p>
         </div>
@@ -457,17 +457,17 @@ function SupportTicketPanel({
 
   return (
     <Card>
-      <div className="mb-4 flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+      <div className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
         <div className="min-w-0">
-          <p className="text-xs text-white/40">جزئیات تیکت</p>
-          <p className="mt-1 truncate font-semibold text-white/90">{ticket.subject}</p>
-          <code className="mt-1 block truncate text-[10px] text-white/25" dir="ltr">{ticket.id}</code>
+          <p className="text-xs text-muted-foreground">جزئیات تیکت</p>
+          <p className="mt-1 truncate font-semibold text-foreground">{ticket.subject}</p>
+          <code className="mt-1 block truncate text-[10px] text-muted-foreground" dir="ltr">{ticket.id}</code>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="بستن جزئیات"
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/45 transition hover:bg-white/5 hover:text-white"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
         >
           <XIcon className="size-4" aria-hidden="true" />
         </button>
@@ -476,12 +476,12 @@ function SupportTicketPanel({
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Chip wireValue={ticket.status} label={TICKET_STATUS_LABELS[statusValue] ?? ticket.status} styles={STATUS_STYLES} />
         <Chip wireValue={ticket.priority} label={TICKET_PRIORITY_LABELS[priorityValue] ?? ticket.priority} styles={PRIORITY_STYLES} />
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-0.5 text-xs text-white/50">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
           <Clock3Icon className="size-3" aria-hidden="true" />
           {fmtDate(ticket.createdAt)}
         </span>
         {ticket.closedAt ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-0.5 text-xs text-white/50">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
             <CheckCircle2Icon className="size-3" aria-hidden="true" />
             بسته در {fmtDate(ticket.closedAt)}
           </span>
@@ -490,22 +490,22 @@ function SupportTicketPanel({
 
       <dl className="mb-4 grid gap-3 text-sm sm:grid-cols-2">
         <div className="min-w-0">
-          <dt className="flex items-center gap-1.5 text-xs text-white/40">
+          <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <StoreIcon className="size-3.5" aria-hidden="true" />
             کسب‌وکار
           </dt>
-          <dd className="mt-1 truncate text-white/75">
-            <a href={`/platform/businesses/${ticket.businessId}`} className="text-sky-300 hover:underline">
+          <dd className="mt-1 truncate text-foreground">
+            <a href={`/platform/businesses/${ticket.businessId}`} className="text-sky-700 dark:text-sky-300 hover:underline">
               {ticket.businessName}
             </a>
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="flex items-center gap-1.5 text-xs text-white/40">
+          <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <UserRoundIcon className="size-3.5" aria-hidden="true" />
             کاربر
           </dt>
-          <dd className="mt-1 truncate text-white/75">{ticket.userName ?? "کاربر حذف‌شده"}</dd>
+          <dd className="mt-1 truncate text-foreground">{ticket.userName ?? "کاربر حذف‌شده"}</dd>
         </div>
       </dl>
 
@@ -517,22 +517,22 @@ function SupportTicketPanel({
             className={`max-w-[92%] rounded-xl border p-3 ${
               message.authorType === "admin"
                 ? "ms-auto border-sky-500/25 bg-sky-500/10"
-                : "border-white/10 bg-white/4"
+                : "border-border bg-card"
             }`}
           >
-            <p className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/40">
-              <span className="font-medium text-white/65">
+            <p className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+              <span className="font-medium text-foreground">
                 {message.authorType === "admin" ? (message.adminName ?? "تیم پشتیبانی") : (message.userName ?? "کاربر")}
               </span>
               <span>{fmtDate(message.createdAt)}</span>
-              {message.authorType === "admin" ? <span className="text-sky-300/70">پاسخ سکو</span> : null}
+              {message.authorType === "admin" ? <span className="text-sky-700/70 dark:text-sky-300/70">پاسخ سکو</span> : null}
             </p>
-            <p className="whitespace-pre-wrap text-sm leading-6 text-white/80">{message.body}</p>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{message.body}</p>
             {message.attachment ? (
               <a
                 href={message.attachment}
                 download={`ticket-${ticket.id}-${message.id}.jpg`}
-                className="mt-2 block overflow-hidden rounded-lg border border-white/10 bg-black/20"
+                className="mt-2 block overflow-hidden rounded-lg border border-border bg-muted"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={message.attachment} alt="پیوست تیکت" className="max-h-44 w-full object-contain" />
@@ -540,9 +540,9 @@ function SupportTicketPanel({
             ) : null}
           </div>
         ))}
-        {!detail && loading ? <p className="text-xs text-white/40">در حال بارگذاری گفت‌وگو…</p> : null}
+        {!detail && loading ? <p className="text-xs text-muted-foreground">در حال بارگذاری گفت‌وگو…</p> : null}
         {detail && detail.messages.length === 0 ? (
-          <p className="text-xs text-white/40">پیامی در این تیکت نیست.</p>
+          <p className="text-xs text-muted-foreground">پیامی در این تیکت نیست.</p>
         ) : null}
       </div>
 
@@ -550,9 +550,9 @@ function SupportTicketPanel({
       {actionError ? <ErrorBox>{actionError}</ErrorBox> : null}
 
       {/* Lifecycle controls */}
-      <div className="mb-4 grid gap-2 border-t border-white/10 pt-4 sm:grid-cols-2">
+      <div className="mb-4 grid gap-2 border-t border-border pt-4 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block text-[11px] text-white/40">وضعیت</span>
+          <span className="mb-1 block text-[11px] text-muted-foreground">وضعیت</span>
           <select
             value={ticket.status}
             onChange={(event) => void patch({ status: event.target.value })}
@@ -567,7 +567,7 @@ function SupportTicketPanel({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-[11px] text-white/40">اولویت</span>
+          <span className="mb-1 block text-[11px] text-muted-foreground">اولویت</span>
           <select
             value={ticket.priority}
             onChange={(event) => void patch({ priority: event.target.value })}
@@ -582,7 +582,7 @@ function SupportTicketPanel({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-[11px] text-white/40">دسته</span>
+          <span className="mb-1 block text-[11px] text-muted-foreground">دسته</span>
           <select
             value={ticket.category}
             onChange={(event) => void patch({ category: event.target.value })}
@@ -597,7 +597,7 @@ function SupportTicketPanel({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-[11px] text-white/40">پاسخ‌دهنده</span>
+          <span className="mb-1 block text-[11px] text-muted-foreground">پاسخ‌دهنده</span>
           <select
             value={ticket.assignedAdminId ?? ""}
             onChange={(event) => void patch({ assignedAdminId: event.target.value || null })}
@@ -624,7 +624,7 @@ function SupportTicketPanel({
           className={`${inputClass} w-full resize-y`}
         />
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] text-white/35">
+          <p className="text-[11px] text-muted-foreground">
             پاسخ شما تیکت را به «در انتظار پاسخ شما» برمی‌گرداند.
           </p>
           <Button onClick={() => void sendReply()} disabled={sending || !reply.trim()} className="gap-2">

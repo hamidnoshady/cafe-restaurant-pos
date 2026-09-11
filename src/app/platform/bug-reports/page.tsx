@@ -65,10 +65,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_STYLES: Record<string, string> = {
-  new: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  in_progress: "border-sky-500/30 bg-sky-500/10 text-sky-300",
-  resolved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  closed: "border-white/15 bg-white/5 text-white/50",
+  new: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  in_progress: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  resolved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  closed: "border-border bg-muted text-muted-foreground",
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -88,7 +88,7 @@ function ReportStatus({ status }: { status: string }) {
   return (
     <span
       className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-        STATUS_STYLES[status] ?? "border-white/15 bg-white/5 text-white/60"
+        STATUS_STYLES[status] ?? "border-border bg-muted text-muted-foreground"
       }`}
     >
       {statusLabel(status)}
@@ -176,12 +176,12 @@ export default function BugReportsPage() {
     <div className="mx-auto w-full max-w-6xl">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 text-rose-700 dark:text-rose-300">
             <BugIcon className="size-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
             <h1 className="text-xl font-bold">گزارش‌های خطا</h1>
-            <p className="mt-1 text-sm text-white/40">
+            <p className="mt-1 text-sm text-muted-foreground">
               مشکلاتی که کاربران از داخل برنامهٔ خود برای تیم پشتیبانی فرستاده‌اند.
             </p>
           </div>
@@ -211,7 +211,7 @@ export default function BugReportsPage() {
           <div className="relative min-w-0">
             <SearchIcon
               aria-hidden="true"
-              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-white/30"
+              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
             <input
               type="search"
@@ -229,7 +229,7 @@ export default function BugReportsPage() {
               </option>
             ))}
           </select>
-          <span className="text-xs text-white/40 sm:text-end">
+          <span className="text-xs text-muted-foreground sm:text-end">
             {reports ? `${toPersianDigits(visible.length)} گزارش` : "در حال بارگذاری…"}
           </span>
         </div>
@@ -258,13 +258,13 @@ export default function BugReportsPage() {
                 className={`block w-full rounded-xl border p-4 text-start transition-colors ${
                   selectedId === report.id
                     ? "border-sky-400/50 bg-sky-500/10"
-                    : "border-white/10 bg-white/3 hover:border-white/20 hover:bg-white/5"
+                    : "border-border bg-card hover:border-border hover:bg-muted"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-white/90">{report.businessName}</p>
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/45">
+                    <p className="truncate font-semibold text-foreground">{report.businessName}</p>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                       <span>{report.userName ?? "کاربر حذف‌شده"}</span>
                       {report.userRole ? <span>({ROLE_LABELS[report.userRole] ?? report.userRole})</span> : null}
                       {report.locationName ? <span>• {report.locationName}</span> : null}
@@ -272,11 +272,11 @@ export default function BugReportsPage() {
                   </div>
                   <ReportStatus status={report.status} />
                 </div>
-                <p className="mt-3 line-clamp-2 text-sm leading-6 text-white/70">{report.description}</p>
-                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/35">
+                <p className="mt-3 line-clamp-2 text-sm leading-6 text-foreground">{report.description}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                   <span>{fmtDate(report.createdAt)}</span>
                   {report.hasScreenshot ? (
-                    <span className="inline-flex items-center gap-1 text-sky-300/70">
+                    <span className="inline-flex items-center gap-1 text-sky-700/70 dark:text-sky-300/70">
                       <ImageIcon className="size-3" aria-hidden="true" />
                       تصویر دارد
                     </span>
@@ -320,7 +320,7 @@ function BugReportDetails({
   if (!summary) {
     return (
       <Card>
-        <div className="flex min-h-56 flex-col items-center justify-center text-center text-white/35">
+        <div className="flex min-h-56 flex-col items-center justify-center text-center text-muted-foreground">
           <BugIcon className="mb-3 size-8" aria-hidden="true" />
           <p className="text-sm">یک گزارش را برای مشاهدهٔ جزئیات انتخاب کنید.</p>
         </div>
@@ -331,17 +331,17 @@ function BugReportDetails({
   const report = detail ?? summary;
   return (
     <Card>
-      <div className="mb-4 flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+      <div className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
         <div className="min-w-0">
-          <p className="text-xs text-white/40">جزئیات گزارش</p>
-          <p className="mt-1 truncate font-semibold text-white/90">{report.businessName}</p>
-          <code className="mt-1 block truncate text-[10px] text-white/25" dir="ltr">{report.id}</code>
+          <p className="text-xs text-muted-foreground">جزئیات گزارش</p>
+          <p className="mt-1 truncate font-semibold text-foreground">{report.businessName}</p>
+          <code className="mt-1 block truncate text-[10px] text-muted-foreground" dir="ltr">{report.id}</code>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="بستن جزئیات"
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/45 transition hover:bg-white/5 hover:text-white"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
         >
           <XIcon className="size-4" aria-hidden="true" />
         </button>
@@ -350,7 +350,7 @@ function BugReportDetails({
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
           <ReportStatus status={report.status} />
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-0.5 text-xs text-white/50">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
             <Clock3Icon className="size-3" aria-hidden="true" />
             {fmtDate(report.createdAt)}
           </span>
@@ -358,13 +358,13 @@ function BugReportDetails({
 
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <DetailItem icon={<StoreIcon className="size-3.5" />} label="کسب‌وکار">
-            <a href={`/platform/businesses/${report.businessId}`} className="text-sky-300 hover:underline">
+            <a href={`/platform/businesses/${report.businessId}`} className="text-sky-700 dark:text-sky-300 hover:underline">
               {report.businessName}
             </a>
           </DetailItem>
           <DetailItem icon={<UserRoundIcon className="size-3.5" />} label="گزارش‌دهنده">
             {report.userName ?? "کاربر حذف‌شده"}
-            {report.userRole ? <span className="text-white/40"> — {ROLE_LABELS[report.userRole] ?? report.userRole}</span> : null}
+            {report.userRole ? <span className="text-muted-foreground"> — {ROLE_LABELS[report.userRole] ?? report.userRole}</span> : null}
           </DetailItem>
           {report.locationName ? (
             <DetailItem icon={<MapPinIcon className="size-3.5" />} label="شعبه">
@@ -377,34 +377,34 @@ function BugReportDetails({
         </dl>
 
         <div>
-          <p className="mb-1.5 text-xs font-medium text-white/45">شرح مشکل</p>
-          <p className="whitespace-pre-wrap rounded-lg border border-white/10 bg-black/15 p-3 text-sm leading-7 text-white/80">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">شرح مشکل</p>
+          <p className="whitespace-pre-wrap rounded-lg border border-border bg-muted p-3 text-sm leading-7 text-foreground">
             {report.description}
           </p>
         </div>
 
-        {loading ? <p className="text-xs text-white/40">در حال بارگذاری اطلاعات تکمیلی…</p> : null}
+        {loading ? <p className="text-xs text-muted-foreground">در حال بارگذاری اطلاعات تکمیلی…</p> : null}
         <ErrorBox>{error}</ErrorBox>
 
         {detail?.screenshot ? (
           <div>
-            <p className="mb-1.5 text-xs font-medium text-white/45">تصویر هنگام ثبت گزارش</p>
-            <a href={detail.screenshot} download={`bug-report-${detail.id}.jpg`} className="group block overflow-hidden rounded-lg border border-white/10 bg-black/20">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">تصویر هنگام ثبت گزارش</p>
+            <a href={detail.screenshot} download={`bug-report-${detail.id}.jpg`} className="group block overflow-hidden rounded-lg border border-border bg-muted">
               <img src={detail.screenshot} alt="تصویر صفحه هنگام گزارش" className="max-h-[28rem] w-full object-contain transition group-hover:opacity-90" />
-              <span className="flex items-center justify-center gap-1.5 border-t border-white/10 px-3 py-2 text-xs text-sky-300">
+              <span className="flex items-center justify-center gap-1.5 border-t border-border px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
                 <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
                 باز کردن تصویر
               </span>
             </a>
           </div>
         ) : summary.hasScreenshot && !loading && !error ? (
-          <p className="text-xs text-white/40">تصویر این گزارش قابل بارگذاری نیست.</p>
+          <p className="text-xs text-muted-foreground">تصویر این گزارش قابل بارگذاری نیست.</p>
         ) : null}
 
         {report.pageUrl ? (
           <div>
-            <p className="mb-1.5 text-xs font-medium text-white/45">صفحهٔ محل بروز مشکل</p>
-            <code className="block break-all rounded-lg border border-white/10 bg-black/15 p-3 text-xs text-white/55" dir="ltr">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">صفحهٔ محل بروز مشکل</p>
+            <code className="block break-all rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground" dir="ltr">
               {report.pageUrl}
             </code>
           </div>
@@ -412,8 +412,8 @@ function BugReportDetails({
 
         {detail?.userAgent ? (
           <div>
-            <p className="mb-1.5 text-xs font-medium text-white/45">مرورگر</p>
-            <code className="block break-all rounded-lg border border-white/10 bg-black/15 p-3 text-[11px] leading-5 text-white/45" dir="ltr">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">مرورگر</p>
+            <code className="block break-all rounded-lg border border-border bg-muted p-3 text-[11px] leading-5 text-muted-foreground" dir="ltr">
               {detail.userAgent}
             </code>
           </div>
@@ -434,11 +434,11 @@ function DetailItem({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="flex items-center gap-1.5 text-xs text-white/40">
+      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {icon}
         {label}
       </dt>
-      <dd className="mt-1 truncate text-white/75">{children}</dd>
+      <dd className="mt-1 truncate text-foreground">{children}</dd>
     </div>
   );
 }

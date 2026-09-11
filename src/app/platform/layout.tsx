@@ -4,8 +4,8 @@
  * Phase 15 — the console shell.
  *
  * A client layout that bootstraps from `/api/platform/auth/me`: no session
- * bounces to `/platform/login`; a session renders the dark chrome, the sidebar,
- * and — crucially — provides every child page the admin's capability list via
+ * bounces to `/platform/login`; a session renders dark-first, theme-aware
+ * chrome, the sidebar, and — crucially — provides every child page the admin's capability list via
  * `CapabilityContext`, so pages hide controls the operator could not use. The
  * server still re-checks every write; this only keeps the UI honest.
  *
@@ -17,10 +17,12 @@
  * never loses the context of which tenant they are inside.
  */
 import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { PlatformCapability } from "@/lib/platform-admin";
 import { PLATFORM_ROLE_LABELS, type PlatformAdminRole } from "@/lib/platform-admin";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { api, CapabilityContext, Button, PlatformPageSkeleton } from "./ui";
 import { businessSections } from "./businesses/[id]/sections";
 
@@ -46,6 +48,9 @@ const NAV: NavItem[] = [
   // payments ledger. Read surfaces are visible to any admin; the pages hide
   // their own write controls from operators without `billing.manage`.
   { label: "پرداخت‌ها", href: "/platform/billing" },
+  // Phase 37b — provider credentials and credits are platform-owned, so they
+  // belong beside billing rather than on any individual business profile.
+  { label: "پیام‌رسانی", href: "/platform/messaging" },
   { label: "پلن‌ساز", href: "/platform/plans" },
   // Migration 0128 — the deployment-wide app switchboard («به‌زودی»، «در حال
   // تعمیر»، …). Readable by any admin; the page hides its own write controls
@@ -109,6 +114,7 @@ function businessIdFromPath(path: string): string | null {
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { setTheme } = useTheme();
   const isLogin = pathname === "/platform/login";
 
   const [me, setMe] = useState<Me | null>(null);
@@ -117,6 +123,13 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   // Context for the «کسب‌وکارها» sub-menu: which business is open, and its name.
   const openBusinessId = isLogin ? null : businessIdFromPath(pathname);
   const [openBusiness, setOpenBusiness] = useState<{ id: string; name: string } | null>(null);
+
+  // The console keeps its distinct dark-first identity until an operator picks
+  // a theme. `ThemeToggle` writes this same next-themes key, so an explicit
+  // light (or dark) choice always wins and survives future visits.
+  useEffect(() => {
+    if (!window.localStorage.getItem("theme")) setTheme("dark");
+  }, [setTheme]);
 
   useEffect(() => {
     if (isLogin) {
@@ -162,7 +175,14 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
   // The login page renders inside this layout but outside its chrome.
   if (isLogin) {
-    return <div className="min-h-screen bg-slate-950">{children}</div>;
+    return (
+      <div className="relative min-h-screen bg-background" dir="rtl">
+        <div className="absolute start-4 top-4 z-10">
+          <ThemeToggle />
+        </div>
+        {children}
+      </div>
+    );
   }
 
   if (loading || !me?.admin) {
@@ -200,14 +220,14 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
               aria-current={isActive ? "page" : undefined}
               className={
                 isActive
-                  ? "block rounded-lg bg-sky-500/15 px-3 py-2.5 text-sm font-medium text-sky-300"
-                  : "block rounded-lg px-3 py-2.5 text-sm text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+                  ? "block rounded-lg bg-sky-500/15 px-3 py-2.5 text-sm font-medium text-sky-700 dark:text-sky-300"
+                  : "block rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               }
             >
               {n.label}
             </Link>
             {showChildren ? (
-              <div className="space-y-0.5 border-e border-white/10 pe-0 ps-[1.35rem]">
+              <div className="space-y-0.5 border-e border-border pe-0 ps-[1.35rem]">
                 {n.children!.map((c) => {
                   const cActive =
                     c.exact ? pathname === c.href : pathname === c.href || pathname.startsWith(`${c.href}/`);
@@ -218,8 +238,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
                       aria-current={cActive ? "page" : undefined}
                       className={
                         cActive
-                          ? "block rounded-md bg-white/10 px-2.5 py-1.5 text-[13px] font-medium text-white"
-                          : "block rounded-md px-2.5 py-1.5 text-[13px] text-white/45 transition-colors hover:bg-white/5 hover:text-white/80"
+                          ? "block rounded-lg bg-muted px-2.5 py-1.5 text-[13px] font-medium text-foreground"
+                          : "block rounded-lg px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       }
                     >
                       {c.label}
@@ -229,8 +249,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
               </div>
             ) : null}
             {n.href === "/platform" && sections ? (
-              <div className="space-y-0.5 rounded-lg border border-white/10 bg-black/20 p-1.5">
-                <p className="truncate px-2 pt-1 text-[11px] font-medium uppercase tracking-wide text-white/35">
+              <div className="space-y-0.5 rounded-lg border border-border bg-muted p-1.5">
+                <p className="truncate px-2 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   {openBusiness?.name}
                 </p>
                 {sections.map((s) => {
@@ -242,8 +262,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
                       aria-current={sActive ? "page" : undefined}
                       className={
                         sActive
-                          ? "block rounded-md bg-sky-500/15 px-2.5 py-1.5 text-[13px] font-medium text-sky-300"
-                          : "block rounded-md px-2.5 py-1.5 text-[13px] text-white/50 transition-colors hover:bg-white/5 hover:text-white/85"
+                          ? "block rounded-lg bg-sky-500/15 px-2.5 py-1.5 text-[13px] font-medium text-sky-700 dark:text-sky-300"
+                          : "block rounded-lg px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       }
                     >
                       {s.label}
@@ -260,43 +280,49 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
   return (
     <CapabilityContext.Provider value={caps}>
-      <div className="flex min-h-screen bg-slate-950 text-white" dir="rtl">
-        <aside className="hidden w-60 shrink-0 flex-col border-e border-white/10 bg-white/2 md:flex">
-          <div className="border-b border-white/10 p-4">
-            <p className="text-xs font-medium uppercase tracking-widest text-sky-400/80">
+      <div className="flex min-h-screen bg-background text-foreground" dir="rtl">
+        <aside className="hidden w-60 shrink-0 flex-col border-e border-border bg-card md:flex">
+          <div className="border-b border-border p-4">
+            <p className="text-xs font-medium uppercase tracking-widest text-sky-600/80 dark:text-sky-400/80">
               Platform
             </p>
             <p className="mt-1 font-bold">کنسول مدیریت سکو</p>
           </div>
           <nav className="flex-1 space-y-1 overflow-y-auto p-3">{sidebarLinks}</nav>
-          <div className="border-t border-white/10 p-4 text-sm">
+          <div className="border-t border-border p-4 text-sm">
             <p className="truncate font-semibold">{me.admin.fullName}</p>
-            <p className="mb-3 truncate text-xs text-white/40">
+            <p className="mb-3 truncate text-xs text-muted-foreground">
               {PLATFORM_ROLE_LABELS[me.admin.role] ?? me.admin.role}
             </p>
-            <Button variant="ghost" onClick={logout}>
-              خروج
-            </Button>
+            <div className="flex items-center justify-between gap-2">
+              <Button variant="ghost" onClick={logout}>
+                خروج
+              </Button>
+              <ThemeToggle />
+            </div>
           </div>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex min-w-0 items-center justify-between gap-2 border-b border-white/10 px-3 py-3 sm:px-4 md:hidden">
+          <header className="flex min-w-0 items-center justify-between gap-2 border-b border-border px-3 py-3 sm:px-4 md:hidden">
             <p className="min-w-0 truncate font-bold">کنسول سکو</p>
-            <Button variant="ghost" onClick={logout}>
-              خروج
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              <ThemeToggle />
+              <Button variant="ghost" onClick={logout}>
+                خروج
+              </Button>
+            </div>
           </header>
           {/* Mobile nav strip */}
-          <nav className="flex min-w-0 gap-1 overflow-x-auto border-b border-white/10 px-2 py-2 md:hidden">
+          <nav className="flex min-w-0 gap-1 overflow-x-auto border-b border-border px-2 py-2 md:hidden">
             {NAV.filter((n) => !n.cap || caps.includes(n.cap)).map((n) => (
               <Link
                 key={n.href}
                 href={n.href}
                 className={
                   active(n)
-                    ? "shrink-0 whitespace-nowrap rounded-lg bg-sky-500/15 px-3 py-1.5 text-sm font-medium text-sky-300"
-                    : "shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-white/60"
+                    ? "shrink-0 whitespace-nowrap rounded-lg bg-sky-500/15 px-3 py-1.5 text-sm font-medium text-sky-700 dark:text-sky-300"
+                    : "shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
                 }
               >
                 {n.label}

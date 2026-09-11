@@ -11,7 +11,7 @@
  * `publishPost` is here because a human's click needs it. It has no executor
  * and no MCP tool — see `website.post.publish` in ACTION_CATALOG.
  */
-import { WebsiteAdapterError, type Post, type RemoteProduct } from "./adapter";
+import { WebsiteAdapterError, type Post, type RemoteProduct, type WebsiteMedia } from "./adapter";
 import { adapterForBusiness, getWebsiteConnection, WebsiteNotConnectedError } from "./connection-service";
 import { summarizeWebsiteQueue } from "./catalog-service";
 
@@ -39,7 +39,9 @@ export interface PostDraftInput {
   title: string;
   /** Markdown. */
   body: string;
+  slug?: string;
   excerpt?: string;
+  featuredImageId?: string | null;
 }
 
 function validateDraft(input: Partial<PostDraftInput>, requireAll: boolean): string | null {
@@ -52,7 +54,41 @@ function validateDraft(input: Partial<PostDraftInput>, requireAll: boolean): str
     if (input.body.length > BODY_MAX) return "field_too_long";
   }
   if (input.excerpt !== undefined && (typeof input.excerpt !== "string" || input.excerpt.length > 500)) return "field_too_long";
+  if (input.slug !== undefined && (typeof input.slug !== "string" || !/^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(input.slug.trim()))) return "invalid_slug";
+  if (input.featuredImageId !== undefined && input.featuredImageId !== null && typeof input.featuredImageId !== "string") return "bad_request";
   return null;
+}
+
+/** Server-side image guard. Browser checks are advisory; this is the trust boundary. */
+const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+export const WEBSITE_MEDIA_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Pure guard used by the route-facing service and its focused boundary tests. */
+export function isValidWebsiteImage(input: { filename: string; mimeType: string; byteLength: number }): boolean {
+  return Boolean(input.filename.trim()) && IMAGE_TYPES.has(input.mimeType) && input.byteLength > 0 && input.byteLength <= WEBSITE_MEDIA_MAX_BYTES;
+}
+
+/** Cheap signature check: MIME comes from an untrusted multipart client. */
+export function hasMatchingImageSignature(mimeType: string, bytes: Uint8Array): boolean {
+  const starts = (...signature: number[]) => signature.every((value, index) => bytes[index] === value);
+  if (mimeType === "image/jpeg") return starts(0xff, 0xd8, 0xff);
+  if (mimeType === "image/png") return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+  if (mimeType === "image/gif") return starts(0x47, 0x49, 0x46, 0x38) && (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61;
+  return mimeType === "image/webp" && starts(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+}
+
+export async function uploadWebsiteMedia(input: {
+  businessId: string; filename: string; mimeType: string; bytes: Uint8Array; alt?: string;
+}): Promise<WebsiteResult<WebsiteMedia>> {
+  if (!isValidWebsiteImage({ filename: input.filename, mimeType: input.mimeType, byteLength: input.bytes.byteLength }) || !hasMatchingImageSignature(input.mimeType, input.bytes)) {
+    return { ok: false, error: "invalid_media" };
+  }
+  try {
+    const { adapter } = await adapterForBusiness(input.businessId);
+    return { ok: true, data: await adapter.uploadMedia(input) };
+  } catch (err) {
+    return mapError(err);
+  }
 }
 
 /** Always a draft: the adapter contract forbids `draftPost` from publishing. */
@@ -61,7 +97,10 @@ export async function draftWebsitePost(businessId: string, input: PostDraftInput
   if (invalid) return { ok: false, error: invalid };
   try {
     const { adapter } = await adapterForBusiness(businessId);
-    const post = await adapter.draftPost({ title: input.title.trim(), body: input.body, excerpt: input.excerpt?.trim() || undefined });
+    const post = await adapter.draftPost({
+      title: input.title.trim(), body: input.body, slug: input.slug?.trim() || undefined,
+      excerpt: input.excerpt?.trim() || undefined, featuredImageId: input.featuredImageId ?? undefined,
+    });
     return { ok: true, data: post };
   } catch (err) {
     return mapError(err);
@@ -77,13 +116,15 @@ export async function updateWebsitePost(
   if (!postId) return { ok: false, error: "bad_request" };
   const invalid = validateDraft(input, false);
   if (invalid) return { ok: false, error: invalid };
-  if (input.title === undefined && input.body === undefined && input.excerpt === undefined) return { ok: false, error: "bad_request" };
+  if (input.title === undefined && input.body === undefined && input.slug === undefined && input.excerpt === undefined && input.featuredImageId === undefined) return { ok: false, error: "bad_request" };
   try {
     const { adapter } = await adapterForBusiness(businessId);
     const post = await adapter.updatePost(postId, {
       ...(input.title !== undefined ? { title: input.title.trim() } : {}),
       ...(input.body !== undefined ? { body: input.body } : {}),
+      ...(input.slug !== undefined ? { slug: input.slug.trim() } : {}),
       ...(input.excerpt !== undefined ? { excerpt: input.excerpt.trim() } : {}),
+      ...(input.featuredImageId !== undefined ? { featuredImageId: input.featuredImageId ?? "" } : {}),
     });
     return { ok: true, data: post };
   } catch (err) {

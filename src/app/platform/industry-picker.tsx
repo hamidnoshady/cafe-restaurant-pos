@@ -7,9 +7,9 @@
  * provision form on the landing page, and the industry panel on a business's
  * detail page. It deliberately does not share a component with the identical
  * grid on `/welcome` (src/app/welcome/page.tsx) — that one is rendered in the
- * tenant app's light theme against `border-input`/`text-foreground` tokens,
- * while the console has its own dark palette, so sharing would mean a variant
- * prop threading two design systems through one component for no gain. What is
+ * tenant app's layout, while the console has its own theme-aware visual
+ * language, so sharing would mean a variant prop threading two design systems
+ * through one component for no gain. What is
  * shared is the thing that matters: `INDUSTRIES` / `ENABLED_INDUSTRIES` /
  * `INDUSTRY_LABELS` from src/lib/industries.ts, so neither copy can drift on
  * which industries exist or what they are called.
@@ -40,17 +40,17 @@ export function IndustryPicker({
             onClick={() => available && onChange(option)}
             className={`relative rounded-lg border px-3 py-2 text-sm transition-colors ${
               selected
-                ? "border-sky-400/60 bg-sky-400/10 font-medium text-sky-200"
-                : "border-white/10 text-white/70"
+                ? "border-sky-400/60 bg-sky-400/10 font-medium text-sky-800 dark:text-sky-200"
+                : "border-border text-foreground"
             } ${
               disabled || !available
                 ? "cursor-not-allowed opacity-50"
-                : "hover:border-sky-400/40 hover:text-white"
+                : "hover:border-sky-400/40 hover:text-foreground"
             }`}
           >
             {INDUSTRY_LABELS[option]}
             {!available ? (
-              <span className="absolute -top-2 -left-2 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-white/60">
+              <span className="absolute -top-2 -left-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                 به‌زودی
               </span>
             ) : null}

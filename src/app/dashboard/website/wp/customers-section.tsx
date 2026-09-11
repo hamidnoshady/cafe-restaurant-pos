@@ -109,7 +109,7 @@ export function WpCustomersSection() {
           <ul className="divide-y divide-border/80">
             {customers.map((c) => (
               <li key={c.remoteId} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-500 dark:bg-stone-800">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
                   <ContactIcon className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">

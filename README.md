@@ -617,9 +617,12 @@ The messaging module is a Growth-app module (`src/lib/apps.ts`); see
   (Debit `5600 هزینهٔ تبلیغات و بازاریابی` / Credit `2455 پرداختنی به پلتفرم (اعتبار پیام)`)
   dated on the branch's business day — never a hand-written ledger call.
 - **The model never sends.** Phase 31 stands; only a human presses send.
-
-The owner/console UI, coworker-triggered sends, project cost-centre reporting and campaign ROI
-(Wave 5) are specified in the phase doc but not yet shipped.
+- **Triggered customer messages, project cost centre and attributable ROI** (Wave 5): deterministic
+  birthday, three-month-inactivity and order-ready events become consent-safe single-recipient
+  outbox campaigns only through an owner-configured coworker job and its approval/cap path.
+  Campaigns can select a project and a dedicated promotion; project spend comes from posted
+  campaign-cost documents, and ROI is shown only for sales that actually applied that dedicated
+  promotion. A campaign without one explicitly says that its ROI is not calculable, never zero.
 
 ## Cross-app data ownership and the WP Manager (Phase 40)
 

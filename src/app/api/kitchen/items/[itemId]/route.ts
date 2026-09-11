@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { canKitchenBump, canMarkServed, type OrderItemStatus } from "@/lib/order-item-status";
 import { broadcast } from "@/lib/realtime";
+import { recordCoworkerEvent } from "@/lib/ai-coworker-events";
 
 /**
  * Kitchen "bump" (sent→preparing→ready) and waiter/cashier "served"
@@ -51,5 +52,22 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   }
 
   broadcast(location.id, { type: "order.item_status", orderId: item.order_id, itemId, status: to });
+  if (to === "ready") {
+    // A multi-line ticket is ready only when its final unserved line is ready.
+    // The event has a stable order key, so a retry/second terminal line remains
+    // one customer event and therefore one coworker run/campaign.
+    const { rows: readyOrders } = await query<{ customer_id: string }>(
+      `SELECT o.customer_id FROM orders o
+        WHERE o.id = $1 AND o.customer_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM order_items oi
+                           WHERE oi.order_id = o.id AND oi.status NOT IN ('ready', 'served'))`,
+      [item.order_id],
+    );
+    if (readyOrders[0]) await recordCoworkerEvent({
+      businessId: session.businessId, locationId: location.id, kind: "order_ready",
+      payload: { customerId: readyOrders[0].customer_id, orderId: item.order_id },
+      dedupeKey: `order-ready:${item.order_id}`,
+    });
+  }
   return NextResponse.json({ ok: true });
 });

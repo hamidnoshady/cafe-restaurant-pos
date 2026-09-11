@@ -11,7 +11,9 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
-import { PageHeader, PageShell } from "../page-chrome";
+import { cardClass, LoadingSkeleton, PageHeader, PageShell } from "../page-chrome";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 // Iran no longer observes DST, so wall-clock Tehran time is a fixed +03:30.
 const TEHRAN_OFFSET = "+03:30";
@@ -127,42 +129,42 @@ function ReservationStatusBadge({ status }: { status: Reservation["status"] }) {
   );
 }
 
+/**
+ * The reservations board while its first read is in flight.
+ *
+ * Reserves the real two-column shape (schedule + booking rail) with the shared
+ * `Skeleton` primitive rather than hand-rolled `animate-pulse` bars, so the
+ * shimmer, its warm ink and the reduced-motion opt-out all come from one
+ * definition. The spoken label lives on the region; the bars are decorative.
+ */
 function ReservationSkeleton() {
   return (
-    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_20rem] lg:grid-cols-[minmax(0,1fr)_23rem]">
-      <section
-        className="rounded-xl border border-border/80 bg-card p-4 md:col-start-1"
-        aria-busy="true"
-      >
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="در حال بارگذاری رزروها"
+      className="grid gap-4 md:grid-cols-[minmax(0,1fr)_20rem] lg:grid-cols-[minmax(0,1fr)_23rem]"
+    >
+      <section aria-hidden="true" className={`${cardClass} p-4 md:col-start-1`}>
         <div className="flex items-center justify-between gap-3">
-          <div className="h-5 w-36 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-          <div className="h-6 w-16 animate-pulse rounded-md bg-muted motion-reduce:animate-none" />
+          <Skeleton className="h-5 w-36" />
+          <Skeleton className="h-6 w-16 rounded-xl" />
         </div>
-        <div className="mt-4 space-y-3">
-          {[0, 1, 2].map((item) => (
-            <div key={item} className="rounded-xl border border-border p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1 space-y-3">
-                  <div className="h-5 w-32 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-                  <div className="h-4 w-3/4 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-                  <div className="h-4 w-1/2 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-                </div>
-                <div className="h-7 w-20 animate-pulse rounded-full bg-muted motion-reduce:animate-none" />
-              </div>
-            </div>
-          ))}
+        <div className="mt-4">
+          <LoadingSkeleton rows={3} label="در حال بارگذاری برنامهٔ روز" />
         </div>
       </section>
       <aside
-        className="hidden rounded-xl border border-border/80 bg-card p-4 md:col-start-2 md:block"
+        className={`hidden ${cardClass} p-4 md:col-start-2 md:block`}
         aria-hidden="true"
       >
-        <div className="h-5 w-28 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+        <Skeleton className="h-5 w-28" />
         <div className="mt-6 space-y-4">
           {[0, 1, 2, 3].map((item) => (
             <div key={item} className="space-y-2">
-              <div className="h-3 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-              <div className="h-[52px] w-full animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-[52px] w-full rounded-lg" />
             </div>
           ))}
         </div>
@@ -231,14 +233,18 @@ function ReservationRow({
 
   return (
     <article
-      className={
-        "overflow-hidden rounded-xl border bg-card shadow-[0_1px_2px_rgb(41_37_36/0.03)] transition-colors motion-reduce:transition-none " +
-        (selected
+      // cn()/twMerge, not string concatenation: cardClass already carries
+      // `border-border/80`, and the selected/overdue border must win by
+      // *source* order, not by Tailwind's emission order.
+      className={cn(
+        "overflow-hidden transition-colors motion-reduce:transition-none",
+        cardClass,
+        selected
           ? "border-amber-500 dark:border-amber-500/60 ring-2 ring-amber-500/20 dark:ring-amber-400/45"
           : overdue
             ? "border-destructive/30"
-            : "border-border/80")
-      }
+            : "border-border/80",
+      )}
     >
       <button
         type="button"
@@ -299,7 +305,7 @@ function ReservationDetails({
 
   return (
     <section
-      className="rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      className={`${cardClass} p-4`}
       aria-label={"جزئیات رزرو " + reservation.customer_name}
     >
       <div className="flex items-start justify-between gap-3">
@@ -517,7 +523,7 @@ function BookingForm({
 
   return (
     <form
-      className="rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      className={`${cardClass} p-4`}
       onSubmit={(event) => {
         event.preventDefault();
         void submit(false);
@@ -908,7 +914,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
                   به‌ترتیب ساعت رزرو
                 </p>
               </div>
-              <span className="shrink-0 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+              <span className="shrink-0 rounded-xl bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
                 {toPersianDigits(reservations.length)} رزرو
               </span>
             </div>

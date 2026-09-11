@@ -58,6 +58,21 @@ export interface Post {
   url: string | null;
 }
 
+export interface WebsiteMedia {
+  id: string;
+  /** Absolute, browser-safe URL returned by the site. */
+  url: string | null;
+  filename: string | null;
+  alt: string | null;
+}
+
+export interface MediaUpload {
+  filename: string;
+  mimeType: string;
+  bytes: Uint8Array;
+  alt?: string;
+}
+
 export interface PostDraft {
   title: string;
   /** Markdown. */
@@ -103,6 +118,8 @@ export interface WebsiteAdapter {
   readonly key: WebsiteAdapterKey;
 
   testConnection(): Promise<ConnectionTest>;
+  /** Upload a media object and return its remote ID for `featuredImageId`. */
+  uploadMedia(input: MediaUpload): Promise<WebsiteMedia>;
 
   listPosts(q: { status?: PostStatus; limit: number; cursor?: string }): Promise<Page<Post>>;
   getPost(id: string): Promise<Post | null>;

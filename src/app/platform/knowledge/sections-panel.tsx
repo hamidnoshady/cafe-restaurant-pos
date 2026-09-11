@@ -155,7 +155,7 @@ export function SectionsPanel() {
         <div className="relative min-w-0 flex-1 sm:max-w-xs">
           <SearchIcon
             aria-hidden="true"
-            className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-white/30"
+            className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           />
           <input
             type="search"
@@ -165,7 +165,7 @@ export function SectionsPanel() {
             className={`${inputClass} ps-9`}
           />
         </div>
-        <span className="shrink-0 text-xs text-white/40">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {rows ? `${visible?.length ?? 0} از ${rows.length} بخش` : "…"}
         </span>
       </div>
@@ -175,9 +175,9 @@ export function SectionsPanel() {
       ) : visible && visible.length === 0 ? (
         <EmptyState title="بخشی پیدا نشد" hint="عبارت جست‌وجو را تغییر دهید." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-border">
           <table className="min-w-[760px] w-full text-sm">
-            <thead className="bg-white/3 text-white/50">
+            <thead className="bg-card text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 text-start font-medium">بخش</th>
                 <th className="px-4 py-3 text-start font-medium">صفحهٔ آموزشی</th>
@@ -188,10 +188,10 @@ export function SectionsPanel() {
             </thead>
             <tbody>
               {(visible ?? []).map((row) => (
-                <tr key={row.section} className="border-t border-white/5 align-top">
+                <tr key={row.section} className="border-t border-border align-top">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-white/90">{row.label}</p>
-                    <p className="mt-0.5 text-[11px] text-white/35" dir="ltr">
+                    <p className="font-medium text-foreground">{row.label}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground" dir="ltr">
                       {row.route}
                     </p>
                   </td>
@@ -201,32 +201,32 @@ export function SectionsPanel() {
                         href={row.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex max-w-full items-center gap-1.5 text-sky-300 transition-colors hover:text-sky-200"
+                        className="inline-flex max-w-full items-center gap-1.5 text-sky-700 dark:text-sky-300 transition-colors hover:text-sky-800 dark:hover:text-sky-200"
                         dir="ltr"
                       >
                         <span className="truncate">{row.url}</span>
                         <ExternalLinkIcon className="size-3.5 shrink-0" aria-hidden="true" />
                       </a>
                     ) : (
-                      <span className="text-white/35">ثبت نشده</span>
+                      <span className="text-muted-foreground">ثبت نشده</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
                     {row.url ? (
                       row.is_active ? (
-                        <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+                        <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                           فعال
                         </span>
                       ) : (
-                        <span className="inline-block rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/50">
+                        <span className="inline-block rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                           غیرفعال
                         </span>
                       )
                     ) : (
-                      <span className="text-white/35">—</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-white/50">{fmtDate(row.updated_at)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(row.updated_at)}</td>
                   {canManage ? (
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
@@ -259,7 +259,7 @@ export function SectionsPanel() {
       {/* Editor — the console's own modal language (dark, one card, no portal kit). */}
       {editing ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
           role="dialog"
           aria-modal="true"
           aria-label={`آموزش ${editing.label}`}
@@ -267,11 +267,11 @@ export function SectionsPanel() {
             if (e.target === e.currentTarget) setEditing(null);
           }}
         >
-          <div className="w-full max-w-lg rounded-xl border border-white/10 bg-slate-900 p-5 shadow-2xl">
-            <h2 className="text-base font-bold text-white">
+          <div className="w-full max-w-lg rounded-xl border border-border bg-popover p-5">
+            <h2 className="text-base font-bold text-foreground">
               {editing.url ? "ویرایش" : "ثبت"} صفحهٔ آموزشی: {editing.label}
             </h2>
-            <p className="mt-1 text-xs text-white/40" dir="ltr">
+            <p className="mt-1 text-xs text-muted-foreground" dir="ltr">
               {editing.route}
             </p>
 
@@ -300,7 +300,7 @@ export function SectionsPanel() {
                   maxLength={2000}
                 />
               </Field>
-              <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm text-white/80">
+              <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={isActive}

@@ -34,11 +34,13 @@ interface CampaignCostPayload {
   amount: RialText;
   /** The branch's business day (YYYY-MM-DD), computed by the caller. */
   entryDate?: string;
+  /** A project belongs to the same business as the campaign (verified below). */
+  projectId?: string | null;
   postingKind?: string;
 }
 
 registerPostingRule("message.campaign_cost", async (event, client): Promise<PostingResult | null> => {
-  const { amount, entryDate } = event.payload as unknown as CampaignCostPayload;
+  const { amount, entryDate, projectId } = event.payload as unknown as CampaignCostPayload;
   if (!amount || Number(amount) <= 0) return null;
   const accounts = await accountIdsByCode(client, event.businessId, [
     WELL_KNOWN_CODES.marketingExpense,
@@ -51,6 +53,7 @@ registerPostingRule("message.campaign_cost", async (event, client): Promise<Post
       { accountId: accounts.get(WELL_KNOWN_CODES.platformMessageCreditPayable)!, debit: zero, credit: amount },
     ],
     entryDate,
+    projectId: projectId ?? null,
     memo: "هزینهٔ کمپین پیام (اعتبار پلتفرم)",
     postingKind: "marketing_campaign_cost",
   };
@@ -104,6 +107,19 @@ export async function postCompletedCampaignCost(
   businessId: string,
   campaignId: string,
 ): Promise<string | null> {
+  // The campaign-to-project relationship needs an application-level affinity
+  // check: the FK proves the UUID exists but cannot prove it is this tenant's.
+  const { rows: campaignRows } = await query<{ project_id: string | null }>(
+    `SELECT c.project_id
+       FROM message_campaigns c
+       LEFT JOIN ai_projects p ON p.id = c.project_id AND p.business_id = c.business_id
+      WHERE c.business_id = $1 AND c.id = $2
+        AND (c.project_id IS NULL OR p.id IS NOT NULL)`,
+    [businessId, campaignId],
+  );
+  const campaign = campaignRows[0];
+  if (!campaign) return null;
+
   const claim = await query<{ id: string }>(
     `UPDATE message_campaigns
         SET cost_posted = true, updated_at = now()
@@ -128,7 +144,7 @@ export async function postCompletedCampaignCost(
     const out = await emitDomainEvent(client, {
       businessId,
       eventType: "message.campaign_cost",
-      payload: { amount: String(spent) as RialText, entryDate },
+      payload: { amount: String(spent) as RialText, entryDate, projectId: campaign.project_id },
       sourceType: "message_campaign",
       sourceId: campaignId,
     });
