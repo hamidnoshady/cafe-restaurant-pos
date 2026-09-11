@@ -1,0 +1,67 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireRole, withTenantScope } from "@/lib/auth";
+import { query } from "@/lib/db";
+
+type Context = { params: Promise<{ id: string }> };
+
+/**
+ * Phase 42b — one retail warehouse document with its lines, for the detail
+ * dialog of the «رسید و حواله‌های انبار» list. Each line shows the lot via
+ * COALESCE(line.lot, batch.lot) and the expiry the same way, so a line stays
+ * readable even after the batch row it touched has been emptied or removed.
+ */
+export const GET = withTenantScope(async (_request: NextRequest, context: Context) => {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+  const { id } = await context.params;
+
+  const { rows: docs } = await query<{
+    id: string;
+    kind: string;
+    location_name: string;
+    recipient: string | null;
+    document_number: string | null;
+    note: string | null;
+    total_value_rial: string;
+    created_at: string;
+    created_by_name: string | null;
+  }>(
+    `SELECT d.id, d.kind::text AS kind, l.name AS location_name,
+            d.recipient, d.document_number, d.note,
+            d.total_value_rial::text AS total_value_rial,
+            d.created_at, u.full_name AS created_by_name
+       FROM retail_warehouse_documents d
+       JOIN locations l ON l.id = d.location_id
+       LEFT JOIN users u ON u.id = d.created_by
+      WHERE d.id = $2 AND d.business_id = $1`,
+    [session.businessId, id],
+  );
+  const doc = docs[0];
+  if (!doc) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  const { rows: lines } = await query<{
+    id: string;
+    item_name: string;
+    tracking: string;
+    lot_number: string | null;
+    expiry_date: string | null;
+    quantity: string;
+    unit_cost: string;
+    value_rial: string;
+  }>(
+    `SELECT l2.id, i.name AS item_name, i.tracking::text AS tracking,
+            COALESCE(l2.lot_number, b.batch_number) AS lot_number,
+            COALESCE(l2.expiry_date, b.expiry_date)::text AS expiry_date,
+            l2.quantity::text AS quantity, l2.unit_cost::text AS unit_cost,
+            l2.value_rial::text AS value_rial
+       FROM retail_warehouse_document_lines l2
+       JOIN retail_warehouse_documents d ON d.id = l2.document_id
+       JOIN items i ON i.id = l2.item_id
+       LEFT JOIN item_batches b ON b.id = l2.batch_id
+      WHERE d.id = $1 AND d.business_id = $2
+      ORDER BY i.name`,
+    [id, session.businessId],
+  );
+
+  return NextResponse.json({ document: doc, lines });
+});

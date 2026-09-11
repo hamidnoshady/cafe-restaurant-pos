@@ -33,7 +33,13 @@ const INVENTORY_CODE_BY_INDUSTRY: Record<Industry, string> = {
   haberdashery: WELL_KNOWN_CODES.haberdasheryInventory,
 };
 
-async function inventoryCodeForBusiness(client: PoolClient, businessId: string): Promise<string> {
+/**
+ * The business's industry inventory account code. Exported because the retail
+ * warehouse document service reports the same code in its create summary —
+ * the screen's «بدهکار/بستانکار» line must name the account the rule actually
+ * posted to, not a second guess at the mapping.
+ */
+export async function inventoryCodeForBusiness(client: PoolClient, businessId: string): Promise<string> {
   const { rows } = await client.query<{ industry: Industry }>(
     `SELECT industry FROM businesses WHERE id = $1`,
     [businessId],
@@ -230,4 +236,60 @@ registerPostingRule("retail.stock_count_reversal", async (event, client): Promis
   }
 
   return { lines, memo: "برگشت مغایرت انبارگردانی", postingKind: "retail_stock_count_reversal" };
+});
+
+/**
+ * Phase 42b — warehouse documents (رسید/حواله انبار) on the retail stock
+ * model. The same "other in / other out" F&B's Phase 42 posts, resolved
+ * against the business's own industry inventory account the way every
+ * retail.* stock rule above does:
+ *
+ *   - warehouse receipt: Debit {industry}Inventory / Credit other income (4900)
+ *     — stock that entered without a purchase order is other income.
+ *   - warehouse issue:   Debit other expense (5900) / Credit {industry}Inventory
+ *     — stock that left without a sale or a supplier return is an other
+ *     expense, valued at the relieved lot's own cost.
+ */
+interface WarehouseDocumentPayload extends AmountPayload {
+  documentId: string;
+}
+
+registerPostingRule("retail.warehouse_receipt", async (event, client): Promise<PostingResult | null> => {
+  const payload = event.payload as unknown as WarehouseDocumentPayload;
+  if (rialBigInt(payload.amount) === 0n) return null;
+
+  const inventoryCode = await inventoryCodeForBusiness(client, event.businessId);
+  const accounts = await accountIdsByCode(client, event.businessId, [
+    inventoryCode,
+    WELL_KNOWN_CODES.otherIncome,
+  ]);
+
+  return {
+    lines: [
+      { accountId: accounts.get(inventoryCode)!, debit: payload.amount, credit: ZERO },
+      { accountId: accounts.get(WELL_KNOWN_CODES.otherIncome)!, debit: ZERO, credit: payload.amount },
+    ],
+    memo: "رسید انبار",
+    postingKind: "retail_warehouse_receipt",
+  };
+});
+
+registerPostingRule("retail.warehouse_issue", async (event, client): Promise<PostingResult | null> => {
+  const payload = event.payload as unknown as WarehouseDocumentPayload;
+  if (rialBigInt(payload.amount) === 0n) return null;
+
+  const inventoryCode = await inventoryCodeForBusiness(client, event.businessId);
+  const accounts = await accountIdsByCode(client, event.businessId, [
+    WELL_KNOWN_CODES.otherExpense,
+    inventoryCode,
+  ]);
+
+  return {
+    lines: [
+      { accountId: accounts.get(WELL_KNOWN_CODES.otherExpense)!, debit: payload.amount, credit: ZERO },
+      { accountId: accounts.get(inventoryCode)!, debit: ZERO, credit: payload.amount },
+    ],
+    memo: "حواله انبار",
+    postingKind: "retail_warehouse_issue",
+  };
 });
