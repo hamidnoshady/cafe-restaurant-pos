@@ -120,26 +120,26 @@ export function CategoriesPanel() {
     return (
       <li key={node.id}>
         <div
-          className="flex flex-wrap items-center gap-2 rounded-xl border border-white/8 bg-white/2 px-3 py-2"
+          className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2"
           style={{ marginInlineStart: `${depth * 22}px` }}
         >
           <span className="text-lg" aria-hidden="true">
             {row.icon || "📁"}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-white/90">
+            <p className="text-sm font-semibold text-foreground">
               {row.title}
               {!row.isActive ? (
-                <span className="ms-2 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] text-white/50">
+                <span className="ms-2 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
                   غیرفعال
                 </span>
               ) : null}
             </p>
-            <p className="text-[11px] text-white/35" dir="ltr">
+            <p className="text-[11px] text-muted-foreground" dir="ltr">
               {row.slug}
             </p>
           </div>
-          <span className="text-[11px] text-white/40">
+          <span className="text-[11px] text-muted-foreground">
             {row.articleCount} راهنما · ترتیب {row.sortOrder}
           </span>
           {canManage ? (
@@ -164,7 +164,7 @@ export function CategoriesPanel() {
               </Button>
               <Button
                 variant="ghost"
-                className="h-8 px-2.5 text-xs text-red-300 hover:bg-red-500/10"
+                className="h-8 px-2.5 text-xs text-red-700 dark:text-red-300 hover:bg-red-500/10"
                 disabled={busyId === row.id}
                 onClick={() => void remove(row)}
               >
@@ -193,8 +193,8 @@ export function CategoriesPanel() {
       <ErrorBox>{error}</ErrorBox>
 
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-white/80">
-          <ChevronDownIcon className="size-4 rotate-0 text-white/40" aria-hidden="true" />
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <ChevronDownIcon className="size-4 rotate-0 text-muted-foreground" aria-hidden="true" />
           درخت دسته‌بندی
         </h2>
         {canManage ? (
@@ -307,7 +307,7 @@ function CategoryEditor({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       role="dialog"
       aria-modal="true"
       aria-label={cat ? `ویرایش دسته ${cat.title}` : "دستهٔ جدید"}
@@ -315,8 +315,8 @@ function CategoryEditor({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-white/10 bg-slate-900 p-5 shadow-2xl">
-        <h3 className="text-base font-bold text-white">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-popover p-5">
+        <h3 className="text-base font-bold text-foreground">
           {cat ? `ویرایش دستهٔ «${cat.title}»` : "دستهٔ جدید"}
         </h3>
 
@@ -400,7 +400,7 @@ function CategoryEditor({
               className={inputClass}
             />
           </Field>
-          <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm text-white/80">
+          <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm text-foreground">
             <input
               type="checkbox"
               checked={isActive}

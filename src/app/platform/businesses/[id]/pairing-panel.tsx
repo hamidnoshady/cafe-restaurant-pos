@@ -24,10 +24,10 @@ interface PairingCodeSummary {
 }
 
 const STATE_LABELS: Record<PairingCodeSummary["state"], { label: string; cls: string }> = {
-  valid: { label: "فعال", cls: "text-emerald-300" },
-  code_expired: { label: "منقضی", cls: "text-white/40" },
-  code_already_redeemed: { label: "استفاده‌شده", cls: "text-sky-300" },
-  code_revoked: { label: "لغوشده", cls: "text-white/40" },
+  valid: { label: "فعال", cls: "text-emerald-700 dark:text-emerald-300" },
+  code_expired: { label: "منقضی", cls: "text-muted-foreground" },
+  code_already_redeemed: { label: "استفاده‌شده", cls: "text-sky-700 dark:text-sky-300" },
+  code_revoked: { label: "لغوشده", cls: "text-muted-foreground" },
 };
 
 function fmtDate(iso: string | null): string {
@@ -101,16 +101,16 @@ export function PairingPanel() {
       <ErrorBox>{error}</ErrorBox>
       <InfoBox>{notice}</InfoBox>
 
-      <p className="mb-4 text-sm text-white/60">
+      <p className="mb-4 text-sm text-muted-foreground">
         یک کد یک‌بارمصرف بسازید و آن را به مالک بدهید تا نصب دسکتاپ، تنظیمات این کسب‌وکار را
         دریافت کند. ساختن کد جدید، کد فعال قبلی را لغو می‌کند.
       </p>
 
       {issuedCode ? (
         <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-          <p className="mb-2 text-xs text-emerald-200/70">این کد فقط همین یک بار نمایش داده می‌شود:</p>
+          <p className="mb-2 text-xs text-emerald-800/70 dark:text-emerald-200/70">این کد فقط همین یک بار نمایش داده می‌شود:</p>
           <div className="flex flex-wrap items-center gap-3">
-            <code className="select-all font-mono text-xl tracking-widest text-emerald-100" dir="ltr">
+            <code className="select-all font-mono text-xl tracking-widest text-emerald-900 dark:text-emerald-100" dir="ltr">
               {issuedCode}
             </code>
             <Button
@@ -133,7 +133,7 @@ export function PairingPanel() {
       {codes === null ? (
         <SkeletonRows rows={3} className="mt-4" />
       ) : codes.length === 0 ? (
-        <p className="mt-4 text-sm text-white/40">هنوز کدی صادر نشده است.</p>
+        <p className="mt-4 text-sm text-muted-foreground">هنوز کدی صادر نشده است.</p>
       ) : (
         <div className="mt-4 space-y-2">
           {codes.map((code) => {
@@ -141,15 +141,15 @@ export function PairingPanel() {
             return (
               <div
                 key={code.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/2 p-3 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card p-3 text-sm"
               >
                 <div>
                   <span className={`font-medium ${state.cls}`}>{state.label}</span>
-                  <p className="mt-0.5 text-xs text-white/30">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     صدور {fmtDate(code.createdAt)} ← انقضا {fmtDate(code.expiresAt)}
                   </p>
                   {code.redeemedAt ? (
-                    <p className="mt-0.5 text-xs text-white/30">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       استفاده در {fmtDate(code.redeemedAt)}
                     </p>
                   ) : null}
@@ -158,7 +158,7 @@ export function PairingPanel() {
                   <button
                     type="button"
                     onClick={() => revoke(code.id)}
-                    className="rounded-md border border-red-500/30 px-2 py-1 text-xs text-red-300 hover:bg-red-500/10"
+                    className="rounded-lg border border-red-500/30 px-2 py-1 text-xs text-red-700 dark:text-red-300 hover:bg-red-500/10"
                   >
                     لغو
                   </button>

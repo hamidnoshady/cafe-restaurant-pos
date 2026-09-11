@@ -114,7 +114,7 @@ export default function BusinessBillingPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-12 text-white/50">
+      <div className="flex justify-center py-12 text-muted-foreground">
         <Loader2Icon className="size-6 animate-spin" />
       </div>
     );
@@ -128,20 +128,20 @@ export default function BusinessBillingPage() {
 
       <Card title={`کیف پول — ${data.business.name}`}>
         <div className="mb-4 flex items-center gap-3">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-300">
             <WalletIcon className="size-6" />
           </span>
           <div>
-            <p className="text-2xl font-extrabold tabular-nums text-white">
-              {toman(data.wallet.balanceRial)} <span className="text-sm font-normal text-white/60">تومان</span>
+            <p className="text-2xl font-extrabold tabular-nums text-foreground">
+              {toman(data.wallet.balanceRial)} <span className="text-sm font-normal text-muted-foreground">تومان</span>
             </p>
-            <p className="text-xs text-white/40">
+            <p className="text-xs text-muted-foreground">
               مجموع شارژ: {toman(data.wallet.totalToppedUpRial)} ت · مجموع مصرف: {toman(data.wallet.totalSpentRial)} ت
             </p>
           </div>
         </div>
 
-        <form onSubmit={adjust} className="grid gap-3 rounded-xl border border-white/10 bg-white/3 p-4 sm:grid-cols-3 sm:items-end">
+        <form onSubmit={adjust} className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-3 sm:items-end">
           <Field label="مبلغ (تومان — برای کسر منفی وارد کنید)">
             <PersianNumberInput
               className={inputClass}
@@ -163,13 +163,13 @@ export default function BusinessBillingPage() {
 
       <Card title="قابلیت‌های فعال (اشتراک/خرید/هدیه)">
         {data.entitlements.length === 0 ? (
-          <p className="py-4 text-center text-sm text-white/40">قابلیت فعال مستقیمی ثبت نشده است.</p>
+          <p className="py-4 text-center text-sm text-muted-foreground">قابلیت فعال مستقیمی ثبت نشده است.</p>
         ) : (
-          <ul className="divide-y divide-white/5 text-sm">
+          <ul className="divide-y divide-border text-sm">
             {data.entitlements.map((e) => (
               <li key={e.featureKey} className="flex items-center justify-between gap-2 py-2">
-                <span className="text-white/90">{e.featureKey}</span>
-                <span className="text-xs text-white/40">
+                <span className="text-foreground">{e.featureKey}</span>
+                <span className="text-xs text-muted-foreground">
                   {e.source}
                   {e.freeUntil ? ` · رایگان تا ${formatJalali(e.freeUntil, { withMonthName: true })}` : ""}
                   {e.freeLimit != null ? ` · ${toPersianDigits(e.freeLimit)} استفاده رایگان` : ""}
@@ -183,11 +183,11 @@ export default function BusinessBillingPage() {
 
       <Card title="مصرف قابلیت‌های پولی">
         {data.usage.length === 0 ? (
-          <p className="py-4 text-center text-sm text-white/40">هنوز مصرفی ثبت نشده است.</p>
+          <p className="py-4 text-center text-sm text-muted-foreground">هنوز مصرفی ثبت نشده است.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-right text-xs text-white/40">
-              <tr className="border-b border-white/10">
+            <thead className="text-right text-xs text-muted-foreground">
+              <tr className="border-b border-border">
                 <th className="py-2">قابلیت</th>
                 <th className="py-2">تعداد استفاده</th>
                 <th className="py-2">استفادهٔ پولی</th>
@@ -196,8 +196,8 @@ export default function BusinessBillingPage() {
             </thead>
             <tbody>
               {data.usage.map((u) => (
-                <tr key={u.featureKey} className="border-b border-white/5">
-                  <td className="py-2 text-white/90">{u.featureKey}</td>
+                <tr key={u.featureKey} className="border-b border-border">
+                  <td className="py-2 text-foreground">{u.featureKey}</td>
                   <td className="py-2 tabular-nums">{toPersianDigits(u.usedCount)}</td>
                   <td className="py-2 tabular-nums">{toPersianDigits(u.chargedCount)}</td>
                   <td className="py-2 tabular-nums">{toman(u.spentRial)} ت</td>
@@ -209,19 +209,19 @@ export default function BusinessBillingPage() {
       </Card>
 
       <Card title="دفتر اعتبار">
-        <ul className="divide-y divide-white/5 text-sm">
+        <ul className="divide-y divide-border text-sm">
           {data.ledger.map((l) => (
             <li key={l.id} className="flex items-center justify-between gap-2 py-2">
               <div className="min-w-0">
-                <p className="truncate text-white/90">{l.note || KIND_LABELS[l.kind] || l.kind}</p>
-                <p className="text-xs text-white/40">
+                <p className="truncate text-foreground">{l.note || KIND_LABELS[l.kind] || l.kind}</p>
+                <p className="text-xs text-muted-foreground">
                   {formatJalali(l.createdAt, { withMonthName: true, withTime: true })}
                   {l.featureKey ? ` · ${l.featureKey}` : ""}
                 </p>
               </div>
               <span
                 className={`shrink-0 tabular-nums font-semibold ${
-                  l.direction === "credit" ? "text-emerald-300" : "text-red-300"
+                  l.direction === "credit" ? "text-emerald-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"
                 }`}
               >
                 {l.direction === "credit" ? "+" : "−"}
@@ -230,18 +230,18 @@ export default function BusinessBillingPage() {
             </li>
           ))}
           {data.ledger.length === 0 && (
-            <li className="py-4 text-center text-white/40">تراکنشی ثبت نشده است.</li>
+            <li className="py-4 text-center text-muted-foreground">تراکنشی ثبت نشده است.</li>
           )}
         </ul>
       </Card>
 
       <Card title="پرداخت‌ها">
-        <ul className="divide-y divide-white/5 text-sm">
+        <ul className="divide-y divide-border text-sm">
           {data.payments.map((p) => (
             <li key={p.id} className="flex items-center justify-between gap-2 py-2">
               <div className="min-w-0">
-                <p className="truncate text-white/90">{p.description || p.purpose}</p>
-                <p className="text-xs text-white/40">
+                <p className="truncate text-foreground">{p.description || p.purpose}</p>
+                <p className="text-xs text-muted-foreground">
                   {formatJalali(p.createdAt, { withMonthName: true, withTime: true })}
                   {p.gatewayRef ? ` · پیگیری: ${toPersianDigits(p.gatewayRef)}` : ""}
                 </p>
@@ -251,10 +251,10 @@ export default function BusinessBillingPage() {
                 <span
                   className={`rounded-full border px-2 py-0.5 text-xs ${
                     p.status === "verified"
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                       : p.status === "failed" || p.status === "cancelled"
-                        ? "border-red-500/30 bg-red-500/10 text-red-300"
-                        : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                        ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
+                        : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
                   }`}
                 >
                   {p.status === "verified" ? "موفق" : p.status === "failed" ? "ناموفق" : p.status === "cancelled" ? "لغو" : "در انتظار"}
@@ -262,7 +262,7 @@ export default function BusinessBillingPage() {
               </div>
             </li>
           ))}
-          {data.payments.length === 0 && <li className="py-4 text-center text-white/40">پرداختی نیست.</li>}
+          {data.payments.length === 0 && <li className="py-4 text-center text-muted-foreground">پرداختی نیست.</li>}
         </ul>
       </Card>
     </div>

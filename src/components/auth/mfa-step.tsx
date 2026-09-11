@@ -58,25 +58,25 @@ export const TENANT_MFA_THEME: MfaTheme = {
     "rounded-lg border border-input bg-muted/50 px-3 py-2 font-mono text-sm tracking-wider",
 };
 
-/** The console's palette — the dark card in src/app/platform/login. */
+/** The console's palette — semantic tokens keep its login flow theme-aware. */
 export const PLATFORM_MFA_THEME: MfaTheme = {
-  card: "space-y-4 text-white",
+  card: "space-y-4 text-foreground",
   heading: "text-base font-bold",
-  muted: "text-sm text-white/40",
+  muted: "text-sm text-muted-foreground",
   input:
-    "h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-center text-lg tracking-[0.4em] text-white outline-none transition-colors focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/20",
+    "h-11 w-full rounded-lg border border-border bg-transparent px-3 text-center text-lg tracking-[0.4em] text-foreground outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20",
   primaryButton:
-    "h-10 w-full rounded-lg bg-sky-500 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-sky-500/50",
+    "h-10 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/80 disabled:cursor-not-allowed disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50",
   secondaryButton:
-    "h-10 w-full rounded-lg border border-white/15 text-sm font-semibold text-white transition-colors hover:bg-white/10 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-sky-500/50",
+    "h-10 w-full rounded-lg border border-border text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50",
   linkButton:
-    "rounded text-sm text-white/50 underline-offset-4 hover:text-white hover:underline outline-none focus-visible:ring focus-visible:ring-sky-500/50",
+    "rounded text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline outline-none focus-visible:ring focus-visible:ring-ring/50",
   error:
-    "rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200",
+    "rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive",
   notice:
-    "rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-100",
+    "rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary",
   codeBlock:
-    "rounded-lg border border-white/15 bg-white/5 px-3 py-2 font-mono text-sm tracking-wider text-white",
+    "rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm tracking-wider text-foreground",
 };
 
 /** Persian for the error codes the three MFA endpoints return. */

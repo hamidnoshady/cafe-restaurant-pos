@@ -92,13 +92,13 @@ function levelCls(level: string): string {
   switch (level) {
     case "error":
     case "fatal":
-      return "border-red-500/30 bg-red-500/10 text-red-300";
+      return "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300";
     case "warn":
-      return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+      return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
     case "info":
-      return "border-sky-500/30 bg-sky-500/10 text-sky-300";
+      return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300";
     default:
-      return "border-white/15 bg-white/5 text-white/50";
+      return "border-border bg-muted text-muted-foreground";
   }
 }
 
@@ -243,9 +243,9 @@ export default function ObservabilityPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold">پایش و لاگ‌ها</h2>
-          <p className="mt-1 text-xs text-white/40">
-            استریم <code dir="ltr" className="text-white/60">{config?.stream}</code> از سرویس{" "}
-            <code dir="ltr" className="text-white/60">{config?.service}</code>؛ خطاهای همهٔ
+          <p className="mt-1 text-xs text-muted-foreground">
+            استریم <code dir="ltr" className="text-muted-foreground">{config?.stream}</code> از سرویس{" "}
+            <code dir="ltr" className="text-muted-foreground">{config?.service}</code>؛ خطاهای همهٔ
             نصب‌هایی که به این کلکتور لاگ می‌فرستند، یک‌جا.
           </p>
         </div>
@@ -254,8 +254,8 @@ export default function ObservabilityPage() {
             <span
               className={
                 health.ok
-                  ? "inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300"
-                  : "inline-flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs text-red-300"
+                  ? "inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-700 dark:text-emerald-300"
+                  : "inline-flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs text-red-700 dark:text-red-300"
               }
             >
               <span className={`h-1.5 w-1.5 rounded-full ${health.ok ? "bg-emerald-400" : "bg-red-400"}`} />
@@ -267,7 +267,7 @@ export default function ObservabilityPage() {
               href={config.publicUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/15 px-3 text-xs text-white/70 transition-colors hover:bg-white/5"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-foreground transition-colors hover:bg-muted"
             >
               <ExternalLink className="h-3.5 w-3.5" />
               داشبورد کامل
@@ -288,7 +288,7 @@ export default function ObservabilityPage() {
       <Card>
         <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_auto]">
           <div className="relative">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -304,8 +304,8 @@ export default function ObservabilityPage() {
                 onClick={() => setRangeIdx(i)}
                 className={
                   rangeIdx === i
-                    ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-300"
-                    : "rounded-full border border-white/15 px-3 py-1 text-xs text-white/55 transition-colors hover:bg-white/5 hover:text-white"
+                    ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-700 dark:text-sky-300"
+                    : "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 }
               >
                 {r.label}
@@ -325,12 +325,12 @@ export default function ObservabilityPage() {
                 onClick={() => setLevel(l.value)}
                 className={
                   activeChip
-                    ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-300"
-                    : "rounded-full border border-white/15 px-3 py-1 text-xs text-white/55 transition-colors hover:bg-white/5 hover:text-white"
+                    ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-700 dark:text-sky-300"
+                    : "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 }
               >
                 {l.label}
-                <span className="ms-1.5 tabular-nums text-white/40">{toPersianDigits(n)}</span>
+                <span className="ms-1.5 tabular-nums text-muted-foreground">{toPersianDigits(n)}</span>
               </button>
             );
           })}
@@ -339,7 +339,7 @@ export default function ObservabilityPage() {
               type="button"
               onClick={() => setAuto((v) => !v)}
               title={auto ? "توقف تازه‌سازی خودکار" : "شروع تازه‌سازی خودکار (هر ۱۵ ثانیه)"}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/15 px-2.5 text-xs text-white/70 hover:bg-white/5"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs text-foreground hover:bg-muted"
             >
               {auto ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
               {auto ? "خودکار" : "متوقف"}
@@ -366,7 +366,7 @@ export default function ObservabilityPage() {
         />
       ) : (
         <Card>
-          <ul className="divide-y divide-white/5">
+          <ul className="divide-y divide-border">
             {rows.map((r, idx) => {
               const lvl = String(r.level ?? "info");
               const open = expanded.has(idx);
@@ -390,10 +390,10 @@ export default function ObservabilityPage() {
                       {lvl}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block whitespace-pre-wrap break-words text-sm leading-6 text-white/85">
+                      <span className="block whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
                         {String(r.message ?? "")}
                       </span>
-                      <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-white/35">
+                      <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                         {ts ? <span className="tabular-nums">{fmtDate(new Date(ts).toISOString())}</span> : null}
                         {r.logger ? <span dir="ltr">{String(r.logger)}</span> : null}
                         {r.host ? <span dir="ltr">{String(r.host)}</span> : null}
@@ -409,7 +409,7 @@ export default function ObservabilityPage() {
                   {open ? (
                     <pre
                       dir="ltr"
-                      className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-white/10 bg-black/25 p-3 text-start text-[11px] leading-5 text-white/60"
+                      className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-muted p-3 text-start text-[11px] leading-5 text-muted-foreground"
                     >
                       {JSON.stringify(r, null, 2)}
                     </pre>
@@ -437,40 +437,40 @@ function SetupGuide() {
     <div className="space-y-4">
       <h2 className="text-lg font-bold">پایش و لاگ‌ها</h2>
       <Card title="پایش هنوز تنظیم نشده است">
-        <p className="mb-4 text-sm leading-7 text-white/60">
-          این تب به یک نمونهٔ <a href="https://openobserve.ai" target="_blank" rel="noreferrer" className="text-sky-300 hover:underline">OpenObserve</a>{" "}
+        <p className="mb-4 text-sm leading-7 text-muted-foreground">
+          این تب به یک نمونهٔ <a href="https://openobserve.ai" target="_blank" rel="noreferrer" className="text-sky-700 dark:text-sky-300 hover:underline">OpenObserve</a>{" "}
           وصل می‌شود و لاگ خطاها، درخواست‌های کند/ناموفق و پیام‌های همهٔ سرورهای متصل را یک‌جا نشان می‌دهد.
           راه‌اندازی‌اش یک سرویس اضافه روی همان داکر-کامپوز است:
         </p>
-        <ol className="list-inside list-decimal space-y-2 text-sm leading-7 text-white/75">
+        <ol className="list-inside list-decimal space-y-2 text-sm leading-7 text-foreground">
           <li>
             در سرور مرکزی، استک را با فایل اضافه بالا بیاورید:{" "}
-            <code dir="ltr" className="rounded bg-white/8 px-1.5 py-0.5 text-xs">
+            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 text-xs">
               docker compose -f archive/deploy/docker-compose.komodo.yml -f archive/deploy/docker-compose.observability.yml up -d
             </code>
           </li>
           <li>
             در <code dir="ltr" className="text-xs">.env</code> کامپوز، نام‌کاربری/رمز ریشه را ست کنید:{" "}
-            <code dir="ltr" className="rounded bg-white/8 px-1.5 py-0.5 text-xs">
+            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 text-xs">
               OPENOBSERVE_ROOT_EMAIL / OPENOBSERVE_ROOT_PASSWORD
             </code>
           </li>
           <li>
             اپ (و هر نصب ساحه‌ای که می‌خواهید لاگ بفرستد) باید این‌ها را ببیند:{" "}
-            <code dir="ltr" className="rounded bg-white/8 px-1.5 py-0.5 text-xs">
+            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 text-xs">
               OPENOBSERVE_URL, OPENOBSERVE_USER, OPENOBSERVE_PASSWORD
             </code>{" "}
             — بقیه اختیاری است. فایل کامپوز این‌ها را خودکار تزریق می‌کند.
           </li>
           <li>
             راهنمای کامل، هشدارها و پاک‌سازی خودکار لاگ‌ها:{" "}
-            <code dir="ltr" className="rounded bg-white/8 px-1.5 py-0.5 text-xs">
+            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 text-xs">
               docs/openobserve.md
             </code>
           </li>
         </ol>
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-white/10 bg-white/2 p-3 text-xs leading-6 text-white/50">
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300/80" />
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-border bg-card p-3 text-xs leading-6 text-muted-foreground">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700/80 dark:text-amber-300/80" />
           تا پیش از تنظیم، سلامت دیتابیس (تب «سلامت») همچنان کامل کار می‌کند؛ این تب فقط نمای لاگ‌ها را اضافه می‌کند.
         </div>
       </Card>

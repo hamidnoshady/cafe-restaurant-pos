@@ -56,7 +56,7 @@ export default function AdminsPage() {
   return (
     <div className="mx-auto w-full max-w-4xl">
       <h1 className="mb-2 text-xl font-bold">مدیران سکو</h1>
-      <p className="mb-6 text-sm text-white/40">
+      <p className="mb-6 text-sm text-muted-foreground">
         مدیران جدید از طریق اسکریپت <code dir="ltr">npm run db:platform-admin</code> ساخته می‌شوند.
       </p>
       <ErrorBox>{error}</ErrorBox>
@@ -65,40 +65,40 @@ export default function AdminsPage() {
         <SkeletonRows rows={5} />
       ) : admins.length === 0 ? (
         <Card>
-          <p className="text-sm text-white/50">مدیری ثبت نشده است.</p>
+          <p className="text-sm text-muted-foreground">مدیری ثبت نشده است.</p>
         </Card>
       ) : (
         <>
           <div className="space-y-3 md:hidden">
             {admins.map((a) => (
-              <div key={a.id} className="rounded-xl border border-white/10 bg-white/3 p-4">
+              <div key={a.id} className="rounded-xl border border-border bg-card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-semibold">{a.fullName}</p>
-                    <p className="mt-1 break-all text-xs text-white/45" dir="ltr">
+                    <p className="mt-1 break-all text-xs text-muted-foreground" dir="ltr">
                       {a.email}
                     </p>
                   </div>
-                  <span className={a.isActive ? "text-sm text-emerald-300" : "text-sm text-white/40"}>
+                  <span className={a.isActive ? "text-sm text-emerald-700 dark:text-emerald-300" : "text-sm text-muted-foreground"}>
                     {a.isActive ? "فعال" : "غیرفعال"}
                   </span>
                 </div>
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <dt className="text-xs text-white/40">نقش</dt>
-                    <dd className="mt-1 text-white/80">{roleLabel(a.role)}</dd>
+                    <dt className="text-xs text-muted-foreground">نقش</dt>
+                    <dd className="mt-1 text-foreground">{roleLabel(a.role)}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-white/40">آخرین ورود</dt>
-                    <dd className="mt-1 text-white/60">{fmtDate(a.lastLoginAt)}</dd>
+                    <dt className="text-xs text-muted-foreground">آخرین ورود</dt>
+                    <dd className="mt-1 text-muted-foreground">{fmtDate(a.lastLoginAt)}</dd>
                   </div>
                 </dl>
               </div>
             ))}
           </div>
-          <div className="hidden overflow-x-auto rounded-xl border border-white/10 md:block">
+          <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
             <table className="min-w-[680px] w-full text-sm">
-              <thead className="bg-white/3 text-white/50">
+              <thead className="bg-card text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 text-start font-medium">نام</th>
                   <th className="px-4 py-3 text-start font-medium">ایمیل</th>
@@ -109,20 +109,20 @@ export default function AdminsPage() {
               </thead>
               <tbody>
                 {admins.map((a) => (
-                  <tr key={a.id} className="border-t border-white/5">
-                    <td className="px-4 py-3 text-white/90">{a.fullName}</td>
-                    <td className="px-4 py-3 text-white/60" dir="ltr">
+                  <tr key={a.id} className="border-t border-border">
+                    <td className="px-4 py-3 text-foreground">{a.fullName}</td>
+                    <td className="px-4 py-3 text-muted-foreground" dir="ltr">
                       {a.email}
                     </td>
-                    <td className="px-4 py-3 text-white/80">{roleLabel(a.role)}</td>
+                    <td className="px-4 py-3 text-foreground">{roleLabel(a.role)}</td>
                     <td className="px-4 py-3">
                       {a.isActive ? (
-                        <span className="text-emerald-300">فعال</span>
+                        <span className="text-emerald-700 dark:text-emerald-300">فعال</span>
                       ) : (
-                        <span className="text-white/40">غیرفعال</span>
+                        <span className="text-muted-foreground">غیرفعال</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-white/50">{fmtDate(a.lastLoginAt)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{fmtDate(a.lastLoginAt)}</td>
                   </tr>
                 ))}
               </tbody>

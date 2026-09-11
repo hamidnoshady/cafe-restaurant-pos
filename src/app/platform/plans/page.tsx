@@ -196,12 +196,12 @@ export default function PlanBuilderPage() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 sm:space-y-6">
       <header className="flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-sky-500/15 text-sky-300">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-sky-500/15 text-sky-700 dark:text-sky-300">
           <Settings2Icon className="size-5" />
         </span>
         <div>
-          <h1 className="text-lg font-bold text-white">پلن‌ساز</h1>
-          <p className="text-sm text-white/50">
+          <h1 className="text-lg font-bold text-foreground">پلن‌ساز</h1>
+          <p className="text-sm text-muted-foreground">
             انتخاب قابلیت‌ها برای هر پلن، تعیین هزینهٔ هر قابلیت، و تعریف دورهٔ رایگان یا تعداد استفادهٔ رایگان
           </p>
         </div>
@@ -247,21 +247,21 @@ export default function PlanBuilderPage() {
               onClick={() => setSelectedPlan(plan.key)}
               className={`rounded-full border px-4 py-1.5 text-sm transition ${
                 selectedPlan === plan.key
-                  ? "border-sky-400/60 bg-sky-500/20 text-sky-100"
-                  : "border-white/15 text-white/70 hover:bg-white/5"
+                  ? "border-sky-400/60 bg-sky-500/20 text-sky-900 dark:text-sky-100"
+                  : "border-border text-foreground hover:bg-muted"
               }`}
             >
               {plan.name}
               {plan.monthlyPriceRial != null && plan.monthlyPriceRial > 0 && (
-                <span className="mr-2 text-xs text-white/40">{toman(plan.monthlyPriceRial)} ت/ماه</span>
+                <span className="mr-2 text-xs text-muted-foreground">{toman(plan.monthlyPriceRial)} ت/ماه</span>
               )}
             </button>
           ))}
         </div>
 
         {canManage && (
-          <form onSubmit={saveFeature} className="rounded-xl border border-white/10 bg-white/3 p-4">
-            <p className="mb-3 text-sm font-semibold text-white/80">افزودن قابلیت به این پلن</p>
+          <form onSubmit={saveFeature} className="rounded-xl border border-border bg-card p-4">
+            <p className="mb-3 text-sm font-semibold text-foreground">افزودن قابلیت به این پلن</p>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="قابلیت (عملکرد)">
                 <select className={inputClass} value={featureKey} onChange={(e) => setFeatureKey(e.target.value)}>
@@ -323,7 +323,7 @@ export default function PlanBuilderPage() {
                 {busy === "feature" ? <Loader2Icon className="size-4 animate-spin" /> : "افزودن / به‌روزرسانی قابلیت"}
               </Button>
             </div>
-            <p className="mt-2 text-xs text-white/40">
+            <p className="mt-2 text-xs text-muted-foreground">
               «رایگان تا تاریخ» یعنی این قابلیت تا آن تاریخ هیچ هزینه‌ای ندارد؛ «تعداد استفادهٔ رایگان» یعنی تا آن تعداد استفاده، هزینه‌ای از اعتبار کسر نمی‌شود.
             </p>
           </form>
@@ -331,18 +331,18 @@ export default function PlanBuilderPage() {
 
         <div className="mt-4 space-y-2">
           {currentFeatures.length === 0 && (
-            <p className="py-6 text-center text-sm text-white/40">
+            <p className="py-6 text-center text-sm text-muted-foreground">
               برای این پلن هنوز قابلیتی قیمت‌گذاری نشده است.
             </p>
           )}
           {currentFeatures.map((f) => (
             <div
               key={f.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/3 px-3 py-2.5"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5"
             >
               <div className="min-w-0">
-                <p className="text-sm font-medium text-white/90">{f.featureName ?? f.featureKey}</p>
-                <p className="text-xs text-white/40">
+                <p className="text-sm font-medium text-foreground">{f.featureName ?? f.featureKey}</p>
+                <p className="text-xs text-muted-foreground">
                   {MODEL_LABELS[f.pricingModel]}
                   {f.pricingModel !== "included" && f.priceRial > 0 && ` · ${toman(f.priceRial)} تومان`}
                   {f.freeUntil && ` · رایگان تا ${formatJalali(f.freeUntil, { withMonthName: true })}`}
@@ -354,7 +354,7 @@ export default function PlanBuilderPage() {
                   type="button"
                   onClick={() => void removeFeature(f)}
                   disabled={busy?.startsWith("del")}
-                  className="text-red-300 hover:text-red-200"
+                  className="text-red-700 dark:text-red-300 hover:text-red-800 dark:hover:text-red-200"
                   aria-label="حذف قابلیت از پلن"
                 >
                   <Trash2Icon className="size-4" />

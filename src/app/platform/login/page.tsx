@@ -5,8 +5,8 @@
  *
  * A separate login from the tenant one, POSTing to the platform auth realm
  * (`/api/platform/auth/login`) which sets the `pos_platform_session` cookie —
- * never the tenant `pos_session`. Deliberately spartan and dark, so an operator
- * is never in doubt about which realm they are entering.
+ * never the tenant `pos_session`. Deliberately spartan and dark-first, so an
+ * operator is never in doubt about which realm they are entering.
  */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -89,14 +89,14 @@ export default function PlatformLoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 p-4 text-white">
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-white/3 p-8 shadow-2xl">
+    <main className="flex min-h-screen items-center justify-center bg-background p-4 text-foreground">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-8">
         <div className="mb-6 text-center">
-          <p className="text-xs font-medium uppercase tracking-widest text-sky-400/80">
+          <p className="text-xs font-medium uppercase tracking-widest text-sky-600/80 dark:text-sky-400/80">
             Platform Console
           </p>
           <h1 className="mt-2 text-lg font-bold">کنسول مدیریت سکو</h1>
-          <p className="mt-1 text-sm text-white/40">ورود مدیران سکو</p>
+          <p className="mt-1 text-sm text-muted-foreground">ورود مدیران سکو</p>
         </div>
 
         {pending ? (
@@ -117,9 +117,9 @@ export default function PlatformLoginPage() {
           />
         ) : graceDaysLeft !== undefined ? (
           <div className="space-y-4">
-            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-900 dark:text-sky-100">
               <p className="mb-1 font-semibold">ورود دومرحله‌ای را فعال کنید</p>
-              <p className="text-sky-100/70">
+              <p className="text-sky-900/70 dark:text-sky-100/70">
                 {graceDaysLeft === null
                   ? "حساب مدیر سکو باید به‌زودی با ورود دومرحله‌ای محافظت شود."
                   : graceDaysLeft <= 0
@@ -133,14 +133,14 @@ export default function PlatformLoginPage() {
                 router.push("/platform/security");
                 router.refresh();
               }}
-              className="h-10 w-full rounded-lg bg-sky-500 text-sm font-semibold text-white transition-colors hover:bg-sky-400"
+              className="h-10 w-full rounded-lg bg-sky-500 text-sm font-semibold text-foreground transition-colors hover:bg-sky-400"
             >
               همین حالا فعال می‌کنم
             </button>
             <button
               type="button"
               onClick={enterConsole}
-              className="h-10 w-full rounded-lg border border-white/15 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+              className="h-10 w-full rounded-lg border border-border text-sm font-semibold text-foreground transition-colors hover:bg-muted"
             >
               بعداً
             </button>
@@ -173,7 +173,7 @@ export default function PlatformLoginPage() {
               <button
                 type="submit"
                 disabled={busy}
-                className="h-10 w-full rounded-lg bg-sky-500 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-sky-500/50"
+                className="h-10 w-full rounded-lg bg-sky-500 text-sm font-semibold text-foreground transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-sky-500/50"
               >
                 {busy ? "در حال ورود…" : "ورود"}
               </button>

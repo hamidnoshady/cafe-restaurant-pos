@@ -31,54 +31,54 @@ export default function BusinessOverviewPage() {
       <Card title="اطلاعات کلی">
         <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <div>
-            <dt className="text-xs text-white/40">نوع کسب‌وکار</dt>
-            <dd className="mt-0.5 text-white/80">{INDUSTRY_LABELS[business.industry]}</dd>
+            <dt className="text-xs text-muted-foreground">نوع کسب‌وکار</dt>
+            <dd className="mt-0.5 text-foreground">{INDUSTRY_LABELS[business.industry]}</dd>
           </div>
           <div>
-            <dt className="text-xs text-white/40">منطقهٔ زمانی</dt>
-            <dd className="mt-0.5 text-white/80" dir="ltr">
+            <dt className="text-xs text-muted-foreground">منطقهٔ زمانی</dt>
+            <dd className="mt-0.5 text-foreground" dir="ltr">
               {business.timezone}
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-white/40">ایجاد</dt>
-            <dd className="mt-0.5 text-white/80">{fmtDate(business.createdAt, true)}</dd>
+            <dt className="text-xs text-muted-foreground">ایجاد</dt>
+            <dd className="mt-0.5 text-foreground">{fmtDate(business.createdAt, true)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-white/40">آخرین فعالیت</dt>
-            <dd className="mt-0.5 text-white/80">{fmtDate(business.lastActivityAt)}</dd>
+            <dt className="text-xs text-muted-foreground">آخرین فعالیت</dt>
+            <dd className="mt-0.5 text-foreground">{fmtDate(business.lastActivityAt)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-white/40">تعلیق در</dt>
-            <dd className="mt-0.5 text-white/80">{fmtDate(business.suspendedAt)}</dd>
+            <dt className="text-xs text-muted-foreground">تعلیق در</dt>
+            <dd className="mt-0.5 text-foreground">{fmtDate(business.suspendedAt)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-white/40">بایگانی در</dt>
-            <dd className="mt-0.5 text-white/80">{fmtDate(business.archivedAt)}</dd>
+            <dt className="text-xs text-muted-foreground">بایگانی در</dt>
+            <dd className="mt-0.5 text-foreground">{fmtDate(business.archivedAt)}</dd>
           </div>
         </dl>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {stats.map((s) => (
-            <div key={s.label} className="rounded-lg border border-white/10 bg-white/2 p-3">
-              <p className="text-xs text-white/40">{s.label}</p>
+            <div key={s.label} className="rounded-lg border border-border bg-card p-3">
+              <p className="text-xs text-muted-foreground">{s.label}</p>
               <p className="mt-1 text-lg font-bold tabular-nums">{s.value}</p>
             </div>
           ))}
         </div>
-        <p className="mt-4 text-xs text-white/40">
+        <p className="mt-4 text-xs text-muted-foreground">
           <Link
             href={`/platform/audit?businessId=${business.id}`}
-            className="text-sky-300 hover:underline"
+            className="text-sky-700 dark:text-sky-300 hover:underline"
           >
             رویدادهای این کسب‌وکار ←
           </Link>
         </p>
         {rootDomain ? (
-          <p className="mt-4 text-xs text-white/40">
+          <p className="mt-4 text-xs text-muted-foreground">
             نشانی:{" "}
             <a
               dir="ltr"
-              className="text-sky-300 hover:underline"
+              className="text-sky-700 dark:text-sky-300 hover:underline"
               href={`https://${business.subdomain}.${rootDomain}`}
               target="_blank"
               rel="noreferrer"
@@ -108,7 +108,7 @@ export default function BusinessOverviewPage() {
             {business.status === "archived" && caps.includes("business.suspend") ? (
               <Button onClick={() => void changeStatus("active", "فعال")}>بازگردانی از بایگانی</Button>
             ) : null}
-            <span className="text-xs text-white/35">
+            <span className="text-xs text-muted-foreground">
               تعلیق داده‌ها را پاک نمی‌کند؛ فقط ورود اعضا را می‌بندد.
             </span>
           </div>
@@ -120,10 +120,10 @@ export default function BusinessOverviewPage() {
           <Link
             key={s.href}
             href={s.href}
-            className="group rounded-xl border border-white/10 bg-white/2 p-4 transition-colors hover:border-sky-400/40 hover:bg-white/4"
+            className="group rounded-xl border border-border bg-card p-4 transition-colors hover:border-sky-400/40 hover:bg-card"
           >
-            <p className="text-sm font-semibold text-sky-300 group-hover:underline">{s.label}</p>
-            <p className="mt-1 text-xs leading-5 text-white/40">{s.hint}</p>
+            <p className="text-sm font-semibold text-sky-700 dark:text-sky-300 group-hover:underline">{s.label}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{s.hint}</p>
           </Link>
         ))}
       </div>

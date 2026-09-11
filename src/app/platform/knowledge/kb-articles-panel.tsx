@@ -8,8 +8,8 @@
  * an article — title, slug (auto-suggested), category, tags, the dashboard
  * sections it teaches, video and cover URLs, ordering, status — plus the
  * markdown body with a tiny insertion toolbar and a live preview rendered by
- * the exact KbMarkdown members read (tone="dark" here, because the console is
- * always dark), so what the operator writes is what «مرکز آموزش» shows.
+ * the exact KbMarkdown members read (theme-aware `auto` tone), so what the
+ * operator writes is what «مرکز آموزش» shows in either selected theme.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -162,7 +162,7 @@ export function ArticlesPanel({
         <div className="relative min-w-0 flex-1 sm:max-w-xs">
           <SearchIcon
             aria-hidden="true"
-            className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-white/30"
+            className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           />
           <input
             type="search"
@@ -221,7 +221,7 @@ export function ArticlesPanel({
             </option>
           ))}
         </select>
-        <span className="shrink-0 text-xs text-white/40">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {rows ? `${rows.length} راهنما` : "…"}
         </span>
         {canManage ? (
@@ -242,9 +242,9 @@ export function ArticlesPanel({
           hint="فیلترها را تغییر دهید یا یک راهنمای جدید بنویسید."
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-border">
           <table className="min-w-[860px] w-full text-sm">
-            <thead className="bg-white/3 text-white/50">
+            <thead className="bg-card text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 text-start font-medium">راهنما</th>
                 <th className="px-4 py-3 text-start font-medium">دسته</th>
@@ -256,20 +256,20 @@ export function ArticlesPanel({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-t border-white/5 align-top">
+                <tr key={row.id} className="border-t border-border align-top">
                   <td className="max-w-[260px] px-4 py-3">
-                    <p className="font-medium text-white/90">
+                    <p className="font-medium text-foreground">
                       {row.videoUrl ? (
-                        <EyeIcon className="me-1 inline size-3.5 text-white/40" aria-hidden="true" />
+                        <EyeIcon className="me-1 inline size-3.5 text-muted-foreground" aria-hidden="true" />
                       ) : null}
                       {row.title}
                     </p>
-                    <p className="mt-0.5 truncate text-[11px] text-white/35" dir="rtl">
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground" dir="rtl">
                       /dashboard/knowledge/a/{row.slug}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-white/60">{categoryTitle(row.categoryId)}</td>
-                  <td className="px-4 py-3 text-white/50">
+                  <td className="px-4 py-3 text-muted-foreground">{categoryTitle(row.categoryId)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
                     {row.sectionKeys.length
                       ? row.sectionKeys
                           .map((k) => KNOWLEDGE_SECTIONS.find((s) => s.key === k)?.label ?? k)
@@ -278,16 +278,16 @@ export function ArticlesPanel({
                   </td>
                   <td className="px-4 py-3">
                     {row.status === "published" ? (
-                      <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+                      <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                         منتشرشده
                       </span>
                     ) : (
-                      <span className="inline-block rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-300">
+                      <span className="inline-block rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
                         پیش‌نویس
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-white/50">{fmtDate(row.updatedAt)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(row.updatedAt)}</td>
                   {canManage ? (
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
@@ -307,7 +307,7 @@ export function ArticlesPanel({
                         </Button>
                         <Button
                           variant="ghost"
-                          className="h-8 px-2 text-xs text-red-300 hover:bg-red-500/10"
+                          className="h-8 px-2 text-xs text-red-700 dark:text-red-300 hover:bg-red-500/10"
                           disabled={busyId === row.id}
                           onClick={() => void remove(row)}
                         >
@@ -448,7 +448,7 @@ function ArticleEditor({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-2 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={article ? `ویرایش ${article.title}` : "راهنمای جدید"}
@@ -456,13 +456,13 @@ function ArticleEditor({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-2xl">
-        <div className="flex flex-wrap items-center gap-3 border-b border-white/10 px-5 py-3.5">
-          <BookOpenIcon className="size-5 text-sky-300" aria-hidden="true" />
-          <h3 className="text-base font-bold text-white">
+      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-popover">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
+          <BookOpenIcon className="size-5 text-sky-700 dark:text-sky-300" aria-hidden="true" />
+          <h3 className="text-base font-bold text-foreground">
             {article ? `ویرایش «${article.title}»` : "راهنمای جدید"}
           </h3>
-          <span className="me-auto text-[11px] text-white/35" dir="ltr">
+          <span className="me-auto text-[11px] text-muted-foreground" dir="ltr">
             /dashboard/knowledge/a/{effectiveSlug}
           </span>
           <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => setShowPreview((v) => !v)}>
@@ -564,7 +564,7 @@ function ArticleEditor({
               </Field>
 
               <Field label="بخش‌هایی که این راهنما آموزش می‌دهد" hint="آیکون «آموزش» همان بخش به این راهنما پیوند می‌خورد.">
-                <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-white/10 p-2">
+                <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border p-2">
                   {KNOWLEDGE_SECTIONS.map((s) => {
                     const on = sectionKeys.includes(s.key);
                     return (
@@ -575,8 +575,8 @@ function ArticleEditor({
                         onClick={() => setSectionKeys((prev) => toggleList(prev, s.key))}
                         className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                           on
-                            ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
-                            : "border-white/15 bg-white/5 text-white/50 hover:text-white/80"
+                            ? "border-sky-400/50 bg-sky-500/20 text-sky-800 dark:text-sky-200"
+                            : "border-border bg-muted text-muted-foreground hover:text-foreground"
                         }`}
                       >
                         {s.label}
@@ -587,9 +587,9 @@ function ArticleEditor({
               </Field>
 
               <Field label="برچسب‌ها">
-                <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-white/10 p-2">
+                <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border p-2">
                   {tags.length === 0 ? (
-                    <span className="text-xs text-white/30">اول از برگهٔ «برچسب‌ها» بسازید.</span>
+                    <span className="text-xs text-muted-foreground">اول از برگهٔ «برچسب‌ها» بسازید.</span>
                   ) : (
                     tags.map((t) => {
                       const on = tagIds.includes(t.id);
@@ -601,8 +601,8 @@ function ArticleEditor({
                           onClick={() => setTagIds((prev) => toggleList(prev, t.id))}
                           className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                             on
-                              ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-200"
-                              : "border-white/15 bg-white/5 text-white/50 hover:text-white/80"
+                              ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-800 dark:text-emerald-200"
+                              : "border-border bg-muted text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           #{t.label}
@@ -623,7 +623,7 @@ function ArticleEditor({
                     type="button"
                     title={btn.title}
                     onClick={() => insertIntoBody(btn.insert)}
-                    className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                    className="rounded-lg border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     {btn.label}
                   </button>
@@ -636,30 +636,30 @@ function ArticleEditor({
                 rows={18}
                 spellCheck={false}
                 placeholder={"## شروع\nمتن راهنما به فارسی…\n\n```sql\nSELECT 1;\n```"}
-                className="min-h-[320px] w-full flex-1 rounded-lg border border-white/15 bg-white/5 p-3 font-mono text-[13px] leading-6 text-white outline-none placeholder:text-white/25 focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/20"
+                className="min-h-[320px] w-full flex-1 rounded-lg border border-border bg-muted p-3 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/20"
                 aria-label="متن راهنما (مارک‌داون)"
               />
-              <p className="mt-1 text-[11px] text-white/30">
+              <p className="mt-1 text-[11px] text-muted-foreground">
                 مارک‌داون: ## تیترها لنگر می‌گیرند؛ ``` بلوک کد؛ ![توضیح](آدرس) تصویر.
               </p>
             </div>
           </div>
 
           {showPreview ? (
-            <div className="mt-5 rounded-xl border border-white/10 bg-black/30 p-5">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-white/35">
+            <div className="mt-5 rounded-xl border border-border bg-muted p-5">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 پیش‌نمایش زنده — همان چیزی که عضو می‌بیند
               </p>
-              <h4 className="mb-1 text-lg font-bold text-white">{title || "بدون عنوان"}</h4>
-              {summary ? <p className="mb-4 text-sm text-white/50">{summary}</p> : null}
-              <KbMarkdown content={bodyMd || "(بدنه خالی است)"} tone="dark" />
+              <h4 className="mb-1 text-lg font-bold text-foreground">{title || "بدون عنوان"}</h4>
+              {summary ? <p className="mb-4 text-sm text-muted-foreground">{summary}</p> : null}
+              <KbMarkdown content={bodyMd || "(بدنه خالی است)"} />
             </div>
           ) : null}
 
           {formError ? <div className="mt-4"><ErrorBox>{formError}</ErrorBox></div> : null}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-3.5">
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3.5">
           <Button variant="ghost" onClick={onClose}>
             انصراف
           </Button>

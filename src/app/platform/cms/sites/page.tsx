@@ -158,7 +158,7 @@ export default function CmsSitesPage() {
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-xs text-white/40">
+              <thead className="text-xs text-muted-foreground">
                 <tr>
                   <th className="pb-2 text-start font-normal">دامنه</th>
                   <th className="pb-2 text-start font-normal">کسب‌وکار</th>
@@ -172,38 +172,38 @@ export default function CmsSitesPage() {
               <tbody>
                 {filtered.map((site) => (
                   <Fragment key={site.id}>
-                    <tr className="border-t border-white/5">
+                    <tr className="border-t border-border">
                       <td className="py-2">
                         <div className="flex items-center gap-2">
-                          <Globe className="size-3.5 text-white/30" />
+                          <Globe className="size-3.5 text-muted-foreground" />
                           <span dir="ltr">{site.domain}</span>
                           {site.domainVerified ? null : (
-                            <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">
+                            <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-300">
                               تأییدنشده
                             </span>
                           )}
                         </div>
-                        <p className="mt-0.5 text-xs text-white/35">{site.name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{site.name}</p>
                       </td>
-                      <td className="py-2 text-white/60">
+                      <td className="py-2 text-muted-foreground">
                         {site.businessName ?? (
-                          <span className="text-white/30">بدون کسب‌وکار</span>
+                          <span className="text-muted-foreground">بدون کسب‌وکار</span>
                         )}
                       </td>
-                      <td className="py-2 text-white/60">
+                      <td className="py-2 text-muted-foreground">
                         {SITE_TYPE_LABELS[site.type] ?? site.type}
                       </td>
                       <td className="py-2">
                         <StatusBadge status={site.status} />
                       </td>
-                      <td className="py-2 tabular-nums text-white/60">
+                      <td className="py-2 tabular-nums text-muted-foreground">
                         {formatPersianNumber(site.totals.pages ?? 0)} /{" "}
                         {formatPersianNumber(site.totals.posts ?? 0)} /{" "}
                         {formatPersianNumber(site.totals.products ?? 0)}
                       </td>
-                      <td className="py-2 tabular-nums text-white/60">
+                      <td className="py-2 tabular-nums text-muted-foreground">
                         {formatPersianNumber(site.totals.ordersPaid ?? 0)}
-                        <span className="text-white/25">
+                        <span className="text-muted-foreground">
                           {" / "}
                           {formatPersianNumber(site.totals.orders ?? 0)}
                         </span>
@@ -236,7 +236,7 @@ export default function CmsSitesPage() {
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-xs text-white/35">
+          <p className="mt-3 text-xs text-muted-foreground">
             ستون «محتوا» صفحه‌ها / نوشته‌ها / محصولات است. اعداد از آخرین آینه‌برداری‌اند.
           </p>
         </Card>
@@ -321,7 +321,7 @@ function SitePanel({
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-3">
+    <div className="space-y-3 rounded-xl border border-border bg-muted p-3">
       {error ? <ErrorBox>{error}</ErrorBox> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -362,7 +362,7 @@ function SitePanel({
           </select>
         </Field>
         <Field label="تأیید دامنه">
-          <label className="flex h-10 items-center gap-2 text-sm text-white/70">
+          <label className="flex h-10 items-center gap-2 text-sm text-foreground">
             <input
               checked={verified}
               className="size-4"
@@ -375,22 +375,22 @@ function SitePanel({
         </Field>
       </div>
 
-      <p className="text-xs leading-6 text-white/35">
+      <p className="text-xs leading-6 text-muted-foreground">
         دامنهٔ اصلی از این‌جا تغییر نمی‌کند: تنها مسیر نوشتن روی آن در سایت‌ساز، درخواستی است که
         تأیید دامنه را صفر می‌کند و یکتایی نام را در همهٔ سایت‌ها بازبینی می‌کند — همان مسیری که
         کسب‌وکار از «تنظیمات و همگام‌سازی» خودش استفاده می‌کند.
       </p>
 
       {site.aliases.length ? (
-        <div className="text-xs text-white/45">
+        <div className="text-xs text-muted-foreground">
           دامنه‌های فرعی:{" "}
           {site.aliases.map((alias) => (
             <span className="me-2" dir="ltr" key={alias.hostname}>
               {alias.hostname}
               {alias.verified ? (
-                <Check className="ms-1 inline size-3 text-emerald-400" />
+                <Check className="ms-1 inline size-3 text-emerald-600 dark:text-emerald-400" />
               ) : (
-                <X className="ms-1 inline size-3 text-amber-400" />
+                <X className="ms-1 inline size-3 text-amber-600 dark:text-amber-400" />
               )}
             </span>
           ))}
@@ -398,7 +398,7 @@ function SitePanel({
       ) : null}
 
       {site.gateways.length ? (
-        <div className="text-xs text-white/45">
+        <div className="text-xs text-muted-foreground">
           درگاه‌ها:{" "}
           {site.gateways.map((gateway) => (
             <span className="me-2" key={gateway.gateway}>
@@ -406,10 +406,10 @@ function SitePanel({
               <span
                 className={
                   gateway.selfTest === "failed"
-                    ? "ms-1 text-red-300"
+                    ? "ms-1 text-red-700 dark:text-red-300"
                     : gateway.selfTest === "ok"
-                      ? "ms-1 text-emerald-300"
-                      : "ms-1 text-white/30"
+                      ? "ms-1 text-emerald-700 dark:text-emerald-300"
+                      : "ms-1 text-muted-foreground"
                 }
               >
                 {gateway.selfTest === "failed"
@@ -437,18 +437,18 @@ function SitePanel({
             صدور کلید تازه
           </Button>
         ) : null}
-        <span className="text-xs text-white/30">
+        <span className="text-xs text-muted-foreground">
           آینه‌برداری: {fmtDate(site.mirroredAt)}
         </span>
       </div>
 
       {issued ? (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-          <p className="text-xs text-emerald-200">
+          <p className="text-xs text-emerald-800 dark:text-emerald-200">
             این کلید فقط همین یک‌بار نمایش داده می‌شود؛ سایت‌ساز تنها هَش آن را نگه می‌دارد.
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded bg-black/40 px-2 py-1 text-xs" dir="ltr">
+            <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs" dir="ltr">
               {issued}
             </code>
             <Button
@@ -463,15 +463,15 @@ function SitePanel({
 
       {keys ? (
         keys.length === 0 ? (
-          <p className="text-xs text-white/40">این سایت هیچ کلیدی ندارد.</p>
+          <p className="text-xs text-muted-foreground">این سایت هیچ کلیدی ندارد.</p>
         ) : (
           <ul className="space-y-1 text-xs">
             {keys.map((key) => (
               <li className="flex items-center justify-between gap-2" key={key.id}>
-                <span className="text-white/60">
+                <span className="text-muted-foreground">
                   {key.name}
                   {key.disabledAt ? (
-                    <span className="ms-2 text-red-300">لغوشده {fmtDate(key.disabledAt)}</span>
+                    <span className="ms-2 text-red-700 dark:text-red-300">لغوشده {fmtDate(key.disabledAt)}</span>
                   ) : null}
                 </span>
                 {manage && !key.disabledAt ? (
@@ -547,11 +547,11 @@ function NewSiteForm({
   if (key) {
     return (
       <Card title="سایت ساخته شد">
-        <p className="text-xs text-emerald-200">
+        <p className="text-xs text-emerald-800 dark:text-emerald-200">
           کلید سایت فقط همین یک‌بار نمایش داده می‌شود. پیش از بستن این کادر آن را ذخیره کنید.
         </p>
         <div className="mt-2 flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded bg-black/40 px-2 py-1 text-xs" dir="ltr">
+          <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs" dir="ltr">
             {key}
           </code>
           <Button onClick={() => void navigator.clipboard?.writeText(key)} variant="ghost">
@@ -591,7 +591,7 @@ function NewSiteForm({
           </select>
         </Field>
         <Field label="کلید سایت">
-          <label className="flex h-10 items-center gap-2 text-sm text-white/70">
+          <label className="flex h-10 items-center gap-2 text-sm text-foreground">
             <input
               checked={issueKey}
               className="size-4"
@@ -602,7 +602,7 @@ function NewSiteForm({
           </label>
         </Field>
       </div>
-      <p className="mt-2 text-xs leading-6 text-white/35">
+      <p className="mt-2 text-xs leading-6 text-muted-foreground">
         این سایت به هیچ کسب‌وکاری وصل نمی‌شود و صورت‌حسابی برایش ساخته نمی‌شود؛ اتصال و اشتراک،
         کارِ خودِ کسب‌وکار از «مدیریت وب‌سایت» است. تعداد {toPersianDigits(1)} سایت اضافه می‌شود.
       </p>

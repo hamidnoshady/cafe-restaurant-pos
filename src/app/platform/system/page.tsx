@@ -127,7 +127,7 @@ export default function SystemPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">سیستم</h1>
-          <p className="mt-1 text-xs text-white/35">
+          <p className="mt-1 text-xs text-muted-foreground">
             {loadedAt ? `آخرین به‌روزرسانی: ${fmtDate(loadedAt)} — هر دقیقه تازه می‌شود.` : ""}
           </p>
         </div>
@@ -135,7 +135,7 @@ export default function SystemPage() {
           <button
             type="button"
             onClick={() => void copySummary()}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/15 px-3 text-xs text-white/70 transition-colors hover:bg-white/5"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-foreground transition-colors hover:bg-muted"
           >
             <Copy className="h-3.5 w-3.5" />
             {copied ? "کپی شد" : "کپی خلاصه"}
@@ -143,7 +143,7 @@ export default function SystemPage() {
           <button
             type="button"
             onClick={() => void load()}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/15 px-3 text-xs text-white/70 transition-colors hover:bg-white/5"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-foreground transition-colors hover:bg-muted"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             تازه‌سازی
@@ -156,14 +156,14 @@ export default function SystemPage() {
       ) : null}
 
       {pending > 0 ? (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">
               {formatPersianNumber(pending)} مهاجرت هنوز روی پایگاه‌داده اعمال نشده است؛ کد در حال اجرا
               جلوتر از ساختار داده است.
             </p>
-            <p className="mt-1 text-xs text-amber-200/70" dir="ltr">
+            <p className="mt-1 text-xs text-amber-800/70 dark:text-amber-200/70" dir="ltr">
               npm run db:migrate
             </p>
           </div>
@@ -199,14 +199,14 @@ export default function SystemPage() {
 
       <Card title="استخر اتصال">
         <div className="mb-2 flex items-end justify-between text-sm">
-          <span className="text-white/50">
+          <span className="text-muted-foreground">
             {formatPersianNumber(busy)} درگیر از {formatPersianNumber(pool.total)}
           </span>
-          <span className={pool.waiting > 0 ? "text-amber-300" : "text-white/40"}>
+          <span className={pool.waiting > 0 ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}>
             {formatPersianNumber(pool.waiting)} در صف انتظار
           </span>
         </div>
-        <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/8">
+        <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
           <div
             className={`h-full rounded-full transition-all ${
               pool.total > 0 && busy / pool.total > 0.85 ? "bg-amber-400" : "bg-sky-400"
@@ -214,26 +214,26 @@ export default function SystemPage() {
             style={{ width: `${pool.total > 0 ? Math.min(100, (busy / pool.total) * 100) : 0}%` }}
           />
         </div>
-        <p className="mt-2 text-xs text-white/35">
+        <p className="mt-2 text-xs text-muted-foreground">
           صفِ غیرصفر یعنی درخواست‌ها پشت اتصال‌ها مانده‌اند — با رشد ترافیک، limit استخر را بالا ببرید.
         </p>
       </Card>
 
       <Card title="مهاجرت‌های اعمال‌شده">
         {migrations.length === 0 ? (
-          <p className="text-sm text-white/50">موردی یافت نشد.</p>
+          <p className="text-sm text-muted-foreground">موردی یافت نشد.</p>
         ) : (
           <>
             <ul className="space-y-1 text-sm">
               {shown.map((m) => (
                 <li
                   key={m.filename}
-                  className="flex flex-col gap-1 border-b border-white/5 py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-1 border-b border-border py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <span className="break-all text-white/80" dir="ltr">
+                  <span className="break-all text-foreground" dir="ltr">
                     {m.filename}
                   </span>
-                  <span className="whitespace-nowrap text-xs text-white/40">{fmtDate(m.appliedAt)}</span>
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">{fmtDate(m.appliedAt)}</span>
                 </li>
               ))}
             </ul>
@@ -241,7 +241,7 @@ export default function SystemPage() {
               <button
                 type="button"
                 onClick={() => setShowAllMigrations((v) => !v)}
-                className="mt-2 text-xs text-sky-300 hover:underline"
+                className="mt-2 text-xs text-sky-700 dark:text-sky-300 hover:underline"
               >
                 {showAllMigrations
                   ? "فشرده‌سازی فهرست"
@@ -254,53 +254,53 @@ export default function SystemPage() {
 
       <Card title="آخرین پشتیبان‌گیری هر کسب‌وکار">
         {platformBackup ? (
-          <div className="mb-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-white/2 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-3 flex flex-col gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
             <span className="flex flex-wrap items-center gap-2">
-              <Link href="/platform/backup" className="font-medium text-sky-300 hover:underline">
+              <Link href="/platform/backup" className="font-medium text-sky-700 dark:text-sky-300 hover:underline">
                 پشتیبان‌گیری کل سیستم
               </Link>
               <span
                 className={
                   platformBackup.alertLevel === "ok"
-                    ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300"
+                    ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300"
                     : platformBackup.alertLevel === "warning"
-                      ? "rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300"
-                      : "rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-300"
+                      ? "rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300"
+                      : "rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-700 dark:text-red-300"
                 }
               >
                 {PLATFORM_BACKUP_ALERT_LABELS[platformBackup.alert] ?? platformBackup.alert}
               </span>
             </span>
-            <span className="flex flex-wrap items-center gap-2 text-xs text-white/40 sm:gap-3">
+            <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:gap-3">
               <span>{formatPersianNumber(platformBackup.artifacts)} نسخه روی دیسک</span>
-              {platformBackup.servingEnabled ? <span className="text-amber-300/80">ارسال به سرور دیگر روشن</span> : null}
+              {platformBackup.servingEnabled ? <span className="text-amber-700/80 dark:text-amber-300/80">ارسال به سرور دیگر روشن</span> : null}
               <span className="whitespace-nowrap">{fmtDate(platformBackup.ranAt)}</span>
             </span>
           </div>
         ) : null}
         {backups.length === 0 ? (
-          <p className="text-sm text-white/50">پشتیبانی ثبت نشده است.</p>
+          <p className="text-sm text-muted-foreground">پشتیبانی ثبت نشده است.</p>
         ) : (
           <ul className="space-y-1 text-sm">
             {backups.map((b) => (
               <li
                 key={b.businessId}
-                className="flex flex-col gap-2 border-b border-white/5 py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 border-b border-border py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
               >
-                <span className="text-white/80">{b.businessName}</span>
+                <span className="text-foreground">{b.businessName}</span>
                 <span className="flex flex-wrap items-center gap-2 sm:gap-3">
                   <span
                     className={
                       b.status === "success"
-                        ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300"
+                        ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300"
                         : b.status === "failed"
-                          ? "rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-300"
-                          : "rounded-full border border-white/15 px-2 py-0.5 text-xs text-white/50"
+                          ? "rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-700 dark:text-red-300"
+                          : "rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
                     }
                   >
                     {b.status === "success" ? "موفق" : b.status === "failed" ? "ناموفق" : b.status}
                   </span>
-                  <span className="whitespace-nowrap text-xs text-white/40">{fmtDate(b.ranAt)}</span>
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">{fmtDate(b.ranAt)}</span>
                 </span>
               </li>
             ))}
@@ -316,7 +316,7 @@ function ButtonLikeRetry({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="mt-4 inline-flex h-9 items-center rounded-lg border border-white/15 px-4 text-sm text-white/80 transition-colors hover:bg-white/5"
+      className="mt-4 inline-flex h-9 items-center rounded-lg border border-border px-4 text-sm text-foreground transition-colors hover:bg-muted"
     >
       تلاش دوباره
     </button>
