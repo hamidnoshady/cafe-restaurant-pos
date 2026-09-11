@@ -87,7 +87,8 @@ export function AiRecentConversations({
         onClick={collapsible ? () => setCollapsed((current) => !current) : undefined}
         className={cn(
           "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors",
-          collapsible && "hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300",
+          collapsible &&
+            "min-h-9 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45",
         )}
       >
         <MessageSquareIcon aria-hidden="true" className="size-3.5 shrink-0" />
@@ -95,7 +96,7 @@ export function AiRecentConversations({
         {collapsible ? (
           <ChevronDownIcon
             aria-hidden="true"
-            className={cn("size-3.5 shrink-0 transition-transform", collapsed && "rtl:-rotate-90 ltr:rotate-90")}
+            className={cn("size-3.5 shrink-0 transition-transform duration-200 ease-out", collapsed && "-rotate-90")}
           />
         ) : null}
       </button>
@@ -112,13 +113,14 @@ export function AiRecentConversations({
                 <button
                   type="button"
                   onClick={() => onSelect(item.id)}
+                  title={item.title}
                   className={cn(
-                    "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-right text-xs transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300",
+                    "flex min-h-10 w-full items-start gap-2 rounded-lg px-2 py-1.5 text-start text-xs transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45",
                     activeId === item.id ? "bg-amber-100 dark:bg-amber-500/20 font-medium text-amber-700 dark:text-amber-300" : "text-foreground/80",
                   )}
                 >
                   <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-input" aria-hidden="true" />
-                  <span className="min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{item.title}</span>
                     <span className="block text-[10px] text-muted-foreground">{formatDate(item.lastMessageAt)}</span>
                   </span>
@@ -130,7 +132,7 @@ export function AiRecentConversations({
             <button
               type="button"
               onClick={() => setVisibleCount((count) => Math.min(items.length, count + initialLimit))}
-              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15"
+              className="flex min-h-9 w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
             >
               <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0" />
               نمایش بیشتر
@@ -140,7 +142,7 @@ export function AiRecentConversations({
             <button
               type="button"
               onClick={() => setVisibleCount(initialLimit)}
-              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground/80"
+              className="flex min-h-9 w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
             >
               <ChevronUpIcon aria-hidden="true" className="size-3.5 shrink-0" />
               نمایش کمتر

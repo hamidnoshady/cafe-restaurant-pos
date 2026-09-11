@@ -44,7 +44,11 @@ import {
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AppShellNavProps } from "@/app/dashboard/app-shell-nav";
-import { APP_NAV_BUTTON_CLASS, BACK_TO_WORKSPACE_BUTTON_CLASS } from "@/app/dashboard/sidebar-nav-styles";
+import {
+  APP_NAV_BUTTON_CLASS,
+  BACK_TO_WORKSPACE_BUTTON_CLASS,
+  NAV_LABEL_CLASS,
+} from "@/app/dashboard/sidebar-nav-styles";
 import { api } from "@/app/dashboard/ui";
 import { CMS_NAV_ITEMS, WEBSITE_NAV_GROUPS, WP_NAV_ITEMS } from "./website-nav";
 import {
@@ -165,7 +169,7 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate, workspaceShel
             <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
               <Link href={backHref} onClick={onNavigate}>
                 <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
-                <span className="truncate">{backLabel}</span>
+                <span className={NAV_LABEL_CLASS}>{backLabel}</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -181,8 +185,8 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate, workspaceShel
               className={APP_NAV_BUTTON_CLASS}
             >
               <Link href={WEBSITE_HOME} onClick={onNavigate} aria-current={pathname === WEBSITE_HOME ? "page" : undefined}>
-                <LayoutDashboardIcon className="size-4 shrink-0" />
-                <span className="truncate">خانهٔ وب‌سایت</span>
+                <LayoutDashboardIcon aria-hidden="true" className="size-5 shrink-0" />
+                <span className={NAV_LABEL_CLASS}>خانهٔ وب‌سایت</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -245,36 +249,50 @@ function CollapsibleNavGroup({
   if (items.length === 0) return null;
   return (
     <div className="space-y-1.5">
+      {/* Collapsed to icons the heading below is hidden, so the CMS sections and
+          the WordPress sections would read as one undivided column of glyphs. */}
+      <div
+        aria-hidden="true"
+        className="mx-2 hidden border-t border-border/70 group-data-[state=collapsed]/sidebar:block"
+      />
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-right transition-colors hover:bg-muted/60 group-data-[state=collapsed]/sidebar:hidden"
+        aria-label={`${open ? "بستن" : "باز کردن"} ${heading.label}`}
+        title={heading.description}
+        /* A 22px-tall heading was the smallest tap target in the whole menu. */
+        className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-start transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 group-data-[state=collapsed]/sidebar:hidden"
       >
-        <span className="text-[11px] font-bold text-muted-foreground">{heading.label}</span>
+        <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-muted-foreground">{heading.label}</span>
         <ChevronDownIcon
           aria-hidden="true"
-          className={`ms-auto size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out ${open ? "" : "-rotate-90"}`}
+          className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out ${open ? "" : "-rotate-90"}`}
         />
       </button>
-      {open ? (
-        <SidebarMenu className="space-y-1.5">
-          {items.map((item) => {
-            const active = activeFor(item.key);
-            const Icon = iconFor(item.key);
-            return (
-              <SidebarMenuItem key={item.key}>
-                <SidebarMenuButton asChild isActive={active} tooltip={item.label} className={APP_NAV_BUTTON_CLASS}>
-                  <Link href={hrefFor(item.key)} onClick={onNavigate} aria-current={active ? "page" : undefined}>
-                    <Icon className="size-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            );
-          })}
-        </SidebarMenu>
-      ) : null}
+      {/*
+        Collapsed, there is no chevron to reopen a closed group with, so a closed
+        group would leave the rail simply empty. At 4rem the sections are always
+        listed; the disclosure is an expanded-rail affordance.
+      */}
+      <SidebarMenu
+        className={open ? "space-y-1.5" : "hidden space-y-1.5 group-data-[state=collapsed]/sidebar:block"}
+      >
+        {items.map((item) => {
+          const active = activeFor(item.key);
+          const Icon = iconFor(item.key);
+          return (
+            <SidebarMenuItem key={item.key}>
+              <SidebarMenuButton asChild isActive={active} tooltip={item.label} className={APP_NAV_BUTTON_CLASS}>
+                <Link href={hrefFor(item.key)} onClick={onNavigate} aria-current={active ? "page" : undefined}>
+                  <Icon aria-hidden="true" className="size-5 shrink-0" />
+                  <span className={NAV_LABEL_CLASS}>{item.label}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
+      </SidebarMenu>
     </div>
   );
 }

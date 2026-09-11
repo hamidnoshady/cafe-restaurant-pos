@@ -3,10 +3,12 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useEffect, useState } from "react";
+import { FingerprintIcon } from "lucide-react";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { overlayPanelClass } from "./page-chrome";
+import { SIDEBAR_FOOTER_BUTTON_CLASS } from "./sidebar-nav-styles";
 
 interface Credential {
   id: string;
@@ -47,12 +49,9 @@ export function BiometricSettingsButton() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mb-2 w-full rounded-lg border border-input py-1.5 text-sm text-muted-foreground transition hover:bg-muted/50"
-      >
-        ورود بیومتریک
+      <button type="button" onClick={() => setOpen(true)} className={SIDEBAR_FOOTER_BUTTON_CLASS}>
+        <FingerprintIcon aria-hidden="true" className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-start">ورود بیومتریک</span>
       </button>
       {open && <BiometricPanel onClose={() => setOpen(false)} />}
     </>

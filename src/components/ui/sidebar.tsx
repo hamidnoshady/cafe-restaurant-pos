@@ -5,7 +5,7 @@ import { Slot } from "radix-ui";
 import { MenuIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type SidebarState = "expanded" | "collapsed";
@@ -16,9 +16,19 @@ type SidebarContextValue = {
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
   toggleSidebar: () => void;
+  /**
+   * Opens the desktop rail without toggling it. A collapsed rail hides every
+   * label, so a control that only makes sense next to its text (a disclosure
+   * group, the width handle) asks for the width it needs instead of leaving
+   * the member with a click that appears to do nothing.
+   */
+  expandSidebar: () => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextValue | null>(null);
+
+/** The element id the mobile trigger points `aria-controls` at. */
+const SIDEBAR_ID = "dashboard-sidebar";
 
 function useSidebar() {
   const context = React.useContext(SidebarContext);
@@ -67,17 +77,27 @@ function SidebarProvider({
     setOpen(!open);
   }, [isMobile, open, setOpen]);
 
+  const expandSidebar = React.useCallback(() => {
+    // The drawer is already full width on a phone: nothing to widen there.
+    if (isMobile || open) return;
+    setOpen(true);
+  }, [isMobile, open, setOpen]);
+
+  const value = React.useMemo<SidebarContextValue>(
+    () => ({
+      state: open ? "expanded" : "collapsed",
+      isMobile,
+      openMobile,
+      setOpenMobile,
+      toggleSidebar,
+      expandSidebar,
+    }),
+    [expandSidebar, isMobile, open, openMobile, toggleSidebar],
+  );
+
   return (
     <TooltipProvider>
-      <SidebarContext.Provider
-        value={{
-          state: open ? "expanded" : "collapsed",
-          isMobile,
-          openMobile,
-          setOpenMobile,
-          toggleSidebar,
-        }}
-      >
+      <SidebarContext.Provider value={value}>
         <div className={cn("contents", className)} {...props}>
           {children}
         </div>
@@ -97,8 +117,26 @@ function Sidebar({
   if (isMobile) {
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile}>
-        <SheetContent side={side} showCloseButton className="w-72 p-0">
-          <aside className={cn("flex h-full flex-col bg-sidebar text-sidebar-foreground", className)} {...props}>
+        {/*
+          The drawer is a dialog: Radix needs a title and a description or it
+          warns and screen readers announce an unnamed dialog. They are spoken
+          only — the visible name is the brand block the sidebar already draws.
+        */}
+        <SheetContent side={side} showCloseButton className="w-[86vw] max-w-80 gap-0 p-0">
+          <SheetTitle className="sr-only">منوی داشبورد</SheetTitle>
+          <SheetDescription className="sr-only">
+            دسترسی به بخش‌های داشبورد و تنظیمات حساب
+          </SheetDescription>
+          <aside
+            id={SIDEBAR_ID}
+            data-slot="sidebar"
+            data-state="expanded"
+            className={cn(
+              "group/sidebar flex h-full min-h-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground",
+              className,
+            )}
+            {...props}
+          >
             {children}
           </aside>
         </SheetContent>
@@ -108,10 +146,11 @@ function Sidebar({
 
   return (
     <aside
+      id={SIDEBAR_ID}
       data-slot="sidebar"
       data-state={state}
       className={cn(
-        "group/sidebar relative hidden h-screen shrink-0 flex-col overflow-hidden border-e border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 md:flex",
+        "group/sidebar relative hidden h-screen shrink-0 flex-col overflow-hidden border-e border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out md:flex",
         state === "expanded" ? "w-64" : "w-16",
         className,
       )}
@@ -123,10 +162,13 @@ function Sidebar({
 }
 
 function SidebarTrigger({ className, ...props }: React.ComponentProps<typeof Button>) {
-  const { state, isMobile, toggleSidebar } = useSidebar();
+  const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
+  const expanded = isMobile ? openMobile : state === "expanded";
   const label = isMobile
-    ? "باز کردن منو"
-    : state === "expanded"
+    ? expanded
+      ? "بستن منو"
+      : "باز کردن منو"
+    : expanded
       ? "جمع کردن نوار کناری"
       : "باز کردن نوار کناری";
 
@@ -137,7 +179,9 @@ function SidebarTrigger({ className, ...props }: React.ComponentProps<typeof But
       size="icon"
       aria-label={label}
       title={label}
-      className={cn("min-h-11 min-w-11", className)}
+      aria-expanded={expanded}
+      aria-controls={SIDEBAR_ID}
+      className={cn("size-11 shrink-0", className)}
       onClick={toggleSidebar}
       {...props}
     >
@@ -147,15 +191,41 @@ function SidebarTrigger({ className, ...props }: React.ComponentProps<typeof But
 }
 
 function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="sidebar-header" className={cn("border-b border-sidebar-border p-4", className)} {...props} />;
+  return (
+    <div
+      data-slot="sidebar-header"
+      className={cn("shrink-0 border-b border-sidebar-border p-4", className)}
+      {...props}
+    />
+  );
 }
 
 function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="sidebar-content" className={cn("min-h-0 flex-1 overflow-y-auto p-3", className)} {...props} />;
+  return (
+    <div
+      data-slot="sidebar-content"
+      className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain p-3", className)}
+      {...props}
+    />
+  );
 }
 
 function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="sidebar-footer" className={cn("border-t border-sidebar-border p-4", className)} {...props} />;
+  return (
+    <div
+      data-slot="sidebar-footer"
+      /*
+        The footer never eats the menu: on a short screen (a phone in landscape,
+        a small POS panel) it scrolls inside its own half rather than squeezing
+        the nav above it to nothing.
+      */
+      className={cn(
+        "max-h-[50%] shrink-0 overflow-y-auto overscroll-contain border-t border-sidebar-border p-4",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
@@ -185,7 +255,7 @@ function SidebarMenuButton({
       data-slot="sidebar-menu-button"
       data-active={isActive || undefined}
       className={cn(
-        "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-2",
+        "flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-lg px-3 text-sm text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:gap-0 group-data-[state=collapsed]/sidebar:px-0",
         className,
       )}
       {...props}
