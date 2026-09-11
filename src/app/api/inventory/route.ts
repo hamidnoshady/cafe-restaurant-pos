@@ -22,6 +22,7 @@ export const GET = withTenantScope(async () => {
       recipes: [],
       modifierRecipes: [],
       costingMethod: null,
+      inventorySystem: null,
     });
   }
 

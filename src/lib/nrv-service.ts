@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { rialBigInt, rialText, type RialText } from "./inventory-exact";
+import { getInventorySystem } from "./inventory-service";
 import { postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 
@@ -17,6 +18,11 @@ export async function createNrvWriteDown(
 ): Promise<{ id: string; amount: RialText }> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(params.valuationDate) || !params.reason.trim() || params.lines.length === 0) {
     throw new Error("invalid_write_down");
+  }
+  // NRV compares carrying value per item — a perpetual notion; ادواری has no
+  // per-item carrying value between closes.
+  if ((await getInventorySystem(params.businessId, client)) === "periodic") {
+    throw new Error("periodic_system_unsupported");
   }
   const { rows: header } = await client.query<{ id: string }>(
     `INSERT INTO inventory_write_downs

@@ -80,6 +80,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     if (err instanceof MissingLedgerAccountError) {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
+    if (err instanceof Error && err.message === "periodic_system_unsupported") {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
     throw err;
   }
 });

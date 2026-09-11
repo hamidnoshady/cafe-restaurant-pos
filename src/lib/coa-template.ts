@@ -120,6 +120,13 @@ export const WELL_KNOWN_CODES = {
   deliveryRevenue: "4330",
   salesReturns: "4400",
   cogs: "5100",
+  // سیستم ادواری — the periodic system's «خرید طی دوره» account (migration
+  // 0144). A business whose setup chose `system: "periodic"` debits every
+  // received purchase here instead of 1300; the period-close entry credits
+  // it back to zero and moves B + P − E into COGS. Perpetual businesses
+  // never post to it, but it is seeded on every chart so the posting rule
+  // stays a rule and not a per-system template lookup.
+  periodicPurchases: "5105",
   wasteExpense: "5150",
   salariesExpense: "5200",
   // Phase 27 Wave 7 — sales-staff commission, posted as a payroll liability
@@ -278,49 +285,62 @@ export const WELL_KNOWN_CODES = {
  * the overhead a production run capitalised, so it belongs beside that overhead
  * rather than inside gross profit. See its note in WELL_KNOWN_CODES.
  */
+// 5105 (خرید طی دوره) is cost of sales for every industry: in the periodic
+// system its balance between closes IS the period's yet-unclosed cost of
+// goods, and each close credits it back to zero — so counting it keeps the
+// gross-profit line honest mid-period and changes nothing once a period is
+// closed. Perpetual businesses never post to it.
 const COST_OF_SALES_CODES_BY_INDUSTRY: Record<Industry, readonly string[]> = {
   food_service: [
     WELL_KNOWN_CODES.cogs,
     WELL_KNOWN_CODES.wasteExpense,
     WELL_KNOWN_CODES.inventoryCountExpense,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.periodicPurchases,
   ],
   jewelry: [
     WELL_KNOWN_CODES.goldCogs,
     WELL_KNOWN_CODES.repairPartsExpense,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.periodicPurchases,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   watch: [
     WELL_KNOWN_CODES.watchCogs,
     WELL_KNOWN_CODES.repairPartsExpense,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.periodicPurchases,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   accessories: [
     WELL_KNOWN_CODES.accessoryCogs,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.periodicPurchases,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   cosmetics: [
     WELL_KNOWN_CODES.cosmeticCogs,
     WELL_KNOWN_CODES.cosmeticExpiredAndTester,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.periodicPurchases,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   wholesale: [
     WELL_KNOWN_CODES.wholesaleCogs,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.periodicPurchases,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   tools_fittings: [
     WELL_KNOWN_CODES.toolsCogs,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.periodicPurchases,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   haberdashery: [
     WELL_KNOWN_CODES.haberdasheryCogs,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.periodicPurchases,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
 };
@@ -405,6 +425,8 @@ const SHARED_REVENUE_ACCOUNTS: TemplateAccount[] = [
 ];
 
 const SHARED_EXPENSE_ACCOUNTS: TemplateAccount[] = [
+  // Periodic-system purchases (سیستم ادواری) — see WELL_KNOWN_CODES.periodicPurchases.
+  { code: "5105", name: "خرید طی دوره (سیستم ادواری)", type: "expense", parentCode: "5000" },
   { code: "5750", name: "زیان فروش دارایی ثابت", type: "expense", parentCode: "5000" },
   { code: "5800", name: "کارمزد بانکی و درگاه پرداخت", type: "expense", parentCode: "5000" },
   { code: "5810", name: "کسری و اضافه صندوق", type: "expense", parentCode: "5000" },

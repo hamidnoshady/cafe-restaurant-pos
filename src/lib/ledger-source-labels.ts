@@ -48,6 +48,8 @@ export const LEDGER_SOURCE_LABELS: Record<string, string> = {
   waste: "ضایعات",
   stock_count: "شمارش موجودی",
   stock_count_reversal: "برگشت شمارش موجودی",
+  // سیستم ادواری — بستن دوره (periodic-closing-service.ts).
+  periodic_closing: "بستن دوره انبار (ادواری)",
   item_stock_count: "شمارش موجودی کالا",
   item_stock_transfer: "انتقال موجودی کالا",
   item_audit: "بازبینی کالا",

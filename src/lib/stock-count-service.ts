@@ -21,7 +21,7 @@ import Decimal from "decimal.js";
 import type { PoolClient } from "pg";
 import { applyStockAdjustmentExact } from "./inventory-adjustment-exact";
 import { quantityText, rialText } from "./inventory-exact";
-import type { CostingMethod } from "./inventory-costing";
+import { isLotBased, type CostingMethod } from "./inventory-costing";
 import { adjustCarryingValue, insertLot, insertMovement } from "./inventory-reversal";
 import { getCostingMethod } from "./inventory-service";
 import {
@@ -139,7 +139,7 @@ async function reverseAdjustmentLine(
     const positiveValue = value - negativeValue;
     if (positiveQuantity.lt(0) || positiveValue < 0n) throw new Error("stock_count_reversal_inconsistent");
     if (positiveQuantity.gt(0)) {
-      if (params.method === "fifo") {
+      if (isLotBased(params.method)) {
         await insertLot(client, {
           locationId: params.locationId,
           inventoryItemId: params.inventoryItemId,
@@ -206,7 +206,7 @@ async function reverseAdjustmentLine(
 
   const positiveValue = value - settledValue;
   if (positiveValue < 0n) throw new Error("stock_count_reversal_inconsistent");
-  if (params.method === "fifo") {
+  if (isLotBased(params.method)) {
     // The count's own FIFO lot is the positive portion; it must still be fully
     // on hand, or a later sale already consumed part of the surplus.
     const { rows: lots } = await client.query<{

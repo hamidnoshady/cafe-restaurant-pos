@@ -20,7 +20,7 @@
  */
 import Decimal from "decimal.js";
 import type { PoolClient } from "pg";
-import type { CostingMethod } from "./inventory-costing";
+import { isLotBased, type CostingMethod } from "./inventory-costing";
 
 export function unitCostFromValue(value: bigint, quantity: Decimal): string {
   if (quantity.eq(0)) return "0";
@@ -274,7 +274,7 @@ export async function reverseConsumedInventory(
     const positiveValue = value - cancelled.value;
     if (positiveQuantity.lt(0) || positiveValue < 0n) throw new Error("consumption_reversal_inconsistent");
     if (positiveQuantity.gt(0)) {
-      if (params.method === "fifo") {
+      if (isLotBased(params.method)) {
         await insertLot(client, {
           locationId: params.locationId,
           inventoryItemId: row.inventory_item_id,

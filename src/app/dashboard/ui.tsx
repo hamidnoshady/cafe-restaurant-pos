@@ -66,6 +66,13 @@ const ERROR_MESSAGES: Record<string, string> = {
     table_occupied: "این میز سفارش باز دیگری دارد.",
     invalid_order_type: "نوع سفارش نامعتبر است.",
     no_items: "حداقل یک قلم لازم است.",
+    // سیستم ادواری — periodic-closing-service.ts / consumeInventoryExact guard.
+    periodic_system_unsupported:
+      "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
+    not_periodic_system: "این کسب‌وکار سیستم ادواری ندارد؛ بستن دوره فقط برای سیستم ادواری است.",
+    invalid_period_end: "تاریخ پایان دوره معتبر نیست.",
+    period_end_not_after_previous: "تاریخ پایان دوره باید بعد از آخرین دورهٔ بسته‌شده باشد.",
+    count_line_missing: "برای همهٔ اقلامی که موجودی اول دوره یا خرید داشته‌اند باید شمارش ثبت شود (حتی صفر).",
     invalid_item: "تعداد یکی از اقلام معتبر نیست.",
     invalid_modifier: "یکی از افزودنی‌های انتخابی معتبر نیست.",
     invalid_modifier_selection: "انتخاب افزودنی‌ها با محدودیت گروه هم‌خوانی ندارد.",

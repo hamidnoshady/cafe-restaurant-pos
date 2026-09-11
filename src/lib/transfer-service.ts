@@ -4,7 +4,8 @@ import {
   positiveQuantityText, proportionalDepletionValue, quantityText, rialBigInt, rialText,
   subtractQuantity, type QuantityText, type RialText,
 } from "./inventory-exact";
-import { getCostingMethod } from "./inventory-service";
+import { isLotBased, lotConsumptionOrderClause } from "./inventory-costing";
+import { getCostingMethod, getInventorySystem } from "./inventory-service";
 import { unitCostFromValue } from "./inventory-reversal";
 import { postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
@@ -55,6 +56,8 @@ export async function shipInventoryTransfer(client: PoolClient, params: {
   const transfer=transfers[0];
   if (!transfer) throw new Error("transfer_not_found");
   if (transfer.status!=="draft") throw new Error(transfer.status==="shipped"?"transfer_already_shipped":"invalid_transfer_status");
+  // Transfers move priced stock between branches — a perpetual instrument.
+  if ((await getInventorySystem(params.businessId,client))==="periodic") throw new Error("periodic_system_unsupported");
   const method=await getCostingMethod(params.businessId,client);
   const { rows: events } = await client.query<{id:string}>(
     `INSERT INTO inventory_events
@@ -74,12 +77,12 @@ export async function shipInventoryTransfer(client: PoolClient, params: {
       [line.source_inventory_item_id]);
     if (new Decimal(stock[0].quantity).lt(new Decimal(quantity))) throw new Error("insufficient_transfer_stock");
     let lineValue=0n;
-    if (method==="fifo") {
+    if (isLotBased(method)) {
       let needed=quantity;
       const { rows: lots } = await client.query<{
         id:string;remaining_qty:string;remaining_value_rial:string|null;received_at:string;
       }>(`SELECT id,remaining_qty::text,remaining_value_rial::text,received_at::text FROM inventory_lots
-          WHERE inventory_item_id=$1 AND remaining_qty>0 ORDER BY received_at,id FOR UPDATE`,
+          WHERE inventory_item_id=$1 AND remaining_qty>0 ORDER BY ${lotConsumptionOrderClause(method)} FOR UPDATE`,
         [line.source_inventory_item_id]);
       for (const lot of lots) {
         if (new Decimal(needed).eq(0)) break;
@@ -171,7 +174,7 @@ export async function receiveInventoryTransfer(client: PoolClient, params: {
        (location_id,inventory_item_id,type,quantity,unit_cost,cost_value_rial,source_type,source_id,created_by,inventory_event_id)
        VALUES($1,$2,'transfer_in',$3,$4::numeric/$3::numeric,$4,'inventory_transfer',$5,$6,$7)`,
       [transfer.destination_location_id,a.destination_inventory_item_id,a.quantity,a.value_rial,params.transferId,params.actorId,events[0].id]);
-    if (method==="fifo") {
+    if (isLotBased(method)) {
       const { rows: lots }=await client.query<{id:string}>(
         `INSERT INTO inventory_lots
          (location_id,inventory_item_id,remaining_qty,unit_cost,source_type,source_id,received_at,inventory_event_id,
@@ -245,7 +248,7 @@ export async function cancelInventoryTransfer(client: PoolClient, params: {
        VALUES($1,$2,'transfer_in',$3,$4::numeric/$3::numeric,$4,'inventory_transfer_cancel',$5,$6,$7)`,
       [transfer.source_location_id,allocation.source_inventory_item_id,allocation.quantity,
        allocation.value_rial,params.transferId,params.actorId,events[0].id]);
-    if(method==="fifo"){
+    if(isLotBased(method)){
       await client.query(
         `INSERT INTO inventory_lots
          (location_id,inventory_item_id,remaining_qty,unit_cost,source_type,source_id,received_at,inventory_event_id,

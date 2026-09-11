@@ -242,7 +242,7 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     method: "POST",
     label: "انتخاب روش قیمت‌گذاری موجودی",
     wizardStep: "costing",
-    payloadHint: '{ method: "fifo" | "weighted_average" }',
+    payloadHint: '{ method: "fifo" | "lifo" | "weighted_average", system?: "perpetual" | "periodic" }',
   },
   "setup.tax": {
     type: "setup.tax",

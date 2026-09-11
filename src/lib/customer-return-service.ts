@@ -8,7 +8,8 @@ import {
   type QuantityText,
   type RialText,
 } from "./inventory-exact";
-import { getCostingMethod } from "./inventory-service";
+import { isLotBased } from "./inventory-costing";
+import { getCostingMethod, getInventorySystem } from "./inventory-service";
 import { unitCostFromValue } from "./inventory-reversal";
 import { liveSaleInventoryEventId } from "./order-amendment-service";
 import { postExactCustomerRefundEntry, postExactOperationalInventoryEntry } from "./ledger-service";
@@ -75,10 +76,14 @@ export async function createCustomerReturn(
     [params.businessId, params.locationId, returnId, params.createdBy, `customer-return:${params.idempotencyKey}`],
   );
   const method = await getCostingMethod(params.businessId, client);
+  // سیستم ادواری: a sale consumed nothing, so a return restocks nothing —
+  // the refund still posts below, and the returned goods simply show up in
+  // the next period-end count.
+  const periodic = (await getInventorySystem(params.businessId, client)) === "periodic";
   // The sale's COGS is read off the consumption event that currently stands for
   // this order — after a closed-order amendment that is the replayed
   // consumption, not the reversed original, and both wear `source_type='order'`.
-  const saleEventId = await liveSaleInventoryEventId(client, params.businessId, params.orderId);
+  const saleEventId = periodic ? null : await liveSaleInventoryEventId(client, params.businessId, params.orderId);
   let recovered = 0n;
 
   for (const line of [...params.lines].sort((a, b) => a.orderItemId.localeCompare(b.orderItemId))) {
@@ -93,7 +98,7 @@ export async function createCustomerReturn(
        VALUES($1,$2,$3,$4) RETURNING id`,
       [returnId, line.orderItemId, line.quantity, line.disposition],
     );
-    if (line.disposition === "discarded") continue;
+    if (line.disposition === "discarded" || periodic) continue;
 
     const { rows: snapshots } = await client.query<{ inventory_item_id: string; required_quantity: string }>(
       "SELECT inventory_item_id,required_quantity::text FROM order_item_inventory_snapshots WHERE order_item_id=$1 ORDER BY inventory_item_id",
@@ -139,7 +144,7 @@ export async function createCustomerReturn(
         [params.locationId, snapshot.inventory_item_id, restoredQty, value.toString(), returnId, params.createdBy, events[0].id],
       );
       let lotId: string | null = null;
-      if (method === "fifo") {
+      if (isLotBased(method)) {
         const { rows: lots } = await client.query<{ id: string }>(
           `INSERT INTO inventory_lots
             (location_id,inventory_item_id,remaining_qty,unit_cost,remaining_value_rial,source_type,source_id,inventory_event_id,

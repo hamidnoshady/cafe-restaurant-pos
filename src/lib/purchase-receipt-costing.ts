@@ -12,7 +12,8 @@ import {
   type QuantityText,
   type RialText,
 } from "./inventory-exact";
-import { getCostingMethod } from "./inventory-service";
+import { isLotBased } from "./inventory-costing";
+import { getCostingMethod, getInventorySystem } from "./inventory-service";
 
 export interface ExactPurchaseReceiptItem {
   purchaseItemId: string;
@@ -53,6 +54,13 @@ export async function applyPurchaseReceiptCosting(
     createdBy: string | null;
   },
 ): Promise<PurchaseReceiptCostingResult> {
+  // ادواری purchases are journal-only (Debit 5105); the receive route
+  // branches before ever calling this. The guard protects the other callers
+  // (Holoo import, warehouse receipts) from writing perpetual cost basis
+  // into a periodic business.
+  if ((await getInventorySystem(params.businessId, client)) === "periodic") {
+    throw new Error("periodic_system_unsupported");
+  }
   const method = await getCostingMethod(params.businessId, client);
   let receiptValue = 0n;
   let upward = 0n;
@@ -153,7 +161,7 @@ export async function applyPurchaseReceiptCosting(
             difference.toString(),
           ],
         );
-      } else if (method === "fifo") {
+      } else if (isLotBased(method)) {
         const unitCost = derivedUnitCost(actualValue, portion.quantity);
         const { rows: lotRows } = await client.query<{ id: string }>(
           `INSERT INTO inventory_lots
