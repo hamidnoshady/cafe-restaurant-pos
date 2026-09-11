@@ -43,12 +43,12 @@ export type CrmSectionKey = (typeof CRM_SECTION_KEYS)[number];
 
 /** The route for a section. The overview is the app root; the rest nest under it. */
 export function crmSectionHref(key: CrmSectionKey): string {
-  return key === "overview" ? "/dashboard/crm" : `/dashboard/crm/${key}`;
+  return key === "overview" ? "/crm/overview" : `/crm/${key}`;
 }
 
 /** The route of one customer's 360° file. */
 export function crmCustomerHref(customerId: string): string {
-  return `/dashboard/crm/persons/${customerId}`;
+  return `/crm/persons/${customerId}`;
 }
 
 /**

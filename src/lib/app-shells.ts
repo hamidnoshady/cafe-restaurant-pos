@@ -47,13 +47,13 @@ export interface AppShellDef {
 export const APP_SHELLS: readonly AppShellDef[] = [
   {
     app: "growth",
-    prefix: "/dashboard/growth",
+    prefix: "/growth",
     label: "رشد و بازاریابی",
     description: "میز کار، کمپین‌ها و کارت هدیه، وفاداری و پورسانت.",
   },
   {
     app: "crm",
-    prefix: "/dashboard/crm",
+    prefix: "/crm",
     label: "ارتباط با مشتری",
     description: "پرونده و بخش‌بندی مشتری، قیف فروش، کارها و تیکت‌ها.",
   },
@@ -63,7 +63,7 @@ export const APP_SHELLS: readonly AppShellDef[] = [
     // is one door with two rooms rather than two apps in the rail. The
     // WordPress pages moved under this prefix with it (/dashboard/website/wp).
     app: "website",
-    prefix: "/dashboard/website",
+    prefix: "/websites",
     label: "مدیریت وب‌سایت",
     description: "سایت‌ساز اشوبه و مدیریت وردپرس و ووکامرس، هرکدام جدا.",
   },

@@ -70,7 +70,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       roles: ["owner", "manager", "cashier", "accountant"],
     },
     // Phase 36b — loyalty, campaigns/gift cards and commission are one app
-    // now («رشد و بازاریابی», /dashboard/growth), with its own dashboard the
+    // now («رشد و بازاریابی», /growth), with its own dashboard the
     // way accounting has one. The entry is anchored on the `loyalty` module —
     // core for every trade — and the app's own main sidebar restricts its
     // sections by role (src/lib/app-shells.ts hands that sidebar over): a cashier
@@ -79,7 +79,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: "رشد و بازاریابی",
       module: "loyalty",
-      href: "/dashboard/growth",
+      href: "/growth/overview",
       roles: ["owner", "manager", "cashier"],
     },
     // Its own app (issue #378) — an integration with an external system of
@@ -88,7 +88,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: "وب‌سایت",
       module: "website",
-      href: "/dashboard/website",
+      href: "/websites/overview",
       roles: ["owner", "manager"],
     },
     {
@@ -131,7 +131,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: "/dashboard/cosmetics", roles: ["owner", "manager"] }]
       : []),
     // The «حسابداری» sub-menu — the Accounting app's sections, each a real
-    // route under the app's own prefix (`/dashboard/accounting/…`), drawn as a
+    // route under the app's own prefix (`/accounting/…`), drawn as a
     // collapsible sidebar group (the same shape «محصولات» uses) with the app's
     // dashboard as its first entry. The parent keeps its href so the section is
     // still one tap away and still pinnable to the bottom bar; the app's old
@@ -139,7 +139,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: "حسابداری",
       module: "ledger",
-      href: "/dashboard/accounting",
+      href: "/accounting/overview",
       roles: [...ACCOUNTING_ROLES],
       flag: "ledger",
       children: ACCOUNTING_SECTIONS.map((section) => ({
@@ -184,17 +184,17 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
     // Wallet/credits & plans. The small credit badge in the chrome links here
     // too; the nav entry gives owners/managers a permanent door.
-    { label: "اعتبار و پرداخت‌ها", module: "settings", href: "/dashboard/billing", roles: ["owner", "manager"] },
+    { label: "اعتبار و پرداخت‌ها", module: "settings", href: "/settings", roles: ["owner", "manager"] },
     // Settings tabs are already role/permission/feature-filtered server-side
     // (`visibleSettingsTabs`), so they carry no further gate here.
     {
       label: "تنظیمات",
       module: "settings",
-      href: "/dashboard/settings",
+      href: "/settings",
       children: ctx.settingsTabs.map((tab) => ({
         label: tab.label,
         module: "settings" as const,
-        href: `/dashboard/settings?tab=${tab.key}`,
+        href: `/settings?tab=${tab.key}`,
       })),
     },
     // Migration 0131 — the in-product knowledge base («مرکز آموزش»): every
@@ -280,7 +280,7 @@ export default async function DashboardLayout({
     )
     .filter((item) => !item.children || item.children.length > 0)
     .filter((item) => canSee(item, member.role, permissions, features, industry))
-    .filter((item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0)
+    .filter((item) => item.href !== "/settings" || settingsTabs.length > 0)
     .map((item) => {
       // An app that is off is *announced*, not hidden: the entry stays and
       // carries its state's badge («به‌زودی», «در حال تعمیر», «نسخهٔ آزمایشی»),

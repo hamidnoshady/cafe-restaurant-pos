@@ -5,7 +5,7 @@
  * (`?tab=` targets). It is now a real app with one route per section under its
  * own prefix — the same shape `crm-routes.ts` and `growth-routes.ts` keep — so
  * an accounting section is a URL a person can bookmark, share and pin, and the
- * app answers to its own name in the address bar: `/dashboard/accounting/…`,
+ * app answers to its own name in the address bar: `/accounting/…`,
  * the persons directory at `/dashboard/accounting/directory` among them.
  *
  * These keys are the one source of truth for the app's menu
@@ -16,7 +16,7 @@
  */
 
 /** The app's own home — the workspace rail, the sidebar parent and every "open accounting" link point here. */
-export const ACCOUNTING_HOME = "/dashboard/accounting";
+export const ACCOUNTING_HOME = "/accounting/overview";
 
 export const ACCOUNTING_SECTION_KEYS = [
   "dashboard",
@@ -50,7 +50,7 @@ export type AccountingSectionKey = (typeof ACCOUNTING_SECTION_KEYS)[number];
 
 /** The route for a section. The dashboard is the app root; the rest nest under it. */
 export function accountingSectionHref(key: AccountingSectionKey): string {
-  return key === "dashboard" ? ACCOUNTING_HOME : `/dashboard/accounting/${key}`;
+  return key === "dashboard" ? ACCOUNTING_HOME : `/accounting/${key}`;
 }
 
 /** The full customers slice — Accounting's own customer directory. */
