@@ -58,7 +58,10 @@ async function applyOpeningInventory(
   const toImport = rows.filter((row) => !stockMapped.has(row.remoteId));
   if (toImport.length === 0) return 0;
 
-  const costing = await getSetting<{ method?: "fifo" | "weighted_average"; lockedAt?: string | null }>(businessId, SETTING_KEYS.costing);
+  const costing = await getSetting<{ method?: "fifo" | "lifo" | "weighted_average"; system?: "perpetual" | "periodic"; lockedAt?: string | null }>(businessId, SETTING_KEYS.costing);
+  // ادواری: opening stock is the first period-end count, not a priced
+  // stock movement — refuse rather than import a perpetual cost basis.
+  if (costing?.system === "periodic") throw new Error("periodic_system_unsupported");
   const method = costing?.method ?? "fifo";
   const client = await getPool().connect();
   let eventId: string | null = null;
@@ -121,7 +124,7 @@ async function applyOpeningInventory(
          VALUES ($1, $2, 'adjustment', $3, $4, $5, 'opening', $6, 'موجودی افتتاحیه از هلو', $7, $6)`,
         [locationId, itemId, row.quantity, row.unitCostRial.toString(), costValue, eventId, createdBy],
       );
-      if (method === "fifo") {
+      if (method !== "weighted_average") {
         await client.query(
           `INSERT INTO inventory_lots
              (location_id, inventory_item_id, remaining_qty, unit_cost, source_type, source_id,

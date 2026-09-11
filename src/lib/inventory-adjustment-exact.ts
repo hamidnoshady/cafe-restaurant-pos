@@ -28,7 +28,8 @@ import {
   type RialText,
 } from "./inventory-exact";
 import { consumeInventoryExact } from "./inventory-consumption-exact";
-import { getCostingMethod } from "./inventory-service";
+import { isLotBased, type CostingMethod } from "./inventory-costing";
+import { getCostingMethod, getInventorySystem } from "./inventory-service";
 
 export interface ExactStockAdjustmentResult {
   /** Signed whole-Rial variance value: negative for a shortage, positive for a surplus. */
@@ -61,7 +62,7 @@ function derivedUnitCost(value: RialText, quantity: QuantityText): string {
 async function surplusUnitCost(
   client: PoolClient,
   inventoryItemId: string,
-  method: string,
+  method: CostingMethod,
   avgCost: string,
   carryingValue: string | null,
   positivePhysical: Decimal,
@@ -72,7 +73,7 @@ async function surplusUnitCost(
       ? "0"
       : new Decimal(raw ?? "0").toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
   };
-  if (method === "fifo") {
+  if (isLotBased(method)) {
     const { rows } = await client.query<{ quantity: string; value: string }>(
       `SELECT COALESCE(sum(remaining_qty),0)::text quantity,
               COALESCE(sum(remaining_value_rial),0)::text value
@@ -117,6 +118,11 @@ export async function applyStockAdjustmentExact(
     inventoryEventId: string;
   },
 ): Promise<ExactStockAdjustmentResult> {
+  // انبارگردانی is a perpetual instrument — under ادواری the count lives in
+  // the period-close document instead (periodic-closing-service.ts).
+  if ((await getInventorySystem(params.businessId, client)) === "periodic") {
+    throw new Error("periodic_system_unsupported");
+  }
   const delta = new Decimal(params.delta);
   const zero = rialText("0");
   if (delta.eq(0)) {
@@ -237,7 +243,7 @@ export async function applyStockAdjustmentExact(
           difference.toString(),
         ],
       );
-    } else if (method === "fifo") {
+    } else if (isLotBased(method)) {
       await client.query(
         `INSERT INTO inventory_lots
            (location_id,inventory_item_id,remaining_qty,unit_cost,source_type,source_id,inventory_event_id,

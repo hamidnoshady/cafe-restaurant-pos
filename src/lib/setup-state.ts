@@ -39,7 +39,12 @@ export interface BusinessPrefs {
 }
 
 export interface CostingSetting {
-  method: "fifo" | "weighted_average";
+  method: "fifo" | "lifo" | "weighted_average";
+  /**
+   * سیستم دائمی/ادواری. Absent on settings written before the periodic
+   * system existed — treat as "perpetual" (the only behaviour back then).
+   */
+  system?: "perpetual" | "periodic";
   lockedAt: string | null;
 }
 
@@ -264,7 +269,17 @@ export async function costingLocked(businessId: string): Promise<boolean> {
      WHERE l.business_id = $1`,
     [businessId],
   );
-  return n > 0;
+  if (n > 0) return true;
+  // A periodic (ادواری) business never writes stock_movements — its first
+  // inventory transaction is a received purchase (journal-only) or a period
+  // close, so those lock the choice on the same terms.
+  const periodicActivity = await count(
+    `SELECT (SELECT count(*) FROM purchases p JOIN locations l ON l.id = p.location_id
+              WHERE l.business_id = $1 AND p.status = 'received')
+          + (SELECT count(*) FROM periodic_closings WHERE business_id = $1) AS n`,
+    [businessId],
+  );
+  return periodicActivity > 0;
 }
 
 /**

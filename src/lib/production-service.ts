@@ -33,6 +33,7 @@ import {
   type RialText,
 } from "./inventory-exact";
 import { reverseConsumedInventory } from "./inventory-reversal";
+import { isLotBased, type CostingMethod } from "./inventory-costing";
 import { getCostingMethod } from "./inventory-service";
 import { postExactNegativeSettlementEntry } from "./ledger-service";
 import { emitDomainEvent } from "./posting-engine";
@@ -820,7 +821,7 @@ async function withdrawProductionOutput(
     reversalRunId: string;
     reversalEventId: string;
     createdBy: string | null;
-    method: string;
+    method: CostingMethod;
   },
 ): Promise<{ upward: RialText; downward: RialText }> {
   let upward = 0n;
@@ -883,7 +884,7 @@ async function withdrawProductionOutput(
   const positiveValue = params.value - settledValue;
   if (positiveValue < 0n) throw new ProductionError("production_reversal_inconsistent");
 
-  if (params.method === "fifo") {
+  if (isLotBased(params.method)) {
     const { rows: lots } = await client.query<{
       id: string;
       original_quantity: string;

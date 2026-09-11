@@ -3,7 +3,7 @@ import { getSetting, markStepDone, setSetting, SETTING_KEYS } from "@/lib/settin
 import { costingLocked, requireManager, type CostingSetting } from "@/lib/setup-state";
 import { withTenantScope } from "@/lib/auth";
 
-/** Step 3 — inventory costing method (FIFO vs weighted average). */
+/** Step 3 — inventory system (دائمی/ادواری) + costing method (FIFO/LIFO/میانگین). */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
@@ -22,22 +22,28 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
-  let body: { method?: string };
+  let body: { method?: string; system?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (body.method !== "fifo" && body.method !== "weighted_average") {
+  if (body.method !== "fifo" && body.method !== "lifo" && body.method !== "weighted_average") {
     return NextResponse.json({ error: "invalid_method" }, { status: 400 });
+  }
+  // Omitted system means perpetual — the only behaviour before ادواری existed,
+  // and what every pre-existing caller (e.g. the AI setup executor) sends.
+  const system = body.system ?? "perpetual";
+  if (system !== "perpetual" && system !== "periodic") {
+    return NextResponse.json({ error: "invalid_system" }, { status: 400 });
   }
 
   if (await costingLocked(session.businessId)) {
     return NextResponse.json({ error: "costing_locked" }, { status: 409 });
   }
 
-  const setting: CostingSetting = { method: body.method, lockedAt: null };
+  const setting: CostingSetting = { method: body.method, system, lockedAt: null };
   await setSetting(session.businessId, SETTING_KEYS.costing, setting);
   const progress = await markStepDone(session.businessId, "costing");
   return NextResponse.json({ ok: true, progress });

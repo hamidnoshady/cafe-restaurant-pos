@@ -5,8 +5,10 @@ import {
   MissingLedgerAccountError,
   postExactPurchaseEntry,
   postNegativeStockSettlementEntry,
+  postPeriodicPurchaseEntry,
 } from "@/lib/ledger-service";
 import { positiveQuantityText, rialText } from "@/lib/inventory-exact";
+import { getInventorySystem } from "@/lib/inventory-service";
 import { applyPurchaseReceiptCosting } from "@/lib/purchase-receipt-costing";
 import {
   preparePurchaseLines,
@@ -217,6 +219,31 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     if (nextStatus !== "received") {
       await client.query(`UPDATE purchases SET status=$2::purchase_status, ordered_at=CASE WHEN $2::purchase_status='ordered' THEN now() ELSE ordered_at END WHERE id=$1`, [id,nextStatus]);
       await client.query("COMMIT"); return NextResponse.json({ok:true});
+    }
+    // سیستم ادواری: a received purchase is a journal entry only — Debit 5105
+    // «خرید طی دوره» / Credit AP-cash-bank. No stock movement, no lot, no
+    // negative-layer settlement; the period close is what touches 1300/COGS.
+    if ((await getInventorySystem(session.businessId, client)) === "periodic") {
+      const { rows: totals } = await client.query<{ total: string }>(
+        "SELECT COALESCE(sum(extended_cost),0)::text total FROM purchase_items WHERE purchase_id=$1",
+        [id],
+      );
+      if (totals[0].total !== String(purchase.total)) throw new Error("purchase_total_mismatch");
+      await client.query(
+        "UPDATE purchases SET status = 'received', received_at = now(), settlement_method = $2 WHERE id = $1",
+        [id, settlementMethod],
+      );
+      await postPeriodicPurchaseEntry(client, {
+        businessId: session.businessId,
+        locationId: location.id,
+        purchaseId: id,
+        createdBy: session.sub,
+        total: rialText(totals[0].total),
+        settlementMethod,
+      });
+      await enqueueHolooPurchase(client, session.businessId, id, "purchase");
+      await client.query("COMMIT");
+      return NextResponse.json({ ok: true });
     }
     const { rows: items } = await client.query<{
       id:string; inventory_item_id:string; quantity:string; extended_cost:string;

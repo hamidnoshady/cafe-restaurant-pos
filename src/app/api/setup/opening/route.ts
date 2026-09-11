@@ -111,6 +111,12 @@ async function openingInventory(
   if (!costing) {
     return NextResponse.json({ error: "costing_not_set" }, { status: 409 });
   }
+  // سیستم ادواری: opening stock is not a priced stock movement — it is the
+  // business's first period-end count (see periodic-closing-service.ts), so
+  // this perpetual instrument is closed off rather than half-supported.
+  if (costing.system === "periodic") {
+    return NextResponse.json({ error: "periodic_system_unsupported" }, { status: 409 });
+  }
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
@@ -153,7 +159,7 @@ async function openingInventory(
         [location.id, itemId, String(qty), String(cost), eventId, userId],
       );
       totalValue += BigInt(movement[0].value);
-      if (costing.method === "fifo") await client.query(
+      if (costing.method !== "weighted_average") await client.query(
         `INSERT INTO inventory_lots(location_id,inventory_item_id,remaining_qty,unit_cost,source_type,source_id,inventory_event_id)
          VALUES($1,$2,$3,$4,'opening',$5,$5)`,[location.id,itemId,String(qty),String(cost),eventId]);
       else await client.query("UPDATE inventory_items SET avg_cost=$2 WHERE id=$1",[itemId,String(cost)]);

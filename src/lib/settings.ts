@@ -9,7 +9,7 @@ export const SETTING_KEYS = {
   businessPrefs: "business.prefs",
   /** { legalName, taxId, email, website, receiptFooter } — operational business profile */
   businessProfile: "business.profile",
-  /** { method: 'fifo'|'weighted_average', lockedAt: string|null } */
+  /** { method: 'fifo'|'lifo'|'weighted_average', system?: 'perpetual'|'periodic', lockedAt: string|null } */
   costing: "inventory.costing",
   /** { defaultRate: number } — percent, applied to new menu categories */
   tax: "tax.config",

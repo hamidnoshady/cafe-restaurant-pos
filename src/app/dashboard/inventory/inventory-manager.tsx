@@ -46,6 +46,7 @@ import { WarehousesSection } from "./warehouses-section";
 import { DocumentFormSection } from "./document-form-section";
 import { DocumentsSection } from "./documents-section";
 import { StockSection } from "./stock-section";
+import { PeriodicClosingsSection } from "./periodic-closings-section";
 import styles from "./inventory-workspace.module.css";
 
 export interface InventoryItem {
@@ -106,7 +107,8 @@ interface InventoryData {
   modifiers: ModifierRef[];
   recipes: RecipeLink[];
   modifierRecipes: ModifierRecipeLink[];
-  costingMethod: "fifo" | "weighted_average" | null;
+  costingMethod: "fifo" | "lifo" | "weighted_average" | null;
+  inventorySystem: "perpetual" | "periodic" | null;
 }
 
 interface LowStockItem {
@@ -121,6 +123,7 @@ const TABS = [
   { key: "warehouses", label: "لیست انبارها", icon: WarehouseIcon },
   { key: "stock", label: "موجودی انبار", icon: BoxesIcon },
   { key: "counts", label: "انبارگردانی", icon: ClipboardCheckIcon },
+  { key: "periodic-closings", label: "بستن دوره (ادواری)", icon: ClipboardCheckIcon },
   { key: "documents-new", label: "ثبت رسید انبار/حواله", icon: FilePlus2Icon },
   { key: "documents", label: "رسید و حواله‌های انبار", icon: FileTextIcon },
   { key: "items", label: "اقلام انبار", icon: PackageIcon },
@@ -134,8 +137,26 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
+// سیستم ادواری keeps no per-movement cost, so every perpetual instrument —
+// priced counts, رسید/حواله documents, waste, transfers, production — is
+// hidden for a periodic business; بستن دوره is its replacement. The
+// perpetual business never sees the periodic tab, symmetrically.
+const PERPETUAL_ONLY_TABS: readonly TabKey[] = [
+  "counts",
+  "documents-new",
+  "documents",
+  "production",
+  "waste",
+  "transfers",
+];
+
+function visibleTabs(system: "perpetual" | "periodic" | null) {
+  if (system === "periodic") return TABS.filter((t) => !PERPETUAL_ONLY_TABS.includes(t.key));
+  return TABS.filter((t) => t.key !== "periodic-closings");
+}
+
 const GROUPS = [
-  { label: "انبارها", keys: ["warehouses", "stock", "counts"] as const },
+  { label: "انبارها", keys: ["warehouses", "stock", "counts", "periodic-closings"] as const },
   { label: "سند انبار", keys: ["documents-new", "documents"] as const },
   {
     label: "اقلام و عملیات",
@@ -224,7 +245,7 @@ export function InventoryManager({ role }: { role: string }) {
       <SectionNav
         idPrefix="inventory"
         label="بخش‌های انبار"
-        sections={TABS}
+        sections={visibleTabs(data.inventorySystem)}
         groups={GROUPS}
         variant="rail"
         active={tab}
@@ -240,6 +261,7 @@ export function InventoryManager({ role }: { role: string }) {
         ) : null}
         {tab === "stock" ? <StockSection locationId={stockLocationId} /> : null}
         {tab === "counts" ? <StockCountsSection items={data.items} busy={busy} run={run} /> : null}
+        {tab === "periodic-closings" ? <PeriodicClosingsSection items={data.items} busy={busy} run={run} /> : null}
         {tab === "documents-new" ? (
           <DocumentFormSection
             onCreated={() => {

@@ -41,7 +41,8 @@ import {
   type RialText,
 } from "./inventory-exact";
 import { consumeInventoryExact } from "./inventory-consumption-exact";
-import { getCostingMethod } from "./inventory-service";
+import { isLotBased } from "./inventory-costing";
+import { getCostingMethod, getInventorySystem } from "./inventory-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { emitDomainEvent } from "./posting-engine";
 // Side-effect import: registers "inventory.operational_posting" with the engine.
@@ -167,6 +168,10 @@ export async function createWarehouseDocumentInTransaction(
   const location = locationRows[0];
   if (!location) throw new Error("location_not_found");
   if (!location.is_active) throw new Error("location_inactive");
+  // رسید/حواله انبار write priced stock movements — perpetual instruments.
+  if ((await getInventorySystem(params.businessId, client)) === "periodic") {
+    throw new Error("periodic_system_unsupported");
+  }
 
   let supplierId: string | null = null;
   if (params.supplierId) {
@@ -411,7 +416,7 @@ async function applyWarehouseReceiptCosting(
             difference.toString(),
           ],
         );
-      } else if (method === "fifo") {
+      } else if (isLotBased(method)) {
         await client.query(
           `INSERT INTO inventory_lots
              (location_id,inventory_item_id,remaining_qty,unit_cost,source_type,source_id,inventory_event_id,
