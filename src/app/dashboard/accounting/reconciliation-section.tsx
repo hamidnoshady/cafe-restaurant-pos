@@ -7,15 +7,23 @@ import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
-import { api, ErrorBox, errorMessage, inputClass, PrimaryButton } from "../ui";
+import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
+import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { cardClass } from "../page-chrome";
 
-type AccountCode = "cash" | "bankClearing";
+type AccountCode = "cash" | "bank" | "bankClearing";
 
-const ACCOUNTS: { code: AccountCode; label: string }[] = [
-  { code: "cash", label: "صندوق (نقدی)" },
-  { code: "bankClearing", label: "کارت‌خوان (در راه)" },
+/**
+ * The three settlement accounts, matching `RECONCILABLE_ACCOUNTS` in
+ * reconciliation-service.ts. بانک is here because a cheque clears *into the
+ * bank* (Phase 30) — a business taking cheques had movements on ۱۱۱۰ and no
+ * way to reconcile the account this very screen is named after.
+ */
+const ACCOUNTS: { code: AccountCode; label: string; hint: string }[] = [
+  { code: "cash", label: "صندوق (نقدی)", hint: "حساب ۱۱۰۰" },
+  { code: "bank", label: "بانک", hint: "حساب ۱۱۱۰ — وصول چک و انتقال بانکی" },
+  { code: "bankClearing", label: "کارت‌خوان (در راه)", hint: "حساب ۱۱۲۰" },
 ];
 
 interface ReconciliationSummary {
@@ -45,18 +53,6 @@ interface ReconciliationDetail extends ReconciliationSummary {
   lines: ReconciliationLine[];
 }
 
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  order: "سفارش",
-  purchase: "خرید",
-  customer_return: "بازپرداخت مشتری",
-  supplier_return: "برگشت به تأمین‌کننده",
-  ar_receipt: "دریافت از مشتری",
-  ap_payment: "پرداخت به تأمین‌کننده",
-  manual: "سند دستی",
-  expense: "هزینه",
-  payroll_payment: "پرداخت حقوق",
-};
-
 export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean> }) {
   const money = useMoney();
   const [accountCode, setAccountCode] = useState<AccountCode>("cash");
@@ -68,11 +64,18 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
   const [statementDate, setStatementDate] = useState("");
   const [statementBalance, setStatementBalance] = useState("");
 
+  const [loadFailed, setLoadFailed] = useState(false);
+
   useEffect(() => {
     setDetail(null);
+    setHistory(null);
+    setLoadFailed(false);
     api<{ reconciliations: ReconciliationSummary[] }>(`/api/ledger/reconciliations?accountCode=${accountCode}`).then(
       ({ ok, data }) => {
+        // `ledger_account_missing` is the real case here: a chart of accounts
+        // without ۱۱۱۰ cannot be reconciled, and an endless skeleton never said so.
         if (ok) setHistory(data.reconciliations);
+        else setLoadFailed(true);
       },
     );
   }, [accountCode, refreshKey]);
@@ -142,12 +145,13 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
               مانده صورتحساب را با اقلام قابل تطبیق همان حساب مقایسه و در صورت برابری قفل کنید.
             </p>
           </div>
-          <div className="grid min-w-full grid-cols-2 gap-2 sm:min-w-0">
+          <div className="grid min-w-full grid-cols-3 gap-2 sm:min-w-0">
             {ACCOUNTS.map((a) => (
               <button
                 key={a.code}
                 type="button"
                 aria-pressed={accountCode === a.code}
+                title={a.hint}
                 onClick={() => setAccountCode(a.code)}
                 className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${
                   accountCode === a.code
@@ -162,7 +166,16 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
         </div>
 
         <div className="p-4 sm:p-5">
-          {!history ? (
+          {loadFailed ? (
+            <div className="space-y-3">
+              <ErrorBox>
+                بارگذاری تطبیق‌های این حساب ناموفق بود؛ اگر حساب موردنظر در سرفصل حساب‌ها نیست، ابتدا آن را بررسی کنید.
+              </ErrorBox>
+              <div className="max-w-xs">
+                <SecondaryButton onClick={() => setRefreshKey((k) => k + 1)}>تلاش دوباره</SecondaryButton>
+              </div>
+            </div>
+          ) : !history ? (
             <LoadingSkeleton rows={3} />
           ) : !current ? (
             <div className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
@@ -207,7 +220,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
                             <tr key={l.journalLineId} className="border-b border-border last:border-b-0">
                               <td className="px-4 py-3"><input type="checkbox" checked={l.cleared} onChange={(e) => toggleLine(l.journalLineId, e.target.checked)} disabled={busy} aria-label={`تطبیق ${l.memo ?? "سند"}`} /></td>
                               <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{toPersianDigits(formatJalali(l.entryDate))}</td>
-                              <td className="px-4 py-3 text-muted-foreground">{(l.sourceType && SOURCE_TYPE_LABELS[l.sourceType]) ?? l.sourceType ?? "—"}</td>
+                              <td className="px-4 py-3 text-muted-foreground">{ledgerSourceLabel(l.sourceType)}</td>
                               <td className="px-4 py-3 text-foreground">{l.memo ?? "—"}</td>
                               <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">{l.debit ? money.format(l.debit) : "—"}</td>
                               <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">{l.credit ? money.format(l.credit) : "—"}</td>
@@ -224,7 +237,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
                           <input type="checkbox" checked={l.cleared} onChange={(e) => toggleLine(l.journalLineId, e.target.checked)} disabled={busy} className="mt-1 size-5" />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap justify-between gap-2"><h3 className="text-sm font-semibold text-foreground">{l.memo ?? "—"}</h3><span className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.entryDate))}</span></div>
-                            <p className="mt-1 text-xs text-muted-foreground">{(l.sourceType && SOURCE_TYPE_LABELS[l.sourceType]) ?? l.sourceType ?? "—"}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{ledgerSourceLabel(l.sourceType)}</p>
                             <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm"><div><dt className="text-xs text-muted-foreground">بدهکار</dt><dd className="mt-1 font-semibold text-foreground">{l.debit ? money.format(l.debit) : "—"}</dd></div><div><dt className="text-xs text-muted-foreground">بستانکار</dt><dd className="mt-1 font-semibold text-foreground">{l.credit ? money.format(l.credit) : "—"}</dd></div></dl>
                           </div>
                         </div>

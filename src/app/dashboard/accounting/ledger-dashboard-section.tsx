@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "../page-chrome";
 import { api, ErrorBox } from "../ui";
 import type { AccountingSectionKey } from "./accounting-routes";
@@ -64,6 +65,7 @@ export function LedgerDashboardSection({
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
+    setError("");
     api<{ overview: LedgerOverview }>("/api/ledger/overview").then(({ ok, data }) => {
       if (ok) setOverview(data.overview);
       else setError("بارگذاری داشبورد حسابداری ناموفق بود.");
@@ -72,7 +74,14 @@ export function LedgerDashboardSection({
   useEffect(load, [load, refreshKey]);
 
   if (!overview) {
-    return <SectionCardSkeleton rows={4} />;
+    // The skeleton must not outlive a request that failed — the error box did
+    // render, but underneath a spinner-shaped placeholder that never resolved.
+    return (
+      <>
+        <ErrorBox>{error}</ErrorBox>
+        {error ? null : <SectionCardSkeleton rows={4} label="در حال بارگذاری داشبورد حسابداری" />}
+      </>
+    );
   }
 
   const hasActivity = overview.totalDebit !== 0 || overview.totalCredit !== 0;
@@ -179,6 +188,9 @@ export function LedgerDashboardSection({
               <li key={entry.id} className="flex items-center gap-3 py-2.5">
                 <span className="min-w-0 flex-1 truncate text-sm text-foreground/80">
                   {entry.memo?.trim() || "سند بدون شرح"}
+                  {/* What posted it — a fact the endpoint already returned and this
+                      list dropped, leaving five look-alike rows. */}
+                  <span className="ms-2 text-xs text-muted-foreground">{ledgerSourceLabel(entry.sourceType)}</span>
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatJalali(entry.date)}

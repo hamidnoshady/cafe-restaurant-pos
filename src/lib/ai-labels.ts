@@ -84,6 +84,17 @@ export const RESERVATION_STATUS_LABELS: Record<string, string> = {
   no_show: "عدم حضور",
 };
 
+/**
+ * The settlement accounts «تطبیق بانکی» works on. Same three keys as
+ * `RECONCILABLE_ACCOUNTS` in reconciliation-service.ts — kept here as labels so
+ * a tool result names the account instead of handing the model `bankClearing`.
+ */
+export const RECONCILABLE_ACCOUNT_LABELS: Record<string, string> = {
+  cash: "صندوق",
+  bank: "بانک",
+  bankClearing: "کارت‌خوان (در راه)",
+};
+
 /** Falls back to the raw value rather than to an invented translation. */
 export function labelFor(map: Record<string, string>, value: string | null | undefined): string {
   if (!value) return "نامشخص";

@@ -2,6 +2,8 @@ import { getPool, query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
 import { isoDateToJalali, jalaliMonthLength, jalaliToIsoDate } from "./jalali";
+import { isUuid } from "./uuid";
+import { businessToday } from "./business-day-service";
 
 /**
  * Installment schedules (اقساط) — see migrations/0140_installments.sql for the
@@ -65,6 +67,9 @@ export interface InstallmentPlanRow {
   note: string | null;
   createdAt: string;
   paidTotal: number;
+  /** Sum of every slice on the schedule — principal net of the down payment, plus interest. */
+  scheduledTotal: number;
+  /** Sum of the slices still unpaid. */
   remaining: number;
   paidCount: number;
   nextDueDate: string | null;
@@ -83,9 +88,22 @@ export function addJalaliMonths(iso: string, months: number): string {
   return jalaliToIsoDate(jy, jm, jd);
 }
 
-function planStatus(paidCount: number, count: number, nextDueDate: string | null): "open" | "overdue" | "settled" {
+/**
+ * `today` is the *business's* today (`businessToday`), not a UTC date slice.
+ *
+ * A slice due today read «سررسید گذشته» for the first three and a half hours of
+ * every Tehran day, because `new Date().toISOString()` was still on yesterday's
+ * date — and for a branch whose trading day runs 18:00→03:00 that is most of
+ * the shift that would be chasing the payment.
+ */
+function planStatus(
+  paidCount: number,
+  count: number,
+  nextDueDate: string | null,
+  today: string,
+): "open" | "overdue" | "settled" {
   if (paidCount >= count) return "settled";
-  if (nextDueDate && nextDueDate < new Date().toISOString().slice(0, 10)) return "overdue";
+  if (nextDueDate && nextDueDate < today) return "overdue";
   return "open";
 }
 
@@ -102,7 +120,18 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.firstDueDate)) throw new InstallmentError("invalid_due_date");
   const interestPercent = input.interestPercent ?? 0;
   const lateFeePercent = input.lateFeePercent ?? 0;
-  if (interestPercent < 0 || interestPercent > 100 || lateFeePercent < 0 || lateFeePercent > 100) {
+  // `Number.isFinite` first: every comparison against NaN is false, so a NaN
+  // percent (what `Number("۵")` produces, and what the route forwards) walked
+  // straight through a `< 0 || > 100` check and turned every slice amount into
+  // NaN, which the insert then failed on with a 500 rather than a message.
+  if (
+    !Number.isFinite(interestPercent) ||
+    !Number.isFinite(lateFeePercent) ||
+    interestPercent < 0 ||
+    interestPercent > 100 ||
+    lateFeePercent < 0 ||
+    lateFeePercent > 100
+  ) {
     throw new InstallmentError("invalid_percent");
   }
 
@@ -112,14 +141,27 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
 
   if (input.source === "invoice") {
     if (!input.invoiceOrderId) throw new InstallmentError("invoice_required");
-    const { rows } = await query<{ id: string; total: string; customer_id: string | null }>(
-      `SELECT o.id, o.total, o.customer_id FROM orders o
-        JOIN locations l ON l.id = o.location_id
-       WHERE o.id = $1 AND l.business_id = $2 AND o.type = 'retail'`,
+    if (!isUuid(input.invoiceOrderId)) throw new InstallmentError("invoice_not_found", 404);
+    const { rows } = await query<{ id: string; total: string; customer_id: string | null; on_credit: boolean }>(
+      `SELECT o.id, o.total, o.customer_id,
+              EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.method = 'credit') AS on_credit
+         FROM orders o
+         JOIN locations l ON l.id = o.location_id
+        WHERE o.id = $1 AND l.business_id = $2 AND o.type = 'retail'`,
       [input.invoiceOrderId, input.businessId],
     );
     if (!rows[0]) throw new InstallmentError("invoice_not_found", 404);
     if (!rows[0].customer_id) throw new InstallmentError("invoice_has_no_customer");
+    /*
+     * The invoice has to be the one that *raised* the receivable.
+     *
+     * Settling a slice posts an `ar_receipt` — Debit Cash / Credit A/R — so
+     * scheduling an invoice that was already paid in cash credits a receivable
+     * nothing ever debited: A/R drifts negative and the customer's statement
+     * shows money coming in against an invoice they never owed. Only a
+     * credit-settled invoice has a balance to schedule.
+     */
+    if (!rows[0].on_credit) throw new InstallmentError("invoice_not_on_credit");
     invoiceOrderId = rows[0].id;
     partyId = rows[0].customer_id;
     principal = Number(rows[0].total);
@@ -128,6 +170,8 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
   }
 
   if (partyId) {
+    // A non-uuid id raises a Postgres syntax error instead of matching nothing.
+    if (!isUuid(partyId)) throw new InstallmentError("party_not_found", 404);
     const { rows } = await query<{ id: string }>(
       `SELECT id FROM parties WHERE id = $1 AND business_id = $2`,
       [partyId, input.businessId],
@@ -217,14 +261,28 @@ interface PlanDbRow {
   created_at: string;
   paid_total: string | null;
   paid_count: string | null;
+  scheduled_total: string | null;
+  unpaid_total: string | null;
   next_due_date: string | null;
 }
 
-function mapPlanRow(r: PlanDbRow, items?: InstallmentItemRow[]): InstallmentPlanRow {
+/**
+ * `remaining` is the sum of the *unpaid slices*, not `principal - paidTotal`.
+ *
+ * The schedule's total is the financed amount (principal less the down
+ * payment) grossed up by the interest percent, so subtracting payments from the
+ * principal was wrong in both directions at once: a plan with a down payment
+ * showed a balance still owing after the last slice settled — «تسویه شده» next
+ * to a non-zero مانده — and a plan with interest understated what was left.
+ * Asking the slices removes the arithmetic entirely.
+ */
+function mapPlanRow(r: PlanDbRow, today: string, items?: InstallmentItemRow[]): InstallmentPlanRow {
   const count = Number(r.installment_count);
   const paidCount = Number(r.paid_count ?? 0);
   const principal = Number(r.principal);
   const paidTotal = Number(r.paid_total ?? 0);
+  const scheduledTotal = Number(r.scheduled_total ?? 0);
+  const remaining = Number(r.unpaid_total ?? 0);
   const nextDueDate = r.next_due_date ?? null;
   return {
     id: r.id,
@@ -244,10 +302,11 @@ function mapPlanRow(r: PlanDbRow, items?: InstallmentItemRow[]): InstallmentPlan
     note: r.note,
     createdAt: r.created_at,
     paidTotal,
-    remaining: Math.max(principal - paidTotal, 0),
+    scheduledTotal,
+    remaining,
     paidCount,
     nextDueDate,
-    status: planStatus(paidCount, count, nextDueDate),
+    status: planStatus(paidCount, count, nextDueDate, today),
     items,
   };
 }
@@ -261,6 +320,10 @@ const PLAN_SELECT = `
            WHERE i.installment_id = p.id AND i.paid_at IS NOT NULL) AS paid_total,
          (SELECT count(*) FROM installment_items i
            WHERE i.installment_id = p.id AND i.paid_at IS NOT NULL) AS paid_count,
+         (SELECT COALESCE(sum(i.amount), 0) FROM installment_items i
+           WHERE i.installment_id = p.id) AS scheduled_total,
+         (SELECT COALESCE(sum(i.amount), 0) FROM installment_items i
+           WHERE i.installment_id = p.id AND i.paid_at IS NULL) AS unpaid_total,
          (SELECT min(i.due_date)::text FROM installment_items i
            WHERE i.installment_id = p.id AND i.paid_at IS NULL) AS next_due_date
     FROM installments p
@@ -278,7 +341,8 @@ export async function listInstallmentPlans(
     [businessId, filters.direction],
   );
   const q = filters.q?.trim();
-  let plans = rows.map((r) => mapPlanRow(r));
+  const today = await businessToday(businessId);
+  let plans = rows.map((r) => mapPlanRow(r, today));
   if (q) {
     plans = plans.filter(
       (p) =>
@@ -308,7 +372,7 @@ export async function getInstallmentPlan(businessId: string, planId: string): Pr
        FROM installment_items WHERE installment_id = $1 ORDER BY seq`,
     [planId],
   );
-  return mapPlanRow(rows[0], itemRows.map((i) => ({
+  return mapPlanRow(rows[0], await businessToday(businessId), itemRows.map((i) => ({
     id: i.id,
     seq: Number(i.seq),
     dueDate: i.due_date,
@@ -479,7 +543,12 @@ export async function listPayments(businessId: string, q?: string) {
     memo: string | null;
     party_name: string | null;
   }>(
-    `SELECT p.id, p.payment_date::text AS payment_date, p.method, p.amount::text AS amount, p.memo, pa.name AS party_name
+    // The party's name when the branch alias is linked to one, else the alias's
+    // own — the same COALESCE A/P and the store use. Reading only `parties.name`
+    // showed the placeholder «تأمین‌کننده» for every supplier row predating the
+    // party link, which is most of them in an upgraded business.
+    `SELECT p.id, p.payment_date::text AS payment_date, p.method, p.amount::text AS amount, p.memo,
+            COALESCE(pa.name, s.name) AS party_name
        FROM ap_payments p
        LEFT JOIN suppliers s ON s.id = p.supplier_id
        LEFT JOIN parties pa ON pa.id = s.party_id
@@ -495,7 +564,7 @@ export async function listPayments(businessId: string, q?: string) {
       method: r.method,
       amount: Number(r.amount),
       memo: r.memo,
-      partyName: r.party_name ?? "تأمین‌کننده",
+      partyName: r.party_name ?? "بدون تأمین‌کننده مشخص",
     }))
     .filter((r) => !needle || r.partyName.includes(needle) || (r.memo ?? "").includes(needle));
 }

@@ -8,6 +8,7 @@ import { formatJalali } from "@/lib/jalali";
 import { auditActionLabel } from "@/lib/audit";
 import { api } from "../ui";
 import { overlayPanelClass } from "../page-chrome";
+import { useOverlayEscape } from "./use-overlay-escape";
 
 interface HistoryEntry {
   id: number;
@@ -55,6 +56,7 @@ export function AccountHistoryPanel({
   onClose: () => void;
 }) {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  useOverlayEscape(onClose);
 
   useEffect(() => {
     setEntries(null);

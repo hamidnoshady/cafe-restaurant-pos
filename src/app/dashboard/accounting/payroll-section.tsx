@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { Runner } from "./accounting-manager";
@@ -50,6 +51,16 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
   const [periodLabel, setPeriodLabel] = useState("");
   const [accrualDate, setAccrualDate] = useState("");
   const [localError, setLocalError] = useState("");
+  /*
+   * «پرداخت از» — the account the payout leaves.
+   *
+   * `POST /api/ledger/payroll/runs/:id/pay` has accepted `cash` or `bank` since
+   * this feature shipped, and the payment posts against whichever is chosen.
+   * The button hardcoded `cash` and said «پرداخت (از صندوق)», so a business
+   * paying wages by transfer had to either post it from the till or write the
+   * entry by hand.
+   */
+  const [payMethod, setPayMethod] = useState<Record<string, "cash" | "bank">>({});
 
   function load() {
     api<{ staff: StaffWage[] }>("/api/ledger/payroll/staff").then(({ ok, data }) => {
@@ -58,10 +69,18 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         setWageInputs(
           Object.fromEntries(data.staff.map((s) => [s.id, s.monthlyWage != null ? String(money.toInput(s.monthlyWage)) : ""])),
         );
+      } else {
+        // An endless skeleton reads as "still loading"; name the failure.
+        setStaff([]);
+        setLocalError("بارگذاری فهرست کارکنان ناموفق بود.");
       }
     });
     api<{ runs: PayrollRun[] }>("/api/ledger/payroll/runs").then(({ ok, data }) => {
       if (ok) setRuns(data.runs);
+      else {
+        setRuns([]);
+        setLocalError("بارگذاری تاریخچه حقوق ناموفق بود.");
+      }
     });
   }
 
@@ -102,7 +121,8 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
   }
 
   async function pay(runId: string) {
-    await run(() => api("/api/ledger/payroll/runs/" + runId + "/pay", { method: "POST", body: JSON.stringify({ method: "cash" }) }));
+    const method = payMethod[runId] ?? "cash";
+    await run(() => api("/api/ledger/payroll/runs/" + runId + "/pay", { method: "POST", body: JSON.stringify({ method }) }));
   }
 
   if (!staff || !runs) {
@@ -117,7 +137,11 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         <header className="border-b border-border/80 px-4 py-4 sm:px-5">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تنظیمات حقوق</p>
           <h2 id="payroll-wages-heading" className="mt-1 text-base font-semibold text-foreground">حقوق ماهانه کارکنان</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">مبلغ حقوق هر کارمند را به تومان وارد و ذخیره کنید.</p>
+          {/* The unit is the business's own choice (ریال/تومان), so it comes from
+              the money context rather than being asserted in the copy. */}
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            مبلغ حقوق هر کارمند را به {money.unitLabel} وارد و ذخیره کنید.
+          </p>
         </header>
 
         <div className="p-4 sm:p-5">
@@ -228,9 +252,21 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
                 </div>
 
                 {r.status === "accrued" ? (
-                  <div className="mt-4 max-w-xs">
+                  <div className="mt-4 grid gap-3 border-t border-border pt-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,14rem)] sm:items-end">
+                    <label className="block text-sm font-medium">
+                      <span className="mb-1.5 block text-xs text-muted-foreground">پرداخت از</span>
+                      <SearchableSelect
+                        value={payMethod[r.id] ?? "cash"}
+                        onChange={(value) => setPayMethod((prev) => ({ ...prev, [r.id]: value as "cash" | "bank" }))}
+                        ariaLabel={`حساب پرداخت حقوق دوره ${r.periodLabel}`}
+                        options={[
+                          { value: "cash", label: "صندوق (نقدی)" },
+                          { value: "bank", label: "بانکی" },
+                        ]}
+                      />
+                    </label>
                     <SecondaryButton onClick={() => pay(r.id)} disabled={busy}>
-                      پرداخت (از صندوق)
+                      ثبت پرداخت حقوق
                     </SecondaryButton>
                   </div>
                 ) : null}

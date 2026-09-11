@@ -11,7 +11,7 @@ import {
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { isoDateToJalali } from "@/lib/jalali";
+import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
@@ -28,6 +28,7 @@ import {
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { Button } from "@/components/ui/button";
 import type { InstallmentPlanRow } from "@/lib/installments-service";
+import { useOverlayEscape } from "./use-overlay-escape";
 
 /**
  * «کارت اقساط» — the installment schedule card. Functions follow the trade's
@@ -36,11 +37,23 @@ import type { InstallmentPlanRow } from "@/lib/installments-service";
  * teal actions, Persian digits everywhere.
  */
 
+/**
+ * `formatJalali`, not a second hand-rolled conversion — the repo keeps one
+ * Shamsi formatter so two screens cannot disagree about a date.
+ */
 function fmtJalali(iso: string | null): string {
   if (!iso) return "—";
-  const j = isoDateToJalali(iso.slice(0, 10));
-  if (!j) return "—";
-  return toPersianDigits(`${j.jy}/${String(j.jm).padStart(2, "0")}/${String(j.jd).padStart(2, "0")}`);
+  return toPersianDigits(formatJalali(iso.slice(0, 10)));
+}
+
+/**
+ * Today as the reader's calendar names it. `new Date().toISOString()` is the
+ * UTC date, which is still yesterday for the first three and a half hours of
+ * every Tehran day — so the default first due date, and the «تاریخ ثبت» line,
+ * were a day behind for anyone opening this before 03:30.
+ */
+function todayIso(): string {
+  return isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
 }
 
 const chipClass = (active: boolean) =>
@@ -74,9 +87,15 @@ export function InstallmentsSection() {
   const load = useCallback(() => {
     const params = new URLSearchParams({ direction, status });
     if (q.trim()) params.set("q", q.trim());
+    setError("");
     api<{ plans: InstallmentPlanRow[]; error?: string }>(`/api/ledger/installments?${params}`).then(({ ok, data }) => {
       if (ok) setPlans(data.plans);
-      else setError(errorMessage(data.error));
+      else {
+        // An empty array rather than `null`: the skeleton must not outlive the
+        // request that failed, or a failure reads as "still loading".
+        setPlans([]);
+        setError(errorMessage(data.error));
+      }
     });
   }, [direction, status, q]);
 
@@ -154,7 +173,7 @@ export function InstallmentsSection() {
                     <tr className="border-b border-border bg-stone-50 dark:bg-stone-500/10">
                       <th className="py-3 pe-3 ps-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">#</th>
                       <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">عنوان</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">مبلغ کل</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">مبلغ اصل</th>
                       <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">مانده</th>
                       <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">تعداد اقساط</th>
                       <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">سررسید بعدی</th>
@@ -224,7 +243,7 @@ export function InstallmentsSection() {
                       )}
                     </div>
                     <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
-                      <div><dt className="text-xs text-muted-foreground">مبلغ کل</dt><dd className="mt-1 font-semibold">{money.format(p.principal)}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">مبلغ اصل</dt><dd className="mt-1 font-semibold">{money.format(p.principal)}</dd></div>
                       <div><dt className="text-xs text-muted-foreground">مانده</dt><dd className="mt-1 font-semibold">{money.format(p.remaining)}</dd></div>
                     </dl>
                     <button type="button" onClick={() => setDetailId(p.id)} className="mt-3 w-full rounded-lg bg-amber-100 dark:bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
@@ -277,7 +296,7 @@ function CreateInstallmentPanel({
   const [amount, setAmount] = useState("");
   const [count, setCount] = useState(4);
   const [intervalMonths, setIntervalMonths] = useState(1);
-  const [firstDueDate, setFirstDueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [firstDueDate, setFirstDueDate] = useState(todayIso);
   const [downPayment, setDownPayment] = useState("");
   const [hasDownPayment, setHasDownPayment] = useState(false);
   const [hasInterest, setHasInterest] = useState(false);
@@ -288,6 +307,7 @@ function CreateInstallmentPanel({
   const [moreSettings, setMoreSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useOverlayEscape(onClose);
 
   useEffect(() => {
     const role = direction === "receivable" ? "Customer" : "Supplier";
@@ -295,8 +315,11 @@ function CreateInstallmentPanel({
       if (ok) setParties((data.customers ?? []) as { id: string; name: string }[]);
     });
     if (direction === "receivable") {
+      // `method=credit` only: an invoice already paid in cash has no receivable
+      // to schedule, and the service refuses one (`invoice_not_on_credit`), so
+      // listing it would only offer an error.
       api<{ invoices?: { id: string; orderNumber: number; total: number; customerName: string | null }[] }>(
-        "/api/sales/invoices?pageSize=100",
+        "/api/sales/invoices?pageSize=100&method=credit",
       ).then(({ ok, data }) => {
         if (ok) setInvoices(data.invoices ?? []);
         else setInvoicesAvailable(false);
@@ -375,7 +398,7 @@ function CreateInstallmentPanel({
                 پرداختنی
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">تاریخ ثبت: {fmtJalali(new Date().toISOString().slice(0, 10))}</p>
+            <p className="text-xs text-muted-foreground">تاریخ ثبت: {fmtJalali(todayIso())}</p>
           </div>
 
           <div>
@@ -407,7 +430,7 @@ function CreateInstallmentPanel({
                 }`}
               >
                 <FileTextIcon aria-hidden="true" className="size-4 text-amber-800 dark:text-amber-300" />
-                فاکتورهای فروش
+                فاکتورهای نسیه
                 {source === "invoice" ? <CheckIcon aria-hidden="true" className="ms-auto size-4" /> : null}
               </button>
             </div>
@@ -424,7 +447,7 @@ function CreateInstallmentPanel({
                 />
               </Field>
             ) : (
-              <Field label="فاکتور فروش">
+              <Field label="فاکتور نسیه">
                 <SearchableSelect
                   value={invoiceOrderId}
                   onChange={setInvoiceOrderId}
@@ -461,7 +484,21 @@ function CreateInstallmentPanel({
             </Field>
             <Field label="فاصله اقساط">
               <div className="flex items-center gap-2">
-                <input className={`${inputClass} w-20`} dir="ltr" inputMode="numeric" value={toPersianDigits(String(intervalMonths))} onChange={(e) => { const n = parseInt(e.target.value.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))), 10); setIntervalMonths(Number.isFinite(n) && n > 0 ? Math.min(n, 36) : 1); }} />
+                {/* PersianNumberInput already hands back canonical ASCII, so the
+                    digit-by-digit translation this used to do by hand is gone. */}
+                <PersianNumberInput
+                  className={`${inputClass} w-20`}
+                  dir="ltr"
+                  inputMode="numeric"
+                  grouping={false}
+                  allowNegative={false}
+                  aria-label="فاصله اقساط به ماه"
+                  value={String(intervalMonths)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setIntervalMonths(Number.isFinite(n) && n > 0 ? Math.min(Math.trunc(n), 36) : 1);
+                  }}
+                />
                 <span className="text-sm text-muted-foreground">ماه</span>
               </div>
             </Field>
@@ -488,15 +525,38 @@ function CreateInstallmentPanel({
                   <input type="checkbox" checked={hasInterest} onChange={(e) => setHasInterest(e.target.checked)} className="size-4 accent-amber-600" />
                   محاسبه سود (درصد)
                 </label>
+                {/* A plain <input> here meant a Persian «۵» arrived as NaN and the
+                    plan was created with no interest at all (or, before the service
+                    learned to refuse it, failed with an unexplained server error). */}
                 {hasInterest ? (
-                  <input className={`${inputClass} max-w-48`} dir="ltr" inputMode="decimal" value={interest} onChange={(e) => setInterest(e.target.value)} placeholder="۰" />
+                  <PersianNumberInput
+                    className={`${inputClass} max-w-48`}
+                    dir="ltr"
+                    inputMode="decimal"
+                    grouping={false}
+                    allowNegative={false}
+                    aria-label="درصد سود"
+                    value={interest}
+                    onChange={(e) => setInterest(e.target.value)}
+                    placeholder="۰"
+                  />
                 ) : null}
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={hasLateFee} onChange={(e) => setHasLateFee(e.target.checked)} className="size-4 accent-amber-600" />
                   جریمه دیرکرد (درصد)
                 </label>
                 {hasLateFee ? (
-                  <input className={`${inputClass} max-w-48`} dir="ltr" inputMode="decimal" value={lateFee} onChange={(e) => setLateFee(e.target.value)} placeholder="۰" />
+                  <PersianNumberInput
+                    className={`${inputClass} max-w-48`}
+                    dir="ltr"
+                    inputMode="decimal"
+                    grouping={false}
+                    allowNegative={false}
+                    aria-label="درصد جریمه دیرکرد"
+                    value={lateFee}
+                    onChange={(e) => setLateFee(e.target.value)}
+                    placeholder="۰"
+                  />
                 ) : null}
               </div>
             ) : null}
@@ -528,10 +588,13 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
   const [method, setMethod] = useState<"cash" | "bank">("cash");
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
+  useOverlayEscape(onClose);
 
   const load = useCallback(() => {
     api<{ plan: InstallmentPlanRow; error?: string }>(`/api/ledger/installments/${planId}`).then(({ ok, data }) => {
+      // Without the else this panel sat on a skeleton for ever on any failure.
       if (ok) setPlan(data.plan);
+      else setError(errorMessage(data.error));
     });
   }, [planId]);
   useEffect(load, [load]);
@@ -581,10 +644,17 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
             <LoadingSkeleton rows={4} />
           ) : (
             <div className="space-y-4">
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <div className="rounded-xl border border-border/80 bg-muted px-3 py-2">
-                  <dt className="text-xs text-muted-foreground">مبلغ کل</dt>
+                  <dt className="text-xs text-muted-foreground">مبلغ اصل</dt>
                   <dd className="mt-1 text-sm font-bold">{money.format(plan.principal)}</dd>
+                </div>
+                {/* The schedule's own total: principal less the down payment, plus
+                    interest. Showing only the principal hid the interest a plan
+                    actually charges. */}
+                <div className="rounded-xl border border-border/80 bg-muted px-3 py-2">
+                  <dt className="text-xs text-muted-foreground">جمع اقساط</dt>
+                  <dd className="mt-1 text-sm font-bold">{money.format(plan.scheduledTotal)}</dd>
                 </div>
                 <div className="rounded-xl border border-border/80 bg-muted px-3 py-2">
                   <dt className="text-xs text-muted-foreground">مانده</dt>

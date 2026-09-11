@@ -1,9 +1,13 @@
 /**
  * Phase 16 — bank & cash reconciliation.
  *
- * Reconciles one account (cash or bank-clearing — the only two accounts
- * anything in this system posts to) against a manually-entered statement
- * ending balance. A reconciliation's candidate lines are every journal line
+ * Reconciles one settlement account against a manually-entered statement
+ * ending balance. Three accounts qualify: صندوق (`cash`), بانک (`bank`) and
+ * کارت‌خوان در راه (`bankClearing`). `bank` was missing until now, from a time
+ * when nothing posted to it — but since Phase 30 a cheque *clears into the
+ * bank* (cheques-service.ts posts 1110 on `clear`/`present`), so a business
+ * that takes cheques had movements on 1110 and no way to reconcile the very
+ * account «تطبیق بانکی» is named after. A reconciliation's candidate lines are every journal line
  * ever posted to the account, up to the statement date, that no earlier
  * *completed* reconciliation has already claimed — so "unreconciled items
  * carry forward" is just what's left unclaimed, not a separate step.
@@ -19,12 +23,25 @@
 import { getPool, query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 
-export type ReconcilableAccount = "cash" | "bankClearing";
+export type ReconcilableAccount = "cash" | "bank" | "bankClearing";
 
-const ACCOUNT_CODES: Record<ReconcilableAccount, string> = {
+export const RECONCILABLE_ACCOUNTS: readonly ReconcilableAccount[] = ["cash", "bank", "bankClearing"];
+
+/** Exported so the assistant's own «تطبیق نشده» tool reads the same three accounts. */
+export const RECONCILABLE_ACCOUNT_CODES: Record<ReconcilableAccount, string> = {
   cash: WELL_KNOWN_CODES.cash,
+  bank: WELL_KNOWN_CODES.bank,
   bankClearing: WELL_KNOWN_CODES.bankClearing,
 };
+
+/**
+ * code → key, so a third account cannot be mislabelled as the fallback. The
+ * two-way ternary this replaced read "cash, else bankClearing", which would
+ * have reported every بانک reconciliation as a کارت‌خوان one.
+ */
+const ACCOUNT_KEYS_BY_CODE = new Map<string, ReconcilableAccount>(
+  RECONCILABLE_ACCOUNTS.map((key) => [RECONCILABLE_ACCOUNT_CODES[key], key]),
+);
 
 export class ReconciliationError extends Error {
   status: number;
@@ -37,7 +54,7 @@ export class ReconciliationError extends Error {
 async function resolveAccountId(businessId: string, accountCode: ReconcilableAccount): Promise<string> {
   const { rows } = await query<{ id: string }>(
     `SELECT id FROM accounts WHERE business_id = $1 AND code = $2`,
-    [businessId, ACCOUNT_CODES[accountCode]],
+    [businessId, RECONCILABLE_ACCOUNT_CODES[accountCode]],
   );
   if (!rows[0]) throw new ReconciliationError("ledger_account_missing", 409);
   return rows[0].id;
@@ -64,7 +81,7 @@ interface ReconciliationRow extends Record<string, unknown> {
 function toSummary(r: ReconciliationRow): ReconciliationSummary {
   return {
     id: r.id,
-    accountCode: r.account_code === ACCOUNT_CODES.cash ? "cash" : "bankClearing",
+    accountCode: ACCOUNT_KEYS_BY_CODE.get(r.account_code) ?? "cash",
     statementDate: r.statement_date,
     statementBalance: Number(r.statement_balance),
     status: r.status,
@@ -227,7 +244,7 @@ export async function createReconciliation(params: {
       [params.businessId, accountId, params.statementDate, params.statementBalance, params.createdBy],
     );
     await client.query("COMMIT");
-    return toSummary({ ...rows[0], account_code: ACCOUNT_CODES[params.accountCode] });
+    return toSummary({ ...rows[0], account_code: RECONCILABLE_ACCOUNT_CODES[params.accountCode] });
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
