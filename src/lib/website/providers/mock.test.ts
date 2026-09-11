@@ -14,6 +14,14 @@ describe("Phase 38 Wave 1 — the mock adapter implements every method of the in
     expect(await adapter.testConnection()).toEqual({ ok: true, siteName: "کافه نمونه" });
   });
 
+  it("uploads a featured image before attaching it to a draft", async () => {
+    const adapter = new MockWebsiteAdapter();
+    const media = await adapter.uploadMedia({ filename: "hero.webp", mimeType: "image/webp", bytes: new Uint8Array([7]), alt: "کیک" });
+    expect(media).toMatchObject({ id: "media_1", url: "https://example.test/media/media_1", filename: "hero.webp" });
+    const post = await adapter.draftPost({ title: "کیک", body: "متن", featuredImageId: media.id });
+    expect(post.featuredImageUrl).toBe("https://example.test/media/media_1");
+  });
+
   it("drafts a post as a draft regardless of what the caller wants, and publishes only on publishPost", async () => {
     const adapter = new MockWebsiteAdapter({ now: fixedClock() });
     const draft = await adapter.draftPost({ title: "قهوهٔ تازه", body: "متن" });

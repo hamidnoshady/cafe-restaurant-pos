@@ -20,6 +20,7 @@ import { addItemsToOrder, createOrder } from "./order-mutations";
 import type { DiscountInput } from "./orders";
 import { classifyStatusReplay } from "./offline-sync";
 import type { OrderItemStatus } from "./order-item-status";
+import { recordCoworkerEvent } from "./ai-coworker-events";
 
 export type SyncEventType = "order.create" | "order.add_items" | "order_item.status";
 
@@ -150,6 +151,20 @@ async function dispatch(
       itemId: payload.itemId,
       status: payload.status,
     });
+    if (payload.status === "ready") {
+      const { rows: readyOrders } = await query<{ customer_id: string; business_id: string }>(
+        `SELECT o.customer_id, l.business_id FROM orders o JOIN locations l ON l.id = o.location_id
+          WHERE o.id = $1 AND o.customer_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM order_items oi
+                             WHERE oi.order_id = o.id AND oi.status NOT IN ('ready', 'served'))`,
+        [item.order_id],
+      );
+      if (readyOrders[0]) await recordCoworkerEvent({
+        businessId: readyOrders[0].business_id, locationId, kind: "order_ready",
+        payload: { customerId: readyOrders[0].customer_id, orderId: item.order_id },
+        dedupeKey: `order-ready:${item.order_id}`,
+      });
+    }
     return { data: { status: payload.status } };
   }
 

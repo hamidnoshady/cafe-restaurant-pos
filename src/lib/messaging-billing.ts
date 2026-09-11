@@ -81,7 +81,18 @@ export interface MessageSaveConfigInput {
 }
 
 export interface MessageBusinessBilling {
+  /** Always reconstructed from the signed ledger; never a cached balance. */
   balanceRial: number;
+}
+
+export interface MessageCreditPackage {
+  id: string;
+  name: string;
+  priceRial: number;
+  creditAmountRial: number;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
 }
 
 export interface MessageLedgerEntry {
@@ -355,12 +366,97 @@ export async function savePlatformMessageConfig(
 // Business billing, history and top-ups
 // ---------------------------------------------------------------------------
 
+/**
+ * The balance deliberately has no cache column.  A signed ledger is the source
+ * of truth, so restoring a backup or retrying a settlement cannot make a
+ * business appear richer or poorer than its transaction history says.
+ */
 export async function getMessageBusinessBilling(businessId: string): Promise<MessageBusinessBilling> {
-  const { rows } = await query<{ balance_rial: string | null }>(
-    `SELECT balance_rial FROM message_business_billing WHERE business_id = $1`,
-    [businessId],
-  );
-  return { balanceRial: numberValue(rows[0]?.balance_rial) };
+  return { balanceRial: await getMessageLedgerBalance(businessId) };
+}
+
+function toCreditPackage(row: {
+  id: string;
+  name: string;
+  price_rial: string | number;
+  credit_amount_rial: string | number;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+}): MessageCreditPackage {
+  return {
+    id: row.id,
+    name: row.name,
+    priceRial: numberValue(row.price_rial),
+    creditAmountRial: numberValue(row.credit_amount_rial),
+    isActive: row.is_active,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+  };
+}
+
+/** The owner only sees packages that the platform currently offers. */
+export async function listMessageCreditPackages(activeOnly = false): Promise<MessageCreditPackage[]> {
+  return withoutTenantScope("platform", async () => {
+    const { rows } = await query<{
+      id: string;
+      name: string;
+      price_rial: string | number;
+      credit_amount_rial: string | number;
+      is_active: boolean;
+      sort_order: number;
+      created_at: string;
+    }>(
+      `SELECT id, name, price_rial, credit_amount_rial, is_active, sort_order, created_at
+         FROM message_credit_packages
+        WHERE ($1::boolean = false OR is_active)
+        ORDER BY sort_order, created_at, id`,
+      [activeOnly],
+    );
+    return rows.map(toCreditPackage);
+  });
+}
+
+/** Platform-console package upsert. Amounts are integer Rial by contract. */
+export async function saveMessageCreditPackage(input: {
+  id?: string;
+  name: string;
+  priceRial: number;
+  creditAmountRial: number;
+  isActive?: boolean;
+  sortOrder?: number;
+}): Promise<MessageCreditPackage> {
+  const name = input.name.trim();
+  if (!name || !nonNegativeInt(input.priceRial) || input.priceRial <= 0 || !nonNegativeInt(input.creditAmountRial) || input.creditAmountRial <= 0) {
+    throw new Error("invalid_message_credit_package");
+  }
+  return withoutTenantScope("platform", async () => {
+    const { rows } = await query<{
+      id: string;
+      name: string;
+      price_rial: string | number;
+      credit_amount_rial: string | number;
+      is_active: boolean;
+      sort_order: number;
+      created_at: string;
+    }>(
+      input.id
+        ? `UPDATE message_credit_packages
+              SET name = $2, price_rial = $3, credit_amount_rial = $4,
+                  is_active = $5, sort_order = $6, updated_at = now()
+            WHERE id = $1
+            RETURNING id, name, price_rial, credit_amount_rial, is_active, sort_order, created_at`
+        : `INSERT INTO message_credit_packages
+              (name, price_rial, credit_amount_rial, is_active, sort_order)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, name, price_rial, credit_amount_rial, is_active, sort_order, created_at`,
+      input.id
+        ? [input.id, name, input.priceRial, input.creditAmountRial, input.isActive !== false, Math.trunc(input.sortOrder ?? 0)]
+        : [name, input.priceRial, input.creditAmountRial, input.isActive !== false, Math.trunc(input.sortOrder ?? 0)],
+    );
+    if (!rows[0]) throw new Error("message_credit_package_not_found");
+    return toCreditPackage(rows[0]);
+  });
 }
 
 export async function listRecentMessageLedger(
@@ -394,19 +490,41 @@ export async function listRecentMessageLedger(
 
 export async function createMessageTopUpRequest(input: {
   businessId: string;
-  amountRial: number;
+  /** An offered package fixes both the price and the granted credit server-side. */
+  packageId?: string;
+  /** Kept for manual bank-transfer requests when no package is selected. */
+  amountRial?: number;
   note?: string;
 }): Promise<MessageTopUpRequest> {
-  if (!Number.isSafeInteger(input.amountRial) || input.amountRial <= 0) {
+  let packageId: string | null = null;
+  let packageName = "مبلغ دلخواه";
+  let priceRial = input.amountRial;
+  let creditAmountRial = input.amountRial;
+
+  if (input.packageId) {
+    const packages = await listMessageCreditPackages(true);
+    const selected = packages.find((p) => p.id === input.packageId);
+    if (!selected) throw new Error("message_credit_package_not_found");
+    packageId = selected.id;
+    packageName = selected.name;
+    priceRial = selected.priceRial;
+    creditAmountRial = selected.creditAmountRial;
+  }
+  if (typeof priceRial !== "number" || !Number.isSafeInteger(priceRial) || priceRial <= 0 ||
+      typeof creditAmountRial !== "number" || !Number.isSafeInteger(creditAmountRial) || creditAmountRial <= 0) {
     throw new Error("invalid_amount");
   }
+  // TypeScript cannot retain the numeric guard through the branch above.
+  const safePriceRial = priceRial as number;
+  const safeCreditAmountRial = creditAmountRial as number;
+
   const { rows } = await query<MessageTopUpRequestRow>(
     `INSERT INTO message_top_up_requests
        (business_id, package_id, package_name, price_rial, credit_amount_rial, note)
-     VALUES ($1, NULL, 'مبلغ دلخواه', $2, $2, $3)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id, business_id, package_id, package_name, price_rial,
                credit_amount_rial, note, status, reviewed_at, created_at`,
-    [input.businessId, input.amountRial, input.note?.trim() || null],
+    [input.businessId, packageId, packageName, safePriceRial, safeCreditAmountRial, input.note?.trim() || null],
   );
   return toTopUpRequest(rows[0], null);
 }
@@ -518,18 +636,11 @@ async function grantMessageCreditInTransaction(
     platformAdminId?: string | null;
   },
 ): Promise<string> {
-  const { rows } = await client.query<{ business_id: string }>(
-    `INSERT INTO message_business_billing (business_id, balance_rial)
-     VALUES ($1, $2)
-     ON CONFLICT (business_id)
-       DO UPDATE SET balance_rial = message_business_billing.balance_rial + $2, updated_at = now()
-     RETURNING business_id`,
-    [input.businessId, input.amountRial],
-  );
-  await client.query(
+  const { rows } = await client.query<{ id: string }>(
     `INSERT INTO message_credit_ledger
        (business_id, kind, amount_rial, note, created_by_user_id, platform_admin_id)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
     [
       input.businessId,
       input.kind,
@@ -539,7 +650,21 @@ async function grantMessageCreditInTransaction(
       input.platformAdminId ?? null,
     ],
   );
-  return rows[0]?.business_id ?? input.businessId;
+  return rows[0]?.id ?? "";
+}
+
+/** Serialises a business's balance-changing ledger transaction without a mutable balance row. */
+async function lockMessageCreditLedger(client: PoolClient, businessId: string): Promise<void> {
+  await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 7310318183545164275))`, [businessId]);
+}
+
+async function messageLedgerBalanceInTransaction(client: PoolClient, businessId: string): Promise<number> {
+  const { rows } = await client.query<{ balance_rial: string | null }>(
+    `SELECT coalesce(sum(amount_rial), 0)::text AS balance_rial
+       FROM message_credit_ledger WHERE business_id = $1`,
+    [businessId],
+  );
+  return numberValue(rows[0]?.balance_rial);
 }
 
 // ---------------------------------------------------------------------------
@@ -562,23 +687,13 @@ export async function reserveMessageSend(input: {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const { rows } = await client.query<{ balance_rial: string }>(
-      `SELECT balance_rial FROM message_business_billing
-        WHERE business_id = $1 FOR UPDATE`,
-      [input.businessId],
-    );
-    const balance = numberValue(rows[0]?.balance_rial);
+    await lockMessageCreditLedger(client, input.businessId);
+    const balance = await messageLedgerBalanceInTransaction(client, input.businessId);
     if (balance < input.reservedRial) {
       await client.query("ROLLBACK");
       throw new MessageInsufficientCreditError();
     }
     const requestId = randomUUID();
-    await client.query(
-      `UPDATE message_business_billing
-          SET balance_rial = balance_rial - $2, updated_at = now()
-        WHERE business_id = $1`,
-      [input.businessId, input.reservedRial],
-    );
     await client.query(
       `INSERT INTO message_credit_ledger
          (business_id, kind, amount_rial, request_id, created_by_user_id, metadata)
@@ -594,11 +709,7 @@ export async function reserveMessageSend(input: {
     await client.query("COMMIT");
     return { requestId, reservedRial: input.reservedRial };
   } catch (error) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {
-      // already rolled back
-    }
+    await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
     client.release();
@@ -622,11 +733,13 @@ export async function settleMessageSend(input: {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await lockMessageCreditLedger(client, input.businessId);
     const { rows } = await client.query<{ id: string }>(
       `UPDATE message_credit_ledger
           SET actual_cost_rial = $3, note = $4,
               metadata = metadata || $5::jsonb
         WHERE business_id = $1 AND request_id = $2 AND kind = 'usage'
+          AND coalesce(metadata->>'phase', 'reserved') = 'reserved'
         RETURNING id`,
       [
         input.businessId,
@@ -638,12 +751,6 @@ export async function settleMessageSend(input: {
     );
     if (!rows[0]) throw new Error("message_reservation_not_found");
     if (refundedRial > 0) {
-      await client.query(
-        `UPDATE message_business_billing
-            SET balance_rial = balance_rial + $2, updated_at = now()
-          WHERE business_id = $1`,
-        [input.businessId, refundedRial],
-      );
       await client.query(
         `INSERT INTO message_credit_ledger
            (business_id, kind, amount_rial, request_id, metadata)
@@ -659,7 +766,7 @@ export async function settleMessageSend(input: {
     await client.query("COMMIT");
     return { chargedRial, refundedRial };
   } catch (error) {
-    await client.query("ROLLBACK");
+    await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
     client.release();
@@ -679,10 +786,12 @@ export async function refundUnsentMessage(input: {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await lockMessageCreditLedger(client, input.businessId);
     const { rows } = await client.query<{ id: string }>(
       `UPDATE message_credit_ledger
           SET metadata = metadata || $3::jsonb
         WHERE business_id = $1 AND request_id = $2 AND kind = 'usage'
+          AND coalesce(metadata->>'phase', 'reserved') = 'reserved'
         RETURNING id`,
       [
         input.businessId,
@@ -692,15 +801,20 @@ export async function refundUnsentMessage(input: {
     );
     if (rows[0]) {
       await client.query(
-        `UPDATE message_business_billing
-            SET balance_rial = balance_rial + $2, updated_at = now()
-          WHERE business_id = $1`,
-        [input.businessId, input.reservation.reservedRial],
+        `INSERT INTO message_credit_ledger
+           (business_id, kind, amount_rial, request_id, metadata)
+         VALUES ($1, 'usage_refund', $2, $3, $4::jsonb)`,
+        [
+          input.businessId,
+          input.reservation.reservedRial,
+          input.reservation.requestId,
+          JSON.stringify({ reservedRial: input.reservation.reservedRial, reason: input.reason }),
+        ],
       );
     }
     await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
     client.release();

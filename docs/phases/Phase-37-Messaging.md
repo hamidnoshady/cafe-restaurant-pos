@@ -13,9 +13,9 @@ settled → refunded, a balance that is always the SUM of a signed ledger) and
 posted like every auto-posted entry (a domain event turned into one journal
 document by the posting engine, dated on the branch's business day).
 
-Status: **Waves 1–4 engine implemented and unit-tested.** Wave 5 (coworker-
-triggered sends, project cost-centre reporting and the ROI report) is specified
-below but not yet shipped.
+Status: **Implemented (Waves 1–5).** The implementation is queue-first, consent-safe,
+and verified by the unit-test suite and production build. Database integration validation
+remains environment-dependent, as it requires an available PostgreSQL `DATABASE_URL`.
 
 ## Scope
 
@@ -80,15 +80,31 @@ rule and, when a campaign drains to completion, posts **one** document
 A locked fiscal period routes it through the engine's exact posting path to the
 human-approval queue; it never stops a real spend being recognised.
 
-### Wave 5 (#377) — not yet shipped
+### Wave 5 (#377) — triggered messages, cost centres and ROI
 
-Specified, not built: event-triggered messages (a deterministic coworker event
-that creates a single-recipient campaign and respects `approvalMode` and the
-Phase 31 batch caps with a deterministic unique index for idempotency), campaigns
-charged to a project (cost centre) with project spend reporting, and campaign ROI
-derived only from a dedicated promo code.
+Migration `0143_messaging_completion.sql` adds project lifecycle fields (status,
+assigned owner, budget and `updated_at`), campaign/project and campaign/promotion
+relations, campaign promotion uniqueness, event dedupe data, and the messaging
+approval-category constraints. A campaign can select a project; its engine-posted
+cost document carries `project_id`; the project screen, project-cost endpoint, and
+Growth accounting panel rebuild spend from posted journal documents.
 
-## Guardrails (add to CLAUDE.md when the phase ships fully)
+`customer_event_message` is a deterministic coworker-only template for birthday,
+three-month inactivity and order-ready events. The scheduler and kitchen/replay paths
+only call `recordCoworkerEvent`; the normal coworker proposal, human-review or
+owner-enabled auto path, Phase 31 messaging cap, and idempotent coworker run decide
+whether to queue. At execution, the target, current consent/contact, template,
+project and exact rendered rate are re-read. The executor only materialises a
+one-recipient campaign/recipient/outbox row: `runMessagingTick()` still alone
+reserves credits, calls a provider, settles the ledger and posts accounting.
+
+A campaign may reserve one dedicated promotion for attribution. The ROI report joins
+only completed post-start orders that recorded that same promotion application and
+reads campaign spend from the posted `5600` journal line. It never infers sales from
+an audience or a message body. Campaigns without a dedicated promotion are explicitly
+labelled «قابل محاسبه نیست» (not calculable), never reported as zero.
+
+## Guardrails
 
 > **پیام مشتری‌رو، اعتبار پلتفرمی دارد و در دفتر می‌نشیند.** Sending runs through
 > the outbox + tick; its cost is turned into one journal document per campaign by

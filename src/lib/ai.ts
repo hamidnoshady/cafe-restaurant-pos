@@ -176,7 +176,9 @@ export type ActionType =
   | "website.post.draft"
   | "website.post.update"
   | "website.product.upsert"
-  | "website.post.publish";
+  | "website.post.publish"
+  /** A deterministic coworker-only action that queues, never sends, one message. */
+  | "messaging.campaign.trigger";
 
 export type AutopilotExecutorKey =
   | "menuItemPatch"
@@ -192,7 +194,8 @@ export type AutopilotExecutorKey =
   | "productionRun"
   | "websitePostDraft"
   | "websitePostUpdate"
-  | "websiteProductUpsert";
+  | "websiteProductUpsert"
+  | "triggeredMessageCampaign";
 
 export interface ActionMeta {
   type: ActionType;
@@ -436,6 +439,20 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     autopilotCategory: "inventory",
     executor: "productionRun",
     revertible: "always",
+  },
+  // The only customer-facing coworker action. Its executor can only materialise
+  // a one-recipient campaign + outbox row — it imports no provider and never
+  // sends inline. A model/MCP caller cannot propose it (`coworkerOnly`).
+  "messaging.campaign.trigger": {
+    type: "messaging.campaign.trigger",
+    endpoint: "/api/messaging",
+    method: "POST",
+    label: "صف‌کردن پیام رویدادی مشتری",
+    payloadHint: "{ customerId: string, templateId: string, channel: 'sms'|'email', eventKind: 'customer_birthday'|'customer_inactive_3_months'|'order_ready', projectId?: string } — فقط کار همکارِ ازپیش‌تعریف‌شده؛ ارسال فقط از صف و tick",
+    autopilotCategory: "messaging",
+    executor: "triggeredMessageCampaign",
+    coworkerOnly: true,
+    revertible: false,
   },
   "menu.item.create": {
     type: "menu.item.create",

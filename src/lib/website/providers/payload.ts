@@ -29,6 +29,7 @@
 import {
   CmsApiError,
   CmsNetworkError,
+  cmsFormRequest,
   cmsRequest,
   createPost,
   createProduct,
@@ -51,6 +52,8 @@ import {
   type RemoteProduct,
   type RemoteProductInput,
   type WebsiteAdapter,
+  type WebsiteMedia,
+  type MediaUpload,
 } from "../adapter";
 import { lexicalToMarkdown, markdownToLexical } from "./payload-content";
 
@@ -98,6 +101,11 @@ function mediaUrl(media: string | CmsMedia | null | undefined, mediaOrigin: stri
   if (!url) return null;
   if (/^https?:\/\//.test(url)) return url;
   return mediaOrigin ? `${mediaOrigin.replace(/\/+$/, "")}${url.startsWith("/") ? "" : "/"}${url}` : url;
+}
+
+/** Pure Payload media response → the small media contract the app exposes. */
+export function mapPayloadMedia(doc: CmsMedia, mediaOrigin: string | null): WebsiteMedia {
+  return { id: doc.id, url: mediaUrl(doc, mediaOrigin), filename: doc.filename ?? null, alt: doc.alt ?? null };
 }
 
 export interface PayloadMappingContext {
@@ -307,6 +315,22 @@ export class PayloadWebsiteAdapter implements WebsiteAdapter {
       const mapped = mapCmsError(error);
       return { ok: false, error: mapped.code };
     }
+  }
+
+  async uploadMedia(input: MediaUpload): Promise<WebsiteMedia> {
+    if (!input.filename.trim() || !input.mimeType.startsWith("image/") || input.bytes.byteLength === 0) {
+      throw new WebsiteAdapterError("rejected", "invalid image upload");
+    }
+    const form = new FormData();
+    // Copy into a plain ArrayBuffer-backed view: a caller may give us a view of
+    // a SharedArrayBuffer, which Blob deliberately refuses in Node's typings.
+    const bytes = Uint8Array.from(input.bytes);
+    form.set("file", new Blob([bytes.buffer], { type: input.mimeType }), input.filename);
+    if (input.alt?.trim()) form.set("alt", input.alt.trim());
+    const doc = await this.call(() => cmsFormRequest<CmsMedia>(this.config, {
+      path: "/api/media", form, fetchImpl: this.fetchImpl,
+    }));
+    return mapPayloadMedia(doc, this.ctx.mediaOrigin);
   }
 
   async listPosts(q: { status?: PostStatus; limit: number; cursor?: string }): Promise<Page<Post>> {

@@ -23,6 +23,8 @@ import {
   type RemoteProductInput,
   type WebsiteAdapter,
   type WebsiteAdapterErrorCode,
+  type WebsiteMedia,
+  type MediaUpload,
 } from "../adapter";
 
 export interface MockWebsiteOptions {
@@ -77,6 +79,17 @@ export class MockWebsiteAdapter implements WebsiteAdapter {
     this.calls.push({ method: "testConnection", args: [] });
     if (this.failure) return { ok: false, error: this.failure };
     return { ok: true, siteName: this.siteName };
+  }
+
+  // ---- media -------------------------------------------------------------
+
+  async uploadMedia(input: MediaUpload): Promise<WebsiteMedia> {
+    this.guard("uploadMedia", input.filename, input.mimeType, input.bytes.byteLength);
+    if (!input.filename.trim() || !input.mimeType.startsWith("image/") || input.bytes.byteLength === 0) {
+      throw new WebsiteAdapterError("rejected", "invalid image upload");
+    }
+    const id = this.nextId("media");
+    return { id, url: `${this.siteUrl}/media/${id}`, filename: input.filename, alt: input.alt ?? null };
   }
 
   // ---- posts -------------------------------------------------------------

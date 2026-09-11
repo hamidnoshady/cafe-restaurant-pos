@@ -24,6 +24,17 @@ interface BridgeRow {
   balance: number;
 }
 
+interface ProjectCostRow {
+  projectId: string; name: string; status: string; ownerName: string | null;
+  spentRial: number; budgetRial: number | null; remainingBudgetRial: number | null; campaigns: number;
+}
+
+interface CampaignRoiRow {
+  campaignId: string; campaignName: string; promotionId: string; promotionName: string;
+  sentCount: number; spentRial: number; attributableSales: number;
+  attributableRevenueRial: number; discountRial: number; roiPercent: number | null;
+}
+
 interface GrowthAccountingData {
   window: { from: string; to: string };
   bridge: BridgeRow[];
@@ -46,6 +57,8 @@ function KpiTile({ label, value, hint }: { label: string; value: string; hint?: 
 export function GrowthAccountingView() {
   const money = useMoney();
   const [data, setData] = useState<GrowthAccountingData | null>(null);
+  const [projectCosts, setProjectCosts] = useState<ProjectCostRow[]>([]);
+  const [campaignRoi, setCampaignRoi] = useState<CampaignRoiRow[]>([]);
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
@@ -55,6 +68,12 @@ export function GrowthAccountingView() {
         else setError("بارگذاری داده‌های رشد ناموفق بود.");
       })
       .catch(() => setError("بارگذاری داده‌های رشد ناموفق بود."));
+    api<{ rows: ProjectCostRow[] }>("/api/reports/project-costs")
+      .then(({ ok, data: body }) => { if (ok) setProjectCosts(body.rows); })
+      .catch(() => undefined);
+    api<{ rows: CampaignRoiRow[] }>("/api/reports/message-campaign-roi")
+      .then(({ ok, data: body }) => { if (ok) setCampaignRoi(body.rows); })
+      .catch(() => undefined);
   }, []);
   useEffect(load, [load]);
 
@@ -123,6 +142,14 @@ export function GrowthAccountingView() {
             </tbody>
           </table>
         </div>
+      </SectionCard>
+
+      <SectionCard title="هزینهٔ پروژه‌ها" description="خرج هر پروژه از اسناد هزینهٔ قطعیِ کمپین پیام بازسازی می‌شود؛ کمپین بدون سند هزینه، خرج ثبت‌شده ندارد.">
+        {projectCosts.length === 0 ? <p className="text-sm text-muted-foreground">پروژهٔ فعالی با هزینهٔ کمپین ندارید.</p> : <ul className="divide-y divide-border/80 text-sm">{projectCosts.map((project) => <li key={project.projectId} className="flex flex-wrap items-center justify-between gap-2 py-2.5"><div><b>{project.name}</b><p className="text-xs text-muted-foreground">{project.ownerName ?? "بدون مالک"} · {formatPersianNumber(project.campaigns)} کمپین · {project.status === "active" ? "فعال" : project.status === "paused" ? "متوقف" : "تکمیل‌شده"}</p></div><div className="text-left"><b>{money.format(project.spentRial)}</b><p className="text-xs text-muted-foreground">{project.remainingBudgetRial === null ? "بدون بودجه" : `مانده ${money.format(project.remainingBudgetRial)}`}</p></div></li>)}</ul>}
+      </SectionCard>
+
+      <SectionCard title="بازدهِ قابل‌انتساب کمپین پیام" description="فقط سفارش‌هایی شمرده می‌شوند که پروموشن اختصاصیِ همان کمپین را پس از شروع آن اعمال کرده‌اند. بدون پروموشن اختصاصی، هیچ فروشی حدس زده نمی‌شود.">
+        {campaignRoi.length === 0 ? <p className="text-sm text-muted-foreground">هنوز کمپینی با پروموشن اختصاصی برای گزارش بازده ثبت نشده است.</p> : <ul className="divide-y divide-border/80 text-sm">{campaignRoi.map((row) => <li key={row.campaignId} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><b>{row.campaignName}</b><p className="mt-1 text-xs text-muted-foreground">پروموشن: {row.promotionName} · {formatPersianNumber(row.attributableSales)} فروشِ ثبت‌شده · {formatPersianNumber(row.sentCount)} ارسال</p></div><div className="text-left"><b>{row.roiPercent === null ? "در انتظار ثبت هزینه" : `${formatPersianNumber(row.roiPercent)}٪ بازده`}</b><p className="text-xs text-muted-foreground">فروش {money.format(row.attributableRevenueRial)} · هزینه {money.format(row.spentRial)} · تخفیف {money.format(row.discountRial)}</p></div></li>)}</ul>}
       </SectionCard>
 
       {data.commission.top.length > 0 ? (

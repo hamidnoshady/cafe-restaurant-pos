@@ -28,6 +28,8 @@ export const COWORKER_TEMPLATE_KEYS = [
   "shift_open_stock_topup",
   "low_stock_purchase_draft",
   "accounting_review",
+  // Wave 5: one event, one customer, one queued campaign — never a model call.
+  "customer_event_message",
 ] as const;
 export type CoworkerTemplateKey = (typeof COWORKER_TEMPLATE_KEYS)[number];
 
@@ -198,6 +200,25 @@ export const COWORKER_TEMPLATES: Record<CoworkerTemplateKey, CoworkerTemplate> =
       },
     ],
   },
+
+  customer_event_message: {
+    key: "customer_event_message",
+    title: "صف‌کردن پیام رویدادی مشتری",
+    description: "در رخداد انتخاب‌شده (تولد، سه ماه بی‌مراجعگی یا آماده‌شدن سفارش) فقط برای همان مشتری یک کمپین تک‌نفره می‌سازد. متن از الگوی ذخیره‌شده می‌آید و ارسال هرگز در خود کار همکار انجام نمی‌شود.",
+    scope: "business",
+    module: "messaging",
+    triggers: ["event"],
+    suggestedTrigger: "event",
+    suggestedEvent: "customer_birthday",
+    suggestedHour: null,
+    facts: [],
+    emits: ["messaging.campaign.trigger"],
+    params: [
+      { key: "channel", label: "کانال", type: "select", required: true, options: [{ value: "sms", label: "پیامک" }, { value: "email", label: "ایمیل" }] },
+      { key: "templateId", label: "شناسهٔ الگوی پیام", type: "text", required: true, help: "شناسه را از فهرست الگوها در صفحهٔ پیام‌رسانی بردارید؛ هنگام اجرا دوباره مالکیت و کانال آن بررسی می‌شود." },
+      { key: "projectId", label: "شناسهٔ پروژه / مرکز هزینه (اختیاری)", type: "text", required: false },
+    ],
+  },
 };
 
 export const COWORKER_TEMPLATE_LIST: CoworkerTemplate[] = Object.values(COWORKER_TEMPLATES);
@@ -238,8 +259,17 @@ export interface LowStockFact {
   supplierId: string | null;
 }
 
+export interface TriggeredCustomerFact {
+  customerId: string;
+  eventKind: "customer_birthday" | "customer_inactive_3_months" | "order_ready";
+  /** An order-ready notification carries the order reference for its audit summary. */
+  orderId?: string;
+}
+
 export interface CoworkerFacts {
   onHand?: Record<string, InventoryOnHandFact>;
+  /** Present only for the deterministic one-customer messaging template. */
+  triggerCustomer?: TriggeredCustomerFact;
   formulas?: Record<string, ProductionFormulaFact>;
   lowStock?: LowStockFact[];
   review?: AccountingFinding[];
@@ -331,6 +361,12 @@ export function validateTemplateParams(key: CoworkerTemplateKey, params: Record<
       }
       break;
     }
+    case "customer_event_message": {
+      if (params.channel !== "sms" && params.channel !== "email") errors.push("coworker_params_message_channel_invalid");
+      if (!nonEmptyString(params.templateId)) errors.push("coworker_params_message_template_invalid");
+      if (params.projectId !== undefined && !nonEmptyString(params.projectId)) errors.push("coworker_params_project_invalid");
+      break;
+    }
   }
 
   return Array.from(new Set(errors));
@@ -348,6 +384,9 @@ export const TEMPLATE_PARAM_ERROR_MESSAGES: Record<string, string> = {
   coworker_params_formula_invalid: "فرمول تولید معتبر نیست.",
   coworker_params_batches_invalid: "تعداد بچ باید بزرگ‌تر از صفر باشد.",
   coworker_params_severity_invalid: "درجهٔ اهمیت معتبر نیست.",
+  coworker_params_message_channel_invalid: "کانال پیام باید پیامک یا ایمیل باشد.",
+  coworker_params_message_template_invalid: "شناسهٔ الگوی پیام لازم است.",
+  coworker_params_project_invalid: "شناسهٔ پروژه معتبر نیست.",
 };
 
 // ---------------------------------------------------------------------------
@@ -529,6 +568,30 @@ function buildLowStockDraft(params: Record<string, unknown>, facts: CoworkerFact
   return { actions };
 }
 
+function buildTriggeredCustomerMessage(params: Record<string, unknown>, facts: CoworkerFacts): CoworkerBuildResult {
+  const trigger = facts.triggerCustomer;
+  const templateId = nonEmptyString(params.templateId);
+  const channel = params.channel === "sms" || params.channel === "email" ? params.channel : null;
+  if (!trigger || !templateId || !channel) {
+    return { actions: [], skipReason: "اطلاعات مشتری یا الگوی پیام این رویداد دیگر در دسترس نیست." };
+  }
+  const eventNames: Record<TriggeredCustomerFact["eventKind"], string> = {
+    customer_birthday: "تولد مشتری", customer_inactive_3_months: "سه ماه بی‌مراجعگی مشتری", order_ready: "آماده‌شدن سفارش",
+  };
+  return {
+    actions: [{
+      type: "messaging.campaign.trigger",
+      title: `صف‌کردن پیام ${eventNames[trigger.eventKind]}`,
+      summary: `یک پیام ${channel === "sms" ? "پیامکی" : "ایمیلی"} برای مشتری رویداد «${eventNames[trigger.eventKind]}» در صف قرار می‌گیرد.`,
+      payload: {
+        customerId: trigger.customerId, templateId, channel, eventKind: trigger.eventKind,
+        ...(nonEmptyString(params.projectId) ? { projectId: nonEmptyString(params.projectId)! } : {}),
+        ...(trigger.orderId ? { orderId: trigger.orderId } : {}),
+      },
+    }],
+  };
+}
+
 function buildAccountingReview(params: Record<string, unknown>, facts: CoworkerFacts): CoworkerBuildResult {
   const floor = (params.minSeverity as AccountingReviewSeverity | undefined) ?? "medium";
   const findings = filterFindings(facts.review ?? [], floor);
@@ -563,5 +626,7 @@ export function buildCoworkerActions(
       return buildLowStockDraft(params, facts);
     case "accounting_review":
       return buildAccountingReview(params, facts);
+    case "customer_event_message":
+      return buildTriggeredCustomerMessage(params, facts);
   }
 }

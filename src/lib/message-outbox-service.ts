@@ -77,7 +77,11 @@ async function drainRows(businessId: string): Promise<DrainRow[]> {
     `SELECT o.id, o.campaign_id, r.channel, r.address, r.subject, r.body
        FROM message_outbox o
        JOIN message_recipients r ON r.id = o.recipient_id
+       JOIN message_campaigns c ON c.id = o.campaign_id AND c.business_id = o.business_id
       WHERE o.business_id = $1 AND o.status = 'queued' AND o.next_attempt_at <= now()
+        -- Pausing is a real brake, not just a label: unclaimed outbox rows
+        -- remain historical queue records but cannot enter another reservation.
+        AND c.status = 'sending'
       ORDER BY o.next_attempt_at, o.created_at
       LIMIT ${DRAIN_BATCH_LIMIT}`,
     [businessId],

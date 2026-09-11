@@ -178,6 +178,32 @@ export async function cmsRequest<T>(
   return body as T;
 }
 
+/**
+ * Multipart variant of `cmsRequest` for Payload's media collection. It shares
+ * tenant/auth headers and deadline with JSON calls but deliberately does not
+ * set Content-Type: fetch supplies FormData's boundary.
+ */
+export async function cmsFormRequest<T>(
+  config: CmsConfig,
+  options: { path: string; form: FormData; fetchImpl?: FetchLike },
+): Promise<T> {
+  const url = cmsUrl(config, { path: options.path });
+  const fetchImpl: FetchLike = options.fetchImpl ?? ((input, init) => fetch(input, init));
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: "POST", headers: cmsHeaders(config, { path: options.path }), body: options.form,
+      signal: AbortSignal.timeout(config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new CmsNetworkError(`Eshobe CMS unreachable (${url}): ${error instanceof Error ? error.message : String(error)}`, options.path);
+  }
+  const text = await response.text();
+  const body = text ? JSON.parse(text) as CmsApiErrorBody | unknown : undefined;
+  if (!response.ok) throw new CmsApiError(response.status, options.path, (body ?? {}) as CmsApiErrorBody);
+  return body as T;
+}
+
 /** Payload `where` filter for one value (safe to narrow with, never to widen). */
 export function whereEquals(field: string, value: string): Record<string, unknown> {
   return { [field]: { equals: value } };

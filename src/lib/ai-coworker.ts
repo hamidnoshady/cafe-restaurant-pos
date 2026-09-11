@@ -36,13 +36,21 @@ import type { LocalBusinessClock } from "./ai-proactive";
  * `employee_shifts` already knows; a cron expression can only guess at it, and
  * guesses wrong exactly on the nights that ran long.
  */
-export const COWORKER_EVENT_KINDS = ["shift_open", "shift_close", "day_close"] as const;
+export const COWORKER_EVENT_KINDS = [
+  "shift_open", "shift_close", "day_close",
+  // Phase 37b Wave 5: customer events originate in foreground/scheduled
+  // producers, then follow this exact durable coworker queue.
+  "customer_birthday", "customer_inactive_3_months", "order_ready",
+] as const;
 export type CoworkerEventKind = (typeof COWORKER_EVENT_KINDS)[number];
 
 export const COWORKER_EVENT_LABELS: Record<CoworkerEventKind, string> = {
   shift_open: "با شروع هر شیفت",
   shift_close: "با پایان هر شیفت",
   day_close: "با بستن روز کاری",
+  customer_birthday: "در روز تولد مشتری",
+  customer_inactive_3_months: "سه ماه پس از آخرین خرید مشتری",
+  order_ready: "با آماده‌شدن سفارش مشتری",
 };
 
 export const COWORKER_TRIGGER_KINDS = ["manual", "schedule", "event"] as const;

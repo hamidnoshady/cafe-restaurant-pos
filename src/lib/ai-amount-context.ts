@@ -15,6 +15,7 @@
 import { query } from "./db";
 import type { ProposedAction } from "./ai";
 import type { AutopilotAmountContext } from "./ai-autopilot";
+import { estimateTriggeredMessageCost } from "./message-campaigns-service";
 
 /**
  * The values the caps are measured against, read here rather than taken from
@@ -113,6 +114,23 @@ export async function autopilotAmountContext(
         return { documentValueRial: Math.round((Math.min(quantity, onHand) / onHand) * carrying) };
       }
       return { documentValueRial: Math.round(quantity * Number(rows[0].unit_cost)) };
+    }
+    case "messaging.campaign.trigger": {
+      const customerId = proposal.payload.customerId;
+      const templateId = proposal.payload.templateId;
+      const channel = proposal.payload.channel;
+      const eventKind = proposal.payload.eventKind;
+      if (typeof customerId !== "string" || typeof templateId !== "string" ||
+          (channel !== "sms" && channel !== "email") || typeof eventKind !== "string") return {};
+      try {
+        return { messageCostRial: await estimateTriggeredMessageCost({
+          businessId, customerId, templateId, channel, triggerLabel: `پیام رویدادی: ${eventKind}`,
+        }) };
+      } catch {
+        // A missing consent/template/rate must be held, never estimated from a
+        // model payload and never allowed past an automatic cap.
+        return {};
+      }
     }
     case "inventory.production.run": {
       const formulaId = proposal.payload.formulaId;
