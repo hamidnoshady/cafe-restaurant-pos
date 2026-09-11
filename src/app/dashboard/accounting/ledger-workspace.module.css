@@ -1,0 +1,25 @@
+/*
+ * Ledger workspace chrome — STRUCTURAL ONLY.
+ *
+ * Scrollbar styling and reduced-motion only. Everything color-bearing lives
+ * in the markup as the canon's utility classes (docs/design-system.md):
+ * `bg-stone-50 dark:bg-stone-800/40` header washes, `border-border/80`
+ * inner panels, token text colors. This module once restated colors on raw
+ * table elements and inflated the headings — the old dialect; both are gone
+ * so the workspace renders the shared primitives exactly.
+ */
+
+.content {
+  min-width: 0;
+}
+
+.content :global(.overflow-x-auto) {
+  scrollbar-color: var(--color-stone-300) transparent;
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content :global(*) {
+    scroll-behavior: auto;
+  }
+}

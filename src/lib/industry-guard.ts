@@ -15,6 +15,7 @@ import type { SessionPayload } from "./auth";
 import { query, withTenant } from "./db";
 import type { Industry } from "./industries";
 import { hasCapability, hasModule, type CapabilityKey, type ModuleKey } from "./industry-profile";
+import { isProductWorkspaceIndustry } from "./product-workspace";
 
 /**
  * Scoped with `withTenant` for the same reason `effectiveFeatures` is (see its
@@ -90,6 +91,20 @@ export async function requireCapabilityForApi(
   const industry = await getBusinessIndustry(session.businessId);
   if (!industry || !hasCapability(industry, capability)) {
     return NextResponse.json({ error: "capability_unavailable" }, { status: 403 });
+  }
+  return null;
+}
+
+/**
+ * Phase 42 — the products workspace spans the five trade-goods industries, so
+ * its shared `/api/products/*` routes gate on the set rather than one exact
+ * industry; each trade's own `/api/<trade>/*` routes keep the exact match.
+ */
+export async function requireProductWorkspaceForApi(
+  session: SessionPayload,
+): Promise<NextResponse | null> {
+  if (!isProductWorkspaceIndustry(await getBusinessIndustry(session.businessId))) {
+    return NextResponse.json({ error: "industry_mismatch" }, { status: 403 });
   }
   return null;
 }

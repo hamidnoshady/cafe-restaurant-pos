@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { PartyValidationError, createParty } from "@/lib/parties-service";
+import { PARTY_ROLE_STORAGE } from "@/lib/parties";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -36,8 +37,12 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   if (body.partyId) {
     const { rows } = await query<{ id: string; name: string; phone: string | null }>(
-      `SELECT id, name, phone FROM parties WHERE business_id = $1 AND id = $2 AND role = 'Supplier'`,
-      [session.businessId, body.partyId],
+      // `parties.role` is stored lowercase (see PARTY_ROLE_STORAGE); the literal
+      // `'Supplier'` this used to compare against matched no row ever, so linking
+      // an existing counterparty as this branch's supplier always answered
+      // `party_not_found`.
+      `SELECT id, name, phone FROM parties WHERE business_id = $1 AND id = $2 AND role = $3`,
+      [session.businessId, body.partyId, PARTY_ROLE_STORAGE.Supplier],
     );
     if (!rows[0]) return NextResponse.json({ error: "party_not_found" }, { status: 404 });
     partyId = rows[0].id;

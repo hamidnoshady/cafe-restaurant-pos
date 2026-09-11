@@ -65,7 +65,7 @@ export function invitationStatus(
 
 /**
  * Roles that authenticate with an email and password (and therefore need a
- * global identity), versus roles that use a 4-digit PIN on a shared device.
+ * global identity), versus roles that use a numeric PIN on a shared device.
  */
 export const PASSWORD_ROLES: Role[] = ["owner", "manager", "accountant"];
 export const PIN_ROLES: Role[] = ["cashier", "waiter", "kitchen"];
@@ -176,12 +176,26 @@ export function overridesAreEmpty(overrides: PermissionOverrides): boolean {
 // PINs
 // ---------------------------------------------------------------------------
 
+/** Shortest PIN a member may hold — the legacy quick-login length. */
+export const PIN_MIN_LENGTH = 4;
 /**
- * A PIN is exactly four digits — validated after Persian digits are folded to
- * Latin. Deliberately no weak-PIN policy: that would be a product decision
- * this phase wasn't asked to make, and it would reject the `1234` the seed
- * script and the README's demo flow both use.
+ * Longest PIN a member may hold. Phase 42 opened the length up from exactly
+ * four, and the owner then raised the ceiling from eight to twelve: 10,000
+ * combinations survives a shared-till shoulder-surf, but a member who wants
+ * more room gets it (10¹² at the ceiling, and the pad's dots compact past
+ * eight so a longer PIN stays easy to type).
+ */
+export const PIN_MAX_LENGTH = 12;
+
+/**
+ * A PIN is 4–12 digits — validated after Persian digits are folded to Latin
+ * (callers run toLatinDigits first; this regex is the one backend gate).
+ * Deliberately no weak-PIN policy: that would be a product decision this
+ * phase wasn't asked to make, and it would reject the `1234` the seed script
+ * and the README's demo flow both use. Since Phase 42 the *door*, not the
+ * digit count, is what a PIN protects: outside the 7-day OTP window the PIN
+ * alone no longer opens it at all (phone-otp-policy.ts).
  */
 export function isValidPin(pin: string): boolean {
-  return /^\d{4}$/.test(pin);
+  return new RegExp(`^\\d{${PIN_MIN_LENGTH},${PIN_MAX_LENGTH}}$`).test(pin);
 }

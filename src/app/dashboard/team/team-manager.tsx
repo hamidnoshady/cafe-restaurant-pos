@@ -21,6 +21,7 @@ import {
 } from "@/lib/permissions";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { formatPhoneDisplay } from "@/lib/phone";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
 
@@ -55,11 +56,11 @@ const PERMISSION_LABELS: Record<string, string> = {
   "inventory.view": "مشاهدهٔ انبار",
   "inventory.adjust": "اصلاح موجودی",
   "purchases.manage": "مدیریت خرید",
-  // The party permission covers all three roles, so the label says «طرف‌حساب» — a
+  // The party permission covers all three roles, so the label says «اشخاص» — a
   // manager granting it to a cashier is also letting them edit suppliers and
   // personnel, and the label must not hide that.
-  "parties.view": "مشاهدهٔ طرف‌حساب‌ها",
-  "parties.manage": "مدیریت طرف‌حساب‌ها",
+  "parties.view": "مشاهدهٔ اشخاص",
+  "parties.manage": "مدیریت اشخاص",
   "ledger.view": "مشاهدهٔ دفتر",
   "ledger.post": "ثبت سند",
   "ledger.approve": "تأیید سند",
@@ -82,6 +83,9 @@ interface Member {
   isActive: boolean;
   hasPin: boolean;
   hasLogin: boolean;
+  /** Phase 42 — the login phone (E.164) and whether the member has proven it with an OTP. */
+  phone: string | null;
+  phoneVerified: boolean;
   locationIds: string[];
   defaultLocationId: string | null;
   overrides: { granted?: string[]; revoked?: string[] };
@@ -112,6 +116,8 @@ export function TeamManager({ currentUserId, role }: { currentUserId: string; ro
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
+  /** Phase 42 — which member's login-phone editor is open. */
+  const [phoneEditing, setPhoneEditing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [membersRes, invitesRes] = await Promise.all([
@@ -173,8 +179,31 @@ export function TeamManager({ currentUserId, role }: { currentUserId: string; ro
                     {member.email ? ` · ${member.email}` : ""}
                     {member.hasPin ? " · ورود با رمز عددی" : ""}
                   </p>
+                  <p className="mt-1 text-xs">
+                    {member.phone ? (
+                      <>
+                        <span dir="ltr">{toPersianDigits(formatPhoneDisplay(member.phone))}</span>
+                        {member.phoneVerified ? (
+                          <span className="ms-2 text-emerald-600 dark:text-emerald-400">موبایل تأییدشده</span>
+                        ) : (
+                          <span className="ms-2 text-amber-600 dark:text-amber-400">
+                            تأییدنشده — در اولین ورود با کد پیامکی تأیید می‌شود
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">بدون شمارهٔ موبایل</span>
+                    )}
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <SecondaryButton
+                    onClick={() =>
+                      setPhoneEditing(phoneEditing === member.id ? null : member.id)
+                    }
+                  >
+                    شمارهٔ موبایل
+                  </SecondaryButton>
                   <SecondaryButton
                     onClick={() => setEditing(editing === member.id ? null : member.id)}
                   >
@@ -211,6 +240,19 @@ export function TeamManager({ currentUserId, role }: { currentUserId: string; ro
                       body: JSON.stringify({ role, permissions: overrides }),
                     });
                     if (ok) setEditing(null);
+                  }}
+                />
+              )}
+
+              {phoneEditing === member.id && (
+                <PhoneEditor
+                  member={member}
+                  onSave={async (phone) => {
+                    const ok = await mutate(`/api/team/${member.id}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ phone }),
+                    });
+                    if (ok) setPhoneEditing(null);
                   }}
                 />
               )}
@@ -305,6 +347,44 @@ function PermissionEditor({
       )}
 
       <PrimaryButton onClick={save}>ذخیره</PrimaryButton>
+    </div>
+  );
+}
+
+/**
+ * Phase 42 — set or clear one member's login phone.
+ *
+ * An owner typing a number proves nothing about who holds it, so whatever is
+ * saved here lands *unverified* — the member proves it with an OTP at their
+ * next door login (or from the security center), and only then does it
+ * become usable for the phone login. The hint says so, because an owner who
+ * is not told will assume typing the number was the whole job.
+ */
+function PhoneEditor({
+  member,
+  onSave,
+}: {
+  member: Member;
+  onSave: (phone: string) => void;
+}) {
+  const [phone, setPhone] = useState(member.phone ?? "");
+
+  return (
+    <div className="mt-3 space-y-3 border-t pt-3">
+      <Field
+        label="شمارهٔ موبایل ورود"
+        hint="با کد پیامکی که در اولین ورود به خود عضو می‌رسد تأیید می‌شود؛ خالی بگذارید تا حذف شود."
+      >
+        <input
+          className={inputClass}
+          dir="ltr"
+          inputMode="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="09121234567"
+        />
+      </Field>
+      <PrimaryButton onClick={() => onSave(phone)}>ذخیرهٔ شماره</PrimaryButton>
     </div>
   );
 }
@@ -429,6 +509,9 @@ function AddStaffSection({
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<string>("cashier");
   const [pin, setPin] = useState("");
+  // Phase 42 — optional login phone, stored unverified until the member's
+  // first OTP proves it (mirrors PhoneEditor above).
+  const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function add() {
@@ -436,7 +519,7 @@ function AddStaffSection({
     onError("");
     const res = await api<{ error?: string }>("/api/team", {
       method: "POST",
-      body: JSON.stringify({ role, fullName, pin }),
+      body: JSON.stringify({ role, fullName, pin, phone: phone.trim() || undefined }),
     });
     setBusy(false);
     if (!res.ok) {
@@ -445,6 +528,7 @@ function AddStaffSection({
     }
     setFullName("");
     setPin("");
+    setPhone("");
     await onChanged();
   }
 
@@ -456,9 +540,9 @@ function AddStaffSection({
           <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">افزودن کارکنان صندوق و آشپزخانه</h2>
         </div>
       }
-      description="این کارکنان با رمز عددی چهاررقمی روی دستگاه مشترک وارد می‌شوند و ایمیل ندارند."
+      description="این کارکنان با رمز عددی روی دستگاه مشترک وارد می‌شوند و ایمیل ندارند."
     >
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="نام">
           <input className={inputClass} value={fullName} onChange={(e) => setFullName(e.target.value)} />
         </Field>
@@ -469,21 +553,34 @@ function AddStaffSection({
             options={PIN_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
           />
         </Field>
-        <Field label="رمز عددی (۴ رقم)">
+        <Field label="رمز عددی (۴ تا ۱۲ رقم)">
           <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
             grouping={false}
             allowNegative={false}
-            maxLength={4}
+            maxLength={12}
             value={pin}
             onChange={(e) => setPin(e.target.value)}
           />
         </Field>
+        <Field
+          label="شمارهٔ موبایل"
+          hint="اختیاری؛ برای ورود با پیامک. بار اول با کد تأیید فعال می‌شود."
+        >
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="09121234567"
+          />
+        </Field>
       </div>
       <div className="mt-4">
-        <PrimaryButton onClick={add} disabled={busy || !fullName || pin.length !== 4}>
+        <PrimaryButton onClick={add} disabled={busy || !fullName || pin.length < 4 || pin.length > 12}>
           افزودن
         </PrimaryButton>
       </div>

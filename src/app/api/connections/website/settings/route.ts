@@ -7,7 +7,7 @@ import { updateWebsiteSyncSettings } from "@/lib/website/connection-service";
  * and which branch the site mirrors.
  */
 export const PATCH = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
   let body: { pushPrices?: unknown; pushStock?: unknown; productScope?: unknown; syncLocationId?: unknown };

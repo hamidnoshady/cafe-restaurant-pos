@@ -1,6 +1,14 @@
 import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { appForModule } from "@/lib/apps";
+import {
+  isProductWorkspaceIndustry,
+  PRODUCT_WORKSPACE_SECTIONS,
+} from "@/lib/product-workspace";
+import { visibleConnectionKinds, type ConnectionKind } from "@/lib/connection-kinds";
+import { ACCOUNTING_ROLES, ACCOUNTING_SECTIONS } from "./accounting/accounting-nav";
+import { accountingSectionHref } from "./accounting/accounting-routes";
+import { REPORTS_TABS, reportsTabHref } from "./reports/reports-nav";
 import { effectiveAppAvailability } from "@/lib/app-availability-service";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures, isLockableFeature } from "@/lib/features";
@@ -8,7 +16,7 @@ import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { hasModule, industryProfile, labelFor } from "@/lib/industry-profile";
 import { effectivePermissions, parseOverrides, type Permission } from "@/lib/permissions";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
-import { visibleSettingsTabs } from "@/lib/settings-tabs";
+import { visibleSettingsTabs, type ResolvedSettingsTab } from "@/lib/settings-tabs";
 import { MoneyProvider } from "@/components/money/money-context";
 import { BugReportProvider } from "@/components/bug-report/bug-report-provider";
 import { LockProvider } from "./lock-screen";
@@ -29,7 +37,14 @@ import { AppAvailabilityGate } from "./app-availability-gate";
  * constant the console and the /welcome picker use, so a business's type is
  * called one thing across the whole product.
  */
-function navItemsFor(industry: Industry): NavItem[] {
+interface NavContext {
+  /** The settings tabs this member may open (already role/permission/feature-filtered). */
+  settingsTabs: ResolvedSettingsTab[];
+  /** The connection kinds this member may open (already role/module-filtered). */
+  connectionKinds: ConnectionKind[];
+}
+
+function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
   return [
     // Phase 35 Wave 2: the dashboard itself moved to /dashboard/overview; the
     // bare /dashboard route is now the chat home. Links that meant "the
@@ -90,29 +105,98 @@ function navItemsFor(industry: Industry): NavItem[] {
     { label: "انبار", module: "inventory", href: "/dashboard/inventory", roles: ["owner", "manager"], flag: "inventory" },
     { label: INDUSTRY_LABELS.jewelry, module: "jewelry", href: "/dashboard/jewelry", roles: ["owner", "manager"] },
     { label: INDUSTRY_LABELS.watch, module: "watch", href: "/dashboard/watch", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.accessories, module: "accessories", href: "/dashboard/accessories", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.cosmetics, module: "cosmetics", href: "/dashboard/cosmetics", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.wholesale, module: "wholesale", href: "/dashboard/wholesale", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.tools_fittings, module: "tools_fittings", href: "/dashboard/tools-fittings", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.haberdashery, module: "haberdashery", href: "/dashboard/haberdashery", roles: ["owner", "manager"] },
-    { label: "حسابداری", module: "ledger", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
-    // Technical connections are their own utility app. WooCommerce is not
-    // listed here: its management surface belongs to the standalone WP Manager
-    // below, so Accounting never becomes the doorway to the store.
-    { label: "اتصال‌های فنی", module: "connections", href: "/dashboard/connections", roles: ["owner", "manager"] },
+    // Phase 42 — the retail trade-goods trades manage their catalogue in the
+    // shared products workspace: a collapsible sidebar group — افزودن محصول،
+    // لیست محصولات، لیست قیمت، ویژگی محصول، الگوی بارکد وزنی and the trade's
+    // own گزارش‌ها — instead of five flat trade entries. The old trade pages
+    // forward into the workspace; cosmetics alone keeps its own entry for the
+    // sections only it has (بچ‌ها و انقضا، برند و ماتریس).
+    ...(isProductWorkspaceIndustry(industry)
+      ? [
+          {
+            label: "محصولات",
+            module: industry,
+            iconKey: "/dashboard/products",
+            roles: ["owner", "manager"],
+            children: PRODUCT_WORKSPACE_SECTIONS.map((section) => ({
+              label: section.label,
+              module: industry,
+              href: section.href,
+              roles: ["owner", "manager"],
+            })),
+          },
+        ]
+      : []),
+    ...(industry === "cosmetics"
+      ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: "/dashboard/cosmetics", roles: ["owner", "manager"] }]
+      : []),
+    // The «حسابداری» sub-menu — the Accounting app's sections, each a real
+    // route under the app's own prefix (`/dashboard/accounting/…`), drawn as a
+    // collapsible sidebar group (the same shape «محصولات» uses) with the app's
+    // dashboard as its first entry. The parent keeps its href so the section is
+    // still one tap away and still pinnable to the bottom bar; the app's old
+    // `/dashboard/ledger?tab=…` addresses forward to these routes.
     {
-      label: "مدیریت وردپرس و ووکامرس",
-      module: "integrations",
-      href: "/dashboard/wp",
-      roles: ["owner", "manager"],
-      flag: "integrations",
+      label: "حسابداری",
+      module: "ledger",
+      href: "/dashboard/accounting",
+      roles: [...ACCOUNTING_ROLES],
+      flag: "ledger",
+      children: ACCOUNTING_SECTIONS.map((section) => ({
+        label: section.label,
+        module: "ledger" as const,
+        href: accountingSectionHref(section.key),
+        roles: [...(section.roles ?? ACCOUNTING_ROLES)],
+      })),
     },
-    { label: "گزارش‌ها", module: "reports", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
+    // The «اتصال‌های فنی» hub — every technical connection in the product
+    // (desktop, WordPress/WooCommerce, the CMS site, Holoo, the remote server
+    // sync, MCP, API keys). A shell utility, not an app: its module is
+    // unassigned in `apps.ts`, so it is never badged and never gated.
+    // WordPress/WooCommerce *management* is not listed here either: it lives
+    // inside «مدیریت وب‌سایت» above, and the old `/dashboard/wp` prefix
+    // forwards there (its connection screen forwards to this hub instead), so
+    // one door stays one door.
+    {
+      label: "اتصال‌های فنی",
+      module: "connections",
+      href: "/dashboard/connections",
+      roles: ["owner", "manager"],
+      children: ctx.connectionKinds.map((kind) => ({
+        label: kind.label,
+        module: "connections" as const,
+        href: `/dashboard/connections?tab=${kind.key}`,
+      })),
+    },
+    {
+      label: "گزارش‌ها",
+      module: "reports",
+      href: "/dashboard/reports",
+      roles: ["owner", "manager", "accountant"],
+      flag: "reporting",
+      children: REPORTS_TABS.map((tab) => ({
+        label: tab.label,
+        module: "reports" as const,
+        href: reportsTabHref(tab.key),
+        roles: tab.roles ?? ["owner", "manager", "accountant"],
+      })),
+    },
     { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
     // Wallet/credits & plans. The small credit badge in the chrome links here
     // too; the nav entry gives owners/managers a permanent door.
     { label: "اعتبار و پرداخت‌ها", module: "settings", href: "/dashboard/billing", roles: ["owner", "manager"] },
-    { label: "تنظیمات", module: "settings", href: "/dashboard/settings" },
+    // Settings tabs are already role/permission/feature-filtered server-side
+    // (`visibleSettingsTabs`), so they carry no further gate here.
+    {
+      label: "تنظیمات",
+      module: "settings",
+      href: "/dashboard/settings",
+      children: ctx.settingsTabs.map((tab) => ({
+        label: tab.label,
+        module: "settings" as const,
+        href: `/dashboard/settings?tab=${tab.key}`,
+      })),
+    },
     // Migration 0131 — the in-product knowledge base («مرکز آموزش»): every
     // member learns the platform here, so like the support desk it has no
     // role gate; the `settings` module anchors it because every trade has it.
@@ -183,8 +267,18 @@ export default async function DashboardLayout({
   const industry = bizRows[0]?.industry ?? "food_service";
   const permissions = effectivePermissions(member.role, parseOverrides(member.permissions));
   const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features, industry });
+  const connectionKinds = visibleConnectionKinds({ role: member.role, industry });
   const profile = industryProfile(industry);
-  const navItems = navItemsFor(industry)
+  const navItems = navItemsFor(industry, { settingsTabs, connectionKinds })
+    // Phase 42 — group children go through the same role/module/permission
+    // gate as their parent; a group whose children all filtered out is gone
+    // rather than an empty disclosure.
+    .map((item) =>
+      item.children
+        ? { ...item, children: item.children.filter((child) => canSee(child, member.role, permissions, features, industry)) }
+        : item,
+    )
+    .filter((item) => !item.children || item.children.length > 0)
     .filter((item) => canSee(item, member.role, permissions, features, industry))
     .filter((item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0)
     .map((item) => {
@@ -243,7 +337,9 @@ export default async function DashboardLayout({
           industry={industry}
         />
         <DashboardMain workspaceEnabled={workspaceEnabled}>
-          <AppAvailabilityGate availability={appAvailability}>{children}</AppAvailabilityGate>
+          <AppAvailabilityGate availability={appAvailability} workspaceEnabled={workspaceEnabled}>
+            {children}
+          </AppAvailabilityGate>
         </DashboardMain>
         </div>
         </BugReportProvider>

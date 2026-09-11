@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { lockoutMessage, sanitizeOverrides } from "@/lib/team";
-import { TeamError, removeMembership, updateMembership } from "@/lib/team-service";
+import {
+  TeamError,
+  removeMembership,
+  setMemberPhone,
+  updateMembership,
+} from "@/lib/team-service";
+import { canonicalMemberPhone } from "@/lib/phone-otp";
 import type { Role } from "@/lib/auth";
 
 const ASSIGNABLE_ROLES: Role[] = ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"];
@@ -30,6 +36,8 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     locationIds?: string[];
     defaultLocationId?: string | null;
     permissions?: unknown;
+    /** Phase 42 — set (or, with "", clear) the member's login phone. Stored unverified. */
+    phone?: string;
   };
   try {
     body = await request.json();
@@ -39,6 +47,23 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
   if (body.role !== undefined && !ASSIGNABLE_ROLES.includes(body.role)) {
     return NextResponse.json({ error: "invalid_role" }, { status: 400 });
+  }
+
+  // A phone change is its own action rather than a field on updateMembership:
+  // it carries its own guards (mobile shape, per-business uniqueness) and its
+  // own audit entry, and an owner typing somebody's number must never look
+  // like a verified number.
+  if (body.phone !== undefined) {
+    const trimmed = String(body.phone).trim();
+    const phone = trimmed ? canonicalMemberPhone(trimmed) : null;
+    if (trimmed && !phone) {
+      return NextResponse.json({ error: "invalid_phone" }, { status: 400 });
+    }
+    try {
+      await setMemberPhone(session.businessId, id, phone, session.sub);
+    } catch (err) {
+      return errorResponse(err);
+    }
   }
 
   try {

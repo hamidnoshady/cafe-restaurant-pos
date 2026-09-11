@@ -24,7 +24,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import type { AppShellNavProps } from "../app-shell-nav";
-import { APP_NAV_BUTTON_CLASS } from "../sidebar-nav-styles";
+import { APP_NAV_BUTTON_CLASS, BACK_TO_WORKSPACE_BUTTON_CLASS } from "../sidebar-nav-styles";
 import { crmNavItemsForRole } from "./crm-nav";
 import { crmSectionHref, isCrmSectionPathname } from "./crm-routes";
 
@@ -40,6 +40,20 @@ export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }:
           <p className="text-sm font-bold text-foreground">{shell.label}</p>
           <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">{shell.description}</p>
         </div>
+
+        {/* The way out, first — and drawn as a control, not as another section,
+            so «بازگشت» is the one thing that is always findable. */}
+        <SidebarMenu className="space-y-1.5">
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
+              <Link href={backHref} onClick={onNavigate}>
+                <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
+                <span className="group-data-[state=collapsed]/sidebar:hidden">{backLabel}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <div aria-hidden="true" className="border-t border-border/80" />
 
         <SidebarMenu className="space-y-1.5">
           {items.map((item) => {
@@ -70,21 +84,6 @@ export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }:
               </SidebarMenuItem>
             );
           })}
-        </SidebarMenu>
-
-        <SidebarMenu className="space-y-1.5 border-t border-border/80 pt-3">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              tooltip={backLabel}
-              className="min-h-12 rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <Link href={backHref} onClick={onNavigate}>
-                <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
-                <span className="group-data-[state=collapsed]/sidebar:hidden">{backLabel}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
         </SidebarMenu>
       </nav>
     </SidebarContent>

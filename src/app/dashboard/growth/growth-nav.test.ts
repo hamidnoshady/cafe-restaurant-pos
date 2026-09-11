@@ -47,8 +47,8 @@ describe("growthNavItemsForRole", () => {
 
   it("shows a cashier only the floor surface, and never a page they are redirected off", () => {
     // The menu and the route guard must agree exactly: an entry that leads to a
-    // redirect is a button that does nothing. Customers are a read-only
-    // projection for Accounting, not a cashier Growth workflow.
+    // redirect is a button that does nothing. The customers screen is a
+    // management surface, not a cashier Growth workflow.
     expect(growthNavItemsForRole("cashier").map((item) => item.key)).toEqual(["loyalty"]);
   });
 

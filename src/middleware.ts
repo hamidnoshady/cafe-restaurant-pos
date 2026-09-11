@@ -223,6 +223,50 @@ export function unknownHostAllowedPath(pathname: string): boolean {
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
+ * A POST that pretends to invoke a server action.
+ *
+ * This app has none: every mutation is a route handler under `/api/**`. So a
+ * request carrying `next-action` reaches Next's own "this app has no server
+ * actions, answer 404 early" branch — which *warns* on the way out
+ * (`The Server Reference ID did not match the expected format. Received "x"`,
+ * plus the stack, once per request) into the same log stream an operator reads to
+ * find a broken café. Nothing of ours can send one — no client code, the print
+ * agent, the WordPress plugin or the service worker (which only ever reads GET)
+ * puts that header on a request — so whatever arrives with it is a scanner probing
+ * the Server Action surface with `0`, `1`, `x` and `action` for an id, or a client
+ * aimed at whatever else this address used to serve. Both are answered the same
+ * way, and the log stops being where an operator has to notice them.
+ */
+const SERVER_ACTION_ID = /^[0-9a-f]{42}$/;
+
+/**
+ * Whether to refuse a request before the router sees it — the malformed ids only,
+ * which is the whole of what middleware can decide without reading a body. A
+ * well-formed one (`SERVER_REFERENCE_ID_LENGTH` hex characters: one info byte plus
+ * the module/export hash) is passed through to fail in Next's own way, so this
+ * guard does not have to be revisited on the day the app grows its first server
+ * action.
+ *
+ * `/api/**` is exempt, and not for tidiness: a route handler never reads the
+ * header (only the page render path does), so a POST to one of them is already
+ * answered by that handler on its own terms. Refusing it here instead would
+ * change documented behaviour for every integration, print agent and peer server
+ * that ever calls us, to silence a log line that was never going to be written.
+ *
+ * Exported for `src/middleware.test.ts`, which holds the three edges: a malformed
+ * id on a page path is refused, a well-formed id, a non-POST and an API path are
+ * not touched.
+ */
+export function isStrayServerActionCall(
+  method: string,
+  pathname: string,
+  nextAction: null | string,
+): boolean {
+  if (method !== "POST" || nextAction === null || pathname.startsWith("/api/")) return false;
+  return !SERVER_ACTION_ID.test(nextAction);
+}
+
+/**
  * Phase 17 — tenant-scoped rate limiting. Four independent fixed-window
  * counters, keyed so that one business (or one runaway bearer-token client,
  * or one IP hammering a login form) can only ever exhaust its own bucket:
@@ -367,6 +411,12 @@ const AUTH_RATE_LIMITED_PATHS = [
   "/api/auth/mfa/challenge",
   "/api/auth/mfa/verify",
   "/api/auth/mfa/enrol",
+  // Phase 42 — the phone-OTP door's two steps: `request` spends SMS credit
+  // and `verify` guesses a 6-digit code, both pre-session (see the sibling
+  // comment in PUBLIC_PATHS). The per-identity send limiter lives in
+  // phone-otp.ts; this per-IP bucket is the outer ceiling.
+  "/api/auth/phone-otp/request",
+  "/api/auth/phone-otp/verify",
   "/api/platform/auth/mfa/challenge",
   "/api/platform/auth/mfa/verify",
   "/api/platform/auth/mfa/enrol",
@@ -748,6 +798,15 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
   const { pathname } = request.nextUrl;
   const now = Date.now();
   maybeSweep(now);
+
+  // ---- A request that is not one this app serves ---------------------------
+  //
+  // Ahead of the rate limits on purpose: a probe of a surface this app does not
+  // have should cost nothing and should not spend the bucket of the IP it came
+  // from, which may well be shared with a real customer behind the same NAT.
+  if (isStrayServerActionCall(request.method, pathname, request.headers.get("next-action"))) {
+    return NextResponse.json({ error: "invalid_action_id" }, { status: 400 });
+  }
 
   const rateLimitResponse = await handleRateLimits(request, pathname, now);
   if (rateLimitResponse) return rateLimitResponse;

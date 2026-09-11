@@ -118,7 +118,7 @@ export default async function WebsiteAppHome() {
               </Button>
             ) : (
               <Button asChild className="px-4">
-                <Link href={wpSectionHref("connections")}>
+                <Link href="/dashboard/connections?tab=woocommerce">
                   <PlugZapIcon className="size-4" />
                   اتصال فروشگاه وردپرسی
                 </Link>

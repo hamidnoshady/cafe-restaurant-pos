@@ -1,0 +1,19 @@
+import { NextResponse } from "next/server";
+import { requireRole, withTenantScope } from "@/lib/auth";
+import { getLedgerOverview } from "@/lib/ledger-reports-service";
+
+/**
+ * The Accounting app's dashboard, in one call.
+ *
+ * Read-only, like the trial balance it reports beside, and reading the same
+ * `journal_lines` through the same helper (`ledger-reports-service.ts`), so the
+ * dashboard cannot disagree with the books or with the trial balance.
+ *
+ * Owner/manager/accountant only: it is the ledger's own door.
+ */
+export const GET = withTenantScope(async () => {
+  const { session, error } = await requireRole("owner", "manager", "accountant");
+  if (error) return error;
+
+  return NextResponse.json({ overview: await getLedgerOverview(session.businessId) });
+});

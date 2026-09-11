@@ -57,6 +57,13 @@ export function clientIpFrom(headers: Headers, trustedHops: number): string {
     const parts = forwarded.split(",").map((s) => s.trim());
 
     if (trustedHops > 0) {
+      // Count back `trustedHops` entries from the end, NOT one further. The
+      // last entry was appended by our own trusted proxy and names the peer it
+      // saw, so with the default one hop that entry *is* the client. Taking
+      // `length - 1 - trustedHops` reads one position further left, which on a
+      // forged `X-Forwarded-For: 1.2.3.4` returns the attacker's own value —
+      // letting them pin the login limiter to someone else's address. This is
+      // the index Phase 24 specified; the code had drifted from it.
       const index = Math.max(0, parts.length - trustedHops);
       return parts[index];
     }
@@ -121,9 +128,7 @@ function noteDurableFailure(reason: string): void {
  * the one running middleware (e.g. a split-tier deploy). It does not need to
  * be set for a plain reverse-proxy install; the default already handles that.
  */
-export function internalBaseOrigin(
-  env?: Record<string, string | undefined>,
-): string {
+export function internalBaseOrigin(env?: Record<string, string | undefined>): string {
   const source = env ?? process.env;
   const configured = source.INTERNAL_BASE_URL?.trim();
   if (configured) return configured.replace(/\/+$/, "");
@@ -157,10 +162,7 @@ export async function checkRateLimit(
       const origin = internalBaseOrigin();
       const res = await fetch(`${origin}/api/internal/rate-limit`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          [INTERNAL_AUTH_HEADER]: token,
-        },
+        headers: { "Content-Type": "application/json", [INTERNAL_AUTH_HEADER]: token },
         body: JSON.stringify({ key, limit, windowMs }),
       });
       if (res.ok) {
@@ -169,9 +171,7 @@ export async function checkRateLimit(
       }
       noteDurableFailure(`HTTP ${res.status}`);
     } else {
-      noteDurableFailure(
-        "no JWT_SECRET, so the internal call cannot be signed",
-      );
+      noteDurableFailure("no JWT_SECRET, so the internal call cannot be signed");
     }
   } catch (err) {
     noteDurableFailure(err instanceof Error ? err.message : String(err));
@@ -197,11 +197,7 @@ export async function checkRateLimit(
  * the IP- and token-keyed stores grow with every distinct caller ever seen —
  * call this occasionally (not on every request) to keep them bounded.
  */
-export function sweepExpired(
-  store: Map<string, RateLimitEntry>,
-  now: number,
-  staleAfterMs: number,
-): void {
+export function sweepExpired(store: Map<string, RateLimitEntry>, now: number, staleAfterMs: number): void {
   for (const [key, entry] of store) {
     if (now - entry.windowStart > staleAfterMs) store.delete(key);
   }

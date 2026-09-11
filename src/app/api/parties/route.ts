@@ -5,7 +5,7 @@ import { PartyValidationError, createParty, listParties, searchParties } from "@
 import { PARTY_ROLES, parsePartyRequestBody, type PartyRole } from "@/lib/parties";
 
 /**
- * The party directory — one endpoint for «طرف‌حساب‌ها» in every app.
+ * The party directory — one endpoint for «اشخاص» in every app.
  *
  * This is where the platform's copy of the record lives, and it is deliberately
  * the *only* way a party is written (migration 0137 renamed `customers` to
@@ -84,17 +84,21 @@ function rolesFrom(params: URLSearchParams): PartyRole[] | "invalid_role" | unde
  * cashier both hold — is not enough to change them. The owner who wants a till
  * operator editing party phone numbers should not be silently giving that till an
  * invoice's VAT rate with it.
+ *
+ * The two identity numbers (کد ملی, کد اقتصادی) are deliberately *not* on this
+ * list: they answer «who the person is», which is the CRM's half of the record,
+ * not «what the ledger posts». Gating them here turned every cashier save from
+ * the CRM — whose form always round-trips the general tab — into a 403.
  */
 function touchesAccountingFields(body: Record<string, unknown>): boolean {
   if (body.accountingCode !== undefined || body.accountingCodeMode !== undefined) return true;
   const general = (body.general_info ?? body.generalInfo) as Record<string, unknown> | undefined;
   if (general && general.taxPercentage !== undefined) return true;
-  if (general && (general.nationalId !== undefined || general.economicCode !== undefined)) return true;
   return body.financial_info !== undefined || body.financialInfo !== undefined;
 }
 
 /**
- * Creates a party — from the directory's «افزودن طرف‌حساب», from a store adding a
+ * Creates a party — from the directory's «افزودن شخص», from a store adding a
  * supplier, or from checkout's inline picker.
  *
  * The body is the flat form state at the root and one nested object per tab (see

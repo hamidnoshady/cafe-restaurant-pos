@@ -35,7 +35,13 @@ describe("app data ownership rules", () => {
     expect(rule.syncStrategy).toBe("mapped-integration");
     expect(appUsesData("accounting", "wp_store_mirror")).toBe(true);
     expect(appUsesData("website", "wp_store_mirror")).toBe(true);
-    expect(appUsesData("website", "technical_connections")).toBe(false);
+    // There is deliberately no `technical_connections` domain: the connection
+    // profile behind the mirror is owned by the «اتصال‌های فنی» hub, which is
+    // shell infrastructure rather than an app, so no cross-app contract can
+    // state it. The unknown-domain lookup throws rather than failing open.
+    expect(() =>
+      appDataRule("technical_connections" as Parameters<typeof appDataRule>[0]),
+    ).toThrow("Unknown app data domain");
     expect(canWriteData("accounting", "wp_store_mirror")).toBe(false);
     expect(canWriteData("website", "wp_store_mirror")).toBe(true);
   });

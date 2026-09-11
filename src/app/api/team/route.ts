@@ -3,7 +3,14 @@ import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { toLatinDigits } from "@/lib/digits";
 import { isPinRole, isValidPin, sanitizeOverrides } from "@/lib/team";
-import { TeamError, createMembership, isPinTaken, listMembers } from "@/lib/team-service";
+import {
+  TeamError,
+  createMembership,
+  isPhoneTaken,
+  isPinTaken,
+  listMembers,
+} from "@/lib/team-service";
+import { canonicalMemberPhone } from "@/lib/phone-otp";
 import type { Role } from "@/lib/auth";
 
 const ASSIGNABLE_ROLES: Role[] = ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"];
@@ -34,6 +41,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     email?: string;
     password?: string;
     pin?: string;
+    phone?: string;
     locationIds?: string[];
     defaultLocationId?: string | null;
     permissions?: unknown;
@@ -60,6 +68,18 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     }
   }
 
+  // Phase 42 — the login phone, optional but recommended: it is what every
+  // member eventually signs in with. Stored unverified; the member proves it
+  // with an OTP at their first door login.
+  let phone: string | null = null;
+  if (body.phone && String(body.phone).trim()) {
+    phone = canonicalMemberPhone(body.phone);
+    if (!phone) return NextResponse.json({ error: "invalid_phone" }, { status: 400 });
+    if (await isPhoneTaken(session.businessId, phone)) {
+      return NextResponse.json({ error: "phone_taken" }, { status: 409 });
+    }
+  }
+
   try {
     const { userId } = await createMembership({
       businessId: session.businessId,
@@ -68,6 +88,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       email: body.email ?? null,
       password: body.password ?? null,
       pin,
+      phoneE164: phone,
       locationIds: body.locationIds ?? [],
       defaultLocationId: body.defaultLocationId ?? null,
       overrides: sanitizeOverrides(body.permissions),

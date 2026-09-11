@@ -166,6 +166,7 @@ export function CartLineCard({
       <div className="mt-2 flex items-center justify-start gap-1 border-t border-border/70 pt-2">
         <button
           type="button"
+          aria-label={"تغییر افزودنی‌های " + line.name}
           onClick={() => onEdit(line.key)}
           className="flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
         >
@@ -174,6 +175,7 @@ export function CartLineCard({
         </button>
         <button
           type="button"
+          aria-label={"حذف " + line.name}
           onClick={() => onRemove(line.key)}
           className="flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
         >

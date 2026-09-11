@@ -2,12 +2,13 @@
  * Party scopes — how one shared record looks different in each app.
  *
  * The rule this encodes: **the data is one thing, the screens are many.** Every
- * app that lists «طرف‌حساب‌ها» mounts the same section component over the same
+ * app that lists «اشخاص» mounts the same section component over the same
  * `/api/parties` endpoint and the same `parties` table; what differs is which
  * roles it shows, which columns it draws, and what it lets you edit there. A
  * café owner opening the CRM sees customers and their phones; the same person
  * opening Accounting sees the whole file including the ledger number; the store
- * clerk opening Inventory sees suppliers; the Team tab sees personnel.
+ * clerk opening Inventory sees suppliers; the Team tab sees personnel; Growth
+ * sees the same customers with lifecycle and loyalty columns.
  *
  * Why a table of scopes rather than four hand-written sections: the moment the
  * per-app views are four copies, one of them drifts — a column appears in
@@ -25,7 +26,7 @@ export const PARTY_SCOPES = [
   "crm",
   "accounting",
   // Accounting's customers-only screen. It reads the same one record as the
-  // full «طرف‌حساب‌ها» view, but answers the accountant's customer question
+  // full «اشخاص» view, but answers the accountant's customer question
   // (who a customer is in the ledger) without the suppliers and staff noise.
   "accounting-customers",
   "operations",
@@ -87,8 +88,10 @@ export interface PartyScopeDef {
   accounting: "editable" | "readonly" | "hidden";
   /**
    * A read-only scope is a *view*: it lists the shared record and links to the
-   * app that owns it, exactly as Growth's customer section has done since
-   * Phase 36. No second edit path, ever.
+   * app that owns it, as the sales picker scope does. Every real app screen is
+   * editable — the record stays one thing because every one of them writes
+   * through the same form and the same endpoint, not because only one app may
+   * write.
    */
   readOnly: boolean;
 }
@@ -114,15 +117,18 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     app: "accounting",
     // Every counterparty, because the ledger is the one app that settles with all
     // three: AR against customers, AP against suppliers, payroll against staff.
+    // This is Accounting's own «اشخاص» — managed here, never by sending the
+    // accountant into the CRM's customers screen.
     roles: ["Customer", "Employee", "Supplier"],
     defaultRole: "Customer",
-    label: "طرف‌حساب‌ها",
+    label: "اشخاص",
     description: "مشتریان، تأمین‌کنندگان و کارکنان با کد حسابداری و اطلاعات مالی",
-    // The ledger is one page of in-app tabs, so the address is the tab it opens —
-    // `?tab=` is read by `LedgerManager` for exactly this link and for the party
-    // deep link (`?party=<id>`) an AR row or an AI answer uses.
-    href: "/dashboard/ledger?tab=parties",
-    columns: ["displayName", "role", "accountingCode", "tax", "status"],
+    // The Accounting app has its own route prefix now (`/dashboard/accounting`),
+    // one route per section — this is its persons directory, and the `?party=`
+    // a deep link from another app (an A/R row, an AI answer) carries is read
+    // by the section it opens.
+    href: "/dashboard/accounting/directory",
+    columns: ["displayName", "role", "phone", "accountingCode", "tax", "status"],
     accounting: "editable",
     readOnly: false,
   },
@@ -139,7 +145,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Customer",
     label: "مشتریان",
     description: "مشتریان با کد حسابداری، مالیات و ماندهٔ حساب",
-    href: "/dashboard/ledger?tab=customers",
+    href: "/dashboard/accounting/customers",
     columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
     accounting: "editable",
     readOnly: false,
@@ -162,7 +168,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     roles: ["Employee"],
     defaultRole: "Employee",
     label: "کارکنان",
-    description: "پروندهٔ طرف‌حساب کارکنان — حساب جاری، کد ملی و اطلاعات مالی",
+    description: "پروندهٔ کارکنان — حساب جاری، کد ملی و اطلاعات مالی",
     href: "/dashboard/settings?tab=team",
     columns: ["displayName", "phone", "accountingCode", "status"],
     accounting: "readonly",
@@ -174,14 +180,15 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     roles: ["Customer"],
     defaultRole: "Customer",
     label: "مشتریان",
-    description: "نمای خواندنی از پروندهٔ مشترک مشتریان",
+    description: "مشتریان رشد: چرخهٔ حیات، امتیاز و خرید — افزودن و ویرایش در همین بخش",
     href: "/dashboard/growth/customers",
     columns: ["displayName", "phone", "status"],
     accounting: "hidden",
-    // Growth acts *on* the audience; it has never owned the record, and Phase 36
-    // said so out loud. A second edit path is what the duplicates screen exists
-    // to clean up.
-    readOnly: true,
+    // Growth manages its own customers screen (its own lifecycle/loyalty columns,
+    // its own add/edit form) over the same shared `parties` row — the record is
+    // still one thing, so there is no second table for the duplicates screen to
+    // clean up. Only the 360° file (notes, tags, timeline) stays CRM's.
+    readOnly: false,
   },
   {
     key: "sales",

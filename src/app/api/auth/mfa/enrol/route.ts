@@ -39,12 +39,24 @@ export async function POST(request: NextRequest) {
     const email = rows[0]?.email;
     if (!email) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+    // Phase 42 — the issuer Google Authenticator shows: this business's own
+    // name, so a person who is an Owner twice reads «کافه لمیز: a@b.c» and
+    // «رستوران باران: a@b.c» instead of two identical «Business Suite» rows.
+    const issuer = payload.businessId
+      ? (
+          await query<{ name: string }>(`SELECT name FROM businesses WHERE id = $1`, [
+            payload.businessId,
+          ])
+        ).rows[0]?.name
+      : undefined;
+
     const result = await enrolMfaMethod({
       subjectRealm: "platform_user",
       subjectId: payload.sub,
       email,
       method: body.method,
       phone: body.phone,
+      issuer,
     });
 
     if (!result.ok) {

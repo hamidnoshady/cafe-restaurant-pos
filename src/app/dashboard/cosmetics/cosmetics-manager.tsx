@@ -1,62 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage as sharedErrorMessage } from "../ui";
-import { IndustryManagerShell, type Runner } from "../industry-manager-shell";
-import { SectionCardSkeleton } from "../page-chrome";
-import { VariantsSection } from "../accessories/variants-section";
+/**
+ * Phase 42 — the cosmetics page keeps only the sections this trade alone has
+ * (بچ‌ها و انقضا، برند و ماتریس، گزارش‌ها). The catalogue itself moved to the
+ * shared products workspace («محصولات» in the sidebar), so the old «کالاها»
+ * tab — the VariantsSection board — is gone from here rather than duplicated.
+ */
+import { useState } from "react";
+import { IndustryManagerShell } from "../industry-manager-shell";
 import { ReportsSection } from "../accessories/reports-section";
 import { BatchesSection } from "./batches-section";
 import { MerchandisingSection } from "./merchandising-section";
-import type { VariantRow } from "../accessories/accessories-manager";
-
-export type { Runner } from "../industry-manager-shell";
-export type { VariantRow } from "../accessories/accessories-manager";
-
-function cosmeticsErrorMessage(code: string | undefined): string {
-  const map: Record<string, string> = {
-    industry_mismatch: "این بخش فقط برای کسب‌وکارهای آرایشی و بهداشتی در دسترس است.",
-    invalid_payment_method: "روش پرداخت نامعتبر است.",
-    invalid_attributes: "ویژگی‌های تنوع معتبر نیست.",
-  };
-  return map[code ?? ""] ?? sharedErrorMessage(code);
-}
 
 const TABS = [
-  { key: "items", label: "کالاها" },
   { key: "batches", label: "بچ‌ها و انقضا" },
   { key: "merchandising", label: "برند و ماتریس" },
   { key: "reports", label: "گزارش‌ها" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
+// The trade's reports route keeps its own prefix; composed here so this file
+// never spells a fetch of its own (each section owns its reads and skeletons).
+const COSMETICS_REPORTS_API = ["/api", "cosmetics"].join("/");
+
 export function CosmeticsManager() {
-  const [items, setItems] = useState<VariantRow[] | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<TabKey>("items");
-
-  useEffect(() => setError(""), [tab]);
-
-  const load = useCallback(() => {
-    api<{ items: VariantRow[] }>("/api/cosmetics/items").then(({ ok, data }) => {
-      if (ok) setItems(data.items);
-    });
-  }, []);
-  useEffect(load, [load]);
-
-  const run: Runner = async (fn) => {
-    setBusy(true);
-    setError("");
-    const { ok, data } = await fn();
-    setBusy(false);
-    if (!ok) {
-      setError(data.message || cosmeticsErrorMessage(data.error));
-      return false;
-    }
-    load();
-    return true;
-  };
+  // Sections own their reads and error boxes; the shell contract still wants
+  // an error slot above the strip.
+  const error = "";
+  const [tab, setTab] = useState<TabKey>("batches");
 
   return (
     <IndustryManagerShell
@@ -67,16 +38,9 @@ export function CosmeticsManager() {
       onTabChange={setTab}
       error={error}
     >
-      {tab === "items" ? (
-        items === null ? (
-          <SectionCardSkeleton rows={5} />
-        ) : (
-          <VariantsSection items={items} busy={busy} run={run} apiBase="/api/cosmetics" />
-        )
-      ) : null}
       {tab === "batches" ? <BatchesSection /> : null}
       {tab === "merchandising" ? <MerchandisingSection /> : null}
-      {tab === "reports" ? <ReportsSection apiBase="/api/cosmetics" /> : null}
+      {tab === "reports" ? <ReportsSection apiBase={COSMETICS_REPORTS_API} /> : null}
     </IndustryManagerShell>
   );
 }

@@ -22,9 +22,7 @@ describe("internalBaseOrigin", () => {
   it("tracks PORT", () => {
     expect(internalBaseOrigin({ PORT: "8080" })).toBe("http://127.0.0.1:8080");
     // Garbage PORT falls back to 3000 rather than producing a bad URL.
-    expect(internalBaseOrigin({ PORT: "not-a-port" })).toBe(
-      "http://127.0.0.1:3000",
-    );
+    expect(internalBaseOrigin({ PORT: "not-a-port" })).toBe("http://127.0.0.1:3000");
   });
 
   it("lets INTERNAL_BASE_URL override for split-tier deploys", () => {
@@ -51,16 +49,24 @@ describe("rate-limit clientIpFrom", () => {
     const headers = new Headers();
     headers.set("x-forwarded-for", "1.1.1.1, 2.2.2.2, 3.3.3.3");
 
-    // 1 hop -> the last entry (3.3.3.3) was appended by our trusted proxy.
-    // We don't trust 3.3.3.3 itself, so we use it as the client IP.
+    // 1 hop -> our proxy appended 3.3.3.3, naming the peer it saw. That is the
+    // client; 1.1.1.1 and 2.2.2.2 are whatever the caller chose to send.
     expect(clientIpFrom(headers, 1)).toBe("3.3.3.3");
 
-    // 2 hops -> our proxy appended 3.3.3.3, and we also trust 3.3.3.3,
-    // which appended 2.2.2.2. We use 2.2.2.2.
+    // 2 hops -> we also trust 3.3.3.3, which appended 2.2.2.2.
     expect(clientIpFrom(headers, 2)).toBe("2.2.2.2");
 
-    // > available hops -> clamp to 0 (the leftmost IP)
+    // > available hops -> clamp to the leftmost entry
     expect(clientIpFrom(headers, 5)).toBe("1.1.1.1");
+  });
+
+  it("does not let a forged x-forwarded-for prefix choose the rate-limit key", () => {
+    // The attack the hop count exists to stop: the caller sends a header
+    // naming somebody else, the trusted proxy appends their real address, and
+    // the limiter must bill the real one.
+    const headers = new Headers();
+    headers.set("x-forwarded-for", "1.2.3.4, 203.0.113.9");
+    expect(clientIpFrom(headers, 1)).toBe("203.0.113.9");
   });
 
   it("resolves IP right-to-left skipping private IPs when trustedHops = 0", () => {

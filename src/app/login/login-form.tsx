@@ -9,6 +9,9 @@ import {
   startAuthentication,
 } from "@simplewebauthn/browser";
 import { PinPad } from "@/components/auth/pin-pad";
+import { PhoneOtpStep, type PhoneOtpSendSpec } from "@/components/auth/phone-otp-step";
+import { formatJalali } from "@/lib/jalali";
+import { toPersianDigits } from "@/lib/digits";
 import {
   lockoutMessage,
   retryAfterMs,
@@ -33,6 +36,15 @@ const ROLE_LABELS: Record<string, string> = {
  * to the tenant origin's `/admin` subdirectory (src/app/admin), so the till's
  * front screen no longer offers a password form — the business's origin simply
  * *is* the staff quick login.
+ *
+ * Phase 42 added the phone axis to the same door. After a name is picked, the
+ * step the door shows follows that member's `loginMode` (decided server-side
+ * by the roster): the PIN pad as before, the OTP screen for a member whose
+ * 7-day PIN window has closed or whose number is still unproven, or the PIN
+ * pad followed by a set-and-verify number for a member with none on file.
+ * Under the roster, «ورود با شمارهٔ موبایل» opens the direct phone login that
+ * every member — managers and owners included — can use once their number is
+ * verified; admins keep the email+password door at /admin.
  */
 export default function LoginForm() {
   return (
@@ -57,6 +69,16 @@ interface RosterEmployee {
   role: string;
   photoUrl: string | null;
   hasWebauthn: boolean;
+  /** Phase 42 — which step follows this name; decided server-side, never re-derived here. */
+  loginMode: "pin" | "otp" | "pin_then_otp";
+  phoneState: "none" | "unverified" | "verified";
+}
+
+/** Phase 42 — the business's phone-OTP adoption state, once per roster load. */
+interface RosterPolicy {
+  state: "off" | "grace" | "pending_sms" | "enforced";
+  daysLeft: number | null;
+  enforcedAt: string | null;
 }
 
 /** Device-local "who signed in here recently" — never synced, just a UI shortcut. */
@@ -137,14 +159,16 @@ function rememberRecent(employeeId: string) {
 }
 
 /**
- * Phase 20 Wave 2 — name-then-PIN. Step 1 shows the eligible staff (photo,
- * name, role), most-recently-used-on-this-device first; step 2 is the PIN
- * pad for whichever name was picked.
+ * Phase 20 Wave 2 — name-then-login. Step 1 shows the eligible staff (photo,
+ * name, role), most-recently-used-on-this-device first; step 2 is whatever
+ * that member's door step is — the PIN pad (Phase 42: PINs are 4–12 digits
+ * now), the OTP screen, or the PIN pad followed by «شمارهٔ موبایل».
  */
 function PinLogin() {
   const router = useRouter();
   const next = useNextPath("/dashboard");
   const [employees, setEmployees] = useState<RosterEmployee[] | null>(null);
+  const [policy, setPolicy] = useState<RosterPolicy | null>(null);
   const [rosterFailure, setRosterFailure] = useState<RosterFailure | null>(null);
   /** Bumped by the retry button; the roster effect keys off it. */
   const [rosterReloadKey, setRosterReloadKey] = useState(0);
@@ -152,6 +176,33 @@ function PinLogin() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [webauthnSupported, setWebauthnSupported] = useState(false);
+
+  /** The door's step for the selected member: the pad, the number input, or the OTP. */
+  const [doorStep, setDoorStep] = useState<"pin" | "set_phone" | "otp">("pin");
+  /**
+   * Phase 42 — the ten-minute `phone_pending` token pin-login hands back when
+   * the PIN was proven but the phone step must run first. Carries the member
+   * (and, after the number input, the candidate number) through
+   * request/verify.
+   */
+  const [pinPending, setPinPending] = useState<{ token: string; maskedPhone: string | null } | null>(null);
+  /** The member chose to verify their number on this login (the adoption-window button). */
+  const [verifyMode, setVerifyMode] = useState(false);
+  /** The set-phone input (first-time verify, nothing on file yet). */
+  const [phoneInput, setPhoneInput] = useState("");
+  /**
+   * The live OTP exchange: `otpSpec` is how the next send is addressed (set
+   * the moment a send starts, so a failed first send can be retried), and
+   * `otpSent` is what came back — the pending token and masked number the
+   * code entry runs on.
+   */
+  const [otpSpec, setOtpSpec] = useState<PhoneOtpSendSpec | null>(null);
+  const [otpSent, setOtpSent] = useState<{ token: string; maskedPhone: string | null } | null>(null);
+
+  /** The direct «ورود با شمارهٔ موبایل» tab — offered once the policy turns the feature on. */
+  const [phoneTab, setPhoneTab] = useState(false);
+  const [tabPhone, setTabPhone] = useState("");
+  const [tabBusinesses, setTabBusinesses] = useState<{ id: string; name: string }[] | null>(null);
 
   useEffect(() => {
     // Checked client-side only (guarded, not called during the server render)
@@ -182,10 +233,12 @@ function PinLogin() {
       if (res.ok) {
         const data = (await res.json().catch(() => null)) as {
           employees?: RosterEmployee[];
+          policy?: RosterPolicy;
         } | null;
         if (cancelled) return;
         setRosterFailure(null);
         setEmployees(data?.employees ?? []);
+        setPolicy(data?.policy ?? null);
         return;
       }
 
@@ -243,11 +296,109 @@ function PinLogin() {
   /** Re-asks for the roster from scratch — the button under a failed load. */
   function retryRoster() {
     setEmployees(null);
+    setPolicy(null);
     setRosterFailure(null);
     setRosterReloadKey((key) => key + 1);
   }
 
-  async function submit(pin: string) {
+  function pick(employee: RosterEmployee) {
+    setSelected(employee);
+    setError(null);
+    setVerifyMode(false);
+    setPinPending(null);
+    setOtpSpec(null);
+    setOtpSent(null);
+    setPhoneInput("");
+    // The server already decided this member's step (loginMode) — the client
+    // only follows it. `otp` means the code is the credential this time: send
+    // to the number already on file as soon as the name is picked.
+    setDoorStep(employee.loginMode === "otp" ? "otp" : "pin");
+    if (employee.loginMode === "otp") {
+      void startOtp({ kind: "employee", employeeId: employee.id });
+    }
+  }
+
+  function goNext(employeeId?: string) {
+    if (employeeId) rememberRecent(employeeId);
+    router.push(next);
+    router.refresh();
+  }
+
+  /**
+   * Send the first OTP for any of the door's paths, then hand the live
+   * exchange to PhoneOtpStep. One function because every path's first send
+   * differs only in how it is addressed (see /api/auth/phone-otp/request).
+   * The spec is remembered the moment the send starts, so a failed first
+   * send has a retry button that re-addresses the exact same send.
+   */
+  async function startOtp(spec: PhoneOtpSendSpec, employeeId?: string) {
+    setBusy(true);
+    setError(null);
+    setOtpSpec(spec);
+    setOtpSent(null);
+    setDoorStep("otp");
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      let body: Record<string, unknown> = {};
+      if (spec.kind === "token") {
+        headers.Authorization = `Bearer ${spec.token}`;
+        body = { phone: spec.phone };
+      } else if (spec.kind === "employee") {
+        body = { employeeId: spec.employeeId, businessId: spec.businessId };
+      } else {
+        body = { phone: spec.phone, businessId: spec.businessId };
+      }
+
+      const res = await fetch("/api/auth/phone-otp/request", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        token?: string;
+        maskedPhone?: string | null;
+        error?: string;
+        message?: string;
+        retryAfterMs?: number;
+        needsBusinessSelection?: boolean;
+        businesses?: { id: string; name: string }[];
+      };
+
+      if (data.needsBusinessSelection) {
+        // The typed number belongs to members of more than one business and
+        // this origin does not name one — ask which, then re-send addressed
+        // to it. (Only the direct tab can land here.)
+        setTabBusinesses(data.businesses ?? []);
+        return;
+      }
+      if (res.status === 429) {
+        const ms = typeof data.retryAfterMs === "number" ? data.retryAfterMs : 0;
+        const seconds = Math.max(1, Math.ceil(ms / 1000));
+        setError(`درخواست بعدی تا ${toPersianDigits(String(seconds))} ثانیهٔ دیگر ممکن نیست.`);
+        return;
+      }
+      if (!res.ok || !data.token) {
+        const map: Record<string, string> = {
+          invalid_phone: "شمارهٔ موبایل معتبر نیست.",
+          phone_missing: "برای این حساب شمارهٔ موبایلی ثبت نشده است.",
+          sms_dispatch_failed: "ارسال پیامک ممکن نشد. کمی بعد دوباره تلاش کنید.",
+          unauthorized: "مهلت این مرحله تمام شده است؛ از ابتدا تلاش کنید.",
+        };
+        setError(data.message ?? map[data.error ?? ""] ?? "ارسال کد ممکن نشد.");
+        return;
+      }
+
+      setTabBusinesses(null);
+      setOtpSent({ token: data.token, maskedPhone: data.maskedPhone ?? null });
+      if (employeeId) rememberRecent(employeeId);
+    } catch {
+      setError("ارتباط با سرور برقرار نشد.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitPin(pin: string) {
     if (!selected) return;
     setBusy(true);
     setError(null);
@@ -258,20 +409,42 @@ function PinLogin() {
         pin,
         employeeId: selected.id,
         deviceToken: readDeviceToken(),
+        // The adoption-window button: prove the PIN, then verify the number
+        // this same login — the OTP step that follows is voluntary today and
+        // becomes the gate the day the window closes.
+        ...(verifyMode ? { verifyPhone: true } : {}),
       }),
     });
+    const data = (await res.json().catch(() => ({}))) as {
+      phoneVerification?: "otp" | "set_phone";
+      phoneToken?: string;
+      maskedPhone?: string | null;
+      lockedUntil?: unknown;
+    };
     setBusy(false);
-    if (res.ok) {
-      rememberRecent(selected.id);
-      router.push(next);
-      router.refresh();
-      return;
-    }
+
     if (res.status === 423) {
-      const data = await res.json().catch(() => ({}));
-      setError(lockoutMessage((data as { lockedUntil?: unknown }).lockedUntil));
+      setError(lockoutMessage(data.lockedUntil));
       return;
     }
+
+    if (res.ok) {
+      if (data.phoneVerification && data.phoneToken) {
+        // PIN proven, phone step owed. `otp` — a number is on file (unproven,
+        // or proven with a closed window): send to it straight away. 
+        // `set_phone` — nothing on file: ask for the number first.
+        setPinPending({ token: data.phoneToken, maskedPhone: data.maskedPhone ?? null });
+        if (data.phoneVerification === "otp") {
+          await startOtp({ kind: "token", token: data.phoneToken });
+        } else {
+          setDoorStep("set_phone");
+        }
+        return;
+      }
+      goNext(selected.id);
+      return;
+    }
+
     setError("پین نادرست است.");
   }
 
@@ -310,9 +483,7 @@ function PinLogin() {
       }
       if (!verifyRes.ok) throw new Error("invalid_credentials");
 
-      rememberRecent(selected.id);
-      router.push(next);
-      router.refresh();
+      goNext(selected.id);
     } catch {
       // Covers a failed verification as well as the user cancelling the
       // browser's own biometric prompt — either way, the PIN pad below is
@@ -324,9 +495,123 @@ function PinLogin() {
     }
   }
 
-  if (!selected) {
+  // -------------------------------------------------------------------------
+  // The direct phone tab
+  // -------------------------------------------------------------------------
+  if (phoneTab) {
     return (
       <div>
+        <div className="mb-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => {
+              setPhoneTab(false);
+              setTabBusinesses(null);
+              setError(null);
+              setOtpSpec(null);
+              setOtpSent(null);
+            }}
+            className="rounded text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
+          >
+            ← بازگشت
+          </button>
+          <span className="text-sm font-semibold">ورود با شمارهٔ موبایل</span>
+        </div>
+
+        {otpSent && otpSpec ? (
+          <PhoneOtpStep
+            sendSpec={otpSpec}
+            initialToken={otpSent.token}
+            initialMaskedPhone={otpSent.maskedPhone}
+            deviceToken={readDeviceToken()}
+            onVerified={() => goNext()}
+            onCancel={() => {
+              setOtpSpec(null);
+              setOtpSent(null);
+              setError(null);
+            }}
+          />
+        ) : tabBusinesses ? (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              این شماره در چند کسب‌وکار ثبت شده است؛ وارد کدام می‌شوید؟
+            </p>
+            {tabBusinesses.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                disabled={busy}
+                onClick={() => void startOtp({ kind: "phone", phone: tabPhone, businessId: b.id })}
+                className="w-full rounded-lg border border-input px-3 py-2.5 text-sm font-semibold transition hover:bg-primary/10 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
+              >
+                {b.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (tabPhone.trim()) void startOtp({ kind: "phone", phone: tabPhone });
+            }}
+          >
+            <p className="text-sm text-muted-foreground">
+              شمارهٔ موبایل تأییدشدهٔ خود را وارد کنید تا کد یک‌بارمصرف پیامک شود.
+            </p>
+            <input
+              dir="ltr"
+              inputMode="tel"
+              autoFocus
+              required
+              value={tabPhone}
+              onChange={(e) => setTabPhone(e.target.value)}
+              placeholder="09121234567"
+              aria-label="شمارهٔ موبایل"
+              className="w-full rounded-lg border border-input px-3 py-2 text-center focus:border-primary focus:outline-none"
+            />
+            {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+            <button
+              type="submit"
+              disabled={busy || !tabPhone.trim()}
+              className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
+            >
+              {busy ? "در حال ارسال…" : "ارسال کد"}
+            </button>
+            <p className="text-xs text-muted-foreground">
+              مدیران و مالکان می‌توانند با ایمیل و رمز عبور نیز از صفحهٔ /admin وارد شوند.
+            </p>
+          </form>
+        )}
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Roster
+  // -------------------------------------------------------------------------
+  if (!selected) {
+    const showPhoneTab = policy?.state === "grace" || policy?.state === "enforced";
+    return (
+      <div>
+        {policy?.state === "grace" && (
+          // The adoption window, said out loud where everyone walks past it.
+          // A countdown nobody can see is a lockout nobody was warned about.
+          <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+            <p className="font-semibold">
+              ورود با کد پیامکی از{" "}
+              {policy.enforcedAt
+                ? toPersianDigits(formatJalali(policy.enforcedAt, { withMonthName: true }))
+                : "به‌زودی"}{" "}
+              برای همه الزامی می‌شود
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              {policy.daysLeft !== null
+                ? `${toPersianDigits(String(policy.daysLeft))} روز فرصت دارید شمارهٔ موبایل کارکنان را ثبت و تأیید کنید.`
+                : "شمارهٔ موبایل کارکنان را ثبت و تأیید کنید."}
+            </p>
+          </div>
+        )}
         <p className="mb-3 text-center text-sm text-muted-foreground">
           نام خود را انتخاب کنید
         </p>
@@ -380,10 +665,7 @@ function PinLogin() {
             <button
               key={employee.id}
               type="button"
-              onClick={() => {
-                setSelected(employee);
-                setError(null);
-              }}
+              onClick={() => pick(employee)}
               className="flex flex-col items-center gap-1.5 rounded-lg p-2 text-center transition hover:bg-primary/10 active:scale-95 outline-none focus-visible:ring focus-visible:ring-ring/50"
             >
               <EmployeeAvatar employee={employee} />
@@ -396,28 +678,146 @@ function PinLogin() {
             </button>
           ))}
         </div>
+        {showPhoneTab && (
+          <button
+            type="button"
+            onClick={() => {
+              setPhoneTab(true);
+              setError(null);
+              setOtpSpec(null);
+              setOtpSent(null);
+            }}
+            className="mt-4 w-full rounded-lg border border-input py-2.5 text-sm font-semibold transition hover:bg-primary/10 outline-none focus-visible:ring focus-visible:ring-ring/50"
+          >
+            ورود با شمارهٔ موبایل
+          </button>
+        )}
       </div>
     );
   }
 
+  // -------------------------------------------------------------------------
+  // The selected member's door step
+  // -------------------------------------------------------------------------
+  if (doorStep === "otp") {
+    return (
+      <div>
+        <DoorHeader employee={selected} onBack={() => pick(selected)} />
+        {otpSent && otpSpec ? (
+          <PhoneOtpStep
+            sendSpec={otpSpec}
+            initialToken={otpSent.token}
+            initialMaskedPhone={otpSent.maskedPhone}
+            deviceToken={readDeviceToken()}
+            onVerified={() => goNext(selected.id)}
+            onCancel={() => pick(selected)}
+          />
+        ) : (
+          // The first send is in flight (or just failed). Never a dead end:
+          // one tap re-addresses the exact same send.
+          <div className="space-y-4 text-center">
+            <p role="status" className="text-sm text-muted-foreground">
+              {busy ? "در حال ارسال کد…" : "ارسال کد انجام نشد."}
+            </p>
+            {error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
+            {!busy && otpSpec ? (
+              <button
+                type="button"
+                onClick={() => void startOtp(otpSpec)}
+                className="rounded-lg border border-input px-4 py-2 text-sm font-semibold transition hover:bg-primary/10 outline-none focus-visible:ring focus-visible:ring-ring/50"
+              >
+                تلاش دوباره
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (doorStep === "set_phone" && pinPending) {
+    return (
+      <div>
+        <DoorHeader employee={selected} onBack={() => pick(selected)} />
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (phoneInput.trim()) {
+              void startOtp({ kind: "token", token: pinPending.token, phone: phoneInput });
+            }
+          }}
+        >
+          <div>
+            <h2 className="text-base font-bold">شمارهٔ موبایل خود را ثبت کنید</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              یک بار کد پیامکی به این شماره می‌رسد؛ از آن پس می‌توانید با همان شماره
+              وارد شوید و تا ۷ روز از رمز عددی برای ورود سریع استفاده کنید.
+            </p>
+          </div>
+          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+          <input
+            dir="ltr"
+            inputMode="tel"
+            autoFocus
+            required
+            value={phoneInput}
+            onChange={(e) => setPhoneInput(e.target.value)}
+            placeholder="09121234567"
+            aria-label="شمارهٔ موبایل"
+            className="w-full rounded-lg border border-input px-3 py-2 text-center focus:border-primary focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={busy || !phoneInput.trim()}
+            className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
+          >
+            {busy ? "در حال ارسال…" : "ارسال کد تأیید"}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // doorStep === "pin"
+  const graceVerifyOffer =
+    policy?.state === "grace" && selected.phoneState !== "verified";
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => {
-            setSelected(null);
-            setError(null);
-          }}
-          className="rounded text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
-        >
-          ← کارمند دیگر
-        </button>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{selected.fullName}</span>
-          <EmployeeAvatar employee={selected} size="sm" />
+      <DoorHeader employee={selected} onBack={() => pick(selected)} />
+      {graceVerifyOffer && (
+        <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+          {verifyMode ? (
+            <p>
+              رمز عددی را وارد کنید؛ پس از آن، شمارهٔ موبایل شما با یک کد پیامکی
+              تأیید و ورود کامل می‌شود.
+            </p>
+          ) : (
+            <>
+              <p className="font-semibold">
+                {selected.phoneState === "none"
+                  ? "شمارهٔ موبایل شما هنوز ثبت نشده است."
+                  : "شمارهٔ موبایل شما هنوز تأیید نشده است."}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                تا چند روز دیگر ورود با کد پیامکی الزامی می‌شود؛ همین حالا ثبت/تأیید
+                کنید تا بعداً درِ ورود برایتان بسته نماند.
+              </p>
+              <button
+                type="button"
+                onClick={() => setVerifyMode(true)}
+                className="mt-2 rounded-lg border border-primary/40 px-3 py-1.5 font-semibold text-primary transition hover:bg-primary/10 outline-none focus-visible:ring focus-visible:ring-ring/50"
+              >
+                تأیید شمارهٔ موبایل و ورود
+              </button>
+            </>
+          )}
         </div>
-      </div>
+      )}
       {selected.hasWebauthn && webauthnSupported && (
         <button
           type="button"
@@ -429,11 +829,36 @@ function PinLogin() {
         </button>
       )}
       <PinPad
-        onComplete={submit}
+        onComplete={submitPin}
         busy={busy}
         error={error}
-        resetKey={selected.id}
+        resetKey={selected.id + (verifyMode ? ":verify" : "")}
       />
+    </div>
+  );
+}
+
+/** The «کارمند دیگر» bar every post-roster step shares. */
+function DoorHeader({
+  employee,
+  onBack,
+}: {
+  employee: RosterEmployee;
+  onBack: () => void;
+}) {
+  return (
+    <div className="mb-4 flex items-center justify-between">
+      <button
+        type="button"
+        onClick={onBack}
+        className="rounded text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
+      >
+        ← کارمند دیگر
+      </button>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold">{employee.fullName}</span>
+        <EmployeeAvatar employee={employee} size="sm" />
+      </div>
     </div>
   );
 }

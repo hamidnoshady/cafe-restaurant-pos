@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import {
   ArmchairIcon,
   BarChart3Icon,
@@ -12,6 +12,7 @@ import {
   CalculatorIcon,
   CheckIcon,
   ChefHatIcon,
+  ChevronDownIcon,
   CircleIcon,
   ClipboardListIcon,
   ContactIcon,
@@ -49,12 +50,12 @@ import {
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
-import type { AppKey } from "@/lib/apps";
+import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { AppStateBadge } from "./app-availability-gate";
 import { CreditBadge } from "./credit-badge";
-import { APP_NAV_BUTTON_CLASS } from "./sidebar-nav-styles";
+import { APP_NAV_BUTTON_CLASS, BACK_TO_WORKSPACE_BUTTON_CLASS } from "./sidebar-nav-styles";
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
@@ -121,13 +122,16 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/overview": LayoutDashboardIcon,
   "/dashboard/orders": ClipboardListIcon,
   "/dashboard/pos": ShoppingCartIcon,
-  "/dashboard/customers": UsersIcon,
+  "/dashboard/persons": UsersIcon,
   "/dashboard/floor": ArmchairIcon,
   "/dashboard/waiter": ArmchairIcon,
   "/dashboard/kitchen": ChefHatIcon,
   "/dashboard/reservations": CalendarDaysIcon,
   "/dashboard/delivery": TruckIcon,
   "/dashboard/inventory": PackageIcon,
+  // Phase 42 — the products workspace group's icon (nav entries derive theirs
+  // from href; the group has none, so it names this key via `iconKey`).
+  "/dashboard/products": PackageIcon,
   "/dashboard/jewelry": GemIcon,
   "/dashboard/watch": WatchIcon,
   "/dashboard/accessories": SparklesIcon,
@@ -135,6 +139,11 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/tools-fittings": PackageIcon,
   "/dashboard/haberdashery": SparklesIcon,
   "/dashboard/ledger": CalculatorIcon,
+  // The Accounting app's own home (`/dashboard/accounting`); the old ledger
+  // address above still forwards into it, and keeps its glyph for any saved
+  // bottom-nav slot that still points there.
+  "/dashboard/accounting": CalculatorIcon,
+  "/dashboard/connections": PlugIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
   "/dashboard/billing": WalletIcon,
@@ -142,7 +151,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   // Phase 36b — the Growth & Marketing app's home; the trend glyph the
   // workspace rail already uses for «رشد و بازاریابی».
   "/dashboard/growth": TrendingUpIcon,
-  // Phase 36 — the CRM app's home. `/dashboard/customers` keeps the plain
+  // Phase 36 — the CRM app's home. `/dashboard/persons` keeps the plain
   // people glyph above; this is the app that now owns that record.
   "/dashboard/crm": ContactIcon,
   // «مدیریت وب‌سایت» — one app for both website systems (the Eshobe CMS site
@@ -155,7 +164,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
 };
 
 /**
- * The apps the workspace rail launches, in rail order.
+ * The apps the workspace rail launches, in rail order — plus the one hub.
  *
  * A table rather than a block of markup per app: the rail is the front door to
  * every app in the platform, so adding one (the CRM, and whatever follows it)
@@ -168,9 +177,13 @@ const NAV_ICONS: Record<string, LucideIcon> = {
  * actually reach (their trade's modules, their role, their feature flags — the
  * nav list is already filtered for all three) are considered, which is what
  * makes an app disappear from the rail for a business that does not have it.
+ *
+ * The last entry is not an app: «اتصال‌های فنی» is the shell's technical hub
+ * (src/lib/apps.ts), launched from the rail like an app but never badged and
+ * never gated.
  */
 const WORKSPACE_APP_LAUNCHERS: readonly {
-  key: AppKey;
+  key: AppKey | "connections";
   label: string;
   icon: LucideIcon;
   hrefs: readonly string[];
@@ -179,17 +192,20 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     key: "accounting",
     label: "حسابداری",
     icon: CalculatorIcon,
-    // The accounting overview is available to every member who can see this
-    // rail; ledger and reports stay reachable from the app's own sidebar.
-    hrefs: ["/dashboard/overview", "/dashboard/ledger", "/dashboard/reports"],
+    // The app's own pages first: opening «حسابداری» lands on the app's home
+    // (`/dashboard/accounting`), not on the sales overview. The overview is
+    // only the fallback for a member whose role cannot open the accounting
+    // pages or the reports at all; the old `/dashboard/ledger` address stays
+    // as a preference-list entry for any surface still holding it.
+    hrefs: ["/dashboard/accounting", "/dashboard/ledger", "/dashboard/reports", "/dashboard/overview"],
   },
   {
     key: "crm",
     label: "ارتباط با مشتری",
     icon: ContactIcon,
-    // `/dashboard/customers` redirects into the app's directory, so a business
+    // `/dashboard/persons` redirects into the app's directory, so a business
     // that has customers but has never opened the CRM still gets the launcher.
-    hrefs: ["/dashboard/crm", "/dashboard/customers"],
+    hrefs: ["/dashboard/crm", "/dashboard/persons"],
   },
   {
     key: "growth",
@@ -206,12 +222,13 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     key: "website",
     label: "مدیریت وب‌سایت",
     icon: GlobeIcon,
-    // One launcher for both managers. The app home is first; `/dashboard/wp`
-    // stays in the list because a saved bottom-nav slot or bookmark from the
-    // standalone WP Manager still points there (it redirects into the app).
-    // Do not fall back to the technical connection hub: that would put
-    // WooCommerce and the CMS back behind the Accounting/Connections door.
-    hrefs: ["/dashboard/website", "/dashboard/wp"],
+    // One launcher for both managers, opening the app home. (The old
+    // `/dashboard/wp` prefix still forwards into the app for bookmarks and
+    // saved bottom-nav slots, but it is not a nav entry anymore, so it is not
+    // a launcher fallback either.) Do not fall back to the technical
+    // connection hub: that would put the site managers back behind the
+    // Accounting/Connections door.
+    hrefs: ["/dashboard/website"],
   },
   {
     key: "connections",
@@ -226,6 +243,13 @@ export interface NavItem {
   /** The industry module that owns this entry (src/lib/industry-profile.ts); already filtered out of navItems for an industry that has no such module. */
   module: ModuleKey;
   href?: string;
+  /**
+   * Phase 42 — a collapsible group («محصولات») rather than a link: the button
+   * discloses `children` beneath it. The `iconKey` names the NAV_ICONS entry
+   * the group wears, since a group has no href of its own to derive one from.
+   */
+  children?: NavItem[];
+  iconKey?: string;
   roles?: string[];
   /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled and not lockable. */
   flag?: string;
@@ -267,9 +291,155 @@ interface SidebarProps {
   industry?: Industry;
 }
 
-function isActive(path: string, href: string): boolean {
-  if (href === "/dashboard") return path === "/dashboard";
-  return path === href || path.startsWith(`${href}/`);
+/**
+ * Whether a nav href is the current location.
+ *
+ * A bare href (no `?`) is a section's home and is active on its whole path
+ * prefix, the way the flat nav always behaved — so a group's parent link stays
+ * lit on every one of its query-string tabs. A `?tab=` href is a *named* sub-
+ * section: it matches only that tab (other query params, like a `party=` deep
+ * link, are ignored so the «مشتریان» entry stays lit on one customer's file).
+ */
+function isActive(pathname: string, href: string, search?: ReadonlyURLSearchParams | null): boolean {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  const q = href.indexOf("?");
+  if (q >= 0) {
+    const hrefPath = href.slice(0, q);
+    if (pathname !== hrefPath) return false;
+    const hrefTab = new URLSearchParams(href.slice(q + 1)).get("tab");
+    return (search?.get("tab") ?? null) === hrefTab;
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** Which collapsible nav groups the member left open, per device. */
+const OPEN_NAV_GROUPS_KEY = "dashboard-sidebar-open-groups";
+
+function readOpenGroups(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(OPEN_NAV_GROUPS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Phase 42 — a collapsible group in the flat nav («محصولات» and its
+ * sub-sections). The parent is a disclosure, not a link; children wear the
+ * same amber selection as every other nav entry, with an inline-start bar
+ * marking the one you are on. A group that holds the active page opens on
+ * its own, so a deep link never lands behind a closed door; the member's
+ * manual opens/closes are remembered per device.
+ */
+function NavGroupItem({
+  item,
+  pathname,
+  search,
+  onNavigate,
+  open,
+  onToggle,
+}: {
+  item: NavItem & { children: NavItem[] };
+  pathname: string;
+  search: ReadonlyURLSearchParams | null;
+  onNavigate: () => void;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = NAV_ICONS[item.iconKey ?? item.href ?? ""] ?? CircleIcon;
+  const childActive = item.children.some((child) => child.href && isActive(pathname, child.href, search));
+  const hrefActive = item.href ? isActive(pathname, item.href, search) : false;
+  const active = childActive || hrefActive;
+  // A group that *has* a home keeps its label a link to that home («حسابداری»
+  // → the dashboard) and puts the disclosure on a separate chevron, so tapping
+  // the section still opens its main page — while a pure group («محصولات»)
+  // toggles on the whole row, exactly as before.
+  const hasHref = Boolean(item.href);
+
+  return (
+    <SidebarMenuItem>
+      <div className="relative">
+        <SidebarMenuButton
+          asChild={hasHref}
+          isActive={active}
+          tooltip={item.label}
+          className={`${APP_NAV_BUTTON_CLASS} ${hasHref ? "pe-9" : ""}`}
+          aria-expanded={hasHref ? undefined : open}
+          onClick={hasHref ? undefined : onToggle}
+        >
+          {hasHref ? (
+            <Link
+              href={item.href!}
+              onClick={onNavigate}
+              aria-current={hrefActive ? "page" : undefined}
+            >
+              <Icon aria-hidden="true" className="size-5 shrink-0" />
+              <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+              {item.appState ? (
+                <AppStateBadge
+                  state={item.appState.state}
+                  label={item.appState.label}
+                  className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                />
+              ) : null}
+            </Link>
+          ) : (
+            <>
+              <Icon aria-hidden="true" className="size-5 shrink-0" />
+              <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+              {item.appState ? (
+                <AppStateBadge
+                  state={item.appState.state}
+                  label={item.appState.label}
+                  className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                />
+              ) : null}
+              <ChevronDownIcon
+                aria-hidden="true"
+                className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-data-[state=collapsed]/sidebar:hidden ${item.appState ? "ms-1.5" : "ms-auto"}`}
+              />
+            </>
+          )}
+        </SidebarMenuButton>
+        {hasHref ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            aria-label={`باز و بسته کردن زیربخش‌های ${item.label}`}
+            className="absolute end-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-amber-500/20 dark:hover:text-amber-300 group-data-[state=collapsed]/sidebar:hidden"
+          >
+            <ChevronDownIcon
+              aria-hidden="true"
+              className={`size-4 transition-transform duration-200 ease-out ${open ? "" : "-rotate-90"}`}
+            />
+          </button>
+        ) : null}
+      </div>
+      {open ? (
+        <ul className="ms-6 mt-1 space-y-0.5 group-data-[state=collapsed]/sidebar:hidden">
+          {item.children.map((child) => {
+            if (!child.href) return null;
+            const active = isActive(pathname, child.href, search);
+            return (
+              <li key={child.href}>
+                <Link
+                  href={child.href}
+                  onClick={onNavigate}
+                  data-active={active}
+                  aria-current={active ? "page" : undefined}
+                  className="flex min-h-10 w-full items-center rounded-lg border-s-2 border-transparent px-3 text-sm text-foreground/75 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 data-[active=true]:border-amber-500 dark:data-[active=true]:border-amber-400 data-[active=true]:bg-amber-100 dark:data-[active=true]:bg-amber-500/20 data-[active=true]:font-semibold data-[active=true]:text-amber-700 dark:data-[active=true]:text-amber-200"
+                >
+                  {child.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </SidebarMenuItem>
+  );
 }
 
 function NavLinks({
@@ -284,29 +454,67 @@ function NavLinks({
   /** True while the business has the workspace shell: adds a «میز کار» entry back to the chat home. */
   showWorkspaceHome?: boolean;
 }) {
+  const search = useSearchParams();
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  useEffect(() => setOpenGroups(readOpenGroups()), []);
+  const toggleGroup = useCallback((label: string) => {
+    setOpenGroups((current) => {
+      const next = { ...current, [label]: !current[label] };
+      try {
+        window.localStorage.setItem(OPEN_NAV_GROUPS_KEY, JSON.stringify(next));
+      } catch {
+        // A device that refuses storage keeps the choice for the session.
+      }
+      return next;
+    });
+  }, []);
   return (
     <SidebarContent className="px-3 py-4">
-      <nav aria-label="ناوبری داشبورد">
+      <nav aria-label="ناوبری داشبورد" className="space-y-3">
+        {showWorkspaceHome ? (
+          <>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/dashboard"}
+                  tooltip="بازگشت به میز کار"
+                  className={BACK_TO_WORKSPACE_BUTTON_CLASS}
+                >
+                  <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
+                    <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
+                    <span className="group-data-[state=collapsed]/sidebar:hidden">بازگشت به میز کار</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+            {/* The way out is a control, not a menu entry: separate it from the
+                sections below so it reads as "leave this app" rather than as
+                another page. */}
+            <div aria-hidden="true" className="border-t border-border/80" />
+          </>
+        ) : null}
         <SidebarMenu className="space-y-1.5">
-          {showWorkspaceHome ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname === "/dashboard"}
-                tooltip="میز کار"
-                className={APP_NAV_BUTTON_CLASS}
-              >
-                <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
-                  <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
-                  <span className="group-data-[state=collapsed]/sidebar:hidden">میز کار</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ) : null}
           {navItems.map((item) => {
+            if (item.children && item.children.length > 0) {
+              const holdsActive =
+                (item.href ? isActive(pathname, item.href, search) : false) ||
+                item.children.some((child) => child.href && isActive(pathname, child.href, search));
+              return (
+                <NavGroupItem
+                  key={item.label}
+                  item={item as NavItem & { children: NavItem[] }}
+                  pathname={pathname}
+                  search={search}
+                  onNavigate={onNavigate}
+                  open={Boolean(openGroups[item.label]) || holdsActive}
+                  onToggle={() => toggleGroup(item.label)}
+                />
+              );
+            }
             if (!item.href) return null;
             const Icon = NAV_ICONS[item.href] ?? CircleIcon;
-            const active = isActive(pathname, item.href);
+            const active = isActive(pathname, item.href, search);
             return (
               <SidebarMenuItem key={item.label}>
                 <SidebarMenuButton
@@ -381,16 +589,30 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
   // route lands in the app rather than on a 404. An app with no reachable
   // route (its modules are not this trade's) is simply not listed.
   // An app's state («به‌زودی», «در حال تعمیر», …) travels on the nav entries the
-  // layout already resolved, so the rail badges the launcher with exactly what
-  // the flat sidebar shows for the same app rather than re-deriving it.
-  const stateByHref = new Map(
-    navItems.flatMap((item) => (item.href && item.appState ? [[item.href, item.appState] as const] : [])),
-  );
+  // layout already resolved — grouped here by *owning app*, so each launcher
+  // wears its own app's badge, exactly what the flat sidebar shows for the
+  // same app, rather than re-deriving it. Looking the state up by the
+  // launcher's resolved href instead is what once badged «حسابداری» with the
+  // *sales* app's «به‌زودی»: the launcher opened the sales overview, which is
+  // a sales page, not an accounting one. The hub entry has no app and so is
+  // never badged.
+  const stateByApp = new Map<AppKey, NonNullable<NavItem["appState"]>>();
+  for (const item of navItems) {
+    if (!item.appState) continue;
+    const owner = appForModule(item.module);
+    if (owner && !stateByApp.has(owner)) stateByApp.set(owner, item.appState);
+  }
   const launchers = WORKSPACE_APP_LAUNCHERS.flatMap((launcher) => {
     const href = launcher.hrefs.find((candidate) => hrefs.includes(candidate));
-    return href
-      ? [{ ...launcher, href, active: isActive(pathname, href), appState: stateByHref.get(href) }]
-      : [];
+    if (!href) return [];
+    return [
+      {
+        ...launcher,
+        href,
+        active: isActive(pathname, href),
+        appState: isAppKey(launcher.key) ? stateByApp.get(launcher.key) : undefined,
+      },
+    ];
   });
 
   return (

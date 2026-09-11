@@ -179,6 +179,52 @@ export function isSellableWooProduct(product: { type?: string; parent_id?: numbe
 }
 
 // ---------------------------------------------------------------------------
+// Order statuses
+// ---------------------------------------------------------------------------
+
+/**
+ * The WooCommerce order statuses that mean "no money has moved" (or never
+ * will).
+ *
+ * `pending`/`on-hold` are a cart that has not been paid for yet — BACS and
+ * offline gateways park orders there until a human confirms the transfer.
+ * `cancelled`/`failed` are abandoned. `draft`/`checkout-draft` are not even
+ * orders yet, and `trash` is the store's bin.
+ *
+ * Everything else — `processing`, `completed`, `refunded` (which *was* paid,
+ * and its refund arrives as its own event), and any status an extension
+ * added — is imported. An unknown status is a state this app has not caught
+ * up with, not a reason to drop revenue: the repo's own rule is that a sale
+ * is never silently missed.
+ *
+ * This is the same default the mature WooCommerce accounting connectors ship
+ * (WooCommerce's own Xero extension creates the invoice at Processing or
+ * Completed; QuickBooks Connector asks which statuses to sync): a POS that
+ * records a pending cart as a completed, paid sale with a journal entry is
+ * recording money that does not exist yet.
+ */
+const WOO_UNPAID_ORDER_STATUSES = new Set([
+  "pending",
+  "on-hold",
+  "cancelled",
+  "failed",
+  "draft",
+  "checkout-draft",
+  "trash",
+]);
+
+/**
+ * True when an order's status means it should become a local sale.
+ *
+ * Pure so the matrix (every core status + a custom one) is unit-tested rather
+ * than discovered on a live store.
+ */
+export function shouldImportWooOrder(status: string | undefined | null): boolean {
+  if (!status) return true;
+  return !WOO_UNPAID_ORDER_STATUSES.has(status.trim().toLowerCase());
+}
+
+// ---------------------------------------------------------------------------
 // Order lines
 // ---------------------------------------------------------------------------
 

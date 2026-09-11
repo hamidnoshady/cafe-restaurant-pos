@@ -37,8 +37,13 @@ export async function consumeInventoryExact(
      * sale — including opening a *priced* negative layer when the material has
      * run short — and is a distinct movement type only so that "what did we
      * bake" and "what did we sell" stay separable in the stock ledger.
+     *
+     * `warehouse_out` (Phase 42) is a حواله انبار: stock issued by a
+     * warehouse document without a sale or waste entry behind it. Same
+     * consumption terms; distinct type so "what left by document" stays
+     * separable in the stock ledger.
      */
-    type: "sale" | "waste" | "adjustment" | "production_consume";
+    type: "sale" | "waste" | "adjustment" | "production_consume" | "warehouse_out";
     sourceType: string;
     sourceId: string | null;
     note?: string | null;

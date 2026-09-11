@@ -33,6 +33,7 @@ export default function UsersStep() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -52,9 +53,14 @@ export default function UsersStep() {
     setError("");
     const { ok, data } = await api<{ error?: string }>("/api/setup/users", {
       method: "POST",
-      body: JSON.stringify(
-        needsEmail ? { role, fullName, email, password } : { role, fullName, pin },
-      ),
+      body: JSON.stringify({
+        role,
+        fullName,
+        // Phase 42 — optional login phone for both shapes: managers get it
+        // next to email+password, PIN roles next to the PIN. Stored unverified.
+        phone: phone.trim() || undefined,
+        ...(needsEmail ? { email, password } : { pin }),
+      }),
     });
     setBusy(false);
     if (!ok) {
@@ -65,6 +71,7 @@ export default function UsersStep() {
     setEmail("");
     setPassword("");
     setPin("");
+    setPhone("");
     load();
   }
 
@@ -73,7 +80,7 @@ export default function UsersStep() {
   return (
     <StepShell
       step="users"
-      description="حساب مالک ساخته شده است. این‌جا مدیر (ایمیل و گذرواژه) و صندوق‌دار/گارسون/آشپزخانه (پین ۴ رقمی برای ورود سریع) اضافه کنید."
+      description="حساب مالک ساخته شده است. این‌جا مدیر (ایمیل و گذرواژه) و صندوق‌دار/گارسون/آشپزخانه (رمز عددی برای ورود سریع) اضافه کنید."
       showSkip
       showNext
     >
@@ -125,20 +132,33 @@ export default function UsersStep() {
               </Field>
             </>
           ) : (
-            <Field label="پین ۴ رقمی *" hint="برای ورود سریع در صفحهٔ ورود؛ در هر شعبه باید یکتا باشد.">
+            <Field label="پین (۴ تا ۱۲ رقم) *" hint="برای ورود سریع در صفحهٔ ورود؛ در هر شعبه باید یکتا باشد.">
               <PersianNumberInput
-                className={`${inputClass} w-28 text-center tracking-[0.5em]`}
+                className={`${inputClass} w-48 text-center tracking-[0.25em]`}
                 dir="ltr"
                 inputMode="numeric"
                 grouping={false}
                 allowNegative={false}
-                maxLength={4}
+                maxLength={12}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
                 required
               />
             </Field>
           )}
+          <Field
+            label="شمارهٔ موبایل"
+            hint="اختیاری؛ برای ورود با پیامک. بار اول با کد تأیید فعال می‌شود."
+          >
+            <input
+              className={inputClass}
+              dir="ltr"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="09121234567"
+            />
+          </Field>
           <div className="mt-4">
             <PrimaryButton disabled={busy}>افزودن کاربر</PrimaryButton>
           </div>

@@ -355,10 +355,16 @@ export async function provisionBusiness(
       // location_id stays NULL: an owner reaches every branch of their
       // business, and pinning them to the first one would be wrong the moment
       // a second branch exists.
+      //
+      // Phase 42 — the owner's login phone rides along when one was given
+      // (it is the same `ownerPhone` the connected path enrols SMS 2FA
+      // against), stored unverified like every provisioned number: the owner
+      // proves it with an OTP at their first door login or from the security
+      // center, and only then does it open the phone login.
       const { rows: userRows } = await client.query<{ id: string }>(
-        `INSERT INTO users (business_id, platform_user_id, role, full_name, email, location_id)
-         VALUES ($1, $2, 'owner', $3, $4, NULL) RETURNING id`,
-        [businessId, platformUserId, ownerName, email],
+        `INSERT INTO users (business_id, platform_user_id, role, full_name, email, phone_e164, location_id)
+         VALUES ($1, $2, 'owner', $3, $4, $5, NULL) RETURNING id`,
+        [businessId, platformUserId, ownerName, email, input.ownerPhone ?? null],
       );
       const userId = userRows[0].id;
 
@@ -392,6 +398,23 @@ export async function provisionBusiness(
       let totpUrl: string | undefined;
       let totpQr: string | null | undefined;
 
+      // Phase 42 — the phone-OTP login policy starts *enforced* for a
+      // business created after this feature, stamped in the same transaction:
+      // a brand-new business has no legacy staff to protect, and every member
+      // it ever gains verifies a number at their first door login anyway.
+      // (Migration 0139 gave the businesses already running on an install
+      // their 14-day window instead; SMS-less installs stay unenforced at
+      // runtime until a Kavenegar key exists — see phone-otp-policy.ts.)
+      await client.query(
+        `INSERT INTO settings (business_id, location_id, key, value)
+         VALUES ($1, NULL, $2, $3)`,
+        [
+          businessId,
+          SETTING_KEYS.phoneOtpPolicy,
+          JSON.stringify({ enforcedAt: new Date().toISOString() }),
+        ],
+      );
+
       if (input.deploymentMode === "local") {
         await client.query(
           `INSERT INTO settings (business_id, location_id, key, value)
@@ -399,11 +422,14 @@ export async function provisionBusiness(
           [businessId, SETTING_KEYS.deploymentMode, JSON.stringify({ mode: "local", pairedAt: null })],
         );
         await disableFeatures(client, businessId, LOCAL_DISABLED_FEATURES);
-        
+
         totpSecret = generateSecret();
         totpUrl = generateURI({
           label: email,
-          issuer: "Business Suite",
+          // Phase 42 — the business's own name, so the entry in the
+          // authenticator app is tellable apart from every other business
+          // this person holds an entry for (see mfa-enrol.ts's TOTP_ISSUER).
+          issuer: businessName,
           secret: totpSecret,
           strategy: "totp"
         });

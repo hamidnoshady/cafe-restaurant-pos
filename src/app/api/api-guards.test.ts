@@ -36,6 +36,21 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "auth/pin-login/roster":
     "the name-then-PIN picker's first step (Phase 20 Wave 2) — lists a business's PIN-role " +
     "employees (name/role/photo only, no PIN) before any credential has been presented",
+  // Phase 42 — the phone-OTP door. `request` dispatches the code and is the
+  // same shape as pin-login: a credential exchange that necessarily runs
+  // before any session exists (its three addressing modes — a PIN-verified
+  // phone_pending token, a roster employeeId, a typed number — are each
+  // rate-limited and none reveals more than the roster already does).
+  // `verify` is the second half of the same exchange: the six-digit code is
+  // the credential, and it is what finally mints the session, exactly like
+  // the MFA interstitial's verify but on the till's realm.
+  "auth/phone-otp/request":
+    "credential exchange (Phase 42) — sends the login OTP before any session exists, " +
+    "addressed by a phone_pending token, a roster employeeId, or a typed number",
+  "auth/phone-otp/verify":
+    "credential exchange (Phase 42) — checks the six-digit code carried by the " +
+    "phone_pending token and only then mints the session, necessarily while the " +
+    "caller still has none",
   "auth/webauthn/login/options":
     "credential exchange (Phase 20 Wave 3) — step 1 of a biometric login, necessarily runs " +
     "without a session, the same as auth/pin-login",
@@ -227,6 +242,13 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   "auth/mfa/self":
     "enrols / re-issues recovery codes for the caller's own identity — the session's own " +
     "platformUserId is the authorization, and no other account is reachable",
+  // Phase 42 — the signed-in member's own login phone: send/verify an OTP for
+  // the session's own membership row only (session.sub, never a body field),
+  // the same ownership shape as auth/businesses. The owner force-setting
+  // somebody else's number goes through /api/team's team.manage guard.
+  "auth/phone/self":
+    "verifies or changes the caller's own login phone — the session's own sub is the " +
+    "authorization, and no other member's number is reachable",
   // AI Hub Wave 1 (issue #141) — a conversation is visible only to the member
   // who started it (actor_user_id), not by role, so ai-conversations.ts's own
   // ownership filter is the authorization, the same shape as auth/businesses.

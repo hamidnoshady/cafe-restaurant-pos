@@ -8,6 +8,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
 import { overlayPanelClass } from "../page-chrome";
+import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 
 interface DrillDownLine {
   entryId: string;
@@ -17,15 +18,6 @@ interface DrillDownLine {
   debit: number;
   credit: number;
 }
-
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  order: "سفارش",
-  purchase: "خرید",
-  waste: "ضایعات",
-  stock_count: "شمارش موجودی",
-  customer_return: "بازپرداخت مشتری",
-  manual: "سند دستی",
-};
 
 export interface DrillDownTarget {
   accountCode: string;
@@ -87,7 +79,7 @@ export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; o
                   <td className="py-1.5 pe-3 text-muted-foreground">{toPersianDigits(formatJalali(l.entryDate))}</td>
                   <td className="py-1.5 pe-3">{l.memo ?? "—"}</td>
                   <td className="py-1.5 pe-3 text-muted-foreground">
-                    {(l.sourceType && SOURCE_TYPE_LABELS[l.sourceType]) ?? l.sourceType ?? "—"}
+                    {ledgerSourceLabel(l.sourceType)}
                   </td>
                   <td className="py-1.5 pe-3 tabular-nums">{l.debit ? money.format(l.debit) : "—"}</td>
                   <td className="py-1.5 tabular-nums">{l.credit ? money.format(l.credit) : "—"}</td>

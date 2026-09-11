@@ -9,14 +9,19 @@ import { KnowledgeHelpButton } from "../knowledge-help";
 import { ConnectionsManager } from "./connections-manager";
 
 /**
- * Technical connections this business uses: the desktop install, Holoo and
- * developer/assistant access. WooCommerce is intentionally not rendered here;
- * the WP Manager owns the complete WordPress/WooCommerce system.
+ * «اتصال‌های فنی» — the one hub for every technical connection this business
+ * has: the desktop install, WordPress/WooCommerce, the Eshobe CMS site, Holoo,
+ * the remote server sync, and developer/assistant access.
  *
- * Deliberately not gated as a whole. The technical tabs have different
- * entitlements — and desktop pairing is not an entitlement at all — so gating
- * the page would hide the free thing behind the paid ones. Each tab carries
- * its own lock instead.
+ * A shell utility, not an app (src/lib/apps.ts): never badged, never gated by
+ * availability, and deliberately not gated as a whole by any feature either.
+ * The tabs have different entitlements — and desktop pairing is not an
+ * entitlement at all — so gating the page would hide the free thing behind
+ * the paid ones. Each tab carries its own lock instead.
+ *
+ * The product screens that *use* a connection manage their own subject only:
+ * «مدیریت وب‌سایت» manages the sites, the ledger keeps the books. Any
+ * connection surface anywhere else redirects to a tab here.
  */
 export default async function ConnectionsPage({
   searchParams,
@@ -27,9 +32,6 @@ export default async function ConnectionsPage({
   if (!session) redirect("/login");
 
   const { tab } = await searchParams;
-  // WooCommerce used to live in this generic hub. Keep old bookmarks working,
-  // but do not render the store manager here: the WP app owns that system now.
-  if (tab === "woocommerce") redirect("/dashboard/wp/connections");
 
   const [features, { rows }] = await withTenant(session.businessId, () =>
     Promise.all([
@@ -49,8 +51,8 @@ export default async function ConnectionsPage({
   return (
     <PageShell>
       <PageHeader
-        title="اتصال‌ها"
-        description="اتصال این کسب‌وکار به برنامهٔ دسکتاپ، هلو و برنامه‌های توسعه‌دهندگان — همراه با آزمایش اتصال و مدیریت کلیدها."
+        title="اتصال‌های فنی"
+        description="همهٔ اتصال‌های فنی این کسب‌وکار در یک‌جا: برنامهٔ دسکتاپ، وردپرس و ووکامرس، سایت‌ساز اشوبه، هلو، سرور راه دور و دسترسی توسعه‌دهندگان — همراه با آزمایش اتصال و مدیریت کلیدها."
         actions={<KnowledgeHelpButton section="connections" />}
       />
       <ConnectionsManager
@@ -62,6 +64,7 @@ export default async function ConnectionsPage({
         features={{
           integrations: Boolean(features.integrations),
           api_platform: Boolean(features.api_platform),
+          offline_mode: Boolean(features.offline_mode),
         }}
       />
     </PageShell>

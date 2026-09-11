@@ -1,21 +1,32 @@
 /**
- * What the technical Connections app can connect to, and who may set each one up.
+ * What the «اتصال‌های فنی» hub can connect to, and who may set each one up.
  *
- * The dashboard once mixed the WordPress/WooCommerce store with technical
- * connections. The store kind remains in this compatibility catalogue because
- * older callers and URLs know its key, but it is not returned by
- * `visibleConnectionKinds`; WP Manager owns that connection and its workflows.
- * The technical connections the product supports are desktop, Holoo, the
- * website (Phase 38), API keys and MCP. This is the list they now share, kept pure so its visibility rules are unit
- * tested rather than asserted by reading JSX. It follows `settings-tabs.ts`'s
- * shape deliberately — same role/feature/module vocabulary — because it is the
- * same kind of decision.
+ * This hub is the one home for *every* technical connection in the product —
+ * desktop pairing, WordPress/WooCommerce, the Eshobe CMS site, Holoo, the
+ * remote server sync, MCP and API keys. It is deliberately not an app
+ * (src/lib/apps.ts): a technical utility of the shell, never listed in the
+ * platform switchboard, never badged, never gated by availability. Any
+ * connection surface anywhere else in the product redirects here, and the
+ * product screens that *use* a connection (the website managers, the ledger)
+ * manage their own subject only.
+ *
+ * Kept pure so its visibility rules are unit tested rather than asserted by
+ * reading JSX. It follows `settings-tabs.ts`'s shape deliberately — same
+ * role/feature/module vocabulary — because it is the same kind of decision.
  */
 import type { Role } from "./auth";
 import type { Industry } from "./industries";
 import { hasModule } from "./industry-profile";
 
-export const CONNECTION_KIND_KEYS = ["desktop", "woocommerce", "holoo", "website", "api", "mcp"] as const;
+export const CONNECTION_KIND_KEYS = [
+  "desktop",
+  "woocommerce",
+  "website",
+  "holoo",
+  "server_sync",
+  "mcp",
+  "api",
+] as const;
 export type ConnectionKindKey = (typeof CONNECTION_KIND_KEYS)[number];
 
 export interface ConnectionKind {
@@ -44,11 +55,22 @@ export const CONNECTION_KINDS: ConnectionKind[] = [
   },
   {
     key: "woocommerce",
-    label: "فروشگاه ووکامرس",
+    label: "وردپرس و ووکامرس",
     description:
-      "اتصال دوطرفه به فروشگاه اینترنتی: سفارش، محصول، مشتری، موجودی و قیمت، با ثبت خودکار حسابداری.",
+      "اتصال فروشگاه وردپرسی — با افزونهٔ وردپرس یا کلیدهای REST ووکامرس: سفارش، محصول، مشتری، موجودی و قیمت، با ثبت خودکار حسابداری. مدیریت فروشگاه (محصولات، سفارش‌ها، محتوا) در «مدیریت وب‌سایت» است؛ اینجا فقط اتصال.",
     allowedRoles: ["owner", "manager"],
     feature: "integrations",
+  },
+  {
+    key: "website",
+    label: "سایت‌ساز اشوبه",
+    description:
+      "اتصال سایت روی سایت‌ساز پلتفرم به همین حساب: آدرس سایت‌ساز، دامنه و کلید API، با آزمایش اتصال. مدیریت خودِ سایت (محتوا، فروشگاه، همگام‌سازی قیمت و موجودی) در «مدیریت وب‌سایت» است؛ اینجا فقط اتصال.",
+    // Same line as «مدیریت وب‌سایت» itself: both managers are owner/manager
+    // work, and the CMS half carries no feature entitlement, so neither does
+    // this tab. (The site-building wizard lives in the website app; this tab
+    // is for connecting a site that already exists.)
+    allowedRoles: ["owner", "manager"],
   },
   {
     key: "holoo",
@@ -59,14 +81,15 @@ export const CONNECTION_KINDS: ConnectionKind[] = [
     feature: "integrations",
   },
   {
-    key: "website",
-    label: "وب‌سایت",
+    key: "server_sync",
+    label: "سرور راه دور",
     description:
-      "اتصال وب‌سایت کسب‌وکار به همین حساب: پیش‌نویس مطلب و محصول از داده‌های واقعی، و ارسال یک‌طرفهٔ قیمت و موجودی به سایت.",
-    // The site credential can create products and rewrite prices on a public
-    // storefront; like the desktop and API tabs, that is an owner's decision.
+      "همگام‌سازی دوطرفهٔ این سرور با سرور مرکزی (VPS): آدرس و توکن اتصال، وضعیت همگام‌سازی و رویدادهای ناموفق.",
+    // Owner-only, like the settings tab this replaces: the token reaches the
+    // whole central dataset. Gated by `offline_mode` — without it there is no
+    // remote peer to sync with.
     allowedRoles: ["owner"],
-    feature: "integrations",
+    feature: "offline_mode",
   },
   {
     key: "mcp",
@@ -110,20 +133,12 @@ export interface ConnectionKindVisibilityOptions {
  * The industry module is `connections` for this technical hub, and it is a core
  * module every trade has — but it is checked rather than assumed, so that a
  * future profile which drops it drops this page with it. The separate
- * `integrations` module belongs to the WP Manager.
+ * `integrations` module belongs to the WordPress *management* half of
+ * «مدیریت وب‌سایت», not to any connection.
  */
 export function visibleConnectionKinds(options: ConnectionKindVisibilityOptions): ConnectionKind[] {
   if (options.industry && !hasModule(options.industry, "connections")) return [];
-  return CONNECTION_KINDS.filter(
-    (kind) =>
-      // Both website connections belong to «مدیریت وب‌سایت» (the WooCommerce
-      // store to its WordPress manager, the platform site to its CMS manager),
-      // so neither is drawn here — a business sets each one up inside the
-      // manager that uses it, and this hub keeps the technical credentials.
-      kind.key !== "woocommerce" &&
-      kind.key !== "website" &&
-      kind.allowedRoles.includes(options.role),
-  );
+  return CONNECTION_KINDS.filter((kind) => kind.allowedRoles.includes(options.role));
 }
 
 export function isConnectionKindKey(value: string | null | undefined): value is ConnectionKindKey {

@@ -1,6 +1,6 @@
 {
   "name": "cafe-pos-desktop",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "author": "Cafe POS",
   "description": "Standalone Windows installer for the Cafe/Restaurant POS — no Docker, no Docker Desktop, no manual database setup.",
@@ -91,7 +91,8 @@
           "**/*",
           "!vitest{,/**}",
           "!@vitest{,/**}",
-          "!.cache{,/**}"
+          "!.cache{,/**}",
+          "!@embedded-postgres/{linux,darwin}-*{,/**}"
         ]
       }
     ]

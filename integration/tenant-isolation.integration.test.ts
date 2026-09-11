@@ -253,6 +253,14 @@ describe("every tenant table is protected", () => {
       "platform_backup_peers",
       "platform_backup_runs",
       "platform_backup_tokens",
+      // Migration 0139 — the console's CMS control plane: the eshobe-cms address and
+      // its platform key (encrypted), the mirror of every site on that deployment,
+      // and the log of every sync. One CMS serves every business, so none of it has
+      // a business_id; the per-business half (eshobe_cms_connections, 0122) is
+      // RLS-protected and is not listed here.
+      "platform_cms_config",
+      "platform_cms_sites",
+      "platform_cms_sync_runs",
       // Phase 37 — singleton message provider config + rates (no business_id;
       // the business side of messaging billing is RLS-protected).
       "platform_message_config",

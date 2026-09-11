@@ -1,5 +1,5 @@
 /**
- * Party drafts — an unfinished «طرف‌حساب» saved in the browser.
+ * Party drafts — an unfinished «شخص» saved in the browser.
  *
  * Why this exists at all: the party form is long (identity, tabs for place,
  * contact and money, an avatar, a national ID that the owner has to look up in

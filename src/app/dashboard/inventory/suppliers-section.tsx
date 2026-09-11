@@ -22,10 +22,11 @@
  * so the drift is not possible in either direction.
  */
 import { useEffect, useMemo, useState } from "react";
-import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { Button } from "@/components/ui/button";
+import { api, Field, inputClass } from "../ui";
 import { partyScopeFor } from "@/lib/parties-scopes";
 import { toPersianDigits } from "@/lib/digits";
-import { cardClass, LoadingSkeleton } from "../page-chrome";
+import { EmptyState, LoadingSkeleton, SectionCard } from "../page-chrome";
 import { PartiesSection } from "../parties/parties-section";
 import type { Runner, Supplier } from "./inventory-manager";
 
@@ -41,7 +42,7 @@ export function SuppliersSection({
   role: string;
 }) {
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="min-w-0 space-y-4 sm:space-y-5">
       <PartiesSection scope={partyScopeFor("operations")} role={role} />
       <BranchSupplierLinks suppliers={suppliers} busy={busy} run={run} />
     </div>
@@ -55,13 +56,6 @@ interface PartyOption {
   accountingCode?: string | null;
 }
 
-/**
- * The per-location half: this branch's list of aliases, the note the branch keeps
- * for itself, and the picker that links a party the CRM or Accounting already
- * created. Rows with no `partyId` are the pre-link legacy ones; they still work and
- * still take a name edit, because there is no shared record to be loyal to yet —
- * the row says «پیوند به طرف‌حساب» so a person can give it one.
- */
 function BranchSupplierLinks({
   suppliers,
   busy,
@@ -85,24 +79,29 @@ function BranchSupplierLinks({
   const linked = useMemo(() => new Set(suppliers.map((s) => s.partyId).filter(Boolean)), [suppliers]);
 
   return (
-    <section className={`min-w-0 ${cardClass} p-5`}>
-      <h2 className="mb-1 font-semibold">تأمین‌کنندگان این شعبه</h2>
-      <p className="mb-3 text-xs text-muted-foreground">
-        خریدها به همین فهرست ثبت می‌شوند؛ نام و تلفن از پروندهٔ مشترک طرف‌حساب خوانده می‌شود و اینجا فقط یادداشت و وضعیت
-        فعال‌بودنِ همین شعبه است.
-      </p>
-
-      <ul className="mb-4 divide-y divide-border rounded-lg border border-border">
+    <SectionCard
+      title={
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شعبه</p>
+          <h2 className="mt-1 font-semibold text-foreground">تأمین‌کنندگان این شعبه</h2>
+        </div>
+      }
+      description="خریدها به همین فهرست ثبت می‌شوند؛ نام و تلفن از پروندهٔ مشترک اشخاص خوانده می‌شود و اینجا فقط یادداشت و وضعیت فعال‌بودنِ همین شعبه است."
+      flush
+    >
+      <ul className="divide-y divide-border/80">
         {suppliers.map((supplier) => (
           <BranchSupplierRow key={supplier.id} supplier={supplier} busy={busy} run={run} />
         ))}
         {suppliers.length === 0 ? (
-          <li className="p-3 text-sm text-muted-foreground">این شعبه هنوز تأمین‌کننده‌ای به نام خود ندارد.</li>
+          <li className="px-4 py-5 sm:px-5">
+            <EmptyState>این شعبه هنوز تأمین‌کننده‌ای به نام خود ندارد.</EmptyState>
+          </li>
         ) : null}
       </ul>
 
-      <div className="grid min-w-0 gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-        <Field label="افزودن طرف‌حساب تأمین‌کننده به این شعبه">
+      <div className="border-t border-border/80 p-4 sm:p-5">
+        <Field label="افزودن تأمین‌کننده به این شعبه">
           <input
             className={inputClass}
             value={linkQuery}
@@ -110,68 +109,67 @@ function BranchSupplierLinks({
             placeholder="جستجو در تأمین‌کنندگان…"
           />
         </Field>
+        {parties === null ? (
+          <div className="mt-2">
+            <LoadingSkeleton rows={2} compact label="در حال بارگذاری تأمین‌کنندگان" />
+          </div>
+        ) : null}
+        {parties && parties.length > 0 ? (
+          <ul className="mt-2 divide-y divide-border/80 rounded-xl border border-border/80">
+            {parties
+              .filter((party) => !linked.has(party.id))
+              .map((party) => (
+                <li key={party.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate">
+                    {party.name}
+                    {party.phone ? (
+                      <span className="text-xs text-muted-foreground"> ({toPersianDigits(party.phone)})</span>
+                    ) : null}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      run(() =>
+                        api("/api/inventory/suppliers", { method: "POST", body: JSON.stringify({ partyId: party.id }) }),
+                      )
+                    }
+                  >
+                    افزودن به این شعبه
+                  </Button>
+                </li>
+              ))}
+          </ul>
+        ) : null}
+        {parties && parties.every((party) => linked.has(party.id)) ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            هر تأمین‌کننده‌ای که در پروندهٔ مشترک هست، به این شعبه هم پیوند خورده است.
+          </p>
+        ) : null}
+        {parties && parties.length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            تأمین‌کننده‌ای در اشخاص پیدا نشد؛ با دکمهٔ «افزودن تأمین‌کننده» در فهرست بالا یکی بسازید.
+          </p>
+        ) : null}
       </div>
-      {parties === null ? (
-        <div className="mt-2">
-          <LoadingSkeleton rows={2} compact label="در حال بارگذاری تأمین‌کنندگان" />
-        </div>
-      ) : null}
-      {parties && parties.length > 0 ? (
-        <ul className="mt-2 divide-y divide-border/80 rounded-lg border border-border/80">
-          {parties
-            .filter((party) => !linked.has(party.id))
-            .map((party) => (
-              <li key={party.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                <span className="min-w-0 truncate">
-                  {party.name}
-                  {party.phone ? (
-                    <span className="text-xs text-muted-foreground"> ({toPersianDigits(party.phone)})</span>
-                  ) : null}
-                </span>
-                <SecondaryButton
-                  disabled={busy}
-                  onClick={() =>
-                    run(() =>
-                      api("/api/inventory/suppliers", { method: "POST", body: JSON.stringify({ partyId: party.id }) }),
-                    )
-                  }
-                >
-                  افزودن به این شعبه
-                </SecondaryButton>
-              </li>
-            ))}
-        </ul>
-      ) : null}
-      {parties && parties.every((party) => linked.has(party.id)) ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          هر تأمین‌کننده‌ای که در پروندهٔ مشترک هست، به این شعبه هم پیوند خورده است.
-        </p>
-      ) : null}
-      {parties && parties.length === 0 ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          طرف‌حساب تأمین‌کننده‌ای پیدا نشد؛ با دکمهٔ «افزودن تأمین‌کننده» در فهرست بالا یکی بسازید.
-        </p>
-      ) : null}
-    </section>
+    </SectionCard>
   );
 }
 
 function BranchSupplierRow({ supplier, busy, run }: { supplier: Supplier; busy: boolean; run: Runner }) {
   const [notes, setNotes] = useState(supplier.notes ?? "");
   const [editing, setEditing] = useState(false);
-  // The party's name when there is a party, the alias's own when there is not —
-  // `getInventoryOverview` resolves that in one COALESCE so the screen cannot
-  // accidentally prefer the stale copy.
   const name = supplier.displayName || supplier.name;
   const phone = supplier.displayPhone || supplier.phone;
 
   return (
     <li className="flex min-w-0 flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
       <span className={`min-w-0 break-words ${supplier.is_active ? "" : "text-muted-foreground line-through"}`}>
-        {name}
+        <span className="font-medium text-foreground">{name}</span>
         {phone ? <span className="text-xs text-muted-foreground"> ({toPersianDigits(phone)})</span> : null}
         {supplier.partyId ? null : (
-          <span className="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+          <span className="ms-2 rounded-full bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 text-xs text-amber-950 dark:text-amber-200">
             بدون پروندهٔ مشترک
           </span>
         )}
@@ -185,8 +183,10 @@ function BranchSupplierRow({ supplier, busy, run }: { supplier: Supplier; busy: 
                 <input className={inputClass} value={notes} onChange={(event) => setNotes(event.target.value)} />
               </Field>
             </div>
-            <PrimaryButton
+            <Button
               disabled={busy}
+              size="lg"
+              className="px-5 font-semibold"
               onClick={async () => {
                 const ok = await run(() =>
                   api(`/api/inventory/suppliers/${supplier.id}`, {
@@ -199,8 +199,9 @@ function BranchSupplierRow({ supplier, busy, run }: { supplier: Supplier; busy: 
               }}
             >
               ذخیره
-            </PrimaryButton>
-            <SecondaryButton
+            </Button>
+            <Button
+              variant="outline"
               disabled={busy}
               onClick={() => {
                 setNotes(supplier.notes ?? "");
@@ -208,14 +209,16 @@ function BranchSupplierRow({ supplier, busy, run }: { supplier: Supplier; busy: 
               }}
             >
               انصراف
-            </SecondaryButton>
+            </Button>
           </div>
         ) : (
           <>
-            <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => setEditing(true)}>
               یادداشت
-            </SecondaryButton>
-            <SecondaryButton
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               disabled={busy}
               onClick={() =>
                 run(() =>
@@ -227,16 +230,19 @@ function BranchSupplierRow({ supplier, busy, run }: { supplier: Supplier; busy: 
               }
             >
               {supplier.is_active ? "غیرفعال" : "فعال"}
-            </SecondaryButton>
-            <SecondaryButton
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               disabled={busy}
               onClick={() => {
-                if (!window.confirm(`«${name}» از این شعبه حذف شود؟ (پروندهٔ طرف‌حساب دست‌نخورده می‌ماند.)`)) return;
+                if (!window.confirm(`«${name}» از این شعبه حذف شود؟ (پروندهٔ شخص در اشخاص دست‌نخورده می‌ماند.)`)) return;
                 void run(() => api(`/api/inventory/suppliers/${supplier.id}`, { method: "DELETE" }));
               }}
             >
-              حذف از این شعبه
-            </SecondaryButton>
+              حذف
+            </Button>
           </>
         )}
       </div>

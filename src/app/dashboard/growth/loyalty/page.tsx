@@ -8,5 +8,5 @@ export default async function GrowthLoyaltyPage() {
   if (!session) redirect("/login");
   if (!["owner", "manager", "cashier"].includes(session.role)) redirect("/dashboard");
 
-  return <GrowthSection section="loyalty" />;
+  return <GrowthSection section="loyalty" role={session.role} />;
 }

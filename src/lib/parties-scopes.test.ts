@@ -17,11 +17,12 @@ import {
 /**
  * The per-app view of one shared record.
  *
- * These assertions are the contract the four party screens are built on, so they
+ * These assertions are the contract the party screens are built on, so they
  * are written as the promise each app makes: who it lists, what it shows about the
- * ledger, and — most importantly — that only one app may *write* a given role.
- * A scope that drifts (Growth growing an edit path again, the store keeping a
- * private supplier name) is exactly the bug this file exists to refuse.
+ * ledger, and — most importantly — that every app writes through the *same* form
+ * and endpoint. A scope that drifts (the store keeping a private supplier name,
+ * an app inventing its own party table) is exactly the bug this file exists to
+ * refuse.
  */
 
 const byKey = new Map(PARTY_SCOPES_DEF.map((def) => [def.key, def]));
@@ -63,8 +64,9 @@ describe("the scope list", () => {
     expect(partyScopeForApp("growth")?.key).toBe("growth");
     // The website app publishes posts; it has no business listing who the
     // business pays, and `null` is what stops a nav entry being invented for it.
+    // (Every other app mounts a scope. The «اتصال‌های فنی» hub asks no such
+    // question: it is not an app, so it is not an argument here at all.)
     expect(partyScopeForApp("website")).toBeNull();
-    expect(partyScopeForApp("connections")).toBeNull();
   });
 });
 
@@ -84,12 +86,21 @@ describe("who each app lists", () => {
   it("accounting also has a customers-only view for the customer links", () => {
     // A/R links used to open Growth's customer projection. Now they open an
     // accounting customers screen — same shared record, only customers, with
-    // the ledger fields an accountant needs.
+    // the ledger fields an accountant needs — at the Accounting app's own
+    // route, never a redirect into the CRM.
     expect(accountingCustomers.roles).toEqual(["Customer"]);
     expect(accountingCustomers.app).toBe("accounting");
-    expect(accountingCustomers.href).toBe("/dashboard/ledger?tab=customers");
+    expect(accountingCustomers.href).toBe("/dashboard/accounting/customers");
     expect(accountingCustomers.columns).toContain("accountingCode");
     expect(accountingCustomers.columns).toContain("balance");
+  });
+
+  it("accounting's persons directory lives at the app's own route", () => {
+    // The Accounting app has its own prefix now (`/dashboard/accounting/…`);
+    // its «اشخاص» section is its persons directory — managed there, never by
+    // sending the accountant into the CRM's.
+    expect(accounting.app).toBe("accounting");
+    expect(accounting.href).toBe("/dashboard/accounting/directory");
   });
 
   it("filters a shared list to what the scope is about", () => {

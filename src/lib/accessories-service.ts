@@ -247,6 +247,12 @@ export interface VariantSummary {
   unitCost: number | null;
   unitPrice: number | null;
   attributes: { name: string; value: string }[];
+  /** Phase 42 — the products workspace's list columns (barcode, units, sellability). */
+  barcode: string | null;
+  unit: string | null;
+  subUnit: string | null;
+  conversionFactor: number | null;
+  isSellable: boolean;
 }
 
 /** The accessories board: every family and variant at this branch, with its attributes, stock and pricing, in one round trip. */
@@ -263,8 +269,14 @@ export async function listVariantBoard(locationId: string): Promise<VariantSumma
     unit_cost: string | null;
     unit_price: string | null;
     attributes: { name: string; value: string }[] | null;
+    barcode: string | null;
+    unit: string | null;
+    sub_unit: string | null;
+    conversion_factor: string | null;
+    is_sellable: boolean;
   }>(
     `SELECT i.id, i.parent_item_id, p.name AS parent_name, i.name, i.sku, i.kind, i.is_active,
+            i.barcode, i.unit, i.sub_unit, i.conversion_factor, i.is_sellable,
             s.quantity, s.unit_cost, s.unit_price,
             COALESCE(
               (SELECT json_agg(json_build_object('name', a.name, 'value', a.value) ORDER BY a.name)
@@ -291,5 +303,10 @@ export async function listVariantBoard(locationId: string): Promise<VariantSumma
     unitCost: r.unit_cost == null ? null : Number(r.unit_cost),
     unitPrice: r.unit_price == null ? null : Number(r.unit_price),
     attributes: r.attributes ?? [],
+    barcode: r.barcode,
+    unit: r.unit,
+    subUnit: r.sub_unit,
+    conversionFactor: r.conversion_factor == null ? null : Number(r.conversion_factor),
+    isSellable: r.is_sellable,
   }));
 }

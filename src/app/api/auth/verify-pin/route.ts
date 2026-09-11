@@ -4,6 +4,7 @@ import { getSession, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { toLatinDigits } from "@/lib/digits";
 import { auditLoginFailure, checkLoginLockout } from "@/lib/employee-service";
+import { PIN_MAX_LENGTH, PIN_MIN_LENGTH } from "@/lib/team";
 
 /**
  * Phase 20 Wave 2 — confirms the caller's own PIN to dismiss the client-side
@@ -42,7 +43,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
 
   const pin = body.pin ? toLatinDigits(String(body.pin)) : "";
-  if (!/^\d{4}$/.test(pin)) {
+  // Phase 42 — the same 4–12 digit range the door accepts (team.ts owns the
+  // bounds); the lock screen's pad submits whatever length its member set.
+  if (!new RegExp(`^\\d{${PIN_MIN_LENGTH},${PIN_MAX_LENGTH}}$`).test(pin)) {
     return NextResponse.json({ error: "invalid_pin" }, { status: 400 });
   }
 

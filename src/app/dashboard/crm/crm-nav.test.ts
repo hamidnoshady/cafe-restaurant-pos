@@ -52,7 +52,7 @@ describe("crmNavItemsForRole", () => {
     // not get segments, the pipeline, merge or the consent register.
     expect(crmNavItemsForRole("cashier").map((item) => item.key)).toEqual([
       "directory",
-      "customers",
+      "persons",
       "activities",
       "cases",
     ]);
@@ -112,8 +112,8 @@ describe("isCrmSectionPathname", () => {
     // half the app, and an unlit sidebar there would make it feel like a
     // different place each time.
     const href = crmCustomerHref("c-42");
-    expect(href).toBe("/dashboard/crm/customers/c-42");
-    expect(isCrmSectionPathname(href, "customers")).toBe(true);
+    expect(href).toBe("/dashboard/crm/persons/c-42");
+    expect(isCrmSectionPathname(href, "persons")).toBe(true);
     expect(isCrmSectionPathname(href, "directory")).toBe(false);
   });
 });

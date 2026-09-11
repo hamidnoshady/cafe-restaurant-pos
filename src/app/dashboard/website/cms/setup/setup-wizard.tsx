@@ -63,7 +63,6 @@ import {
 } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessageOrRaw, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
 import { cmsSectionHref } from "../../website-routes";
-import { ConnectExistingSite } from "../cms-sections";
 
 interface DomainQuote {
   domain: string;
@@ -191,14 +190,11 @@ export function WebsiteSetupWizard() {
 
       <SectionCard
         title="سایت از قبل دارید؟"
-        description="اگر سایتی روی سایت‌ساز اشوبه ساخته‌اید، به‌جای ساخت دوباره آن را وصل کنید."
+        description="اگر سایتی روی سایت‌ساز اشوبه ساخته‌اید، به‌جای ساخت دوباره آن را در «اتصال‌های فنی» وصل کنید؛ همین‌که وصل شد، همین‌جا دیده می‌شود."
       >
-        <ConnectExistingSite
-          onDone={() => {
-            toast.success("وب‌سایت متصل شد.");
-            reload();
-          }}
-        />
+        <Button asChild variant="outline" className="px-4">
+          <Link href="/dashboard/connections?tab=website">اتصال سایت موجود</Link>
+        </Button>
       </SectionCard>
     </div>
   );

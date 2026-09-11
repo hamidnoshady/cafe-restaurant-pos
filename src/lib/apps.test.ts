@@ -46,11 +46,14 @@ describe("appForModule", () => {
     expect(appForModule("website")).toBe("website");
   });
 
-  it("treats the assistant and the workspace shell as not-apps", () => {
-    // The assistant is the chat *home*, not an app in the rail, and the
-    // workspace is the shell around the apps — neither is a content area.
+  it("treats the assistant, the workspace shell and the connections hub as not-apps", () => {
+    // The assistant is the chat *home*, not an app in the rail, the
+    // workspace is the shell around the apps — and the «اتصال‌های فنی» hub
+    // is a technical utility of the shell, never listed in the platform
+    // switchboard. None of the three is a content area.
     expect(appForModule("ai")).toBeNull();
     expect(appForModule("workspace")).toBeNull();
+    expect(appForModule("connections")).toBeNull();
   });
 
   it("keeps every other module in exactly one app", () => {
@@ -123,6 +126,9 @@ describe("isAppKey", () => {
   it("recognises exactly the declared keys", () => {
     expect(APP_KEYS.every((key) => isAppKey(key))).toBe(true);
     expect(isAppKey("loyalty")).toBe(false);
+    // The connections hub is a shell utility, not a platform app: it must
+    // never resolve as an app key or the switchboard would list it.
+    expect(isAppKey("connections")).toBe(false);
     expect(isAppKey(null)).toBe(false);
     expect(isAppKey(undefined)).toBe(false);
   });
@@ -156,10 +162,13 @@ describe("visibleApps", () => {
 });
 
 describe("unassignedModules", () => {
-  it("marks only the assistant and the workspace shell as intentionally not apps", () => {
+  it("marks only the shell modules as intentionally not apps", () => {
     const unassigned = unassignedModules();
     expect(unassigned).toContain("ai");
     expect(unassigned).toContain("workspace");
+    // The «اتصال‌های فنی» hub is a shell utility: its module stays
+    // unassigned so the availability gate can never lock it.
+    expect(unassigned).toContain("connections");
     expect(unassigned).not.toContain("crm");
     expect(unassigned).not.toContain("loyalty");
   });

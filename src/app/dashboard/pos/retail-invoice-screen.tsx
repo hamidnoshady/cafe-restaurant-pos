@@ -36,8 +36,9 @@ import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { usePaymentMethods } from "../payment-ways";
-import { PageHeader, PageShell, cardClass } from "../page-chrome";
+import { PageHeader, PageShell, TabBar, TabPanel, cardClass } from "../page-chrome";
 import { KnowledgeHelpButton } from "../knowledge-help";
+import { InvoiceManagementView } from "./invoice-management-view";
 
 type Purity = "18" | "21" | "24";
 
@@ -82,15 +83,6 @@ interface Variant {
 interface Customer {
   id: string;
   name: string;
-}
-
-interface InvoiceSummary {
-  id: string;
-  orderNumber: number;
-  total: number;
-  closedAt: string;
-  customerName: string | null;
-  lineCount: number;
 }
 
 /** One line in the cart, before it is sent. Prices are previews of what the server will compute. */
@@ -146,7 +138,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   const [units, setUnits] = useState<SerialUnit[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
+  const [view, setView] = useState<"issue" | "manage">("issue");
 
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customerId, setCustomerId] = useState("");
@@ -173,9 +165,6 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
     const requests: Promise<unknown>[] = [
       api<{ customers?: Customer[] }>("/api/parties?page=1&pageSize=500&roles=Customer").then(({ ok, data }) => {
         if (ok) setCustomers(data.customers ?? []);
-      }),
-      api<{ invoices?: InvoiceSummary[] }>("/api/sales/invoices?limit=20").then(({ ok, data }) => {
-        if (ok) setInvoices(data.invoices ?? []);
       }),
     ];
     if (industry === "jewelry") {
@@ -285,6 +274,19 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
         </div>
       ) : null}
 
+      <TabBar
+        idPrefix="retail-invoice"
+        label="بخش‌های فروش"
+        tabs={[
+          { key: "issue", label: "صدور فاکتور" },
+          { key: "manage", label: "مدیریت فاکتورها" },
+        ]}
+        active={view}
+        onChange={setView}
+        className="mb-4"
+      />
+      <TabPanel idPrefix="retail-invoice" active={view}>
+      {view === "issue" ? (
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="min-w-0 space-y-4">
           {hasCapability(industry, "barcode") ? (
@@ -305,7 +307,6 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
           {industry === "cosmetics" ? <CosmeticsLineForm variants={variants} onAdd={addLine} /> : null}
           {isTradeGoodsIndustry(industry) ? <AccessoryLineForm variants={variants} onAdd={addLine} kind="stocked" /> : null}
 
-          <RecentInvoices invoices={invoices} loading={loading} />
         </div>
 
         <aside className="min-w-0">
@@ -408,6 +409,10 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
           </div>
         </aside>
       </div>
+      ) : (
+        <InvoiceManagementView />
+      )}
+      </TabPanel>
     </PageShell>
   );
 }
@@ -1137,39 +1142,4 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
   );
 }
 
-/**
- * The sales history a retail business never had. It lives here rather than on
- * `/dashboard/orders`, which is a board of *open* order tickets — a retail
- * invoice is settled the moment it is written and would never appear there.
- */
-function RecentInvoices({ invoices, loading }: { invoices: InvoiceSummary[]; loading: boolean }) {
-  const money = useMoney();
-  return (
-    <Panel title="فاکتورهای اخیر" hint="آخرین فاکتورهای ثبت‌شده در این شعبه.">
-      {loading ? (
-        <LoadingSkeleton rows={3} />
-      ) : invoices.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-          هنوز فاکتوری ثبت نشده است.
-        </p>
-      ) : (
-        <ul className="divide-y divide-border/80">
-          {invoices.map((invoice) => (
-            <li key={invoice.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-              <div className="min-w-0">
-                <span className="font-medium text-foreground">
-                  فاکتور {toPersianDigits(invoice.orderNumber)}
-                </span>
-                <span className="mr-2 text-xs text-muted-foreground">
-                  {invoice.customerName ?? "بدون مشتری"} ·{" "}
-                  {formatPersianNumber(invoice.lineCount)} قلم
-                </span>
-              </div>
-              <span className="shrink-0 font-semibold text-foreground">{money.format(invoice.total)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Panel>
-  );
-}
+

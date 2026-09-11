@@ -5,15 +5,12 @@ import { query } from "@/lib/db";
 /**
  * Growth & Marketing's customer projection.
  *
- * The customer *record* belongs to the CRM; Growth may not create or edit it.
- * What Growth may do is show the audience with the numbers its own workflows
- * answer against — lifecycle/RFM stage, loyalty points, purchase history — so
- * the customers screen is a growth view of the shared `parties` record, not a
- * second customer table.
- *
- * Read-only. Accountants are admitted because Growth's customer projection is
- * the read-only surface Phase 40 gave Accounting; the full CRM file and any
- * edit remain behind the CRM's own gates.
+ * The customer *row* is the shared `parties` record — Growth keeps no second
+ * customer table. What makes this screen Growth's is the columns it answers
+ * against: lifecycle/RFM stage, loyalty points, purchase history. Adding and
+ * editing happen here too, through the same party form and the same endpoint
+ * every other app writes with; only the 360° file (notes, tags, timeline)
+ * stays behind the CRM's own gates.
  */
 
 interface GrowthCustomerRow extends Record<string, unknown> {
@@ -104,5 +101,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     lastPurchaseDate: row.last_purchase_date,
   }));
 
-  return NextResponse.json({ customers });
+  // `businessId` namespaces the form's local drafts — already in the session this
+  // route read, same as the parties listing.
+  return NextResponse.json({ customers, businessId: session.businessId });
 });

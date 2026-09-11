@@ -3,8 +3,8 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
- * «اتصال فروشگاه» — the WP Manager's WooCommerce connection and management
- * panel. It preserves the connection workflows from the old standalone
+ * «وردپرس و ووکامرس» — the «اتصال‌های فنی» hub's tab for the store
+ * connection. It preserves the connection workflows from the old standalone
  * `/dashboard/integrations` page and extends them for the second
  * way a store can now connect.
  *
@@ -14,19 +14,21 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  * mode asks for consumer keys the owner has to mint in WP admin first and then
  * a webhook to configure by hand. Most people want the first; a store that
  * cannot install plugins needs the second.
+ *
+ * Only the connection lives here — create, test, sync triggers, the per-store
+ * sync preferences, token rotation, pause and delete. Managing the store
+ * itself (products, orders, customers, taxonomies, content, media, the queue)
+ * is «مدیریت وب‌سایت»'s WordPress manager, which links here for the
+ * connection.
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useFeatureLocked } from "@/components/feature-lock";
 import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/app/dashboard/page-chrome";
 import { formatDateTime } from "./format";
-import {
-  CatalogueSection,
-  StoreOrdersSection,
-  SyncSettingsSection,
-  TaxonomiesSection,
-} from "./woo-store-sections";
+import { SyncSettingsSection } from "./woo-store-sections";
 
 type LinkMode = "rest_api" | "plugin";
 
@@ -157,8 +159,11 @@ export function WpConnectionPanel() {
   const [auditFor, setAuditFor] = useState<string | null>(null);
   const [outboxJobs, setOutboxJobs] = useState<OutboxJob[]>([]);
   const [outboxFor, setOutboxFor] = useState<string | null>(null);
-  // Phase 38 — the four working surfaces, one open at a time per store.
-  const [sectionFor, setSectionFor] = useState<string | null>(null);
+  // The per-store sync preferences, one open at a time. The store's own
+  // working surfaces (catalogue, taxonomies, orders) used to open here too;
+  // they are «مدیریت وب‌سایت»'s sections now, so this panel links there
+  // instead of rendering a second copy of them.
+  const [syncFor, setSyncFor] = useState<string | null>(null);
   const locked = useFeatureLocked();
 
   const [form, setForm] = useState({
@@ -522,29 +527,19 @@ export function WpConnectionPanel() {
                   <Button type="button" variant="outline" size="xs" onClick={() => void loadOutbox(c.id)} disabled={busy !== null}>
                     کارهای در صف
                   </Button>
-                  {(
-                    [
-                      { key: "catalogue", label: "کاتالوگ" },
-                      { key: "taxonomies", label: "دسته‌بندی‌ها" },
-                      { key: "orders", label: "سفارش‌های فروشگاه" },
-                      { key: "sync", label: "تنظیمات همگام‌سازی" },
-                    ] as const
-                  ).map((section) => (
-                    <Button
-                      key={section.key}
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      aria-pressed={sectionFor === `${c.id}:${section.key}`}
-                      onClick={() => {
-                        const next = `${c.id}:${section.key}`;
-                        setSectionFor(sectionFor === next ? null : next);
-                      }}
-                      disabled={busy !== null}
-                    >
-                      {section.label}
-                    </Button>
-                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    aria-pressed={syncFor === c.id}
+                    onClick={() => setSyncFor(syncFor === c.id ? null : c.id)}
+                    disabled={busy !== null}
+                  >
+                    تنظیمات همگام‌سازی
+                  </Button>
+                  <Button type="button" variant="outline" size="xs" asChild>
+                    <Link href="/dashboard/website/wp">مدیریت فروشگاه</Link>
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"
@@ -575,17 +570,7 @@ export function WpConnectionPanel() {
                   </p>
                 ) : null}
 
-                {sectionFor === `${c.id}:catalogue` ? (
-                  <CatalogueSection connectionId={c.id} busy={busy !== null} call={call} />
-                ) : null}
-
-                {sectionFor === `${c.id}:taxonomies` ? <TaxonomiesSection connectionId={c.id} /> : null}
-
-                {sectionFor === `${c.id}:orders` ? (
-                  <StoreOrdersSection connectionId={c.id} busy={busy !== null} call={call} />
-                ) : null}
-
-                {sectionFor === `${c.id}:sync` ? (
+                {syncFor === c.id ? (
                   <SyncSettingsSection connection={c} busy={busy !== null} call={call} />
                 ) : null}
 

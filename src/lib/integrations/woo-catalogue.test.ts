@@ -6,6 +6,7 @@ import {
   isWooAttributeTaxonomy,
   planWooCatalogueWrite,
   resolveWooOrderLine,
+  shouldImportWooOrder,
   sortWooTerms,
   wooAttributeSlug,
   wooLineCandidateIds,
@@ -350,5 +351,41 @@ describe("wooUpdatePath", () => {
   it("sends a plain product's update to the flat endpoint", () => {
     expect(wooUpdatePath("10", null)).toBe("products/10");
     expect(wooUpdatePath("10")).toBe("products/10");
+  });
+});
+
+describe("shouldImportWooOrder", () => {
+  it("imports the paid states — the ones where money has actually moved", () => {
+    expect(shouldImportWooOrder("processing")).toBe(true);
+    expect(shouldImportWooOrder("completed")).toBe(true);
+    // A refunded order *was* paid; its refund arrives as its own event and
+    // reverses it, so it must be recorded as a sale first.
+    expect(shouldImportWooOrder("refunded")).toBe(true);
+  });
+
+  it("does not import carts and abandoned checkouts as completed sales", () => {
+    // Each of these used to be recorded as a completed, paid order with a
+    // revenue journal entry — a pending BACS transfer was revenue on the
+    // day the shopper clicked checkout.
+    expect(shouldImportWooOrder("pending")).toBe(false);
+    expect(shouldImportWooOrder("on-hold")).toBe(false);
+    expect(shouldImportWooOrder("cancelled")).toBe(false);
+    expect(shouldImportWooOrder("failed")).toBe(false);
+    expect(shouldImportWooOrder("draft")).toBe(false);
+    expect(shouldImportWooOrder("checkout-draft")).toBe(false);
+    expect(shouldImportWooOrder("trash")).toBe(false);
+  });
+
+  it("imports a status an extension added rather than dropping the sale", () => {
+    // "shipped", "packing", "wc-assembly"… A state this app has never heard
+    // of is post-payment in practice, and the rule is that revenue is never
+    // silently missed.
+    expect(shouldImportWooOrder("shipped")).toBe(true);
+    expect(shouldImportWooOrder(undefined)).toBe(true);
+  });
+
+  it("is case- and whitespace-tolerant", () => {
+    expect(shouldImportWooOrder("Pending")).toBe(false);
+    expect(shouldImportWooOrder(" Processing ")).toBe(true);
   });
 });

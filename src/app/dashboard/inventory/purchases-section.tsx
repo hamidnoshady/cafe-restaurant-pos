@@ -9,14 +9,15 @@ import { formatQuantity } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { JalaliDatePicker } from "../jalali-date-picker";
-import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { api, Field, inputClass } from "../ui";
+import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { InventoryItem, Runner, Supplier } from "./inventory-manager";
 import {
   InvoiceOcrPanel,
   type InvoiceOcrApplyPayload,
 } from "./invoice-ocr-panel";
-import { cardClass } from "../page-chrome";
+import { cardClass, SectionCard } from "../page-chrome";
 
 interface Purchase {
   id: string;
@@ -419,9 +420,9 @@ export function PurchasesSection({
               : "واحد خرید انتخاب‌شده را مشخص کنید."}
           </span>
           <div className="mb-4 flex items-end">
-            <SecondaryButton onClick={() => onRemove(i)} disabled={source.length === 1}>
+            <Button type="button" variant="outline" onClick={() => onRemove(i)} disabled={source.length === 1}>
               حذف ردیف
-            </SecondaryButton>
+            </Button>
           </div>
         </div>
       );
@@ -456,11 +457,15 @@ export function PurchasesSection({
         onApply={applyOcrDraft}
       />
 
-      <section
-        id="purchase-draft-form"
-        className={`min-w-0 ${cardClass} p-5`}
+      <div id="purchase-draft-form">
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملیات خرید</p>
+            <h2 className="mt-1 font-semibold text-foreground">ثبت خرید (رسید ورود کالا)</h2>
+          </div>
+        }
       >
-        <h2 className="mb-3 font-semibold">ثبت خرید (رسید ورود کالا)</h2>
         <form onSubmit={submit} className="space-y-3">
           <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <Field label="تأمین‌کننده">
@@ -480,17 +485,23 @@ export function PurchasesSection({
 
           <div className="space-y-2">{lineRows(lines, updateLine, removeLine)}</div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <SecondaryButton onClick={addLine}>افزودن ردیف</SecondaryButton>
+            <Button type="button" variant="outline" onClick={addLine}>افزودن ردیف</Button>
             <div className="w-full sm:w-52">
-              <PrimaryButton disabled={busy}>ثبت پیش‌نویس خرید</PrimaryButton>
+              <Button type="submit" size="lg" className="w-full px-5 font-semibold" disabled={busy}>ثبت پیش‌نویس خرید</Button>
             </div>
           </div>
         </form>
-      </section>
+      </SectionCard>
+      </div>
 
-      <section className={`min-w-0 ${cardClass} p-5`}>
-        <h2 className="mb-3 font-semibold">خریدهای اخیر</h2>
-
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سوابق خرید</p>
+            <h2 className="mt-1 font-semibold text-foreground">خریدهای اخیر</h2>
+          </div>
+        }
+      >
         <div className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="وضعیت">
             <SearchableSelect
@@ -533,16 +544,16 @@ export function PurchasesSection({
                   <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-end">
                     <span className="text-xs">{STATUS_LABELS[p.status]}</span>
                     {p.status !== "cancelled" ? (
-                      <SecondaryButton onClick={() => toggleExpanded(p.id)}>
+                      <Button type="button" variant="outline" onClick={() => toggleExpanded(p.id)}>
                         {isExpanded ? "بستن" : "مشاهده جزئیات"}
-                      </SecondaryButton>
+                      </Button>
                     ) : null}
                     {p.status === "draft" || p.status === "ordered" ? (
                       <>
                         {p.status === "draft" ? (
-                          <SecondaryButton disabled={busy} onClick={() => transition(p.id, "ordered")}>
+                          <Button type="button" variant="outline" disabled={busy} onClick={() => transition(p.id, "ordered")}>
                             ثبت سفارش
-                          </SecondaryButton>
+                          </Button>
                         ) : null}
                         <label className="grid min-w-36 max-w-full gap-1 text-xs font-medium">
                           <span>روش تسویه</span>
@@ -565,21 +576,21 @@ export function PurchasesSection({
                             />
                           </div>
                         ) : null}
-                        <SecondaryButton
+                        <Button type="button" variant="outline"
                           disabled={busy || (!p.supplier_name && (settlementByPurchase[p.id] ?? "credit") === "credit" && !supplierByPurchase[p.id])}
                           onClick={() => transition(p.id, "received", settlementByPurchase[p.id] ?? "credit")}
                         >
                           دریافت کالا
-                        </SecondaryButton>
-                        <SecondaryButton disabled={busy} onClick={() => transition(p.id, "cancelled")}>
+                        </Button>
+                        <Button type="button" variant="outline" disabled={busy} onClick={() => transition(p.id, "cancelled")}>
                           لغو
-                        </SecondaryButton>
+                        </Button>
                       </>
                     ) : null}
                     {p.status !== "received" ? (
-                      <SecondaryButton disabled={busy} onClick={() => void removePurchase(p.id)}>
+                      <Button type="button" variant="outline" disabled={busy} onClick={() => void removePurchase(p.id)}>
                         حذف
-                      </SecondaryButton>
+                      </Button>
                     ) : null}
                   </div>
                 </div>
@@ -613,10 +624,10 @@ export function PurchasesSection({
                           )}
                         </div>
                         <div className="flex flex-col gap-2 sm:flex-row">
-                          <SecondaryButton onClick={() => setEditLines((prev) => [...prev, emptyLine()])}>افزودن ردیف</SecondaryButton>
-                          <SecondaryButton onClick={() => setEditing(false)}>انصراف</SecondaryButton>
+                          <Button type="button" variant="outline" onClick={() => setEditLines((prev) => [...prev, emptyLine()])}>افزودن ردیف</Button>
+                          <Button type="button" variant="outline" onClick={() => setEditing(false)}>انصراف</Button>
                           <div className="w-full sm:w-52">
-                            <PrimaryButton disabled={busy}>ذخیره تغییرات</PrimaryButton>
+                            <Button type="submit" size="lg" className="w-full px-5 font-semibold" disabled={busy}>ذخیره تغییرات</Button>
                           </div>
                         </div>
                       </form>
@@ -701,22 +712,22 @@ export function PurchasesSection({
                               </Field>
                             </div>
                             <div className="flex flex-col gap-2 sm:flex-row">
-                              <PrimaryButton disabled={busy}>ثبت برگشت</PrimaryButton>
-                              <SecondaryButton onClick={() => setReturning(false)}>انصراف</SecondaryButton>
+                              <Button type="submit" size="lg" className="w-full px-5 font-semibold" disabled={busy}>ثبت برگشت</Button>
+                              <Button type="button" variant="outline" onClick={() => setReturning(false)}>انصراف</Button>
                             </div>
                           </form>
                         ) : null}
 
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           {isEditable(p.status) ? (
-                            <SecondaryButton disabled={busy} onClick={() => startEditing(p.purchase_date)}>
+                            <Button type="button" variant="outline" disabled={busy} onClick={() => startEditing(p.purchase_date)}>
                               ویرایش
-                            </SecondaryButton>
+                            </Button>
                           ) : (
                             <>
-                              <SecondaryButton disabled={busy} onClick={startReturning}>
+                              <Button type="button" variant="outline" disabled={busy} onClick={startReturning}>
                                 برگشت به تأمین‌کننده
-                              </SecondaryButton>
+                              </Button>
                               <p className="text-xs text-muted-foreground">
                                 خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از «برگشت به تأمین‌کننده» استفاده کنید.
                               </p>
@@ -732,7 +743,7 @@ export function PurchasesSection({
           })}
           {purchases && purchases.length === 0 ? <li className="p-3 text-sm text-muted-foreground">خریدی ثبت نشده است.</li> : null}
         </ul>
-      </section>
+      </SectionCard>
     </div>
   );
 }

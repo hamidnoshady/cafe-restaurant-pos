@@ -11,16 +11,17 @@
  *
  * The manager covers everything a connected store has — commerce (products,
  * orders, customers, categories) and content (posts, pages, media), plus the
- * connection itself. The read/write operations are shared services in
- * src/lib/integrations/*, so the other apps that need store integration (the
- * POS pushing stock, CRM customers, Growth segments) call the same code this
- * manager's sections call; this is the *management surface*, not the only
- * caller.
+ * sync queue. The connection itself is deliberately not a section: every
+ * technical connection in the product lives in the «اتصال‌های فنی» hub
+ * (/dashboard/connections), and the old `connections` section redirects there.
+ * The read/write operations are shared services in src/lib/integrations/*, so
+ * the other apps that need store integration (the POS pushing stock, CRM
+ * customers, Growth segments) call the same code this manager's sections
+ * call; this is the *management surface*, not the only caller.
  */
 
 export const WP_SECTION_KEYS = [
   "overview",
-  "connections",
   "products",
   "orders",
   "customers",

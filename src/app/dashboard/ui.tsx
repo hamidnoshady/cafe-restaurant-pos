@@ -141,8 +141,11 @@ const ERROR_MESSAGES: Record<string, string> = {
     // Phase 13 — teams & permissions
     invalid_role: "نقش انتخاب‌شده معتبر نیست.",
     invalid_email: "ایمیل معتبر نیست.",
-    invalid_pin: "رمز عددی باید دقیقاً ۴ رقم باشد.",
+    invalid_pin: "رمز عددی باید ۴ تا ۱۲ رقم باشد.",
     pin_taken: "این رمز عددی قبلاً برای عضو دیگری ثبت شده است.",
+    // Phase 42 — the member's login phone
+    invalid_phone: "شمارهٔ موبایل معتبر نیست. نمونه: ۰۹۱۲۱۲۳۴۵۶۷",
+    phone_taken: "این شمارهٔ موبایل قبلاً برای عضو دیگری ثبت شده است.",
     email_taken: "این ایمیل قبلاً در این کسب‌وکار ثبت شده است.",
     email_required: "برای این نقش ایمیل الزامی است.",
     pin_required: "برای این نقش رمز عددی الزامی است.",
@@ -281,28 +284,46 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_price: "قیمت باید عدد صحیح و غیرمنفی باشد.",
     invalid_inventory: "موجودی باید عدد صحیح و غیرمنفی باشد.",
     domain_taken: "این دامنه قبلاً برای سایت دیگری ثبت شده است.",
-    // Parties (the shared «طرف‌حساب‌ها» record every app reads) — src/app/api/parties.
+    // Parties (the shared «اشخاص» record every app reads) — src/app/api/parties.
     // `validation_failed` is the collection's answer to a body the form rules
     // reject; the message per field comes from `partyFieldErrorMessage` in
     // src/lib/parties.ts, which is why this one stays general.
-    validation_failed: "اطلاعات طرف‌حساب کامل یا معتبر نیست؛ فیلدهای مشخص‌شده را بررسی کنید.",
-    party_not_found: "این طرف‌حساب پیدا نشد یا در همین کسب‌وکار نیست.",
-    display_name_required: "نام نمایشی طرف‌حساب الزامی است.",
+    validation_failed: "اطلاعات شخص کامل یا معتبر نیست؛ فیلدهای مشخص‌شده را بررسی کنید.",
+    party_not_found: "این شخص پیدا نشد یا در همین کسب‌وکار نیست.",
+    display_name_required: "نام نمایشی شخص الزامی است.",
     // `invalid_role` and `category_not_found` above already cover the party
     // routes' versions of those two codes; only the party-specific ones are added.
     invalid_person_type: "نوع شخص باید حقیقی یا حقوقی باشد.",
-    accounting_code_required: "در حالت دستی، کد حسابداری طرف‌حساب الزامی است.",
-    accounting_code_taken: "این کد حسابداری برای طرف‌حساب دیگری در همین کسب‌وکار استفاده شده است.",
+    accounting_code_required: "در حالت دستی، کد حسابداری شخص الزامی است.",
+    accounting_code_taken: "این کد حسابداری برای شخص دیگری در همین کسب‌وکار استفاده شده است.",
     invalid_national_id: "کد ملی معتبر نیست.",
-    national_id_taken: "این کد ملی قبلاً برای طرف‌حساب دیگری ثبت شده است.",
+    national_id_taken: "این کد ملی قبلاً برای شخص دیگری ثبت شده است.",
     economic_code_invalid: "کد اقتصادی معتبر نیست (۱۱ رقم با رقم کنترلی).",
     iban_invalid: "شمارهٔ شبا معتبر نیست.",
     too_long: "مقدار یکی از فیلدها بلندتر از حد مجاز است.",
     email_too_long: "ایمیل بلندتر از حد مجاز است.",
-    accounting_fields_forbidden: "فیلدهای حسابداری طرف‌حساب (کد، نرخ مالیات، بانک) فقط با دسترسی «مشاهدهٔ دفتر» قابل ویرایش‌اند.",
+    accounting_fields_forbidden: "فیلدهای حسابداری شخص (کد، نرخ مالیات، بانک) فقط با دسترسی «مشاهدهٔ دفتر» قابل ویرایش‌اند.",
     category_name_required: "نام دسته الزامی است.",
     category_name_too_long: "نام دسته بیش از ۸۰ نویسه است.",
     category_in_use: "این دسته در حال استفاده است و فقط غیرفعال می‌شود.",
+    // Installments (کارت اقساط) — src/lib/installments-service.ts.
+    invalid_down_payment: "پیش‌پرداخت نمی‌تواند منفی باشد.",
+    down_payment_exceeds_principal: "پیش‌پرداخت از مبلغ کل بیشتر است.",
+    invalid_installment_count: "تعداد اقساط معتبر نیست.",
+    invalid_interval: "فاصله اقساط معتبر نیست.",
+    invalid_due_date: "تاریخ اولین بازپرداخت را انتخاب کنید.",
+    invalid_percent: "درصد سود/جریمه باید بین ۰ تا ۱۰۰ باشد.",
+    invoice_required: "فاکتور را انتخاب کنید.",
+    invoice_not_found: "فاکتور انتخاب‌شده پیدا نشد.",
+    invoice_has_no_customer: "این فاکتور مشتری ندارد؛ اقساط فاکتوری فقط برای فاکتورهای دارای مشتری است.",
+    invoice_not_on_credit: "این فاکتور نسیه نیست و بدهی‌ای برای قسط‌بندی ندارد؛ فقط فاکتورهای نسیه قابل قسط‌بندی‌اند.",
+    party_required: "شخص را انتخاب کنید.",
+    plan_not_found: "برنامه قسطی پیدا نشد.",
+    plan_has_no_party: "این برنامه شخص طرف‌حساب ندارد.",
+    already_paid: "این قسط قبلاً تسویه شده است.",
+    supplier_record_missing: "این شخص در فهرست تأمین‌کنندگان ثبت نشده است؛ ابتدا او را به‌عنوان تأمین‌کننده ثبت کنید.",
+    installment_amount_too_small: "مبلغ هر قسط بسیار کم است؛ تعداد اقساط را کاهش دهید.",
+    item_required: "قسط را انتخاب کنید.",
 };
 
 export function errorMessage(code: string | undefined): string {

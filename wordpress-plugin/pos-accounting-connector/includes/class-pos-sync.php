@@ -40,8 +40,10 @@ class POS_Connector_Sync {
 	/** How many orders one sweep may re-send, so a cron run finishes inside PHP's limit. */
 	const ORDER_SWEEP_LIMIT = 200;
 
-	/** Most rows one push may carry. The app's own cap is 100 events per request. */
-	const PUSH_BATCH_ROWS = 50;
+	/**
+	 * Most rows one push may carry. The app's own cap is 100 events per request.
+	 */
+	const PUSH_BATCH_ROWS = 100;
 
 	/**
 	 * Most payload bytes one push may carry, comfortably under the app's 2 MB
@@ -49,6 +51,23 @@ class POS_Connector_Sync {
 	 * measured here.
 	 */
 	const PUSH_BATCH_BYTES = 1200000;
+
+	/**
+	 * How long one cron run may spend pushing, in seconds.
+	 *
+	 * 1.2.x pushed exactly one batch per run: 50 events every five minutes is
+	 * 600 an hour, so a first-time export of a modest catalogue (800 products
+	 * with variations, 300 customers, a week of orders) took the better part
+	 * of a day to arrive — and on a traffic-driven WP-Cron, days. That is
+	 * exactly what "the app never got all my data" looked like from the
+	 * owner's side. The loop keeps the per-request caps (rows, bytes) and
+	 * adds a wall-clock budget, so one run drains as much as the host's PHP
+	 * limit tolerates and the next run picks up the rest — the queue is
+	 * durable, so a run killed mid-loop loses nothing. 24 seconds stays
+	 * under the 60-second cron lock and under the common 30–60 s
+	 * max_execution_time with room for the pull phase.
+	 */
+	const PUSH_TIME_BUDGET_SECONDS = 24;
 
 	public static function init() {
 		// Every cron hook is bound unconditionally, before the `enabled` check
@@ -464,9 +483,18 @@ class POS_Connector_Sync {
 			);
 		}
 
-		// Categories: a flat array of {id, name, slug} triples.
+		// Categories: a flat array of {id, name, slug} triples. A variation
+		// carries no product_cat of its own — WooCommerce files the taxonomy
+		// on the parent — so a variation reads its parent's terms. Without
+		// this, every variation arrived with an empty array and the app's
+		// «دسته‌بندی» column and taxonomy mirror showed parents sorted into
+		// categories and all of their children in none.
+		$term_post_id = $product->get_id();
+		if ( 'variation' === $type && $parent_id ) {
+			$term_post_id = $parent_id;
+		}
 		$categories = array();
-		foreach ( wp_get_post_terms( $product->get_id(), 'product_cat' ) as $term ) {
+		foreach ( wp_get_post_terms( $term_post_id, 'product_cat' ) as $term ) {
 			$categories[] = array(
 				'id'   => $term->term_id,
 				'name' => $term->name,
@@ -474,9 +502,10 @@ class POS_Connector_Sync {
 			);
 		}
 
-		// Tags, so the app's taxonomy mirror is not half a tree.
+		// Tags, so the app's taxonomy mirror is not half a tree — read from
+		// the parent for a variation, for the same reason as the categories.
 		$tags = array();
-		foreach ( wp_get_post_terms( $product->get_id(), 'product_tag' ) as $term ) {
+		foreach ( wp_get_post_terms( $term_post_id, 'product_tag' ) as $term ) {
 			$tags[] = array(
 				'id'   => $term->term_id,
 				'name' => $term->name,
@@ -579,6 +608,12 @@ class POS_Connector_Sync {
 	 * push then honours; pushing before pulling means a stock level the app
 	 * computes is computed from sales it already knows about, rather than from
 	 * a picture one cycle out of date.
+	 *
+	 * Since 1.3.0 both pushes run in a loop under a wall-clock budget, and a
+	 * short second push runs *after* the pull: an export job the pull just
+	 * applied has filled the queue with the entire catalogue, and making that
+	 * wait for the next tick is what turned a five-minute initial sync into a
+	 * day-long drip.
 	 */
 	public static function run() {
 		$settings = pos_connector_settings();
@@ -599,10 +634,18 @@ class POS_Connector_Sync {
 			return;
 		}
 
+		$started = microtime( true );
+		$pushed  = self::push_queue_until( $client, $started );
+		$applied = self::pull_jobs( $client );
+		// Whatever budget is left ships the events a just-applied export job
+		// queued, so «همگام‌سازی محصولات» starts producing rows in the same
+		// run the plugin accepted the job.
+		$pushed += self::push_queue_until( $client, $started );
+
 		$stats = array(
 			'at'      => current_time( 'mysql', true ),
-			'pushed'  => self::push_queue( $client ),
-			'applied' => self::pull_jobs( $client ),
+			'pushed'  => $pushed,
+			'applied' => $applied,
 		);
 
 		pos_connector_update_settings(
@@ -616,6 +659,28 @@ class POS_Connector_Sync {
 		POS_Connector_Log::prune();
 
 		return $stats;
+	}
+
+	/**
+	 * Push batches until the queue is empty, a batch stops making progress, or
+	 * the run's time budget runs out.
+	 *
+	 * `push_queue` returns 0 both when there is nothing left and when the app
+	 * could not be reached — in both cases looping would only hammer the same
+	 * failure, so 0 is where this stops. A batch that delivered *some* rows
+	 * (the app rejects events one by one, not wholesale) keeps the loop going:
+	 * those are the backlog minutes of a first sync.
+	 */
+	private static function push_queue_until( POS_Connector_Client $client, $started_at ) {
+		$total = 0;
+		do {
+			$sent = self::push_queue( $client );
+			$total += $sent;
+		} while (
+			$sent > 0
+			&& ( microtime( true ) - $started_at ) < self::PUSH_TIME_BUDGET_SECONDS
+		);
+		return $total;
 	}
 
 	/**
@@ -1114,7 +1179,8 @@ class POS_Connector_Sync {
 	 * unrecognised type as "skip".
 	 */
 	public static function export_products() {
-		// Pass 1: every product the store has, of every type.
+		// Pass 1: every product the store has, of every type and every
+		// non-trashed status.
 		//
 		// No `type` filter on purpose. 1.0.x asked for
 		// `array( 'simple', 'variable' )`, which silently dropped grouped,
@@ -1122,6 +1188,14 @@ class POS_Connector_Sync {
 		// catalogue — and the app then treated those rows as a type it did
 		// not recognise. This query returns every `product` post, whatever
 		// `product_type` term it carries.
+		//
+		// No `publish`-only filter either, since 1.3.0. The app's own REST
+		// pull reads `/products` with the store's default status filter —
+		// `any` — so a plugin-connected store whose owner keeps drafts or
+		// private products was exporting a *smaller* catalogue than the same
+		// store connected with consumer keys, and "the app is missing
+		// products" had its answer right here. Trash and auto-drafts stay
+		// out: they are not catalogue rows anywhere.
 		$parents    = array();
 		$variations = array();
 		$page       = 1;
@@ -1130,7 +1204,7 @@ class POS_Connector_Sync {
 				array(
 					'limit'  => 100,
 					'page'   => $page,
-					'status' => 'publish',
+					'status' => array( 'publish', 'draft', 'pending', 'private', 'future' ),
 					'return' => 'objects',
 				)
 			);
