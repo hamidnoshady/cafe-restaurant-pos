@@ -31,7 +31,7 @@ describe("GROWTH_NAV_ITEMS", () => {
     // no ledger, no reports, no other app's page.
     for (const item of GROWTH_NAV_ITEMS) {
       const href = growthSectionHref(item.key);
-      expect(href === "/dashboard/growth" || href.startsWith("/dashboard/growth/")).toBe(true);
+      expect(href === "/growth/overview" || href.startsWith("/growth/")).toBe(true);
       expect(href).not.toContain("ledger");
       expect(href).not.toContain("reports");
     }
@@ -73,8 +73,8 @@ describe("growthNavItemsForRole", () => {
 
 describe("customer data projection", () => {
   it("opens the customer section in Growth without moving ownership", () => {
-    expect(growthCustomerHref()).toBe("/dashboard/growth/customers");
-    expect(growthCustomerHref("customer/42")).toBe("/dashboard/growth/customers?customerId=customer%2F42");
+    expect(growthCustomerHref()).toBe("/growth/customers");
+    expect(growthCustomerHref("customer/42")).toBe("/growth/customers?customerId=customer%2F42");
     expect(canViewGrowthSection("accountant", "customers")).toBe(true);
     expect(canOpenGrowth("accountant")).toBe(true);
   });
@@ -84,15 +84,15 @@ describe("isGrowthSectionPathname", () => {
   it("lights the overview only on the app's root", () => {
     // Every section page lives under the root path, so a prefix match here would
     // leave «میز کار رشد» active on all six pages.
-    expect(isGrowthSectionPathname("/dashboard/growth", "overview")).toBe(true);
-    expect(isGrowthSectionPathname("/dashboard/growth/campaigns", "overview")).toBe(false);
-    expect(isGrowthSectionPathname("/dashboard/growth/customers", "customers")).toBe(true);
+    expect(isGrowthSectionPathname("/growth/overview", "overview")).toBe(true);
+    expect(isGrowthSectionPathname("/growth/campaigns", "overview")).toBe(false);
+    expect(isGrowthSectionPathname("/growth/customers", "customers")).toBe(true);
   });
 
   it("keeps a section active on its page and anything nested under it", () => {
-    expect(isGrowthSectionPathname("/dashboard/growth/gift-cards", "gift-cards")).toBe(true);
-    expect(isGrowthSectionPathname("/dashboard/growth/gift-cards/41", "gift-cards")).toBe(true);
-    expect(isGrowthSectionPathname("/dashboard/growth/loyalty", "gift-cards")).toBe(false);
+    expect(isGrowthSectionPathname("/growth/gift-cards", "gift-cards")).toBe(true);
+    expect(isGrowthSectionPathname("/growth/gift-cards/41", "gift-cards")).toBe(true);
+    expect(isGrowthSectionPathname("/growth/loyalty", "gift-cards")).toBe(false);
     expect(isGrowthSectionPathname("/dashboard/ledger", "campaigns")).toBe(false);
   });
 });

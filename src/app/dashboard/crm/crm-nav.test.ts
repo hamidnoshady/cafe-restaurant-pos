@@ -31,7 +31,7 @@ describe("CRM_NAV_ITEMS", () => {
     // hold only its own routes — no ledger, no growth page, no reports.
     for (const item of CRM_NAV_ITEMS) {
       const href = crmSectionHref(item.key);
-      expect(href === "/dashboard/crm" || href.startsWith("/dashboard/crm/")).toBe(true);
+      expect(href === "/crm/overview" || href.startsWith("/crm/")).toBe(true);
       expect(href).not.toContain("ledger");
       expect(href).not.toContain("growth");
       expect(href).not.toContain("reports");
@@ -85,7 +85,7 @@ describe("crmFallbackHref", () => {
   it("keeps a cashier inside the app when they land on a management page", () => {
     // Being thrown to `/dashboard` from a link someone sent you reads as a bug
     // rather than as a permission boundary.
-    expect(crmFallbackHref("cashier")).toBe("/dashboard/crm/directory");
+    expect(crmFallbackHref("cashier")).toBe("/crm/directory");
   });
 
   it("sends a role with no business here back to the dashboard", () => {
@@ -97,13 +97,13 @@ describe("isCrmSectionPathname", () => {
   it("lights the overview only on the app's root", () => {
     // Every section lives under the root path, so a prefix match would leave
     // «میز کار ارتباط با مشتری» active on all nine pages.
-    expect(isCrmSectionPathname("/dashboard/crm", "overview")).toBe(true);
-    expect(isCrmSectionPathname("/dashboard/crm/segments", "overview")).toBe(false);
+    expect(isCrmSectionPathname("/crm/overview", "overview")).toBe(true);
+    expect(isCrmSectionPathname("/crm/segments", "overview")).toBe(false);
   });
 
   it("keeps a section active on its page and anything nested under it", () => {
-    expect(isCrmSectionPathname("/dashboard/crm/deals", "deals")).toBe(true);
-    expect(isCrmSectionPathname("/dashboard/crm/segments", "deals")).toBe(false);
+    expect(isCrmSectionPathname("/crm/deals", "deals")).toBe(true);
+    expect(isCrmSectionPathname("/crm/segments", "deals")).toBe(false);
     expect(isCrmSectionPathname("/dashboard/ledger", "directory")).toBe(false);
   });
 
@@ -112,7 +112,7 @@ describe("isCrmSectionPathname", () => {
     // half the app, and an unlit sidebar there would make it feel like a
     // different place each time.
     const href = crmCustomerHref("c-42");
-    expect(href).toBe("/dashboard/crm/persons/c-42");
+    expect(href).toBe("/crm/persons/c-42");
     expect(isCrmSectionPathname(href, "persons")).toBe(true);
     expect(isCrmSectionPathname(href, "directory")).toBe(false);
   });
