@@ -180,7 +180,7 @@ export default function CmsSyncPage() {
             {busy === "events" ? "در حال دریافت…" : "دریافت رویدادها و ارسال به پایش"}
           </Button>
         </div>
-        <p className="mt-3 text-xs leading-6 text-white/35">
+        <p className="mt-3 text-xs leading-6 text-muted-foreground">
           هر دو روی زمان‌بندی سرور هم اجرا می‌شوند؛ این دکمه‌ها همان کار را بی‌درنگ انجام می‌دهند.
           دریافت رویدادها از نشانگر (cursor) ادامه می‌دهد، پس فشردن دوباره‌اش چیزی را دو بار
           نمی‌فرستد.
@@ -210,7 +210,7 @@ export default function CmsSyncPage() {
           <Field label="بارگذاری تصویر از فایل">
             <input
               accept="application/json"
-              className="h-10 w-full text-xs text-white/60"
+              className="h-10 w-full text-xs text-muted-foreground"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file) void upload(file);
@@ -221,14 +221,14 @@ export default function CmsSyncPage() {
         </div>
 
         <fieldset className="mt-3">
-          <legend className="mb-2 text-xs text-white/45">مجموعه‌ها</legend>
+          <legend className="mb-2 text-xs text-muted-foreground">مجموعه‌ها</legend>
           <div className="flex flex-wrap gap-2">
             {COLLECTIONS.map((name) => (
               <label
                 className={
                   selected.includes(name)
-                    ? "cursor-pointer rounded-lg border border-sky-400/40 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-200"
-                    : "cursor-pointer rounded-lg border border-white/15 px-2.5 py-1 text-xs text-white/50"
+                    ? "cursor-pointer rounded-lg border border-sky-400/40 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-800 dark:text-sky-200"
+                    : "cursor-pointer rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground"
                 }
                 key={name}
               >
@@ -242,7 +242,7 @@ export default function CmsSyncPage() {
               </label>
             ))}
           </div>
-          <p className="mt-2 text-xs text-white/35">
+          <p className="mt-2 text-xs text-muted-foreground">
             رسانه‌ها در تصویر نیستند: فایل‌ها در فضای ذخیره‌سازی ابری‌اند و یک سند JSON نمی‌تواند
             آن‌ها را حمل کند.
           </p>
@@ -262,7 +262,7 @@ export default function CmsSyncPage() {
                 <Upload className="size-4" />
                 {busy === "push" ? "در حال بررسی…" : "بررسی آزمایشی ارسال"}
               </Button>
-              <label className="flex items-center gap-2 text-xs text-white/50">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input
                   checked={force}
                   className="size-4"
@@ -276,7 +276,7 @@ export default function CmsSyncPage() {
         </div>
 
         {snapshot ? (
-          <p className="mt-3 text-xs text-white/40">
+          <p className="mt-3 text-xs text-muted-foreground">
             تصویر از «{snapshot.site?.domain}» در {fmtDate(snapshot.generatedAt)} — زبان‌ها:{" "}
             {(snapshot.locales ?? []).join("، ")}
             {snapshot.truncated?.length ? " (ناقص: از سقف پیمایش گذشته)" : ""}
@@ -284,21 +284,21 @@ export default function CmsSyncPage() {
         ) : null}
 
         {plan ? (
-          <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="mt-4 rounded-xl border border-border bg-muted p-3">
             <p className="text-sm">
               {plan.dryRun ? "نتیجهٔ بررسی آزمایشی" : "نتیجهٔ اعمال"}:{" "}
-              <span className="text-emerald-300">
+              <span className="text-emerald-700 dark:text-emerald-300">
                 {formatPersianNumber(plan.summary.updated)} به‌روزرسانی
               </span>
               {" · "}
-              <span className="text-sky-300">{formatPersianNumber(plan.summary.created)} ساخت</span>
+              <span className="text-sky-700 dark:text-sky-300">{formatPersianNumber(plan.summary.created)} ساخت</span>
               {" · "}
-              <span className="text-white/50">
+              <span className="text-muted-foreground">
                 {formatPersianNumber(plan.summary.skipped)} رد‌شده
               </span>
             </p>
             {plan.errors.length ? (
-              <ul className="mt-2 space-y-1 text-xs text-amber-300/90">
+              <ul className="mt-2 space-y-1 text-xs text-amber-700/90 dark:text-amber-300/90">
                 {plan.errors.slice(0, 10).map((row, index) => (
                   <li key={`${row.collection}-${row.key}-${index}`}>
                     {SNAPSHOT_COLLECTION_LABELS[row.collection] ?? row.collection} / {row.key ?? "—"}{" "}
@@ -324,7 +324,7 @@ export default function CmsSyncPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-xs text-white/40">
+              <thead className="text-xs text-muted-foreground">
                 <tr>
                   <th className="pb-2 text-start font-normal">نوع</th>
                   <th className="pb-2 text-start font-normal">آغازگر</th>
@@ -336,12 +336,12 @@ export default function CmsSyncPage() {
               </thead>
               <tbody>
                 {runs.map((row) => (
-                  <tr className="border-t border-white/5" key={row.id}>
-                    <td className="py-2 text-white/70">
+                  <tr className="border-t border-border" key={row.id}>
+                    <td className="py-2 text-foreground">
                       {SYNC_KIND_LABELS[row.kind]}
-                      {row.dryRun ? <span className="ms-1 text-xs text-white/35">(آزمایشی)</span> : null}
+                      {row.dryRun ? <span className="ms-1 text-xs text-muted-foreground">(آزمایشی)</span> : null}
                     </td>
-                    <td className="py-2 text-white/50">
+                    <td className="py-2 text-muted-foreground">
                       {row.trigger === "scheduled" ? "زمان‌بندی" : "دستی"}
                     </td>
                     <td className={`py-2 ${syncStatusTone(row.status)}`}>
@@ -350,13 +350,13 @@ export default function CmsSyncPage() {
                         <span className="ms-2 text-xs">{cmsErrorText(row.error)}</span>
                       ) : null}
                     </td>
-                    <td className="py-2 tabular-nums text-white/60">
+                    <td className="py-2 tabular-nums text-muted-foreground">
                       {formatPersianNumber(row.items)}
                     </td>
-                    <td className="py-2 tabular-nums text-white/40">
+                    <td className="py-2 tabular-nums text-muted-foreground">
                       {formatPersianNumber(row.durationMs)}‏ms
                     </td>
-                    <td className="py-2 text-xs text-white/40">{fmtDate(row.createdAt)}</td>
+                    <td className="py-2 text-xs text-muted-foreground">{fmtDate(row.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>

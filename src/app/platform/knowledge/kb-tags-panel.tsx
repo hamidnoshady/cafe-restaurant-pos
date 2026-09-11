@@ -105,7 +105,7 @@ export function TagsPanel() {
       <ErrorBox>{error}</ErrorBox>
 
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-white/80">
+        <h2 className="text-sm font-semibold text-foreground">
           {rows ? `${rows.length} برچسب` : "برچسب‌ها"}
         </h2>
         {canManage ? (
@@ -123,9 +123,9 @@ export function TagsPanel() {
       ) : rows.length === 0 ? (
         <EmptyState title="هنوز برچسبی نیست" hint="اولین برچسب را بسازید؛ مثلاً «چاپ» یا «آفلاین»." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-border">
           <table className="min-w-[520px] w-full text-sm">
-            <thead className="bg-white/3 text-white/50">
+            <thead className="bg-card text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 text-start font-medium">برچسب</th>
                 <th className="px-4 py-3 text-start font-medium">نامک</th>
@@ -135,17 +135,17 @@ export function TagsPanel() {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-t border-white/5 align-top">
+                <tr key={row.id} className="border-t border-border align-top">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-white/90">#{row.label}</p>
+                    <p className="font-medium text-foreground">#{row.label}</p>
                     {row.description ? (
-                      <p className="mt-0.5 text-[11px] text-white/35">{row.description}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{row.description}</p>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 text-white/40" dir="ltr">
+                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">
                     {row.slug}
                   </td>
-                  <td className="px-4 py-3 text-white/50">{row.articleCount}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.articleCount}</td>
                   {canManage ? (
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
@@ -161,7 +161,7 @@ export function TagsPanel() {
                         </Button>
                         <Button
                           variant="ghost"
-                          className="h-8 px-2 text-xs text-red-300 hover:bg-red-500/10"
+                          className="h-8 px-2 text-xs text-red-700 dark:text-red-300 hover:bg-red-500/10"
                           disabled={busyId === row.id}
                           onClick={() => void remove(row)}
                         >
@@ -179,7 +179,7 @@ export function TagsPanel() {
 
       {editing ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
           role="dialog"
           aria-modal="true"
           aria-label={editing === "new" ? "برچسب جدید" : "ویرایش برچسب"}
@@ -187,8 +187,8 @@ export function TagsPanel() {
             if (e.target === e.currentTarget) setEditing(null);
           }}
         >
-          <div className="w-full max-w-md rounded-xl border border-white/10 bg-slate-900 p-5 shadow-2xl">
-            <h3 className="text-base font-bold text-white">
+          <div className="w-full max-w-md rounded-xl border border-border bg-popover p-5">
+            <h3 className="text-base font-bold text-foreground">
               {editing === "new" ? "برچسب جدید" : "ویرایش برچسب"}
             </h3>
             <div className="mt-5">

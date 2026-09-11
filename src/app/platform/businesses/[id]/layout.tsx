@@ -41,12 +41,12 @@ function Workspace({ children }: { children: React.ReactNode }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Link
           href="/platform"
-          className="text-sm text-sky-300 hover:underline"
+          className="text-sm text-sky-700 dark:text-sky-300 hover:underline"
           aria-label="بازگشت به فهرست کسب‌وکارها"
         >
           ← فهرست
         </Link>
-        <span className="text-white/20" aria-hidden>
+        <span className="text-muted-foreground" aria-hidden>
           /
         </span>
         <h1 className="text-xl font-bold">{business?.name ?? "…"}</h1>
@@ -58,7 +58,7 @@ function Workspace({ children }: { children: React.ReactNode }) {
             target="_blank"
             rel="noreferrer"
             dir="ltr"
-            className="text-xs text-white/35 underline-offset-4 hover:text-sky-300 hover:underline"
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-sky-700 dark:hover:text-sky-300 hover:underline"
           >
             {business.subdomain}.{rootDomain}
           </a>
@@ -93,7 +93,7 @@ function Workspace({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setNotice(null)}
-              className="text-white/50 hover:text-white"
+              className="text-muted-foreground hover:text-foreground"
               aria-label="بستن پیام"
             >
               ✕

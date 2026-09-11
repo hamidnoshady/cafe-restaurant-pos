@@ -20,7 +20,7 @@ export default function PlatformAppsPage() {
     <div className="space-y-4">
       <header>
         <h1 className="text-xl font-bold">برنامه‌ها</h1>
-        <p className="mt-1 text-sm text-white/50">
+        <p className="mt-1 text-sm text-muted-foreground">
           مدیریت «برنامه‌ها» در کل سکو: فعال، به‌زودی، در حال تعمیر، نسخهٔ آزمایشی یا غیرفعال. این
           مدیریت بر پایهٔ «برنامه» است، نه «بخش». هر بخش (آیتم منو) داخل یک برنامه، از وضعیت همان
           برنامه پیروی می‌کند. برنامه‌ای که فعال نباشد از دید کاربر پنهان نمی‌شود؛ با همین برچسب نمایش

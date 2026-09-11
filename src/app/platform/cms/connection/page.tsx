@@ -172,7 +172,7 @@ export default function CmsConnectionPage() {
             />
           </Field>
           <Field label="اتصال بدون TLS">
-            <label className="flex h-10 items-center gap-2 text-sm text-white/70">
+            <label className="flex h-10 items-center gap-2 text-sm text-foreground">
               <input
                 checked={allowInsecure}
                 className="size-4"
@@ -188,7 +188,7 @@ export default function CmsConnectionPage() {
         {/* There is no password input for this field, and pretending otherwise
             would imply a protection that does not exist: the value is protected at
             rest and on read, not while it is being typed. */}
-        <p className="mt-3 text-xs leading-6 text-white/35">
+        <p className="mt-3 text-xs leading-6 text-muted-foreground">
           کلید هنگام تایپ پوشانده نمی‌شود؛ محافظت آن در ذخیره‌سازی (AES-256-GCM) و در خواندن است —
           هیچ مسیری، از جمله همین صفحه، کلید ذخیره‌شده را برنمی‌گرداند. جای امنی برای تایپ انتخاب
           کنید.
@@ -221,51 +221,51 @@ export default function CmsConnectionPage() {
       <Card title="وضعیت">
         <dl className="space-y-2 text-sm">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <dt className="text-white/45">کلید ذخیره‌شده</dt>
+            <dt className="text-muted-foreground">کلید ذخیره‌شده</dt>
             <dd className="flex items-center gap-2 font-medium">
               {config?.configured ? (
                 <>
-                  <KeyRound className="size-4 text-emerald-400" />
+                  <KeyRound className="size-4 text-emerald-600 dark:text-emerald-400" />
                   {config.apiKeyHint || "ذخیره شده"}
                 </>
               ) : (
                 <>
-                  <ShieldAlert className="size-4 text-amber-400" />
+                  <ShieldAlert className="size-4 text-amber-600 dark:text-amber-400" />
                   ندارد
                 </>
               )}
             </dd>
           </div>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <dt className="text-white/45">آخرین تأیید موفق</dt>
+            <dt className="text-muted-foreground">آخرین تأیید موفق</dt>
             <dd className="font-medium">
               {config?.verifiedAt ? fmtDate(config.verifiedAt) : "هرگز"}
             </dd>
           </div>
           {config?.verifyError ? (
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <dt className="text-white/45">آخرین خطای تأیید</dt>
-              <dd className="font-medium text-red-300">{config.verifyError}</dd>
+              <dt className="text-muted-foreground">آخرین خطای تأیید</dt>
+              <dd className="font-medium text-red-700 dark:text-red-300">{config.verifyError}</dd>
             </div>
           ) : null}
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <dt className="text-white/45">آخرین آینه‌برداری</dt>
+            <dt className="text-muted-foreground">آخرین آینه‌برداری</dt>
             <dd className="font-medium">
               {config?.lastMirrorAt ? fmtDate(config.lastMirrorAt) : "هرگز"}
               {config?.lastMirrorError ? (
-                <span className="ms-2 text-red-300">{cmsErrorText(config.lastMirrorError)}</span>
+                <span className="ms-2 text-red-700 dark:text-red-300">{cmsErrorText(config.lastMirrorError)}</span>
               ) : null}
             </dd>
           </div>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <dt className="text-white/45">رویدادهای ارسال‌شده به پایش</dt>
+            <dt className="text-muted-foreground">رویدادهای ارسال‌شده به پایش</dt>
             <dd className="font-medium tabular-nums">
               {formatPersianNumber(config?.eventsShipped ?? 0)}
               {config?.lastEventsAt ? (
-                <span className="ms-2 text-xs text-white/35">{fmtDate(config.lastEventsAt)}</span>
+                <span className="ms-2 text-xs text-muted-foreground">{fmtDate(config.lastEventsAt)}</span>
               ) : null}
               {config?.lastEventsError ? (
-                <span className="ms-2 text-red-300">{cmsErrorText(config.lastEventsError)}</span>
+                <span className="ms-2 text-red-700 dark:text-red-300">{cmsErrorText(config.lastEventsError)}</span>
               ) : null}
             </dd>
           </div>
@@ -284,7 +284,7 @@ export default function CmsConnectionPage() {
             />
             <span>
               <span className="font-medium">آینه‌برداری دوره‌ای از سایت‌ها</span>
-              <span className="mt-1 block text-xs leading-6 text-white/40">
+              <span className="mt-1 block text-xs leading-6 text-muted-foreground">
                 فهرست و شمارش سایت‌ها را در این سرور نگه می‌دارد تا گزارش‌ها با یک پرس‌وجوی محلی
                 پاسخ داده شوند و وقتی سایت‌ساز در دسترس نیست هم پاسخ بدهند.
               </span>
@@ -315,7 +315,7 @@ export default function CmsConnectionPage() {
             />
             <span>
               <span className="font-medium">ارسال رویدادهای سایت‌ساز به پایش</span>
-              <span className="mt-1 block text-xs leading-6 text-white/40">
+              <span className="mt-1 block text-xs leading-6 text-muted-foreground">
                 خوراک رویدادهای سایت‌ساز — تغییر وضعیت سایت، سفارش‌ها، خودآزمایی ناموفق درگاه‌ها و
                 صدور کلید — را از روی نشانگر می‌خواند و در جریان لاگ همین سکو می‌نشاند. اگر
                 جمع‌کنندهٔ لاگ تنظیم نشده باشد، هیچ درخواستی فرستاده نمی‌شود.

@@ -94,14 +94,14 @@ export function BusinessDetailsPanel() {
           />
         </Field>
         <div className="mb-4 min-w-0">
-          <p className="mb-1 text-sm font-medium text-white/80">شناسهٔ کسب‌وکار</p>
+          <p className="mb-1 text-sm font-medium text-foreground">شناسهٔ کسب‌وکار</p>
           <p
-            className="break-all rounded-lg border border-white/10 bg-white/2 px-3 py-2 text-sm text-white/50"
+            className="break-all rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground"
             dir="ltr"
           >
             {business.slug}
           </p>
-          <p className="mt-1 text-xs text-white/40">این شناسه برای پایداری ارجاع‌ها تغییر نمی‌کند.</p>
+          <p className="mt-1 text-xs text-muted-foreground">این شناسه برای پایداری ارجاع‌ها تغییر نمی‌کند.</p>
         </div>
         {editable ? (
           <div className="mb-4 flex items-end sm:justify-end">
@@ -197,17 +197,17 @@ export function IndustryPanel() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>{saved}</InfoBox> : null}
       <form onSubmit={save}>
-        <p className="mb-3 text-sm text-white/60">
+        <p className="mb-3 text-sm text-muted-foreground">
           نوع فعلی:{" "}
-          <span className="font-medium text-white/85">{INDUSTRY_LABELS[business.industry]}</span>
+          <span className="font-medium text-foreground">{INDUSTRY_LABELS[business.industry]}</span>
         </p>
         <IndustryPicker value={industry} onChange={setIndustry} disabled={!editable || busy} />
-        <p className="mt-3 text-xs leading-5 text-white/40">
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
           نوع کسب‌وکار تعیین می‌کند چه سرفصل حساب‌هایی ساخته می‌شود، مالک چه مراحلی از راه‌اندازی را
           می‌بیند، و داشبورد کدام ماژول‌ها را نشان می‌دهد.
         </p>
         {changed && carried.length > 0 ? (
-          <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2.5 text-xs leading-6 text-amber-200/90">
+          <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2.5 text-xs leading-6 text-amber-800/90 dark:text-amber-200/90">
             <p className="font-medium">این کسب‌وکار داده‌ای دارد که به نوع فعلی تعلق دارد:</p>
             <ul className="mt-1 space-y-0.5">
               {carried.map((c) => (
@@ -308,21 +308,21 @@ export function SubdomainPanel() {
             className={`${inputClass} text-start`}
           />
           {invalid && changed ? (
-            <span className="mt-1 block text-xs text-rose-300">{errorMessage(invalid)}</span>
+            <span className="mt-1 block text-xs text-rose-700 dark:text-rose-300">{errorMessage(invalid)}</span>
           ) : null}
         </Field>
 
         {aliases.length > 0 ? (
           <div className="mb-4">
-            <p className="mb-1 text-sm font-medium text-white/80">نشانی‌های قبلی</p>
-            <ul className="space-y-1 text-xs text-white/50">
+            <p className="mb-1 text-sm font-medium text-foreground">نشانی‌های قبلی</p>
+            <ul className="space-y-1 text-xs text-muted-foreground">
               {aliases.map((a) => (
                 <li key={a.alias} dir="ltr">
                   {rootDomain ? `${a.alias}.${rootDomain}` : a.alias}
                 </li>
               ))}
             </ul>
-            <p className="mt-1 text-xs text-white/40">
+            <p className="mt-1 text-xs text-muted-foreground">
               این نشانی‌ها همچنان کار می‌کنند و به نشانی فعلی هدایت می‌شوند.
             </p>
           </div>
@@ -428,7 +428,7 @@ export function PlanPanel() {
             />
           </Field>
           {current ? (
-            <p className="mt-1 text-xs text-white/40">
+            <p className="mt-1 text-xs text-muted-foreground">
               سقف فعلی: {limitLabel(current.branchLimit)} شعبه، {limitLabel(current.memberLimit)} عضو،{" "}
               {limitLabel(current.monthlyOrderLimit)} سفارش در ماه.
             </p>
@@ -496,13 +496,13 @@ export function UsagePanel() {
     <Card title="مصرف و فعالیت">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-lg border border-white/10 bg-white/2 p-3">
-            <p className="text-xs text-white/40">{s.label}</p>
+          <div key={s.label} className="rounded-lg border border-border bg-card p-3">
+            <p className="text-xs text-muted-foreground">{s.label}</p>
             <p className="mt-1 text-lg font-bold tabular-nums">{s.value}</p>
           </div>
         ))}
       </div>
-      <p className="mt-3 text-xs text-white/40">
+      <p className="mt-3 text-xs text-muted-foreground">
         آخرین فعالیت: {usage.lastActivity ? new Date(usage.lastActivity).toLocaleString("fa-IR") : "—"}
       </p>
     </Card>
@@ -560,20 +560,20 @@ export function FeaturesPanel() {
       {features === null ? (
         <SkeletonRows rows={3} />
       ) : features.length === 0 ? (
-        <p className="text-sm text-white/50">پرچمی تعریف نشده است.</p>
+        <p className="text-sm text-muted-foreground">پرچمی تعریف نشده است.</p>
       ) : (
         <div className="space-y-2">
           {features.map((f) => (
             <div
               key={f.key}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/2 p-3"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3"
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium">{f.name}</p>
                 {f.description ? (
-                  <p className="mt-0.5 text-xs text-white/40">{f.description}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{f.description}</p>
                 ) : null}
-                <p className="mt-1 text-xs text-white/30" dir="ltr">
+                <p className="mt-1 text-xs text-muted-foreground" dir="ltr">
                   {f.key}
                 </p>
               </div>
@@ -581,13 +581,13 @@ export function FeaturesPanel() {
                 <span
                   className={
                     f.effective
-                      ? "rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300"
-                      : "rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-xs text-white/50"
+                      ? "rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300"
+                      : "rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground"
                   }
                 >
                   {f.effective ? "فعال" : "غیرفعال"}
                 </span>
-                <span className="text-xs text-white/30">
+                <span className="text-xs text-muted-foreground">
                   {f.override === null
                     ? `پیش‌فرض (${f.defaultEnabled ? "روشن" : "خاموش"})`
                     : "بازنویسی‌شده"}
@@ -598,7 +598,7 @@ export function FeaturesPanel() {
                       type="button"
                       disabled={pending === f.key}
                       onClick={() => setOverride(f.key, true)}
-                      className="rounded-md border border-white/15 px-2 py-1 text-xs text-white/70 hover:bg-white/5 disabled:opacity-50"
+                      className="rounded-lg border border-border px-2 py-1 text-xs text-foreground hover:bg-muted disabled:opacity-50"
                     >
                       روشن
                     </button>
@@ -606,7 +606,7 @@ export function FeaturesPanel() {
                       type="button"
                       disabled={pending === f.key}
                       onClick={() => setOverride(f.key, false)}
-                      className="rounded-md border border-white/15 px-2 py-1 text-xs text-white/70 hover:bg-white/5 disabled:opacity-50"
+                      className="rounded-lg border border-border px-2 py-1 text-xs text-foreground hover:bg-muted disabled:opacity-50"
                     >
                       خاموش
                     </button>
@@ -614,7 +614,7 @@ export function FeaturesPanel() {
                       type="button"
                       disabled={pending === f.key || f.override === null}
                       onClick={() => setOverride(f.key, null)}
-                      className="rounded-md border border-white/15 px-2 py-1 text-xs text-white/70 hover:bg-white/5 disabled:opacity-50"
+                      className="rounded-lg border border-border px-2 py-1 text-xs text-foreground hover:bg-muted disabled:opacity-50"
                     >
                       پیش‌فرض
                     </button>
@@ -696,11 +696,11 @@ export function ImpersonationPanel() {
   }
 
   function grantState(g: Grant): { label: string; cls: string } {
-    if (g.revokedAt) return { label: "لغو‌شده", cls: "text-red-300" };
-    if (g.endedAt) return { label: "پایان‌یافته", cls: "text-white/40" };
+    if (g.revokedAt) return { label: "لغو‌شده", cls: "text-red-700 dark:text-red-300" };
+    if (g.endedAt) return { label: "پایان‌یافته", cls: "text-muted-foreground" };
     if (new Date(g.expiresAt).getTime() <= Date.now())
-      return { label: "منقضی", cls: "text-white/40" };
-    return { label: "باز", cls: "text-emerald-300" };
+      return { label: "منقضی", cls: "text-muted-foreground" };
+    return { label: "باز", cls: "text-emerald-700 dark:text-emerald-300" };
   }
 
   const canReadOnly = can("impersonate.readOnly");
@@ -713,14 +713,14 @@ export function ImpersonationPanel() {
       <ErrorBox>{error}</ErrorBox>
 
       {openGrants.length > 0 ? (
-        <div className="mb-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+        <div className="mb-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
           {formatPersianNumber(openGrants.length)} نشست پشتیبانی هم‌اکنون باز است. پیش از بستن
           مرورگر، آن را ببندید یا لغو کنید.
         </div>
       ) : null}
 
       {canReadOnly || canFull ? (
-        <div className="mb-4 rounded-lg border border-white/10 bg-white/2 p-3">
+        <div className="mb-4 rounded-lg border border-border bg-card p-3">
           <Field label="دلیل (اختیاری، در گزارش ثبت می‌شود)">
             <input
               value={reason}
@@ -747,7 +747,7 @@ export function ImpersonationPanel() {
       {grants === null ? (
         <SkeletonRows rows={3} />
       ) : grants.length === 0 ? (
-        <p className="text-sm text-white/50">هنوز دسترسی پشتیبانی ثبت نشده است.</p>
+        <p className="text-sm text-muted-foreground">هنوز دسترسی پشتیبانی ثبت نشده است.</p>
       ) : (
         <div className="space-y-2">
           {grants.map((g) => {
@@ -756,15 +756,15 @@ export function ImpersonationPanel() {
             return (
               <div
                 key={g.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/2 p-3 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card p-3 text-sm"
               >
                 <div>
                   <span className="font-medium">
                     {g.mode === "full" ? "دسترسی کامل" : "فقط‌خواندنی"}
                   </span>
                   <span className={`ms-2 text-xs ${st.cls}`}>{st.label}</span>
-                  {g.reason ? <p className="mt-0.5 text-xs text-white/40">{g.reason}</p> : null}
-                  <p className="mt-0.5 text-xs text-white/30" dir="ltr">
+                  {g.reason ? <p className="mt-0.5 text-xs text-muted-foreground">{g.reason}</p> : null}
+                  <p className="mt-0.5 text-xs text-muted-foreground" dir="ltr">
                     {new Date(g.createdAt).toLocaleString("fa-IR")} ←{" "}
                     {new Date(g.expiresAt).toLocaleString("fa-IR")}
                   </p>
@@ -773,7 +773,7 @@ export function ImpersonationPanel() {
                   <button
                     type="button"
                     onClick={() => void revoke(g.id)}
-                    className="rounded-md border border-red-500/30 px-2 py-1 text-xs text-red-300 hover:bg-red-500/10"
+                    className="rounded-lg border border-red-500/30 px-2 py-1 text-xs text-red-700 dark:text-red-300 hover:bg-red-500/10"
                   >
                     لغو
                   </button>
@@ -833,9 +833,9 @@ export function ResetPanel() {
   return (
     <Card title="ریست کامل داده‌ها">
       <ErrorBox>{error}</ErrorBox>
-      <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3 text-sm text-red-100">
+      <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3 text-sm text-red-900 dark:text-red-100">
         <p className="font-semibold">همهٔ داده‌های این کسب‌وکار حذف می‌شوند.</p>
-        <p className="mt-1 text-red-100/70">
+        <p className="mt-1 text-red-900/70 dark:text-red-100/70">
           سفارش‌ها، انبار، حسابداری، تنظیمات، شعبه‌ها، کاربران و دسترسی‌های ویژگی پاک می‌شوند. تنها
           هویت سراسری مالک و پلن کسب‌وکار باقی می‌ماند تا راه‌اندازی از ابتدا انجام شود.
         </p>
@@ -897,9 +897,9 @@ export function RemovePanel() {
   return (
     <Card title="حذف کسب‌وکار">
       <ErrorBox>{error}</ErrorBox>
-      <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3 text-sm text-red-100">
+      <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3 text-sm text-red-900 dark:text-red-100">
         <p className="font-semibold">این کسب‌وکار برای همیشه حذف می‌شود.</p>
-        <p className="mt-1 text-red-100/70">
+        <p className="mt-1 text-red-900/70 dark:text-red-100/70">
           فوری و قطعی است — بدون بایگانی و بدون مهلت. همهٔ داده‌ها، کاربران، شعبه‌ها و اطلاعات
           کسب‌وکار از بین می‌روند.
         </p>

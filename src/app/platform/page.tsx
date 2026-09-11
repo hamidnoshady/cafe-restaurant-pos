@@ -69,7 +69,7 @@ function isPlaceholderSubdomain(subdomain: string): boolean {
 
 function PlaceholderSubdomainBadge() {
   return (
-    <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-amber-400/40">
+    <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 ring-1 ring-amber-400/40">
       زیردامنه موقت
     </span>
   );
@@ -248,7 +248,7 @@ function BusinessesListInner() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">کسب‌وکارها</h1>
-          <p className="mt-1 text-sm text-white/40">
+          <p className="mt-1 text-sm text-muted-foreground">
             {businesses
               ? hasFilters
                 ? `${toPersianDigits(visible.length)} از ${toPersianDigits(businesses.length)} کسب‌وکار`
@@ -323,7 +323,7 @@ function BusinessesListInner() {
 
           {businesses.length === 0 ? (
             <Card>
-              <p className="text-sm text-white/50">هنوز کسب‌وکاری ثبت نشده است.</p>
+              <p className="text-sm text-muted-foreground">هنوز کسب‌وکاری ثبت نشده است.</p>
             </Card>
           ) : visible.length === 0 ? (
             <EmptyState
@@ -349,9 +349,9 @@ function BusinessesListInner() {
                   <BusinessListCard key={b.id} business={b} />
                 ))}
               </div>
-              <div className="hidden overflow-x-auto rounded-xl border border-white/10 md:block">
+              <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
                 <table className="min-w-[760px] w-full text-sm">
-                  <thead className="bg-white/3 text-white/50">
+                  <thead className="bg-card text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3 text-start font-medium">نام</th>
                       <th className="px-4 py-3 text-start font-medium">نوع</th>
@@ -367,37 +367,37 @@ function BusinessesListInner() {
                     {visible.map((b) => (
                       <tr
                         key={b.id}
-                        className="border-t border-white/5 transition-colors hover:bg-white/3"
+                        className="border-t border-border transition-colors hover:bg-card"
                       >
                         <td className="px-4 py-3">
                           <Link
                             href={"/platform/businesses/" + b.id}
-                            className="font-medium text-sky-300 hover:underline"
+                            className="font-medium text-sky-700 dark:text-sky-300 hover:underline"
                           >
                             {b.name}
                           </Link>
-                          <span className="mt-0.5 flex items-center gap-2 text-xs text-white/30">
+                          <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                             <span dir="ltr">{b.subdomain}</span>
                             {isPlaceholderSubdomain(b.subdomain) ? <PlaceholderSubdomainBadge /> : null}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-white/70">{INDUSTRY_LABELS[b.industry]}</td>
+                        <td className="px-4 py-3 text-foreground">{INDUSTRY_LABELS[b.industry]}</td>
                         <td className="px-4 py-3">
                           <StatusBadge status={b.status} />
                         </td>
                         <td className="px-4 py-3">
                           <PlanBadge plan={b.plan} />
                         </td>
-                        <td className="px-4 py-3 text-white/70 tabular-nums">
+                        <td className="px-4 py-3 text-foreground tabular-nums">
                           {formatPersianNumber(b.locationCount)}
                         </td>
-                        <td className="px-4 py-3 text-white/70 tabular-nums">
+                        <td className="px-4 py-3 text-foreground tabular-nums">
                           {formatPersianNumber(b.memberCount)}
                         </td>
-                        <td className="px-4 py-3 text-white/70 tabular-nums">
+                        <td className="px-4 py-3 text-foreground tabular-nums">
                           {formatPersianNumber(b.orderCount)}
                         </td>
-                        <td className="px-4 py-3 text-white/50 whitespace-nowrap">
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                           {fmtDate(b.createdAt, true)}
                         </td>
                       </tr>
@@ -502,7 +502,7 @@ function FilterBar({
 
       <div className="mt-1 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="mb-1 text-sm font-medium text-white/80">تاریخ ایجاد</p>
+          <p className="mb-1 text-sm font-medium text-foreground">تاریخ ایجاد</p>
           <div className="flex flex-wrap items-center gap-1.5">
             {DATE_PRESETS.map((p) => (
               <button
@@ -511,19 +511,19 @@ function FilterBar({
                 onClick={() => onPreset(p.days)}
                 className={
                   preset === p.days && !filters.from && !filters.to
-                    ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-300"
-                    : "rounded-full border border-white/15 px-3 py-1 text-xs text-white/55 transition-colors hover:bg-white/5 hover:text-white"
+                    ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-700 dark:text-sky-300"
+                    : "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 }
               >
                 {p.label}
               </button>
             ))}
-            <span className="mx-1 h-5 w-px bg-white/10" aria-hidden />
-            <label className="flex items-center gap-1 text-xs text-white/45">
+            <span className="mx-1 h-5 w-px bg-muted" aria-hidden />
+            <label className="flex items-center gap-1 text-xs text-muted-foreground">
               از
               <JalaliDatePicker
                 className={`${inputClass} !h-8 w-[9.5rem] text-xs`}
-                popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                popoverClass="absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground"
                 value={filters.from}
                 onChange={(v) => {
                   onDateEdit();
@@ -531,11 +531,11 @@ function FilterBar({
                 }}
               />
             </label>
-            <label className="flex items-center gap-1 text-xs text-white/45">
+            <label className="flex items-center gap-1 text-xs text-muted-foreground">
               تا
               <JalaliDatePicker
                 className={`${inputClass} !h-8 w-[9.5rem] text-xs`}
-                popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                popoverClass="absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground"
                 value={filters.to}
                 onChange={(v) => {
                   onDateEdit();
@@ -547,7 +547,7 @@ function FilterBar({
         </div>
 
         <div className="flex items-end gap-2">
-          <label className="flex items-center gap-2 text-xs text-white/45">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
             مرتب‌سازی
             <select
               value={filters.sort}
@@ -566,7 +566,7 @@ function FilterBar({
               حذف فیلترها
             </Button>
           ) : (
-            <span className="whitespace-nowrap pb-1 text-[11px] text-white/30">
+            <span className="whitespace-nowrap pb-1 text-[11px] text-muted-foreground">
               {toPersianDigits(resultCount)} از {toPersianDigits(totalCount)}
             </span>
           )}
@@ -584,12 +584,12 @@ function BusinessListCard({ business }: { business: Business }) {
   return (
     <Link
       href={"/platform/businesses/" + business.id}
-      className="block rounded-xl border border-white/10 bg-white/3 p-4 transition-colors hover:bg-white/5"
+      className="block rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-semibold text-sky-300">{business.name}</p>
-          <p className="mt-1 break-all text-xs text-white/35" dir="ltr">
+          <p className="truncate font-semibold text-sky-700 dark:text-sky-300">{business.name}</p>
+          <p className="mt-1 break-all text-xs text-muted-foreground" dir="ltr">
             {business.subdomain}
           </p>
           {isPlaceholderSubdomain(business.subdomain) ? (
@@ -602,32 +602,32 @@ function BusinessListCard({ business }: { business: Business }) {
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
-          <dt className="text-xs text-white/40">نوع</dt>
-          <dd className="mt-1 text-white/80">{INDUSTRY_LABELS[business.industry]}</dd>
+          <dt className="text-xs text-muted-foreground">نوع</dt>
+          <dd className="mt-1 text-foreground">{INDUSTRY_LABELS[business.industry]}</dd>
         </div>
         <div>
-          <dt className="text-xs text-white/40">پلن</dt>
-          <dd className="mt-1 text-white/80">
+          <dt className="text-xs text-muted-foreground">پلن</dt>
+          <dd className="mt-1 text-foreground">
             <PlanBadge plan={business.plan} />
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-white/40">شعبه / اعضا</dt>
-          <dd className="mt-1 text-white/80 tabular-nums">
+          <dt className="text-xs text-muted-foreground">شعبه / اعضا</dt>
+          <dd className="mt-1 text-foreground tabular-nums">
             {formatPersianNumber(business.locationCount)} / {formatPersianNumber(business.memberCount)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-white/40">سفارش‌ها</dt>
-          <dd className="mt-1 text-white/80 tabular-nums">{formatPersianNumber(business.orderCount)}</dd>
+          <dt className="text-xs text-muted-foreground">سفارش‌ها</dt>
+          <dd className="mt-1 text-foreground tabular-nums">{formatPersianNumber(business.orderCount)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-white/40">آخرین فعالیت</dt>
-          <dd className="mt-1 text-white/60">{fmtDate(business.lastActivityAt, true)}</dd>
+          <dt className="text-xs text-muted-foreground">آخرین فعالیت</dt>
+          <dd className="mt-1 text-muted-foreground">{fmtDate(business.lastActivityAt, true)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-white/40">ایجاد</dt>
-          <dd className="mt-1 text-white/60">{fmtDate(business.createdAt, true)}</dd>
+          <dt className="text-xs text-muted-foreground">ایجاد</dt>
+          <dd className="mt-1 text-muted-foreground">{fmtDate(business.createdAt, true)}</dd>
         </div>
       </dl>
     </Link>
@@ -747,7 +747,7 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
               placeholder="acme"
             />
             {subdomainError ? (
-              <span className="mt-1 block text-xs text-rose-300">{errorMessage(subdomainError)}</span>
+              <span className="mt-1 block text-xs text-rose-700 dark:text-rose-300">{errorMessage(subdomainError)}</span>
             ) : null}
           </Field>
           <div className="sm:col-span-2">
@@ -859,7 +859,7 @@ function ProvisionMfaPanel({
       </InfoBox>
 
       {handover.method === "sms_otp" ? (
-        <p className="mb-4 text-sm text-white/60">
+        <p className="mb-4 text-sm text-muted-foreground">
           روش اصلی ورود دومرحله‌ای این مالک، پیامک یک‌بارمصرف به شمارهٔ موبایلی است که وارد کردید.
         </p>
       ) : null}
@@ -870,17 +870,17 @@ function ProvisionMfaPanel({
           <img
             src={handover.totpQr}
             alt="کد QR ورود دومرحله‌ای"
-            className="size-48 rounded-lg bg-white p-2"
+            className="size-48 rounded-lg bg-card p-2"
           />
         </div>
       ) : null}
 
       {handover.totpSecret ? (
         <div className="mb-4">
-          <p className="mb-1 text-sm text-white/60">کد دستی برنامهٔ رمزساز:</p>
+          <p className="mb-1 text-sm text-muted-foreground">کد دستی برنامهٔ رمزساز:</p>
           <p
             dir="ltr"
-            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 font-mono text-sm tracking-wider text-white"
+            className="rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm tracking-wider text-foreground"
           >
             {handover.totpSecret}
           </p>
@@ -889,12 +889,12 @@ function ProvisionMfaPanel({
 
       {handover.recoveryCodes.length > 0 ? (
         <div className="mb-4">
-          <p className="mb-2 text-sm text-white/60">
+          <p className="mb-2 text-sm text-muted-foreground">
             ۱۰ کد بازیابی یک‌بارمصرف — تنها راه ورود مالک در صورت گم‌شدن گوشی:
           </p>
           <div
             dir="ltr"
-            className="grid grid-cols-2 gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 font-mono text-sm tracking-wider text-white"
+            className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm tracking-wider text-foreground"
           >
             {handover.recoveryCodes.map((c) => (
               <span key={c}>{c}</span>
@@ -919,7 +919,7 @@ function ProvisionMfaPanel({
         </div>
       ) : null}
 
-      <label className="mb-4 flex items-start gap-2 text-sm text-white/80">
+      <label className="mb-4 flex items-start gap-2 text-sm text-foreground">
         <input
           type="checkbox"
           checked={confirmed}

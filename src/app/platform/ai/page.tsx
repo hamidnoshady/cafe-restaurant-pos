@@ -282,7 +282,7 @@ export default function PlatformAiPage() {
     <div className="mx-auto w-full max-w-6xl space-y-4 sm:space-y-6">
       <header>
         <h1 className="text-xl font-bold">تنظیمات هوش مصنوعی (LiteLLM)</h1>
-        <p className="mt-1 text-sm text-white/50">
+        <p className="mt-1 text-sm text-muted-foreground">
           ارائه‌دهندهٔ واحد و یکپارچهٔ هوش مصنوعی: نشانی و کلید مدیر، نام مستعار مدل‌ها، زنجیرهٔ جایگزین،
           سقف بودجه و کلیدهای مجازی کسب‌وکارها و شعبه‌ها و ابزارهای MCP.
         </p>
@@ -294,30 +294,30 @@ export default function PlatformAiPage() {
       <Card title="وضعیت">
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-white/50">ارائه‌دهنده</dt>
+            <dt className="text-muted-foreground">ارائه‌دهنده</dt>
             <dd className="mt-1 font-medium" dir="ltr">
               LiteLLM (دروازهٔ یکپارچه)
             </dd>
           </div>
           <div>
-            <dt className="text-white/50">دروازه فعال است</dt>
+            <dt className="text-muted-foreground">دروازه فعال است</dt>
             <dd className="mt-1 font-medium">{data?.active ? "بله" : "خیر"}</dd>
           </div>
           <div>
-            <dt className="text-white/50">مدل پیش‌فرض پلتفرم</dt>
+            <dt className="text-muted-foreground">مدل پیش‌فرض پلتفرم</dt>
             <dd className="mt-1 font-medium" dir="ltr">
               {data?.platformModel ?? "—"}
             </dd>
           </div>
           <div className="sm:col-span-3">
-            <dt className="text-white/50">نشانی Base URL</dt>
+            <dt className="text-muted-foreground">نشانی Base URL</dt>
             <dd className="mt-1 font-medium" dir="ltr">
               {data?.platformBaseUrl ?? "—"}
             </dd>
           </div>
         </dl>
         {status ? (
-          <div className="mt-3 rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
+          <div className="mt-3 rounded-lg border border-border bg-card p-3 text-sm">
             {status.ok ? (
               <p>
                 ارتباط برقرار است
@@ -327,21 +327,21 @@ export default function PlatformAiPage() {
                   : " · فهرست مدل‌ها در دسترس نبود"}
               </p>
             ) : (
-              <p className="text-rose-300">{status.error}</p>
+              <p className="text-rose-700 dark:text-rose-300">{status.error}</p>
             )}
             {status.models.length > 0 ? (
-              <p className="mt-2 text-xs text-white/50" dir="ltr">
+              <p className="mt-2 text-xs text-muted-foreground" dir="ltr">
                 {status.models.join("، ")}
               </p>
             ) : null}
             {status.ok && status.proxyRoutingStrategy ? (
               <p className="mt-2 text-xs">
-                <span className="text-white/50">روش توزیع واقعی دروازه: </span>
-                <span dir="ltr" className={status.routingMismatch ? "text-amber-300" : "text-white/80"}>
+                <span className="text-muted-foreground">روش توزیع واقعی دروازه: </span>
+                <span dir="ltr" className={status.routingMismatch ? "text-amber-700 dark:text-amber-300" : "text-foreground"}>
                   {status.proxyRoutingStrategy}
                 </span>
                 {status.routingMismatch ? (
-                  <span className="text-amber-300">
+                  <span className="text-amber-700 dark:text-amber-300">
                     {" "}
                     — با مقدار ذخیره‌شدهٔ این صفحه یکی نیست؛ این مقدار از راه API تغییر نمی‌کند و باید در
                     config.yaml اصلاح شود.
@@ -362,7 +362,7 @@ export default function PlatformAiPage() {
 
       {can("ai.config.manage") && draft ? (
         <Card title="تنظیمات دروازه">
-          <p className="mb-4 text-sm text-white/50">
+          <p className="mb-4 text-sm text-muted-foreground">
             این نشانی برای همهٔ کسب‌وکارهاست. کلید مدیر فقط برای صدور کلید مجازی استفاده می‌شود و هرگز به
             داشبورد کسب‌وکار ارسال نمی‌شود.
           </p>
@@ -470,7 +470,7 @@ export default function PlatformAiPage() {
               />
             </Field>
             <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-white/80">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={draft.enabled}
@@ -478,7 +478,7 @@ export default function PlatformAiPage() {
                 />
                 فعال بودن دروازه
               </label>
-              <label className="flex items-center gap-2 text-sm text-white/80">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={draft.virtualKeysEnabled}
@@ -486,7 +486,7 @@ export default function PlatformAiPage() {
                 />
                 صدور کلید مجازی برای هر کسب‌وکار و شعبه
               </label>
-              <label className="flex items-center gap-2 text-sm text-white/80">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={draft.allowBusinessModels}
@@ -494,7 +494,7 @@ export default function PlatformAiPage() {
                 />
                 اجازهٔ انتخاب مدل به کسب‌وکار و شعبه‌ها
               </label>
-              <label className="flex items-center gap-2 text-sm text-white/80">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={draft.mcpEnabled}
@@ -503,7 +503,7 @@ export default function PlatformAiPage() {
                 ابزارهای MCP از راه دروازه
               </label>
             </div>
-            <div className="lg:col-span-2 border-t border-white/10 pt-4">
+            <div className="lg:col-span-2 border-t border-border pt-4">
               <Field
                 label="سرورهای MCP دروازه"
                 hint="هر سطر: name | برچسب | نشانی."
@@ -542,7 +542,7 @@ export default function PlatformAiPage() {
 
       {can("ai.credits.manage") ? (
         <Card title="کلید مجازی و سقف‌ها — کسب‌وکار و شعبه‌ها">
-          <p className="mb-3 text-sm text-white/50">
+          <p className="mb-3 text-sm text-muted-foreground">
             می‌توانید برای کل کسب‌وکار یا به‌صورت مجزا برای هر یک از شعبه‌های آن کلید مجازی و مدل تعیین کنید.
           </p>
           <div className="grid gap-3 sm:grid-cols-2 mb-4">
@@ -571,7 +571,7 @@ export default function PlatformAiPage() {
           </div>
 
           {selectedBusinessId ? (
-            <div className="space-y-4 border-t border-white/10 pt-4">
+            <div className="space-y-4 border-t border-border pt-4">
               <div className="grid gap-2 text-sm sm:grid-cols-3">
                 <p>
                   مدل مؤثر:{" "}
@@ -646,7 +646,7 @@ export default function PlatformAiPage() {
               </div>
 
               {draft?.allowBusinessModels && draft.publishedModels.length > 0 ? (
-                <div className="grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2">
+                <div className="grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
                   <Field label={`مدل اختصاصی ${selectedName}${selectedLocationId ? " (این شعبه)" : ""}`}>
                     <SearchableSelect
                       value={selectedRow?.modelOverride ?? ""}
@@ -671,33 +671,33 @@ export default function PlatformAiPage() {
               ) : null}
             </div>
           ) : (
-            <p className="text-sm text-white/40">یک کسب‌وکار را انتخاب کنید.</p>
+            <p className="text-sm text-muted-foreground">یک کسب‌وکار را انتخاب کنید.</p>
           )}
         </Card>
       ) : null}
 
       <Card title="همهٔ کلیدهای مجازی">
         {!data?.gateways.length ? (
-          <p className="text-sm text-white/40">هنوز کلیدی صادر نشده است.</p>
+          <p className="text-sm text-muted-foreground">هنوز کلیدی صادر نشده است.</p>
         ) : (
           <ul className="space-y-2">
             {data.gateways.map((row, idx) => (
               <li
                 key={`${row.businessId}-${row.locationId || "biz"}-${idx}`}
-                className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/2 p-3 text-sm md:flex-row md:items-center md:justify-between"
+                className="flex flex-col gap-1 rounded-lg border border-border bg-card p-3 text-sm md:flex-row md:items-center md:justify-between"
               >
                 <div>
                   <p className="font-medium" dir="ltr">
                     {row.keyAlias ?? row.businessId}
                     {row.locationId ? ` (شعبه: ${row.locationId.slice(0, 8)})` : " (کل کسب‌وکار)"}
                   </p>
-                  <p className="mt-1 text-xs text-white/50">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     مدل: <span dir="ltr">{row.effectiveModel}</span>
                   </p>
                 </div>
-                <div className="text-xs text-white/60 md:text-right">
+                <div className="text-xs text-muted-foreground md:text-right">
                   <p>مصرف: {formatPersianNumber(Math.round(row.spendUsd * 100) / 100)} دلار</p>
-                  {row.syncError ? <p className="text-rose-300">{row.syncError}</p> : null}
+                  {row.syncError ? <p className="text-rose-700 dark:text-rose-300">{row.syncError}</p> : null}
                 </div>
               </li>
             ))}

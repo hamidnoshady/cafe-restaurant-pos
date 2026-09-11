@@ -139,7 +139,7 @@ export default function CmsOverviewPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-bold">میز فرمان سایت‌ساز</h1>
-          <p className="mt-1 text-xs text-white/45">
+          <p className="mt-1 text-xs text-muted-foreground">
             {config.label || config.baseUrl}
             {config.verifiedAt ? ` · آخرین تأیید: ${fmtDate(config.verifiedAt)}` : " · تأییدنشده"}
           </p>
@@ -199,8 +199,8 @@ export default function CmsOverviewPage() {
               <li
                 className={
                   finding.severity === "warn"
-                    ? "flex flex-wrap items-baseline gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-sm text-amber-200"
-                    : "flex flex-wrap items-baseline gap-2 rounded-lg border border-white/10 bg-white/2 px-3 py-2 text-sm text-white/60"
+                    ? "flex flex-wrap items-baseline gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
+                    : "flex flex-wrap items-baseline gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground"
                 }
                 key={finding.kind}
               >
@@ -208,7 +208,7 @@ export default function CmsOverviewPage() {
                 <span className="font-medium">{CMS_FINDING_LABELS[finding.kind]}</span>
                 <span className="tabular-nums">{formatPersianNumber(finding.count)}</span>
                 {finding.detail ? (
-                  <span className="text-xs text-white/40">{toPersianDigits(finding.detail)}</span>
+                  <span className="text-xs text-muted-foreground">{toPersianDigits(finding.detail)}</span>
                 ) : null}
               </li>
             ))}
@@ -222,14 +222,14 @@ export default function CmsOverviewPage() {
         <div className="grid gap-3 lg:grid-cols-2">
           <Card title={`درآمد پرداخت‌شده (${toPersianDigits(overview.commerce.windowDays)} روز)`}>
             {overview.commerce.revenue.length === 0 ? (
-              <p className="text-sm text-white/45">در این بازه سفارش پرداخت‌شده‌ای ثبت نشده است.</p>
+              <p className="text-sm text-muted-foreground">در این بازه سفارش پرداخت‌شده‌ای ثبت نشده است.</p>
             ) : (
               <ul className="space-y-2 text-sm">
                 {overview.commerce.revenue.map((row) => (
                   <li className="flex items-baseline justify-between gap-3" key={row.code}>
-                    <span className="text-white/60">
+                    <span className="text-muted-foreground">
                       {CURRENCY_LABELS[row.code] ?? row.code}
-                      <span className="ms-2 text-xs text-white/35">
+                      <span className="ms-2 text-xs text-muted-foreground">
                         {formatPersianNumber(row.orders)} سفارش
                       </span>
                     </span>
@@ -241,13 +241,13 @@ export default function CmsOverviewPage() {
               </ul>
             )}
             {overview.commerce.revenueTruncated ? (
-              <p className="mt-3 text-xs text-amber-300/80">
+              <p className="mt-3 text-xs text-amber-700/80 dark:text-amber-300/80">
                 این جمع از سقف پیمایش گذشته و کامل نیست؛ بازهٔ کوتاه‌تری انتخاب کنید.
               </p>
             ) : null}
             {/* Two currencies are never added together: an order snapshots the
                 currency it sold in, so one total would be a fabricated number. */}
-            <p className="mt-3 text-xs leading-6 text-white/35">
+            <p className="mt-3 text-xs leading-6 text-muted-foreground">
               مبالغ به واحد خردِ همان سایت است و بین واحدهای پول جمع نمی‌شود.
             </p>
           </Card>
@@ -292,13 +292,13 @@ export default function CmsOverviewPage() {
 
           <Card title="درگاه‌های پرداخت">
             {overview.gateways.moduleEnabled ? null : (
-              <p className="mb-3 text-xs text-amber-300/80">
+              <p className="mb-3 text-xs text-amber-700/80 dark:text-amber-300/80">
                 ماژول پرداخت در سایت‌ساز خاموش است؛ هیچ سایتی پرداخت آنلاین نمی‌گیرد.
               </p>
             )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-xs text-white/40">
+                <thead className="text-xs text-muted-foreground">
                   <tr>
                     <th className="pb-2 text-start font-normal">درگاه</th>
                     <th className="pb-2 text-start font-normal">ردیف</th>
@@ -308,21 +308,21 @@ export default function CmsOverviewPage() {
                 </thead>
                 <tbody>
                   {overview.gateways.table.map((row) => (
-                    <tr className="border-t border-white/5" key={row.gateway}>
+                    <tr className="border-t border-border" key={row.gateway}>
                       <td className="py-2">
                         {row.label}
                         {row.allowed ? null : (
-                          <span className="ms-2 text-xs text-white/35">(مجاز نشده)</span>
+                          <span className="ms-2 text-xs text-muted-foreground">(مجاز نشده)</span>
                         )}
                       </td>
                       <td className="py-2 tabular-nums">{formatPersianNumber(row.rows)}</td>
                       <td className="py-2 tabular-nums">{formatPersianNumber(row.enabled)}</td>
                       <td className="py-2">
-                        <span className="text-emerald-300">
+                        <span className="text-emerald-700 dark:text-emerald-300">
                           {formatPersianNumber(row.passingSelfTest)}
                         </span>
-                        <span className="mx-1 text-white/25">/</span>
-                        <span className={row.failingSelfTest ? "text-red-300" : "text-white/40"}>
+                        <span className="mx-1 text-muted-foreground">/</span>
+                        <span className={row.failingSelfTest ? "text-red-700 dark:text-red-300" : "text-muted-foreground"}>
                           {formatPersianNumber(row.failingSelfTest)}
                         </span>
                       </td>
@@ -335,25 +335,25 @@ export default function CmsOverviewPage() {
 
           <Card title="آخرین همگام‌سازی‌ها">
             {runs.length === 0 ? (
-              <p className="text-sm text-white/45">هنوز همگام‌سازی‌ای ثبت نشده است.</p>
+              <p className="text-sm text-muted-foreground">هنوز همگام‌سازی‌ای ثبت نشده است.</p>
             ) : (
               <ul className="space-y-2 text-sm">
                 {runs.slice(0, 6).map((run) => (
                   <li className="flex flex-wrap items-baseline justify-between gap-2" key={run.id}>
-                    <span className="text-white/60">
+                    <span className="text-muted-foreground">
                       {run.kind}
                       {run.dryRun ? <span className="ms-1 text-xs">(آزمایشی)</span> : null}
                     </span>
                     <span className={syncStatusTone(run.status)}>
                       {formatPersianNumber(run.items)} مورد
                     </span>
-                    <span className="text-xs text-white/35">{fmtDate(run.createdAt)}</span>
+                    <span className="text-xs text-muted-foreground">{fmtDate(run.createdAt)}</span>
                   </li>
                 ))}
               </ul>
             )}
             <Link
-              className="mt-3 inline-block text-xs text-sky-300 hover:underline"
+              className="mt-3 inline-block text-xs text-sky-700 dark:text-sky-300 hover:underline"
               href="/platform/cms/sync"
             >
               همهٔ همگام‌سازی‌ها
@@ -362,7 +362,7 @@ export default function CmsOverviewPage() {
         </div>
       ) : (
         <Card title="گزارش زنده">
-          <div className="flex items-center gap-2 text-sm text-white/50">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CloudOff className="size-4" />
             گزارش زندهٔ سایت‌ساز خوانده نشد.
           </div>
@@ -382,14 +382,14 @@ function Row({
   value: string;
 }) {
   const toneCls = {
-    bad: "text-red-300",
-    neutral: "text-white",
-    ok: "text-emerald-300",
-    warn: "text-amber-300",
+    bad: "text-red-700 dark:text-red-300",
+    neutral: "text-foreground",
+    ok: "text-emerald-700 dark:text-emerald-300",
+    warn: "text-amber-700 dark:text-amber-300",
   }[tone];
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-2">
-      <dt className="text-white/45">{label}</dt>
+      <dt className="text-muted-foreground">{label}</dt>
       <dd className={`font-medium ${toneCls}`}>{value}</dd>
     </div>
   );

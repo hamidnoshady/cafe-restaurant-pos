@@ -45,20 +45,20 @@ function fmtDate(iso: string | null): string {
 function ComplianceBadge({ client }: { client: ClientStatus }) {
   if (client.error) {
     return (
-      <span className="inline-block rounded-full border border-red-500/30 bg-red-500/15 px-2.5 py-0.5 text-xs font-medium text-red-300">
+      <span className="inline-block rounded-full border border-red-500/30 bg-red-500/15 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
         خطا
       </span>
     );
   }
   if (client.updateAvailable) {
     return (
-      <span className="inline-block rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-300">
+      <span className="inline-block rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
         نسخهٔ جدید در دسترس
       </span>
     );
   }
   return (
-    <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+    <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
       به‌روز
     </span>
   );
@@ -133,7 +133,7 @@ export default function UpdatesPage() {
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
       <Card title="محل توزیع نصب‌کنندهٔ دسکتاپ">
-        <p className="mb-4 text-sm text-white/50">
+        <p className="mb-4 text-sm text-muted-foreground">
           سطل ذخیره‌سازی سازگار با S3 که برنامهٔ دسکتاپ (Electron) برای بررسی و دریافت نسخهٔ جدید بررسی می‌کند. این
           سطل باید عمومی‌خوان باشد — چیزی حساس (رمز عبور، کلید JWT) هرگز داخل فایل نصب نیست. جزئیات:
           docs/standalone-desktop-app.md
@@ -208,26 +208,26 @@ export default function UpdatesPage() {
       </Card>
 
       <Card title="وضعیت نسخهٔ نصب‌های محلی هر کسب‌وکار">
-        <p className="mb-4 text-sm text-white/50">
+        <p className="mb-4 text-sm text-muted-foreground">
           فقط کسب‌وکارهایی که همگام‌سازی با سرور مرکزی را فعال کرده‌اند اینجا دیده می‌شوند — نصب کاملاً آفلاین
           (بدون هیچ اتصالی) راهی برای گزارش نسخهٔ خود ندارد و در این فهرست ظاهر نمی‌شود.
         </p>
         {clients.length === 0 ? (
-          <p className="text-sm text-white/50">هیچ کسب‌وکاری وضعیت به‌روزرسانی گزارش نکرده است.</p>
+          <p className="text-sm text-muted-foreground">هیچ کسب‌وکاری وضعیت به‌روزرسانی گزارش نکرده است.</p>
         ) : (
           <ul className="space-y-1 text-sm">
             {clients.map((c) => (
               <li
                 key={c.businessId}
-                className="flex flex-col gap-2 border-b border-white/5 py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 border-b border-border py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
               >
-                <span className="text-white/80">{c.businessName}</span>
+                <span className="text-foreground">{c.businessName}</span>
                 <span className="flex flex-wrap items-center gap-2 text-xs sm:gap-3">
-                  <span dir="ltr" className="text-white/50">
+                  <span dir="ltr" className="text-muted-foreground">
                     {c.currentVersion || "—"}
                   </span>
                   <ComplianceBadge client={c} />
-                  <span className="text-white/40">{fmtDate(c.checkedAt)}</span>
+                  <span className="text-muted-foreground">{fmtDate(c.checkedAt)}</span>
                 </span>
               </li>
             ))}
@@ -235,7 +235,7 @@ export default function UpdatesPage() {
         )}
       </Card>
 
-      <p className="text-xs text-white/30">
+      <p className="text-xs text-muted-foreground">
         {formatPersianNumber(clients.length)} کسب‌وکار گزارش‌دهنده.
       </p>
     </div>
