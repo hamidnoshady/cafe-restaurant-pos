@@ -123,10 +123,11 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Customer",
     label: "اشخاص",
     description: "مشتریان، تأمین‌کنندگان و کارکنان با کد حسابداری و اطلاعات مالی",
-    // The ledger is one page of in-app tabs, so the address is the tab it opens —
-    // `?tab=` is read by `LedgerManager` for exactly this link and for the party
-    // deep link (`?party=<id>`) an AR row or an AI answer uses.
-    href: "/dashboard/ledger?tab=parties",
+    // The Accounting app has its own route prefix now (`/dashboard/accounting`),
+    // one route per section — this is its persons directory, and the `?party=`
+    // a deep link from another app (an A/R row, an AI answer) carries is read
+    // by the section it opens.
+    href: "/dashboard/accounting/directory",
     columns: ["displayName", "role", "phone", "accountingCode", "tax", "status"],
     accounting: "editable",
     readOnly: false,
@@ -144,7 +145,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Customer",
     label: "مشتریان",
     description: "مشتریان با کد حسابداری، مالیات و ماندهٔ حساب",
-    href: "/dashboard/ledger?tab=customers",
+    href: "/dashboard/accounting/customers",
     columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
     accounting: "editable",
     readOnly: false,

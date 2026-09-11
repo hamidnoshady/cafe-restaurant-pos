@@ -43,7 +43,7 @@ export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
   { key: "stock", label: "خرید و انبار", route: "/dashboard/stock" },
   { key: "reports", label: "گزارش‌ها", route: "/dashboard/reports" },
   { key: "settings", label: "تنظیمات", route: "/dashboard/settings" },
-  { key: "ledger", label: "حسابداری", route: "/dashboard/ledger" },
+  { key: "ledger", label: "حسابداری", route: "/dashboard/accounting" },
   { key: "reservations", label: "رزروها", route: "/dashboard/reservations" },
   { key: "delivery", label: "ارسال سفارش", route: "/dashboard/delivery" },
   { key: "connections", label: "اتصال‌های فنی", route: "/dashboard/connections" },

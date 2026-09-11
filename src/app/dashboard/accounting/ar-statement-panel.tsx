@@ -7,7 +7,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
-import { accountingCustomerHref } from "./ledger-routes";
+import { accountingCustomerHref } from "./accounting-routes";
 import { UNKNOWN_CUSTOMER_KEY } from "@/lib/aging";
 import { overlayPanelClass } from "../page-chrome";
 import { useOverlayEscape } from "./use-overlay-escape";

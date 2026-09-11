@@ -13,7 +13,7 @@ import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { ArStatementPanel } from "./ar-statement-panel";
 import { useOverlayEscape } from "./use-overlay-escape";
-import { accountingCustomersHref } from "./ledger-routes";
+import { accountingCustomersHref } from "./accounting-routes";
 import { cardClass, overlayPanelClass } from "../page-chrome";
 
 interface CustomerBalance {

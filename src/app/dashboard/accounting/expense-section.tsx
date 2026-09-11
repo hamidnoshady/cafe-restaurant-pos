@@ -10,7 +10,7 @@ import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, ErrorBox, inputClass, PrimaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import type { AccountRow, Runner } from "./ledger-manager";
+import type { AccountRow, Runner } from "./accounting-manager";
 import { cardClass } from "../page-chrome";
 
 interface ExpenseRow {

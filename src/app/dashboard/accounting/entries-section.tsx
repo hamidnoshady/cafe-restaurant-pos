@@ -10,7 +10,7 @@ import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, ErrorBox, inputClass, SecondaryButton } from "../ui";
-import type { Runner } from "./ledger-manager";
+import type { Runner } from "./accounting-manager";
 import { cardClass } from "../page-chrome";
 
 interface JournalLineRow {

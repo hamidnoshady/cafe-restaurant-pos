@@ -44,7 +44,7 @@ export function isPaymentSettlement(value: unknown): value is PaymentSettlement 
  * its own, and settling a bill with one would leave چک‌های نزد صندوق holding a
  * balance no register could explain — and the bill's total sitting in a shift's
  * `gross_total` with no method bucket accounting for it. A cheque is recorded in
- * the register instead (`/dashboard/ledger` → «چک‌ها»), where it settles the
+ * the register instead (`/dashboard/accounting/cheques`), where it settles the
  * customer's or supplier's account; the settlement class exists so the ledger
  * knows which account that is, not so a checkout can offer it.
  */
