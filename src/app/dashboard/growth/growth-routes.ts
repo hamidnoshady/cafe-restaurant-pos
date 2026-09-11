@@ -32,13 +32,13 @@ export type GrowthSectionKey = (typeof GROWTH_SECTION_KEYS)[number];
 /** The route of Growth's customer data projection. */
 export function growthCustomerHref(customerId?: string): string {
   return customerId
-    ? `/dashboard/growth/customers?customerId=${encodeURIComponent(customerId)}`
-    : "/dashboard/growth/customers";
+    ? `/growth/customers?customerId=${encodeURIComponent(customerId)}`
+    : "/growth/customers";
 }
 
 /** The route for a section. The overview is the app root; the rest nest under it. */
 export function growthSectionHref(key: GrowthSectionKey): string {
-  return key === "overview" ? "/dashboard/growth" : `/dashboard/growth/${key}`;
+  return key === "overview" ? "/growth/overview" : `/growth/${key}`;
 }
 
 /**

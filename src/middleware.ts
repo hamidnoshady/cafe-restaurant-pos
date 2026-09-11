@@ -795,6 +795,45 @@ function handleLegacyPathRedirect(
 }
 
 async function handle(request: NextRequest, requestHeaders: Headers) {
+  // Public product URLs are intentionally app-first. Keep the existing
+  // dashboard route tree as the implementation boundary, but rewrite the
+  // browser-facing URLs internally so the address bar never exposes the old
+  // `/dashboard/<app>` hierarchy.
+  const publicAppRoutes: Record<string, string> = {
+    "/accounting/overview": "/dashboard/accounting",
+    "/growth/overview": "/dashboard/growth",
+    "/crm/overview": "/dashboard/crm",
+    "/websites/overview": "/dashboard/website",
+    "/accounting": "/dashboard/accounting",
+    "/growth": "/dashboard/growth",
+    "/crm": "/dashboard/crm",
+    "/websites": "/dashboard/website",
+    "/projects": "/dashboard/projects",
+    "/settings": "/dashboard/settings",
+  };
+  const originalPathname = request.nextUrl.pathname;
+  const legacyAppRoutes: Record<string, string> = {
+    "/dashboard/accounting": "/accounting",
+    "/dashboard/growth": "/growth",
+    "/dashboard/crm": "/crm",
+    "/dashboard/website": "/websites",
+    "/dashboard/projects": "/projects",
+    "/dashboard/settings": "/settings",
+  };
+  const legacyRoute = Object.entries(legacyAppRoutes).find(([legacyPath]) =>
+    originalPathname === legacyPath || originalPathname.startsWith(`${legacyPath}/`),
+  );
+  if (legacyRoute) {
+    const suffix = originalPathname.slice(legacyRoute[0].length);
+    const target = `${legacyRoute[1]}${suffix || "/overview"}`;
+    return NextResponse.redirect(new URL(`${target}${request.nextUrl.search}`, request.url), 308);
+  }
+  const rewrittenPath = Object.entries(publicAppRoutes).find(([publicPath]) =>
+    originalPathname === publicPath || originalPathname.startsWith(`${publicPath}/`),
+  );
+  if (rewrittenPath) {
+    request.nextUrl.pathname = `${rewrittenPath[1]}${originalPathname.slice(rewrittenPath[0].length)}`;
+  }
   const { pathname } = request.nextUrl;
   const now = Date.now();
   maybeSweep(now);
