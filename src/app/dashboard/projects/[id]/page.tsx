@@ -318,7 +318,8 @@ export default function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => handleDeleteNote(note.id)}
-                      className="rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                      aria-label={"حذف یادداشت " + note.title}
+                      className="rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 outline-none focus-visible:ring focus-visible:ring-ring/50 focus-visible:opacity-100"
                       title="حذف"
                     >
                       <TrashIcon className="size-3.5" />
