@@ -6,7 +6,7 @@
  * per-row stock/price panel — composed from the platform's card, input and
  * money primitives instead of the reference's blue chrome.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
@@ -21,6 +21,7 @@ const PAGE_SIZES = [10, 20, 50] as const;
 export function ProductsListSection({ apiBase }: { apiBase: string }) {
   const [items, setItems] = useState<VariantSummary[] | null>(null);
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [pageSize, setPageSize] = useState<number>(20);
   const [page, setPage] = useState(0);
   const [panelFor, setPanelFor] = useState<string | null>(null);
@@ -34,18 +35,34 @@ export function ProductsListSection({ apiBase }: { apiBase: string }) {
   }, [apiBase]);
   useEffect(load, [load]);
 
-  const filtered = useMemo(() => {
+  // Performance optimization: Pre-compute lowercased search strings to avoid O(N) recalculations
+  // per keystroke. This index depends only on the base dataset.
+  const searchIndex = useMemo(() => {
     if (!items) return null;
-    const needle = search.trim();
-    if (!needle) return items;
-    return items.filter((item) =>
-      [item.name, item.parentName ?? "", item.sku ?? "", item.barcode ?? ""]
-        .join(" ")
-        .includes(needle),
-    );
-  }, [items, search]);
+    return items.map((item) => ({
+      item,
+      normalized: [
+        item.name.toLowerCase(),
+        item.parentName?.toLowerCase() ?? "",
+        item.sku?.toLowerCase() ?? "",
+        item.barcode?.toLowerCase() ?? "",
+      ].filter(Boolean),
+    }));
+  }, [items]);
 
-  useEffect(() => setPage(0), [search, pageSize]);
+  // Performance optimization: We depend on deferredSearch so typing remains snappy while
+  // filtering happens in the background. We match against the pre-normalized index and check
+  // individual fields to avoid false-positive cross-boundary matches.
+  const filtered = useMemo(() => {
+    if (!items || !searchIndex) return null;
+    const needle = deferredSearch.trim().toLowerCase();
+    if (!needle) return items;
+    return searchIndex
+      .filter(({ normalized }) => normalized.some((field) => field.includes(needle)))
+      .map(({ item }) => item);
+  }, [items, searchIndex, deferredSearch]);
+
+  useEffect(() => setPage(0), [deferredSearch, pageSize]);
 
   const pageCount = filtered ? Math.max(1, Math.ceil(filtered.length / pageSize)) : 1;
   const safePage = Math.min(page, pageCount - 1);
