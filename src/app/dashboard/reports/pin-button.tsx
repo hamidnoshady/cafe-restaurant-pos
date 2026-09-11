@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckIcon, PinIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChartType } from "./report-ui";
 
@@ -64,19 +65,31 @@ export function PinToDashboardButton({
   }
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="lg"
-      onClick={pin}
-      disabled={state === "busy"}
-      className="min-h-[52px] border-border/80 bg-card px-4 text-foreground hover:bg-muted"
-    >
-      {state === "done"
-        ? "سنجاق شد ✓"
-        : state === "busy"
-          ? "در حال سنجاق…"
-          : "سنجاق به داشبورد"}
-    </Button>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="lg"
+        onClick={pin}
+        disabled={state === "busy" || state === "done"}
+      >
+        {state === "done" ? <CheckIcon aria-hidden="true" /> : <PinIcon aria-hidden="true" />}
+        {state === "done" ? "سنجاق شد" : state === "busy" ? "در حال سنجاق…" : "سنجاق به داشبورد"}
+      </Button>
+      {/*
+        Pinning succeeds silently otherwise: the widget appears on a different
+        page, so without a word here the button looks like it did nothing.
+      */}
+      {state === "done" ? (
+        <span role="status" className="text-xs text-muted-foreground">
+          در «گزارش‌های سنجاق‌شده» داشبورد اضافه شد.
+        </span>
+      ) : null}
+      {state === "error" ? (
+        <span role="alert" className="text-xs text-destructive">
+          سنجاق کردن انجام نشد.
+        </span>
+      ) : null}
+    </div>
   );
 }

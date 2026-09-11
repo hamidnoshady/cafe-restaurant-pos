@@ -18,7 +18,8 @@ import { shiftIsoDate } from "./business-day";
 import { phoneMatchKeys, phoneMatchSql } from "./parties-service";
 import { query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
-import { STANDARD_REPORTS } from "./reports";
+import { reportShape, standardReportsFor } from "./reports";
+import { runTradeReport } from "./trade-reports-service";
 import {
   getBalanceSheet,
   getProfitAndLoss,
@@ -1264,22 +1265,33 @@ export async function runReadTool(
       };
     }
 
+    // Scoped to this business's trade, like every other surface that lists
+    // reports: offering a jeweller «چرخش میزها» would have the model run an
+    // always-empty report and then explain the emptiness as a business fact.
     case "list_reports": {
+      const industry = await getBusinessIndustry(businessId);
       return {
         ok: true,
-        data: STANDARD_REPORTS.map((r) => ({ key: r.key, label: r.label })),
+        data: standardReportsFor(industry).map((r) => ({
+          key: r.key,
+          label: r.label,
+          group: r.group,
+          description: r.description ?? null,
+        })),
       };
     }
 
     case "run_report": {
       const key = typeof args.key === "string" ? args.key : "";
-      const def = STANDARD_REPORTS.find((r) => r.key === key);
+      const industry = await getBusinessIndustry(businessId);
+      const available = standardReportsFor(industry);
+      const def = available.find((r) => r.key === key);
       if (!def) {
         return {
           ok: false,
           data: {
             error: "کلید گزارش نامعتبر است. اول list_reports را صدا بزن.",
-            validKeys: STANDARD_REPORTS.map((r) => r.key),
+            validKeys: available.map((r) => r.key),
           },
         };
       }
@@ -1291,6 +1303,15 @@ export async function runReadTool(
       }
       if (key === "balance_sheet") {
         return { ok: true, data: await getBalanceSheet(businessId, dateTo) };
+      }
+      if (reportShape(def) !== "rows") {
+        const report = await runTradeReport(key, {
+          businessId,
+          locationId: await primaryLocationId(businessId),
+          industry: industry ?? "food_service",
+          filters: { dateFrom, dateTo },
+        });
+        if (report) return { ok: true, data: { label: def.label, ...report } };
       }
       const rows = await runStandardReportRows(key, businessId, { dateFrom, dateTo });
       return { ok: true, data: { label: def.label, rowCount: rows.length, rows: cap(rows) } };

@@ -13,6 +13,8 @@
  * transactional tables" true by construction, not by convention.
  */
 import { WELL_KNOWN_CODES } from "./coa-template";
+import type { Industry } from "./industries";
+import { hasCapability, hasModule, type CapabilityKey, type ModuleKey } from "./industry-profile";
 import { addDays } from "./rollup";
 
 export type Aggregation = "sum" | "avg" | "count" | "count_distinct";
@@ -46,6 +48,37 @@ export interface FilterDef {
   column: string;
 }
 
+/**
+ * What a business must have for a report to mean anything.
+ *
+ * `undefined` — every trade gets it. That is the default and covers most of the
+ * library: a ledger, a sale, a customer and a staff member exist in a café and
+ * in a jewellery shop alike, and the views behind those reports read tables
+ * (`orders`, `journal_entries`, `customers`) that every industry writes.
+ *
+ * A report naming `modules`/`capabilities` is one whose *subject* only exists
+ * in some trades — a table has no meaning without table service, a recipe has
+ * none without F&B's recipe-costed store. Those are resolved against
+ * `industry-profile.ts`, the same source the sidebar and the API guards use, so
+ * a report can never be offered by a nav that the guard would then refuse.
+ *
+ * Every listed key must match (AND), because the requirements are facts about
+ * one subject rather than alternatives: «واریانس بهای تمام‌شده غذا» needs the
+ * recipe store *and* a menu to cost against, not either one.
+ */
+export interface ReportRequirement {
+  modules?: readonly ModuleKey[];
+  capabilities?: readonly CapabilityKey[];
+  /**
+   * An explicit industry set, for the handful of reports whose audience is not
+   * any one module: variant sell-through belongs to the five trade-goods
+   * industries that share the products workspace, and `stock` — the nearest
+   * module — is carried by jewellery and watch too, which write no variant
+   * sale events at all.
+   */
+  industries?: readonly Industry[];
+}
+
 export interface ReportViewDef {
   label: string;
   /** the view's date column (used by date-bucket dimensions and date-range filters), if any. */
@@ -53,6 +86,20 @@ export interface ReportViewDef {
   dimensions: DimensionDef[];
   metrics: MetricDef[];
   filters?: FilterDef[];
+  /**
+   * What a business must have for this source to hold anything — the same
+   * model `StandardReportDef.requires` uses, declared here because the report
+   * *builder* offers these directly. Without it a jeweller's source picker
+   * lists «چرخش میزها» and «عملکرد پیک‌ها», builds a report on them, and gets a
+   * permanently empty chart: the view is a join over `tables`/`deliveries`,
+   * which that trade never writes. Omitted = every trade (see
+   * ReportRequirement).
+   *
+   * This gates what is *offered*, not what is permitted: `buildReportQuery`
+   * still runs any whitelisted view, and RLS still scopes every row, so an
+   * existing saved report keeps working if a business changes trade.
+   */
+  requires?: ReportRequirement;
 }
 
 /**
@@ -80,6 +127,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
   },
   v_menu_item_performance: {
+    requires: { modules: ["menu"] },
     label: "عملکرد اقلام منو",
     dateColumn: "sale_date",
     dimensions: [
@@ -100,6 +148,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
   // deltas inside each item's revenue; this view breaks them out so add-on
   // sales are reportable on their own.
   v_modifier_performance: {
+    requires: { modules: ["menu"] },
     label: "عملکرد افزودنی‌ها",
     dateColumn: "sale_date",
     dimensions: [
@@ -118,6 +167,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     filters: [{ key: "group", label: "گروه افزودنی", column: "modifier_group_id" }],
   },
   v_inventory_valuation: {
+    requires: { modules: ["inventory"] },
     label: "ارزش‌گذاری موجودی",
     dateColumn: null,
     dimensions: [{ key: "item", label: "کالا", columns: ["inventory_item_id", "item_name"] }],
@@ -128,6 +178,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
   },
   v_inventory_nrv_valuation: {
+    requires: { modules: ["inventory"] },
     label: "ارزش نهایی موجودی پس از ذخیره کاهش ارزش",
     dateColumn: null,
     dimensions: [{ key: "item", label: "کالا", columns: ["inventory_item_id", "item_name"] }],
@@ -139,6 +190,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
   },
   v_inventory_history_coverage: {
+    requires: { modules: ["inventory"] },
     label: "پوشش تاریخی موجودی و بهای تمام‌شده",
     dateColumn: "effective_at",
     dimensions: [
@@ -221,6 +273,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
   },
   v_table_turnover: {
+    requires: { modules: ["tables"] },
     label: "چرخش میزها",
     dateColumn: "closed_at",
     dimensions: [
@@ -252,6 +305,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
   },
   v_delivery_performance: {
+    requires: { modules: ["delivery"] },
     label: "عملکرد ارسال",
     dateColumn: "delivery_date",
     dimensions: [
@@ -270,6 +324,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     filters: [{ key: "status", label: "وضعیت", column: "delivery_status" }],
   },
   v_courier_performance: {
+    requires: { modules: ["delivery"] },
     label: "عملکرد پیک‌ها",
     dateColumn: "delivery_date",
     dimensions: [
@@ -286,6 +341,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
   },
   v_waste_summary: {
+    requires: { modules: ["inventory"] },
     label: "گزارش ضایعات",
     dateColumn: "waste_date",
     dimensions: [
@@ -305,6 +361,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
   // sum; `unit_cost` is a rate rather than a quantity, so only `avg` makes
   // sense on it and it stays positive on a reversal.
   v_production_summary: {
+    requires: { modules: ["inventory"] },
     label: "گزارش تولید",
     dateColumn: "production_date",
     dimensions: [
@@ -331,6 +388,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
   // because the grain is finer than a purchase — plain count() here would count
   // lines. All statuses are present; filter on status for received-only spend.
   v_purchase_summary: {
+    requires: { modules: ["inventory"] },
     label: "خریدها",
     dateColumn: "purchase_date",
     dimensions: [
@@ -626,12 +684,160 @@ export function reportConfigLabels(config: ReportConfig): { viewLabel: string; d
 
 export type ChartType = "line" | "bar" | "pie" | "number";
 
+/**
+ * The shelf a report sits on in «گزارش‌های آماده».
+ *
+ * A group is a subject, not a trade: a café owner and a jeweller both open
+ * «مالی و حسابداری» to find the P&L. What differs between trades is *which*
+ * reports exist inside a group (see `requires` below), never the shelving —
+ * so the library reads the same everywhere and a business that changes nothing
+ * about how it reports still finds its reports where it left them.
+ */
+export const REPORT_GROUPS = ["finance", "sales", "inventory", "people", "customers", "operations"] as const;
+export type ReportGroup = (typeof REPORT_GROUPS)[number];
+
+export const REPORT_GROUP_LABELS: Record<ReportGroup, string> = {
+  finance: "مالی و حسابداری",
+  sales: "فروش و درآمد",
+  inventory: "موجودی و خرید",
+  people: "کارکنان",
+  customers: "مشتریان",
+  operations: "عملیات کسب‌وکار",
+};
+
+/**
+ * The order the groups are shown in — finance first because the statements are
+ * what an owner opens the section for, operations last because it is the only
+ * group whose contents change completely from one trade to the next.
+ */
+export const REPORT_GROUP_ORDER: readonly ReportGroup[] = [
+  "finance",
+  "sales",
+  "inventory",
+  "people",
+  "customers",
+  "operations",
+];
+
+
+/**
+ * How a report's payload is shaped, and therefore which view renders it.
+ *
+ * `rows` is the ordinary case: a view dump the chart/table pair can draw
+ * without knowing anything about the subject. Everything else is a report
+ * whose answer has its own structure — an account rollup, a weight
+ * reconciliation, a warranty register — computed by its own service function
+ * and rendered by its own component.
+ */
+export type ReportShape =
+  | "rows"
+  | "profit_and_loss"
+  | "balance_sheet"
+  | "cash_flow"
+  | "food_cost_variance"
+  | "weight_reconciliation"
+  | "consignor_statements"
+  | "layaway_book"
+  | "warranty"
+  | "repairs"
+  | "variant_sales"
+  | "brand_sales"
+  | "near_expiry"
+  | "low_stock"
+  | "dead_stock";
+
 export interface StandardReportDef {
   key: string;
   label: string;
+  /** One line on what question this answers — shown under the report's title. */
+  description?: string;
+  /** Which shelf it sits on. */
+  group: ReportGroup;
+  /**
+   * What the business must have for this report to exist. Omitted = shared:
+   * every trade sees it. See ReportRequirement.
+   */
+  requires?: ReportRequirement;
+  /** How the payload is shaped; defaults to `rows`. See ReportShape. */
+  shape?: ReportShape;
   /** underlying view for a plain row dump (table display); pnl/balance_sheet are computed separately. */
   view: string | null;
   defaultChart: { chartType: ChartType; config: ReportConfig } | null;
+}
+
+/** A report's shape, defaulting to the ordinary view dump. */
+export function reportShape(report: StandardReportDef): ReportShape {
+  return report.shape ?? "rows";
+}
+
+/**
+ * Whether an industry satisfies a requirement. `undefined` — no requirement —
+ * is shared by every trade. Every listed key must match; see ReportRequirement
+ * for why the keys are AND-ed rather than OR-ed.
+ */
+export function requirementMet(industry: Industry, requires: ReportRequirement | undefined): boolean {
+  if (!requires) return true;
+  for (const module of requires.modules ?? []) {
+    if (!hasModule(industry, module)) return false;
+  }
+  for (const capability of requires.capabilities ?? []) {
+    if (!hasCapability(industry, capability)) return false;
+  }
+  if (requires.industries && !requires.industries.includes(industry)) return false;
+  return true;
+}
+
+/** Whether an industry has everything a report requires. A report with no `requires` is shared. */
+export function industryHasReport(industry: Industry, report: StandardReportDef): boolean {
+  return requirementMet(industry, report.requires);
+}
+
+/**
+ * The report library as one industry actually sees it — the shared reports plus
+ * the ones its own trade brings, in `STANDARD_REPORTS` order.
+ *
+ * This is the single filter: every surface that lists or runs a standard report
+ * (the dashboard API, the public v1 API, the assistant's `list_reports`, the
+ * MCP catalogue, the saved-report seeder) goes through it, so a trade can never
+ * be offered «چرخش میزها» in one place and refused it in another.
+ *
+ * A null industry (a business whose row is unreadable, which `getBusinessIndustry`
+ * returns rather than throwing) falls back to F&B, the same default the rest of
+ * the app uses — the caller sees the historical library rather than an empty
+ * screen.
+ */
+export function standardReportsFor(industry: Industry | null | undefined): StandardReportDef[] {
+  const resolved: Industry = industry ?? "food_service";
+  return STANDARD_REPORTS.filter((report) => industryHasReport(resolved, report));
+}
+
+/**
+ * The builder's source list for one industry — the same filter
+ * `standardReportsFor` applies, over the view whitelist.
+ *
+ * Keeps the two halves of the section honest with each other: if a trade is
+ * not offered «چرخش میزها» as a ready-made report, it must not be offered the
+ * view behind it as a place to build one from either.
+ */
+export function reportViewsFor(
+  industry: Industry | null | undefined,
+): { key: string; view: ReportViewDef }[] {
+  const resolved: Industry = industry ?? "food_service";
+  return Object.entries(REPORT_VIEWS)
+    .filter(([, view]) => requirementMet(resolved, view.requires))
+    .map(([key, view]) => ({ key, view }));
+}
+
+/** One industry's library, split into the groups the UI renders, empty groups dropped. */
+export function groupedStandardReportsFor(
+  industry: Industry | null | undefined,
+): { group: ReportGroup; label: string; reports: StandardReportDef[] }[] {
+  const reports = standardReportsFor(industry);
+  return REPORT_GROUP_ORDER.map((group) => ({
+    group,
+    label: REPORT_GROUP_LABELS[group],
+    reports: reports.filter((report) => report.group === group),
+  })).filter((entry) => entry.reports.length > 0);
 }
 
 /**
@@ -641,11 +847,24 @@ export interface StandardReportDef {
  * P&L/Balance Sheet have no single metric/dimension shape (they're
  * structured account-type rollups) — reports-service.ts computes those
  * directly from v_ledger_by_account instead of through buildReportQuery.
+ *
+ * One flat list, read through `standardReportsFor(industry)`.
+ *
+ * The list was flat *and* served unfiltered until Phase 43: a jewellery shop's
+ * report library offered «چرخش میزها»، «گزارش ضایعات» and «عملکرد پیک‌ها»
+ * beside its own numbers, all three of which query views over tables that
+ * trade never writes — so they were always empty, and the four reports the
+ * shop actually wanted (weight reconciliation, layaway, consignors, variant
+ * sell-through) lived somewhere else entirely, under `/api/{trade}/reports`.
+ * Each entry now carries the shelf it belongs on and, when its subject only
+ * exists in some trades, what the business must have for it to appear.
  */
 export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "daily_sales_summary",
     label: "خلاصه فروش روزانه",
+    description: "فروش هر روز کاری: تعداد سند، جمع جزء، تخفیف، مالیات و فروش خالص.",
+    group: "sales",
     view: "v_sales_by_day",
     defaultChart: {
       chartType: "bar",
@@ -655,6 +874,8 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "shift_reconciliation",
     label: "تطبیق شیفت",
+    description: "هر شیفت و آنچه در آن دریافت شده: نقدی، کارت‌خوان، آنلاین و نسیه.",
+    group: "finance",
     // Per-shift since migration 0061 — the report now reports the real
     // employee_shifts entity (with each shift's own start/end time) instead
     // of v_shift_reconciliation's (day × cashier) proxy. Existing saved rows
@@ -674,6 +895,8 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "cogs_trend",
     label: "روند بهای تمام‌شده کالا (COGS)",
+    description: "روند بهای تمام‌شدهٔ کالای فروش‌رفته بر پایهٔ اسناد دفتر کل.",
+    group: "finance",
     view: "v_ledger_by_account",
     defaultChart: {
       chartType: "line",
@@ -689,6 +912,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "inventory_valuation",
     label: "ارزش‌گذاری موجودی",
+    description: "ارزش ریالی موجودی هر کالا در انبار مواد اولیه.",
+    group: "inventory",
+    requires: { modules: ["inventory"] },
     view: "v_inventory_valuation",
     defaultChart: {
       chartType: "bar",
@@ -705,6 +931,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "top_selling_items",
     label: "پرفروش‌ترین اقلام",
+    description: "پرفروش‌ترین اقلام منو بر پایهٔ تعداد فروش.",
+    group: "sales",
+    requires: { modules: ["menu"] },
     view: "v_menu_item_performance",
     defaultChart: {
       chartType: "bar",
@@ -721,6 +950,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "top_selling_add_ons",
     label: "پرفروش‌ترین افزودنی‌ها",
+    description: "درآمد افزودنی‌ها به تفکیک افزودنی و گروه.",
+    group: "sales",
+    requires: { modules: ["menu"] },
     view: "v_modifier_performance",
     defaultChart: {
       chartType: "bar",
@@ -737,6 +969,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "waste_report",
     label: "گزارش ضایعات",
+    description: "ضایعات ثبت‌شده به تفکیک علت، با بهای تمام‌شدهٔ هر علت.",
+    group: "inventory",
+    requires: { modules: ["inventory"] },
     view: "v_waste_summary",
     defaultChart: {
       chartType: "pie",
@@ -746,6 +981,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "production_by_product",
     label: "تولید به تفکیک محصول",
+    description: "تولید داخلی به تفکیک محصول، با بهای تمام‌شدهٔ هر اجرا.",
+    group: "inventory",
+    requires: { modules: ["inventory"] },
     view: "v_production_summary",
     defaultChart: {
       chartType: "bar",
@@ -762,6 +1000,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "purchases_by_supplier",
     label: "خرید به تفکیک تأمین‌کننده",
+    description: "خرید هر تأمین‌کننده در بازه، شامل خریدهای ثبت‌شده و تحویل‌نشده.",
+    group: "inventory",
+    requires: { modules: ["inventory"] },
     view: "v_purchase_summary",
     defaultChart: {
       chartType: "bar",
@@ -778,19 +1019,62 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "expenses_by_category",
     label: "هزینه به تفکیک دسته",
+    description: "هزینه‌های ثبت‌شده به تفکیک حساب هزینه.",
+    group: "finance",
     view: "v_expense_summary",
     defaultChart: {
       chartType: "pie",
       config: { view: "v_expense_summary", metric: "amount", aggregation: "sum", dimension: "category" },
     },
   },
-  { key: "profit_and_loss", label: "صورت سود و زیان", view: null, defaultChart: null },
-  { key: "balance_sheet", label: "ترازنامه", view: null, defaultChart: null },
-  { key: "cash_flow", label: "صورت گردش وجوه نقد", view: null, defaultChart: null },
-  { key: "food_cost_variance", label: "واریانس بهای تمام‌شده غذا", view: null, defaultChart: null },
+  // The three statements are the same statement in every trade — what changes
+  // between them is which expense codes count as cost of sales, and that is
+  // already resolved per-industry inside getProfitAndLoss.
+  {
+    key: "profit_and_loss",
+    label: "صورت سود و زیان",
+    description: "درآمد، بهای تمام‌شده، دستمزد و سود خالص دوره، با امکان مقایسه با دورهٔ قبل.",
+    group: "finance",
+    shape: "profit_and_loss",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "balance_sheet",
+    label: "ترازنامه",
+    description: "دارایی‌ها، بدهی‌ها و حقوق صاحبان سرمایه در یک تاریخ معین.",
+    group: "finance",
+    shape: "balance_sheet",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "cash_flow",
+    label: "صورت گردش وجوه نقد",
+    description: "ورود و خروج نقد دوره به تفکیک نوع رویداد، با موجودی ابتدا و پایان.",
+    group: "finance",
+    shape: "cash_flow",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "food_cost_variance",
+    label: "واریانس بهای تمام‌شده غذا",
+    description: "بهای استاندارد دستور پخت در برابر بهای واقعی دفاتر، و شکاف توضیح‌داده‌نشده.",
+    group: "operations",
+    // The recipe-costed store *and* the menu to cost against: this compares a
+    // menu item's recipe to the ledger's posted COGS, so a trade with one and
+    // not the other could only ever produce half the comparison.
+    requires: { modules: ["inventory", "menu"] },
+    shape: "food_cost_variance",
+    view: null,
+    defaultChart: null,
+  },
   {
     key: "staff_performance",
     label: "عملکرد کارکنان",
+    description: "فروش و میانگین مبلغ سند به تفکیک کارمند بستن‌کنندهٔ سند.",
+    group: "people",
     view: "v_staff_performance",
     defaultChart: {
       chartType: "bar",
@@ -806,6 +1090,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "table_turnover",
     label: "چرخش میزها",
+    description: "میانگین مدت اشغال هر میز — از نشستن مهمان تا تسویه.",
+    group: "operations",
+    requires: { modules: ["tables"] },
     view: "v_table_turnover",
     defaultChart: {
       chartType: "bar",
@@ -815,6 +1102,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "delivery_performance",
     label: "عملکرد ارسال",
+    description: "میانگین زمان ارسال در هر روز، از ثبت سفارش تا تحویل.",
+    group: "operations",
+    requires: { modules: ["delivery"] },
     view: "v_delivery_performance",
     defaultChart: {
       chartType: "line",
@@ -824,6 +1114,9 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "courier_performance",
     label: "عملکرد پیک‌ها",
+    description: "تعداد و زمان تحویل هر پیک.",
+    group: "operations",
+    requires: { modules: ["delivery"] },
     view: "v_courier_performance",
     defaultChart: {
       chartType: "bar",
@@ -843,6 +1136,8 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "customer_acquisition",
     label: "جذب مشتری تازه",
+    description: "مشتریان تازه در هر ماه.",
+    group: "customers",
     view: "v_customer_acquisition",
     defaultChart: {
       chartType: "bar",
@@ -857,6 +1152,8 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "customer_retention",
     label: "ماندگاری و ریزش مشتری",
+    description: "توزیع مشتریان بین مراحل چرخهٔ عمر: فعال، در خطر و از دست‌رفته.",
+    group: "customers",
     view: "v_customer_value",
     defaultChart: {
       chartType: "pie",
@@ -875,6 +1172,8 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "customer_lifetime_value",
     label: "ارزش طول عمر مشتری",
+    description: "پرارزش‌ترین مشتریان بر پایهٔ مجموع خرید.",
+    group: "customers",
     view: "v_customer_value",
     defaultChart: {
       chartType: "bar",
@@ -891,6 +1190,8 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "consent_coverage",
     label: "پوشش رضایت ارتباط",
+    description: "پوشش رضایت ارتباط بازاریابی در پروندهٔ مشتریان.",
+    group: "customers",
     view: "v_customer_consent",
     defaultChart: {
       chartType: "pie",
@@ -902,6 +1203,129 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
         sort: { by: "metric", dir: "desc" },
       },
     },
+  },
+
+  /* ---------------------------------------------------------------- *
+   * Phase 43 — the retail trades' own reports.
+   *
+   * These are not new numbers. Each one already existed behind
+   * `/api/{trade}/reports`, rendered by that trade's own «گزارش» tab, and
+   * was invisible from «گزارش‌ها» — so a jeweller had two report sections
+   * and neither one held everything. They are declared here for the same
+   * reason the CRM's four are (see above): one library, one export path, one
+   * `list_reports`, one place an owner looks.
+   *
+   * They keep `view: null` and their own `shape`, because their subject has
+   * a structure the generic dim/value pair cannot carry — a weight
+   * reconciliation is per-purity with a variance, a warranty register is per
+   * serial with a state. `defaultChart: null` follows from that: there is no
+   * single metric to pin to a dashboard tile, exactly as for the statements.
+   * ---------------------------------------------------------------- */
+  {
+    key: "weight_reconciliation",
+    label: "تطبیق وزنی",
+    description: "وزن خالص دفاتر در برابر آخرین شمارش فیزیکی هر عیار، با مغایرت گرمی.",
+    group: "inventory",
+    requires: { modules: ["jewelry"] },
+    shape: "weight_reconciliation",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "consignor_statements",
+    label: "صورت‌حساب امانت‌گذاران",
+    description: "بدهی هر امانت‌گذار از روی فروش‌های ثبت‌شده: ارزش فلز و اجرت، منهای پرداختی‌ها.",
+    group: "finance",
+    requires: { modules: ["jewelry"] },
+    shape: "consignor_statements",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "layaway_book",
+    label: "دفتر لیاوی",
+    description: "طرح‌های اقساطی باز، وزن رزروشده و مانده‌ی دریافتنی هر طرح.",
+    group: "finance",
+    requires: { modules: ["jewelry"] },
+    shape: "layaway_book",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "warranty_register",
+    label: "دفتر گارانتی‌ها",
+    description: "گارانتی‌های صادرشده و وضعیت هرکدام: معتبر، رو به پایان یا منقضی.",
+    // `repairs` rather than the `watch` module: a jeweller repairs and
+    // warranties too (industry-profile.ts gives both trades the capability),
+    // and the register reads `item_serials`, which both write.
+    group: "operations",
+    requires: { capabilities: ["repairs"] },
+    shape: "warranty",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "repair_profitability",
+    label: "سودآوری تعمیرات",
+    description: "تیکت‌های تعمیر به تفکیک وضعیت، با درآمد، بهای قطعات و حاشیهٔ هر دوره.",
+    group: "operations",
+    requires: { capabilities: ["repairs"] },
+    shape: "repairs",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "variant_sales",
+    label: "تحلیل فروش تنوع‌ها",
+    description: "کدام تنوع‌ها می‌فروشند: تعداد، درآمد، بهای تمام‌شده و حاشیهٔ هر تنوع.",
+    group: "sales",
+    // The five trade-goods industries, not `stock`: jewellery and watch carry
+    // that module too but sell weighted pieces and serialised units, which
+    // write no variant sale event for this to read.
+    requires: { industries: ["accessories", "cosmetics", "wholesale", "tools_fittings", "haberdashery"] },
+    shape: "variant_sales",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "brand_sales",
+    label: "فروش به تفکیک برند",
+    description: "سهم هر برند از فروش و حاشیهٔ سود، برای تصمیم دربارهٔ سبد برندها.",
+    group: "sales",
+    requires: { modules: ["cosmetics"] },
+    shape: "brand_sales",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "near_expiry_batches",
+    label: "بچ‌های نزدیک انقضا",
+    description: "بچ‌های منقضی و زیر ۹۰ روز مانده تا انقضا، برای تخفیف یا مرجوعی به‌موقع.",
+    group: "inventory",
+    requires: { capabilities: ["batch_expiry"] },
+    shape: "near_expiry",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "low_stock",
+    label: "کمبود موجودی",
+    description: "کالاهای زیر نقطهٔ سفارش یا تمام‌شده، برای سفارش دوباره.",
+    group: "inventory",
+    requires: { modules: ["stock"] },
+    shape: "low_stock",
+    view: null,
+    defaultChart: null,
+  },
+  {
+    key: "dead_stock",
+    label: "کالای راکد",
+    description: "کالاهایی که ۹۰ روز فروش نرفته‌اند و سرمایهٔ خوابیده در آن‌ها.",
+    group: "inventory",
+    requires: { modules: ["stock"] },
+    shape: "dead_stock",
+    view: null,
+    defaultChart: null,
   },
 ];
 

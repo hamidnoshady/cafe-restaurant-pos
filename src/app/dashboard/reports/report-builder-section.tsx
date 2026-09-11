@@ -1,6 +1,6 @@
 "use client";
 
-import { SectionCardSkeleton, LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { EmptyState, LoadingSkeleton, SectionCard, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,6 @@ import {
   type ChartType,
   type ReportRow,
 } from "./report-ui";
-import { cardClass } from "../page-chrome";
 
 interface ViewMeta {
   key: string;
@@ -46,10 +45,6 @@ const AGG_LABELS: Record<Aggregation, string> = {
   count: "تعداد",
   count_distinct: "تعداد یکتا",
 };
-const CONTROL_CLASS = [
-  inputClass,
-  "min-h-[52px] border-border/80 bg-card text-foreground",
-].join(" ");
 
 export function ReportBuilderSection() {
   const [views, setViews] = useState<ViewMeta[] | null>(null);
@@ -199,32 +194,18 @@ export function ReportBuilderSection() {
   }
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <section
-        aria-labelledby="report-builder-heading"
-        aria-busy={busy}
-        className={`${cardClass} p-4 sm:p-5`}
+    <div className="space-y-4 sm:space-y-5">
+      <SectionCard
+        title="گزارش‌ساز"
+        description="منبع، معیار و نحوهٔ نمایش گزارش را با داده‌های موجود تنظیم کنید."
       >
-        <header className="border-b border-border pb-4">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش سفارشی</p>
-          <h2
-            id="report-builder-heading"
-            className="mt-1 text-lg font-bold text-foreground"
-          >
-            گزارش‌ساز
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            منبع، معیار و نحوهٔ نمایش گزارش را با داده‌های موجود تنظیم کنید.
-          </p>
-        </header>
-
-        <div className="mt-5">
+        <div aria-busy={busy}>
           <ErrorBox>{error}</ErrorBox>
 
           <div className="grid gap-x-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="منبع داده">
               <SearchableSelect
-                className={CONTROL_CLASS}
+                className={inputClass}
                 value={view}
                 onChange={selectView}
                 options={views.map((item) => ({ value: item.key, label: item.label }))}
@@ -233,7 +214,7 @@ export function ReportBuilderSection() {
 
             <Field label="معیار">
               <SearchableSelect
-                className={CONTROL_CLASS}
+                className={inputClass}
                 value={metric}
                 onChange={(value) => selectMetric(value)}
                 options={(currentView?.metrics ?? []).map((item) => ({
@@ -245,7 +226,7 @@ export function ReportBuilderSection() {
 
             <Field label="نوع تجمیع">
               <SearchableSelect
-                className={CONTROL_CLASS}
+                className={inputClass}
                 value={aggregation}
                 onChange={(value) => setAggregation(value as Aggregation)}
                 options={(currentMetric?.aggregations ?? ["sum"]).map((item) => ({
@@ -257,7 +238,7 @@ export function ReportBuilderSection() {
 
             <Field label="بُعد">
               <SearchableSelect
-                className={CONTROL_CLASS}
+                className={inputClass}
                 value={dimension}
                 onChange={setDimension}
                 options={(currentView?.dimensions ?? []).map((item) => ({
@@ -282,7 +263,7 @@ export function ReportBuilderSection() {
                     value={dateFrom}
                     onChange={setDateFrom}
                     placeholder="از تاریخ"
-                    className={CONTROL_CLASS}
+                    className={inputClass}
                   />
                 </label>
                 <label className="block">
@@ -293,7 +274,7 @@ export function ReportBuilderSection() {
                     value={dateTo}
                     onChange={setDateTo}
                     placeholder="تا تاریخ"
-                    className={CONTROL_CLASS}
+                    className={inputClass}
                   />
                 </label>
               </div>
@@ -311,13 +292,7 @@ export function ReportBuilderSection() {
           ) : null}
 
           <div className="mt-5 grid gap-3 border-t border-border pt-5 lg:grid-cols-[auto_minmax(11rem,1fr)_minmax(12rem,1fr)_auto] lg:items-end">
-            <Button
-              type="button"
-              size="lg"
-              onClick={preview}
-              disabled={busy}
-              className="min-h-[52px] bg-amber-500 dark:bg-amber-400 px-5 font-bold text-amber-950 dark:text-amber-200 hover:bg-amber-500 dark:hover:bg-amber-400 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
-            >
+            <Button type="button" size="lg" onClick={preview} disabled={busy} className="px-5 font-semibold">
               پیش‌نمایش
             </Button>
 
@@ -326,7 +301,7 @@ export function ReportBuilderSection() {
                 نوع نمایش
               </span>
               <SearchableSelect
-                className={CONTROL_CLASS}
+                className={inputClass}
                 value={chartType}
                 onChange={(value) => setChartType(value as ChartType)}
                 options={[
@@ -343,7 +318,7 @@ export function ReportBuilderSection() {
                 نام گزارش
               </span>
               <input
-                className={CONTROL_CLASS}
+                className={inputClass}
                 placeholder="نام گزارش برای ذخیره"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
@@ -357,7 +332,7 @@ export function ReportBuilderSection() {
                 size="lg"
                 onClick={save}
                 disabled={busy}
-                className="min-h-[52px] border-border/80 bg-card px-4 font-semibold text-foreground hover:bg-muted"
+                className="font-semibold"
               >
                 {editingId ? "به‌روزرسانی گزارش" : "ذخیرهٔ گزارش"}
               </Button>
@@ -370,7 +345,7 @@ export function ReportBuilderSection() {
                     setEditingId(null);
                     setName("");
                   }}
-                  className="min-h-[52px] px-4 text-muted-foreground hover:bg-muted"
+                  className="text-muted-foreground"
                 >
                   انصراف از ویرایش
                 </Button>
@@ -404,23 +379,14 @@ export function ReportBuilderSection() {
             </section>
           ) : null}
         </div>
-      </section>
+      </SectionCard>
 
-      <section
-        aria-labelledby="saved-reports-heading"
-        className={`${cardClass} p-4 sm:p-5`}
+      <SectionCard
+        title="گزارش‌های سفارشی ذخیره‌شده"
+        description="گزارش‌هایی که خودتان ساخته‌اید — قابل ویرایش، سنجاق به داشبورد یا حذف."
+        flush
       >
-        <header className="border-b border-border pb-4">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش‌های شخصی</p>
-          <h2
-            id="saved-reports-heading"
-            className="mt-1 text-lg font-bold text-foreground"
-          >
-            گزارش‌های سفارشی ذخیره‌شده
-          </h2>
-        </header>
-
-        <ul className="divide-y divide-border">
+        <ul className="divide-y divide-border px-4 sm:px-5">
           {saved === null ? (
             <li className="py-3">
               <LoadingSkeleton rows={3} compact />
@@ -441,7 +407,6 @@ export function ReportBuilderSection() {
                   variant="outline"
                   size="lg"
                   onClick={() => loadIntoBuilder(report)}
-                  className="min-h-[52px] border-border/80 bg-card px-4 text-foreground hover:bg-muted"
                 >
                   ویرایش
                 </Button>
@@ -452,10 +417,9 @@ export function ReportBuilderSection() {
                 />
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="destructive"
                   size="lg"
                   onClick={() => remove(report.id)}
-                  className="min-h-[52px] border-destructive/30 bg-card px-4 text-destructive hover:bg-destructive/10"
                 >
                   حذف
                 </Button>
@@ -464,12 +428,14 @@ export function ReportBuilderSection() {
           ))}
 
           {saved !== null && customReports.length === 0 ? (
-            <li className="py-8 text-center text-sm text-muted-foreground">
-              هنوز گزارش سفارشی‌ای ذخیره نشده است.
+            <li className="py-4">
+              <EmptyState>
+                هنوز گزارش سفارشی‌ای ذخیره نشده است. بالا یک منبع و معیار انتخاب کنید و آن را ذخیره کنید.
+              </EmptyState>
             </li>
           ) : null}
         </ul>
-      </section>
+      </SectionCard>
     </div>
   );
 }
