@@ -23,6 +23,7 @@ import {
   LayoutGridIcon,
   LifeBuoyIcon,
   LockIcon,
+  MessageSquareIcon,
   MessageSquarePlusIcon,
   PackageIcon,
   PlugIcon,
@@ -50,12 +51,18 @@ import {
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
+import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
 import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { AppStateBadge } from "./app-availability-gate";
 import { CreditBadge } from "./credit-badge";
-import { APP_NAV_BUTTON_CLASS, BACK_TO_WORKSPACE_BUTTON_CLASS } from "./sidebar-nav-styles";
+import {
+  APP_NAV_BUTTON_CLASS,
+  BACK_TO_WORKSPACE_BUTTON_CLASS,
+  NAV_LABEL_CLASS,
+  SIDEBAR_FOOTER_BUTTON_CLASS,
+} from "./sidebar-nav-styles";
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
@@ -318,7 +325,14 @@ const OPEN_NAV_GROUPS_KEY = "dashboard-sidebar-open-groups";
 function readOpenGroups(): Record<string, boolean> {
   try {
     const raw = window.localStorage.getItem(OPEN_NAV_GROUPS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    // The value is hand-editable localStorage: anything but an object of
+    // booleans is treated as "no saved choice" rather than crashing the menu.
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(([, open]) => typeof open === "boolean"),
+    ) as Record<string, boolean>;
   } catch {
     return {};
   }
@@ -329,8 +343,14 @@ function readOpenGroups(): Record<string, boolean> {
  * sub-sections). The parent is a disclosure, not a link; children wear the
  * same amber selection as every other nav entry, with an inline-start bar
  * marking the one you are on. A group that holds the active page opens on
- * its own, so a deep link never lands behind a closed door; the member's
- * manual opens/closes are remembered per device.
+ * its own the first time you land there, so a deep link never arrives behind a
+ * closed door — but it can still be closed by hand afterwards, which the old
+ * always-forced-open rule made impossible. The member's opens/closes are
+ * remembered per device.
+ *
+ * On a collapsed rail there is no room to disclose anything, so the row acts as
+ * a plain launcher: it opens the group's home if it has one, and otherwise asks
+ * the rail to expand rather than swallowing the click.
  */
 function NavGroupItem({
   item,
@@ -347,6 +367,8 @@ function NavGroupItem({
   open: boolean;
   onToggle: () => void;
 }) {
+  const { state, expandSidebar } = useSidebar();
+  const collapsedRail = state === "collapsed";
   const Icon = NAV_ICONS[item.iconKey ?? item.href ?? ""] ?? CircleIcon;
   const childActive = item.children.some((child) => child.href && isActive(pathname, child.href, search));
   const hrefActive = item.href ? isActive(pathname, item.href, search) : false;
@@ -354,8 +376,12 @@ function NavGroupItem({
   // A group that *has* a home keeps its label a link to that home («حسابداری»
   // → the dashboard) and puts the disclosure on a separate chevron, so tapping
   // the section still opens its main page — while a pure group («محصولات»)
-  // toggles on the whole row, exactly as before.
-  const hasHref = Boolean(item.href);
+  // toggles on the whole row, exactly as before. A collapsed rail has no room
+  // for the split, so the row is one target there.
+  const hasHref = Boolean(item.href) && !collapsedRail;
+  // How many of this group's pages are the one you are on — spoken next to the
+  // group's name so a collapsed group still says it holds the current page.
+  const groupTooltip = item.appState ? `${item.label} — ${item.appState.label}` : item.label;
 
   return (
     <SidebarMenuItem>
@@ -363,10 +389,23 @@ function NavGroupItem({
         <SidebarMenuButton
           asChild={hasHref}
           isActive={active}
-          tooltip={item.label}
+          tooltip={groupTooltip}
           className={`${APP_NAV_BUTTON_CLASS} ${hasHref ? "pe-9" : ""}`}
-          aria-expanded={hasHref ? undefined : open}
-          onClick={hasHref ? undefined : onToggle}
+          aria-expanded={hasHref || collapsedRail ? undefined : open}
+          aria-label={item.appState ? `${item.label} (${item.appState.label})` : undefined}
+          onClick={
+            hasHref
+              ? undefined
+              : collapsedRail
+                ? () => {
+                    // No labels to disclose against at 4rem wide: widen first,
+                    // then leave the group open so the click has a visible
+                    // result instead of toggling something nobody can see.
+                    expandSidebar();
+                    if (!open) onToggle();
+                  }
+                : onToggle
+          }
         >
           {hasHref ? (
             <Link
@@ -375,29 +414,29 @@ function NavGroupItem({
               aria-current={hrefActive ? "page" : undefined}
             >
               <Icon aria-hidden="true" className="size-5 shrink-0" />
-              <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+              <span className={NAV_LABEL_CLASS}>{item.label}</span>
               {item.appState ? (
                 <AppStateBadge
                   state={item.appState.state}
                   label={item.appState.label}
-                  className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                  className="shrink-0 group-data-[state=collapsed]/sidebar:hidden"
                 />
               ) : null}
             </Link>
           ) : (
             <>
               <Icon aria-hidden="true" className="size-5 shrink-0" />
-              <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+              <span className={NAV_LABEL_CLASS}>{item.label}</span>
               {item.appState ? (
                 <AppStateBadge
                   state={item.appState.state}
                   label={item.appState.label}
-                  className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                  className="shrink-0 group-data-[state=collapsed]/sidebar:hidden"
                 />
               ) : null}
               <ChevronDownIcon
                 aria-hidden="true"
-                className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-data-[state=collapsed]/sidebar:hidden ${item.appState ? "ms-1.5" : "ms-auto"}`}
+                className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-data-[state=collapsed]/sidebar:hidden ${open ? "" : "-rotate-90"}`}
               />
             </>
           )}
@@ -407,8 +446,14 @@ function NavGroupItem({
             type="button"
             onClick={onToggle}
             aria-expanded={open}
-            aria-label={`باز و بسته کردن زیربخش‌های ${item.label}`}
-            className="absolute end-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-amber-500/20 dark:hover:text-amber-300 group-data-[state=collapsed]/sidebar:hidden"
+            aria-label={`${open ? "بستن" : "باز کردن"} زیربخش‌های ${item.label}`}
+            title={`${open ? "بستن" : "باز کردن"} زیربخش‌های ${item.label}`}
+            /*
+              Sits on top of the row's link, so it needs its own hit area: 28px
+              of ink inside a 40px-tall target, which is what a thumb on a POS
+              tablet actually lands on.
+            */
+            className="absolute end-1 top-1/2 flex h-10 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:hover:bg-amber-500/20 dark:hover:text-amber-300 dark:focus-visible:ring-amber-400/45 group-data-[state=collapsed]/sidebar:hidden"
           >
             <ChevronDownIcon
               aria-hidden="true"
@@ -418,7 +463,7 @@ function NavGroupItem({
         ) : null}
       </div>
       {open ? (
-        <ul className="ms-6 mt-1 space-y-0.5 group-data-[state=collapsed]/sidebar:hidden">
+        <ul className="mt-1 space-y-0.5 border-s border-border/70 pe-0 ps-2 ms-4 group-data-[state=collapsed]/sidebar:hidden">
           {item.children.map((child) => {
             if (!child.href) return null;
             const active = isActive(pathname, child.href, search);
@@ -429,9 +474,10 @@ function NavGroupItem({
                   onClick={onNavigate}
                   data-active={active}
                   aria-current={active ? "page" : undefined}
-                  className="flex min-h-10 w-full items-center rounded-lg border-s-2 border-transparent px-3 text-sm text-foreground/75 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 data-[active=true]:border-amber-500 dark:data-[active=true]:border-amber-400 data-[active=true]:bg-amber-100 dark:data-[active=true]:bg-amber-500/20 data-[active=true]:font-semibold data-[active=true]:text-amber-700 dark:data-[active=true]:text-amber-200"
+                  title={child.label}
+                  className="flex min-h-10 w-full items-center rounded-lg border-s-2 border-transparent px-3 text-sm text-foreground/75 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 data-[active=true]:border-amber-500 dark:data-[active=true]:border-amber-400 data-[active=true]:bg-amber-100 dark:data-[active=true]:bg-amber-500/20 data-[active=true]:font-semibold data-[active=true]:text-amber-700 dark:data-[active=true]:text-amber-200"
                 >
-                  {child.label}
+                  <span className="min-w-0 flex-1 truncate">{child.label}</span>
                 </Link>
               </li>
             );
@@ -468,6 +514,27 @@ function NavLinks({
       return next;
     });
   }, []);
+
+  // Auto-opening a group is an arrival behaviour, not a permanent rule: the
+  // group that holds the page you just landed on opens itself, and from then
+  // on it obeys the member. It used to be OR-ed into `open` on every render,
+  // so the chevron on the group you were standing in did nothing at all.
+  const openGroupsRef = useRef(openGroups);
+  openGroupsRef.current = openGroups;
+  useEffect(() => {
+    const holder = navItems.find(
+      (item) =>
+        item.children &&
+        item.children.length > 0 &&
+        (item.children.some((child) => child.href && isActive(pathname, child.href, search)) ||
+          (item.href ? isActive(pathname, item.href, search) : false)),
+    );
+    if (!holder || openGroupsRef.current[holder.label]) return;
+    setOpenGroups((current) => ({ ...current, [holder.label]: true }));
+    // Deliberately not persisted: arriving somewhere is not the member
+    // choosing to keep that group open forever.
+  }, [navItems, pathname, search]);
+
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="ناوبری داشبورد" className="space-y-3">
@@ -483,7 +550,7 @@ function NavLinks({
                 >
                   <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
                     <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
-                    <span className="group-data-[state=collapsed]/sidebar:hidden">بازگشت به میز کار</span>
+                    <span className={NAV_LABEL_CLASS}>بازگشت به میز کار</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -497,9 +564,6 @@ function NavLinks({
         <SidebarMenu className="space-y-1.5">
           {navItems.map((item) => {
             if (item.children && item.children.length > 0) {
-              const holdsActive =
-                (item.href ? isActive(pathname, item.href, search) : false) ||
-                item.children.some((child) => child.href && isActive(pathname, child.href, search));
               return (
                 <NavGroupItem
                   key={item.label}
@@ -507,7 +571,7 @@ function NavLinks({
                   pathname={pathname}
                   search={search}
                   onNavigate={onNavigate}
-                  open={Boolean(openGroups[item.label]) || holdsActive}
+                  open={Boolean(openGroups[item.label])}
                   onToggle={() => toggleGroup(item.label)}
                 />
               );
@@ -515,12 +579,20 @@ function NavLinks({
             if (!item.href) return null;
             const Icon = NAV_ICONS[item.href] ?? CircleIcon;
             const active = isActive(pathname, item.href, search);
+            // The collapsed rail shows icons only, so the tooltip has to carry
+            // everything the row's badges say — otherwise «به‌زودی» and the
+            // padlock simply vanish at 4rem wide.
+            const tooltip = item.locked
+              ? `${item.label} — فعال نیست`
+              : item.appState
+                ? `${item.label} — ${item.appState.label}`
+                : item.label;
             return (
               <SidebarMenuItem key={item.label}>
                 <SidebarMenuButton
                   asChild
                   isActive={active}
-                  tooltip={item.label}
+                  tooltip={tooltip}
                   className={APP_NAV_BUTTON_CLASS}
                 >
                   <Link
@@ -543,18 +615,18 @@ function NavLinks({
                     }
                   >
                     <Icon aria-hidden="true" className="size-5 shrink-0" />
-                    <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+                    <span className={NAV_LABEL_CLASS}>{item.label}</span>
                     {item.appState ? (
                       <AppStateBadge
                         state={item.appState.state}
                         label={item.appState.label}
-                        className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                        className="shrink-0 group-data-[state=collapsed]/sidebar:hidden"
                       />
                     ) : null}
                     {item.locked ? (
                       <LockIcon
                         aria-hidden="true"
-                        className="ms-auto size-3.5 shrink-0 text-muted-foreground group-data-[state=collapsed]/sidebar:hidden"
+                        className="size-3.5 shrink-0 text-muted-foreground group-data-[state=collapsed]/sidebar:hidden"
                       />
                     ) : null}
                   </Link>
@@ -581,6 +653,7 @@ function NavLinks({
  */
 function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: string }) {
   const router = useRouter();
+  const { expandSidebar } = useSidebar();
   const hrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
   // The apps this rail launches, as data rather than three copies of the same
   // markup. Each entry lists its candidate routes in preference order: a
@@ -628,7 +701,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
             >
               <Link href="/dashboard">
                 <MessageSquarePlusIcon aria-hidden="true" className="size-5 shrink-0" />
-                <span className="group-data-[state=collapsed]/sidebar:hidden">گفت‌وگوی جدید</span>
+                <span className={NAV_LABEL_CLASS}>گفت‌وگوی جدید</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -641,15 +714,27 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
             >
               <Link href="/projects">
                 <FolderIcon aria-hidden="true" className="size-5 shrink-0" />
-                <span className="group-data-[state=collapsed]/sidebar:hidden">پروژه‌ها</span>
+                <span className={NAV_LABEL_CLASS}>پروژه‌ها</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
 
         {launchers.length > 0 ? (
-          <div>
-            <p className="px-2 pb-1 text-xs font-medium text-muted-foreground group-data-[state=collapsed]/sidebar:hidden">برنامه‌ها</p>
+          <div role="group" aria-labelledby="workspace-apps-heading">
+            <p
+              id="workspace-apps-heading"
+              className="px-2 pb-1 text-xs font-medium text-muted-foreground group-data-[state=collapsed]/sidebar:hidden"
+            >
+              برنامه‌ها
+            </p>
+            {/* Collapsed to icons the heading is gone, so the apps would run
+                into «پروژه‌ها» as one undifferentiated column of glyphs. A
+                hairline keeps the two groups apart at 4rem wide. */}
+            <div
+              aria-hidden="true"
+              className="mx-2 mb-2 hidden border-t border-border/70 group-data-[state=collapsed]/sidebar:block"
+            />
             <SidebarMenu className="space-y-1.5">
               {launchers.map((launcher) => {
                 const Icon = launcher.icon;
@@ -658,17 +743,19 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
                     <SidebarMenuButton
                       asChild
                       isActive={launcher.active}
-                      tooltip={launcher.label}
+                      tooltip={
+                        launcher.appState ? `${launcher.label} — ${launcher.appState.label}` : launcher.label
+                      }
                       className={APP_NAV_BUTTON_CLASS}
                     >
-                      <Link href={launcher.href}>
+                      <Link href={launcher.href} aria-current={launcher.active ? "page" : undefined}>
                         <Icon aria-hidden="true" className="size-5 shrink-0" />
-                        <span className="group-data-[state=collapsed]/sidebar:hidden">{launcher.label}</span>
+                        <span className={NAV_LABEL_CLASS}>{launcher.label}</span>
                         {launcher.appState ? (
                           <AppStateBadge
                             state={launcher.appState.state}
                             label={launcher.appState.label}
-                            className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                            className="shrink-0 group-data-[state=collapsed]/sidebar:hidden"
                           />
                         ) : null}
                       </Link>
@@ -693,6 +780,24 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
             onSelect={(id) => router.push(`/dashboard?conversation=${id}`)}
           />
         </div>
+
+        {/* Collapsed, the thread list has no room to render — but it must not
+            silently disappear either, or the rail looks like a business that
+            has never had a conversation. One glyph stands in for it and widens
+            the rail back out. */}
+        <SidebarMenu className="hidden group-data-[state=collapsed]/sidebar:block">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              type="button"
+              tooltip="نخ‌های اخیر"
+              aria-label="نمایش نخ‌های اخیر"
+              className={APP_NAV_BUTTON_CLASS}
+              onClick={expandSidebar}
+            >
+              <MessageSquareIcon aria-hidden="true" className="size-5 shrink-0" />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </nav>
     </SidebarContent>
   );
@@ -700,16 +805,29 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
 
 function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <SidebarHeader className="border-border/80 bg-card p-4">
-      <div className="flex items-start justify-between gap-2 group-data-[state=collapsed]/sidebar:justify-center">
+    <SidebarHeader className="border-border/80 bg-card p-4 group-data-[state=collapsed]/sidebar:px-2">
+      {/*
+        Two layouts, not one squeezed layout. Expanded: the business name and
+        its trade beside the controls. Collapsed: a single centred column, so
+        the credit pill and the reopen control stack instead of fighting over
+        4rem of width — the old row centred the whole flex line and the trigger
+        drifted off the rail's centre.
+      */}
+      <div className="flex items-start justify-between gap-2 group-data-[state=collapsed]/sidebar:flex-col group-data-[state=collapsed]/sidebar:items-center group-data-[state=collapsed]/sidebar:gap-2">
         <div className="min-w-0 group-data-[state=collapsed]/sidebar:hidden">
-          <p className="truncate font-bold text-foreground">{title}</p>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <p className="truncate font-bold text-foreground" title={title}>
+            {title}
+          </p>
+          <p className="truncate text-xs text-muted-foreground" title={subtitle}>
+            {subtitle}
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1 group-data-[state=collapsed]/sidebar:flex-col">
           <span className="hidden md:block group-data-[state=collapsed]/sidebar:hidden"><CreditBadge /></span>
           <span className="hidden group-data-[state=collapsed]/sidebar:md:block"><CreditBadge compact /></span>
-          <span className="hidden md:block group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
+          {/* The theme switch used to vanish with the labels; it is an icon
+              button already, so there is no reason it cannot stay on the rail. */}
+          <span className="hidden md:block"><ThemeToggle /></span>
           <SidebarTrigger className="hidden text-muted-foreground md:inline-flex" />
         </div>
       </div>
@@ -736,7 +854,10 @@ function BottomNavSettings({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>(current);
-  const options = navItems.filter((item): item is NavItem & { href: string } => Boolean(item.href));
+  // Sub-sections count too: a member who lives in «لیست قیمت» could not pin it
+  // before, because the picker only ever read the nav's top level.
+  const options = flattenNav(navItems);
+  const full = draft.length >= BOTTOM_NAV_MAX;
 
   return (
     <Dialog
@@ -749,11 +870,9 @@ function BottomNavSettings({
       }}
     >
       <DialogTrigger asChild>
-        <button
-          type="button"
-          className="mb-3 w-full rounded-lg border border-input py-1.5 text-sm text-muted-foreground transition hover:bg-muted/50 md:hidden"
-        >
-          چیدمان نوار پایین
+        <button type="button" className={`${SIDEBAR_FOOTER_BUTTON_CLASS} mb-2 md:hidden`}>
+          <LayoutGridIcon aria-hidden="true" className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-start">چیدمان نوار پایین</span>
         </button>
       </DialogTrigger>
       <DialogContent className="max-h-[80svh] overflow-y-auto">
@@ -768,19 +887,24 @@ function BottomNavSettings({
           {options.map((item) => {
             const Icon = NAV_ICONS[item.href] ?? CircleIcon;
             const picked = draft.includes(item.href);
+            const blocked = !picked && full;
             return (
               <li key={item.href}>
                 <button
                   type="button"
-                  disabled={!picked && draft.length >= BOTTOM_NAV_MAX}
+                  disabled={blocked}
                   aria-pressed={picked}
+                  /* A greyed row with no explanation reads as broken; say why. */
+                  title={blocked ? `ابتدا یکی از ${toPersianDigits(BOTTOM_NAV_MAX)} انتخاب فعلی را بردارید` : undefined}
                   onClick={() => setDraft((entries) => toggleBottomNavHref(entries, item.href))}
-                  className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-sm disabled:opacity-40 ${
-                    picked ? "bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300" : "text-foreground/80"
+                  className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:cursor-not-allowed disabled:opacity-40 ${
+                    picked
+                      ? "bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300"
+                      : "text-foreground/80 hover:bg-muted/60"
                   }`}
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-right">{item.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-start">{item.label}</span>
                   {picked ? <CheckIcon aria-hidden="true" className="size-4 shrink-0" /> : null}
                 </button>
               </li>
@@ -847,24 +971,72 @@ function DashboardSidebarFooter({
   bottomNavHrefs: string[];
   onSaveBottomNav: (hrefs: string[]) => void;
 }) {
+  const { expandSidebar } = useSidebar();
+  const isPinRole = PIN_ROLES.includes(role);
+  const roleLabel = ROLE_LABELS[role] ?? role;
+
   return (
-    <SidebarFooter className="border-border/80 bg-card">
-      <div className="group-data-[state=collapsed]/sidebar:hidden">
+    <SidebarFooter className="border-border/80 bg-card group-data-[state=collapsed]/sidebar:p-2">
+      <div className="space-y-2 group-data-[state=collapsed]/sidebar:hidden">
         <BranchSwitcher />
+        {/* #541's user menu owns the member's identity and the way out. It is
+            kept as the one identity control; the truncation below is this
+            branch's fix, since a long name used to push the chevron out of the
+            rail. */}
         <PlatformUserMenu role={role} fullName={fullName} />
-        <div className="mb-3 md:hidden"><ThemeToggle /></div>
+        <div className="md:hidden"><ThemeToggle /></div>
         <BottomNavSettings
           navItems={navItems}
           current={bottomNavHrefs}
           onSave={onSaveBottomNav}
         />
-        {PIN_ROLES.includes(role) && <ShiftButton />}
-        {PIN_ROLES.includes(role) && <BiometricSettingsButton />}
-        {PIN_ROLES.includes(role) && <LockButton />}
+        {isPinRole && <ShiftButton />}
+        {isPinRole && <BiometricSettingsButton />}
+        {isPinRole && <LockButton />}
       </div>
-      <BugReportFooterButton />
+
+      {/*
+        Collapsed, the whole footer used to be `hidden` — and #541's user menu,
+        which now owns sign-out, is inside that hidden block, so the exit from a
+        locked-down POS rail still meant expanding the rail first and hunting.
+        The rail keeps the two things that must never be more than one click
+        away: who you are (widens the rail back out) and the exit.
+      */}
+      <div className="hidden flex-col items-center gap-1 group-data-[state=collapsed]/sidebar:flex">
+        <button
+          type="button"
+          onClick={expandSidebar}
+          aria-label={`${fullName} — ${roleLabel} — باز کردن نوار کناری`}
+          title={`${fullName} — ${roleLabel}`}
+          className="flex size-9 items-center justify-center rounded-full border border-border bg-muted/60 text-xs font-bold text-foreground transition-colors hover:border-amber-300/70 hover:bg-amber-50 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:hover:border-amber-500/40 dark:hover:bg-amber-500/15 dark:hover:text-amber-300 dark:focus-visible:ring-amber-400/45"
+        >
+          <UsersIcon aria-hidden="true" className="size-4" />
+        </button>
+        <LogoutButton returnTo={isPinRole ? "/login" : "/admin"} compact />
+        {/* The expanded rail reaches this through the user menu above, so it is
+            only drawn here — one bug-report control, not two. */}
+        <BugReportFooterButton />
+      </div>
     </SidebarFooter>
   );
+}
+
+/**
+ * Closes the phone drawer whenever the route actually changes.
+ *
+ * Every menu wires an `onNavigate` for this, but the ones that forgot (the
+ * workspace rail's «گفت‌وگوی جدید» and «پروژه‌ها», an app launcher, a link
+ * inside a page rendered under the open drawer) left the sheet sitting over the
+ * page the member had just asked for. Watching the pathname covers all of them
+ * at once, and it also handles the browser's back button, which no click
+ * handler ever sees.
+ */
+function CloseDrawerOnNavigate({ pathname }: { pathname: string }) {
+  const { setOpenMobile } = useSidebar();
+  useEffect(() => {
+    setOpenMobile(false);
+  }, [pathname, setOpenMobile]);
+  return null;
 }
 
 function SidebarNavigation({ navItems, pathname, showWorkspaceHome }: Pick<SidebarProps, "navItems"> & { pathname: string; showWorkspaceHome: boolean }) {
@@ -930,7 +1102,11 @@ function AppShellNavigation({
 
 function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
   const [online, setOnline] = useState(true);
-  const active = navItems.find((item) => item.href && isActive(pathname, item.href));
+  const search = useSearchParams();
+  // The longest matching href wins, and sub-sections are searched too: on
+  // «لیست قیمت» the header used to fall back to the generic «داشبورد», because
+  // it only scanned the nav's top level and took the first prefix match.
+  const active = bestNavMatch(flattenNav(navItems), (href) => isActive(pathname, href, search));
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
 
   useEffect(() => {
@@ -945,15 +1121,26 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-border/80 bg-card/95 backdrop-blur px-2 py-1 backdrop-blur md:hidden">
+    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-border/80 bg-card/95 px-2 py-1 backdrop-blur md:hidden">
       <SidebarTrigger className="text-muted-foreground" />
-      <div className="min-w-0 flex-1 text-right">
+      <div className="min-w-0 flex-1 text-start">
         <p className="truncate text-sm font-bold text-foreground">{active?.label ?? "داشبورد"}</p>
-        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground"><CalendarDaysIcon className="size-3" aria-hidden="true" />{today}</p>
+        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <CalendarDaysIcon className="size-3 shrink-0" aria-hidden="true" />
+          <span className="truncate">{today}</span>
+        </p>
       </div>
       <CreditBadge />
-      <span className="flex min-h-11 min-w-8 items-center justify-center" role="status" aria-label={online ? "اتصال برقرار است" : "اتصال قطع است"}>
-        <span className={`size-2.5 rounded-full ${online ? "bg-emerald-500 dark:bg-emerald-500" : "bg-destructive"}`} aria-hidden="true" />
+      <span
+        className="flex min-h-11 min-w-8 items-center justify-center"
+        role="status"
+        aria-label={online ? "اتصال برقرار است" : "اتصال قطع است"}
+        title={online ? "اتصال برقرار است" : "اتصال قطع است"}
+      >
+        <span
+          className={`size-2.5 rounded-full ${online ? "bg-emerald-500 dark:bg-emerald-500" : "bg-destructive"}`}
+          aria-hidden="true"
+        />
       </span>
     </header>
   );
@@ -972,11 +1159,21 @@ function MobileBottomNavigation({
   pathname,
   hrefs,
 }: Pick<SidebarProps, "navItems"> & { pathname: string; hrefs: string[] }) {
-  const primaryItems = hrefs
-    .map((href) => navItems.find((item) => item.href === href))
-    .filter((item): item is NavItem & { href: string } => Boolean(item?.href));
+  const search = useSearchParams();
+  // Sub-sections are pinnable now, so the lookup has to see them: a pinned
+  // «لیست قیمت» silently vanished from the bar when only the top level was read.
+  const byHref = new Map(flattenNav(navItems).map((item) => [item.href, item]));
+  const primaryItems = hrefs.flatMap((href) => {
+    const item = byHref.get(href);
+    return item ? [item] : [];
+  });
 
   if (primaryItems.length === 0) return null;
+
+  // Exactly one tab lights up: the longest matching href, so pinning both a
+  // section and one of its tabs no longer paints two active tabs at once.
+  const activeHref =
+    bestNavMatch(primaryItems, (href) => isActive(pathname, href, search))?.href ?? null;
 
   return (
     <nav
@@ -986,21 +1183,28 @@ function MobileBottomNavigation({
         this bar offsets from that variable, so the bar has to be what the
         variable says it is.
       */
-      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] border-t border-border/80 bg-card/95 backdrop-blur px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgb(41_37_36/0.04)] backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] gap-0.5 border-t border-border/80 bg-card/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgb(41_37_36/0.04)] backdrop-blur md:hidden"
       aria-label="ناوبری اصلی"
     >
       {primaryItems.map((item) => {
         const Icon = NAV_ICONS[item.href] ?? CircleIcon;
-        const active = isActive(pathname, item.href);
+        const active = item.href === activeHref;
         return (
           <Link
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] ${active ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
+            title={item.label}
+            className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] ${active ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
           >
             <Icon className="size-5 shrink-0" aria-hidden="true" />
-            <span className="max-w-full truncate">{item.label}</span>
+            {/*
+              A long label used to be truncated to a couple of glyphs plus an
+              ellipsis in a quarter of a phone's width («صندوق (فروش)» became
+              «صن…»). Two short lines fit the real names instead, and the clamp
+              keeps the bar at the height `--app-bottom-nav` promises.
+            */}
+            <span className="line-clamp-2 w-full text-center leading-tight break-words">{item.label}</span>
           </Link>
         );
       })}
@@ -1012,6 +1216,11 @@ function MobileBottomNavigation({
  * The drag edge of the sidebar: grab it to change the width (the rail and the
  * classic sidebar alike), double-click to snap back to the default, and the
  * arrow keys move it in steps. The width is remembered per device.
+ *
+ * It is a real `separator` with a value now, so a screen reader says how wide
+ * the sidebar is rather than announcing a nameless handle, and the grip only
+ * inks on hover/focus — a permanently visible bar down the edge of the nav
+ * would compete with the entries beside it.
  */
 function SidebarResizeHandle({
   width,
@@ -1034,9 +1243,13 @@ function SidebarResizeHandle({
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      // Left button / primary touch only: a right-click used to start a drag
+      // that no pointerup would ever end.
+      if (event.button !== 0) return;
       start.current = { x: event.clientX, width: widthRef.current };
       onDragChange(true);
       document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
       event.currentTarget.setPointerCapture(event.pointerId);
     },
     [onDragChange],
@@ -1060,10 +1273,42 @@ function SidebarResizeHandle({
     start.current = null;
     onDragChange(false);
     document.body.style.userSelect = "";
+    document.body.style.cursor = "";
   }, [onDragChange]);
+
+  // A drag that ends outside the window (the pointer left the viewport, the tab
+  // lost focus) never fired pointerup on the handle, so the page stayed
+  // unselectable with a resize cursor until the next click.
+  useEffect(() => {
+    const cancel = () => endDrag();
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("blur", cancel);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [endDrag]);
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
+      // Home/End jump to the bounds and Enter/Space resets, so the width is
+      // fully reachable without a pointer — the arrows alone meant up to
+      // fourteen presses to cross the range.
+      if (event.key === "Home") {
+        event.preventDefault();
+        onWidthChange(SIDEBAR_MAX_WIDTH);
+        return;
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        onWidthChange(SIDEBAR_MIN_WIDTH);
+        return;
+      }
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onReset();
+        return;
+      }
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       event.preventDefault();
       const direction = event.key === "ArrowLeft" ? 1 : -1;
@@ -1071,7 +1316,7 @@ function SidebarResizeHandle({
         Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, widthRef.current + direction * SIDEBAR_KEYBOARD_STEP)),
       );
     },
-    [onWidthChange],
+    [onReset, onWidthChange],
   );
 
   return (
@@ -1079,16 +1324,31 @@ function SidebarResizeHandle({
       role="separator"
       aria-orientation="vertical"
       aria-label="تغییر عرض نوار کناری"
-      title="برای تغییر عرض بکشید"
+      aria-valuenow={Math.round(width)}
+      aria-valuemin={SIDEBAR_MIN_WIDTH}
+      aria-valuemax={SIDEBAR_MAX_WIDTH}
+      aria-valuetext={`${toPersianDigits(String(Math.round(width)))} پیکسل`}
+      title="برای تغییر عرض بکشید — دوبار کلیک برای بازگشت به حالت پیش‌فرض"
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       onDoubleClick={onReset}
       onKeyDown={onKeyDown}
-      className="absolute inset-y-0 end-0 z-10 hidden w-1.5 cursor-col-resize touch-none items-center justify-center outline-none transition-colors hover:bg-amber-200/70 dark:hover:bg-amber-500/25 focus-visible:bg-amber-200/70 dark:focus-visible:bg-amber-500/25 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/60 dark:focus-visible:ring-amber-400/40 md:flex"
-    />
+      /*
+        A 1.5px strip was a pixel-hunt to grab. The target is 12px wide with the
+        ink still a hairline, which is the standard trick for a resize edge:
+        easy to hit, invisible until you mean it.
+      */
+      className="group/resize absolute inset-y-0 end-0 z-10 hidden w-3 -me-1 cursor-col-resize touch-none items-center justify-center outline-none md:flex"
+    >
+      <span
+        aria-hidden="true"
+        className="h-full w-1 rounded-full bg-transparent transition-colors group-hover/resize:bg-amber-300/70 group-focus-visible/resize:bg-amber-400/80 dark:group-hover/resize:bg-amber-500/30 dark:group-focus-visible/resize:bg-amber-400/50"
+      />
+    </div>
   );
 }
 
@@ -1121,7 +1381,9 @@ export function DashboardSidebar({
   // mobile header would only duplicate it. The workspace chat home keeps the
   // global header — its hamburger is the only way to reach the rail on a phone.
   const assistantPage = pathname === "/dashboard/ai" || pathname.startsWith("/dashboard/ai/");
-  const availableHrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
+  // Sub-sections included, so a pinned child page survives the "is this still
+  // visible to me?" filter the bottom bar runs on every render.
+  const availableHrefs = flattenNav(navItems).map((item) => item.href);
   // The rail is the workspace *home* — the chat plus the projects surface.
   // Everywhere else the sidebar is an app's nav: either the app that owns the
   // route has a shell of its own (رشد و بازاریابی), or it is the business's flat
@@ -1196,13 +1458,24 @@ export function DashboardSidebar({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
-        event.preventDefault();
-        if (tabletMode) {
-          setTabletExpanded((current) => !current);
-        } else {
-          setPreference((current) => toggleDashboardSidebarPreference(current));
-        }
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      if (event.key.toLowerCase() !== "b") return;
+      // Ctrl/Cmd+B is "bold" inside a text field or a rich-text editor. The
+      // shortcut used to fire anywhere, so bolding a line in the assistant's
+      // composer or a note field collapsed the sidebar out from under you.
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.isContentEditable ||
+        (target instanceof HTMLElement &&
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (tabletMode) {
+        setTabletExpanded((current) => !current);
+      } else {
+        setPreference((current) => toggleDashboardSidebarPreference(current));
       }
     };
 
@@ -1214,6 +1487,7 @@ export function DashboardSidebar({
 
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
+      <CloseDrawerOnNavigate pathname={pathname} />
       {!assistantPage ? <MobileDashboardHeader navItems={navItems} pathname={pathname} /> : null}
       <Sidebar
         side="right"

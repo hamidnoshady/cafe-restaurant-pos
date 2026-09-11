@@ -24,7 +24,10 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import type { AppShellNavProps } from "../app-shell-nav";
-import { APP_NAV_BUTTON_CLASS, BACK_TO_WORKSPACE_BUTTON_CLASS } from "../sidebar-nav-styles";
+import {
+  APP_NAV_BUTTON_CLASS,
+  BACK_TO_WORKSPACE_BUTTON_CLASS,
+} from "../sidebar-nav-styles";
 import { crmNavItemsForRole } from "./crm-nav";
 import { crmSectionHref, isCrmSectionPathname } from "./crm-routes";
 
@@ -48,7 +51,9 @@ export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }:
             <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
               <Link href={backHref} onClick={onNavigate}>
                 <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
-                <span className="group-data-[state=collapsed]/sidebar:hidden">{backLabel}</span>
+                <span className="min-w-0 flex-1 truncate text-start group-data-[state=collapsed]/sidebar:hidden">
+                  {backLabel}
+                </span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -64,7 +69,7 @@ export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }:
                 <SidebarMenuButton
                   asChild
                   isActive={active}
-                  tooltip={item.label}
+                  tooltip={`${item.label} — ${item.description}`}
                   className={APP_NAV_BUTTON_CLASS}
                 >
                   <Link
@@ -73,9 +78,15 @@ export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }:
                     aria-current={active ? "page" : undefined}
                   >
                     <Icon aria-hidden="true" className="size-5 shrink-0" />
-                    <span className="min-w-0 flex-1 text-right group-data-[state=collapsed]/sidebar:hidden">
+                    <span className="min-w-0 flex-1 py-1.5 text-start group-data-[state=collapsed]/sidebar:hidden">
                       <span className="block truncate">{item.label}</span>
-                      <span className="block truncate text-[11px] font-normal leading-4 text-muted-foreground">
+                      {/*
+                        The help line is a second line, so it needs room to be
+                        one: `truncate` cut «چرخهٔ حیات و خرید — با افزودن و
+                        ویرایش» to about three words in a 16rem rail. Two lines,
+                        clamped, and the full text in the row's tooltip.
+                      */}
+                      <span className="mt-0.5 block line-clamp-2 text-[11px] font-normal leading-4 text-muted-foreground">
                         {item.description}
                       </span>
                     </span>
