@@ -193,7 +193,7 @@ export function ModifierPicker({
                     {group.name}
                   </span>
                   <span
-                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                    className={`inline-flex items-center rounded-xl px-2 py-0.5 text-[11px] font-bold ${
                       group.min_select > 0 && !satisfied
                         ? "bg-destructive/10 text-destructive"
                         : `${palette.surface} border ${palette.accent}`
@@ -227,7 +227,7 @@ export function ModifierPicker({
                       >
                         <span className="flex min-w-0 items-center gap-2">
                           <span
-                            className={`flex size-5 shrink-0 items-center justify-center rounded-md border ${
+                            className={`flex size-5 shrink-0 items-center justify-center rounded-sm border ${
                               isOn
                                 ? "border-current bg-current/10"
                                 : "border-input"

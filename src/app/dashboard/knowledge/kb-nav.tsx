@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ChevronDownIcon,
   FileTextIcon,
@@ -83,11 +84,7 @@ export function SideMenuSkeleton({ rows = 4 }: { rows?: number }) {
   return (
     <div role="status" aria-busy="true" aria-label="در حال آماده‌سازی فهرست" className="space-y-2">
       {Array.from({ length: rows }).map((_, i) => (
-        <div
-          key={i}
-          aria-hidden="true"
-          className="h-9 animate-pulse rounded-lg bg-muted/70 motion-reduce:animate-none"
-        />
+        <Skeleton key={i} aria-hidden="true" className="h-9 rounded-lg" />
       ))}
     </div>
   );
@@ -268,7 +265,7 @@ export function KbSideMenu({
             onClick={() => onQueryChange("")}
             aria-label="پاک کردن جست‌وجو"
             title="پاک کردن جست‌وجو"
-            className="absolute end-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="absolute end-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <XIcon className="size-4" aria-hidden="true" />
           </button>
@@ -355,11 +352,7 @@ export function KbSearchResults({
     return (
       <div role="status" aria-busy="true" aria-label="در حال جست‌وجو در راهنماها" className="space-y-2">
         {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            aria-hidden="true"
-            className={`h-20 animate-pulse motion-reduce:animate-none ${cardClass}`}
-          />
+          <Skeleton key={i} aria-hidden="true" className={`h-20 ${cardClass}`} />
         ))}
       </div>
     );

@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
+import { cn } from "@/lib/utils";
 import {
   TICKET_CATEGORIES,
   TICKET_CATEGORY_LABELS,
@@ -306,7 +307,7 @@ function Stat({
   highlight?: boolean;
 }) {
   return (
-    <div className={`${cardClass} p-4 ${highlight ? "border-amber-400/60 dark:border-amber-500/50" : ""}`}>
+    <div className={cn(cardClass, "p-4", highlight && "border-amber-400/60 dark:border-amber-500/50")}>
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className={`mt-1 text-2xl font-bold tabular-nums ${highlight ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}>
         {toPersianDigits(value)}
@@ -404,7 +405,7 @@ function TicketDetailPanel({
   }
 
   return (
-    <div className="min-w-0 rounded-xl border border-border/80 bg-card shadow-[0_1px_2px_rgb(41_37_36/0.035)]">
+    <div className={`min-w-0 ${cardClass}`}>
       <div className="flex items-start justify-between gap-3 border-b border-border/80 p-4">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">گفت‌وگوی تیکت</p>

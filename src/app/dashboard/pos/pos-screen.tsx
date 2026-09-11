@@ -1093,7 +1093,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         simply runs down the page and the page scrolls, the way every other
         screen does; from `md` up the two-column till is unchanged.
       */}
-      <div className={`flex flex-col overflow-hidden ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:min-h-0 md:flex-1`}>
+      <div className={`flex flex-col overflow-hidden ${cardClass} md:min-h-0 md:flex-1`}>
         <div className="border-b border-border/80 p-3 md:p-4">
           <div className="mb-3 hidden flex-wrap items-center gap-2 md:flex">
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1440,7 +1440,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         scroll. `min-h-40` on the list is its floor, and the column itself
         scrolls once the three sections together outgrow the viewport.
       */}
-      <div className={`hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]`}>
+      <div className={`hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto ${cardClass} md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]`}>
         <div className="shrink-0 border-b border-border/80 p-4">
           <ErrorBox>{error}</ErrorBox>
           <OrderTypeTabs value={orderType} onChange={changeOrderType} />

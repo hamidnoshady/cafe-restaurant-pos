@@ -244,7 +244,7 @@ function Kpi({
   value: ReactNode;
 }) {
   return (
-    <div className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]`}>
+    <div className={`${cardClass} p-4`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>

@@ -172,10 +172,7 @@ export function TabBar<K extends string>({
   return (
     <nav
       aria-label={label}
-      className={cn(
-        "rounded-2xl border border-border/80 bg-card p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]",
-        className,
-      )}
+      className={cn(cardClass, "p-2", className)}
     >
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
         {tabs.map((tab) => {

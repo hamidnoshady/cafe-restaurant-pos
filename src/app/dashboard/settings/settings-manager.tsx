@@ -134,7 +134,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner, role }
         bar and this is the only thing naming the section.
       */}
       {activeTabMeta ? (
-        <div className={`hidden ${cardClass} px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.025)] md:block`}>
+        <div className={`hidden ${cardClass} px-5 py-4 md:block`}>
           <div className="flex items-start gap-3">
             {(() => {
               const Icon = TAB_ICONS[activeTabMeta.key];

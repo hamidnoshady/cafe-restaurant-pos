@@ -231,7 +231,7 @@ function SegmentRow({ label, value }: { label: string; value: string }) {
   return (
     <li className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2">
       <span className="min-w-0 truncate text-xs text-muted-foreground">{label}</span>
-      <span className="shrink-0 rounded-md bg-amber-100 dark:bg-amber-500/20 px-3 py-1 font-mono text-xs font-semibold text-amber-950 dark:text-amber-200" dir="ltr">
+      <span className="shrink-0 rounded-xl bg-amber-100 dark:bg-amber-500/20 px-3 py-1 font-mono text-xs font-semibold text-amber-950 dark:text-amber-200" dir="ltr">
         {value}
       </span>
     </li>

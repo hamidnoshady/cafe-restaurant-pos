@@ -425,7 +425,7 @@ function TableDetails({
 
   return (
     <section
-      className={`sticky top-4 ${cardClass} p-4 shadow-[0_6px_20px_rgb(41_37_36/0.04)] sm:p-5`}
+      className={`sticky top-4 ${cardClass} p-4 sm:p-5`}
       aria-labelledby={`table-details-${table.id}`}
     >
       <div className="flex items-start justify-between gap-3">

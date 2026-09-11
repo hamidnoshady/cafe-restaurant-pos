@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeftIcon,
   BookOpenIcon,
@@ -39,10 +40,7 @@ function KbHomeSkeleton() {
     <div role="status" aria-busy="true" aria-label="در حال آماده‌سازی مرکز آموزش">
       <div aria-hidden="true" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-32 animate-pulse rounded-2xl bg-muted/60 motion-reduce:animate-none"
-          />
+          <Skeleton key={i} className="h-32 rounded-2xl" />
         ))}
       </div>
     </div>

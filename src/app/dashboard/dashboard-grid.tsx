@@ -1,6 +1,7 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { cardClass, LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { cn } from "@/lib/utils";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
@@ -98,7 +99,7 @@ function WidgetBody({ widget, canExplain }: { widget: WidgetRow; canExplain: boo
         <button
           type="button"
           onClick={() => requestWidgetExplanation(widget, data)}
-          className="inline-flex min-h-8 w-fit items-center gap-1 rounded-md px-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex min-h-8 w-fit items-center gap-1 rounded-lg px-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <SparklesIcon className="size-3.5" /> توضیح این عدد
         </button>
@@ -237,7 +238,7 @@ export function DashboardGrid({ canEdit, canExplain }: { canEdit: boolean; canEx
         {widgets === null ? (
           <LoadingSkeleton rows={4} label="در حال بارگذاری داشبورد" />
         ) : widgets.length === 0 ? (
-          <p dir="rtl" className="flex min-h-52 items-center justify-center rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-[0_2px_7px_rgb(41_37_36/0.04)]">
+          <p dir="rtl" className="flex min-h-52 items-center justify-center rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
             {canEdit
               ? "هنوز ابزارکی به داشبورد سنجاق نشده است. از صفحهٔ «گزارش‌ها» یک گزارش را به داشبورد سنجاق کنید."
               : "هنوز ابزارکی برای این نقش تنظیم نشده است."}
@@ -255,14 +256,14 @@ export function DashboardGrid({ canEdit, canExplain }: { canEdit: boolean; canEx
             autoSize
           >
             {widgets.map((w) => (
-              <div key={w.id} dir="rtl" className="overflow-hidden rounded-xl border border-border/90 bg-card shadow-[0_1px_3px_rgb(41_37_36/0.05)] transition-shadow hover:shadow-[0_3px_9px_rgb(41_37_36/0.06)]">
+              <div key={w.id} dir="rtl" className={cn("overflow-hidden", cardClass)}>
                 <div className="flex min-h-8 items-center justify-between border-b border-border/80 px-2.5 py-1.5">
                   <p className="truncate text-xs font-semibold text-muted-foreground">{w.title ?? w.report_name}</p>
                   {editMode ? (
                     <button
                       type="button"
                       onClick={() => removeWidget(w.id)}
-                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       aria-label="حذف ابزارک"
                     >
                       <XIcon className="size-3.5" />

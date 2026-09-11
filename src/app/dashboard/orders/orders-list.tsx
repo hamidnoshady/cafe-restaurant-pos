@@ -294,7 +294,7 @@ function OrderDetailsPanel({
 
   return (
     <aside
-      className={`${cardClass} p-4 shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:sticky md:top-0 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto`}
+      className={`${cardClass} p-4 md:sticky md:top-0 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto`}
       aria-label="جزئیات سفارش انتخاب‌شده"
     >
       <div className="flex items-start justify-between gap-3 border-b border-border/80 pb-4">
@@ -809,7 +809,7 @@ export function OrdersList({
 
   return (
     <PageShell>
-      <header className={`mb-3 flex flex-col gap-3 ${cardClass} p-3 shadow-[0_1px_3px_rgb(41_37_36/0.03)] sm:p-4 md:flex-row md:items-center md:justify-between`}>
+      <header className={`mb-3 flex flex-col gap-3 ${cardClass} p-3 sm:p-4 md:flex-row md:items-center md:justify-between`}>
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
             <ShoppingBagIcon className="size-5" aria-hidden="true" />
@@ -890,7 +890,7 @@ export function OrdersList({
       ) : null}
 
       <section
-        className={`mb-3 ${cardClass} p-3 shadow-[0_1px_3px_rgb(41_37_36/0.03)]`}
+        className={`mb-3 ${cardClass} p-3`}
         aria-label="جستجو و فیلتر سفارش‌ها"
       >
         <label className="sr-only" htmlFor="orders-search">
@@ -1025,7 +1025,7 @@ export function OrdersList({
 
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(19rem,0.9fr)] xl:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]">
         <section
-          className={`min-w-0 overflow-hidden ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)]`}
+          className={`min-w-0 overflow-hidden ${cardClass}`}
           aria-label="فهرست سفارش‌ها"
         >
           <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">

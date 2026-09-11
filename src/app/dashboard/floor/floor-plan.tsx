@@ -20,6 +20,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRealtime } from "../use-realtime";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { PageShell, cardClass } from "../page-chrome";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   api,
   ErrorBox,
@@ -394,8 +395,8 @@ function FloorPlanSkeleton() {
     >
       <section className={`${SURFACE} min-h-[500px] overflow-hidden`}>
         <div className="flex items-center justify-between border-b border-border/80 px-4 py-3">
-          <span className="h-4 w-28 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-          <span className="h-4 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-4 w-20" />
         </div>
         <div className="relative min-h-[448px] bg-muted">
           {[
@@ -405,17 +406,17 @@ function FloorPlanSkeleton() {
             ["top-24", "start-16"],
             ["bottom-14", "start-1/3"],
           ].map(([vertical, horizontal], index) => (
-            <span
+            <Skeleton
               key={index}
-              className={`absolute ${vertical} ${horizontal} size-20 animate-pulse ${cardClass} motion-reduce:animate-none`}
+              className={`absolute ${vertical} ${horizontal} size-20 ${cardClass}`}
             />
           ))}
         </div>
       </section>
       <aside className={`${SURFACE} min-h-56 p-4`}>
-        <span className="block h-5 w-32 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-        <span className="mt-4 block h-12 w-full animate-pulse rounded-xl bg-muted motion-reduce:animate-none" />
-        <span className="mt-3 block h-12 w-full animate-pulse rounded-xl bg-muted motion-reduce:animate-none" />
+        <Skeleton className="block h-5 w-32" />
+        <Skeleton className="mt-4 block h-12 w-full rounded-xl" />
+        <Skeleton className="mt-3 block h-12 w-full rounded-xl" />
       </aside>
     </div>
   );
@@ -552,7 +553,7 @@ function Canvas({
         style={{
           backgroundImage:
             mode === "edit"
-              ? "linear-gradient(to right,#ECE9E2 1px,transparent 1px),linear-gradient(to bottom,#ECE9E2 1px,transparent 1px)"
+              ? "linear-gradient(to right,var(--border) 1px,transparent 1px),linear-gradient(to bottom,var(--border) 1px,transparent 1px)"
               : undefined,
           backgroundSize: `${GRID * 2}px ${GRID * 2}px`,
         }}
@@ -618,7 +619,7 @@ function Canvas({
                 <Icon className="size-3 shrink-0" aria-hidden="true" />
                 <span className="truncate">{t.name}</span>
               </span>
-              <span className="mt-0.5 max-w-full truncate rounded-md bg-white/65 px-1 text-[9px] font-bold leading-4">
+              <span className="mt-0.5 max-w-full truncate rounded-xl bg-background/65 px-1 text-[9px] font-bold leading-4">
                 {TABLE_STATUS_LABELS[t.status]}
               </span>
               {!compact ? (
@@ -633,7 +634,7 @@ function Canvas({
                 </span>
               ) : null}
               {!compact && reserved && t.status === "free" ? (
-                <span className="mt-0.5 max-w-full truncate rounded-md bg-chart-1 px-1 text-[9px] font-bold text-white">
+                <span className="mt-0.5 max-w-full truncate rounded-xl bg-chart-1 px-1 text-[9px] font-bold text-primary-foreground">
                   رزرو{" "}
                   {toPersianDigits(formatJalali(reserved.reserved_at).slice(5))}
                 </span>
@@ -974,7 +975,7 @@ function SectionEditor({
         {sections.map((s) => (
           <li
             key={s.id}
-            className="rounded-xl border border-border/80 bg-card p-3"
+            className={`${cardClass} p-3`}
           >
             <div className="flex items-center justify-between gap-2">
               <span className="min-w-0 truncate text-sm font-bold text-foreground">

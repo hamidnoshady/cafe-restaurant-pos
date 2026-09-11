@@ -2,9 +2,10 @@
  * The operations design language, as class strings, for the order screens.
  *
  * The floor-facing app (dashboard overview, POS, KDS, orders queue) is drawn
- * in one palette — cream #FCFCFA canvas, white cards on #EAE8E2 hairlines, the
- * amber #E9A11B accent, #E5CCC5/#9E4437 for anything destructive — with touch
- * targets no smaller than 44px and a consistent focus ring. Those recipes were
+ * in one palette — the warm canvas and `bg-card` surfaces on `border-border`
+ * hairlines, the amber accent, the `destructive` token for anything that
+ * removes or reverses — with touch targets no smaller than 44px and a
+ * consistent focus ring. Those recipes were
  * copy-pasted per file, which is how the order detail drifted into a different
  * look entirely. Naming them once means a control here cannot fall out of step
  * with its siblings.
