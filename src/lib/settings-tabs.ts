@@ -116,8 +116,8 @@ export const SETTINGS_TABS: SettingsTab[] = [
   },
   {
     key: "accounts",
-    label: "سرفصل حساب‌ها",
-    description: "ساختار حساب‌های مالی کسب‌وکار",
+    label: "حسابداری",
+    description: "سرفصل‌ها، حساب‌های سیستمی، گردش حساب و تاریخچهٔ تغییرات",
     requiredAnyPermission: [PERMISSIONS.accountsEdit],
   },
   {

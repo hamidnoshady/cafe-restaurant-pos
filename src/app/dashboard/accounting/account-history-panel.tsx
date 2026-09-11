@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { auditActionLabel } from "@/lib/audit";
-import { api } from "../ui";
+import { api, ErrorBox } from "../ui";
+import { Button } from "@/components/ui/button";
 import { overlayPanelClass } from "../page-chrome";
 import { useOverlayEscape } from "./use-overlay-escape";
 
@@ -56,13 +57,18 @@ export function AccountHistoryPanel({
   onClose: () => void;
 }) {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  const [error, setError] = useState("");
   useOverlayEscape(onClose);
 
   useEffect(() => {
     setEntries(null);
-    api<{ entries: HistoryEntry[] }>(`/api/ledger/accounts/${accountId}/history`).then(({ ok, data }) => {
-      if (ok) setEntries(data.entries);
-    });
+    setError("");
+    void api<{ entries: HistoryEntry[] }>(`/api/ledger/accounts/${accountId}/history`)
+      .then(({ ok, data }) => {
+        if (ok) setEntries(data.entries);
+        else setError("بارگذاری تاریخچهٔ این حساب ناموفق بود.");
+      })
+      .catch(() => setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید."));
   }, [accountId]);
 
   return (
@@ -78,15 +84,17 @@ export function AccountHistoryPanel({
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تاریخچهٔ تغییرات حساب</p>
             <h3 id="account-history-heading" className="mt-1 text-lg font-bold">
-              {accountCode} — {accountName}
+              <span dir="ltr">{accountCode}</span> — {accountName}
             </h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             بستن
-          </button>
+          </Button>
         </header>
 
-        {entries === null ? (
+        {error ? (
+          <ErrorBox>{error}</ErrorBox>
+        ) : entries === null ? (
           <LoadingSkeleton rows={3} />
         ) : entries.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
