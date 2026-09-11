@@ -54,6 +54,10 @@ services:
     # new build would never actually go live.
     pull_policy: always
     restart: unless-stopped
+    # server.ts drains requests, WebSockets, background jobs and the PG pool on
+    # SIGTERM. Give that handler longer than Docker's 10-second default before
+    # Coolify force-kills the old container during a rollout.
+    stop_grace_period: 30s
     depends_on:
       db:
         condition: service_healthy

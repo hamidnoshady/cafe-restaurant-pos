@@ -54,7 +54,7 @@ app.prepare().then(async () => {
   const { runBackupTick } = await import("./src/lib/backup-service");
   const { BACKUP_TICK_INTERVAL_MS } = await import("./src/lib/backup");
   const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
-  const { assertRlsEffective } = await import("./src/lib/db");
+  const { assertRlsEffective, closeDatabasePool } = await import("./src/lib/db");
   const { describeDeploymentRole } = await import("./src/lib/deployment-role");
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runWebsiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS } = await import("./src/lib/website/billing-service");
@@ -72,7 +72,7 @@ app.prepare().then(async () => {
   // records errors/slow requests. No-op unless OPENOBSERVE_URL +
   // OPENOBSERVE_USER/PASSWORD are set — an install without a collector
   // boots exactly as before.
-  const { installObservability, shipHttpEvent } = await import("./src/lib/observability");
+  const { installObservability, shipHttpEvent, flushObservability } = await import("./src/lib/observability");
   installObservability();
 
   const { assertSecurePosture } = await import("./src/lib/deployment-posture");
@@ -85,21 +85,51 @@ app.prepare().then(async () => {
   // development this only warns (see assertRlsEffective).
   await assertRlsEffective();
 
+  // Keep every scheduled job handle so a deploy can stop future work before
+  // draining the HTTP server and database pool. The callbacks already catch
+  // and log their own failures; this helper only owns their lifecycle.
+  const backgroundTimers = new Set<NodeJS.Timeout>();
+  const backgroundTasks = new Set<Promise<void>>();
+  const scheduleBackgroundTick = (
+    tick: () => unknown | Promise<unknown>,
+    intervalMs: number,
+    initialDelayMs: number,
+  ) => {
+    const run = () => {
+      let task: Promise<void>;
+      task = Promise.resolve()
+        .then(tick)
+        .then(() => undefined)
+        .catch((error) => console.error("unexpected background tick failure:", error))
+        .finally(() => backgroundTasks.delete(task));
+      backgroundTasks.add(task);
+    };
+
+    const interval = setInterval(run, intervalMs);
+    interval.unref();
+    backgroundTimers.add(interval);
+
+    const initial = setTimeout(() => {
+      backgroundTimers.delete(initial);
+      run();
+    }, initialDelayMs);
+    initial.unref();
+    backgroundTimers.add(initial);
+  };
+
   // Phase 9: push this location's daily rollup to the configured central
   // server. A tick that can't reach central just records the error and the
   // next one retries the widened window — that's the offline catch-up story.
   const rollupTick = () =>
     runRollupSyncTick().catch((err) => console.error("rollup sync tick failed:", err));
-  setInterval(rollupTick, ROLLUP_SYNC_INTERVAL_MS).unref();
-  setTimeout(rollupTick, 30_000).unref();
+  scheduleBackgroundTick(rollupTick, ROLLUP_SYNC_INTERVAL_MS, 30_000);
 
   // Phase 10: scheduled backups. The tick just checks whether a schedule
   // slot passed without a run (and re-nudges failed cloud uploads); failures
   // land in backup_runs and surface as the dashboard alert.
   const backupTick = () =>
     runBackupTick().catch((err) => console.error("backup tick failed:", err));
-  setInterval(backupTick, BACKUP_TICK_INTERVAL_MS).unref();
-  setTimeout(backupTick, 45_000).unref();
+  scheduleBackgroundTick(backupTick, BACKUP_TICK_INTERVAL_MS, 45_000);
 
   // Migration 0132: the platform's own whole-database backup, on the schedule the
   // super-admin set in the console. Deliberately a second timer rather than a
@@ -110,8 +140,7 @@ app.prepare().then(async () => {
   const { runPlatformBackupTick } = await import("./src/lib/platform-backup-service");
   const platformBackupTick = () =>
     runPlatformBackupTick().catch((err) => console.error("platform backup tick failed:", err));
-  setInterval(platformBackupTick, BACKUP_TICK_INTERVAL_MS).unref();
-  setTimeout(platformBackupTick, 60_000).unref();
+  scheduleBackgroundTick(platformBackupTick, BACKUP_TICK_INTERVAL_MS, 60_000);
 
   // Phase 11: bidirectional server-to-server sync (café laptop ←→ VPS). Each
   // tick pushes locally-born sync_events to the configured remote and pulls
@@ -122,24 +151,21 @@ app.prepare().then(async () => {
   // server-sync target (settings key server_sync.config).
   const serverSyncTick = () =>
     runServerSyncTick().catch((err) => console.error("server-sync tick failed:", err));
-  setInterval(serverSyncTick, SERVER_SYNC_INTERVAL_MS).unref();
-  setTimeout(serverSyncTick, 20_000).unref();
+  scheduleBackgroundTick(serverSyncTick, SERVER_SYNC_INTERVAL_MS, 20_000);
 
   // Phase 18: subscriptions grant their monthly credits in a tenant-scoped
   // transaction. The service discovers due businesses under the documented
   // platform bypass, then re-enters each one with withTenant before writing.
   const aiSubscriptionTick = () =>
     runAiSubscriptionRenewalTick().catch((err) => console.error("AI subscription renewal tick failed:", err));
-  setInterval(aiSubscriptionTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS).unref();
-  setTimeout(aiSubscriptionTick, 60_000).unref();
+  scheduleBackgroundTick(aiSubscriptionTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS, 60_000);
 
   // Phase 18b Wave 4: opt-in proactive AI jobs. The service enumerates
   // businesses only under the documented platform bypass and then wraps each
   // tenant's facts, credit reservation and output rows in withTenant.
   const aiProactiveTick = () =>
     runAiProactiveTick().catch((err) => console.error("proactive AI tick failed:", err));
-  setInterval(aiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS).unref();
-  setTimeout(aiProactiveTick, 75_000).unref();
+  scheduleBackgroundTick(aiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS, 75_000);
 
   // Phase 23 (issue #118): drain the WooCommerce stock/price outbox. The tick
   // enumerates active connections under the documented platform bypass, then
@@ -147,8 +173,7 @@ app.prepare().then(async () => {
   // every other background tick here.
   const wooSyncTick = () =>
     runWooCommerceSyncTick().catch((err) => console.error("woocommerce sync tick failed:", err));
-  setInterval(wooSyncTick, WOO_SYNC_TICK_INTERVAL_MS).unref();
-  setTimeout(wooSyncTick, 90_000).unref();
+  scheduleBackgroundTick(wooSyncTick, WOO_SYNC_TICK_INTERVAL_MS, 90_000);
 
   // Phase 38 (issue #381): push product/stock/price changes to the business's
   // website through website_outbox — the WooCommerce tick's shape exactly
@@ -156,8 +181,7 @@ app.prepare().then(async () => {
   // never stops the next). A site that is down simply grows its queue.
   const websiteSyncTick = () =>
     runWebsiteSyncTick().catch((err) => console.error("website sync tick failed:", err));
-  setInterval(websiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS).unref();
-  setTimeout(websiteSyncTick, 100_000).unref();
+  scheduleBackgroundTick(websiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS, 100_000);
 
   // Migration 0138: a platform website's monthly fee. The service reads the
   // due list under the platform bypass and charges each business inside
@@ -166,8 +190,7 @@ app.prepare().then(async () => {
   // off from a cron is not this tick's decision to make.
   const websiteBillingTick = () =>
     runWebsiteBillingTick().catch((err) => console.error("website billing tick failed:", err));
-  setInterval(websiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS).unref();
-  setTimeout(websiteBillingTick, 90_000).unref();
+  scheduleBackgroundTick(websiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS, 90_000);
 
   // Migration 0139: the website platform's control plane. Two jobs in one tick —
   // refresh the mirror of every site on eshobe-cms (on the operator's configured
@@ -185,8 +208,7 @@ app.prepare().then(async () => {
     inPlatformScope(() => runCmsControlTick()).catch((err) =>
       console.error("cms control tick failed:", err),
     );
-  setInterval(cmsControlTick, 5 * 60_000).unref();
-  setTimeout(cmsControlTick, 110_000).unref();
+  scheduleBackgroundTick(cmsControlTick, 5 * 60_000, 110_000);
 
   // Phase 26 (issue #125) Wave 7: mirror Holoo base data for companion-mode
   // businesses. Polling (Holoo cannot call back), gated on holoo_companion,
@@ -194,22 +216,19 @@ app.prepare().then(async () => {
   // withTenant — the same shape as the WooCommerce tick above.
   const holooSyncTick = () =>
     runHolooSyncTick().catch((err) => console.error("holoo sync tick failed:", err));
-  setInterval(holooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS).unref();
-  setTimeout(holooSyncTick, 120_000).unref();
+  scheduleBackgroundTick(holooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS, 120_000);
 
   // Phase 26 Wave 8: drain the Holoo push outbox (sales/receipts/purchases)
   // with the same backoff/dead-letter policy, web_service preferred and the
   // guarded direct_sql fallback.
   const holooPushTick = () =>
     runHolooPushTick().catch((err) => console.error("holoo push tick failed:", err));
-  setInterval(holooPushTick, HOLOO_PUSH_TICK_INTERVAL_MS).unref();
-  setTimeout(holooPushTick, 150_000).unref();
+  scheduleBackgroundTick(holooPushTick, HOLOO_PUSH_TICK_INTERVAL_MS, 150_000);
 
   // Phase 26 Wave 9: nightly reconciliation of the shadow books against Holoo.
   const holooReconciliationTick = () =>
     runHolooReconciliationTick().catch((err) => console.error("holoo reconciliation tick failed:", err));
-  setInterval(holooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS).unref();
-  setTimeout(holooReconciliationTick, 180_000).unref();
+  scheduleBackgroundTick(holooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS, 180_000);
 
   // Phase 35: drain the notification outbox and push to each recipient's
   // devices. Producers only enqueue — a cashier closing their till must never
@@ -220,8 +239,7 @@ app.prepare().then(async () => {
   // minutes late is one the person has already found out about another way.
   const notificationTick = () =>
     runNotificationTick().catch((err) => console.error("notification tick failed:", err));
-  setInterval(notificationTick, NOTIFICATION_TICK_INTERVAL_MS).unref();
-  setTimeout(notificationTick, 25_000).unref();
+  scheduleBackgroundTick(notificationTick, NOTIFICATION_TICK_INTERVAL_MS, 25_000);
 
   // Phase 35: the one notification producer that has to scan rather than be
   // told. Stock leaves an item through six different paths, so "is this item
@@ -230,8 +248,7 @@ app.prepare().then(async () => {
   // tick above because a reorder level is a "order more this week" signal.
   const lowStockScan = () =>
     runLowStockScanTick().catch((err) => console.error("low-stock scan failed:", err));
-  setInterval(lowStockScan, LOW_STOCK_SCAN_INTERVAL_MS).unref();
-  setTimeout(lowStockScan, 120_000).unref();
+  scheduleBackgroundTick(lowStockScan, LOW_STOCK_SCAN_INTERVAL_MS, 120_000);
 
   // Phase 37: drain the SMS/email marketing outbox. Producers only enqueue —
   // an owner clicking "send" must never wait on (or fail because of) an SMTP or
@@ -244,8 +261,7 @@ app.prepare().then(async () => {
   );
   const messagingTick = () =>
     runMessagingTick().catch((err) => console.error("messaging tick failed:", err));
-  setInterval(messagingTick, MESSAGE_TICK_INTERVAL_MS).unref();
-  setTimeout(messagingTick, 35_000).unref();
+  scheduleBackgroundTick(messagingTick, MESSAGE_TICK_INTERVAL_MS, 35_000);
 
   const requestListener = (req: any, res: any) => {
     const t0 = Date.now();
@@ -333,18 +349,89 @@ app.prepare().then(async () => {
     });
   });
 
+  let shuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`> ${signal} received; draining POS server ...`);
+
+    // No new scheduled work may start once the pool begins draining. Jobs
+    // already in flight are tracked and allowed to finish below.
+    for (const timer of backgroundTimers) {
+      clearTimeout(timer);
+      clearInterval(timer);
+    }
+    backgroundTimers.clear();
+
+    // WebSockets are long-lived, so server.close() cannot make progress by
+    // itself. 1012 tells browsers this is a service restart and invites the
+    // existing reconnect loop to attach to the replacement container.
+    for (const client of wss.clients) client.close(1012, "Service restart");
+
+    const forceExit = setTimeout(() => {
+      console.error("> Shutdown grace period expired; closing remaining connections.");
+      for (const client of wss.clients) client.terminate();
+      server.closeAllConnections();
+      process.exit(0);
+    }, 25_000);
+
+    const httpClosed = new Promise<void>((resolve) => {
+      server.close((error) => {
+        if (error && (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") {
+          console.error("> HTTP shutdown error:", error);
+        }
+        resolve();
+      });
+    });
+    const websocketsClosed = new Promise<void>((resolve) => {
+      wss.close((error) => {
+        if (error) console.error("> WebSocket shutdown error:", error);
+        resolve();
+      });
+    });
+
+    try {
+      await Promise.all([
+        httpClosed,
+        websocketsClosed,
+        Promise.allSettled([...backgroundTasks]),
+      ]);
+      await app.close();
+      await closeDatabasePool();
+      await flushObservability();
+      clearTimeout(forceExit);
+      console.log("> POS server stopped cleanly.");
+      process.exit(0);
+    } catch (error) {
+      clearTimeout(forceExit);
+      console.error("> Error while shutting down POS server:", error);
+      process.exit(1);
+    }
+  };
+
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+
   const bindHost = process.env.BIND_ADDR ?? "0.0.0.0";
   server.listen(port, bindHost, () => {
     console.log(`> Ready on http://${bindHost}:${port} (WebSocket sync on /ws)`);
+    console.log(`> Image: ${process.env.APP_IMAGE_SHA || "unknown"}`);
     // Phase 23 Wave 2: DEPLOYMENT_ROLE defaults by inference when unset, so
     // say out loud what the app decided — an operator otherwise has no way to
     // tell a central server from a site until the sync tab renders the wrong
     // form.
     console.log(describeDeploymentRole());
-    
+
     // Phase 24: Warn if legacy token is configured but not allowed
     if (process.env.REMOTE_SYNC_TOKEN && process.env.ALLOW_LEGACY_SYNC_TOKEN !== "1") {
       console.warn("> WARN: REMOTE_SYNC_TOKEN is set but ALLOW_LEGACY_SYNC_TOKEN is not. Legacy sync token is denied by default.");
     }
   });
+}).catch((error) => {
+  // A rejected prepare/startup promise used to surface only as an unhandled
+  // rejection, which is easy for a PaaS log viewer to separate from the boot
+  // lines. Emit one unmistakable fatal line and exit non-zero so the deploy is
+  // reported as failed rather than left in an indeterminate state.
+  console.error("> FATAL: POS server failed to start:", error);
+  process.exit(1);
 });

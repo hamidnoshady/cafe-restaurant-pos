@@ -206,6 +206,11 @@ async function flush(cfg: ObservabilityConfig | null = observabilityConfig()): P
   }
 }
 
+/** Flush buffered records before an intentional process shutdown. */
+export async function flushObservability(): Promise<void> {
+  await flush();
+}
+
 type ConsoleLevel = "log" | "info" | "warn" | "error" | "debug";
 
 function stringifyArg(arg: unknown): string {

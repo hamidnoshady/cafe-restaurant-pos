@@ -101,6 +101,15 @@ RUN test -x ./node_modules/.bin/tsx \
 
 EXPOSE 3000
 
+# The route is deliberately database-less: Docker/Coolify should only replace a
+# process when the web tier itself is dead, not turn a brief Postgres outage into
+# a restart loop. The long start period covers the entrypoint's database wait +
+# migrations; Docker marks the container healthy immediately on an early success,
+# so this does not delay a normal ~15 second boot. BusyBox wget is included in the
+# Alpine base image, avoiding curl just for one probe.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+  CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-3000}/api/health" || exit 1
+
 # The entrypoint waits for Postgres, applies migrations, then starts the server.
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["npm", "start"]

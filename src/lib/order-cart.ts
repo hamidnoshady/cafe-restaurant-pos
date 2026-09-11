@@ -166,22 +166,26 @@ export async function resolveLineModifiers(
     return { ok: false, error: "invalid_modifier", status: 400 };
   }
 
-  const [{ rows: links }, { rows: modifiers }, { rows: groups }] = await Promise.all([
-    execute<{ modifier_group_id: string }>(
-      "SELECT modifier_group_id FROM menu_item_modifier_groups WHERE menu_item_id = $1",
-      [menuItemId],
-    ),
-    uniqueIds.length > 0
-      ? execute<SelectableModifier & Record<string, unknown>>(
-          "SELECT id, group_id, name, price_delta, is_active FROM modifiers WHERE location_id = $1 AND id = ANY($2::uuid[])",
-          [locationId, uniqueIds],
-        )
-      : Promise.resolve({ rows: [] as SelectableModifier[] }),
-    execute<ModifierGroupRule & Record<string, unknown>>(
-      "SELECT id, min_select, max_select FROM modifier_groups WHERE location_id = $1",
-      [locationId],
-    ),
-  ]);
+  // When `client` is present this function is running inside a transaction on
+  // one physical Postgres connection. Concurrent client.query() calls used to
+  // be queued implicitly, but node-postgres 8.19 deprecates that behaviour and
+  // pg 9 will throw. Await in order; callers without a client still use the
+  // pool through execute(), but these three small reads do not justify two
+  // different code paths merely to parallelise them.
+  const { rows: links } = await execute<{ modifier_group_id: string }>(
+    "SELECT modifier_group_id FROM menu_item_modifier_groups WHERE menu_item_id = $1",
+    [menuItemId],
+  );
+  const { rows: modifiers } = uniqueIds.length > 0
+    ? await execute<SelectableModifier & Record<string, unknown>>(
+        "SELECT id, group_id, name, price_delta, is_active FROM modifiers WHERE location_id = $1 AND id = ANY($2::uuid[])",
+        [locationId, uniqueIds],
+      )
+    : { rows: [] as SelectableModifier[] };
+  const { rows: groups } = await execute<ModifierGroupRule & Record<string, unknown>>(
+    "SELECT id, min_select, max_select FROM modifier_groups WHERE location_id = $1",
+    [locationId],
+  );
 
   return resolveModifierSelection({
     modifierIds,
