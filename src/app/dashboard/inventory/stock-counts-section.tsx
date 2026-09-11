@@ -536,7 +536,7 @@ function StockCountModal({
                         <button
                           type="button"
                           onClick={() => dropLine(l.inventoryItemId)}
-                          className="rounded-md border border-border p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          className="rounded-lg border border-border p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           aria-label={`حذف ${l.itemName} از شمارش`}
                         >
                           <XIcon className="size-4" aria-hidden="true" />
@@ -591,7 +591,7 @@ function StockCountModal({
                           <button
                             type="button"
                             onClick={() => dropLine(id)}
-                            className="rounded-md border border-border p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            className="rounded-lg border border-border p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                             aria-label={`حذف ${item.name} از شمارش`}
                           >
                             <XIcon className="size-4" aria-hidden="true" />

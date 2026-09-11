@@ -163,7 +163,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-md bg-muted p-2 text-xs">
+    <div className="mt-2 space-y-2 rounded-xl bg-muted p-2 text-xs">
       {loading ? <LoadingSkeleton rows={3} compact /> : null}
 
       {!loading && summary ? (
@@ -342,7 +342,7 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
 
   if (groups.length === 0) {
     return (
-      <div className="mt-2 rounded-md bg-muted p-2 text-xs text-muted-foreground">
+      <div className="mt-2 rounded-xl bg-muted p-2 text-xs text-muted-foreground">
         هنوز درخت دسته‌بندی دریافت نشده است. پس از «همگام‌سازی محصولات»، دسته‌ها، برچسب‌ها و ویژگی‌های فروشگاه اینجا
         دیده می‌شوند.
       </div>
@@ -350,7 +350,7 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
   }
 
   return (
-    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-md bg-muted p-2 text-xs">
+    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-xl bg-muted p-2 text-xs">
       {groups.map((group) => (
         <div key={group.taxonomy} className="rounded-lg border border-border/70 bg-card">
           <button
@@ -432,7 +432,7 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
   }, [load]);
 
   return (
-    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-md bg-muted p-2 text-xs">
+    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-xl bg-muted p-2 text-xs">
       {loading ? <LoadingSkeleton rows={3} compact /> : null}
       {!loading && orders.length === 0 ? (
         <p className="text-muted-foreground">
@@ -602,7 +602,7 @@ export function SyncSettingsSection({
   };
 
   return (
-    <div className="mt-2 space-y-3 rounded-md bg-muted p-2 text-xs">
+    <div className="mt-2 space-y-3 rounded-xl bg-muted p-2 text-xs">
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="flex items-start gap-2 rounded-lg border border-border/70 bg-card p-2">
           <input

@@ -21,6 +21,8 @@ import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { useRealtime } from "../use-realtime";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { api, errorMessage } from "../ui";
+import { cardClass, PageShell } from "../page-chrome";
+import { cn } from "@/lib/utils";
 
 interface TicketItem {
   id: string;
@@ -150,7 +152,7 @@ function PriorityBadge({ priority }: { priority: KitchenTicketPriority }) {
   const meta = PRIORITY_META[priority.tier];
   return (
     <span
-      className={`rounded-md border px-2 py-1 text-xs font-semibold ${meta.className}`}
+      className={`rounded-xl border px-2 py-1 text-xs font-semibold ${meta.className}`}
     >
       {meta.label}
     </span>
@@ -191,7 +193,7 @@ function QueueSkeleton() {
       {[0, 1].map((column) => (
         <section
           key={column}
-          className="rounded-xl border border-border/80 bg-card p-4"
+          className={`${cardClass} p-4`}
         >
           <div className="ops-skeleton h-5 w-28 rounded" />
           <div className="mt-4 space-y-3">
@@ -250,13 +252,18 @@ function TicketCard({
 
   return (
     <article
-      className={`overflow-hidden rounded-xl border bg-card shadow-[0_1px_2px_rgb(41_37_36/0.03)] transition-colors motion-reduce:transition-none ${
+      // cn()/twMerge, not a template string: cardClass already carries
+      // `border-border/80`, and the selected/late border must win by *source*
+      // order rather than by whichever colour Tailwind happened to emit last.
+      className={cn(
+        "overflow-hidden transition-colors motion-reduce:transition-none",
+        cardClass,
         selected
           ? "border-amber-500 dark:border-amber-500/60 ring-2 ring-amber-500/20 dark:ring-amber-400/45"
           : late
             ? "border-destructive/30"
-            : "border-border/80"
-      }`}
+            : "border-border/80",
+      )}
     >
       <button
         type="button"
@@ -313,7 +320,7 @@ function TicketDetails({
 
   return (
     <section
-      className="rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      className={`${cardClass} p-4`}
       aria-label={`جزئیات سفارش ${toPersianDigits(ticket.orderNumber)}`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -370,7 +377,7 @@ function TicketDetails({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="break-words font-semibold text-foreground/80">
-                      <span className="ml-1 inline-flex min-w-7 justify-center rounded-md bg-muted px-1.5 py-0.5 text-sm text-muted-foreground">
+                      <span className="ml-1 inline-flex min-w-7 justify-center rounded-xl bg-muted px-1.5 py-0.5 text-sm text-muted-foreground">
                         {toPersianDigits(item.quantity)}×
                       </span>
                       {item.name_snapshot}
@@ -653,8 +660,8 @@ export function KdsBoard() {
   }
 
   return (
-    <div className="space-y-4" dir="rtl">
-      <header className="rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]">
+    <PageShell className="space-y-4">
+      <header className={`${cardClass} p-4`}>
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="hidden min-w-0 md:block">
             <h1 className="text-2xl font-bold text-foreground">آشپزخانه</h1>
@@ -755,7 +762,7 @@ export function KdsBoard() {
               >
                 <span>{item.label}</span>
                 <span
-                  className={`rounded-md px-1.5 py-0.5 text-xs ${active ? "bg-amber-200 dark:bg-amber-500/25" : "bg-muted"}`}
+                  className={`rounded-xl px-1.5 py-0.5 text-xs ${active ? "bg-amber-200 dark:bg-amber-500/25" : "bg-muted"}`}
                 >
                   {toPersianDigits(item.count)}
                 </span>
@@ -797,7 +804,7 @@ export function KdsBoard() {
                         {STATUS_META[section.status].label}
                       </h2>
                     </div>
-                    <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">
+                    <span className="shrink-0 rounded-xl bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">
                       {toPersianDigits(section.tickets.length)} سفارش
                     </span>
                   </div>
@@ -846,6 +853,6 @@ export function KdsBoard() {
           </aside>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

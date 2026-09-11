@@ -25,6 +25,7 @@ import { formatQueueLabel } from "@/lib/orders";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
 import { useRealtime } from "../use-realtime";
+import { cardClass } from "../page-chrome";
 
 interface Delivery {
   id: string;
@@ -112,7 +113,7 @@ function DeliveryQueueSkeleton() {
       {[0, 1, 2].map((item) => (
         <article
           key={item}
-          className="rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+          className={`${cardClass} p-4`}
         >
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1 space-y-2">
@@ -170,7 +171,7 @@ function DeliveryCard({
   const canMarkFailed = canTransitionDelivery(delivery.status, "failed");
 
   return (
-    <article className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_1px_2px_rgb(41_37_36/0.03)]">
+    <article className={`overflow-hidden ${cardClass}`}>
       <div className="p-4 sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -461,7 +462,7 @@ function CourierPanel({
 
   return (
     <aside
-      className="rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:sticky md:top-6"
+      className={`${cardClass} p-4 md:sticky md:top-6`}
       aria-labelledby="couriers-heading"
     >
       <div className="mb-4">

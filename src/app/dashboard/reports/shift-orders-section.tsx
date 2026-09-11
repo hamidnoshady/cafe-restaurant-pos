@@ -346,7 +346,7 @@ export function ShiftOrdersSection() {
   return (
     <section
       aria-labelledby="shift-orders-heading"
-      className={`${cardClass} shadow-[0_1px_2px_rgb(41_37_36/0.03)]`}
+      className={`${cardClass}`}
     >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4 sm:p-5">
         <div className="min-w-0">

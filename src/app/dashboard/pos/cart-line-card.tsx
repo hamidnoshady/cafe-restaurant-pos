@@ -90,7 +90,7 @@ export function CartLineCard({
                 : "کاهش تعداد " + line.name
             }
             onClick={() => onStep(line.key, -1)}
-            className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-95 motion-reduce:transition-none"
+            className="flex size-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-95 motion-reduce:transition-none"
           >
             <MinusIcon className="size-4" aria-hidden="true" />
           </button>
@@ -110,7 +110,7 @@ export function CartLineCard({
                 : "افزایش تعداد " + line.name
             }
             onClick={() => onStep(line.key, 1)}
-            className="flex size-10 items-center justify-center rounded-md text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-95 motion-reduce:transition-none"
+            className="flex size-10 items-center justify-center rounded-lg text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-95 motion-reduce:transition-none"
           >
             <PlusIcon className="size-4" aria-hidden="true" />
           </button>

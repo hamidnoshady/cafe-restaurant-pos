@@ -717,7 +717,7 @@ function PricingPanel({
             </div>
           )}
           {suggestion.hasRecipe && suggestion.suggestedPrice != null ? (
-            <div className="flex flex-col gap-2 rounded-md bg-card px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2 rounded-xl bg-card px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between">
               <span className="font-medium">
                 قیمت پیشنهادی: {money.format(suggestion.suggestedPrice)}
               </span>

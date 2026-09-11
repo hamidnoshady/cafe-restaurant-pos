@@ -14,8 +14,8 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  *
  * It is drawn in the operations design language the rest of the floor-facing
  * app uses (the dashboard overview, the POS, the KDS, and the orders queue
- * behind it): cream canvas, white cards on #EAE8E2 hairlines, the amber
- * #E9A11B accent, pill status chips, and no control smaller than a 44–48px
+ * behind it): the warm canvas, `bg-card` surfaces on `border-border`
+ * hairlines, the amber accent, pill status chips, and no control smaller than a 44–48px
  * touch target. Add-on chips are `tone="amber"` for the same reason — this is
  * a cash-desk surface, not a document one.
  *

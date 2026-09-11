@@ -27,6 +27,7 @@ import {
 import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber, toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import {
   DEAL_STAGES,
   DEAL_STAGE_META,
@@ -341,12 +342,7 @@ function DealDialog({
           />
         </Field>
         <Field label="موعد پیش‌بینی‌شده (اختیاری)">
-          <input
-            type="date"
-            className={inputClass}
-            value={expected}
-            onChange={(e) => setExpected(e.target.value)}
-          />
+          <JalaliDatePicker value={expected} onChange={setExpected} placeholder="بدون موعد" />
         </Field>
         <Field label="مسئول پیگیری (اختیاری)">
           <input className={inputClass} value={owner} onChange={(e) => setOwner(e.target.value)} />

@@ -92,8 +92,6 @@ const RULES: readonly Rule[] = [
     allowed: [
       // Defines cardClass.
       "page-chrome.tsx",
-      // Counted drift — compose cardClass/SectionCard, then delete this entry.
-      "pinned-reports.tsx",
     ],
   },
   {

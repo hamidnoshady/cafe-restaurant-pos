@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { DashboardGrid } from "./dashboard-grid";
+import { cardClass } from "./page-chrome";
+import { cn } from "@/lib/utils";
 
 /** Keeps the existing personalized report widgets available without competing with the operational overview. */
 export function PinnedReports({ canEdit, canExplain }: { canEdit: boolean; canExplain: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <section className="mt-6 rounded-2xl border border-border/80 bg-card px-4 py-1.5 shadow-[0_1px_2px_rgb(41_37_36/0.035)]" aria-labelledby="pinned-reports-heading">
+    <section className={cn("mt-6 px-4 py-1.5", cardClass)} aria-labelledby="pinned-reports-heading">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}

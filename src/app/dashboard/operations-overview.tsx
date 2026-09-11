@@ -352,7 +352,7 @@ function OrdersSkeleton() {
       </div>
       <div className="space-y-3 md:hidden">
         {[0, 1, 2, 3].map((row) => (
-          <div key={row} className="rounded-xl border border-border/80 bg-card p-4">
+          <div key={row} className={`${cardClass} p-4`}>
             <div className="flex items-center justify-between gap-3"><Skeleton className="h-5 w-16 rounded-full" /><span className="inline-flex rounded-full border border-border/80 bg-muted px-2 py-1 text-[11px] text-muted-foreground">در حال آماده‌سازی</span></div>
             <Skeleton className={`mt-4 h-4 rounded-full ${row % 2 ? "w-2/3" : "w-4/5"}`} />
             <div className="mt-4 flex justify-between"><Skeleton className="h-3 w-16 rounded-full" /><Skeleton className="h-3 w-12 rounded-full" /></div>
@@ -396,7 +396,7 @@ function OrdersTable({ orders, timeZone }: { orders: OverviewData["activeOrders"
           <Link
             key={order.id}
             href={`/dashboard/orders/${order.id}`}
-            className="ops-order-row block rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]"
+            className={`ops-order-row block ${cardClass} p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]`}
             style={{ animationDelay: `${index * 60}ms` }}
             aria-label={`مشاهده سفارش ${toPersianDigits(order.orderNumber)}`}
           >
@@ -524,7 +524,7 @@ export function OperationsOverview({
   return (
     <section className="w-full" aria-labelledby="operations-heading">
       <h1 id="operations-heading" className="sr-only">نمای کلی عملیات امروز</h1>
-      <header className={`mb-5 hidden items-start justify-between gap-4 ${cardClass} px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:flex`}>
+      <header className={`mb-5 hidden items-start justify-between gap-4 ${cardClass} px-5 py-4 md:flex`}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <p className="text-2xl font-bold tracking-[-0.03em] text-foreground">نمای کلی عملیات امروز</p>
@@ -569,7 +569,7 @@ export function OperationsOverview({
         <KpiCard icon={ShoppingCartIcon} label="میانگین سفارش" hint="میانگین هر فاکتور" value={data?.kpis.averageOrderValue ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={120} className="min-w-[calc(100%-48px)] snap-start" />
       </div>
 
-      <section className={`mb-5 overflow-hidden ${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`} aria-labelledby="sales-trend-heading">
+      <section className={`mb-5 overflow-hidden ${cardClass} p-4 sm:p-5`} aria-labelledby="sales-trend-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><h2 id="sales-trend-heading" className="font-semibold text-foreground">روند فروش امروز</h2><p className="mt-1 text-xs text-muted-foreground">فروش‌های تکمیل‌شده به تفکیک ساعت{businessDayNote ? ` — ${businessDayNote}` : ""}</p></div>
           <div className="inline-flex min-h-11 w-fit rounded-xl border border-border/80 bg-muted p-1" role="group" aria-label="نمایش روند فروش">
@@ -580,7 +580,7 @@ export function OperationsOverview({
         {showChart ? <SalesTrendChart key={cumulative ? "cumulative" : "hourly"} hourly={data.hourly} cumulative={cumulative} reducedMotion={reducedMotion} startMinutes={data.businessDay?.enabled ? data.businessDay.startMinutes : null} /> : <SalesTrendSkeleton />}
       </section>
 
-      <section className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`} aria-labelledby="active-orders-heading">
+      <section className={`${cardClass} p-4 sm:p-5`} aria-labelledby="active-orders-heading">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div><h2 id="active-orders-heading" className="font-semibold text-foreground">سفارش‌های فعال</h2><p className="mt-1 text-xs text-muted-foreground">وضعیت سفارش‌های باز همین شعبه</p></div>
           <Link href="/dashboard/orders" className="hidden min-h-11 items-center gap-1 rounded-xl border border-border/80 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] sm:inline-flex">مشاهده همه<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>

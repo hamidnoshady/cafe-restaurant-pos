@@ -118,7 +118,7 @@ export function BranchOverviewSection() {
   return (
     <section
       aria-labelledby="branch-overview-heading"
-      className={`overflow-hidden ${cardClass} shadow-[0_1px_2px_rgb(41_37_36/0.03)]`}
+      className={`overflow-hidden ${cardClass}`}
     >
       <header className="border-b border-border px-4 py-4 sm:px-5">
         <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">نمای یکپارچه</p>

@@ -403,7 +403,7 @@ export function WpConnectionPanel() {
                 </div>
 
                 {c.linkMode === "plugin" ? (
-                  <div className="mt-2 space-y-1 rounded-md bg-muted p-2 text-xs text-muted-foreground">
+                  <div className="mt-2 space-y-1 rounded-xl bg-muted p-2 text-xs text-muted-foreground">
                     <div>
                       آدرس این سامانه برای افزونه: <span dir="ltr" className="select-all font-mono">{origin}</span>
                     </div>
@@ -425,7 +425,7 @@ export function WpConnectionPanel() {
                 )}
 
                 {pluginStale ? (
-                  <div className="mt-2 rounded-md border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 p-2 text-xs leading-5 text-amber-900 dark:text-amber-200">
+                  <div className="mt-2 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 p-2 text-xs leading-5 text-amber-900 dark:text-amber-200">
                     <p className="font-semibold">این صف منتظر افزونهٔ وردپرس است.</p>
                     <p>
                       در حالت افزونه، سامانه به فروشگاه دسترسی مستقیم ندارد و خودِ افزونه صف را تخلیه می‌کند. بیش از ۱۵
@@ -575,7 +575,7 @@ export function WpConnectionPanel() {
                 ) : null}
 
                 {auditFor === c.id ? (
-                  <div className="mt-2 max-h-48 overflow-y-auto rounded-md bg-muted p-2 text-xs">
+                  <div className="mt-2 max-h-48 overflow-y-auto rounded-xl bg-muted p-2 text-xs">
                     {audit.map((a) => (
                       <div key={a.id} className="flex flex-wrap justify-between gap-2 border-b border-border py-1">
                         <span>{ACTION_LABELS[a.action] ?? a.action}</span>
@@ -589,7 +589,7 @@ export function WpConnectionPanel() {
                 ) : null}
 
                 {outboxFor === c.id ? (
-                  <div className="mt-2 max-h-56 overflow-y-auto rounded-md bg-muted p-2 text-xs">
+                  <div className="mt-2 max-h-56 overflow-y-auto rounded-xl bg-muted p-2 text-xs">
                     {outboxJobs.length === 0 ? (
                       <p>صف خالی است.</p>
                     ) : (
