@@ -645,4 +645,39 @@ describe("validation of the phase 38b fields", () => {
     );
     expect(validateGatewayInput({ baseUrl: "http://x", mcpServers: [] })).toEqual([]);
   });
+
+  it("a platform-side margin must be zero or a positive number", () => {
+    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: -5 })).toContain(
+      "ai_gateway_bad_margin",
+    );
+    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: 0 })).toEqual([]);
+    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: 20 })).toEqual([]);
+  });
+
+  it("the per-turn reservation ceiling must be zero or positive", () => {
+    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: -1 })).toContain(
+      "ai_gateway_bad_max_turn",
+    );
+    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 50_000 })).toEqual([]);
+  });
+});
+
+describe("the public gateway config carries the costing knobs", () => {
+  it("exposes the conversion rate, margin and ceiling but never the master key", () => {
+    const pub = toPublicGatewayConfig(
+      gateway({
+        masterKey: "sk-secret",
+        gatewayCostingEnabled: true,
+        usdRialRate: 60_000,
+        revenueMarginPercent: 15,
+        maxTurnRial: 40_000,
+      }),
+    );
+    expect(pub.hasMasterKey).toBe(true);
+    expect(pub.gatewayCostingEnabled).toBe(true);
+    expect(pub.usdRialRate).toBe(60_000);
+    expect(pub.revenueMarginPercent).toBe(15);
+    expect(pub.maxTurnRial).toBe(40_000);
+    expect(JSON.stringify(pub)).not.toContain("sk-secret");
+  });
 });

@@ -103,6 +103,8 @@ type GatewayRow = {
   default_rpm_limit: number | null;
   usd_rial_rate: string | null;
   gateway_costing_enabled: boolean;
+  revenue_margin_percent: string | number | null;
+  max_turn_rial: string | number | null;
   mcp_enabled: boolean;
   mcp_servers: unknown;
 };
@@ -129,6 +131,8 @@ function rowToGateway(row: GatewayRow): AiGatewayConfig {
     defaultRpmLimit: optionalInteger(row.default_rpm_limit),
     usdRialRate: optionalNumber(row.usd_rial_rate),
     gatewayCostingEnabled: row.gateway_costing_enabled,
+    revenueMarginPercent: Math.max(0, numberValue(row.revenue_margin_percent)),
+    maxTurnRial: Math.max(0, numberValue(row.max_turn_rial)),
     mcpEnabled: row.mcp_enabled,
     mcpServers: normalizeMcpServers(row.mcp_servers),
   };
@@ -142,6 +146,7 @@ export async function getAiGatewayConfig(): Promise<AiGatewayConfig> {
             allow_business_models, published_models, default_max_budget_usd,
             default_budget_duration, default_tpm_limit, default_rpm_limit,
             usd_rial_rate, gateway_costing_enabled,
+            revenue_margin_percent, max_turn_rial,
             mcp_enabled, mcp_servers
        FROM platform_ai_gateway
       WHERE id = true`,
@@ -204,6 +209,8 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
     defaultRpmLimit: pickOptionalNumber(draft.defaultRpmLimit, current.defaultRpmLimit),
     usdRialRate: pickOptionalNumber(draft.usdRialRate, current.usdRialRate),
     gatewayCostingEnabled: draft.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
+    revenueMarginPercent: pickNonNegativeNumber(draft.revenueMarginPercent, current.revenueMarginPercent),
+    maxTurnRial: pickNonNegativeNumber(draft.maxTurnRial, current.maxTurnRial),
     mcpEnabled: draft.mcpEnabled ?? current.mcpEnabled,
     mcpServers: draft.mcpServers === undefined ? current.mcpServers : normalizeMcpServers(draft.mcpServers),
   };
@@ -212,6 +219,13 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
 function pickOptionalNumber(value: number | null | undefined, current: number | null): number | null {
   if (value === undefined) return current;
   return optionalNumber(value);
+}
+
+/** A non-negative numeric setting (margin, ceiling): 0 is valid, negatives clamp to current. */
+function pickNonNegativeNumber(value: number | null | undefined, current: number): number {
+  if (value === undefined || value === null) return current;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : current;
 }
 
 /**
@@ -229,10 +243,11 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
         allow_business_models, published_models, default_max_budget_usd,
         default_budget_duration, default_tpm_limit, default_rpm_limit,
         usd_rial_rate, gateway_costing_enabled,
+        revenue_margin_percent, max_turn_rial,
         mcp_enabled, mcp_servers, updated_at)
      VALUES
        (true, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11, $12, $13, $14,
-        $15, $16, $17, $18::jsonb, now())
+        $15, $16, $17, $18, $19, $20::jsonb, now())
      ON CONFLICT (id)
      DO UPDATE SET enabled = EXCLUDED.enabled,
                    base_url = EXCLUDED.base_url,
@@ -250,6 +265,8 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
                    default_rpm_limit = EXCLUDED.default_rpm_limit,
                    usd_rial_rate = EXCLUDED.usd_rial_rate,
                    gateway_costing_enabled = EXCLUDED.gateway_costing_enabled,
+                   revenue_margin_percent = EXCLUDED.revenue_margin_percent,
+                   max_turn_rial = EXCLUDED.max_turn_rial,
                    mcp_enabled = EXCLUDED.mcp_enabled,
                    mcp_servers = EXCLUDED.mcp_servers,
                    updated_at = now()`,
@@ -272,6 +289,8 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
       pickOptionalNumber(input.defaultRpmLimit, current.defaultRpmLimit),
       pickOptionalNumber(input.usdRialRate, current.usdRialRate),
       input.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
+      pickNonNegativeNumber(input.revenueMarginPercent, current.revenueMarginPercent),
+      Math.round(pickNonNegativeNumber(input.maxTurnRial, current.maxTurnRial)),
       input.mcpEnabled ?? current.mcpEnabled,
       JSON.stringify(
         input.mcpServers === undefined ? current.mcpServers : normalizeMcpServers(input.mcpServers),

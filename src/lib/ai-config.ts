@@ -23,6 +23,16 @@ export interface PlatformAiConfig extends AiConfig {
   /** Fixed at 1 since the credit-package catalogue was removed: a credit is a Rial. */
   creditUnitRial: number;
   maxOutputTokens: number;
+  /**
+   * LiteLLM-driven costing: when on, the platform prices each turn from the
+   * gateway's own reported USD cost converted at `usdRialRate`, and the manual
+   * per-million token rates are only a fallback. This is the intended mode —
+   * cost-plus-margin lives inside LiteLLM and the platform merely converts and
+   * decrements the business's Rial credit.
+   */
+  gatewayCostingEnabled: boolean;
+  /** FX rate turning the gateway's USD cost into Rial. */
+  usdRialRate: number | null;
 }
 
 type GatewayConfigRow = {
@@ -36,7 +46,15 @@ type GatewayConfigRow = {
   revenue_margin_percent: string | number;
   max_turn_rial: string | number;
   max_output_tokens: number;
+  gateway_costing_enabled: boolean;
+  usd_rial_rate: string | number | null;
 };
+
+function optionalPositiveNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 function numberValue(value: string | number | null | undefined): number {
   const n = Number(value ?? 0);
@@ -92,6 +110,8 @@ export function defaultPlatformConfig(): PlatformAiConfig {
       Number.isInteger(maxOutputTokens) && maxOutputTokens >= 64 && maxOutputTokens <= 8192
         ? maxOutputTokens
         : 1000,
+    gatewayCostingEnabled: process.env.LITELLM_GATEWAY_COSTING_ENABLED === "true",
+    usdRialRate: optionalPositiveNumber(process.env.LITELLM_USD_RIAL_RATE),
   };
 }
 
@@ -119,6 +139,8 @@ function rowToConfig(row: GatewayConfigRow): PlatformAiConfig {
     maxTurnRial: numberValue(row.max_turn_rial),
     creditUnitRial: 1,
     maxOutputTokens: row.max_output_tokens || 1000,
+    gatewayCostingEnabled: Boolean(row.gateway_costing_enabled),
+    usdRialRate: optionalPositiveNumber(row.usd_rial_rate),
   };
 }
 
@@ -128,7 +150,8 @@ export async function getPlatformAiConfig(): Promise<PlatformAiConfig> {
     const { rows } = await query<GatewayConfigRow>(
       `SELECT enabled, chat_model, base_url, master_key, temperature,
               input_cost_rial_per_million, output_cost_rial_per_million,
-              revenue_margin_percent, max_turn_rial, max_output_tokens
+              revenue_margin_percent, max_turn_rial, max_output_tokens,
+              gateway_costing_enabled, usd_rial_rate
          FROM platform_ai_gateway
         WHERE id = true`,
     );
@@ -150,12 +173,25 @@ export function isPlatformAiProviderReady(config: PlatformAiConfig): boolean {
   return config.enabled && Boolean(config.apiKey) && config.maxOutputTokens >= 64;
 }
 
-/** Whether a global provider can safely make metered tenant requests. */
+/**
+ * Whether a global provider can safely make metered tenant requests.
+ *
+ * There are two valid pricing modes and a turn may reserve credit under either:
+ *
+ *  - **LiteLLM-driven costing (intended):** cost-plus-margin is configured
+ *    inside LiteLLM, which reports each turn's USD cost. The platform only needs
+ *    a USD→Rial rate and a per-turn reservation ceiling to convert and decrement
+ *    the business's credit — the manual token rates may be zero.
+ *  - **Manual token rates (fallback):** the platform prices turns from its own
+ *    per-million input/output rates when the gateway does not report a cost.
+ *
+ * A per-turn ceiling (`maxTurnRial`) is required either way: it is the amount
+ * reserved up front and released back down to the actual cost at settlement.
+ */
 export function isPlatformAiConfigured(config: PlatformAiConfig): boolean {
-  return (
-    isPlatformAiProviderReady(config) &&
-    config.inputCostRialPerMillion > 0 &&
-    config.outputCostRialPerMillion > 0 &&
-    config.maxTurnRial > 0
-  );
+  if (!isPlatformAiProviderReady(config)) return false;
+  if (!(config.maxTurnRial > 0)) return false;
+  const gatewayCosting = config.gatewayCostingEnabled && (config.usdRialRate ?? 0) > 0;
+  const tokenRates = config.inputCostRialPerMillion > 0 && config.outputCostRialPerMillion > 0;
+  return gatewayCosting || tokenRates;
 }
