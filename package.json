@@ -9,6 +9,7 @@
     "dev": "tsx watch server.ts",
     "build": "next build",
     "start": "NODE_ENV=production tsx server.ts",
+    "deploy:verify": "node scripts/verify-production-deploy.mjs",
     "lint": "next lint",
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
