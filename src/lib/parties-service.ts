@@ -41,10 +41,13 @@ import {
 import { phoneDigits, phoneE164 } from "./phone";
 import {
   ACCOUNTING_CODE_MODES,
+  partyRoles,
+  primaryPartyRole,
   MAX_PARTY_ACCOUNTING_CODE,
   MAX_PARTY_DISPLAY_NAME,
   MAX_PARTY_NOTES,
   PARTY_PERSON_TYPE_STORAGE,
+  PARTY_ROLES,
   PARTY_ROLE_STORAGE,
   asciiDigits,
   deriveDisplayName,
@@ -80,7 +83,10 @@ export interface Party extends Record<string, unknown> {
   name: string;
   firstName: string | null;
   lastName: string | null;
+  /** The primary role — the accounting-code prefix and every pre-0148 reader. */
   role: PartyRole;
+  /** Every role this party holds (migration 0148); `role` is always one of them. */
+  roles: PartyRole[];
   personType: PartyPersonType;
   /** The `status` toggle of the form; `isActive` is the same boolean under its column name. */
   status: boolean;
@@ -126,7 +132,7 @@ export class PartyValidationError extends Error {
  * `pc`, so a mutation reads its row back through `getParty` instead.
  */
 const PARTY_COLUMNS = `p.id, p.name, p.first_name AS "firstName", p.last_name AS "lastName",
-       p.role, p.person_type AS "personType", p.is_active AS "isActive",
+       p.role, p.roles, p.person_type AS "personType", p.is_active AS "isActive",
        p.accounting_code AS "accountingCode", p.accounting_code_mode AS "accountingCodeMode",
        p.profile_image AS "profileImage", p.category_id AS "categoryId",
        p.general_info AS "generalInfo", p.address_info AS "addressInfo",
@@ -147,6 +153,7 @@ const PARTY_FROM = "parties p LEFT JOIN party_categories pc ON pc.id = p.categor
 interface PartyRow extends Record<string, unknown> {
   name: string;
   role?: string | null;
+  roles?: string[] | null;
   personType?: string | null;
   isActive?: boolean;
   generalInfo?: Record<string, unknown> | null;
@@ -195,6 +202,9 @@ function toParty(row: PartyRow, dek: Buffer | null): Party {
     lastName: (row.lastName as string | null) ?? null,
     name: row.name,
     role: partyRole(row.role),
+    // A row written before 0148 has an empty array until the backfill; reading
+    // it through `partyRoles` means the wire shape is the same either way.
+    roles: partyRoles(row.roles, row.role),
     personType: partyPersonType(row.personType),
     status: row.isActive !== false,
     isActive: row.isActive !== false,
@@ -252,6 +262,8 @@ function textOf(value: unknown): string | null {
 export interface PartyInput {
   status?: boolean;
   role?: string | null;
+  /** Migration 0148 — the full role set. Absent means "leave it"/"derive it". */
+  roles?: string[] | null;
   personType?: string | null;
   displayName?: string | null;
   firstName?: string | null;
@@ -287,6 +299,7 @@ interface NormalizedWrite {
   firstName: string | null;
   lastName: string | null;
   role: PartyRole;
+  roles: PartyRole[];
   personType: PartyPersonType;
   status: boolean;
   categoryId: string | null;
@@ -341,6 +354,47 @@ function normalizePartyWrite(input: PartyInput, existing?: Party | null): Normal
         if (!known) throw new PartyValidationError("invalid_role", "role");
         return partyRole(known);
       })();
+
+  /**
+   * The role *set* (0148), and the primary role re-derived from it.
+   *
+   * Three callers, three shapes, one answer:
+   *  - a form that sends `roles` — authoritative, with `role` folded in;
+   *  - a pre-0148 caller that sends only `role` — the set is that one role,
+   *    plus whatever the record already held, so a POS quick-add editing a
+   *    customer who is also a supplier does not quietly demote them;
+   *  - a partial write that names neither — the stored set, unchanged.
+   */
+  const roles = (() => {
+    if (input.roles !== undefined && input.roles !== null) {
+      const asked = Array.isArray(input.roles) ? input.roles : [];
+      if (asked.length === 0) throw new PartyValidationError("role_required", "roles");
+      // Checked against the raw values, before normalisation: `partyRoles`
+      // drops what it does not recognise, so validating its *output* would
+      // quietly turn a typo into «مشتری» instead of reporting it.
+      for (const entry of asked) {
+        const value = String(entry).trim();
+        const known =
+          (PARTY_ROLES as readonly string[]).includes(value) ||
+          (Object.keys(PARTY_ROLE_STORAGE) as PartyRole[]).some(
+            (candidate) => PARTY_ROLE_STORAGE[candidate] === value.toLowerCase(),
+          );
+        if (!known) throw new PartyValidationError("invalid_role", "roles");
+      }
+      // Only a role the *caller* named is folded in. Folding in the stored
+      // primary role would make the set append-only: a party wrongly marked as
+      // personnel could never be turned back into a plain customer, and
+      // «برداشتن نقش» in the form would silently do nothing.
+      return partyRoles(asked, input.role ?? undefined);
+    }
+    const stored = existing?.roles ?? [];
+    if (input.role !== undefined && input.role !== null) return partyRoles([...stored, role], role);
+    return partyRoles(stored.length > 0 ? stored : [role], role);
+  })();
+  // The primary role prefers what the caller asked for, but only if it is
+  // actually in the set — a code prefix that names a role the party does not
+  // hold is a code nobody can read back.
+  const primaryRole = primaryPartyRole(roles, role);
 
   const personType =
     input.personType === undefined || input.personType === null
@@ -421,7 +475,8 @@ function normalizePartyWrite(input: PartyInput, existing?: Party | null): Normal
     displayName: displayName.slice(0, MAX_PARTY_DISPLAY_NAME),
     firstName: input.firstName !== undefined ? textOf(input.firstName) : (existing?.firstName ?? null),
     lastName: input.lastName !== undefined ? textOf(input.lastName) : (existing?.lastName ?? null),
-    role,
+    role: primaryRole,
+    roles,
     personType,
     // Both `status` and `isActive` are set by `toParty`, and a write that does not
     // name the flag must not invent one: a partial update (an AI note, a tab saved
@@ -736,7 +791,10 @@ export async function searchParties(
     ? options.roles.map((role) => PARTY_ROLE_STORAGE[role])
     : ["customer", "employee", "supplier"];
 
-  const conditions = [`p.business_id = $1`, "p.is_active", "p.merged_into_id IS NULL", "p.role = ANY($2::text[])"];
+  // `roles && …` rather than `role = ANY(…)`: since 0148 a person can hold
+  // several roles, and a supplier who is also a customer must appear in the
+  // customer picker too.
+  const conditions = [`p.business_id = $1`, "p.is_active", "p.merged_into_id IS NULL", "p.roles && $2::text[]"];
   const params: unknown[] = [businessId, roles];
   if (term) {
     const clause = searchClause(term, dek, params.length + 1);
@@ -789,7 +847,8 @@ export async function listParties(businessId: string, options: PartyListOptions 
   if (!options.includeInactive) conditions.push("p.is_active");
   if (options.roles?.length) {
     params.push(options.roles.map((role) => PARTY_ROLE_STORAGE[role]));
-    conditions.push(`p.role = ANY($${params.length}::text[])`);
+    // Overlap, not equality — one record, several roles (0148).
+    conditions.push(`p.roles && $${params.length}::text[]`);
   }
   if (options.categoryId) {
     params.push(options.categoryId);
@@ -874,7 +933,7 @@ export async function createParty(
     try {
       const { rows } = await query<PartyRow>(
         `INSERT INTO parties (
-            business_id, location_id, name, first_name, last_name, role, person_type, is_active,
+            business_id, location_id, name, first_name, last_name, role, roles, person_type, is_active,
             accounting_code, accounting_code_mode, profile_image, category_id,
             general_info, address_info, contact_info, financial_info,
             national_id, national_id_enc, national_id_bidx, economic_code, economic_code_enc,
@@ -882,8 +941,8 @@ export async function createParty(
             address, address_enc, notes, notes_enc, email, birthday, tags,
             marketing_consent, sms_consent, employee_user_id
           )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::uuid,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,
-                 $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33::date,$34,$35,$36,$37::uuid)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::text[],$8,$9,$10,$11,$12,$13::uuid,$14::jsonb,$15::jsonb,$16::jsonb,$17::jsonb,
+                 $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34::date,$35,$36,$37,$38::uuid)
          RETURNING id`,
         [
           businessId,
@@ -892,6 +951,7 @@ export async function createParty(
           write.firstName,
           write.lastName,
           PARTY_ROLE_STORAGE[write.role],
+          write.roles.map((role) => PARTY_ROLE_STORAGE[role]),
           PARTY_PERSON_TYPE_STORAGE[write.personType],
           write.status,
           code,
@@ -922,7 +982,7 @@ export async function createParty(
           write.tags ?? [],
           write.marketingConsent ?? false,
           write.smsConsent ?? false,
-          write.role === "Employee" ? (write.employeeUserId ?? null) : null,
+          write.roles.includes("Employee") ? (write.employeeUserId ?? null) : null,
         ],
       );
       const created = rows[0] ? await getParty(businessId, String(rows[0].id)) : null;
@@ -1010,6 +1070,7 @@ export async function updateParty(
   add("first_name", write.firstName);
   add("last_name", write.lastName);
   add("role", PARTY_ROLE_STORAGE[write.role]);
+  add("roles", write.roles.map((role) => PARTY_ROLE_STORAGE[role]));
   add("person_type", PARTY_PERSON_TYPE_STORAGE[write.personType]);
   add("is_active", write.status);
   add("accounting_code", write.accountingCode);
@@ -1052,7 +1113,7 @@ export async function updateParty(
   // Only a personnel party carries the membership; the number one link per
   // membership is 0137's unique partial index, so a role change clears it rather
   // than leaving a customer file pointing at somebody's login.
-  if (write.role === "Employee") {
+  if (write.roles.includes("Employee")) {
     if (write.employeeUserId !== undefined) add("employee_user_id", write.employeeUserId);
   } else if (existing.employeeUserId) {
     add("employee_user_id", null);

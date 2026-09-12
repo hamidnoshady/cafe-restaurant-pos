@@ -152,7 +152,23 @@ export function LedgerDashboardSection({
         }
         description="از اینجا مستقیم به بخشی بروید که باید در آن کار کنید."
       >
+        {/*
+          The whole workspace, not only the ledger: «اشخاص» و «گزارش‌های مالی»
+          are top-level areas of this app now, and a home screen whose shortcuts
+          all pointed into «فضای کار حسابداری» was exactly what made Accounting
+          read as a ledger tool. The rest of the business (فروش، خرید، انبار،
+          محصولات) is in the app's sidebar, gated once by the shell.
+        */}
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("directory")}>
+            اشخاص
+          </Button>
+          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("receivables")}>
+            حساب‌های دریافتنی
+          </Button>
+          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("payables")}>
+            حساب‌های پرداختنی
+          </Button>
           <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("manual")}>
             ثبت سند دستی
           </Button>
@@ -165,8 +181,8 @@ export function LedgerDashboardSection({
           <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("reconciliation")}>
             تطبیق بانکی
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("chart-of-accounts")}>
-            سرفصل حساب‌ها
+          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("reports")}>
+            گزارش‌های مالی
           </Button>
         </div>
       </SectionCard>

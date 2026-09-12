@@ -24,19 +24,16 @@ import { PARTY_ROLE_LABELS, type PartyRole } from "./parties";
 
 export const PARTY_SCOPES = [
   "crm",
+  // Accounting's «اشخاص» — the platform's *canonical* people directory.
+  //
+  // There used to be three more scopes beside this one:
+  // `accounting-customers`, `accounting-suppliers` and `accounting-vendors`,
+  // each its own route and its own sidebar entry over the same `parties`
+  // table. They are gone: «مشتریان»، «تأمین‌کنندگان» and «فروشندگان» are
+  // *views* of this one directory now (`party-directory.ts`), selected with
+  // `?view=`, so there is one screen, one add/edit form and one place a
+  // deep link can land.
   "accounting",
-  // Accounting's customers-only screen. It reads the same one record as the
-  // full «اشخاص» view, but answers the accountant's customer question
-  // (who a customer is in the ledger) without the suppliers and staff noise.
-  "accounting-customers",
-  // Accounting's supplier-side slices of that same shared record. Two scopes
-  // rather than one because the app's menu says both words: «تأمین‌کنندگان»
-  // is the buying relationship the payables settle against, «فروشندگان» the
-  // same record under the word an accountant coming from another package
-  // looks for. They read one `parties` row — an alias view, never a second
-  // store.
-  "accounting-suppliers",
-  "accounting-vendors",
   "operations",
   "team",
   "growth",
@@ -130,61 +127,16 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     roles: ["Customer", "Employee", "Supplier"],
     defaultRole: "Customer",
     label: "اشخاص",
-    description: "مشتریان، تأمین‌کنندگان و کارکنان با کد حسابداری و اطلاعات مالی",
+    description: "مشتریان، تأمین‌کنندگان، فروشندگان و کارکنان — یک فهرست، با کد حسابداری و اطلاعات مالی",
     // The Accounting app has its own route prefix now (`/dashboard/accounting`),
     // one route per section — this is its persons directory, and the `?party=`
     // a deep link from another app (an A/R row, an AI answer) carries is read
     // by the section it opens.
     href: "/accounting/directory",
-    columns: ["displayName", "role", "phone", "accountingCode", "tax", "status"],
-    accounting: "editable",
-    readOnly: false,
-  },
-  {
-    // Accounting's customers-only view. The full counterparty screen above is
-    // the ledger's whole file; this is the one the customer links in A/R open —
-    // so an accountant looking at a receivable lands on customers, with the
-    // ledger fields that make that record settleable, and never behind Growth's
-    // marketing projection. The record remains CRM's; this is Accounting's view
-    // of it, and the shared `PartiesSection` draws it with these columns.
-    key: "accounting-customers",
-    app: "accounting",
-    roles: ["Customer"],
-    defaultRole: "Customer",
-    label: "مشتریان",
-    description: "مشتریان با کد حسابداری، مالیات و ماندهٔ حساب",
-    href: "/accounting/customers",
-    columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
-    accounting: "editable",
-    readOnly: false,
-  },
-  {
-    // Accounting's suppliers slice — the counterparties A/P settles with, at
-    // the app's own route. The payables screen links here rather than into the
-    // store's supplier list, so an accountant stays in Accounting.
-    key: "accounting-suppliers",
-    app: "accounting",
-    roles: ["Supplier"],
-    defaultRole: "Supplier",
-    label: "تأمین‌کنندگان",
-    description: "تأمین‌کنندگان با کد حسابداری، مالیات و ماندهٔ حساب",
-    href: "/accounting/suppliers",
-    columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
-    accounting: "editable",
-    readOnly: false,
-  },
-  {
-    // The same record under the other word. «فروشندگان» is what an accountant
-    // moving from another package looks for, and answering it with a 404 (or
-    // with a second table) is the mistake this alias exists to avoid.
-    key: "accounting-vendors",
-    app: "accounting",
-    roles: ["Supplier"],
-    defaultRole: "Supplier",
-    label: "فروشندگان",
-    description: "همان پروندهٔ تأمین‌کنندگان، با نام «فروشنده»",
-    href: "/accounting/vendors",
-    columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
+    // The balance travels with the directory now that it is the one screen the
+    // A/R and A/P links land on — the ledger's own number, read from the
+    // ledger's endpoint, never a copy.
+    columns: ["displayName", "role", "phone", "accountingCode", "tax", "balance", "status"],
     accounting: "editable",
     readOnly: false,
   },

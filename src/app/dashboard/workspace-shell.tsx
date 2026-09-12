@@ -7,6 +7,7 @@ import {
 } from "@/lib/product-workspace";
 import { visibleConnectionKinds, type ConnectionKind } from "@/lib/connection-kinds";
 import { ACCOUNTING_ROLES, ACCOUNTING_SECTIONS } from "@/app/(app)/accounting/accounting-nav";
+import { PARTY_DIRECTORY_NAV_VIEWS, partyDirectoryHref } from "@/lib/party-directory";
 import { accountingSectionHref } from "@/app/(app)/accounting/accounting-routes";
 import { PLATFORM_BILLING_HREF, PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
 import { settingsTabHref } from "@/lib/settings-routes";
@@ -164,12 +165,26 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       href: "/accounting/overview",
       roles: [...ACCOUNTING_ROLES],
       flag: "ledger",
-      children: ACCOUNTING_SECTIONS.map((section) => ({
-        label: section.label,
-        module: "ledger" as const,
-        href: accountingSectionHref(section.key),
-        roles: [...(section.roles ?? ACCOUNTING_ROLES)],
-      })),
+      children: [
+        ...ACCOUNTING_SECTIONS.map((section) => ({
+          label: section.label,
+          module: "ledger" as const,
+          href: accountingSectionHref(section.key),
+          roles: [...(section.roles ?? ACCOUNTING_ROLES)],
+        })),
+        // The directory's two most-asked-for views. They are filters of
+        // «اشخاص» above, listed here for the two surfaces that read this tree
+        // by href rather than by section: the mobile bottom bar (a member can
+        // pin «مشتریان» to it) and the mobile header, which titles the page
+        // from the longest matching nav entry. Without them a filtered
+        // directory would be titled «اشخاص» and could not be pinned at all.
+        ...PARTY_DIRECTORY_NAV_VIEWS.map((view) => ({
+          label: view.label,
+          module: "ledger" as const,
+          href: partyDirectoryHref(view.key),
+          roles: [...ACCOUNTING_ROLES],
+        })),
+      ],
     },
     // The «اتصال‌های فنی» hub — every technical connection in the product
     // (desktop, WordPress/WooCommerce, the CMS site, Holoo, the remote server

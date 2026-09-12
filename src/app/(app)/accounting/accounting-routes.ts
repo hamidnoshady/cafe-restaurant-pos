@@ -15,6 +15,8 @@
  * slots and knowledge-base articles never become dead ends).
  */
 
+import { partyDirectoryHref, type PartyDirectoryViewKey } from "@/lib/party-directory";
+
 /** The app's own home — the workspace rail, the sidebar parent and every "open accounting" link point here. */
 export const ACCOUNTING_HOME = "/accounting/overview";
 
@@ -25,21 +27,15 @@ export const ACCOUNTING_SECTION_KEYS = [
   "manual",
   "expenses",
   "fiscal-periods",
-  // Accounting's own persons directory — the shared «اشخاص» record seen with
-  // the ledger's columns (accounting code, tax), managed here rather than by
-  // sending the accountant into the CRM.
+  // The platform's one people directory — the shared «اشخاص» record with the
+  // ledger's columns (accounting code, tax, balance).
+  //
+  // «مشتریان»، «تأمین‌کنندگان» and «فروشندگان» used to be three more section
+  // keys beside this one, three routes and three sidebar rows over the same
+  // table. They are `?view=` filters of this section now
+  // (`src/lib/party-directory.ts`); their old routes redirect here carrying
+  // the matching view, so every bookmark still lands on the right list.
   "directory",
-  // The customers-only slice of the same record: the destination the A/R
-  // customer actions point at, so an accountant looking at a receivable lands
-  // on the customers they can settle with — never on a CRM redirect.
-  "customers",
-  // The supplier-side slices of that same shared record. «تأمین‌کنندگان» is
-  // the buying relationship the payables settle against; «فروشندگان» is the
-  // same record under the word an accountant coming from another package
-  // looks for. Both read one `parties` row — see the note on `vendors` in
-  // `accounting-nav.ts`: an alias view, never a second store.
-  "suppliers",
-  "vendors",
   // Receivables and payables. The keys used to be `ar`/`ap`; the public URLs
   // say what they are, and the two initialisms still resolve (see
   // `accountingSectionForLegacyKey`).
@@ -74,14 +70,27 @@ export function accountingSectionHref(key: AccountingSectionKey): string {
 /** Accounting's own settings page — never the platform settings page. */
 export const ACCOUNTING_SETTINGS_HREF = "/accounting/settings";
 
-/** The full customers slice — Accounting's own customer directory. */
+/**
+ * The customers view of the one directory — where every «برو به مشتری» link in
+ * Accounting lands. A filter on the canonical screen, not a screen of its own.
+ */
 export function accountingCustomersHref(): string {
-  return accountingSectionHref("customers");
+  return partyDirectoryHref("customers");
 }
 
-/** One customer in Accounting's customers slice, with the party file opened. */
+/** One customer in the directory, with their file opened. */
 export function accountingCustomerHref(customerId: string): string {
-  return `${accountingSectionHref("customers")}?party=${encodeURIComponent(customerId)}`;
+  return partyDirectoryHref("customers", { party: customerId });
+}
+
+/** The suppliers view of the same directory — where A/P and purchasing land. */
+export function accountingSuppliersHref(): string {
+  return partyDirectoryHref("suppliers");
+}
+
+/** One supplier in the directory, with their file opened. */
+export function accountingSupplierHref(supplierId: string): string {
+  return partyDirectoryHref("suppliers", { party: supplierId });
 }
 
 /**
@@ -95,7 +104,36 @@ const LEGACY_SECTION_ALIASES: Record<string, AccountingSectionKey> = {
   ar: "receivables",
   ap: "payables",
   parties: "directory",
+  // The three per-role party screens are views of the directory now. They keep
+  // resolving — as real route-level redirects that carry the view (and every
+  // other query parameter the visitor arrived with), never as a 404 and never
+  // as a middleware rewrite.
+  customers: "directory",
+  suppliers: "directory",
+  vendors: "directory",
 };
+
+/**
+ * The directory view an old per-role section URL meant, or null when the key
+ * is not one of them.
+ *
+ * Kept beside the alias table rather than inside it because the two answer
+ * different questions: the table says *which section* now serves the URL, this
+ * says *which filter* the visitor was asking for. `/accounting/suppliers` has
+ * to land on the suppliers list, not on «همه اشخاص».
+ */
+const LEGACY_DIRECTORY_VIEWS: Record<string, PartyDirectoryViewKey> = {
+  customers: "customers",
+  suppliers: "suppliers",
+  vendors: "vendors",
+};
+
+export function accountingDirectoryViewForLegacySection(
+  key: string | null | undefined,
+): PartyDirectoryViewKey | null {
+  if (typeof key !== "string") return null;
+  return LEGACY_DIRECTORY_VIEWS[key] ?? null;
+}
 
 /** The section an old key names now, or null when it is not an old key. */
 export function accountingSectionForLegacyKey(

@@ -35,14 +35,11 @@ export const ACCOUNTING_SECTIONS: readonly AccountingSectionDef[] = [
   { key: "manual", label: "ثبت سند دستی" },
   { key: "expenses", label: "هزینه‌ها" },
   { key: "fiscal-periods", label: "دوره‌های مالی" },
+  // The platform's one people directory. «مشتریان»، «تأمین‌کنندگان» and
+  // «فروشندگان» were three more sections here; they are `?view=` filters of
+  // this one now (`src/lib/party-directory.ts`), so there is one screen, one
+  // add/edit form and one place every deep link lands.
   { key: "directory", label: "اشخاص" },
-  { key: "customers", label: "مشتریان" },
-  // Accounting owns its own directory of counterparties. «تأمین‌کنندگان» and
-  // «فروشندگان» are two words for one shared `parties` record (see
-  // `parties-scopes.ts`) — an alias view, never a second data store — because
-  // the two words are both what an accountant looks for.
-  { key: "suppliers", label: "تأمین‌کنندگان" },
-  { key: "vendors", label: "فروشندگان" },
   { key: "receivables", label: "حساب‌های دریافتنی" },
   { key: "payables", label: "حساب‌های پرداختنی" },
   { key: "receipts", label: "دریافت و پرداخت" },
@@ -63,7 +60,15 @@ export const ACCOUNTING_SECTIONS: readonly AccountingSectionDef[] = [
 ];
 
 /**
- * How the app's own sidebar divides those sections.
+ * How the *ledger rail* («فضای کار حسابداری», the in-page menu) divides those
+ * sections.
+ *
+ * The app's **sidebar** is no longer this list: Accounting is the business's
+ * primary workspace now, so its menu is composed in
+ * `accounting-workspace.ts` — the business's work areas plus these sections
+ * gathered into one group. This grouping stays because the in-page rail still
+ * draws it, and because it is the one place that guarantees every section has
+ * a home.
  *
  * Twenty-three rows in one column is a list nobody reads; these are the
  * accountant's own divisions of the work. Every key appears in exactly one
@@ -73,7 +78,7 @@ export const ACCOUNTING_SECTIONS: readonly AccountingSectionDef[] = [
  */
 export const ACCOUNTING_NAV_GROUPS: readonly { label: string; keys: readonly AccountingSectionKey[] }[] = [
   { label: "دفتر", keys: ["dashboard", "trial-balance", "entries", "manual", "chart-of-accounts"] },
-  { label: "اشخاص", keys: ["directory", "customers", "suppliers", "vendors"] },
+  { label: "اشخاص", keys: ["directory"] },
   { label: "دریافتنی و پرداختنی", keys: ["receivables", "payables", "installments", "cheques"] },
   { label: "وجوه و هزینه", keys: ["receipts", "expenses", "reconciliation", "fixed-assets"] },
   { label: "دوره و گزارش", keys: ["fiscal-periods", "vat", "payroll", "reports", "growth"] },

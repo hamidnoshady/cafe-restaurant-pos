@@ -350,6 +350,20 @@ columns and the tab documents). Customer, supplier and employee are a `role` on 
 not three tables: a supplier who also buys coffee is one party, and the ledger's
 receivable, the store's purchase order and the payroll advance all point at the same `id`.
 
+- **A person holds a *set* of roles.** Migration 0148 added `parties.roles text[]`.
+  `parties.role` stays the **primary** role — it decides the accounting-code prefix and is
+  what every pre-0148 query reads — and the invariant every layer keeps (the form, the
+  API, the service, a DB trigger) is `role ∈ roles`. Listings filter with `roles && …`,
+  not `role = ANY(…)`, so the shop that both buys from and sells to one person sees one
+  file with one balance in both lists. In code: `partyRoles()`, `primaryPartyRole()`,
+  `withPartyRoles()`, `togglePartyRole()` in `src/lib/parties.ts`. Never assume one role,
+  and never write `role` without letting the service derive the set.
+- **One directory, several views.** `/accounting/directory` is the canonical people
+  screen; «همه اشخاص»، «مشتریان»، «تأمین‌کنندگان»، «فروشندگان»، «کارکنان» are `?view=`
+  filters of it (`src/lib/party-directory.ts`, `partyDirectoryHref()`). The old
+  `/accounting/{customers,suppliers,vendors}` routes redirect onto it carrying the view.
+  Deep-link into it — do not add a per-role screen.
+
 - **One endpoint and one screen.** `/api/parties` (+ `/[id]`, `/categories`) and
   `src/app/dashboard/parties/{parties-section,party-form}.tsx` are the only party write
   path in the product; `src/lib/parties.ts` holds the contract both the form and the route
@@ -362,7 +376,8 @@ receivable, the store's purchase order and the payroll advance all point at the 
 - **A per-app view is a scope, not a copy.** What an app lists, which columns it draws and
   whether it may edit at all come from `PARTY_SCOPES` in `src/lib/parties-scopes.ts`
   (CRM=customers, the store=suppliers, the team=personnel, Accounting=all three and the
-  only one that edits the ledger fields, Growth/sales read-only). A new app that needs
+  only one that edits the ledger fields, Growth/sales read-only). **One scope per app** —
+  Accounting used to have four, one per role, and they are gone. A new app that needs
   parties mounts `PartiesSection` with its scope. It does not grow a second table of "the
   suppliers I care about", its own add form, or its own archived flag — that is how one
   person ends up with three names.

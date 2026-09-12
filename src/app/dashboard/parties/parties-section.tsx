@@ -40,7 +40,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "../page-chrome";
+import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge, TabBar } from "../page-chrome";
+import {
+  PARTY_DIRECTORY_VIEWS,
+  partyDirectoryView,
+  type PartyDirectoryViewKey,
+} from "@/lib/party-directory";
 import { api, errorMessage, ErrorBox, Field, InfoBox, inputClass } from "../ui";
 import { ArStatementPanel } from "@/app/(app)/accounting/ar-statement-panel";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
@@ -80,9 +85,49 @@ export interface PartiesSectionProps {
   editPartyId?: string | null;
   /** Opens the create form on mount — an overview quick action that only says "add one". */
   openNewOnMount?: boolean;
+  /**
+   * The directory view («همه اشخاص» / «مشتریان» / «تأمین‌کنندگان» / …).
+   *
+   * Supplied by the canonical directory, which keeps it in the URL so a
+   * filtered list is a link. Omitted by the single-role sections (the store's
+   * suppliers tab, the team's staff list), which are already one role by scope
+   * and show no view strip at all.
+   */
+  view?: PartyDirectoryViewKey;
+  onViewChange?: (view: PartyDirectoryViewKey) => void;
 }
 
-export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: PartiesSectionProps) {
+export function PartiesSection({
+  scope,
+  role,
+  editPartyId,
+  openNewOnMount,
+  view,
+  onViewChange,
+}: PartiesSectionProps) {
+  // The views are offered only where the scope can actually serve them: a
+  // «تأمین‌کنندگان» tab inside a customers-only scope would be a filter that
+  // returns nothing by construction.
+  const views = useMemo(
+    () =>
+      onViewChange
+        ? PARTY_DIRECTORY_VIEWS.filter((candidate) =>
+            candidate.roles.every((candidateRole) => scope.roles.includes(candidateRole)),
+          )
+        : [],
+    [onViewChange, scope],
+  );
+  const activeView = partyDirectoryView(view);
+  /**
+   * Which roles this listing asks the API for: the view's, narrowed to what
+   * the scope allows. The narrowing is what keeps the URL from being an
+   * access-control hole — `?view=employees` inside the CRM's customers-only
+   * scope still lists customers.
+   */
+  const listedRoles = useMemo(() => {
+    const allowed = activeView.roles.filter((candidate) => scope.roles.includes(candidate));
+    return allowed.length > 0 ? allowed : scope.roles;
+  }, [activeView, scope]);
   const canManage = !scope.readOnly && (MANAGING_ROLES as readonly string[]).includes(role);
   // Money-shaped columns follow the ledger's own access rule, not the section's: a
   // cashier browsing customers is not a cashier reading balances.
@@ -126,11 +171,11 @@ export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: Par
     [scope],
   );
 
-  useEffect(() => setPage(1), [query, includeInactive, categoryId]);
+  useEffect(() => setPage(1), [query, includeInactive, categoryId, view]);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
-    params.set("roles", scope.roles.join(","));
+    params.set("roles", listedRoles.join(","));
     if (query.trim()) params.set("q", query.trim());
     if (includeInactive) params.set("includeInactive", "1");
     if (categoryId) params.set("categoryId", categoryId);
@@ -146,7 +191,7 @@ export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: Par
         setError(errorMessage(data.error));
       }
     });
-  }, [page, query, includeInactive, categoryId, refreshKey, scope]);
+  }, [page, query, includeInactive, categoryId, refreshKey, listedRoles]);
   useEffect(load, [load]);
 
   useEffect(() => {
@@ -220,10 +265,13 @@ export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: Par
   }
 
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
+  // One «افزودن شخص» for the directory — the whole point of one form is that
+  // the button does not multiply per role. A single-role section keeps naming
+  // its role, because there it is the only thing you could be adding.
   const addLabel =
-    scope.roles.length > 1 ? "افزودن شخص" : `افزودن ${PARTY_ROLE_LABELS[scope.defaultRole]}`;
+    listedRoles.length > 1 ? "افزودن شخص" : `افزودن ${PARTY_ROLE_LABELS[listedRoles[0]]}`;
   const emptyLabel =
-    scope.roles.length > 1 ? "شخصی پیدا نشد." : `${PARTY_ROLE_LABELS[scope.defaultRole]} ای پیدا نشد.`;
+    listedRoles.length > 1 ? "شخصی پیدا نشد." : `${PARTY_ROLE_LABELS[listedRoles[0]]}ای پیدا نشد.`;
 
   return (
     <div className="min-w-0 space-y-4">
@@ -255,6 +303,19 @@ export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: Par
           </div>
         }
       >
+        {views.length > 1 && onViewChange ? (
+          <div className="mb-4">
+            <TabBar
+              idPrefix="party-directory"
+              label="نمای فهرست اشخاص"
+              tabs={views.map((candidate) => ({ key: candidate.key, label: candidate.label }))}
+              active={activeView.key}
+              onChange={onViewChange}
+            />
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">{activeView.description}</p>
+          </div>
+        ) : null}
+
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <input
             className={`${inputClass} w-full sm:w-56`}
@@ -420,6 +481,9 @@ export function PartiesSection({ scope, role, editPartyId, openNewOnMount }: Par
           partyId={form.partyId ?? null}
           initial={form.initial ?? null}
           businessId={businessId}
+          // A new person opens with the current view's role ticked: «افزودن
+          // شخص» from «تأمین‌کنندگان» should not start life as a customer.
+          defaultRoles={activeView.defaultRoles}
           onClose={() => setForm(null)}
           onSaved={() => {
             setForm(null);

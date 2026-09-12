@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
@@ -10,6 +11,7 @@ import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
+import { accountingSuppliersHref } from "./accounting-routes";
 import { ApStatementPanel } from "./ap-statement-panel";
 import { useOverlayEscape } from "./use-overlay-escape";
 import { cardClass, overlayPanelClass } from "@/app/dashboard/page-chrome";
@@ -104,9 +106,19 @@ export function ApSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
               مانده حساب‌ها و نمای سنی بدهی تأمین‌کنندگان، بر پایه ثبت‌های فعلی.
             </p>
           </div>
-          <div className="grid min-w-full grid-cols-2 gap-2 sm:min-w-0">
+          <div className="flex min-w-full flex-col items-stretch gap-2 sm:min-w-0 sm:items-end">
+            {/* The mirror of the A/R screen's «مشتریان در حسابداری» — the same
+                one directory, filtered to the people this screen is about. */}
+            <Link
+              href={accountingSuppliersHref()}
+              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-primary transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
+            >
+              تأمین‌کنندگان در حسابداری
+            </Link>
+            <div className="grid grid-cols-2 gap-2">
               <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
               <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
+            </div>
           </div>
         </div>
 
