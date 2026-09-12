@@ -129,12 +129,27 @@ describe("loyalty points redemption serialization", () => {
 
     await second.query("BEGIN");
     const secondPid = await backendPid(second);
-    const secondRedeem = redeemPoints(second as never, {
+
+    // The rejection handler is attached *here*, at the moment the promise is
+    // created, rather than at the `await` further down. This redemption is
+    // meant to fail, but it only becomes awaited after `waitUntilBlocked` and
+    // the COMMIT below — and if it rejects during that window with no handler
+    // attached, Node raises an unhandledRejection. Vitest reports that as an
+    // "Unhandled Error" and exits non-zero *even though every test passed*,
+    // which is exactly how it surfaced: a green suite with a red exit code,
+    // only under the timing of a full parallel run and never in isolation.
+    // Settling into a tagged result keeps the assertion identical while making
+    // the rejection observed from the start.
+    const secondOutcome = redeemPoints(second as never, {
       businessId,
       locationId,
       customerId,
       points: 100,
-    });
+    }).then(
+      (value) => ({ rejected: false as const, value }),
+      (reason: unknown) => ({ rejected: true as const, reason }),
+    );
+
     await waitUntilBlocked(observer, secondPid);
 
     // The second redemption is still blocked on the customer's advisory
@@ -143,7 +158,9 @@ describe("loyalty points redemption serialization", () => {
 
     // Only once the first transaction has committed does the second acquire
     // the lock, read the now-zero balance, and refuse.
-    await expect(secondRedeem).rejects.toThrow(/امتیاز/);
+    const outcome = await secondOutcome;
+    expect(outcome.rejected, "the second redemption was allowed to over-redeem").toBe(true);
+    expect(outcome.rejected ? String((outcome.reason as Error)?.message) : "").toMatch(/امتیاز/);
     await second.query("ROLLBACK");
 
     await Promise.all([first.end(), second.end()]);

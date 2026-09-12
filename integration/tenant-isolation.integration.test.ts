@@ -293,6 +293,55 @@ describe("every tenant table is protected", () => {
       ).toBe(true);
     }
   });
+
+  /**
+   * The assertion above reads the catalog flag; this one reads the data.
+   *
+   * Migration 0144 replaced v_inventory_valuation with CREATE OR REPLACE VIEW,
+   * which resets reloptions to NULL — the view silently reverted to running as
+   * its owner and returned every business's inventory to every caller (0146
+   * repairs it). The flag assertion caught that, but only because someone had
+   * set the flag in the first place: a view that leaks for a different reason
+   * would satisfy the catalog check and still leak.
+   *
+   * So this one queries the real thing, as the unprivileged app role, with one
+   * business's tenant context set, and demands it sees exactly its own row.
+   */
+  it("returns only the caller's own rows when read through a reporting view", async () => {
+    const probeName = (label: string) => `valuation-probe-${label}`;
+    for (const [label, business] of [
+      ["alpha", alpha],
+      ["beta", beta],
+    ] as const) {
+      await ownerClient.query(
+        `INSERT INTO inventory_items (location_id, name, unit, avg_cost, carrying_value_rial, is_active)
+         VALUES ($1, $2::text, 'kg', 1000, 500000, true)`,
+        [business.locationId, probeName(label)],
+      );
+    }
+
+    // v_inventory_valuation is the view 0144 broke; v_inventory_nrv_valuation
+    // reads through it and so inherited the leak despite its own correct flag.
+    // Both are checked — repairing only the first would leave the second open.
+    for (const view of ["v_inventory_valuation", "v_inventory_nrv_valuation"]) {
+      await asBusiness(alpha.businessId, async () => {
+        const { rows } = await appClient.query<{ item_name: string }>(
+          `SELECT item_name FROM ${view} WHERE item_name LIKE 'valuation-probe-%' ORDER BY item_name`,
+        );
+        expect(
+          rows.map((row) => row.item_name),
+          `${view} leaked another business's inventory to the caller`,
+        ).toEqual([probeName("alpha")]);
+      });
+    }
+
+    // With no tenant context at all it must fail closed, not open.
+    await appClient.query("SELECT set_config('app.business_id', '', false)");
+    const { rows: unscoped } = await appClient.query<{ n: string }>(
+      "SELECT count(*) AS n FROM v_inventory_valuation",
+    );
+    expect(Number(unscoped[0].n), "v_inventory_valuation returned rows with no tenant context").toBe(0);
+  });
 });
 
 describe("reads are confined to the current business", () => {
