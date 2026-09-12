@@ -4,8 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-Persian-first (RTL, Jalali calendar, Toman display) cafe/restaurant POS. Next.js 15 App
-Router (TypeScript) + PostgreSQL 16. Development is phased — see
+Persian-first (RTL, Jalali calendar, Toman display) multi-industry business platform. It combines accounting, CRM, growth and marketing, website management, sales/POS, operations, inventory, reporting, AI, and platform administration. POS is a major dashboard app, not the product boundary. Next.js 15 App Router (TypeScript) + PostgreSQL 16. Development is phased — see
 [docs/phases/README.md](docs/phases/README.md) for the phase index and status, and each
 phase's file for its scope, the decisions made on its open questions, and where its exit
 criteria are satisfied. Don't start a phase until the previous one's exit criteria are met.
@@ -19,6 +18,7 @@ These words have a specific meaning in prompts from the user. Interpret a reques
 this way first; do not assume the everyday English sense, or the sense a code
 comment happens to use, until you have checked this list.
 
+- **Product identity:** this is a multi-app business platform, never “just a café/restaurant POS.” Hospitality is one supported industry and POS is one major app. Product copy, metadata, demo data, and new documentation must lead with the whole suite; mention café/restaurant behavior only where the specific feature or historical phase requires it.
 - **Platform** means this whole product — the entire repo / system (POS, accounting,
   CRM, growth, both website managers, the AI assistant, tenancy, the super-admin
   console, desktop, the lot). A prompt about "the platform" is **not** a prompt about

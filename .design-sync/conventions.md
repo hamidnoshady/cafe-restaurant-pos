@@ -1,6 +1,6 @@
-## Cafe Restaurant POS — how to build with this design system
+## Business Suite — how to build with this design system
 
-A Persian-first (RTL, Jalali, Toman) café/restaurant POS component set built on shadcn/ui +
+A Persian-first (RTL, Jalali, Toman) multi-app business-platform component set built on shadcn/ui +
 Radix + Tailwind v4. Components are exported from `window.CafePos.*` (e.g.
 `window.CafePos.Button`). Compound components also export their sub-parts from the same
 namespace (e.g. `CardHeader`, `TableRow`, `DialogContent`, `SelectItem`) — compose them, never

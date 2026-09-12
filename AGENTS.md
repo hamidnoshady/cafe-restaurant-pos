@@ -28,6 +28,8 @@ damage when missed:
 
 ## Prompt vocabulary
 
+**Product identity rule:** treat this repository as a multi-industry, multi-app business platform for accounting, CRM, growth, websites, sales/POS, operations, and AI. POS is a major app, not the whole product. Never introduce platform-level copy, metadata, defaults, or sample data that presents it as only a café/restaurant POS; hospitality wording belongs only in hospitality-specific features.
+
 How the user names things in prompts — full version in the "Prompt vocabulary" section of
 CLAUDE.md. Don't assume the everyday English sense:
 
@@ -43,10 +45,7 @@ CLAUDE.md. Don't assume the everyday English sense:
   follows its owning app's state. Don't add a per-section enable/disable table.
 - **AI assistant** = the platform's main page: `/dashboard` (workspace on) and
   `/dashboard/ai`. Not MCP, coworker jobs, or autopilot unless those are named.
-- **Website management** = **both** website systems: Eshobe CMS (`website` app,
-  `/dashboard/website`) **and** WP / Woo management (`wp` app, `/dashboard/wp`). They
-  are peers; never fold one into the other, and don't default "website management" to
-  only the CMS.
+- **Website management** = **both** website systems inside the single `website` app: Eshobe CMS (`/dashboard/website/cms`) and WP / Woo management (`/dashboard/website/wp`). They are peer managers behind one app door; never fold one into the other, and don't default “website management” to only the CMS.
 
 ## Accounting is the primary workspace
 
