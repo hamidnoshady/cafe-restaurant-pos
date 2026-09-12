@@ -224,7 +224,7 @@ export function protectedResourceMetadata(issuer: string) {
     scopes_supported: ALL_MCP_SCOPES,
     bearer_methods_supported: ["header"],
     resource_name: "Business Suite",
-    resource_documentation: `${issuer}/dashboard/connections?tab=mcp`,
+    resource_documentation: `${issuer}/settings/connections?tab=mcp`,
   };
 }
 
@@ -248,7 +248,7 @@ export function authorizationServerMetadata(issuer: string) {
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: SUPPORTED_CODE_CHALLENGE_METHODS,
     token_endpoint_auth_methods_supported: ["none"],
-    service_documentation: `${issuer}/dashboard/connections?tab=mcp`,
+    service_documentation: `${issuer}/settings/connections?tab=mcp`,
   };
 }
 

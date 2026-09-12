@@ -219,7 +219,7 @@ function GracePrompt({ daysLeft, onContinue }: { daysLeft: number | null; onCont
       <button
         type="button"
         onClick={() => {
-          router.push("/dashboard/settings?tab=security-center");
+          router.push("/settings/security");
           router.refresh();
         }}
         className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 outline-none focus-visible:ring focus-visible:ring-ring/50"

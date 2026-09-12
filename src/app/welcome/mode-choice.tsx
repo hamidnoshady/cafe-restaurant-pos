@@ -1,56 +1,132 @@
 "use client";
 
+import {
+  ArrowLeftIcon,
+  Building2Icon,
+  CheckIcon,
+  CloudIcon,
+  HardDriveIcon,
+  ShieldCheckIcon,
+  SparklesIcon,
+  WifiOffIcon,
+} from "lucide-react";
 import { cardClass } from "@/app/dashboard/page-chrome";
+import { Button } from "@/components/ui/button";
 
-/**
- * First screen of the desktop first-run wizard: local-only, or claim an
- * existing online business.
- *
- * Two cards rather than a dropdown, because this is a decision the owner makes
- * once and cannot change afterwards — it deserves the space to say what each
- * option costs.
- */
-export function ModeChoice({ onChoose }: { onChoose: (mode: "local" | "connect") => void }) {
+const options = [
+  {
+    mode: "local" as const,
+    icon: HardDriveIcon,
+    title: "ساخت یک کسب‌وکار جدید",
+    eyebrow: "راه‌اندازی روی این دستگاه",
+    description:
+      "از صفر شروع کنید و اطلاعات کسب‌وکار، حساب‌ها و فروش را قدم‌به‌قدم آماده کنید.",
+    points: [
+      "بدون نیاز دائمی به اینترنت",
+      "اطلاعات روی همین دستگاه",
+      "مناسب یک شعبه و شروع سریع",
+    ],
+    badge: "پیشنهاد برای شروع",
+  },
+  {
+    mode: "connect" as const,
+    icon: CloudIcon,
+    title: "اتصال کسب‌وکار موجود",
+    eyebrow: "همگام‌سازی با پنل آنلاین",
+    description:
+      "این دستگاه را با کد اتصال به کسب‌وکاری که قبلاً در پنل آنلاین ساخته‌اید وصل کنید.",
+    points: [
+      "دریافت منو، کاربران و حساب‌ها",
+      "ورود کارکنان با پین فعلی",
+      "آماده‌سازی در چند دقیقه",
+    ],
+    badge: "برای کسب‌وکار فعال",
+  },
+];
+
+export function ModeChoice({
+  onChoose,
+}: {
+  onChoose: (mode: "local" | "connect") => void;
+}) {
   return (
-    <div className="w-full max-w-3xl">
-      <h1 className="mb-1 text-2xl font-bold">به پلتفرم مدیریت کسب‌وکار خوش آمدید</h1>
-      <p className="mb-6 text-sm text-muted-foreground">
-        این نصب را چگونه راه‌اندازی می‌کنید؟
-      </p>
+    <div className="w-full max-w-5xl">
+      <div className="mb-8 text-center sm:mb-10">
+        <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
+          <SparklesIcon className="size-7" aria-hidden="true" />
+        </div>
+        <p className="mb-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
+          راه‌اندازی اولیه
+        </p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.7rem]">
+          به فضای کار خودتان خوش آمدید
+        </h1>
+        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+          برای شروع فقط روش راه‌اندازی را انتخاب کنید؛ در مرحله‌های بعد
+          می‌توانید همه جزئیات را بررسی و ویرایش کنید.
+        </p>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={() => onChoose("local")}
-          className={`group ${cardClass} p-6 text-start transition hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50/40 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40`}
-        >
-          <p className="mb-2 text-lg font-bold">راه‌اندازی محلی</p>
-          <p className="mb-4 text-sm text-muted-foreground">
-            کسب‌وکار جدیدی روی همین دستگاه بسازید. همه‌چیز محلی می‌ماند و به اینترنت نیازی نیست.
-          </p>
-          <ul className="space-y-1 text-xs text-muted-foreground">
-            <li>• فروش، منو، انبار، حسابداری و گزارش‌ها فعال</li>
-            <li>• پشتیبان‌گیری روی درایو محلی</li>
-            <li>• دستیار هوش مصنوعی و همگام‌سازی چندشعبه‌ای غیرفعال</li>
-          </ul>
-        </button>
+        {options.map((option) => {
+          const Icon = option.icon;
+          return (
+            <article
+              key={option.mode}
+              className={`${cardClass} flex min-h-[330px] flex-col p-5 sm:p-6`}
+            >
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
+                  <Icon className="size-6" aria-hidden="true" />
+                </div>
+                <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+                  {option.badge}
+                </span>
+              </div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                {option.eyebrow}
+              </p>
+              <h2 className="mt-1 text-lg font-bold text-foreground">
+                {option.title}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {option.description}
+              </p>
+              <ul className="mt-5 space-y-2.5 text-sm text-foreground/80">
+                {option.points.map((point) => (
+                  <li key={point} className="flex items-center gap-2">
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:text-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-300">
+                      <CheckIcon className="size-3.5" aria-hidden="true" />
+                    </span>
+                    {point}
+                  </li>
+                ))}
+              </ul>
+              <Button
+                onClick={() => onChoose(option.mode)}
+                className="mt-auto w-full justify-between"
+              >
+                انتخاب و ادامه
+                <ArrowLeftIcon className="size-4" aria-hidden="true" />
+              </Button>
+            </article>
+          );
+        })}
+      </div>
 
-        <button
-          type="button"
-          onClick={() => onChoose("connect")}
-          className={`group ${cardClass} p-6 text-start transition hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50/40 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40`}
-        >
-          <p className="mb-2 text-lg font-bold">اتصال به پلتفرم آنلاین</p>
-          <p className="mb-4 text-sm text-muted-foreground">
-            اگر کسب‌وکار شما از قبل روی پلتفرم آنلاین ساخته شده است، آدرس پنل ابری و یک کد اتصال
-            بگیرید تا همان تنظیمات روی این دستگاه بیاید.
-          </p>
-          <ul className="space-y-1 text-xs text-muted-foreground">
-            <li>• منو، کاربران، حساب‌ها و تنظیمات از سرور می‌آید</li>
-            <li>• کارکنان با همان پین همیشگی وارد می‌شوند</li>
-            <li>• کد اتصال را خودتان در پنل ابری می‌سازید</li>
-          </ul>
-        </button>
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <ShieldCheckIcon className="size-4 text-emerald-700 dark:text-emerald-300" />
+          اطلاعات شما امن می‌ماند
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Building2Icon className="size-4 text-amber-700 dark:text-amber-300" />
+          قابل توسعه برای شعبه‌های بعدی
+        </span>
+        <span className="flex items-center gap-1.5">
+          <WifiOffIcon className="size-4 text-muted-foreground" />
+          امکان کار آفلاین در نسخه محلی
+        </span>
       </div>
     </div>
   );

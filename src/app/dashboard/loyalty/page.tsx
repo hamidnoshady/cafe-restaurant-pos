@@ -7,5 +7,5 @@ import { redirect } from "next/navigation";
  * cashier (the old page's floor audience) is where the app drops them anyway.
  */
 export default function LoyaltyRedirect() {
-  redirect("/dashboard/growth/loyalty");
+  redirect("/growth/loyalty");
 }

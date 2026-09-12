@@ -1,0 +1,57 @@
+"use client";
+
+/**
+ * The CRM app shell (Phase 36).
+ *
+ * Wraps every `/dashboard/crm` route with the app's own header. The side menu
+ * is *not* here: `src/lib/app-shells.ts` hands the dashboard's sidebar slot to
+ * `crm/crm-app-nav.tsx` for these routes, so the app's menu sits at the level
+ * the business's own pages sit at rather than as a sub-menu drawn inside a
+ * page. That split is the whole difference between an app and a folder, and it
+ * is the same arrangement the Growth app uses.
+ */
+
+import { usePathname } from "next/navigation";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { CRM_SETTINGS_HREF } from "./crm-routes";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { AskAssistant } from "@/components/ai/ask-assistant";
+
+/** The app's settings page announces itself; every other section keeps the app's heading. */
+const APP_HEADING = {
+  title: "ارتباط با مشتری",
+  description:
+    "پروندهٔ کامل مشتری، بخش‌بندی رفتاری، قیف فروش، کارها و پیگیری‌ها، تیکت‌های خدمات و سابقهٔ رضایت ارتباط.",
+};
+
+const SETTINGS_HEADING = {
+  title: "تنظیمات ارتباط با مشتری",
+  description:
+    "تنظیمات مخصوص همین برنامه — تشخیص تکراری‌ها، رضایت ارتباط و قیف فروش. تنظیمات کسب‌وکار و پلتفرم جای دیگری است.",
+};
+
+export function CrmAppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const heading = pathname === CRM_SETTINGS_HREF ? SETTINGS_HEADING : APP_HEADING;
+
+  return (
+    <PageShell className="space-y-4 sm:space-y-5">
+      <PageHeader
+        title={heading.title}
+        description={heading.description}
+        actions={
+          <>
+            {/* No `section`: this header serves every CRM sub-page, so the
+                button resolves the current route itself. */}
+            <KnowledgeHelpButton />
+            <AskAssistant
+              app="crm"
+              context="وضعیت مشتریان را بررسی کن: مشتریان تازه، مشتریان در معرض ریزش، بخش‌های تعریف‌شده و تعداد قابل‌ارسال هرکدام، کارهای عقب‌افتاده و تیکت‌های باز."
+            />
+          </>
+        }
+      />
+      <div className="min-w-0">{children}</div>
+    </PageShell>
+  );
+}

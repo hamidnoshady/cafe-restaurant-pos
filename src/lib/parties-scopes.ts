@@ -29,6 +29,14 @@ export const PARTY_SCOPES = [
   // full «اشخاص» view, but answers the accountant's customer question
   // (who a customer is in the ledger) without the suppliers and staff noise.
   "accounting-customers",
+  // Accounting's supplier-side slices of that same shared record. Two scopes
+  // rather than one because the app's menu says both words: «تأمین‌کنندگان»
+  // is the buying relationship the payables settle against, «فروشندگان» the
+  // same record under the word an accountant coming from another package
+  // looks for. They read one `parties` row — an alias view, never a second
+  // store.
+  "accounting-suppliers",
+  "accounting-vendors",
   "operations",
   "team",
   "growth",
@@ -104,7 +112,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Customer",
     label: "مشتریان",
     description: "پروندهٔ مشتریان: افزودن، ویرایش و بایگانی",
-    href: "/dashboard/crm/directory",
+    href: "/crm/directory",
     columns: ["displayName", "phone", "email", "accountingCode", "balance", "status"],
     // The CRM owns who the person is; the ledger owns their number. The code and the
     // balance are shown because an AR conversation needs them, and never edited
@@ -127,7 +135,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     // one route per section — this is its persons directory, and the `?party=`
     // a deep link from another app (an A/R row, an AI answer) carries is read
     // by the section it opens.
-    href: "/dashboard/accounting/directory",
+    href: "/accounting/directory",
     columns: ["displayName", "role", "phone", "accountingCode", "tax", "status"],
     accounting: "editable",
     readOnly: false,
@@ -145,7 +153,37 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Customer",
     label: "مشتریان",
     description: "مشتریان با کد حسابداری، مالیات و ماندهٔ حساب",
-    href: "/dashboard/accounting/customers",
+    href: "/accounting/customers",
+    columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
+    accounting: "editable",
+    readOnly: false,
+  },
+  {
+    // Accounting's suppliers slice — the counterparties A/P settles with, at
+    // the app's own route. The payables screen links here rather than into the
+    // store's supplier list, so an accountant stays in Accounting.
+    key: "accounting-suppliers",
+    app: "accounting",
+    roles: ["Supplier"],
+    defaultRole: "Supplier",
+    label: "تأمین‌کنندگان",
+    description: "تأمین‌کنندگان با کد حسابداری، مالیات و ماندهٔ حساب",
+    href: "/accounting/suppliers",
+    columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
+    accounting: "editable",
+    readOnly: false,
+  },
+  {
+    // The same record under the other word. «فروشندگان» is what an accountant
+    // moving from another package looks for, and answering it with a 404 (or
+    // with a second table) is the mistake this alias exists to avoid.
+    key: "accounting-vendors",
+    app: "accounting",
+    roles: ["Supplier"],
+    defaultRole: "Supplier",
+    label: "فروشندگان",
+    description: "همان پروندهٔ تأمین‌کنندگان، با نام «فروشنده»",
+    href: "/accounting/vendors",
     columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
     accounting: "editable",
     readOnly: false,
@@ -169,7 +207,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Employee",
     label: "کارکنان",
     description: "پروندهٔ کارکنان — حساب جاری، کد ملی و اطلاعات مالی",
-    href: "/dashboard/settings?tab=team",
+    href: "/settings/team",
     columns: ["displayName", "phone", "accountingCode", "status"],
     accounting: "readonly",
     readOnly: false,
@@ -181,7 +219,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Customer",
     label: "مشتریان",
     description: "مشتریان رشد: چرخهٔ حیات، امتیاز و خرید — افزودن و ویرایش در همین بخش",
-    href: "/dashboard/growth/customers",
+    href: "/growth/customers",
     columns: ["displayName", "phone", "status"],
     accounting: "hidden",
     // Growth manages its own customers screen (its own lifecycle/loyalty columns,
@@ -257,7 +295,10 @@ export function partyMatchesScope(scope: PartyScopeDef, role: PartyRole | string
  */
 export function partyOwnerScopeForRole(role: PartyRole): PartyScopeDef {
   const owner = PARTY_SCOPES_DEF.find(
-    (def) => !def.readOnly && def.key !== "accounting" && def.roles.includes(role),
+    // Every accounting-side scope is skipped, not just the full «اشخاص» one:
+    // Accounting is a *view* of every counterparty (that is the point of it),
+    // so it can never be the answer to "which app owns this role's record".
+    (def) => !def.readOnly && !def.key.startsWith("accounting") && def.roles.includes(role),
   );
   // Accounting is the fallback for a role nobody else claims, and every role is
   // claimed, so this only fires if a scope is deleted by mistake.

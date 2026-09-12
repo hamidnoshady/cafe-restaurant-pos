@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchConversations } from "@/lib/ai-conversations";
-import { STANDARD_REPORTS } from "@/lib/reports";
+import { getBusinessIndustry } from "@/lib/industry-guard";
+import { standardReportsFor } from "@/lib/reports";
 import { requireManager } from "@/lib/setup-state";
 import { withTenantScope } from "@/lib/auth";
 
@@ -22,7 +23,8 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   if (!q) return NextResponse.json({ conversations: [], reports: [] });
 
   const needle = q.toLowerCase();
-  const reports = STANDARD_REPORTS.filter(
+  const industry = await getBusinessIndustry(session.businessId);
+  const reports = standardReportsFor(industry).filter(
     (report) => report.label.toLowerCase().includes(needle) || report.key.toLowerCase().includes(needle),
   )
     .slice(0, MAX_RESULTS)

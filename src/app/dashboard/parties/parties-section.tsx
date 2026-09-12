@@ -42,8 +42,8 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "../page-chrome";
 import { api, errorMessage, ErrorBox, Field, InfoBox, inputClass } from "../ui";
-import { ArStatementPanel } from "../accounting/ar-statement-panel";
-import { crmCustomerHref } from "../crm/crm-routes";
+import { ArStatementPanel } from "@/app/(app)/accounting/ar-statement-panel";
+import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import { PartyFormDialog } from "./party-form";
 
 const PAGE_SIZE = 20;

@@ -9,6 +9,7 @@ import {
   previousPeriodRange,
   REPORT_VIEWS,
   STANDARD_REPORTS,
+  standardReportsFor,
   validateReportConfig,
   type FoodCostVariance,
   type FoodCostVarianceItemInput,
@@ -915,9 +916,21 @@ export async function deleteSavedReport(businessId: string, id: string): Promise
   return (rowCount ?? 0) > 0;
 }
 
-/** Idempotently materializes the pre-built report library as saved_reports rows for a business, so they can be pinned to a dashboard like any custom report. Safe to call repeatedly (upsert on standard_key). */
+/**
+ * Idempotently materializes the pre-built report library as saved_reports rows
+ * for a business, so they can be pinned to a dashboard like any custom report.
+ * Safe to call repeatedly (upsert on standard_key).
+ *
+ * Only the reports this business's trade actually has: seeding all of them gave
+ * a jewellery shop pinnable «چرخش میزها» and «گزارش ضایعات» tiles that could
+ * only ever draw an empty chart. Rows seeded before this narrowing are left
+ * alone rather than deleted — a `dashboard_widgets` row references them, and
+ * silently removing a tile an owner arranged is worse than an empty one they
+ * can remove themselves.
+ */
 export async function ensureStandardSavedReports(businessId: string): Promise<Map<string, string>> {
-  const withCharts = STANDARD_REPORTS.filter((r) => r.defaultChart);
+  const industry = await getBusinessIndustry(businessId);
+  const withCharts = standardReportsFor(industry).filter((r) => r.defaultChart);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -987,18 +1000,37 @@ export async function getDashboardWidgets(
  */
 async function seedOwnerDashboardDefaults(businessId: string): Promise<void> {
   const ids = await ensureStandardSavedReports(businessId);
-  const defaults: { key: string; chartType: ChartType; x: number; y: number; w: number; h: number }[] = [
-    { key: "daily_sales_summary", chartType: "bar", x: 0, y: 0, w: 6, h: 3 },
-    { key: "shift_reconciliation", chartType: "bar", x: 6, y: 0, w: 6, h: 3 },
-    { key: "top_selling_items", chartType: "pie", x: 0, y: 3, w: 6, h: 3 },
-    { key: "staff_performance", chartType: "bar", x: 6, y: 3, w: 6, h: 3 },
+  // Preference order, not fixed positions: the first four this trade actually
+  // has are laid into the 2×2 below. «پرفروش‌ترین اقلام» is a menu report, so a
+  // jewellery shop skips it and takes the next candidate rather than being
+  // seeded a hole where its third tile should be — the old fixed-coordinate
+  // list left exactly that gap.
+  const candidates: { key: string; chartType: ChartType }[] = [
+    { key: "daily_sales_summary", chartType: "bar" },
+    { key: "shift_reconciliation", chartType: "bar" },
+    { key: "top_selling_items", chartType: "pie" },
+    { key: "staff_performance", chartType: "bar" },
+    { key: "expenses_by_category", chartType: "pie" },
+    { key: "cogs_trend", chartType: "line" },
   ];
+  const slots = [
+    { x: 0, y: 0 },
+    { x: 6, y: 0 },
+    { x: 0, y: 3 },
+    { x: 6, y: 3 },
+  ];
+  const chosen = candidates.filter((c) => ids.has(c.key)).slice(0, slots.length);
   await saveDashboardWidgets(
     businessId,
     { role: "owner" },
-    defaults
-      .filter((d) => ids.has(d.key))
-      .map((d) => ({ savedReportId: ids.get(d.key)!, chartType: d.chartType, x: d.x, y: d.y, w: d.w, h: d.h })),
+    chosen.map((c, index) => ({
+      savedReportId: ids.get(c.key)!,
+      chartType: c.chartType,
+      x: slots[index].x,
+      y: slots[index].y,
+      w: 6,
+      h: 3,
+    })),
   );
 }
 

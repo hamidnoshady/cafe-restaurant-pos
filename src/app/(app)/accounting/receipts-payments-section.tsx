@@ -1,0 +1,378 @@
+"use client";
+
+import {
+  EmptyState,
+  SectionCardSkeleton,
+  cardClass,
+  overlayPanelClass,
+} from "@/app/dashboard/page-chrome";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
+import { useCallback, useEffect, useState } from "react";
+import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
+import { useMoney } from "@/components/money/money-context";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
+import { ArrowDownLeftIcon, ArrowUpRightIcon, DownloadIcon, PlusIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
+import { Button } from "@/components/ui/button";
+import { useOverlayEscape } from "./use-overlay-escape";
+
+/**
+ * «دریافت و پرداخت» — the voucher ledger slice. The reference software keeps
+ * four lists (receive/pay/income/expense); here receive and pay are the two
+ * subledger voucher streams the accounting engine already posts (ar_receipts
+ * / ap_payments), so this section is a view over the very rows the receive
+ * and pay actions write — one place to browse, search and export them, and to
+ * register a new voucher with the platform's form language.
+ */
+
+interface Voucher {
+  id: string;
+  date: string;
+  method: "cash" | "bank";
+  amount: number;
+  memo: string | null;
+  partyName: string;
+}
+
+type Side = "receipts" | "payments";
+
+/**
+ * `formatJalali` rather than a local re-implementation of the conversion: the
+ * repo has one Shamsi formatter on purpose, and a second spelling of it is how
+ * two screens end up disagreeing about a date.
+ */
+function fmtJalali(iso: string | null): string {
+  if (!iso) return "—";
+  return toPersianDigits(formatJalali(iso.slice(0, 10)));
+}
+
+const METHOD_LABELS: Record<Voucher["method"], string> = {
+  cash: "نقدی",
+  bank: "بانکی",
+};
+
+/**
+ * How many vouchers the list draws. Both breakpoints used to slice differently
+ * (100 on desktop, 50 on mobile) under a heading that counted *all* of them, so
+ * «۳۲۰ سند» sat above a list of fifty with nothing said about the rest.
+ */
+const VISIBLE_ROWS = 100;
+
+const chipClass = (active: boolean) =>
+  `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${
+    active
+      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
+      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+  }`;
+
+export function ReceiptsPaymentsSection() {
+  const money = useMoney();
+  const [side, setSide] = useState<Side>("receipts");
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<Voucher[] | null>(null);
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const load = useCallback(() => {
+    const params = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+    const url = side === "receipts" ? `/api/ledger/ar/receipts${params}` : `/api/ledger/ap/payments${params}`;
+    api<{ receipts?: Voucher[]; payments?: Voucher[]; error?: string }>(url).then(({ ok, data }) => {
+      if (ok) setRows(data.receipts ?? data.payments ?? []);
+      else setError(errorMessage(data.error));
+    });
+  }, [side, q]);
+
+  useEffect(() => {
+    setRows(null);
+    const t = setTimeout(load, q ? 250 : 0);
+    return () => clearTimeout(t);
+  }, [load, q, refreshKey]);
+
+  /*
+   * The export obeys the same Shamsi rule the screen does: a CSV is read by a
+   * person, so its date column is Jalali rather than the stored ISO/Gregorian
+   * string this used to write out. The amount column names the unit actually in
+   * use instead of asserting Rial while the screen shows Toman — as an ASCII
+   * number, because a spreadsheet has to be able to add the column up.
+   */
+  function downloadCsv() {
+    if (!rows) return;
+    const head = ["تاریخ", "شخص", "شرح", "روش", `مبلغ (${money.unitLabel})`];
+    const body = rows.map((r) => [
+      fmtJalali(r.date),
+      r.partyName,
+      r.memo ?? "",
+      METHOD_LABELS[r.method],
+      String(money.toInput(r.amount)),
+    ]);
+    const csv = [head, ...body].map((line) => line.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")).join("\n");
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = side === "receipts" ? "receipts.csv" : "payments.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  return (
+    <section className="space-y-4">
+      <ErrorBox>{error}</ErrorBox>
+
+      <div className={`${cardClass} p-4 sm:p-5`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دریافت و پرداخت</p>
+            <h2 className="mt-1 font-semibold text-stone-950 dark:text-stone-50">
+              {side === "receipts" ? "دریافت‌ها" : "پرداخت‌ها"}
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {side === "receipts" ? "اسناد دریافت وجه از مشتریان، به ترتیب تاریخ ثبت." : "اسناد پرداخت وجه به تأمین‌کنندگان، به ترتیب تاریخ ثبت."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRefreshKey((k) => k + 1)}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 dark:text-stone-300 transition-colors hover:bg-muted"
+            >
+              <RefreshCwIcon aria-hidden="true" className="size-4" />
+              به‌روزرسانی
+            </button>
+            <button
+              type="button"
+              onClick={downloadCsv}
+              disabled={!rows || rows.length === 0}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 dark:text-stone-300 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+            >
+              <DownloadIcon aria-hidden="true" className="size-4" />
+              دانلود
+            </button>
+            <Button onClick={() => setCreating(true)} className="min-h-10">
+              <PlusIcon aria-hidden="true" className="size-4" />
+              {side === "receipts" ? "ثبت دریافت" : "ثبت پرداخت"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="flex gap-2" role="group" aria-label="نوع سند">
+            <button type="button" aria-pressed={side === "receipts"} className={chipClass(side === "receipts")} onClick={() => setSide("receipts")}>
+              <span className="inline-flex items-center gap-1.5">
+                <ArrowDownLeftIcon aria-hidden="true" className="size-3.5" />
+                دریافتی
+              </span>
+            </button>
+            <button type="button" aria-pressed={side === "payments"} className={chipClass(side === "payments")} onClick={() => setSide("payments")}>
+              <span className="inline-flex items-center gap-1.5">
+                <ArrowUpRightIcon aria-hidden="true" className="size-3.5" />
+                پرداختی
+              </span>
+            </button>
+          </div>
+          <input
+            className={`${inputClass} h-11 ms-auto w-40 sm:w-56`}
+            placeholder="جست‌وجوی شخص یا شرح…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+
+        <div className="mt-4">
+          {!rows ? (
+            <SectionCardSkeleton rows={4} />
+          ) : rows.length === 0 ? (
+            <EmptyState>{side === "receipts" ? "هنوز سندی برای دریافت ثبت نشده است." : "هنوز سندی برای پرداخت ثبت نشده است."}</EmptyState>
+          ) : (
+            <>
+              <p className="mb-2 text-xs text-muted-foreground">
+                {rows.length > VISIBLE_ROWS
+                  ? `${toPersianDigits(VISIBLE_ROWS)} سند از ${toPersianDigits(rows.length)} سند — برای دیدن بقیه جست‌وجو کنید`
+                  : `${toPersianDigits(rows.length)} سند`}
+              </p>
+              <div className="hidden overflow-x-auto rounded-xl border border-stone-200/80 dark:border-stone-500/30 lg:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-stone-50 dark:bg-stone-500/10">
+                      <th className="py-3 pe-3 ps-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">#</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">شخص</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">شرح</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">روش</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">تاریخ</th>
+                      <th className="py-3 pe-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">مبلغ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice(0, VISIBLE_ROWS).map((r, index) => (
+                      <tr key={r.id} className="border-b border-border transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-500/10">
+                        <td className="py-3 pe-3 ps-4 text-muted-foreground">{toPersianDigits(index + 1)}</td>
+                        <td className="max-w-48 truncate py-3 pe-3 font-medium">{r.partyName}</td>
+                        <td className="max-w-64 truncate py-3 pe-3 text-muted-foreground">{r.memo ?? "—"}</td>
+                        <td className="py-3 pe-3 text-muted-foreground">{METHOD_LABELS[r.method]}</td>
+                        <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{fmtJalali(r.date)}</td>
+                        <td className="whitespace-nowrap py-3 pe-4 font-semibold">{money.format(r.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="space-y-3 lg:hidden">
+                {rows.slice(0, VISIBLE_ROWS).map((r) => (
+                  <article key={r.id} className="rounded-xl border border-border/80 bg-muted p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-bold">{r.partyName}</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">{r.memo ?? (side === "receipts" ? "دریافت وجه" : "پرداخت وجه")}</p>
+                      </div>
+                      <span className="whitespace-nowrap font-bold">{money.format(r.amount)}</span>
+                    </div>
+                    <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
+                      {fmtJalali(r.date)} · {METHOD_LABELS[r.method]}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {creating ? (
+        <VoucherForm
+          side={side}
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            setRefreshKey((k) => k + 1);
+          }}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => void; onCreated: () => void }) {
+  const money = useMoney();
+  const [parties, setParties] = useState<{ id: string; name: string }[]>([]);
+  const [partyId, setPartyId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<"cash" | "bank">("cash");
+  const [date, setDate] = useState("");
+  const [memo, setMemo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useOverlayEscape(onClose);
+
+  /*
+   * `?scope=directory`, not the open-balance list. A voucher is not always a
+   * settlement of an existing debt — an advance from a customer, a deposit to a
+   * supplier — and the balance list additionally carries the «بدون … مشخص»
+   * bucket, whose id is the sentinel `"unknown"`; submitting that used to fail
+   * with an unexplained server error rather than a message.
+   */
+  useEffect(() => {
+    const url =
+      side === "receipts" ? "/api/ledger/ar/customers?scope=directory" : "/api/ledger/ap/suppliers?scope=directory";
+    api<{
+      customers?: { customerId: string; customerName: string }[];
+      suppliers?: { supplierId: string; supplierName: string }[];
+    }>(url).then(({ ok, data }) => {
+      if (!ok) return;
+      setParties(
+        side === "receipts"
+          ? (data.customers ?? []).map((c) => ({ id: c.customerId, name: c.customerName }))
+          : (data.suppliers ?? []).map((s) => ({ id: s.supplierId, name: s.supplierName })),
+      );
+    });
+  }, [side]);
+
+  async function submit() {
+    if (!partyId) {
+      setError("شخص را انتخاب کنید.");
+      return;
+    }
+    let rial: number;
+    try {
+      rial = money.parse(amount);
+    } catch {
+      setError(errorMessage("invalid_amount"));
+      return;
+    }
+    if (rial <= 0) {
+      setError(errorMessage("invalid_amount"));
+      return;
+    }
+    setBusy(true);
+    setError("");
+    const url = side === "receipts" ? "/api/ledger/ar/receipts" : "/api/ledger/ap/payments";
+    const body =
+      side === "receipts"
+        ? { customerId: partyId, amount: rial, method, memo: memo.trim() || undefined, receiptDate: date || undefined }
+        : { supplierId: partyId, amount: rial, method, memo: memo.trim() || undefined, paymentDate: date || undefined };
+    const { ok, data } = await api<{ error?: string }>(url, { method: "POST", body: JSON.stringify(body) });
+    setBusy(false);
+    if (ok) onCreated();
+    else setError(errorMessage(data.error));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voucher-form-heading"
+        className={`${overlayPanelClass} w-full max-w-md`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ثبت تراکنش مالی</p>
+            <h3 id="voucher-form-heading" className="mt-1 text-lg font-bold">
+              {side === "receipts" ? "ثبت دریافت" : "ثبت پرداخت"}
+            </h3>
+          </div>
+          <button type="button" onClick={onClose} aria-label="بستن" className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted">
+            <XIcon aria-hidden="true" className="size-4" />
+          </button>
+        </header>
+
+        <div className="space-y-4 px-4 py-4 sm:px-5">
+          <ErrorBox>{error}</ErrorBox>
+          <Field label={side === "receipts" ? "دریافت از شخص" : "پرداخت به شخص"}>
+            <SearchableSelect
+              value={partyId}
+              onChange={setPartyId}
+              ariaLabel="انتخاب شخص"
+              options={[{ value: "", label: "انتخاب کنید…" }, ...parties.map((p) => ({ value: p.id, label: p.name }))]}
+            />
+          </Field>
+          <Field label="مبلغ" hint={money.unitLabel}>
+            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="۰" />
+          </Field>
+          <div>
+            <p className="mb-1 text-sm font-medium text-foreground">روش</p>
+            <div className="flex gap-2">
+              <button type="button" aria-pressed={method === "cash"} className={chipClass(method === "cash")} onClick={() => setMethod("cash")}>نقدی</button>
+              <button type="button" aria-pressed={method === "bank"} className={chipClass(method === "bank")} onClick={() => setMethod("bank")}>بانکی</button>
+            </div>
+          </div>
+          <Field label="تاریخ (اختیاری)">
+            <JalaliDatePicker value={date} onChange={setDate} className={inputClass} />
+          </Field>
+          <Field label="شرح (اختیاری)">
+            <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
+          </Field>
+        </div>
+
+        <footer className="grid grid-cols-2 gap-3 border-t border-border px-4 py-4 sm:px-5">
+          <SecondaryButton onClick={onClose} disabled={busy}>انصراف</SecondaryButton>
+          <PrimaryButton onClick={() => void submit()} disabled={busy}>
+            {busy ? "در حال ثبت…" : side === "receipts" ? "ثبت دریافت" : "ثبت پرداخت"}
+          </PrimaryButton>
+        </footer>
+      </section>
+    </div>
+  );
+}

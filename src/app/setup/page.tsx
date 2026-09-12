@@ -8,7 +8,7 @@ export default async function SetupIndex() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  if (await isSetupComplete(session.businessId)) redirect("/dashboard/settings");
+  if (await isSetupComplete(session.businessId)) redirect("/settings");
 
   const state = await computeSetupState(session.businessId);
   const industry = state.business?.industry ?? "food_service";

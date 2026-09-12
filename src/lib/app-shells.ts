@@ -46,6 +46,18 @@ export interface AppShellDef {
 
 export const APP_SHELLS: readonly AppShellDef[] = [
   {
+    // Accounting owns a shell too, now that it has a public prefix of its own.
+    // It was the one app left drawing the business's flat nav, which is what
+    // made «حسابداری» read as *the* product and every other app as a folder
+    // inside it. Its sections are the same list the flat «حسابداری» group used
+    // (`accounting-nav.ts`), so nothing about the app's contents changes —
+    // only which menu draws them while a member is inside the app.
+    app: "accounting",
+    prefix: "/accounting",
+    label: "حسابداری",
+    description: "دفتر کل، اسناد، اشخاص، دریافت و پرداخت و گزارش‌های مالی.",
+  },
+  {
     app: "growth",
     prefix: "/growth",
     label: "رشد و بازاریابی",

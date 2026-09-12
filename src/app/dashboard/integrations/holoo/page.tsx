@@ -9,7 +9,7 @@ export default async function LegacyHolooMigrationPage({
   const { connectionId } = await searchParams;
   redirect(
     connectionId
-      ? `/dashboard/connections/holoo?connectionId=${encodeURIComponent(connectionId)}`
-      : "/dashboard/connections/holoo",
+      ? `/settings/connections/holoo?connectionId=${encodeURIComponent(connectionId)}`
+      : "/settings/connections/holoo",
   );
 }

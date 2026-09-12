@@ -32,6 +32,8 @@ const accountingCustomers = byKey.get("accounting-customers")!;
 const operations = byKey.get("operations")!;
 const team = byKey.get("team")!;
 const growth = byKey.get("growth")!;
+const accountingSuppliers = byKey.get("accounting-suppliers")!;
+const accountingVendors = byKey.get("accounting-vendors")!;
 const sales = byKey.get("sales")!;
 
 describe("the scope list", () => {
@@ -44,7 +46,10 @@ describe("the scope list", () => {
       expect(def.app).toBeTruthy();
       expect(def.roles.length).toBeGreaterThan(0);
       expect(def.roles).toContain(def.defaultRole);
-      expect(def.href.startsWith("/dashboard/")).toBe(true);
+      // A real, public place — an app's own prefix (`/accounting/directory`,
+      // `/crm/directory`), the platform's settings (`/settings/team`) or a
+      // workspace page. The apps left `/dashboard/<app>` behind.
+      expect(def.href.startsWith("/")).toBe(true);
       expect(def.label).toBeTruthy();
       // A list with no name column is not a list of parties.
       expect(def.columns).toContain("displayName");
@@ -90,17 +95,30 @@ describe("who each app lists", () => {
     // route, never a redirect into the CRM.
     expect(accountingCustomers.roles).toEqual(["Customer"]);
     expect(accountingCustomers.app).toBe("accounting");
-    expect(accountingCustomers.href).toBe("/dashboard/accounting/customers");
+    expect(accountingCustomers.href).toBe("/accounting/customers");
     expect(accountingCustomers.columns).toContain("accountingCode");
     expect(accountingCustomers.columns).toContain("balance");
   });
 
   it("accounting's persons directory lives at the app's own route", () => {
-    // The Accounting app has its own prefix now (`/dashboard/accounting/…`);
+    // The Accounting app has its own top-level prefix now (`/accounting/…`);
     // its «اشخاص» section is its persons directory — managed there, never by
     // sending the accountant into the CRM's.
     expect(accounting.app).toBe("accounting");
-    expect(accounting.href).toBe("/dashboard/accounting/directory");
+    expect(accounting.href).toBe("/accounting/directory");
+  });
+
+  it("gives accounting's suppliers and vendors two names over one record", () => {
+    // «تأمین‌کنندگان» and «فروشندگان» are the two words an accountant looks
+    // for; they are two *views*, not two stores — the same shared `parties`
+    // row filtered to the same role, at two of the app's own routes.
+    expect(accountingSuppliers.roles).toEqual(["Supplier"]);
+    expect(accountingVendors.roles).toEqual(["Supplier"]);
+    expect(accountingSuppliers.app).toBe("accounting");
+    expect(accountingVendors.app).toBe("accounting");
+    expect(accountingSuppliers.href).toBe("/accounting/suppliers");
+    expect(accountingVendors.href).toBe("/accounting/vendors");
+    expect(accountingVendors.columns).toEqual(accountingSuppliers.columns);
   });
 
   it("filters a shared list to what the scope is about", () => {

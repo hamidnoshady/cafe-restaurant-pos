@@ -9,5 +9,5 @@ export default async function BranchesPage() {
   if (session.role !== "owner") redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "multi_location");
 
-  redirect("/dashboard/settings?tab=branch-management&branchTab=branches");
+  redirect("/settings/branch-management?branchTab=branches");
 }

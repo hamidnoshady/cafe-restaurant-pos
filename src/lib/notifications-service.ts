@@ -1002,7 +1002,7 @@ export async function sendTestNotification(
       severity: "info",
       title: "اعلان آزمایشی",
       body: "اگر این پیام را می‌بینید، اعلان‌های این دستگاه درست کار می‌کند.",
-      url: "/dashboard/settings?tab=notifications",
+      url: "/settings/notifications",
       notificationId: "test",
       dedupeKey: `system.test:${userId}`,
     }),

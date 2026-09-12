@@ -11,12 +11,17 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * "شیفت‌ها" settings tab (shift-history-settings.tsx).
  */
 import { useCallback, useEffect, useState } from "react";
+import { ClockIcon } from "lucide-react";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "./ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { overlayPanelClass } from "./page-chrome";
+import {
+  SIDEBAR_FOOTER_BUTTON_ACTIVE_CLASS,
+  SIDEBAR_FOOTER_BUTTON_CLASS,
+} from "./sidebar-nav-styles";
 
 interface Shift {
   id: string;
@@ -70,14 +75,10 @@ export function ShiftButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={
-          "mb-2 w-full rounded-lg border py-1.5 text-sm transition " +
-          (shift
-            ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
-            : "border-input text-muted-foreground hover:bg-muted/50")
-        }
+        className={shift ? SIDEBAR_FOOTER_BUTTON_ACTIVE_CLASS : SIDEBAR_FOOTER_BUTTON_CLASS}
       >
-        {shift ? "پایان شیفت" : "شروع شیفت"}
+        <ClockIcon aria-hidden="true" className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-start">{shift ? "پایان شیفت" : "شروع شیفت"}</span>
       </button>
       {open && (
         <ShiftModal

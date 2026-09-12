@@ -51,19 +51,19 @@ export function AiSidebar({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      <div className="flex items-center justify-between border-b border-border/80 px-3 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-border/80 px-3 py-3">
         <span className="font-bold text-foreground">دستیار هوشمند</span>
         <button
           type="button"
           onClick={onNavigate}
           aria-label="بستن منو"
-          className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted md:hidden"
+          className="grid size-11 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 md:hidden"
         >
           <XIcon className="size-5" aria-hidden="true" />
         </button>
       </div>
 
-      <div className="p-3">
+      <div className="shrink-0 p-3">
         <Button
           variant="outline"
           className="w-full justify-start gap-2"
@@ -77,7 +77,7 @@ export function AiSidebar({
         </Button>
       </div>
 
-      <nav aria-label="مکالمه‌ها" className="min-w-0 flex-1 space-y-1 overflow-y-auto p-2">
+      <nav aria-label="مکالمه‌ها" className="min-h-0 min-w-0 flex-1 space-y-1 overflow-y-auto overscroll-contain p-2">
         {loading ? (
           <LoadingSkeleton rows={4} compact className="px-2 py-3" />
         ) : conversations.length === 0 ? (
@@ -94,25 +94,28 @@ export function AiSidebar({
                   onNavigate();
                 }}
                 aria-current={active ? "page" : undefined}
+                title={conversation.title || "گفت‌وگوی بدون عنوان"}
                 className={cn(
-                  "block w-full truncate rounded-lg px-3 py-2 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40",
+                  "flex min-h-11 w-full items-center rounded-lg px-3 py-2 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45",
                   active
                     ? "bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
                     : "text-foreground/80 hover:bg-muted hover:text-foreground",
                 )}
               >
-                {conversation.title || "گفت‌وگوی بدون عنوان"}
+                <span className="min-w-0 flex-1 truncate">
+                  {conversation.title || "گفت‌وگوی بدون عنوان"}
+                </span>
               </button>
             );
           })
         )}
       </nav>
 
-      <div className="border-t border-border/80 p-2">
+      <div className="shrink-0 border-t border-border/80 p-2">
         <Link
-          href="/dashboard/projects"
+          href="/projects"
           onClick={onNavigate}
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+          className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
         >
           <FolderIcon className="size-4 shrink-0" aria-hidden="true" />
           پروژه‌ها

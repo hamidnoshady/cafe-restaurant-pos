@@ -1,8 +1,10 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { LockIcon } from "lucide-react";
 import { PinPad } from "@/components/auth/pin-pad";
 import { overlayPanelClass } from "./page-chrome";
+import { SIDEBAR_FOOTER_BUTTON_CLASS } from "./sidebar-nav-styles";
 
 /**
  * Phase 20 Wave 2 — a client-side-only "step away from the till" convenience,
@@ -89,12 +91,9 @@ function LockOverlay({ fullName, onUnlock }: { fullName: string; onUnlock: () =>
 export function LockButton() {
   const lock = useLockScreen();
   return (
-    <button
-      type="button"
-      onClick={lock}
-      className="mb-2 w-full rounded-lg border border-input py-1.5 text-sm text-muted-foreground transition hover:bg-muted/50"
-    >
-      قفل صفحه
+    <button type="button" onClick={lock} className={SIDEBAR_FOOTER_BUTTON_CLASS}>
+      <LockIcon aria-hidden="true" className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-start">قفل صفحه</span>
     </button>
   );
 }
