@@ -50,21 +50,43 @@ export default function WelcomePage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      {stage === "choosing" ? (
-        <ModeChoice
-          onChoose={(mode) =>
-            setStage(mode === "local" ? "local" : "connecting")
-          }
-        />
-      ) : null}
-      {stage === "local" ? (
-        <LocalBootstrapForm onBack={() => setStage("choosing")} />
-      ) : null}
-      {stage === "connecting" ? (
-        <PairForm onBack={() => setStage("choosing")} />
-      ) : null}
-    </div>
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10 sm:px-6">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-amber-50/80 to-transparent"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -start-24 top-24 size-64 rounded-full bg-primary/5 blur-3xl"
+      />
+      <div className="relative z-10 w-full">
+        {stage !== "choosing" ? (
+          <div
+            className="mx-auto mb-4 flex w-full max-w-md items-center justify-center gap-2 text-xs text-muted-foreground"
+            aria-label="پیشرفت راه‌اندازی"
+          >
+            <span className="size-2 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+            <span>انتخاب روش</span>
+            <span className="h-px w-8 bg-border" />
+            <span className="size-2 rounded-full bg-amber-500 dark:bg-amber-400" />
+            <span>{stage === "local" ? "ساخت فضای کار" : "اتصال دستگاه"}</span>
+          </div>
+        ) : null}
+        {stage === "choosing" ? (
+          <ModeChoice
+            onChoose={(mode) =>
+              setStage(mode === "local" ? "local" : "connecting")
+            }
+          />
+        ) : null}
+        {stage === "local" ? (
+          <LocalBootstrapForm onBack={() => setStage("choosing")} />
+        ) : null}
+        {stage === "connecting" ? (
+          <PairForm onBack={() => setStage("choosing")} />
+        ) : null}
+      </div>
+    </main>
   );
 }
 
@@ -125,7 +147,10 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
     // enrolled in a factor they could never satisfy.
     const data: { mfa?: MfaHandover } = await res.json().catch(() => ({}));
     setBusy(false);
-    if (data.mfa && (data.mfa.totpSecret || data.mfa.recoveryCodes.length > 0)) {
+    if (
+      data.mfa &&
+      (data.mfa.totpSecret || data.mfa.recoveryCodes.length > 0)
+    ) {
       setMfa(data.mfa);
       return;
     }
@@ -133,7 +158,12 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
   }
 
   if (mfa) {
-    return <MfaHandoverCard mfa={mfa} onDone={() => router.replace("/setup/business")} />;
+    return (
+      <MfaHandoverCard
+        mfa={mfa}
+        onDone={() => router.replace("/setup/business")}
+      />
+    );
   }
 
   return (
@@ -141,7 +171,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
       <button
         type="button"
         onClick={onBack}
-        className="mb-4 text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50 rounded-sm"
+        className="mb-4 inline-flex min-h-10 items-center rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
       >
         ← بازگشت
       </button>
@@ -163,7 +193,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
             نام کسب‌وکار *
           </span>
           <input
-            className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
             placeholder="مثلاً فروشگاه بهار"
@@ -186,7 +216,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
                   onClick={() => enabled && setIndustry(option)}
                   className={`relative rounded-lg border px-3 py-2 text-sm transition-colors outline-none focus-visible:ring focus-visible:ring-ring/50 ${
                     selected
-                      ? "border-amber-300 dark:border-amber-500/40 bg-amber-100 dark:bg-amber-500/20 font-medium text-amber-950 dark:text-amber-200"
+                      ? "border-amber-300 dark:border-amber-500/40 bg-amber-100 dark:bg-amber-500 dark:bg-amber-400/20 font-medium text-amber-950 dark:text-amber-200"
                       : "border-input text-foreground"
                   } ${enabled ? "hover:border-amber-400 dark:hover:border-amber-500/50" : "cursor-not-allowed opacity-50"}`}
                 >
@@ -206,7 +236,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
             نام شعبهٔ اول *
           </span>
           <input
-            className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30"
             value={locationName}
             onChange={(e) => setLocationName(e.target.value)}
             required
@@ -218,7 +248,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
             نام مالک *
           </span>
           <input
-            className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30"
             value={ownerName}
             onChange={(e) => setOwnerName(e.target.value)}
             required
@@ -229,7 +259,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
             ایمیل مالک *
           </span>
           <input
-            className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30"
             dir="ltr"
             type="email"
             value={email}
@@ -242,7 +272,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
             گذرواژه *
           </span>
           <input
-            className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30"
             dir="ltr"
             type="password"
             value={password}
@@ -254,7 +284,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
+          className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-transparent bg-primary px-5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/80 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 outline-none focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50"
         >
           {busy ? "در حال ساخت…" : "ساخت و شروع راه‌اندازی"}
         </button>
@@ -287,7 +317,13 @@ interface MfaHandover {
  * an Owner who discovers at their second login that they are enrolled in a
  * factor nobody ever showed them.
  */
-function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void }) {
+function MfaHandoverCard({
+  mfa,
+  onDone,
+}: {
+  mfa: MfaHandover;
+  onDone: () => void;
+}) {
   const [confirmed, setConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -295,8 +331,9 @@ function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void
     <div className={`w-full max-w-md ${cardClass} p-8`}>
       <h1 className="mb-1 text-2xl font-bold">ورود دومرحله‌ای مالک</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        روی نصب محلی، ورود مالک با «برنامهٔ رمزساز» محافظت می‌شود؛ چون بدون اینترنت پیامکی ارسال
-        نمی‌شود. این صفحه فقط همین یک بار نمایش داده می‌شود.
+        روی نصب محلی، ورود مالک با «برنامهٔ رمزساز» محافظت می‌شود؛ چون بدون
+        اینترنت پیامکی ارسال نمی‌شود. این صفحه فقط همین یک بار نمایش داده
+        می‌شود.
       </p>
 
       {mfa.totpQr ? (
@@ -313,8 +350,8 @@ function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void
       {mfa.totpSecret ? (
         <div className="mb-4">
           <p className="mb-1 text-sm text-muted-foreground">
-            کد QR را با Google Authenticator (یا هر برنامهٔ مشابه) اسکن کنید، یا این کد را دستی وارد
-            کنید:
+            کد QR را با Google Authenticator (یا هر برنامهٔ مشابه) اسکن کنید، یا
+            این کد را دستی وارد کنید:
           </p>
           <p
             dir="ltr"
@@ -328,8 +365,8 @@ function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void
       {mfa.recoveryCodes.length > 0 ? (
         <div className="mb-4">
           <p className="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
-            این ۱۰ کد بازیابی را چاپ کنید یا جای امنی بنویسید. اگر گوشی‌تان را از دست بدهید، تنها
-            راه ورود همین‌هاست.
+            این ۱۰ کد بازیابی را چاپ کنید یا جای امنی بنویسید. اگر گوشی‌تان را
+            از دست بدهید، تنها راه ورود همین‌هاست.
           </p>
           <div
             dir="ltr"
@@ -344,7 +381,9 @@ function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void
             className="mt-2 w-full rounded-lg border border-input py-2 text-sm font-semibold transition hover:bg-primary/10"
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(mfa.recoveryCodes.join("\n"));
+                await navigator.clipboard.writeText(
+                  mfa.recoveryCodes.join("\n"),
+                );
                 setCopied(true);
               } catch {
                 // Clipboard access can be refused; the codes are on screen anyway.
@@ -364,14 +403,16 @@ function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void
           onChange={(e) => setConfirmed(e.target.checked)}
           className="mt-1 size-4"
         />
-        <span>کد QR را اسکن کردم و کدهای بازیابی را در جای امنی ذخیره کردم.</span>
+        <span>
+          کد QR را اسکن کردم و کدهای بازیابی را در جای امنی ذخیره کردم.
+        </span>
       </label>
 
       <button
         type="button"
         disabled={!confirmed}
         onClick={onDone}
-        className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
+        className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-transparent bg-primary px-5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/80 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 outline-none focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50"
       >
         ادامه به راه‌اندازی
       </button>
