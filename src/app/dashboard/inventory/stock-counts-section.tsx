@@ -20,8 +20,9 @@ import { useInventorySearch } from "@/lib/inventory-search";
 import { api, errorMessage, Field, inputClass } from "../ui";
 import { Button } from "@/components/ui/button";
 import { CountScanField, type ScanMatch } from "./count-scan-field";
+import { VisionCountPanel } from "./vision-count-panel";
 import type { InventoryItem, Runner } from "./inventory-manager";
-import { cardClass, overlayPanelClass, SectionCard, EmptyState } from "../page-chrome";
+import { cardClass, overlayPanelClass, SectionCard, EmptyState, StatusBadge } from "../page-chrome";
 
 interface StockCount {
   id: string;
@@ -80,9 +81,13 @@ export function StockCountsSection({
   const [countedQty, setCountedQty] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  /** Items reached by the scanner this session, newest first — pinned above
-   *  the full list so a warehouse of thousands stays legible while counting. */
+  /** Items reached by the scanner or the camera counter this session, newest
+   *  first — pinned above the full list so a warehouse of thousands stays
+   *  legible while counting. */
   const [scannedIds, setScannedIds] = useState<string[]>([]);
+  /** Which of the session items were reached by the camera counter — drives
+   *  the row's source chip («دوربین») next to the scanner-reached ones. */
+  const [cameraCountedIds, setCameraCountedIds] = useState<Set<string>>(new Set());
   const countedQtyRef = useRef<Record<string, string>>({});
 
   const loadCounts = useCallback(() => {
@@ -115,6 +120,27 @@ export function StockCountsSection({
     });
   }, []);
 
+  /** A confirmed visual count lands in the same tally as a scan: add by
+   *  default, replace when the operator re-counted a shelf they had already
+   *  partly scanned. Same Decimal discipline as handleScan. */
+  const handleVisionApply = useCallback(
+    (inventoryItemId: string, qty: string, mode: "add" | "replace") => {
+      const value = new Decimal(qty);
+      setScannedIds((prev) =>
+        prev.includes(inventoryItemId) ? prev : [inventoryItemId, ...prev],
+      );
+      setCameraCountedIds((prev) => new Set(prev).add(inventoryItemId));
+      setCountedQty((prev) => {
+        if (mode === "replace") return { ...prev, [inventoryItemId]: value.toFixed() };
+        const current = prev[inventoryItemId]?.trim();
+        const base =
+          current && Number.isFinite(Number(current)) ? new Decimal(current) : new Decimal(0);
+        return { ...prev, [inventoryItemId]: base.plus(value).toFixed() };
+      });
+    },
+    [],
+  );
+
   const runningTotal = useCallback(
     (inventoryItemId: string) => countedQtyRef.current[inventoryItemId],
     [],
@@ -132,6 +158,12 @@ export function StockCountsSection({
         .map((id) => activeItems.find((i) => i.id === id))
         .filter((i): i is InventoryItem => Boolean(i)),
     [scannedIds, activeItems],
+  );
+
+  /** How many items currently carry a count — drives the submit summary. */
+  const tallyLines = useMemo(
+    () => activeItems.filter((i) => countedQty[i.id]?.trim()).length,
+    [activeItems, countedQty],
   );
 
   async function submit(e: React.FormEvent) {
@@ -154,6 +186,7 @@ export function StockCountsSection({
       setNote("");
       setCountedQty({});
       setScannedIds([]);
+      setCameraCountedIds(new Set());
       loadCounts();
     }
   }
@@ -178,12 +211,13 @@ export function StockCountsSection({
           {scannedItems.length > 0 ? (
             <div className="rounded-lg border border-border">
               <div className="flex items-center justify-between px-3 py-2 text-xs font-medium">
-                <span>اقلام اسکن‌شده ({toPersianDigits(scannedItems.length)})</span>
+                <span>شمارش‌شده در این نشست ({toPersianDigits(scannedItems.length)})</span>
                 <button
                   type="button"
                   className="text-xs text-muted-foreground underline-offset-2 hover:underline"
                   onClick={() => {
                     setScannedIds([]);
+                    setCameraCountedIds(new Set());
                     setCountedQty((prev) => {
                       const next = { ...prev };
                       for (const id of scannedIds) delete next[id];
@@ -191,7 +225,7 @@ export function StockCountsSection({
                     });
                   }}
                 >
-                  پاک کردن اسکن‌ها
+                  پاک کردن شمارش‌های این نشست
                 </button>
               </div>
               <ul className="divide-y divide-border border-t border-border">
@@ -202,22 +236,61 @@ export function StockCountsSection({
                   >
                     <span className="min-w-0 break-words">
                       {i.name}{" "}
+                      {cameraCountedIds.has(i.id) ? (
+                        <StatusBadge tone="active">دوربین</StatusBadge>
+                      ) : null}{" "}
                       <span className="text-xs text-muted-foreground">
                         (موجودی سیستم: {formatQuantity(i.stock)} {i.unit})
                       </span>
                     </span>
-                    <label className="grid w-full gap-1 text-xs font-medium sm:w-40">
-                      <span>مقدار شمارش‌شده</span>
-                      <PersianNumberInput
-                        className={inputClass}
-                        dir="ltr"
-                        inputMode="decimal"
-                        value={countedQty[i.id] ?? ""}
-                        onChange={(e) =>
-                          setCountedQty((prev) => ({ ...prev, [i.id]: e.target.value }))
+                    <div className="flex items-end gap-1.5">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-border px-2.5 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                        onClick={() =>
+                          setCountedQty((prev) => {
+                            const current = prev[i.id]?.trim();
+                            const base =
+                              current && Number.isFinite(Number(current))
+                                ? new Decimal(current)
+                                : new Decimal(0);
+                            return { ...prev, [i.id]: base.minus(1).toFixed() };
+                          })
                         }
-                      />
-                    </label>
+                        aria-label={`کم کردن یک واحد از شمارش ${i.name}`}
+                      >
+                        −
+                      </button>
+                      <label className="grid w-full gap-1 text-xs font-medium sm:w-36">
+                        <span>مقدار شمارش‌شده</span>
+                        <PersianNumberInput
+                          className={inputClass}
+                          dir="ltr"
+                          inputMode="decimal"
+                          value={countedQty[i.id] ?? ""}
+                          onChange={(e) =>
+                            setCountedQty((prev) => ({ ...prev, [i.id]: e.target.value }))
+                          }
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-border px-2.5 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                        onClick={() =>
+                          setCountedQty((prev) => {
+                            const current = prev[i.id]?.trim();
+                            const base =
+                              current && Number.isFinite(Number(current))
+                                ? new Decimal(current)
+                                : new Decimal(0);
+                            return { ...prev, [i.id]: base.plus(1).toFixed() };
+                          })
+                        }
+                        aria-label={`اضافه کردن یک واحد به شمارش ${i.name}`}
+                      >
+                        +
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -253,6 +326,11 @@ export function StockCountsSection({
               >
                 <span className="min-w-0 break-words">
                   {i.name}{" "}
+                  {countedQty[i.id]?.trim() ? (
+                    <StatusBadge tone="active">
+                      شمارش‌شده: {formatQuantity(countedQty[i.id])}
+                    </StatusBadge>
+                  ) : null}{" "}
                   <span className="text-xs text-muted-foreground">
                     (موجودی سیستم: {formatQuantity(i.stock)} {i.unit})
                   </span>
@@ -282,9 +360,25 @@ export function StockCountsSection({
                 : "قلم فعالی برای شمارش موجود نیست."}
             </p>
           ) : null}
-          <Button type="submit" size="lg" className="w-full px-5 font-semibold" disabled={busy}>ثبت شمارش</Button>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              {tallyLines > 0
+                ? `${toPersianDigits(tallyLines)} قلم آمادهٔ ثبت است.`
+                : "هنوز قلمی شمارش نشده است."}
+            </p>
+            <Button
+              type="submit"
+              size="lg"
+              className="flex-1 px-5 font-semibold sm:flex-none"
+              disabled={busy || tallyLines === 0}
+            >
+              ثبت شمارش
+            </Button>
+          </div>
         </form>
       </SectionCard>
+
+      <VisionCountPanel items={activeItems} run={run} onApply={handleVisionApply} />
 
       <SectionCard
         title={
@@ -315,8 +409,8 @@ export function StockCountsSection({
             </li>
           ))}
           {counts && counts.length === 0 ? (
-            <li className="p-3 text-sm text-muted-foreground">
-              شمارشی ثبت نشده است.
+            <li className="p-3">
+              <EmptyState>هنوز شمارشی ثبت نشده است؛ با اسکنر، دوربین یا ورود دستی شروع کنید.</EmptyState>
             </li>
           ) : null}
         </ul>
