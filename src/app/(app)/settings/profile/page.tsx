@@ -23,8 +23,8 @@ export default async function ProfilePage() {
   const { rows } = await withTenant(
     session.businessId,
     () =>
-      query<{ full_name: string; phone: string | null; created_at: string }>(
-        "SELECT full_name, phone, created_at FROM users WHERE id = $1 AND business_id = $2",
+      query<{ full_name: string; phone_e164: string | null; created_at: string }>(
+        "SELECT full_name, phone_e164, created_at FROM users WHERE id = $1 AND business_id = $2",
         [session.sub, session.businessId],
       ),
     { locationId: session.locationId, userId: session.sub },
@@ -39,7 +39,7 @@ export default async function ProfilePage() {
       />
       <ProfileSection
         fullName={member?.full_name ?? session.fullName}
-        phone={member?.phone ?? null}
+        phone={member?.phone_e164 ?? null}
         role={session.role}
         isOwner={session.role === "owner"}
       />

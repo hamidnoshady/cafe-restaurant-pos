@@ -13,6 +13,7 @@
 import Link from "next/link";
 import { ShieldCheckIcon, UserRoundIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
+import { formatPhoneDisplay } from "@/lib/phone";
 import { SectionCard } from "@/app/dashboard/page-chrome";
 import { TwoFactorSettings } from "../two-factor-settings";
 
@@ -57,7 +58,11 @@ export function ProfileSection({
           <div>
             <dt className="text-xs text-muted-foreground">شمارهٔ ورود</dt>
             <dd className="mt-1 font-semibold tabular-nums text-foreground">
-              {phone ? toPersianDigits(phone) : "—"}
+              {phone ? (
+                <span dir="ltr">{toPersianDigits(formatPhoneDisplay(phone))}</span>
+              ) : (
+                "—"
+              )}
             </dd>
           </div>
         </dl>
