@@ -532,11 +532,18 @@ export function routingStrategyMatches(configured: string, proxy: string | null)
 
 /** `/key/generate` answers `{ key: "sk-…", … }`. */
 export function parseGeneratedKey(payload: unknown): string | null {
+  // LiteLLM has returned both `{key}` and `{token}` over its releases. Some
+  // OpenAI-compatible deployments wrap the management response in `data`, so
+  // accept that shape too rather than reporting a successful request as a
+  // missing key.
   const row = payload as Record<string, unknown> | null;
-  if (!row) return null;
-  for (const field of ["key", "token"]) {
-    const value = row[field];
-    if (typeof value === "string" && value.trim()) return value.trim();
+  if (!row || typeof row !== "object") return null;
+  for (const source of [row, row.data as Record<string, unknown> | undefined]) {
+    if (!source || typeof source !== "object") continue;
+    for (const field of ["key", "token", "api_key"]) {
+      const value = source[field];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
   }
   return null;
 }

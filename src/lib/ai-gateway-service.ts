@@ -58,6 +58,7 @@ import {
   type PublicBusinessGateway,
 } from "./ai-gateway";
 import type { AiGatewayTurnPricing } from "./ai-billing-service";
+import { getPlatformAiConfig } from "./ai-config";
 
 /** Management calls are operator-facing: fail them fast rather than hang a page. */
 const MANAGEMENT_TIMEOUT_MS = 10_000;
@@ -721,6 +722,50 @@ export async function provisionVirtualKey(
     tpmLimit: input.tpmLimit,
     rpmLimit: input.rpmLimit,
   });
+}
+
+/**
+ * Provision the business-level key immediately after a business is created.
+ *
+ * Business creation must not be rolled back when LiteLLM is temporarily down:
+ * the gateway can be restarted and the admin can retry from the console. When
+ * it is configured, however, a new tenant is ready for AI before the create
+ * request returns — there is no second manual "generate key" step.
+ */
+export async function autoProvisionBusinessVirtualKey(businessId: string): Promise<BusinessGateway | null> {
+  try {
+    const [gateway, platform] = await Promise.all([getAiGatewayConfig(), getPlatformAiConfig()]);
+    if (!gateway.virtualKeysEnabled || !gateway.masterKey || !gateway.enabled) return null;
+
+    return await provisionVirtualKey(gateway, platform.model, {
+      businessId,
+      locationId: null,
+      maxBudgetUsd: gateway.defaultMaxBudgetUsd,
+      budgetDuration: gateway.defaultBudgetDuration,
+      tpmLimit: gateway.defaultTpmLimit,
+      rpmLimit: gateway.defaultRpmLimit,
+    });
+  } catch (error) {
+    const syncError = error instanceof Error ? error.message : "ai_gateway_provision_failed";
+    // Keep a visible retryable record without exposing the master key or
+    // making tenant creation depend on gateway availability.
+    try {
+      await withoutTenantScope("platform", async () => {
+        await query(
+          `INSERT INTO ai_business_gateway
+             (business_id, location_id, sync_error, updated_at)
+           VALUES ($1, NULL, $2, now())
+           ON CONFLICT (business_id, location_id)
+           DO UPDATE SET sync_error = EXCLUDED.sync_error, updated_at = now()`,
+          [businessId, syncError],
+        );
+      });
+    } catch (recordError) {
+      console.error("could not record automatic LiteLLM key provisioning failure", recordError);
+    }
+    console.error("automatic LiteLLM key provisioning failed", { businessId, error: syncError });
+    return null;
+  }
 }
 
 /** Revoke a business or branch's virtual key at the gateway and drop the row. */
