@@ -1,8 +1,8 @@
-# Cafe/Restaurant POS
+# Business Suite — multi-app business platform
 
-Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
+A Persian-first (RTL, Jalali calendar, Toman display) platform for running and growing a business. Accounting, CRM, growth and marketing, website management, sales/POS, operations, inventory, reporting, AI assistance, and multi-business administration live in one product. **POS is a major app in the suite, not the identity or boundary of the platform.** The industry profile adapts the workspace for hospitality, retail, jewelry, cosmetics, wholesale, and other supported businesses.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 18 numbered phases implemented; Phase 18b is complete for its documented existing-model scope, and Phase 19 is in progress with its Waves 1–2 public-API foundation and core data API** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening), then added platform-owned, metered AI credits and subscriptions (Phase 18). All five Phase 18b waves are shipped. Capabilities that require a new expiry, delivery-zone, staff-shift, ETA, credit-limit, or promotion data model remain explicitly deferred in the Phase 18b document rather than being approximated or silently omitted.
+Development history and shipped capability are documented in [docs/phases/README.md](docs/phases/README.md). Early phases began with café/restaurant POS workflows; later phases evolved that foundation into the current multi-industry, multi-app business platform. Phase documents are historical implementation records, not the current product definition.
 
 ## Stack
 

@@ -3,11 +3,10 @@ import type { MetadataRoute } from "next";
 /**
  * PWA manifest (Phase 12) — served at /manifest.webmanifest by Next 15.
  *
- * Makes the POS installable as a standalone desktop app on the café laptop
+ * Makes the complete Business Suite platform installable as a standalone desktop app
  * (and on tablets/phones). Once installed, Chrome/Edge give it its own window
  * with no browser chrome, a Start-menu entry, and an icon — so it launches and
- * behaves like native software. The Windows launcher (Start-CafePOS) opens
- * this installed app directly.
+ * behaves like native software. Legacy Windows launchers can open this installed app directly.
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {

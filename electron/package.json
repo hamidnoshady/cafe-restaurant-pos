@@ -1,9 +1,9 @@
 {
-  "name": "cafe-pos-desktop",
+  "name": "business-suite-desktop",
   "version": "1.0.5",
   "private": true,
-  "author": "Cafe POS",
-  "description": "Standalone Windows installer for the Cafe/Restaurant POS — no Docker, no Docker Desktop, no manual database setup.",
+  "author": "Business Suite",
+  "description": "Standalone Windows installer for the multi-app Business Suite platform — accounting, CRM, growth, websites, and POS without manual infrastructure setup.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "com.cafepos.desktop",
-    "productName": "Cafe POS",
+    "productName": "Business Suite",
     "asar": true,
     "asarUnpack": [
       "node_modules/**"
@@ -39,8 +39,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Cafe POS",
-      "menuCategory": "Cafe POS",
+      "shortcutName": "Business Suite",
+      "menuCategory": "Business Suite",
       "installerIcon": "../windows/cafe-pos.ico",
       "uninstallerIcon": "../windows/cafe-pos.ico",
       "installerHeaderIcon": "../windows/cafe-pos.ico",

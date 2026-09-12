@@ -12,9 +12,8 @@
  * without exposing transparent corners, which is why icon-square.svg exists
  * alongside the rounded icon.svg used for the "any" purpose and favicon.
  *
- * The generated windows/cafe-pos.ico replaces the ImageMagick-dependent
- * conversion in windows/Install-CafePOS.ps1 — every café laptop now gets the
- * real coffee-cup icon on its shortcuts, not just ones with ImageMagick.
+ * The generated windows/cafe-pos.ico also supplies the same platform mark to
+ * legacy Windows launchers and the current Business Suite desktop installer.
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
