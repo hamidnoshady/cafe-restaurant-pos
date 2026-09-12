@@ -4,6 +4,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CircleAlertIcon, InfoIcon } from "lucide-react";
+import { toPersianDigits } from "@/lib/digits";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,7 +17,10 @@ export async function api<T = Record<string, unknown>>(
   init?: RequestInit,
 ): Promise<{ ok: boolean; status: number; data: T }> {
   const res = await fetch(url, {
-    headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+    headers:
+      init?.body instanceof FormData
+        ? undefined
+        : { "Content-Type": "application/json" },
     ...init,
   });
   let data: T;
@@ -29,7 +33,10 @@ export async function api<T = Record<string, unknown>>(
 }
 
 /** Persian messages for the API's error codes. */
-export function errorMessage(code: string | undefined, messages?: string[]): string {
+export function errorMessage(
+  code: string | undefined,
+  messages?: string[],
+): string {
   if (messages?.length) return messages.join(" ");
   const map: Record<string, string> = {
     unauthorized: "وارد نشده‌اید.",
@@ -68,9 +75,14 @@ export function errorMessage(code: string | undefined, messages?: string[]): str
 export function ErrorBox({ children }: { children: React.ReactNode }) {
   if (!children) return null;
   return (
-    <Alert variant="destructive" className="mb-4 border-destructive/30 bg-destructive/5">
+    <Alert
+      variant="destructive"
+      className="mb-4 border-destructive/30 bg-destructive/5"
+    >
       <CircleAlertIcon />
-      <AlertDescription className="text-destructive">{children}</AlertDescription>
+      <AlertDescription className="text-destructive">
+        {children}
+      </AlertDescription>
     </Alert>
   );
 }
@@ -95,16 +107,20 @@ export function Field({
 }) {
   return (
     <label className="mb-4 block">
-      <span className="mb-1 block text-sm font-medium text-foreground">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-foreground">
+        {label}
+      </span>
       {children}
-      {hint ? <span className="mt-1 block text-xs text-muted-foreground">{hint}</span> : null}
+      {hint ? (
+        <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
+      ) : null}
     </label>
   );
 }
 
 /** shadcn <Input>-equivalent classes for raw <input>/<select>/<textarea> elements. */
 export const inputClass =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50";
+  "h-10 w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50";
 
 export function PrimaryButton({
   children,
@@ -118,7 +134,12 @@ export function PrimaryButton({
   type?: "submit" | "button";
 }) {
   return (
-    <Button type={type} onClick={onClick} disabled={disabled} className="px-5 font-semibold">
+    <Button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className="px-5 font-semibold"
+    >
       {children}
     </Button>
   );
@@ -134,7 +155,13 @@ export function SecondaryButton({
   disabled?: boolean;
 }) {
   return (
-    <Button type="button" variant="outline" onClick={onClick} disabled={disabled} className="px-4">
+    <Button
+      type="button"
+      variant="outline"
+      onClick={onClick}
+      disabled={disabled}
+      className="px-4"
+    >
       {children}
     </Button>
   );
@@ -143,7 +170,12 @@ export function SecondaryButton({
 /** Data-shaped fallback for client-loaded wizard steps. */
 export function SetupDataSkeleton({ rows = 4 }: { rows?: number }) {
   return (
-    <div role="status" aria-live="polite" aria-busy="true" aria-label="در حال بارگذاری اطلاعات مرحله">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="در حال بارگذاری اطلاعات مرحله"
+    >
       <div aria-hidden="true" className="space-y-6">
         <header className="space-y-2">
           <Skeleton className="h-7 w-44" />
@@ -193,15 +225,46 @@ export function StepShell({
 
   async function skip() {
     setSkipping(true);
-    await api("/api/setup/progress", { method: "POST", body: JSON.stringify({ step }) });
+    await api("/api/setup/progress", {
+      method: "POST",
+      body: JSON.stringify({ step }),
+    });
     router.push(nextPath(step, steps));
   }
 
+  const currentIndex = steps.findIndex((item) => item.id === step);
+  const progress = Math.round(((currentIndex + 1) / steps.length) * 100);
+
   return (
     <div>
-      <header className="mb-6">
-        <h1 className="text-xl font-bold">{meta.title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <header className="mb-7 border-b border-border pb-6">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+            مرحلهٔ {toPersianDigits(currentIndex + 1)} از{" "}
+            {toPersianDigits(steps.length)}
+          </p>
+          <span className="text-xs text-muted-foreground">
+            {toPersianDigits(progress)}٪ پیشرفت
+          </span>
+        </div>
+        <div
+          className="mb-5 h-1.5 overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <div
+            className="h-full rounded-full bg-amber-500 dark:bg-amber-400 transition-[width] duration-500"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          {meta.title}
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+          {description}
+        </p>
       </header>
 
       {children}
@@ -209,7 +272,9 @@ export function StepShell({
       <div className="mt-8 flex items-center justify-between border-t pt-4">
         <div>
           {back ? (
-            <SecondaryButton onClick={() => router.push(back)}>مرحلهٔ قبل</SecondaryButton>
+            <SecondaryButton onClick={() => router.push(back)}>
+              مرحلهٔ قبل
+            </SecondaryButton>
           ) : null}
         </div>
         <div className="flex items-center gap-4">
@@ -224,7 +289,10 @@ export function StepShell({
             </button>
           ) : null}
           {showNext ? (
-            <PrimaryButton type="button" onClick={() => router.push(nextPath(step, steps))}>
+            <PrimaryButton
+              type="button"
+              onClick={() => router.push(nextPath(step, steps))}
+            >
               مرحلهٔ بعد
             </PrimaryButton>
           ) : null}

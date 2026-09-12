@@ -13,7 +13,7 @@ interface StateResponse {
   localOnly?: boolean;
 }
 
-export function StepNav() {
+export function StepNav({ compact = false }: { compact?: boolean }) {
   const pathname = usePathname();
   const industry = useSetupIndustry();
   const [done, setDone] = useState<Record<string, string>>({});
@@ -42,7 +42,9 @@ export function StepNav() {
   // The backup-destination step only means anything on a standalone install;
   // on a connected one its page steps aside, so don't offer a link that would
   // bounce straight to the next step.
-  const steps = stepsFor(industry).filter((s) => s.id !== "backup" || localOnly);
+  const steps = stepsFor(industry).filter(
+    (s) => s.id !== "backup" || localOnly,
+  );
 
   if (!loaded) {
     return (
@@ -51,17 +53,27 @@ export function StepNav() {
         aria-live="polite"
         aria-busy="true"
         aria-label="در حال بارگذاری مراحل راه‌اندازی"
-        className="space-y-2"
+        className={compact ? "flex gap-2 overflow-hidden" : "space-y-2"}
       >
         {[0, 1, 2, 3, 4, 5].map((item) => (
-          <Skeleton key={item} aria-hidden="true" className="h-9 w-full rounded-lg" />
+          <Skeleton
+            key={item}
+            aria-hidden="true"
+            className="h-9 w-full rounded-lg"
+          />
         ))}
       </nav>
     );
   }
 
   return (
-    <nav className="space-y-1">
+    <nav
+      className={
+        compact
+          ? "flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]"
+          : "space-y-1"
+      }
+    >
       {steps.map((s, i) => {
         const active = pathname === s.path;
         const isDone = Boolean(done[s.id]);
@@ -69,10 +81,11 @@ export function StepNav() {
           <Link
             key={s.id}
             href={s.path}
-            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+            aria-current={active ? "step" : undefined}
+            className={`flex min-h-10 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm transition-colors ${
               active
-                ? "bg-primary/5 font-semibold text-primary"
-                : "text-muted-foreground hover:bg-muted/50"
+                ? "bg-amber-100 font-semibold text-amber-950 dark:bg-amber-500/20 dark:text-amber-200"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <span
@@ -87,14 +100,20 @@ export function StepNav() {
               {isDone ? "✓" : toPersianDigits(i + 1)}
             </span>
             <span className="truncate">{s.short}</span>
-            {s.optional ? <span className="ms-auto text-[10px] text-muted-foreground">اختیاری</span> : null}
+            {s.optional ? (
+              <span className="ms-auto text-[10px] text-muted-foreground">
+                اختیاری
+              </span>
+            ) : null}
           </Link>
         );
       })}
       <Link
         href="/setup/finish"
         className={`mt-2 flex items-center gap-2 rounded-lg border-t border-border px-3 py-2 pt-3 text-sm ${
-          pathname === "/setup/finish" ? "font-semibold text-primary" : "text-muted-foreground hover:bg-muted/50"
+          pathname === "/setup/finish"
+            ? "font-semibold text-primary"
+            : "text-muted-foreground hover:bg-muted/50"
         }`}
       >
         پایان راه‌اندازی

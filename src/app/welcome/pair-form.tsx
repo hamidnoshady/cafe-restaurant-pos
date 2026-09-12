@@ -144,7 +144,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
       <button
         type="button"
         onClick={onBack}
-        className="mb-4 text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50 rounded-sm"
+        className="mb-4 inline-flex min-h-10 items-center rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
       >
         ← بازگشت
       </button>
@@ -167,7 +167,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
             آدرس سرور *
           </span>
           <input
-            className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30"
             dir="ltr"
             value={remoteUrl}
             onChange={(e) => {
@@ -191,7 +191,10 @@ export function PairForm({ onBack }: { onBack: () => void }) {
               {probing ? "در حال آزمایش…" : "آزمایش اتصال"}
             </button>
             {probe.kind === "ok" ? (
-              <span className="text-xs text-emerald-600 dark:text-emerald-400" dir="ltr">
+              <span
+                className="text-xs text-emerald-600 dark:text-emerald-400"
+                dir="ltr"
+              >
                 ✓ {probe.url}
               </span>
             ) : null}
@@ -229,7 +232,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
         <button
           type="submit"
           disabled={busy || codeKind !== "pairing_code"}
-          className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
+          className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-transparent bg-primary px-5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/80 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 outline-none focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50"
         >
           {busy ? "در حال دریافت تنظیمات…" : "اتصال و دریافت تنظیمات"}
         </button>
