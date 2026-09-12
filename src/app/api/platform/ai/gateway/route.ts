@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPlatformAiConfig } from "@/lib/ai-config";
 import {
+  GatewayProvisioningError,
   getAiGatewayConfig,
   getBusinessGateway,
   listBusinessGateways,
@@ -160,6 +161,23 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
   const gateway = await getAiGatewayConfig();
 
   if (body.action === "sync_key") {
+    // Pre-flight: each of these states would end in a guaranteed-failing or
+    // guaranteed-useless key, so the operator hears *that* instead of an
+    // opaque 502 from a call that was never going to work. They are 400s —
+    // operator-fixable configuration, not an upstream failure.
+    if (!isGatewayActive(gateway)) {
+      return NextResponse.json({ error: "ai_gateway_disabled" }, { status: 400 });
+    }
+    if (!gateway.masterKey) {
+      return NextResponse.json({ error: "ai_gateway_missing_master_key" }, { status: 400 });
+    }
+    // A key minted while the toggle is off would never authenticate anything:
+    // resolveGatewayAuthKey only consults business keys once virtual keys are
+    // enabled, so the console must not let one be minted into that limbo.
+    if (!gateway.virtualKeysEnabled) {
+      return NextResponse.json({ error: "ai_gateway_virtual_keys_disabled" }, { status: 400 });
+    }
+
     const existing = await getBusinessGateway(businessId, locationId);
     try {
       const row = await provisionVirtualKey(gateway, platform.model, {
@@ -181,6 +199,11 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
       });
       return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
     } catch (err) {
+      if (err instanceof GatewayProvisioningError) {
+        // The gateway answered but refused — the proxy's own explanation is
+        // the most actionable thing the operator can be shown.
+        return NextResponse.json({ error: err.code, detail: err.detail }, { status: 502 });
+      }
       if (err instanceof Error && err.message.startsWith("ai_gateway")) {
         return NextResponse.json({ error: err.message }, { status: 502 });
       }

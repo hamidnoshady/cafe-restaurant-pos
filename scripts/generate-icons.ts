@@ -73,10 +73,15 @@ async function main() {
   const icoFrames = await Promise.all(
     icoSizes.map(async (size) => ({ size, png: await renderPng(ICON_SVG, size) })),
   );
-  writeFileSync(join(ROOT, "windows/cafe-pos.ico"), buildIco(icoFrames));
+  const ico = buildIco(icoFrames);
+  writeFileSync(join(ROOT, "windows/cafe-pos.ico"), ico);
+  // Browsers still request /favicon.ico even when the metadata points at the
+  // SVG/PNG set; serving the same ICO from public/ answers that request with
+  // the real icon instead of a 404.
+  writeFileSync(join(ROOT, "public/favicon.ico"), ico);
 
   console.log("Generated: public/icon-192.png, public/icon-512.png, public/apple-touch-icon.png,");
-  console.log("           public/icon-maskable-512.png, windows/cafe-pos.ico");
+  console.log("           public/icon-maskable-512.png, public/favicon.ico, windows/cafe-pos.ico");
 }
 
 main().catch((err) => {
