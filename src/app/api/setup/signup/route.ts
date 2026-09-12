@@ -7,6 +7,7 @@ import {
   validateProvisionBody,
   type ProvisionRequestBody,
 } from "@/lib/business-provisioning";
+import { autoProvisionBusinessVirtualKey } from "@/lib/ai-gateway-service";
 
 /**
  * Self-service business registration.
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
   let created;
   try {
     created = await provisionBusiness(input);
+    await autoProvisionBusinessVirtualKey(created.businessId);
   } catch (err) {
     if (err instanceof EmailPasswordMismatchError) {
       // The email exists and the password didn't match. Deliberately the same

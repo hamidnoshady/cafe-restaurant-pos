@@ -7,6 +7,7 @@ import {
   type ProvisionRequestBody,
 } from "@/lib/business-provisioning";
 import { hasAnyUser } from "@/lib/setup-state";
+import { autoProvisionBusinessVirtualKey } from "@/lib/ai-gateway-service";
 
 /**
  * First-run bootstrap: on a completely empty database, creates the business,
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
   let created;
   try {
     created = await provisionBusiness({ ...input, deploymentMode });
+    await autoProvisionBusinessVirtualKey(created.businessId);
   } catch (err) {
     if (err instanceof EmailPasswordMismatchError) {
       return NextResponse.json({ error: "email_password_mismatch" }, { status: 409 });

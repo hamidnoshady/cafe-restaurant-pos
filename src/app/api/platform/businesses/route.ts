@@ -9,6 +9,7 @@ import {
   SubdomainTakenError,
   type ProvisionRequestBody,
 } from "@/lib/business-provisioning";
+import { autoProvisionBusinessVirtualKey } from "@/lib/ai-gateway-service";
 
 /**
  * Every business on the deployment — the console's landing list (any admin
@@ -55,6 +56,10 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
       seedChartOfAccounts: true,
     });
 
+    // A configured LiteLLM gateway now provisions the tenant key as part of
+    // business creation; failures are recorded for retry and never undo the
+    // otherwise successful tenant transaction.
+    await autoProvisionBusinessVirtualKey(provisioned.businessId);
 
     await platformAudit({
       adminId: session.padmin,
