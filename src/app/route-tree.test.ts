@@ -16,7 +16,7 @@
  * their own tests — because the failure being prevented is precisely "the
  * address bar says a URL this app has no route for".
  */
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -25,7 +25,13 @@ import { CRM_SECTION_KEYS } from "./(app)/crm/crm-routes";
 import { GROWTH_SECTION_KEYS } from "./(app)/growth/growth-routes";
 import { CMS_SECTION_KEYS, WEBSITE_HOME } from "./(app)/websites/website-routes";
 import { WP_SECTION_KEYS } from "./(app)/websites/wp/wp-routes";
-import { APP_HOME_HREFS, APP_ROUTE_PREFIXES, APP_SETTINGS_HREFS } from "@/lib/app-routes";
+import {
+  APP_HOME_HREFS,
+  APP_ROUTE_PREFIXES,
+  APP_SETTINGS_HREFS,
+  DASHBOARD_HOME,
+  PLATFORM_SETTINGS_HOME,
+} from "@/lib/app-routes";
 import { PLATFORM_SETTINGS_PAGES, settingsTabHref } from "@/lib/settings-routes";
 import { SETTINGS_TAB_KEYS } from "@/lib/settings-tabs";
 
@@ -146,6 +152,62 @@ describe("the route tree resolves every promised URL", () => {
       "/dashboard/locations",
     ]) {
       expectRoute(pathname);
+    }
+  });
+
+  it("agrees with the production build, when one has been made", () => {
+    // The filesystem walk above proves a `page.tsx` exists; it cannot prove
+    // Next actually compiled it into the server bundle. `next build` writes
+    // every app route it emitted into this manifest, so when a build is
+    // present it is the closest thing to "the deployed server has this URL"
+    // that a unit test can read. Skipped when there is no build, so the suite
+    // still runs on a fresh clone.
+    const manifestPath = fileURLToPath(new URL("../../.next/server/app-paths-manifest.json", import.meta.url));
+    if (!existsSync(manifestPath)) return;
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, string>;
+    // Manifest keys keep the `(group)` segments the URL does not have.
+    const built = new Set(
+      Object.keys(manifest).map(
+        (key) =>
+          key
+            .replace(/\/page$/, "")
+            .split("/")
+            .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")))
+            .join("/") || "/",
+      ),
+    );
+
+    /**
+     * A URL is served if some built route matches it segment for segment,
+     * where a `[dynamic]` segment matches anything — `/accounting/settings`
+     * is served by `/accounting/[section]`, which is a real route and not a
+     * missing one.
+     */
+    const servedByBuild = (pathname: string) => {
+      const wanted = pathname.split("/").filter(Boolean);
+      return [...built].some((route) => {
+        const got = route.split("/").filter(Boolean);
+        if (got.length !== wanted.length) return false;
+        return got.every(
+          (segment, i) =>
+            (segment.startsWith("[") && segment.endsWith("]")) || segment === wanted[i],
+        );
+      });
+    };
+
+    const promised = [
+      DASHBOARD_HOME,
+      "/projects",
+      PLATFORM_SETTINGS_HOME,
+      ...PLATFORM_SETTINGS_PAGES.map((page) => `/settings/${page}`),
+      ...APP_ROUTE_PREFIXES.flatMap((prefix) => [
+        prefix,
+        APP_HOME_HREFS[prefix],
+        APP_SETTINGS_HREFS[prefix],
+      ]),
+    ];
+    for (const pathname of promised) {
+      expect(servedByBuild(pathname), `${pathname} is not in the production bundle`).toBe(true);
     }
   });
 
