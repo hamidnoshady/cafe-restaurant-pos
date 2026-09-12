@@ -74,6 +74,10 @@ describe("route-level skeleton coverage", () => {
       // first read, so there is no data region to skeleton — it is chrome, not
       // a page manager.
       "dashboard/credit-badge.tsx",
+      // The sidebar's identity drop-up. Its only fetch is the sign-out POST —
+      // an action, with the button's own "در حال خروج…" state — and the menu
+      // renders a fixed list of links, so there is no data region to reserve.
+      "dashboard/platform-user-menu.tsx",
     ]);
     const offenders: string[] = [];
     for (const file of walkTsFiles(APP_DIR)) {

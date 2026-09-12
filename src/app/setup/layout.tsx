@@ -15,7 +15,7 @@ export default async function SetupLayout({
   const session = await getSession();
   if (!session) redirect("/login");
   if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
-  if (await isSetupComplete(session.businessId)) redirect("/dashboard/settings");
+  if (await isSetupComplete(session.businessId)) redirect("/settings");
   const industry = (await getBusinessIndustry(session.businessId)) ?? "food_service";
   const prefs = await getSetting<{ currencyDisplay?: "toman" | "rial" }>(
     session.businessId,

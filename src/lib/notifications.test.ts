@@ -372,12 +372,12 @@ describe("pushPayloadFor", () => {
       severity: "important",
       title: "کسری صندوق",
       body: "۴۰۰٬۰۰۰ تومان",
-      url: "/dashboard/settings?tab=shifts",
+      url: "/settings/shifts",
       notificationId: "n1",
       dedupeKey: "shift.cash_variance:s1",
     });
     expect(payload.tag).toBe("shift.cash_variance:s1");
-    expect(payload.url).toBe("/dashboard/settings?tab=shifts");
+    expect(payload.url).toBe("/settings/shifts");
     expect(payload.notificationId).toBe("n1");
   });
 });

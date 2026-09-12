@@ -1,7 +1,7 @@
 /**
  * Every app that owns a shell must be entered through its own app-home route.
  *
- * The dashboard's flat nav (built in `layout.tsx`) carries one door per app.
+ * The dashboard's flat nav (built in `workspace-shell.tsx`) carries one door per app.
  * For an app with a shell (`src/lib/app-shells.ts` — Growth, the Website
  * manager, the CRM), that door's href must live *inside* the shell's own
  * prefix, e.g. `/crm/overview` and not the legacy `/dashboard/customers`.
@@ -20,7 +20,7 @@
  *      so it kept surfacing while the member was inside another app such as
  *      حسابداری — the CRM leaking into Accounting.
  *
- * This test greps the layout source (the same source-of-truth approach
+ * This test greps the shell's source (the same source-of-truth approach
  * `design-lint.test.ts` uses) so the invariant holds without importing the
  * server component, which pulls in the database pool.
  */
@@ -29,8 +29,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { APP_SHELLS, isInsideAnyAppShell } from "@/lib/app-shells";
 
+// The nav is built in the workspace shell — `layout.tsx` is a thin wrapper
+// around it now that `/dashboard` and the apps share one chrome.
 const LAYOUT_SOURCE = readFileSync(
-  fileURLToPath(new URL("./layout.tsx", import.meta.url)),
+  fileURLToPath(new URL("./workspace-shell.tsx", import.meta.url)),
   "utf8",
 );
 

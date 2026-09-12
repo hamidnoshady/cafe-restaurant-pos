@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { canOpenCrm } from "../crm/crm-routes";
-import { accountingCustomersHref } from "../accounting/accounting-routes";
+import { canOpenCrm } from "@/app/(app)/crm/crm-routes";
+import { accountingCustomersHref } from "@/app/(app)/accounting/accounting-routes";
 
 /**
  * `/dashboard/customers` → each role's own persons screen.
@@ -23,5 +23,5 @@ export default async function CustomersPage() {
   if (!session) redirect("/login");
   if (session.role === "accountant") redirect(accountingCustomersHref());
   if (!canOpenCrm(session.role)) redirect("/dashboard");
-  redirect("/dashboard/crm/directory");
+  redirect("/crm/directory");
 }

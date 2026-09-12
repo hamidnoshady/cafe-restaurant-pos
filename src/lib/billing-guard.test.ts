@@ -62,7 +62,7 @@ describe("chargeForFeature", () => {
       expect(r.response).toBeTruthy();
       expect(r.response.status).toBe(402);
       const body = await r.response.json();
-      expect(body.topUpUrl).toBe("/dashboard/billing");
+      expect(body.topUpUrl).toBe("/settings/billing");
       expect(body.balanceRial).toBe(10_000);
       expect(body.requiredRial).toBe(50_000);
     }
@@ -76,7 +76,7 @@ describe("chargeForFeature", () => {
       expect(r.error).toBe("feature_not_entitled");
       expect(r.response.status).toBe(403);
       const body = await r.response.json();
-      expect(body.topUpUrl).toContain("/dashboard/billing");
+      expect(body.topUpUrl).toContain("/settings/billing");
     }
   });
 

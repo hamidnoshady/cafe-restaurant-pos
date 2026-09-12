@@ -2,5 +2,5 @@ import { redirect } from "next/navigation";
 
 /** Kept as a stable legacy URL; team administration now lives under Settings. */
 export default function TeamPage() {
-  redirect("/dashboard/settings?tab=team");
+  redirect("/settings/team");
 }

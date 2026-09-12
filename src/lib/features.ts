@@ -94,8 +94,10 @@ export function featureForApiPath(pathname: string): string | null {
 /** Dashboard page prefix -> the flag that gates it, for the nav list and each gated page's own redirect. */
 export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   ["/dashboard/inventory", "inventory"],
-  // The Accounting app's own prefix; the old `/dashboard/ledger` address below
-  // forwards into it, so both halves stay entitlement-gated.
+  // The Accounting app's own public prefix; the old `/dashboard/accounting`
+  // and `/dashboard/ledger` addresses forward into it, so every half stays
+  // entitlement-gated on both sides of the redirect.
+  ["/accounting", "ledger"],
   ["/dashboard/accounting", "ledger"],
   ["/dashboard/ledger", "ledger"],
   ["/dashboard/reservations", "reservations"],
@@ -115,9 +117,12 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   // Eshobe CMS manager) is not, so a business without `integrations` still
   // reaches its platform site.
   ["/dashboard/integrations", "integrations"],
+  // «مدیریت وب‌سایت»'s WordPress manager, at the app's public prefix and at
+  // the legacy one it forwards from.
+  ["/websites/wp", "integrations"],
   ["/dashboard/website/wp", "integrations"],
-  ["/dashboard/connections/holoo", "integrations"],
-  // `/dashboard/connections` is deliberately absent: the technical hub carries
+  ["/settings/connections/holoo", "integrations"],
+  // `/settings/connections` is deliberately absent: the technical hub carries
   // connections with different entitlements (and desktop with none), so it
   // gates each tab rather than the page. See src/lib/connection-kinds.ts.
 ];

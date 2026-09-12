@@ -44,6 +44,31 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/v1/orders")).toBe(true);
     expect(isPublicPath("/logindecoy")).toBe(false);
   });
+
+  it("gates the apps' new top-level URLs exactly like the dashboard's", () => {
+    // The apps left `/dashboard/<app>` for prefixes of their own. They are
+    // still the same signed-in surfaces, and nothing about giving an app a
+    // shorter address may make it readable without a session — the whole
+    // point of `PUBLIC_PATHS` being a list rather than a prefix rule.
+    for (const pathname of [
+      "/accounting",
+      "/accounting/overview",
+      "/accounting/expenses",
+      "/accounting/settings",
+      "/crm/persons/42",
+      "/growth/campaigns",
+      "/websites/cms/content",
+      "/websites/wp/orders",
+      "/projects",
+      "/settings",
+      "/settings/team",
+      "/settings/billing",
+      "/settings/subscription",
+      "/settings/connections",
+    ]) {
+      expect(isPublicPath(pathname), `${pathname} must require a session`).toBe(false);
+    }
+  });
 });
 
 describe("unknown hosts — fail closed", () => {

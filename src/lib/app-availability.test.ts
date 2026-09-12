@@ -150,7 +150,7 @@ describe("route → app", () => {
     expect(appForPagePath("/dashboard/ai")).toBeNull();
     // The «اتصال‌های فنی» hub is a shell utility, not an app: turning a
     // platform off must never lock the page that holds its credentials.
-    expect(appForPagePath("/dashboard/connections")).toBeNull();
+    expect(appForPagePath("/settings/connections")).toBeNull();
     expect(appForApiPath("/api/auth/login")).toBeNull();
   });
 });

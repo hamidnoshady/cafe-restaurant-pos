@@ -74,7 +74,7 @@ export async function chargeForFeature(
             message: "اعتبار حساب شما برای این عملیات کافی نیست. از بخش «اعتبار و پرداخت‌ها» حساب خود را شارژ کنید.",
             balanceRial: balance,
             requiredRial: required,
-            topUpUrl: "/dashboard/billing",
+            topUpUrl: "/settings/billing",
           },
           { status: 402 },
         ),
@@ -89,7 +89,7 @@ export async function chargeForFeature(
           {
             error: "feature_not_entitled",
             message: "این قابلیت برای پلن شما فعال نیست. از بخش «اعتبار و پرداخت‌ها» می‌توانید پلن یا افزونهٔ آن را تهیه کنید.",
-            topUpUrl: "/dashboard/billing",
+            topUpUrl: "/settings/billing",
           },
           { status: 403 },
         ),

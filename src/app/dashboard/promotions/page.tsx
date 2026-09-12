@@ -6,5 +6,5 @@ import { redirect } from "next/navigation";
  * the app's own section, one tap deeper.
  */
 export default function PromotionsRedirect() {
-  redirect("/dashboard/growth/campaigns");
+  redirect("/growth/campaigns");
 }

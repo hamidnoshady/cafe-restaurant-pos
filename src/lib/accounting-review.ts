@@ -201,7 +201,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: gap,
       suggestion: "هر سند را در دفتر روزنامه باز کنید و ردیف جاافتاده را اضافه یا اصلاح کنید. اگر سند از یک عملیات خودکار آمده، آن عملیات را برگردانید و دوباره ثبت کنید.",
-      href: "/dashboard/accounting/entries",
+      href: "/accounting/entries",
       samples: firstSamples(rows, (row) => sample(`${day(row.entryDate)} — ${row.memo || "بدون شرح"}`, row.id)),
     };
   },
@@ -259,7 +259,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: null,
       suggestion: "این سرفصل‌ها را در «سرفصل حساب‌ها» بسازید. تا وقتی نباشند، هر عملیاتی که به آن‌ها نیاز دارد با خطای «سرفصل حساب موجود نیست» متوقف می‌شود.",
-      href: "/dashboard/accounting/chart-of-accounts",
+      href: "/accounting/chart-of-accounts",
       samples: rows.slice(0, 5).map((row) => sample(`${row.code} — ${row.name}`)),
     };
   },
@@ -277,7 +277,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: total,
       suggestion: "پیش‌نویس‌ها را در صف تأیید اسناد بررسی و تعیین‌تکلیف کنید: تأیید، اصلاح یا حذف.",
-      href: "/dashboard/accounting/manual",
+      href: "/accounting/manual",
       samples: firstSamples(rows, (row) => sample(`${row.memo} — ${fa(row.ageDays)} روز`, row.id)),
     };
   },
@@ -311,7 +311,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: total,
       suggestion: "هر چک را در دفتر چک‌ها به وضعیت واقعی‌اش ببرید: وصول، برگشت یا ابطال. وضعیت اشتباه، هم مانده بانک و هم مانده طرف حساب را غلط نشان می‌دهد.",
-      href: "/dashboard/accounting/cheques",
+      href: "/accounting/cheques",
       samples: firstSamples(rows, (row) =>
         sample(
           `${CHEQUE_DIRECTION_LABELS[row.direction] ?? row.direction} ${row.serialNumber} — سررسید ${day(row.dueDate)}`,
@@ -333,7 +333,7 @@ const RULES: Rule[] = [
       count,
       amountRial,
       suggestion: "در «مغایرت‌گیری بانکی» صورتحساب دوره را وارد و ردیف‌ها را تطبیق دهید. هرچه دیرتر انجام شود، پیدا کردن ردیف جاافتاده سخت‌تر می‌شود.",
-      href: "/dashboard/accounting/reconciliation",
+      href: "/accounting/reconciliation",
       samples: [],
     };
   },
@@ -400,7 +400,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: null,
       suggestion: "پس از اطمینان از کامل‌بودن اسناد، دوره را در «دوره‌های مالی» ببندید و سپس قفل کنید.",
-      href: "/dashboard/accounting/fiscal-periods",
+      href: "/accounting/fiscal-periods",
       samples: firstSamples(rows, (row) => sample(`${row.label} — پایان ${day(row.endsOn)}`, row.id)),
     };
   },

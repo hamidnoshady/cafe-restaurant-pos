@@ -65,7 +65,7 @@ describe("isLockableFeature", () => {
     expect(lockablePages).toBe("ai_assistant");
     expect(featureForPagePath("/dashboard/integrations")).toBe("integrations");
     expect(featureForPagePath("/dashboard/website/wp/connections")).toBe("integrations");
-    expect(featureForPagePath("/dashboard/connections/holoo")).toBe("integrations");
+    expect(featureForPagePath("/settings/connections/holoo")).toBe("integrations");
     expect(isLockableFeature(featureForApiPath("/api/ai/chat")!)).toBe(true);
   });
 });

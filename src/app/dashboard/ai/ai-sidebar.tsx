@@ -113,7 +113,7 @@ export function AiSidebar({
 
       <div className="shrink-0 border-t border-border/80 p-2">
         <Link
-          href="/dashboard/projects"
+          href="/projects"
           onClick={onNavigate}
           className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
         >

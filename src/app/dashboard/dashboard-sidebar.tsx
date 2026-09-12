@@ -97,6 +97,7 @@ import { BiometricSettingsButton } from "./biometric-settings";
 import { BranchSwitcher } from "./branch-switcher";
 import { LockButton } from "./lock-screen";
 import { LogoutButton } from "./logout-button";
+import { PlatformUserMenu } from "./platform-user-menu";
 import { ShiftButton } from "./shift-panel";
 import { AiRecentConversations } from "./ai/ai-recent-conversations";
 
@@ -151,20 +152,27 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   // address above still forwards into it, and keeps its glyph for any saved
   // bottom-nav slot that still points there.
   "/accounting": CalculatorIcon,
-  "/dashboard/connections": PlugIcon,
+  // Each app's *home* is its overview, and the nav entry carries that exact
+  // href — so the glyph has to be keyed on it too, or the app's own door falls
+  // back to the generic circle.
+  "/accounting/overview": CalculatorIcon,
+  "/settings/connections": PlugIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
-  "/dashboard/billing": WalletIcon,
+  "/settings/billing": WalletIcon,
   "/settings": SettingsIcon,
   // Phase 36b — the Growth & Marketing app's home; the trend glyph the
   // workspace rail already uses for «رشد و بازاریابی».
   "/growth": TrendingUpIcon,
+  "/growth/overview": TrendingUpIcon,
   // Phase 36 — the CRM app's home. `/dashboard/persons` keeps the plain
   // people glyph above; this is the app that now owns that record.
   "/crm": ContactIcon,
+  "/crm/overview": ContactIcon,
   // «مدیریت وب‌سایت» — one app for both website systems (the Eshobe CMS site
   // builder and the WordPress/WooCommerce manager, each its own section).
   "/websites": GlobeIcon,
+  "/websites/overview": GlobeIcon,
   // Migration 0130 — the support desk.
   "/dashboard/support": LifeBuoyIcon,
   // Migration 0131 — the in-product knowledge base («مرکز آموزش»).
@@ -242,7 +250,7 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     key: "connections",
     label: "اتصال‌های فنی",
     icon: PlugIcon,
-    hrefs: ["/dashboard/connections"],
+    hrefs: ["/settings/connections"],
   },
 ];
 
@@ -928,36 +936,6 @@ function BottomNavSettings({
 }
 
 
-function PlatformUserMenu({ role, fullName }: { role: string; fullName: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative mb-3">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center justify-between rounded-xl border border-border/80 bg-background px-3 py-2.5 text-start transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
-      >
-        <span className="min-w-0">
-          <span className="block truncate font-semibold text-foreground">{fullName}</span>
-          <span className="block text-xs text-muted-foreground">{ROLE_LABELS[role] ?? role}</span>
-        </span>
-        <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
-      </button>
-      {open ? (
-        <div className={`absolute inset-x-0 bottom-full z-50 mb-2 p-1.5 ${popoverPanelClass}`} role="menu">
-          <Link href="/settings" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">تنظیمات پلتفرم</Link>
-          <Link href="/dashboard/knowledge" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">پایگاه دانش</Link>
-          <Link href="/dashboard/connections" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">اتصال‌ها</Link>
-          <Link href="/dashboard/support" onClick={() => setOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm hover:bg-muted" role="menuitem">پشتیبانی</Link>
-          <div className="px-1 py-1"><BugReportFooterButton /></div>
-          <div className="my-1 border-t border-border" />
-          <LogoutButton returnTo={PIN_ROLES.includes(role) ? "/login" : "/admin"} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function DashboardSidebarFooter({
   role,
@@ -1003,20 +981,26 @@ function DashboardSidebarFooter({
         The rail keeps the two things that must never be more than one click
         away: who you are (widens the rail back out) and the exit.
       */}
+      {/*
+        Collapsed, the whole footer used to be `hidden`, and the identity menu
+        with it — so the exit from a locked-down POS rail meant expanding the
+        rail first and hunting. The rail now carries the same menu as the
+        expanded footer, as an avatar button: one implementation, so «تنظیمات
+        پلتفرم» and «خروج» are one click away at either width. It is portalled,
+        which is what lets it escape the 4rem rail's clipping instead of being
+        cut off by it.
+      */}
       <div className="hidden flex-col items-center gap-1 group-data-[state=collapsed]/sidebar:flex">
+        <PlatformUserMenu role={role} fullName={fullName} compact />
         <button
           type="button"
           onClick={expandSidebar}
-          aria-label={`${fullName} — ${roleLabel} — باز کردن نوار کناری`}
-          title={`${fullName} — ${roleLabel}`}
-          className="flex size-9 items-center justify-center rounded-full border border-border bg-muted/60 text-xs font-bold text-foreground transition-colors hover:border-amber-300/70 hover:bg-amber-50 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:hover:border-amber-500/40 dark:hover:bg-amber-500/15 dark:hover:text-amber-300 dark:focus-visible:ring-amber-400/45"
+          aria-label="باز کردن نوار کناری"
+          title="باز کردن نوار کناری"
+          className="flex size-9 items-center justify-center rounded-lg border border-input text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
         >
           <UsersIcon aria-hidden="true" className="size-4" />
         </button>
-        <LogoutButton returnTo={isPinRole ? "/login" : "/admin"} compact />
-        {/* The expanded rail reaches this through the user menu above, so it is
-            only drawn here — one bug-report control, not two. */}
-        <BugReportFooterButton />
       </div>
     </SidebarFooter>
   );

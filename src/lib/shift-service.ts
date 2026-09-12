@@ -233,7 +233,7 @@ export async function openShift(
       severity: "info",
       title: "شیفت باز شد",
       body: `${await employeeName(businessId, employeeId)} شیفت خود را شروع کرد.`,
-      url: "/dashboard/settings?tab=shifts",
+      url: "/settings/shifts",
       // Keyed on the shift, not on now(): a retried request is one shift and
       // therefore one notification.
       dedupeKey: notificationDedupeKey("shift.opened", shift.id),
@@ -386,7 +386,7 @@ async function closeShiftRow(
       severity: "info",
       title: "شیفت بسته شد",
       body: `${closerName} — فروش نقدی ${tomanText(cashSummary.cashTotal)}`,
-      url: "/dashboard/settings?tab=shifts",
+      url: "/settings/shifts",
       amountRial: cashSummary.cashTotal,
       dedupeKey: notificationDedupeKey("shift.closed", shift.id),
       payload: { shiftId: shift.id, employeeId: shift.employeeId },
@@ -405,7 +405,7 @@ async function closeShiftRow(
         severity: "important",
         title: `${cashVarianceText(reconciliation.variance)}`,
         body: `شیفت ${closerName} — مبلغ مورد انتظار ${tomanText(reconciliation.expectedCash)}`,
-        url: "/dashboard/settings?tab=shifts",
+        url: "/settings/shifts",
         amountRial: reconciliation.variance,
         dedupeKey: notificationDedupeKey("shift.cash_variance", shift.id),
         payload: { shiftId: shift.id, employeeId: shift.employeeId, variance: reconciliation.variance },
