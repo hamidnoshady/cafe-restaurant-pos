@@ -56,6 +56,24 @@ export async function renderHtmlToPng(html: string, widthPx: number): Promise<Bu
   }
 }
 
+/**
+ * Renders `html` as a real PDF page — the A4/A5 path. A sheet printer's driver
+ * wants a page, not a bitmap: a screenshot scaled to A4 prints soft text and
+ * loses selectable content, and the template already declares its own `@page`
+ * size and margins, so `preferCSSPageSize` reproduces exactly what the
+ * designer's preview showed.
+ */
+export async function renderHtmlToPdf(html: string): Promise<Buffer> {
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  try {
+    await page.setContent(withEmbeddedFont(html), { waitUntil: "networkidle" });
+    return await page.pdf({ preferCSSPageSize: true, printBackground: true });
+  } finally {
+    await page.close();
+  }
+}
+
 export async function closeBrowser(): Promise<void> {
   if (!browserPromise) return;
   const browser = await browserPromise;

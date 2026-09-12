@@ -9,6 +9,14 @@ export const SETTING_KEYS = {
   businessPrefs: "business.prefs",
   /** { legalName, taxId, email, website, receiptFooter } — operational business profile */
   businessProfile: "business.profile",
+  /**
+   * BusinessLogo (src/lib/business-logo.ts) — { dataUrl, mimeType, byteLength,
+   * updatedAt }. The logo printed on receipts and invoices, stored inline as a
+   * data URL because the print agent renders with no session and often no
+   * route back to the app server (see that file's header). Absent until a
+   * business uploads one.
+   */
+  businessLogo: "business.logo",
   /** { method: 'fifo'|'lifo'|'weighted_average', system?: 'perpetual'|'periodic', lockedAt: string|null } */
   costing: "inventory.costing",
   /** { defaultRate: number } — percent, applied to new menu categories */

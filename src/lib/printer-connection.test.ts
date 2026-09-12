@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { isValidPrinterConnection, resolvedPaperWidthMm, resolvedPort } from "./printer-connection";
+import {
+  describeConnection,
+  isValidPrinterConnection,
+  resolvedDriverMode,
+  resolvedPaperWidthMm,
+  resolvedPort,
+  resolvedTransport,
+} from "./printer-connection";
 
 describe("isValidPrinterConnection", () => {
-  it("requires a non-empty ip string", () => {
+  it("requires a non-empty ip string on the network transport", () => {
     expect(isValidPrinterConnection({ ip: "192.168.1.50" })).toBe(true);
     expect(isValidPrinterConnection({ ip: "" })).toBe(false);
     expect(isValidPrinterConnection({})).toBe(false);
@@ -29,5 +36,38 @@ describe("resolvedPaperWidthMm", () => {
     expect(resolvedPaperWidthMm({ ip: "x" })).toBe(80);
     expect(resolvedPaperWidthMm({ ip: "x", paperWidthMm: 58 })).toBe(58);
     expect(resolvedPaperWidthMm({ ip: "x", paperWidthMm: 80 })).toBe(80);
+  });
+});
+
+describe("transports", () => {
+  it("treats a row written before transports existed as a network printer", () => {
+    expect(resolvedTransport({ ip: "192.168.1.50" })).toBe("network");
+    expect(resolvedTransport({ transport: "nonsense" as never })).toBe("network");
+  });
+
+  it("validates each transport against the field it actually needs", () => {
+    expect(isValidPrinterConnection({ transport: "system", systemName: "EPSON TM-T20" })).toBe(true);
+    expect(isValidPrinterConnection({ transport: "system", systemName: "" })).toBe(false);
+    // A system printer needs no IP, and a network one needs no queue name.
+    expect(isValidPrinterConnection({ transport: "system", systemName: "Q", ip: null })).toBe(true);
+
+    expect(isValidPrinterConnection({ transport: "usb", devicePath: "USB001" })).toBe(true);
+    expect(isValidPrinterConnection({ transport: "usb" })).toBe(false);
+  });
+
+  it("accepts the browser transport with nothing configured — that is the point of it", () => {
+    expect(isValidPrinterConnection({ transport: "browser" })).toBe(true);
+  });
+
+  it("defaults to the ESC/POS raster driver, not the page spooler", () => {
+    expect(resolvedDriverMode({ ip: "x" })).toBe("raster");
+    expect(resolvedDriverMode({ ip: "x", driverMode: "document" })).toBe("document");
+  });
+
+  it("describes where each kind of printer is, for the hardware list", () => {
+    expect(describeConnection({ ip: "192.168.1.50", port: 9100 })).toBe("192.168.1.50:9100");
+    expect(describeConnection({ transport: "system", systemName: "TM-T20" })).toBe("TM-T20");
+    expect(describeConnection({ transport: "usb", devicePath: "/dev/usb/lp0" })).toBe("/dev/usb/lp0");
+    expect(describeConnection({ transport: "browser" })).toContain("مرورگر");
   });
 });

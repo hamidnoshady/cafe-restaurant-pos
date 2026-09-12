@@ -137,8 +137,8 @@ export const SETTINGS_TABS: SettingsTab[] = [
   },
   {
     key: "printers",
-    label: "چاپگر و کشوی پول",
-    description: "چاپگرهای شعبه، مسیر چاپ و آزمایش اتصال",
+    label: "چاپ و فاکتور",
+    description: "قالب‌های رسید و فاکتور، طراحی قالب اختصاصی، لوگو، چاپگرهای شعبه و کشوی پول",
     requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {
