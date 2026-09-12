@@ -74,6 +74,64 @@ export function partyRole(value: unknown): PartyRole {
   return "Customer";
 }
 
+/**
+ * Every role a party holds, normalised — the set, where `partyRole` answers
+ * the scalar.
+ *
+ * Migration 0148 added `parties.roles`; the scalar `role` stays the *primary*
+ * role (it decides the accounting-code prefix and the personnel link), and the
+ * set is what the directory filters on. The invariant both ends keep is
+ * `role ∈ roles`, so a caller that knows only one of the two still describes a
+ * consistent record:
+ *
+ *  - given a set, the primary role is folded in;
+ *  - given nothing, the answer is the primary role alone — which is exactly
+ *    what every row written before 0148 holds.
+ *
+ * Sorted and de-duplicated so two callers that named the same roles in a
+ * different order produce the same value (the DB trigger does the same, so a
+ * round-trip is stable).
+ */
+export function partyRoles(value: unknown, primary?: unknown): PartyRole[] {
+  const out: PartyRole[] = [];
+  const push = (role: PartyRole) => {
+    if (!out.includes(role)) out.push(role);
+  };
+  const read = (candidate: unknown) => {
+    if (typeof candidate !== "string") return;
+    const trimmed = candidate.trim().toLowerCase();
+    for (const role of PARTY_ROLES) {
+      if (role.toLowerCase() === trimmed || PARTY_ROLE_STORAGE[role] === trimmed) push(role);
+    }
+  };
+  if (Array.isArray(value)) for (const entry of value) read(entry);
+  else read(value);
+  // The primary role is a member of its own set, always — including when the
+  // caller sent no set at all, which is the pre-0148 row.
+  if (primary !== undefined) push(partyRole(primary));
+  if (out.length === 0) push("Customer");
+  return out.sort((a, b) => PARTY_ROLES.indexOf(a) - PARTY_ROLES.indexOf(b));
+}
+
+/**
+ * The primary role of a set — the one that decides the accounting-code prefix.
+ *
+ * Not "the first one the caller typed": the prefixes are a numbering scheme a
+ * business reads off a code (۱ مشتری، ۲ تأمین‌کننده، ۳ کارکنان), so when a
+ * person holds several roles the record needs one stable answer. Customer wins
+ * over supplier wins over employee, because that is the order a shop meets
+ * them in and the order the existing codes were generated in.
+ */
+export function primaryPartyRole(roles: readonly PartyRole[], preferred?: unknown): PartyRole {
+  const set = roles.length > 0 ? roles : (["Customer"] as PartyRole[]);
+  if (preferred !== undefined) {
+    const candidate = partyRole(preferred);
+    if (set.includes(candidate)) return candidate;
+  }
+  for (const role of PARTY_ROLES) if (set.includes(role)) return role;
+  return set[0];
+}
+
 /** "real" and "legal" person — the distinction that makes national ID vs. company registration apply at all. */
 export const PARTY_PERSON_TYPES = ["Real", "Legal"] as const;
 export type PartyPersonType = (typeof PARTY_PERSON_TYPES)[number];
@@ -164,7 +222,19 @@ export interface PartyFinancialInfo {
  */
 export interface PartyFormState {
   status: boolean;
+  /**
+   * The *primary* role — the accounting-code prefix, and what every service
+   * that predates migration 0148 reads. Always a member of `roles`; the form
+   * derives it rather than asking for it (see `withPartyRoles`).
+   */
   role: PartyRole;
+  /**
+   * Every role this person holds. One record can be a customer *and* a
+   * supplier — the ordinary case for a shop that buys from somebody it also
+   * sells to — so the form offers checkboxes over this set, not one radio over
+   * `role`.
+   */
+  roles: PartyRole[];
   accountingCodeMode: AccountingCodeMode;
   accountingCode: string;
   profileImage: string;
@@ -194,6 +264,7 @@ export interface PartyFormContext {
 export const PARTY_FORM_DEFAULTS: PartyFormState = {
   status: true,
   role: "Customer",
+  roles: ["Customer"],
   accountingCodeMode: "Automatic",
   accountingCode: "",
   profileImage: "",
@@ -216,11 +287,40 @@ export const PARTY_FORM_DEFAULTS: PartyFormState = {
 export function resetPartyForm(): PartyFormState {
   return {
     ...PARTY_FORM_DEFAULTS,
+    roles: [...PARTY_FORM_DEFAULTS.roles],
     generalInfo: { ...PARTY_FORM_DEFAULTS.generalInfo },
     addressInfo: { ...PARTY_FORM_DEFAULTS.addressInfo },
     contactInfo: { ...PARTY_FORM_DEFAULTS.contactInfo },
     financialInfo: { ...PARTY_FORM_DEFAULTS.financialInfo },
   };
+}
+
+/**
+ * Set the role set on a form state, and re-derive the primary role with it.
+ *
+ * The one place the two fields are changed together, so no screen can leave a
+ * state whose `role` is not in its own `roles` — the invariant the API, the
+ * service and the DB trigger all also keep. An empty set falls back to the
+ * role the state already had, because "no role at all" is not a party.
+ */
+export function withPartyRoles(state: PartyFormState, roles: readonly PartyRole[]): PartyFormState {
+  const next = partyRoles(roles.length > 0 ? roles : [state.role]);
+  return { ...state, roles: next, role: primaryPartyRole(next, state.role) };
+}
+
+/** Whether this person holds a role — what a checkbox reads. */
+export function hasPartyRole(state: Pick<PartyFormState, "roles">, role: PartyRole): boolean {
+  return state.roles.includes(role);
+}
+
+/** Add or remove one role, keeping the last one from being removed. */
+export function togglePartyRole(state: PartyFormState, role: PartyRole): PartyFormState {
+  const next = state.roles.includes(role)
+    ? state.roles.filter((entry) => entry !== role)
+    : [...state.roles, role];
+  // Refusing the last removal here rather than in the form means the API, the
+  // assistant and a future client obey it too.
+  return withPartyRoles(state, next.length > 0 ? next : state.roles);
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +476,7 @@ export function isAccountingCodeShape(value: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 /** What a field can be, decided once here so the form and the route agree. */
-export type PartyFieldKind = "text" | "uuid" | "role" | "personType" | "accountingMode" | "nationalId" | "economicCode" | "iban" | "cardNumber" | "postalCode" | "taxPercent" | "email" | "url" | "image";
+export type PartyFieldKind = "text" | "uuid" | "role" | "roleSet" | "personType" | "accountingMode" | "nationalId" | "economicCode" | "iban" | "cardNumber" | "postalCode" | "taxPercent" | "email" | "url" | "image";
 
 export interface PartyFieldSpec {
   /** Dot path into `PartyFormState` — also the key the API reports errors under. */
@@ -396,6 +496,9 @@ export interface PartyFieldSpec {
 
 export const PARTY_SCHEMA: readonly PartyFieldSpec[] = [
   { path: "role", label: "نقش", kind: "role", required: true },
+  // The full set. Validated as its own field so a 400 can name «نقش‌ها»
+  // rather than blaming the primary role for a set the caller got wrong.
+  { path: "roles", label: "نقش‌ها", kind: "roleSet", required: true },
   { path: "personType", label: "نوع شخص", kind: "personType", required: true },
   { path: "displayName", label: "نام نمایشی", kind: "text", maxLength: MAX_PARTY_DISPLAY_NAME, required: true },
   { path: "firstName", label: "نام", kind: "text", maxLength: MAX_PARTY_NAME_PART },
@@ -441,6 +544,7 @@ export const PARTY_FIELD_ERROR_MESSAGES: Record<string, string> = {
   required: "این فیلد الزامی است.",
   too_long: "طول این فیلد بیش از حد مجاز است.",
   invalid_role: "نقش انتخابی معتبر نیست.",
+  role_required: "دست‌کم یک نقش باید انتخاب شود.",
   invalid_person_type: "نوع شخص باید حقیقی یا حقوقی باشد.",
   invalid_code_mode: "نوع کد حسابداری باید خودکار یا دستی باشد.",
   invalid_accounting_code: "کد حسابداری باید ۱ تا ۲۴ نویسه باشد (رقم، حرف لاتین یا خط تیره).",
@@ -479,6 +583,17 @@ export function validatePartyForm(state: PartyFormState): PartyFieldErrors {
   for (const field of PARTY_SCHEMA) {
     if (field.when && !field.when(state)) continue;
     const raw = readPath(state, field.path);
+
+    if (field.kind === "roleSet") {
+      const value = Array.isArray(raw) ? raw : [];
+      const known = value.every((entry) => (PARTY_ROLES as readonly string[]).includes(String(entry)));
+      // A party with no role is not a party; a party with an unknown one is a
+      // bug in the caller, not a default.
+      if (value.length === 0) errors[field.path] = "required";
+      else if (!known) errors[field.path] = "invalid_role";
+      else if (!value.includes(state.role)) errors[field.path] = "invalid_role";
+      continue;
+    }
 
     if (field.kind === "taxPercent") {
       const value = typeof raw === "number" ? raw : Number(asciiDigits(raw));
@@ -583,7 +698,10 @@ export function deriveDisplayName(state: Pick<PartyFormState, "displayName" | "f
 /** The REST body: root fields flat, every tab its own nested object. */
 export interface PartyPayload {
   status: boolean;
+  /** The primary role — the accounting-code prefix, and every pre-0148 reader. */
   role: PartyRole;
+  /** Every role this person holds; `role` is always one of them. */
+  roles: PartyRole[];
   personType: PartyPersonType;
   displayName: string;
   firstName: string | null;
@@ -629,9 +747,13 @@ function compactTab<T extends Record<string, unknown>>(tab: T): Record<string, u
  */
 export function buildPartyPayload(state: PartyFormState): PartyPayload {
   const manual = state.accountingCodeMode === "Manual";
+  // Derived rather than trusted: a draft written before the role set existed,
+  // or a caller that only set `role`, still produces a consistent pair.
+  const roles = partyRoles(state.roles, state.role);
   return {
     status: state.status !== false,
-    role: partyRole(state.role),
+    role: primaryPartyRole(roles, state.role),
+    roles,
     personType: partyPersonType(state.personType),
     displayName: deriveDisplayName(state).slice(0, MAX_PARTY_DISPLAY_NAME),
     firstName: trimmedOrNull(state.firstName)?.slice(0, MAX_PARTY_NAME_PART) ?? null,
@@ -716,6 +838,8 @@ export interface PartyApiRecord {
   status?: boolean;
   isActive?: boolean;
   role?: string;
+  /** Migration 0148. Absent on a record read by a client older than it. */
+  roles?: string[] | null;
   personType?: string;
   displayName?: string | null;
   name?: string | null;
@@ -745,7 +869,8 @@ export function formStateFromParty(party: PartyApiRecord | null | undefined): Pa
   const state = resetPartyForm();
   if (!party) return state;
   state.status = party.status ?? party.isActive ?? true;
-  state.role = partyRole(party.role);
+  state.roles = partyRoles(party.roles, party.role);
+  state.role = primaryPartyRole(state.roles, party.role);
   state.personType = partyPersonType(party.personType);
   state.displayName = party.displayName ?? party.name ?? "";
   state.firstName = party.firstName ?? "";
@@ -822,6 +947,7 @@ function partyRootAddress(party: PartyApiRecord): string | null {
 export interface PartyWriteInput {
   status?: boolean;
   role?: string | null;
+  roles?: string[] | null;
   personType?: string | null;
   displayName?: string | null;
   firstName?: string | null;
@@ -936,6 +1062,18 @@ export function parsePartyRequestBody(
     if (!(PARTY_ROLES as readonly string[]).includes(value)) errors.role = "invalid_role";
     input.role = value;
     state.role = partyRole(value);
+    if (!has("roles")) state.roles = partyRoles(state.role);
+  }
+  if (has("roles")) {
+    const sent = Array.isArray(raw.roles) ? raw.roles : [];
+    const known = sent.every((entry) => (PARTY_ROLES as readonly string[]).includes(String(entry).trim()));
+    if (sent.length === 0) errors.roles = "role_required";
+    else if (!known) errors.roles = "invalid_role";
+    input.roles = sent.map((entry) => String(entry).trim());
+    if (known && sent.length > 0) {
+      state.roles = partyRoles(input.roles, has("role") ? raw.role : undefined);
+      state.role = primaryPartyRole(state.roles, has("role") ? raw.role : undefined);
+    }
   }
   if (has("personType")) {
     const value = String(raw.personType ?? "").trim();

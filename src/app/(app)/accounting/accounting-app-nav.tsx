@@ -1,26 +1,33 @@
 "use client";
 
 /**
- * The Accounting app's own main sidebar.
+ * The Accounting workspace's main sidebar.
  *
- * Accounting was the last app without one. Its sections lived as a collapsible
- * «حسابداری» group inside the business's flat nav, so an accountant working in
- * the ledger saw the whole business menu — orders, menu, devices — with their
- * own app folded into a corner of it, while CRM, Growth and Websites each got
- * a menu of their own. The sections are unchanged: this reads the very same
- * `accounting-nav.ts` list, filtered by the very same role gate, so the app's
- * contents cannot drift from what the pages allow.
+ * Accounting is the business's *primary* workspace, so this is the complete
+ * work menu: the business's own areas — فروش و فاکتور، خرید و انبار،
+ * محصولات، عملیات صنف، گزارش‌ها، تنظیمات — plus the ledger, gathered into one
+ * named group called «فضای کار حسابداری». Before this, opening «حسابداری»
+ * dropped straight into that ledger group and nothing else, and everything a
+ * business does daily lived in a second main menu at `/dashboard/*`: two
+ * competing navigations, with the one named after the app being the narrower.
  *
- * Grouped, because the flat list is twenty-plus rows: an unbroken column of
- * that length is a list nobody scans. The groups are the accountant's own
- * division of the work — the ledger itself, who owes whom, cash movement,
- * setup — and every section appears in exactly one of them, asserted in
- * `accounting-nav.test.ts` so a new section cannot quietly go missing from the
- * menu.
+ * Nothing here is a new page or a second copy of one. The business entries are
+ * picked out of the nav the shell already built and already filtered for this
+ * member's trade, role, features and permissions
+ * (`accounting-workspace.ts`), so a page this member cannot open is simply not
+ * in the list — one gate, not two that could disagree. The ledger entries are
+ * the same `accounting-nav.ts` sections behind the same role check the pages
+ * use.
+ *
+ * RTL: every inset is logical (`ms`/`me`, `border-s`, `text-start`), the
+ * disclosure chevron points down when open and toward the inline start when
+ * closed, and the group headings are real `<h2>`s over real `<ul>`s so a
+ * screen reader hears the same structure the eye sees.
  */
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, ChevronDownIcon, CircleIcon } from "lucide-react";
 import {
   SidebarContent,
   SidebarMenu,
@@ -31,27 +38,185 @@ import type { AppShellNavProps } from "@/app/dashboard/app-shell-nav";
 import {
   APP_NAV_BUTTON_CLASS,
   BACK_TO_WORKSPACE_BUTTON_CLASS,
+  NAV_LABEL_CLASS,
 } from "@/app/dashboard/sidebar-nav-styles";
-import { ACCOUNTING_NAV_GROUPS, accountingSectionsForRole } from "./accounting-nav";
+import { NAV_ICONS } from "@/app/dashboard/sidebar-nav-icons";
 import { ACCOUNTING_SECTION_ICONS } from "./accounting-icons";
-import { accountingSectionHref, isAccountingSectionPathname } from "./accounting-routes";
+import { isAccountingSectionPathname } from "./accounting-routes";
+import {
+  accountingWorkspaceGroups,
+  LEDGER_WORKSPACE_GROUP_KEY,
+  type WorkspaceNavEntry,
+  type WorkspaceNavGroup,
+} from "./accounting-workspace";
+
+/** Which groups the member left open, remembered per device like the flat nav's. */
+const OPEN_GROUPS_KEY = "accounting-nav-open-groups";
+
+/**
+ * Is this entry the page we are on?
+ *
+ * Two rules, because the menu holds two kinds of entry. An accounting section
+ * is matched by its section key (so `/accounting/directory?view=customers`
+ * lights «اشخاص» and its «مشتریان» deep link both). A business page is matched
+ * by path prefix, the way the flat nav matches — and exactly, for the roots
+ * (`/settings`, `/dashboard/products`) that would otherwise swallow every page
+ * beneath them.
+ */
+function entryIsActive(entry: WorkspaceNavEntry, pathname: string, search: string): boolean {
+  if (entry.section) {
+    if (!isAccountingSectionPathname(pathname, entry.section)) return false;
+    const view = new URLSearchParams(entry.href.split("?")[1] ?? "").get("view");
+    const current = new URLSearchParams(search).get("view");
+    // A deep link into a view is only "here" when that view is showing; the
+    // parent «اشخاص» entry owns the default list.
+    return view ? current === view : !current;
+  }
+  const base = entry.href.split("?")[0];
+  return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+function EntryIcon({ entry }: { entry: WorkspaceNavEntry }) {
+  const Icon = entry.section
+    ? ACCOUNTING_SECTION_ICONS[entry.section]
+    : (NAV_ICONS[entry.iconKey ?? entry.href] ?? NAV_ICONS[entry.href.split("?")[0]] ?? CircleIcon);
+  return <Icon aria-hidden="true" className="size-5 shrink-0" />;
+}
+
+function NavEntries({
+  entries,
+  pathname,
+  search,
+  onNavigate,
+  indented,
+}: {
+  entries: readonly WorkspaceNavEntry[];
+  pathname: string;
+  search: string;
+  onNavigate: () => void;
+  /** Inside a disclosure group: a start-side rule ties the children to their heading. */
+  indented?: boolean;
+}) {
+  return (
+    <SidebarMenu
+      className={
+        indented
+          ? "ms-4 space-y-1.5 border-s border-border/70 ps-2 group-data-[state=collapsed]/sidebar:ms-0 group-data-[state=collapsed]/sidebar:border-s-0 group-data-[state=collapsed]/sidebar:ps-0"
+          : "space-y-1.5"
+      }
+    >
+      {entries.map((entry) => {
+        const active = entryIsActive(entry, pathname, search);
+        return (
+          <SidebarMenuItem key={entry.href}>
+            <SidebarMenuButton asChild isActive={active} tooltip={entry.label} className={APP_NAV_BUTTON_CLASS}>
+              <Link href={entry.href} onClick={onNavigate} aria-current={active ? "page" : undefined}>
+                <EntryIcon entry={entry} />
+                <span className={NAV_LABEL_CLASS}>{entry.label}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
+  );
+}
+
+function CollapsibleGroup({
+  group,
+  pathname,
+  search,
+  onNavigate,
+  open,
+  onToggle,
+}: {
+  group: WorkspaceNavGroup;
+  pathname: string;
+  search: string;
+  onNavigate: () => void;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const panelId = `accounting-nav-${group.key}`;
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex min-h-10 w-full items-center gap-2 rounded-xl px-2 text-start text-[11px] font-bold text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 group-data-[state=collapsed]/sidebar:hidden"
+      >
+        <ChevronDownIcon
+          aria-hidden="true"
+          // Closed, the chevron points toward the inline start — which in this
+          // RTL product is the left, hence the extra flip under `rtl:`.
+          className={`size-4 shrink-0 transition-transform ${open ? "" : "-rotate-90 rtl:rotate-90"}`}
+        />
+        <span className="min-w-0 flex-1 truncate">{group.label}</span>
+      </button>
+      <div id={panelId} hidden={!open}>
+        {group.description ? (
+          <p className="mb-1.5 px-2 text-[11px] leading-5 text-muted-foreground group-data-[state=collapsed]/sidebar:hidden">
+            {group.description}
+          </p>
+        ) : null}
+        <NavEntries entries={group.entries} pathname={pathname} search={search} onNavigate={onNavigate} indented />
+      </div>
+    </div>
+  );
+}
 
 export function AccountingAppNav({
   shell,
   role,
   pathname,
+  search = "",
+  navItems = [],
   onNavigate,
   workspaceShell,
 }: AppShellNavProps) {
-  const allowed = accountingSectionsForRole(role);
-  const byKey = new Map(allowed.map((section) => [section.key, section]));
+  const groups = accountingWorkspaceGroups({ role, navItems });
+
+  // The ledger group opens on arrival when you are standing in it, so an
+  // accountant who bookmarked «دفتر روزنامه» does not land on a closed group
+  // with no sign of where they are.
+  const inLedger = groups
+    .find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY)
+    ?.entries.some((entry) => entryIsActive(entry, pathname, search));
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [restored, setRestored] = useState(false);
+
+  // Read after mount: localStorage does not exist on the server, and the first
+  // client paint has to match the markup the server sent.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(OPEN_GROUPS_KEY);
+      if (raw) setOpenGroups(JSON.parse(raw) as Record<string, boolean>);
+    } catch {
+      // A hand-edited or quota-broken store is a preference, not an error.
+    }
+    setRestored(true);
+  }, []);
+
+  function toggle(key: string, currentlyOpen: boolean) {
+    setOpenGroups((current) => {
+      const next = { ...current, [key]: !currentlyOpen };
+      try {
+        window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
+      } catch {
+        // Same again: failing to remember is not failing to navigate.
+      }
+      return next;
+    });
+  }
 
   const backHref = workspaceShell ? "/dashboard" : "/dashboard/overview";
   const backLabel = workspaceShell ? "بازگشت به میز کار" : "بازگشت به داشبورد";
 
   return (
     <SidebarContent className="px-3 py-4">
-      <nav aria-label="بخش‌های حسابداری" className="space-y-3">
+      <nav aria-label="منوی حسابداری" className="space-y-3">
         <div className="px-2 group-data-[state=collapsed]/sidebar:hidden">
           <p className="text-sm font-bold text-foreground">{shell.label}</p>
           <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">{shell.description}</p>
@@ -63,24 +228,36 @@ export function AccountingAppNav({
             <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
               <Link href={backHref} onClick={onNavigate}>
                 <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
-                <span className="min-w-0 flex-1 truncate text-start group-data-[state=collapsed]/sidebar:hidden">
-                  {backLabel}
-                </span>
+                <span className={NAV_LABEL_CLASS}>{backLabel}</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
         <div aria-hidden="true" className="border-t border-border/80" />
 
-        {ACCOUNTING_NAV_GROUPS.map((group) => {
-          const items = group.keys.flatMap((key) => {
-            const section = byKey.get(key);
-            return section ? [section] : [];
-          });
-          if (items.length === 0) return null;
+        {groups.map((group) => {
+          if (group.entries.length === 0) return null;
+
+          if (group.collapsible) {
+            // Before the stored preference has been read, the group's state is
+            // "am I standing in it" — the same answer on the server and on the
+            // first paint, so nothing flickers.
+            const open = restored ? (openGroups[group.key] ?? Boolean(inLedger)) : Boolean(inLedger);
+            return (
+              <CollapsibleGroup
+                key={group.key}
+                group={group}
+                pathname={pathname}
+                search={search}
+                onNavigate={onNavigate}
+                open={open}
+                onToggle={() => toggle(group.key, open)}
+              />
+            );
+          }
 
           return (
-            <div key={group.label} className="space-y-1.5">
+            <div key={group.key} className="space-y-1.5">
               {/* Collapsed to a rail the headings are hidden, so a rule keeps
                   the groups from reading as one undivided column of glyphs. */}
               <div
@@ -90,33 +267,12 @@ export function AccountingAppNav({
               <p className="px-2 text-[11px] font-bold text-muted-foreground group-data-[state=collapsed]/sidebar:hidden">
                 {group.label}
               </p>
-              <SidebarMenu className="space-y-1.5">
-                {items.map((section) => {
-                  const active = isAccountingSectionPathname(pathname, section.key);
-                  const Icon = ACCOUNTING_SECTION_ICONS[section.key];
-                  return (
-                    <SidebarMenuItem key={section.key}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        tooltip={section.label}
-                        className={APP_NAV_BUTTON_CLASS}
-                      >
-                        <Link
-                          href={accountingSectionHref(section.key)}
-                          onClick={onNavigate}
-                          aria-current={active ? "page" : undefined}
-                        >
-                          <Icon aria-hidden="true" className="size-5 shrink-0" />
-                          <span className="min-w-0 flex-1 truncate text-start group-data-[state=collapsed]/sidebar:hidden">
-                            {section.label}
-                          </span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
+              <NavEntries
+                entries={group.entries}
+                pathname={pathname}
+                search={search}
+                onNavigate={onNavigate}
+              />
             </div>
           );
         })}

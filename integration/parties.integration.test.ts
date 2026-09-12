@@ -369,3 +369,108 @@ describe("categories", () => {
     expect(await parties.removePartyCategory(biz.id, spare!.id)).toBe("deleted");
   });
 });
+
+describe("one person, several roles (migration 0148)", () => {
+  it("stores the set beside the primary role, and keeps them consistent", async () => {
+    const party = await parties.createParty(biz.id, {
+      displayName: "کافه بامداد",
+      roles: ["Customer", "Supplier"],
+    });
+    expect(party.roles).toEqual(["Customer", "Supplier"]);
+    // The primary role is a member of its own set, and it is what the
+    // accounting-code prefix was taken from (۱ = مشتری).
+    expect(party.roles).toContain(party.role);
+    expect(party.accountingCode?.startsWith("1")).toBe(true);
+
+    const stored = await db.query<{ role: string; roles: string[] }>(
+      "SELECT role, roles FROM parties WHERE id = $1",
+      [party.id],
+    );
+    // Sorted and de-duplicated by the trigger, in storage spelling.
+    expect(stored.rows[0].roles).toEqual(["customer", "supplier"]);
+    expect(stored.rows[0].roles).toContain(stored.rows[0].role);
+  });
+
+  it("lists one record under every word it answers to", async () => {
+    const both = await parties.createParty(biz.id, {
+      displayName: "علی رضایی",
+      roles: ["Customer", "Supplier"],
+    });
+    await parties.createParty(biz.id, { role: "Customer", displayName: "فقط مشتری" });
+    await parties.createParty(biz.id, { role: "Supplier", displayName: "فقط تأمین‌کننده" });
+
+    const customers = await parties.listParties(biz.id, { roles: ["Customer"] });
+    const suppliers = await parties.listParties(biz.id, { roles: ["Supplier"] });
+    // The same id in both lists — one file, one balance, not two rows.
+    expect(customers.parties.map((p) => p.id)).toContain(both.id);
+    expect(suppliers.parties.map((p) => p.id)).toContain(both.id);
+    expect(customers.total).toBe(2);
+    expect(suppliers.total).toBe(2);
+
+    // And the picker search agrees with the directory listing.
+    const found = await parties.searchParties(biz.id, "علی", { roles: ["Supplier"] });
+    expect(found.map((p) => p.id)).toContain(both.id);
+  });
+
+  it("backfills a pre-0148 row: a scalar role alone still reads as its own set", async () => {
+    // A writer that knows nothing about `roles` — an importer, the POS
+    // quick-add, anything written before the column existed.
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO parties (business_id, name, role) VALUES ($1, 'واردشده', 'supplier') RETURNING id`,
+      [biz.id],
+    );
+    const party = await parties.getParty(biz.id, rows[0].id);
+    expect(party?.roles).toEqual(["Supplier"]);
+    const listed = await parties.listParties(biz.id, { roles: ["Supplier"] });
+    expect(listed.parties.map((p) => p.id)).toContain(rows[0].id);
+  });
+
+  it("does not demote a multi-role party when an old caller edits one field", async () => {
+    const party = await parties.createParty(biz.id, {
+      displayName: "نانوایی شرق",
+      roles: ["Customer", "Supplier"],
+    });
+    // The POS quick-add fixing a phone number: it sends `role` and knows
+    // nothing about the set. Losing «تأمین‌کننده» here would silently drop the
+    // party out of the purchasing picker.
+    await parties.updateParty(biz.id, party.id, { role: "Customer", phone: "09120000000" });
+    const after = await parties.getParty(biz.id, party.id);
+    expect(after?.roles).toEqual(["Customer", "Supplier"]);
+
+    // A write that names no role at all leaves the set entirely alone.
+    await parties.updateParty(biz.id, party.id, { notes: "یادداشت" });
+    expect((await parties.getParty(biz.id, party.id))?.roles).toEqual(["Customer", "Supplier"]);
+  });
+
+  it("keeps the personnel link while the party still holds the employee role", async () => {
+    const user = await db.query<{ id: string }>(
+      "INSERT INTO users (business_id, full_name, email, role, pin_hash) VALUES ($1, $2, $3, 'cashier', $4) RETURNING id",
+      [
+        biz.id,
+        "مریم رضایی",
+        `cashier-${randomUUID().slice(0, 8)}@example.ir`,
+        "$2b$10$notarealhashnotarealhashnotarealhashno",
+      ],
+    );
+    const userId = user.rows[0].id;
+    const party = await parties.ensureEmployeeParty(biz.id, userId, { displayName: "مریم رضایی" });
+    expect(party?.employeeUserId).toBe(userId);
+
+    // Staff who also buy from the shop: adding «مشتری» must not sever the
+    // membership the payroll screen reads.
+    await parties.updateParty(biz.id, party!.id, { roles: ["Employee", "Customer"] });
+    const after = await parties.getParty(biz.id, party!.id);
+    expect(after?.roles).toEqual(["Customer", "Employee"]);
+    expect(after?.employeeUserId).toBe(userId);
+
+    // Dropping the employee role does sever it — one membership, one file.
+    await parties.updateParty(biz.id, party!.id, { roles: ["Customer"] });
+    expect((await parties.getParty(biz.id, party!.id))?.employeeUserId).toBeNull();
+  });
+
+  it("refuses an unknown role rather than defaulting it", async () => {
+    await expect(
+      parties.createParty(biz.id, { displayName: "نامعتبر", roles: ["Wizard"] }),
+    ).rejects.toMatchObject({ code: "invalid_role" });
+  });
+});

@@ -9,6 +9,7 @@ import {
   ACCOUNTING_SECTION_KEYS,
   accountingCustomerHref,
   accountingCustomersHref,
+  accountingDirectoryViewForLegacySection,
   accountingSectionForLegacyTab,
   accountingSectionHref,
   isAccountingSectionKey,
@@ -47,11 +48,10 @@ describe("ACCOUNTING_SECTIONS", () => {
 
   it("names the persons section the directory route, inside accounting", () => {
     expect(accountingSectionHref("directory")).toBe("/accounting/directory");
-    // The customers-only slice is accounting's own page too — the A/R customer
-    // links land here, never on a CRM redirect.
-    expect(accountingSectionHref("customers")).toBe("/accounting/customers");
-    expect(accountingCustomersHref()).toBe("/accounting/customers");
-    expect(accountingCustomerHref("p1")).toBe("/accounting/customers?party=p1");
+    // «مشتریان» is a view of that one directory, not a route of its own — the
+    // A/R customer links land on the directory with the customers filter on.
+    expect(accountingCustomersHref()).toBe("/accounting/directory?view=customers");
+    expect(accountingCustomerHref("p1")).toBe("/accounting/directory?view=customers&party=p1");
   });
 });
 
@@ -97,8 +97,11 @@ describe("isAccountingSectionKey", () => {
 describe("accountingSectionForLegacyTab", () => {
   it("answers every old `?tab=` target with the section it names now", () => {
     expect(accountingSectionForLegacyTab("cheques")).toBe("cheques");
-    expect(accountingSectionForLegacyTab("customers")).toBe("customers");
-    // The one rename: the persons tab is the directory route.
+    // The per-role party tabs all land on the one directory now; the page
+    // turns each of them into the matching `?view=`.
+    expect(accountingSectionForLegacyTab("customers")).toBe("directory");
+    expect(accountingSectionForLegacyTab("suppliers")).toBe("directory");
+    expect(accountingSectionForLegacyTab("vendors")).toBe("directory");
     expect(accountingSectionForLegacyTab("parties")).toBe("directory");
   });
 
@@ -109,13 +112,30 @@ describe("accountingSectionForLegacyTab", () => {
   });
 });
 
+describe("the directory view a legacy per-role URL asked for", () => {
+  it("names the filter, so a bookmark keeps its list", () => {
+    // «تأمین‌کنندگان» landing on «همه اشخاص» is losing the filter, not
+    // preserving the URL. Both the `/accounting/<key>` routes and the old
+    // `/dashboard/ledger?tab=` addresses forward through this.
+    expect(accountingDirectoryViewForLegacySection("customers")).toBe("customers");
+    expect(accountingDirectoryViewForLegacySection("suppliers")).toBe("suppliers");
+    expect(accountingDirectoryViewForLegacySection("vendors")).toBe("vendors");
+  });
+
+  it("says nothing about a section that was never a party screen", () => {
+    for (const key of ["directory", "parties", "entries", "payroll", null, undefined]) {
+      expect(accountingDirectoryViewForLegacySection(key)).toBeNull();
+    }
+  });
+});
+
 describe("isAccountingSectionPathname", () => {
   it("lights the dashboard only on the app root, sections on their own routes", () => {
     expect(isAccountingSectionPathname("/accounting/overview", "dashboard")).toBe(true);
     expect(isAccountingSectionPathname("/accounting/directory", "dashboard")).toBe(false);
     expect(isAccountingSectionPathname("/accounting/directory", "directory")).toBe(true);
     // What nests under a section is that section's.
-    expect(isAccountingSectionPathname("/accounting/customers/x", "customers")).toBe(true);
+    expect(isAccountingSectionPathname("/accounting/directory/x", "directory")).toBe(true);
     // …and the old address never lights a section.
     expect(isAccountingSectionPathname("/dashboard/ledger", "directory")).toBe(false);
   });

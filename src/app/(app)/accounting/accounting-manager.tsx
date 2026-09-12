@@ -7,6 +7,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { SectionNav } from "@/app/dashboard/section-nav";
 import { api, ErrorBox, SecondaryButton } from "@/app/dashboard/ui";
 import { partyScopeFor } from "@/lib/parties-scopes";
+import {
+  partyDirectoryHref,
+  partyDirectoryView,
+  type PartyDirectoryViewKey,
+} from "@/lib/party-directory";
 import { PartiesSection } from "@/app/dashboard/parties/parties-section";
 import { LedgerDashboardSection } from "./ledger-dashboard-section";
 import {
@@ -14,6 +19,11 @@ import {
   type AccountingSectionKey,
 } from "./accounting-routes";
 import { accountingSectionsForRole } from "./accounting-nav";
+import {
+  LEDGER_WORKSPACE_DESCRIPTION,
+  LEDGER_WORKSPACE_LABEL,
+  LEDGER_WORKSPACE_SECTION_KEYS,
+} from "./accounting-workspace";
 import { ACCOUNTING_SECTION_ICONS as SECTION_ICONS } from "./accounting-icons";
 import { TrialBalanceSection } from "./trial-balance-section";
 import { EntriesSection } from "./entries-section";
@@ -55,10 +65,12 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
    * columns, managed here rather than by sending the accountant into the CRM.
    * It is also the one place a party's ledger code is written.
    *
-   * «مشتریان» is the customers-only slice (`scope accounting-customers`): it
-   * is the destination the A/R customer actions point at, so an accountant
-   * looking at a receivable lands on the customers they can settle with — an
-   * accounting page, never a redirect into the CRM.
+   * «مشتریان»، «تأمین‌کنندگان» and «فروشندگان» used to be three more sections
+   * beside it, three routes over the same table. They are `?view=` filters of
+   * this one screen now (`src/lib/party-directory.ts`), so an A/R link, an A/P
+   * link and a purchase order all land on the same directory with the right
+   * list already selected — and a person who is both a customer and a supplier
+   * is one file, not two.
    *
    * A `?party=<id>` link from another app (an A/R row, an AI answer, a
    * notification) lands on the section's route with that one file open, the
@@ -71,6 +83,19 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
   useEffect(() => {
     setEditPartyId(partyParam);
   }, [partyParam]);
+  // The directory's view («همه اشخاص» / «مشتریان» / …) lives in the URL, so a
+  // filtered list is a link somebody can send and a back button returns to the
+  // list you were reading rather than to «همه».
+  const viewParam = searchParams.get("view");
+  const directoryView = partyDirectoryView(viewParam).key;
+  const setDirectoryView = useCallback(
+    (next: PartyDirectoryViewKey) => {
+      // `replace`, not `push`: switching a filter is refining one screen, and
+      // it should not cost five back presses to leave the directory.
+      router.replace(partyDirectoryHref(next, { party: partyParam }), { scroll: false });
+    },
+    [partyParam, router],
+  );
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Every section is a route now, so the rail navigates rather than switching
@@ -82,12 +107,30 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
     [router],
   );
 
-  // Wages are compensation data — restricted to owner + accountant; the list
-  // comes from `accounting-nav.ts`, the same source the sidebar reads.
-  const sections = accountingSectionsForRole(role).map((s) => ({
-    ...s,
-    icon: SECTION_ICONS[s.key],
-  }));
+  /**
+   * The in-page rail is «فضای کار حسابداری» — *only* that group.
+   *
+   * It used to list every section in the app, which made it a second copy of
+   * the whole menu sitting inside the page: two navigations, one of them
+   * looking like the app's real one. The app's menu is the sidebar now
+   * (`accounting-app-nav.tsx`, the complete workspace), and this rail is the
+   * ledger group's own sub-navigation — the same fifteen keys the sidebar
+   * group holds, from the same `accounting-workspace.ts` list, so the two can
+   * never disagree about what «فضای کار حسابداری» contains.
+   *
+   * Wages stay owner + accountant: the keys are filtered through
+   * `accountingSectionsForRole`, the same gate the pages use.
+   */
+  const allowed = accountingSectionsForRole(role);
+  const sections = LEDGER_WORKSPACE_SECTION_KEYS.flatMap((key) => {
+    const def = allowed.find((candidate) => candidate.key === key);
+    return def ? [{ ...def, icon: SECTION_ICONS[def.key] }] : [];
+  });
+  // Outside the ledger group the rail has nothing to say: «اشخاص», the
+  // reports index and the settings screen are top-level entries of the app's
+  // own menu, so they render as plain pages rather than under a menu that
+  // does not contain them.
+  const inLedgerWorkspace = sections.some((candidate) => candidate.key === section);
 
   const [loadFailed, setLoadFailed] = useState(false);
   const loadAccounts = useCallback(() => {
@@ -131,22 +174,9 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
     );
   }
 
-  return (
-    <div className="min-w-0 space-y-4 sm:space-y-5">
-      <ErrorBox>{error}</ErrorBox>
-
-      <SectionNav
-        idPrefix="accounting"
-        label="بخش‌های حسابداری"
-        title="فضای کار حسابداری"
-        description="ثبت، بررسی و گزارش‌های مالی"
-        variant="rail"
-        sections={sections}
-        active={section}
-        onChange={goToSection}
-      >
-        <div className={`${styles.content} min-w-0`}>
-          {section === "dashboard" ? <LedgerDashboardSection onGoToTab={goToSection} refreshKey={refreshKey} /> : null}
+  const body = (
+    <>
+      {section === "dashboard" ? <LedgerDashboardSection onGoToTab={goToSection} refreshKey={refreshKey} /> : null}
           {section === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
           {section === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
           {section === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
@@ -157,27 +187,8 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
               scope={partyScopeFor("accounting")}
               role={role}
               editPartyId={editPartyId}
-            />
-          ) : null}
-          {section === "customers" ? (
-            <PartiesSection
-              scope={partyScopeFor("accounting-customers")}
-              role={role}
-              editPartyId={editPartyId}
-            />
-          ) : null}
-          {section === "suppliers" ? (
-            <PartiesSection
-              scope={partyScopeFor("accounting-suppliers")}
-              role={role}
-              editPartyId={editPartyId}
-            />
-          ) : null}
-          {section === "vendors" ? (
-            <PartiesSection
-              scope={partyScopeFor("accounting-vendors")}
-              role={role}
-              editPartyId={editPartyId}
+              view={directoryView}
+              onViewChange={setDirectoryView}
             />
           ) : null}
           {section === "receivables" ? <ArSection busy={busy} run={run} /> : null}
@@ -193,8 +204,29 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
           {section === "reports" ? <AccountingReportsSection /> : null}
           {section === "settings" ? <AccountingSettingsSection /> : null}
           {section === "growth" ? <GrowthAccountingView /> : null}
-        </div>
-      </SectionNav>
+    </>
+  );
+
+  return (
+    <div className="min-w-0 space-y-4 sm:space-y-5">
+      <ErrorBox>{error}</ErrorBox>
+
+      {inLedgerWorkspace ? (
+        <SectionNav
+          idPrefix="accounting-ledger"
+          label={LEDGER_WORKSPACE_LABEL}
+          title={LEDGER_WORKSPACE_LABEL}
+          description={LEDGER_WORKSPACE_DESCRIPTION}
+          variant="rail"
+          sections={sections}
+          active={section}
+          onChange={goToSection}
+        >
+          <div className={`${styles.content} min-w-0`}>{body}</div>
+        </SectionNav>
+      ) : (
+        <div className={`${styles.content} min-w-0`}>{body}</div>
+      )}
     </div>
   );
 }

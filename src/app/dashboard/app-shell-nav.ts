@@ -34,6 +34,25 @@ export interface AppShellNavProps {
   shell: AppShellDef;
   role: string;
   pathname: string;
+  /**
+   * The current query string (without `?`).
+   *
+   * Only the Accounting workspace reads it so far: its directory entries are
+   * one route with a `?view=` filter, and «مشتریان» must not light up while
+   * «همه اشخاص» is showing.
+   */
+  search?: string;
+  /**
+   * The business nav the shell built — already filtered for this member's
+   * trade, role, features and permissions, and flattened so children are
+   * reachable too.
+   *
+   * An app whose menu adopts business pages (Accounting, which is the
+   * business's primary workspace) arranges *these* entries rather than
+   * declaring its own: one gate, so a page the member cannot open can never
+   * appear in an app's menu.
+   */
+  navItems?: readonly { label: string; href: string; iconKey?: string }[];
   /** Closes the mobile drawer after a tap, the way the flat nav does. */
   onNavigate: () => void;
   /** The `workspace` feature flag: the rail launcher exists, so «بازگشت» goes to it. */

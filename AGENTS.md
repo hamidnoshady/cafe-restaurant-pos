@@ -48,6 +48,29 @@ CLAUDE.md. Don't assume the everyday English sense:
   are peers; never fold one into the other, and don't default "website management" to
   only the CMS.
 
+## Accounting is the primary workspace
+
+«حسابداری» is the business's main work menu, not a ledger tool: its sidebar
+holds the business's own work areas (فروش، خرید و انبار، محصولات، عملیات،
+گزارش‌ها، تنظیمات) **plus** the ledger as one named group, «فضای کار حسابداری».
+
+Two rules when you touch that menu:
+
+- The business entries are **adopted**, never re-declared. The composer
+  (`src/app/(app)/accounting/accounting-workspace.ts`) picks them out of the
+  nav the shell already built and already gated, by href. Adding a page to the
+  menu is one href in `WORKSPACE_GROUP_SLOTS` — writing a second role/module
+  check is the bug this design exists to prevent.
+- There is **one** people directory: `/accounting/directory`.
+  «مشتریان»، «تأمین‌کنندگان»، «فروشندگان» are `?view=` filters of it
+  (`src/lib/party-directory.ts`), over one `parties` table, one `/api/parties`
+  endpoint and one add/edit form. A person holds a **set** of roles
+  (`parties.roles`, migration 0148) with `parties.role` as the primary one that
+  decides the accounting-code prefix — so never add a per-role party screen,
+  and never assume one person has one role.
+
+Route/nav map and the legacy-URL table: [`docs/accounting-workspace-ia.md`](docs/accounting-workspace-ia.md).
+
 ## Design system
 
 **The visual canon is [`docs/design-system.md`](docs/design-system.md), backed by the

@@ -121,7 +121,17 @@ describe("the signed-in journey", () => {
     for (const pathname of [
       "/accounting/expenses",
       "/accounting/receivables",
+      "/accounting/payables",
       "/accounting/reports",
+      // The one people directory, and the URLs of its views. All one route —
+      // the middleware must serve it, not redirect it, filter or no filter.
+      "/accounting/directory",
+      // The retired per-role party screens. They are route-level redirects
+      // inside the app (never middleware rewrites), so the middleware serves
+      // them through and the page does the forwarding.
+      "/accounting/customers",
+      "/accounting/suppliers",
+      "/accounting/vendors",
       "/crm/persons",
       "/crm/persons/00000000-0000-0000-0000-000000000000",
       "/crm/segments",
@@ -138,6 +148,38 @@ describe("the signed-in journey", () => {
     const { status, location } = await visit("/crm/persons?q=ali&page=2", { authed: true });
     expect(status).toBe(200);
     expect(location).toBeNull();
+  });
+
+  it("serves a filtered and deep-linked directory as one page, not a redirect", async () => {
+    // A link from A/R («مشتریان در حسابداری») or from an AI answer lands here;
+    // the filter and the opened file are query parameters on one route, so the
+    // middleware must let both through untouched.
+    for (const pathname of [
+      "/accounting/directory?view=customers",
+      "/accounting/directory?view=suppliers",
+      "/accounting/directory?view=customers&party=00000000-0000-0000-0000-000000000000",
+    ]) {
+      const { status, location } = await visit(pathname, { authed: true });
+      expect(status, `${pathname} should be served`).toBe(200);
+      expect(location, `${pathname} must not be redirected by the middleware`).toBeNull();
+    }
+  });
+
+  it("still serves every business work area the Accounting menu adopts", async () => {
+    // The Accounting workspace lists these in its own sidebar. Adopting a page
+    // into an app's menu must not move it, break it, or start redirecting it —
+    // it stays exactly the `/dashboard/*` page it always was.
+    for (const pathname of [
+      "/dashboard/orders",
+      "/dashboard/pos",
+      "/dashboard/stock",
+      "/dashboard/inventory",
+      "/dashboard/products",
+      "/dashboard/products/prices",
+      "/dashboard/reports",
+    ]) {
+      expect(await isServed(pathname), `${pathname} should still be served`).toBe(true);
+    }
   });
 });
 
@@ -185,6 +227,29 @@ describe("the legacy addresses", () => {
       expect(status, `${legacy} should be a permanent redirect`).toBe(308);
       expect(location?.pathname, `${legacy} → ${canonical}`).toBe(canonical);
     }
+  });
+
+  it("sends a signed-out visitor from every Accounting URL to the login page, not a 404", async () => {
+    for (const pathname of [
+      "/accounting",
+      "/accounting/overview",
+      "/accounting/directory",
+      "/accounting/customers",
+      "/accounting/suppliers",
+      "/accounting/vendors",
+      "/accounting/receivables",
+      "/accounting/payables",
+    ]) {
+      const { status, location } = await visit(pathname, { authed: false });
+      expect(status, `${pathname} should bounce a signed-out visitor`).toBe(307);
+      expect(location?.pathname).toBe("/login");
+      expect(location?.searchParams.get("next")).toBe(pathname);
+    }
+  });
+
+  it("carries a directory filter through the sign-in bounce", async () => {
+    const { location } = await visit("/accounting/directory?view=suppliers", { authed: false });
+    expect(location?.searchParams.get("next")).toBe("/accounting/directory?view=suppliers");
   });
 
   it("redirects a signed-out visitor too, so the bookmark lands before the login bounce", async () => {

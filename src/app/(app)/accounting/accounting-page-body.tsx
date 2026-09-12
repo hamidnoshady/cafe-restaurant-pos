@@ -33,7 +33,7 @@ import {
  * platform settings page.
  */
 const DEFAULT_ACCOUNTING_HEADING = {
-  title: "حسابداری",
+  title: "فضای کار حسابداری",
   description: "تراز آزمایشی، دفتر روزنامه، اسناد دستی و عملیات مالی کسب‌وکار.",
 };
 
@@ -47,13 +47,15 @@ const ACCOUNTING_HEADINGS: Partial<Record<AccountingSectionKey, { title: string;
     title: "گزارش‌های مالی",
     description: "گزارش‌های حسابداری و راه رسیدن به گزارش‌های کسب‌وکار.",
   },
-  suppliers: {
-    title: "تأمین‌کنندگان",
-    description: "پروندهٔ تأمین‌کنندگان حسابداری — همان رکورد مشترک، با ستون‌های دفتر.",
+  dashboard: {
+    title: "حسابداری",
+    description:
+      "میز کار حسابداری — نمای مالی کسب‌وکار، اشخاص و دسترسی به همهٔ بخش‌های کاری از منوی کناری.",
   },
-  vendors: {
-    title: "فروشندگان",
-    description: "همان پروندهٔ تأمین‌کنندگان، با نام «فروشنده».",
+  directory: {
+    title: "اشخاص",
+    description:
+      "یک فهرست برای همهٔ طرف‌حساب‌ها — مشتریان، تأمین‌کنندگان، فروشندگان و کارکنان. یک پرونده برای هر نفر، حتی وقتی چند نقش دارد.",
   },
 };
 

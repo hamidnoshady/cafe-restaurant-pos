@@ -58,6 +58,7 @@ import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/li
 import { AppStateBadge } from "./app-availability-gate";
 import { CreditBadge } from "./credit-badge";
 import { popoverPanelClass } from "./page-chrome";
+import { NAV_ICONS } from "./sidebar-nav-icons";
 import {
   APP_NAV_BUTTON_CLASS,
   BACK_TO_WORKSPACE_BUTTON_CLASS,
@@ -126,58 +127,6 @@ const ROLE_LABELS: Record<string, string> = {
   kitchen: "آشپزخانه",
 };
 
-const NAV_ICONS: Record<string, LucideIcon> = {
-  "/dashboard": LayoutDashboardIcon,
-  "/dashboard/overview": LayoutDashboardIcon,
-  "/dashboard/orders": ClipboardListIcon,
-  "/dashboard/pos": ShoppingCartIcon,
-  "/dashboard/persons": UsersIcon,
-  "/dashboard/floor": ArmchairIcon,
-  "/dashboard/waiter": ArmchairIcon,
-  "/dashboard/kitchen": ChefHatIcon,
-  "/dashboard/reservations": CalendarDaysIcon,
-  "/dashboard/delivery": TruckIcon,
-  "/dashboard/inventory": PackageIcon,
-  // Phase 42 — the products workspace group's icon (nav entries derive theirs
-  // from href; the group has none, so it names this key via `iconKey`).
-  "/dashboard/products": PackageIcon,
-  "/dashboard/jewelry": GemIcon,
-  "/dashboard/watch": WatchIcon,
-  "/dashboard/accessories": SparklesIcon,
-  "/dashboard/wholesale": TruckIcon,
-  "/dashboard/tools-fittings": PackageIcon,
-  "/dashboard/haberdashery": SparklesIcon,
-  "/dashboard/ledger": CalculatorIcon,
-  // The Accounting app's own home (`/accounting`); the old ledger
-  // address above still forwards into it, and keeps its glyph for any saved
-  // bottom-nav slot that still points there.
-  "/accounting": CalculatorIcon,
-  // Each app's *home* is its overview, and the nav entry carries that exact
-  // href — so the glyph has to be keyed on it too, or the app's own door falls
-  // back to the generic circle.
-  "/accounting/overview": CalculatorIcon,
-  "/settings/connections": PlugIcon,
-  "/dashboard/reports": BarChart3Icon,
-  "/dashboard/ai": BotIcon,
-  "/settings/billing": WalletIcon,
-  "/settings": SettingsIcon,
-  // Phase 36b — the Growth & Marketing app's home; the trend glyph the
-  // workspace rail already uses for «رشد و بازاریابی».
-  "/growth": TrendingUpIcon,
-  "/growth/overview": TrendingUpIcon,
-  // Phase 36 — the CRM app's home. `/dashboard/persons` keeps the plain
-  // people glyph above; this is the app that now owns that record.
-  "/crm": ContactIcon,
-  "/crm/overview": ContactIcon,
-  // «مدیریت وب‌سایت» — one app for both website systems (the Eshobe CMS site
-  // builder and the WordPress/WooCommerce manager, each its own section).
-  "/websites": GlobeIcon,
-  "/websites/overview": GlobeIcon,
-  // Migration 0130 — the support desk.
-  "/dashboard/support": LifeBuoyIcon,
-  // Migration 0131 — the in-product knowledge base («مرکز آموزش»).
-  "/dashboard/knowledge": BookOpenIcon,
-};
 
 /**
  * The apps the workspace rail launches, in rail order — plus the one hub.
@@ -1065,20 +1014,28 @@ function AppShellNavigation({
   shell,
   role,
   pathname,
+  navItems,
   workspaceShell,
 }: {
   nav: (props: AppShellNavProps) => React.ReactElement;
   shell: AppShellDef;
   role: string;
   pathname: string;
+  /** The business nav, for an app menu that arranges business pages (Accounting). */
+  navItems: NavItem[];
   workspaceShell: boolean;
 }) {
   const { setOpenMobile } = useSidebar();
+  const search = useSearchParams();
   return (
     <Nav
       shell={shell}
       role={role}
       pathname={pathname}
+      search={search.toString()}
+      // Flattened, so a child page (لیست قیمت under محصولات) can be adopted by
+      // an app's menu as well as its parent.
+      navItems={flattenNav(navItems)}
       workspaceShell={workspaceShell}
       onNavigate={() => setOpenMobile(false)}
     />
@@ -1492,6 +1449,7 @@ export function DashboardSidebar({
             shell={appShell.shell}
             role={role}
             pathname={pathname}
+            navItems={navItems}
             workspaceShell={workspaceShell}
           />
         ) : (

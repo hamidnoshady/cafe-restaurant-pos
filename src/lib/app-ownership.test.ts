@@ -84,10 +84,14 @@ describe("Accounting's sidebar groups", () => {
 });
 
 describe("what each app owns", () => {
-  it("keeps the accounting directory in Accounting", () => {
+  it("keeps the one people directory in Accounting, as one section", () => {
     const keys = ACCOUNTING_SECTIONS.map((section) => section.key);
-    for (const owned of ["directory", "customers", "suppliers", "vendors"]) {
-      expect(keys).toContain(owned);
+    expect(keys).toContain("directory");
+    // «مشتریان»، «تأمین‌کنندگان» and «فروشندگان» were three more sections over
+    // the same table. They are `?view=` filters of the directory now
+    // (`party-directory.ts`), so the app must not grow those routes back.
+    for (const gone of ["customers", "suppliers", "vendors"]) {
+      expect(keys).not.toContain(gone);
     }
   });
 

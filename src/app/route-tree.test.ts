@@ -105,6 +105,18 @@ describe("the route tree resolves every promised URL", () => {
     }
   });
 
+  it("resolves the retired per-role party URLs rather than 404ing them", () => {
+    // «مشتریان»، «تأمین‌کنندگان» and «فروشندگان» were Accounting sections of
+    // their own. They are `?view=` filters of `/accounting/directory` now, and
+    // their old addresses must still resolve — the `[section]` catch-all
+    // answers them with a route-level redirect that carries the view.
+    for (const legacy of ["/accounting/customers", "/accounting/suppliers", "/accounting/vendors", "/accounting/parties"]) {
+      expectRoute(legacy);
+    }
+    // The canonical directory itself, of course.
+    expectRoute("/accounting/directory");
+  });
+
   it("finds every CRM section, and a person's file", () => {
     for (const key of CRM_SECTION_KEYS) {
       expectRoute(key === "overview" ? "/crm/overview" : `/crm/${key}`);
@@ -142,6 +154,16 @@ describe("the route tree resolves every promised URL", () => {
       "/dashboard/ledger",
       "/dashboard/customers",
       "/dashboard/persons",
+      // The business work areas the Accounting workspace adopts into its own
+      // menu. They are still real pages at their own `/dashboard/*` URLs —
+      // adopting a page into an app's menu must never move it.
+      "/dashboard/orders",
+      "/dashboard/pos",
+      "/dashboard/stock",
+      "/dashboard/inventory",
+      "/dashboard/products",
+      "/dashboard/products/prices",
+      "/dashboard/reports",
       "/dashboard/loyalty",
       "/dashboard/promotions",
       "/dashboard/commission",

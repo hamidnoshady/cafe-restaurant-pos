@@ -28,12 +28,9 @@ import {
 const byKey = new Map(PARTY_SCOPES_DEF.map((def) => [def.key, def]));
 const crm = byKey.get("crm")!;
 const accounting = byKey.get("accounting")!;
-const accountingCustomers = byKey.get("accounting-customers")!;
 const operations = byKey.get("operations")!;
 const team = byKey.get("team")!;
 const growth = byKey.get("growth")!;
-const accountingSuppliers = byKey.get("accounting-suppliers")!;
-const accountingVendors = byKey.get("accounting-vendors")!;
 const sales = byKey.get("sales")!;
 
 describe("the scope list", () => {
@@ -88,16 +85,12 @@ describe("who each app lists", () => {
     expect(accounting.roles).toEqual(["Customer", "Employee", "Supplier"]);
   });
 
-  it("accounting also has a customers-only view for the customer links", () => {
-    // A/R links used to open Growth's customer projection. Now they open an
-    // accounting customers screen — same shared record, only customers, with
-    // the ledger fields an accountant needs — at the Accounting app's own
-    // route, never a redirect into the CRM.
-    expect(accountingCustomers.roles).toEqual(["Customer"]);
-    expect(accountingCustomers.app).toBe("accounting");
-    expect(accountingCustomers.href).toBe("/accounting/customers");
-    expect(accountingCustomers.columns).toContain("accountingCode");
-    expect(accountingCustomers.columns).toContain("balance");
+  it("keeps the ledger columns on the one directory", () => {
+    // A/R links used to open a customers-only screen of their own. They open
+    // the canonical directory filtered to customers now, so the columns an
+    // accountant needs have to live on it.
+    expect(accounting.columns).toContain("accountingCode");
+    expect(accounting.columns).toContain("balance");
   });
 
   it("accounting's persons directory lives at the app's own route", () => {
@@ -108,17 +101,13 @@ describe("who each app lists", () => {
     expect(accounting.href).toBe("/accounting/directory");
   });
 
-  it("gives accounting's suppliers and vendors two names over one record", () => {
-    // «تأمین‌کنندگان» and «فروشندگان» are the two words an accountant looks
-    // for; they are two *views*, not two stores — the same shared `parties`
-    // row filtered to the same role, at two of the app's own routes.
-    expect(accountingSuppliers.roles).toEqual(["Supplier"]);
-    expect(accountingVendors.roles).toEqual(["Supplier"]);
-    expect(accountingSuppliers.app).toBe("accounting");
-    expect(accountingVendors.app).toBe("accounting");
-    expect(accountingSuppliers.href).toBe("/accounting/suppliers");
-    expect(accountingVendors.href).toBe("/accounting/vendors");
-    expect(accountingVendors.columns).toEqual(accountingSuppliers.columns);
+  it("has exactly one accounting scope — the per-role screens are views now", () => {
+    // «مشتریان»، «تأمین‌کنندگان» and «فروشندگان» used to be three scopes of
+    // their own, three routes over the same table and three sidebar rows. They
+    // are `?view=` filters of the one directory now (`party-directory.ts`), so
+    // there is one screen, one add/edit form and one place a deep link lands.
+    const accountingScopes = PARTY_SCOPES_DEF.filter((def) => def.app === "accounting");
+    expect(accountingScopes.map((def) => def.key)).toEqual(["accounting"]);
   });
 
   it("filters a shared list to what the scope is about", () => {

@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireFeatureForPage } from "@/lib/features";
+import { partyDirectoryHref } from "@/lib/party-directory";
 import {
+  accountingDirectoryViewForLegacySection,
   accountingSectionForLegacyTab,
   accountingSectionHref,
   canOpenAccounting,
@@ -35,6 +37,14 @@ export default async function LegacyLedgerRedirect({
 
   const { tab, party } = await searchParams;
   const section = accountingSectionForLegacyTab(tab ?? null);
+  // `?tab=customers` / `suppliers` / `vendors` all became the one directory,
+  // so the forward has to carry *which list* the visitor asked for — landing a
+  // «تأمین‌کنندگان» bookmark on «همه اشخاص» is losing the filter, not
+  // preserving the URL.
+  const view = accountingDirectoryViewForLegacySection(tab ?? null);
+  if (section === "directory") {
+    redirect(partyDirectoryHref(view ?? "all", { party: party ?? null }));
+  }
   const href = accountingSectionHref(section);
   redirect(party ? `${href}?party=${encodeURIComponent(party)}` : href);
 }

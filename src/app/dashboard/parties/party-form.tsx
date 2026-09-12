@@ -39,8 +39,11 @@ import {
   buildPartyPayload,
   formStateFromParty,
   partyFieldErrorMessage,
+  hasPartyRole,
   resetPartyForm,
+  togglePartyRole,
   validatePartyForm,
+  withPartyRoles,
   type PartyApiRecord,
   type PartyFormState,
   type PartyRole,
@@ -51,6 +54,7 @@ import {
   loadPartyDraft,
   localStorageDraftStorage,
   partyDraftLabel,
+  partyFormHasUnsavedChanges,
   savePartyDraft,
   type PartyDraft,
 } from "@/lib/party-drafts";
@@ -100,18 +104,48 @@ export interface PartyFormDialogProps {
   /** The record to hydrate from, when the caller already has it (the directory row). */
   initial?: PartyApiRecord | null;
   businessId: string;
+  /**
+   * The roles a *new* person starts with ticked — the directory's current view
+   * («تأمین‌کنندگان» ticks تأمین‌کننده). Falls back to the scope's own default
+   * role, which is what a single-role section always wants.
+   */
+  defaultRoles?: readonly PartyRole[];
   onClose: () => void;
   onSaved: (party: PartyApiRecord) => void;
 }
 
-export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, onSaved }: PartyFormDialogProps) {
+export function PartyFormDialog({
+  scope,
+  partyId,
+  initial,
+  businessId,
+  defaultRoles,
+  onClose,
+  onSaved,
+}: PartyFormDialogProps) {
   const storage = useMemo(() => localStorageDraftStorage(), []);
+  /**
+   * The roles a new person opens with: the caller's (the directory's current
+   * view), narrowed to what this scope may write, or the scope's default.
+   */
+  const openingRoles = useMemo(() => {
+    const asked = (defaultRoles ?? []).filter((role) => scope.roles.includes(role));
+    return asked.length > 0 ? asked : [scope.defaultRole];
+  }, [defaultRoles, scope]);
+
   const [state, setState] = useState<PartyFormState>(() => {
     const hydrated = formStateFromParty(initial ?? null);
     // A new party starts from the app that opened the form (the store's «تأمین‌کننده
-    // جدید» is not a customer with the label changed); an edit keeps its own role.
-    return partyId ? hydrated : { ...hydrated, role: scope.defaultRole };
+    // جدید» is not a customer with the label changed); an edit keeps its own roles.
+    return partyId ? hydrated : withPartyRoles(hydrated, openingRoles);
   });
+  /**
+   * What the form looked like when it opened — the baseline «آیا تغییری ذخیره
+   * نشده دارید؟» compares against. Kept as state and re-set on hydration so an
+   * edit that loads its record from the server does not count the load itself
+   * as an unsaved change.
+   */
+  const [baseline, setBaseline] = useState<PartyFormState>(state);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [tab, setTab] = useState<TabKey>("general");
   const [busy, setBusy] = useState(false);
@@ -149,7 +183,9 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
         setFormError(errorMessage((data as { error?: string }).error));
         return;
       }
-      setState(formStateFromParty(data.party));
+      const hydrated = formStateFromParty(data.party);
+      setState(hydrated);
+      setBaseline(hydrated);
     });
     return () => {
       cancelled = true;
@@ -196,7 +232,73 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
 
   const accountingEditable = canEditAccountingInScope(scope);
   const accountingVisible = canSeeAccountingInScope(scope);
-  const roleLocked = scope.roles.length === 1;
+  // Which roles this section may assign at all. A single-role section (the
+  // store's suppliers, the team's staff) shows the one role as a fixed pill;
+  // the directory shows the whole set as checkboxes, because one person really
+  // can be a customer and a supplier at once.
+  const assignableRoles = PARTY_ROLES.filter((role) => scope.roles.includes(role));
+  const roleLocked = assignableRoles.length <= 1;
+
+  /**
+   * The unsaved-changes guard.
+   *
+   * Compared on the *payload*, not the state, so a form that merely re-derived
+   * a default does not claim to be dirty — the same rule the draft autosave
+   * uses, from the same helper, so the two can never disagree about whether
+   * there is anything to lose.
+   */
+  const dirty = partyFormHasUnsavedChanges(state, baseline);
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  const requestClose = useCallback(() => {
+    if (
+      dirtyRef.current &&
+      !window.confirm("تغییرهای ذخیره‌نشده‌ای در این فرم دارید. بستن فرم آن‌ها را کنار می‌گذارد. ادامه می‌دهید؟")
+    ) {
+      return;
+    }
+    onClose();
+  }, [onClose]);
+
+  // The browser's own guard, for the other way out of a form: a refresh, a
+  // closed tab, a link to another site. The dialog's Escape and «انصراف» go
+  // through `requestClose` above.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Chrome still requires the assignment; the string itself is never shown.
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  /**
+   * Focus management.
+   *
+   * When validation sends you to another tab, the point of the jump is the
+   * field that is wrong — so the first invalid control is focused, not merely
+   * scrolled to. Without this a keyboard user is moved to a tab and then has
+   * to hunt for the red text with the Tab key.
+   */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [focusField, setFocusField] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusField) return;
+    const target = bodyRef.current?.querySelector<HTMLElement>(`[data-field="${CSS.escape(focusField)}"]`);
+    target?.focus();
+    setFocusField(null);
+  }, [focusField, tab]);
+
+  /** Route an error set to the tab that owns its first field, and focus it. */
+  const showFirstError = useCallback((found: Record<string, string>) => {
+    const first = Object.keys(found)[0] ?? "displayName";
+    setErrors(found);
+    setTab(tabForField(first));
+    setFocusField(first);
+  }, []);
 
   /**
    * Submit.
@@ -217,8 +319,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
   async function submit() {
     const found = validatePartyForm(state);
     if (Object.keys(found).length > 0) {
-      setErrors(found);
-      setTab(tabForField(Object.keys(found)[0] ?? "displayName"));
+      showFirstError(found);
       return;
     }
     setErrors({});
@@ -237,10 +338,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
     setBusy(false);
     if (!ok) {
       const fieldErrors = data.fieldErrors ?? {};
-      if (Object.keys(fieldErrors).length > 0) {
-        setErrors(fieldErrors);
-        setTab(tabForField(Object.keys(fieldErrors)[0] ?? "displayName"));
-      }
+      if (Object.keys(fieldErrors).length > 0) showFirstError(fieldErrors);
       setFormError(errorMessage(data.error));
       return;
     }
@@ -308,17 +406,23 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
   }
 
   return (
-    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+    <Dialog open onOpenChange={(next) => (next ? undefined : requestClose())}>
       <DialogContent className="sm:max-w-2xl lg:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
-            {partyId ? `ویرایش ${state.displayName || "شخص"}` : `شخص جدید — ${PARTY_ROLE_LABELS[scope.defaultRole]}`}
+            {partyId
+              ? `ویرایش ${state.displayName || "شخص"}`
+              : `شخص جدید — ${state.roles.map((role) => PARTY_ROLE_LABELS[role]).join(" و ")}`}
           </DialogTitle>
         </DialogHeader>
 
         <ErrorBox>{formError}</ErrorBox>
         {info ? <InfoBox>{info}</InfoBox> : null}
 
+
+        {/* The scroller the focus lookup searches — every validated control,
+            root fields and tabs alike, lives inside it. */}
+        <div ref={bodyRef} className="min-w-0 space-y-4">
 
         {/* ---------------- root fields ---------------- */}
         <div className="grid min-w-0 gap-3 sm:grid-cols-2">
@@ -338,28 +442,77 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
             </span>
           </div>
 
-          <Field label="نقش">
-            {roleLocked ? (
-              <div className="flex h-10 items-center">
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-950 dark:bg-amber-500/20 dark:text-amber-200">
-                  {PARTY_ROLE_LABELS[scope.defaultRole]}
+          {/*
+            Roles, plural.
+
+            One person can be a customer and a supplier at the same time — the
+            café that buys its beans from a regular, the workshop that sells to
+            the shop it buys from — and before this the only way to record that
+            was two files, two accounting codes and two balances for one human
+            being. So this is a checkbox group over the set, not a `<select>`
+            over one value, and the first ticked role (by the product's own
+            order: مشتری، تأمین‌کننده، کارکنان) is the primary one that decides
+            the accounting-code prefix. A section that lists exactly one role
+            still shows a fixed pill — there is nothing to choose there.
+          */}
+          <div className="sm:col-span-2">
+            <Field label="نقش‌ها (الزامی)">
+              {roleLocked ? (
+                <div className="flex min-h-10 items-center">
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-950 dark:bg-amber-500/20 dark:text-amber-200">
+                    {PARTY_ROLE_LABELS[assignableRoles[0] ?? scope.defaultRole]}
+                  </span>
+                  <span className="ms-2 text-xs text-muted-foreground">در این بخش نقش ثابت است.</span>
+                </div>
+              ) : (
+                <div
+                  role="group"
+                  aria-label="نقش‌های این شخص"
+                  aria-describedby="party-form-roles-hint"
+                  className="flex flex-wrap gap-2"
+                >
+                  {assignableRoles.map((role, index) => {
+                    const checked = hasPartyRole(state, role);
+                    // The last remaining role cannot be unticked: a party with
+                    // no role is not a party, and refusing it here explains
+                    // itself better than a 400 after «ذخیره».
+                    const last = checked && state.roles.length === 1;
+                    return (
+                      <button
+                        key={role}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={checked}
+                        disabled={last}
+                        data-field={index === 0 ? "roles" : undefined}
+                        title={last ? "دست‌کم یک نقش باید انتخاب شود." : undefined}
+                        onClick={() => {
+                          setState((current) => togglePartyRole(current, role));
+                          clearError("roles");
+                          clearError("role");
+                        }}
+                        className={`min-h-10 rounded-xl border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+                          checked
+                            ? "border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
+                            : "border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        {PARTY_ROLE_LABELS[role]}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {has("roles") ? (
+                <span className="mt-1 block text-xs text-destructive">{partyFieldErrorMessage(has("roles"))}</span>
+              ) : roleLocked ? null : (
+                <span id="party-form-roles-hint" className="mt-1 block text-xs text-muted-foreground">
+                  می‌توانید چند نقش را هم‌زمان انتخاب کنید. کد حسابداری بر پایهٔ «
+                  {PARTY_ROLE_LABELS[state.role]}» ساخته می‌شود.
                 </span>
-                <span className="ms-2 text-xs text-muted-foreground">در این بخش نقش ثابت است.</span>
-              </div>
-            ) : (
-              <select
-                className={inputClass}
-                value={state.role}
-                onChange={(event) => patch({ role: event.target.value as PartyRole })}
-              >
-                {PARTY_ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {PARTY_ROLE_LABELS[role]}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
+              )}
+            </Field>
+          </div>
 
           <Field label="نوع شخص">
             <div className="flex gap-2">
@@ -383,6 +536,8 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
 
           <Field label="نام نمایشی (الزامی)">
             <input
+              data-field="displayName"
+              autoFocus
               className={inputClass}
               maxLength={MAX_PARTY_DISPLAY_NAME}
               value={state.displayName}
@@ -469,6 +624,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
                     ))}
                   </select>
                   <input
+                  data-field="accountingCode"
                     className={`${inputClass} sm:flex-1`}
                     dir="ltr"
                     inputMode="numeric"
@@ -518,6 +674,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
             <div className="grid min-w-0 gap-3 sm:grid-cols-2">
               <Field label="کد ملی">
                 <input
+                  data-field="generalInfo.nationalId"
                   className={inputClass}
                   dir="ltr"
                   inputMode="numeric"
@@ -542,6 +699,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
               </Field>
               <Field label="کد اقتصادی">
                 <input
+                  data-field="generalInfo.economicCode"
                   className={inputClass}
                   dir="ltr"
                   inputMode="numeric"
@@ -561,6 +719,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
               </Field>
               <Field label="نرخ مالیات (٪)">
                 <input
+                  data-field="generalInfo.taxPercentage"
                   className={inputClass}
                   dir="ltr"
                   inputMode="decimal"
@@ -623,6 +782,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
               </div>
               <Field label="کد پستی">
                 <input
+                  data-field="addressInfo.zipCode"
                   className={inputClass}
                   dir="ltr"
                   inputMode="numeric"
@@ -676,6 +836,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
               </Field>
               <Field label="پست الکترونیکی">
                 <input
+                  data-field="contactInfo.email"
                   className={inputClass}
                   dir="ltr"
                   type="email"
@@ -694,6 +855,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
               </Field>
               <Field label="وب‌سایت">
                 <input
+                  data-field="contactInfo.website"
                   className={inputClass}
                   dir="ltr"
                   maxLength={200}
@@ -736,6 +898,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
                 </Field>
                 <Field label="شماره کارت">
                   <input
+                  data-field="financialInfo.cardNumber"
                     className={inputClass}
                     dir="ltr"
                     inputMode="numeric"
@@ -755,6 +918,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
                 </Field>
                 <Field label="شبا (IBAN)">
                   <input
+                  data-field="financialInfo.iban"
                     className={inputClass}
                     dir="ltr"
                     disabled={!accountingEditable}
@@ -778,6 +942,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
             )
           ) : null}
         </TabPanel>
+        </div>
 
         {/* ---------------- drafts ---------------- */}
         <div className="rounded-xl border border-border/80 bg-muted/40 p-3">
@@ -841,7 +1006,7 @@ export function PartyFormDialog({ scope, partyId, initial, businessId, onClose, 
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+          <Button type="button" variant="outline" onClick={requestClose} disabled={busy}>
             انصراف
           </Button>
           <Button type="button" onClick={submit} disabled={busy}>
