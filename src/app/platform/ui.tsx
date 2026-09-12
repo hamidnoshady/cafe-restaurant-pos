@@ -13,6 +13,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { PlatformCapability } from "@/lib/platform-admin";
 import { toPersianDigits } from "@/lib/digits";
+import { gatewayErrorText } from "@/lib/ai-gateway";
 
 export async function api<T = Record<string, unknown>>(
   url: string,
@@ -105,7 +106,12 @@ export function errorMessage(code: string | undefined): string {
     bad_manifest: "پاسخ سرور مقابل معتبر نیست.",
     invalid_cover_url: "آدرس تصویر باید با http:// یا https:// شروع شود.",
   };
-  return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
+  // The LiteLLM gateway's own vocabulary (`ai_gateway_*`) lives beside the
+  // codes it describes in src/lib/ai-gateway.ts, so the service's stored
+  // sync errors and the console's translations cannot drift apart. A raw code
+  // must never reach an operator: an unmapped one falls back to the generic
+  // message below rather than being shown as-is.
+  return map[code ?? ""] ?? gatewayErrorText(code) ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
 
 /** The signed-in admin's capabilities, provided by the layout to every page. */

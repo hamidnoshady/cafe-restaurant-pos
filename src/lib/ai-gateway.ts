@@ -574,6 +574,96 @@ export function gatewayStatusMessage(status: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// The operator-facing error vocabulary
+// ---------------------------------------------------------------------------
+
+/**
+ * Persian text for every `ai_gateway_*` code the console can be shown: the
+ * codes minted by the gateway calls (`unreachable`, `auth`, …), the ones the
+ * service throws when a response cannot be parsed, the validation codes from
+ * `validateGatewayInput`/`validateBusinessGatewayInput`, and the pre-flight
+ * codes the console route answers before it will even try to mint a key.
+ *
+ * One table for server and client: the service composes the `sync_error` text
+ * stored on a business's row from it, and the console's `errorMessage()`
+ * consults it as a fallback so a code never reaches an operator untranslated.
+ * A code without an entry here is a bug — `gatewayErrorText` returns
+ * `undefined` for it so the console falls back to its generic message rather
+ * than showing the raw code.
+ */
+export const GATEWAY_ERROR_TEXT: Record<string, string> = {
+  // Pre-flight: the console route refuses to mint before any network call,
+  // because each of these states would produce a key that cannot work (or,
+  // for the master key, a call the proxy is guaranteed to refuse).
+  ai_gateway_disabled:
+    "دروازهٔ هوش مصنوعی فعال نیست. ابتدا آن را در «تنظیمات دروازه» همین صفحه روشن کرده و ذخیره کنید.",
+  ai_gateway_missing_master_key:
+    "کلید مدیر دروازه ثبت نشده است. آن را در «تنظیمات دروازه» وارد و ذخیره کنید؛ بدون کلید مدیر، دروازه اجازهٔ صدور کلید نمی‌دهد.",
+  ai_gateway_virtual_keys_disabled:
+    "صدور کلید مجازی در تنظیمات دروازه خاموش است. گزینهٔ «صدور کلید مجازی برای هر کسب‌وکار و شعبه» را روشن کنید تا کلید صادرشده واقعاً به‌کار گرفته شود.",
+  // The management calls themselves.
+  ai_gateway_unreachable:
+    "دروازه در دسترس نیست. نشانی دروازه را در «تنظیمات دروازه» بررسی کنید و مطمئن شوید سرویس LiteLLM در حال اجراست و از سرورِ برنامه قابل دسترسی است.",
+  ai_gateway_auth: "کلید مدیر دروازه پذیرفته نشد؛ مقدار آن را در «تنظیمات دروازه» بررسی کنید.",
+  ai_gateway_error: "دروازه پاسخ خطا داد؛ جزئیات دروازه را در پیام خطا ببینید.",
+  ai_gateway_bad_response: "پاسخ دروازه قابل خواندن نبود و کلیدی در آن یافت نشد.",
+  // Validation of the gateway settings form and the per-business form.
+  ai_gateway_bad_base_url: "نشانی دروازه باید یک نشانی http یا https معتبر باشد.",
+  ai_gateway_bad_fallbacks: "زنجیرهٔ جایگزین معتبر نیست؛ یک نام مستعار در هر سطر.",
+  ai_gateway_bad_published_models: "فهرست مدل‌های قابل انتخاب معتبر نیست؛ یک نام در هر سطر.",
+  ai_gateway_bad_routing: "روش توزیع انتخاب‌شده معتبر نیست.",
+  ai_gateway_bad_duration: "دورهٔ بودجه باید عددی به‌همراه یکی از واحدهای s، m، h، d یا mo باشد (مثل 30d).",
+  ai_gateway_bad_budget: "سقف بودجه باید عددی بزرگ‌تر از صفر باشد.",
+  ai_gateway_bad_tpm: "سقف توکن در دقیقه باید عدد صحیح بزرگ‌تر از صفر باشد.",
+  ai_gateway_bad_rpm: "سقف درخواست در دقیقه باید عدد صحیح بزرگ‌تر از صفر باشد.",
+  ai_gateway_bad_usd_rate: "نرخ تبدیل دلار به ریال باید عددی بزرگ‌تر از صفر باشد.",
+  ai_gateway_costing_needs_rate:
+    "برای تسویه بر پایهٔ هزینهٔ دروازه، نرخ تبدیل دلار به ریال الزامی است.",
+  ai_gateway_bad_margin: "حاشیهٔ سود باید عددی بزرگ‌تر یا مساوی صفر باشد.",
+  ai_gateway_bad_max_turn: "سقف رزرو اعتبار هر درخواست باید عددی بزرگ‌تر یا مساوی صفر باشد.",
+  ai_gateway_bad_mcp_servers: "فهرست سرورهای MCP معتبر نیست.",
+  ai_gateway_model_choice_disabled: "انتخاب مدل توسط کسب‌وکار در تنظیمات دروازه فعال نیست.",
+  ai_gateway_model_not_published: "این مدل در فهرست مدل‌های قابل انتخاب پلتفرم نیست.",
+};
+
+/** The console translation of one `ai_gateway_*` code, when it has one. */
+export function gatewayErrorText(code: string | null | undefined): string | undefined {
+  return GATEWAY_ERROR_TEXT[code ?? ""];
+}
+
+/**
+ * The proxy's own explanation of a failure, when it sent one. LiteLLM answers
+ * in OpenAI's shape (`error.message`), FastAPI's (`detail`), or a plain string
+ * — all three are read so the operator sees the *why* the proxy reported, not
+ * just the status number. Long bodies are truncated; this is a console line.
+ */
+export function parseGatewayErrorDetail(body: unknown): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const row = body as Record<string, unknown>;
+  const error = row.error;
+  if (typeof error === "string" && error.trim()) return error.trim().slice(0, 240);
+  if (error && typeof error === "object" && !Array.isArray(error)) {
+    const message = (error as Record<string, unknown>).message;
+    if (typeof message === "string" && message.trim()) return message.trim().slice(0, 240);
+  }
+  const detail = row.detail;
+  if (typeof detail === "string" && detail.trim()) return detail.trim().slice(0, 240);
+  if (Array.isArray(detail)) {
+    const first = detail[0];
+    if (first && typeof first === "object") {
+      const message = (first as Record<string, unknown>).msg;
+      if (typeof message === "string" && message.trim()) return message.trim().slice(0, 240);
+    }
+  }
+  return null;
+}
+
+/** Attach the proxy's own explanation to a console message. */
+export function joinGatewayDetail(message: string, detail: string | null | undefined): string {
+  return detail ? `${message} — ${detail}` : message;
+}
+
+// ---------------------------------------------------------------------------
 // Per-call resolution with Branch -> Business -> Platform fallback
 // ---------------------------------------------------------------------------
 

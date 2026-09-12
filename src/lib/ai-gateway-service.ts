@@ -27,6 +27,7 @@ import {
   emptyBusinessGateway,
   gatewayManagementUrl,
   gatewayStatusMessage,
+  joinGatewayDetail,
   keyDeleteUrl,
   keyGenerateUrl,
   keyInfoUrl,
@@ -36,6 +37,7 @@ import {
   modelInfoUrl,
   normaliseRoutingStrategy,
   normalizeMcpServers,
+  parseGatewayErrorDetail,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
@@ -566,13 +568,41 @@ async function gatewayRequest(
 export interface GatewayCallError {
   code: string;
   message: string;
+  /** The proxy's own explanation of the failure, when it sent one. */
+  detail: string | null;
 }
 
-function asError(status: number): GatewayCallError {
+function asError(status: number, body?: unknown): GatewayCallError {
   if (status === 0) {
-    return { code: "ai_gateway_unreachable", message: "دروازه در دسترس نیست (اتصال برقرار نشد)." };
+    return {
+      code: "ai_gateway_unreachable",
+      message: "دروازه در دسترس نیست (اتصال برقرار نشد).",
+      detail: null,
+    };
   }
-  return { code: status === 401 || status === 403 ? "ai_gateway_auth" : "ai_gateway_error", message: gatewayStatusMessage(status) };
+  return {
+    code: status === 401 || status === 403 ? "ai_gateway_auth" : "ai_gateway_error",
+    message: gatewayStatusMessage(status),
+    detail: parseGatewayErrorDetail(body),
+  };
+}
+
+/**
+ * The one throw of this module: provisioning is an explicit operator action,
+ * so the operator is entitled to the code *and* the proxy's own explanation.
+ * `message` stays the code so the route's `startsWith("ai_gateway")` contract
+ * keeps working; the explanation rides along as `detail`.
+ */
+export class GatewayProvisioningError extends Error {
+  readonly code: string;
+  readonly detail: string | null;
+
+  constructor(code: string, detail: string | null) {
+    super(code);
+    this.name = "GatewayProvisioningError";
+    this.code = code;
+    this.detail = detail;
+  }
 }
 
 function ok(status: number): boolean {
@@ -584,13 +614,14 @@ export async function probeGateway(config: AiGatewayConfig): Promise<GatewayProb
   const started = Date.now();
   const health = await gatewayRequest(config, livelinessUrl(config.baseUrl), { method: "GET" });
   if (!ok(health.status)) {
+    const error = asError(health.status, health.body);
     return {
       ok: false,
       latencyMs: null,
       models: [],
       proxyRoutingStrategy: null,
       routingMismatch: false,
-      error: asError(health.status).message,
+      error: joinGatewayDetail(error.message, error.detail),
     };
   }
   const latencyMs = Date.now() - started;
@@ -668,7 +699,7 @@ export async function provisionVirtualKey(
       body: { key: existing.virtualKey, ...limits },
     });
     if (!ok(res.status)) {
-      const error = asError(res.status);
+      const error = asError(res.status, res.body);
       return storeVirtualKey({
         businessId: input.businessId,
         locationId: loc,
@@ -678,7 +709,7 @@ export async function provisionVirtualKey(
         budgetDuration: input.budgetDuration,
         tpmLimit: input.tpmLimit,
         rpmLimit: input.rpmLimit,
-        syncError: error.message,
+        syncError: joinGatewayDetail(error.message, error.detail),
       });
     }
     return storeVirtualKey({
@@ -706,11 +737,13 @@ export async function provisionVirtualKey(
     },
   });
   if (!ok(res.status)) {
-    const error = asError(res.status);
-    throw new Error(error.code);
+    const error = asError(res.status, res.body);
+    throw new GatewayProvisioningError(error.code, error.detail);
   }
   const key = parseGeneratedKey(res.body);
-  if (!key) throw new Error("ai_gateway_bad_response");
+  if (!key) {
+    throw new GatewayProvisioningError("ai_gateway_bad_response", parseGatewayErrorDetail(res.body));
+  }
   return storeVirtualKey({
     businessId: input.businessId,
     locationId: loc,

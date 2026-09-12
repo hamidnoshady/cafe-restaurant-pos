@@ -12,12 +12,14 @@ import {
   defaultGatewayConfig,
   GATEWAY_ROUTING_STRATEGIES,
   emptyBusinessGateway,
+  gatewayErrorText,
   gatewayManagementUrl,
   gatewayMcpToolsBody,
   gatewayTurnPricing,
   gatewayRequestBody,
   gatewayStatusMessage,
   isValidBudgetDuration,
+  joinGatewayDetail,
   keyInfoUrl,
   keyModelsFor,
   livelinessUrl,
@@ -27,6 +29,7 @@ import {
   normaliseBusinessGatewayInput,
   normaliseRoutingStrategy,
   normalizeMcpServers,
+  parseGatewayErrorDetail,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
@@ -328,6 +331,63 @@ describe("response parsing", () => {
     expect(gatewayStatusMessage(404)).toContain("یافت نشد");
     expect(gatewayStatusMessage(500)).toContain("خطای داخلی");
     expect(gatewayStatusMessage(418)).toContain("418");
+  });
+});
+
+describe("the operator-facing error vocabulary", () => {
+  it("translates every code the console route and the service can emit", () => {
+    // The full set emitted by the route's pre-flight guards, the service's
+    // management calls, and both validators. A code missing from the table
+    // would reach the operator as a raw English token — the exact bug these
+    // tests pin.
+    const codes = [
+      "ai_gateway_disabled",
+      "ai_gateway_missing_master_key",
+      "ai_gateway_virtual_keys_disabled",
+      "ai_gateway_unreachable",
+      "ai_gateway_auth",
+      "ai_gateway_error",
+      "ai_gateway_bad_response",
+      ...validateGatewayInput({ baseUrl: "not-a-url", fallbackModels: "no", publishedModels: "no", routingStrategy: "nope", defaultBudgetDuration: "no" }),
+      ...validateGatewayInput({ defaultMaxBudgetUsd: -1, defaultTpmLimit: -1, defaultRpmLimit: -1, usdRialRate: -1, gatewayCostingEnabled: true, revenueMarginPercent: -1, maxTurnRial: -1, mcpServers: "no" }),
+      ...validateBusinessGatewayInput({ modelOverride: "nope", maxBudgetUsd: -1, budgetDuration: "no", tpmLimit: -1, rpmLimit: -1 }, { allowBusinessModels: false, allowedModels: [] }),
+      ...validateBusinessGatewayInput({ modelOverride: "nope" }, { allowBusinessModels: true, allowedModels: [] }),
+    ];
+    expect(new Set(codes).size).toBeGreaterThan(10);
+    for (const code of codes) {
+      expect(gatewayErrorText(code), code).toBeTruthy();
+    }
+  });
+
+  it("answers undefined for anything else, so the console shows its generic message", () => {
+    expect(gatewayErrorText("totally_unknown_code")).toBeUndefined();
+    expect(gatewayErrorText(undefined)).toBeUndefined();
+    expect(gatewayErrorText("")).toBeUndefined();
+  });
+
+  it("reads the proxy's own explanation from every error shape LiteLLM uses", () => {
+    // OpenAI shape: { error: { message } }
+    expect(parseGatewayErrorDetail({ error: { message: "bad budget" } })).toBe("bad budget");
+    // Plain string error
+    expect(parseGatewayErrorDetail({ error: "nope" })).toBe("nope");
+    // FastAPI shape: { detail } and { detail: [{ msg }] }
+    expect(parseGatewayErrorDetail({ detail: "validation failed" })).toBe("validation failed");
+    expect(parseGatewayErrorDetail({ detail: [{ msg: "field required" }] })).toBe("field required");
+    // Nothing usable
+    expect(parseGatewayErrorDetail(null)).toBeNull();
+    expect(parseGatewayErrorDetail({})).toBeNull();
+    expect(parseGatewayErrorDetail("text")).toBeNull();
+    expect(parseGatewayErrorDetail({ error: { code: 500 } })).toBeNull();
+  });
+
+  it("truncates a runaway explanation so a console line stays a line", () => {
+    expect(parseGatewayErrorDetail({ detail: "x".repeat(1000) })).toHaveLength(240);
+  });
+
+  it("attaches the explanation to the message with a visible separator", () => {
+    expect(joinGatewayDetail("پیام", "why")).toBe("پیام — why");
+    expect(joinGatewayDetail("پیام", null)).toBe("پیام");
+    expect(joinGatewayDetail("پیام", undefined)).toBe("پیام");
   });
 });
 

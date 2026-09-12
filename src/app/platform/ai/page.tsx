@@ -20,7 +20,7 @@ import { formatPersianNumber } from "@/lib/digits";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Loader2Icon } from "lucide-react";
-import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass, useCan, PlatformPageSkeleton } from "../ui";
+import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass, errorMessage, useCan, PlatformPageSkeleton } from "../ui";
 
 interface GatewayConfig {
   enabled: boolean;
@@ -176,7 +176,7 @@ export default function PlatformAiPage() {
     setLoading(true);
     const result = await api<GatewayData>("/api/platform/ai/gateway");
     if (!result.ok) {
-      setError(result.data.error ?? "خواندن تنظیمات دروازه ممکن نشد.");
+      setError(result.data.error ? errorMessage(result.data.error) : "خواندن تنظیمات دروازه ممکن نشد.");
       setLoading(false);
       return;
     }
@@ -218,13 +218,28 @@ export default function PlatformAiPage() {
     setBusy(key);
     setError("");
     setNotice("");
-    const result = await api<{ error?: string }>("/api/platform/ai/gateway", {
+    const result = await api<{
+      error?: string;
+      /** The gateway's own explanation of a refusal, when it sent one. */
+      detail?: string | null;
+      /** The saved row — present on the key actions. */
+      gateway?: { syncError?: string | null };
+    }>("/api/platform/ai/gateway", {
       method,
       body: JSON.stringify(body),
     });
     setBusy("");
     if (!result.ok) {
-      setError(result.data.error ?? "انجام عملیات ممکن نشد.");
+      const message = result.data.error ? errorMessage(result.data.error) : "انجام عملیات ممکن نشد.";
+      setError(result.data.detail ? `${message} — ${result.data.detail}` : message);
+      return false;
+    }
+    // A key sync that kept the old key and recorded a sync error is a 200 by
+    // design (the row is saved), but it is not a success: the gateway refused
+    // the update, and the operator must hear that instead of "ذخیره شد".
+    if (result.data.gateway?.syncError) {
+      setError(result.data.gateway.syncError);
+      await load();
       return false;
     }
     setNotice("تغییرات ذخیره شد.");
@@ -272,7 +287,7 @@ export default function PlatformAiPage() {
     });
     setBusy("");
     if (!result.ok) {
-      setError(result.data.error ?? "بررسی ارتباط ممکن نشد.");
+      setError(result.data.error ? errorMessage(result.data.error) : "بررسی ارتباط ممکن نشد.");
       return;
     }
     setData((current) => (current ? { ...current, status: result.data.status } : current));
@@ -615,6 +630,17 @@ export default function PlatformAiPage() {
           <p className="mb-3 text-sm text-muted-foreground">
             می‌توانید برای کل کسب‌وکار یا به‌صورت مجزا برای هر یک از شعبه‌های آن کلید مجازی و مدل تعیین کنید.
           </p>
+          {!data?.active ? (
+            <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+              دروازهٔ هوش مصنوعی فعال نیست؛ پیش از صدور کلید مجازی، «تنظیمات دروازه» را کامل کرده و ذخیره کنید.
+            </p>
+          ) : null}
+          {data?.active && draft && !draft.virtualKeysEnabled ? (
+            <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+              صدور کلید مجازی در تنظیمات دروازه خاموش است. گزینهٔ «صدور کلید مجازی برای هر کسب‌وکار و شعبه» را
+              روشن کنید و ذخیره کنید؛ در غیر این صورت کلید صادرشده در هیچ درخواستی به‌کار گرفته نمی‌شود.
+            </p>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2 mb-4">
             <Field label="کسب‌وکار">
               <SearchableSelect
