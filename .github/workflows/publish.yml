@@ -132,45 +132,26 @@ jobs:
             "https://manage.eshobe.com/api/v1/services/jrfpvt0rctfkmzpw1ao5c1cb/restart?latest=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
 
-      - name: Verify the published image is live
-        # Production health verification is opt-in. The repository currently
-        # has no PRODUCTION_HEALTH_URL variable, and pos.eshobe.com is not a
-        # reachable deployment endpoint. Defaulting to that hostname made every
-        # otherwise-successful publish wait eleven minutes and fail after the
-        # image had already been built, pushed, and accepted by Coolify.
+      - name: Report an unverified production rollout
+        if: github.ref_type == 'branch' && vars.PRODUCTION_HEALTH_URL == ''
+        run: |
+          echo "::warning title=Production rollout unverified::Coolify accepted a redeploy request, but PRODUCTION_HEALTH_URL is unset so this run cannot prove the live image or canonical routes changed. Set it to https://<live-host>/api/health."
+
+      - name: Verify the published image and canonical routes are live
+        # Production verification is intentionally opt-in until the service's
+        # public hostname has been stored as the non-secret repository variable
+        # PRODUCTION_HEALTH_URL. A restart acknowledgement only says Coolify
+        # queued work; it is not proof that the new image replaced the old one.
         #
-        # Once the deployed service has a public /api/health endpoint, set the
-        # repository variable PRODUCTION_HEALTH_URL to enable exact-SHA rollout
-        # verification without another workflow change.
+        # Set the value to https://<live-host>/api/health. The verifier waits
+        # for APP_IMAGE_SHA, then checks every route involved in the top-level
+        # apps/settings cutover takes the canonical signed-out login redirect
+        # (rather than 404ing or falling back to /dashboard/*).
         if: github.ref_type == 'branch' && vars.PRODUCTION_HEALTH_URL != ''
         timeout-minutes: 12
         env:
           EXPECTED_SHA: ${{ steps.sha.outputs.short }}
-          HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
-        run: |
-          # The restart API is asynchronous. A 200 from it means "queued", not
-          # "deployed", and an immediate health request can be answered by the
-          # old container. /api/health includes APP_IMAGE_SHA, so wait for this
-          # exact build instead of turning a stale image or failed migration
-          # into a green workflow.
-          last_response=""
-          for attempt in $(seq 1 60); do
-            if last_response=$(curl --fail --silent --show-error \
-              --connect-timeout 5 --max-time 10 \
-              -H 'Cache-Control: no-cache' \
-              "$HEALTH_URL" 2>/dev/null); then
-              live_sha=$(printf '%s' "$last_response" | jq -r '.version // empty')
-              if [ "$live_sha" = "$EXPECTED_SHA" ]; then
-                echo "Verified production image $EXPECTED_SHA on attempt $attempt."
-                exit 0
-              fi
-              echo "Attempt $attempt: healthy image is ${live_sha:-unknown}; waiting for $EXPECTED_SHA ..."
-            else
-              echo "Attempt $attempt: production is restarting or not healthy yet ..."
-            fi
-            sleep 10
-          done
-
-          echo "Production never reported image $EXPECTED_SHA at $HEALTH_URL." >&2
-          echo "Last health response: ${last_response:-<none>}" >&2
-          exit 1
+          PRODUCTION_HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
+          DEPLOY_VERIFY_ATTEMPTS: "60"
+          DEPLOY_VERIFY_DELAY_MS: "10000"
+        run: node scripts/verify-production-deploy.mjs

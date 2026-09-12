@@ -266,6 +266,8 @@ platform is the orchestrator.
      configured env, so `DATABASE_URL` is the privileged one — but check with
      `echo $DATABASE_URL` first, and pass `--database-url` if it isn't.
 6. **Add the domain** to the service and enable SSL, then verify per Step 4.
+   For every subsequent image rollout, also run the exact-SHA and canonical-route
+   check in [production deployment verification](production-deployment-verification.md).
 
 Runflare caveats specific to this app:
 
