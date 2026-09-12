@@ -307,7 +307,7 @@ export async function customerTimeline(
         // said here so the file never reads as if the deal booked money.
         amount: moneyFields(Number(row.value_rial)),
         detail: `مرحله: ${meta?.label ?? row.stage} (مبلغ برآوردی)`,
-        href: `/dashboard/crm/deals?deal=${row.id}`,
+        href: `/crm/deals?deal=${row.id}`,
       });
     }
   }
@@ -335,7 +335,7 @@ export async function customerTimeline(
         kindLabel: TIMELINE_KIND_LABELS.case,
         summary: row.subject,
         detail: `وضعیت: ${CASE_STATUS_LABELS[row.status as keyof typeof CASE_STATUS_LABELS] ?? row.status}`,
-        href: `/dashboard/crm/cases?case=${row.id}`,
+        href: `/crm/cases?case=${row.id}`,
       });
     }
   }

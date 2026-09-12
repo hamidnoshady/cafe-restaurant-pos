@@ -9,7 +9,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
 import { overlayPanelClass } from "../page-chrome";
-import { useOverlayEscape } from "../accounting/use-overlay-escape";
+import { useOverlayEscape } from "@/app/(app)/accounting/use-overlay-escape";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 
 interface DrillDownLine {

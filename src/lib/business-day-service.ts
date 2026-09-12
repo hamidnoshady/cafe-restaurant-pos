@@ -273,7 +273,7 @@ export async function closeBusinessDay(
     severity: "info",
     title: "روز کاری بسته شد",
     body: `روز ${toPersianDigits(status.businessDate)} در این شعبه بسته شد.`,
-    url: "/dashboard/settings?tab=shifts",
+    url: "/settings/shifts",
     dedupeKey: notificationDedupeKey("business_day.closed", locationId, status.businessDate),
     payload: { businessDate: status.businessDate, closureId: rows[0]?.id ?? null },
   });

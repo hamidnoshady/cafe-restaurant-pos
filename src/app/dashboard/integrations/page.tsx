@@ -6,5 +6,5 @@ import { redirect } from "next/navigation";
  * path is in bookmarks, older release notes, and cached shells.
  */
 export default async function IntegrationsPage() {
-  redirect("/dashboard/connections?tab=woocommerce");
+  redirect("/settings/connections?tab=woocommerce");
 }

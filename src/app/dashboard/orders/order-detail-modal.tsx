@@ -58,7 +58,7 @@ import {
 import { PaymentWays, usePaymentMethods } from "../payment-ways";
 import { LoadingSkeleton } from "../page-chrome";
 import { formatQueueLabel } from "@/lib/orders";
-import { crmCustomerHref } from "../crm/crm-routes";
+import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
 import type { ReceiptData } from "@/lib/receipt-template";
 import {

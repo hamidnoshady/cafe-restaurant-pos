@@ -29,7 +29,13 @@ export interface KnowledgeSection {
 }
 
 /**
- * Every dashboard surface that carries a learning icon. Order is the console's
+ * Every surface that carries a learning icon.
+ *
+ * The routes are the *public* ones: the apps left `/dashboard/<app>` for their
+ * own top-level prefixes (`/accounting`, `/growth`, `/crm`, `/websites`) and
+ * settings for `/settings`, so a catalogue still keyed on the old addresses
+ * would mean `sectionForPathname` matching nothing and the «آموزش» icon
+ * quietly vanishing from every page inside an app. Order is the console's
  * list order — top to bottom, the way a member meets the app: the daily
  * screens first, then money and people, then the growth app, then the retail
  * trades' screens (only one of the last four is ever visible to a business).
@@ -42,22 +48,22 @@ export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
   { key: "inventory", label: "انبار", route: "/dashboard/inventory" },
   { key: "stock", label: "خرید و انبار", route: "/dashboard/stock" },
   { key: "reports", label: "گزارش‌ها", route: "/dashboard/reports" },
-  { key: "settings", label: "تنظیمات", route: "/dashboard/settings" },
-  { key: "ledger", label: "حسابداری", route: "/dashboard/accounting" },
+  { key: "settings", label: "تنظیمات", route: "/settings" },
+  { key: "ledger", label: "حسابداری", route: "/accounting" },
   { key: "reservations", label: "رزروها", route: "/dashboard/reservations" },
   { key: "delivery", label: "ارسال سفارش", route: "/dashboard/delivery" },
-  { key: "connections", label: "اتصال‌های فنی", route: "/dashboard/connections" },
-  { key: "website", label: "وب‌سایت", route: "/dashboard/website" },
-  { key: "projects", label: "پروژه‌ها", route: "/dashboard/projects" },
+  { key: "connections", label: "اتصال‌های فنی", route: "/settings/connections" },
+  { key: "website", label: "وب‌سایت", route: "/websites" },
+  { key: "projects", label: "پروژه‌ها", route: "/projects" },
   { key: "ai", label: "دستیار هوشمند", route: "/dashboard/ai" },
   { key: "kitchen", label: "آشپزخانه", route: "/dashboard/kitchen" },
   { key: "floor", label: "نقشهٔ سالن", route: "/dashboard/floor" },
   { key: "waiter", label: "میزهای من", route: "/dashboard/waiter" },
-  { key: "growth", label: "رشد و بازاریابی", route: "/dashboard/growth" },
-  { key: "loyalty", label: "وفاداری", route: "/dashboard/growth/loyalty" },
-  { key: "campaigns", label: "کمپین‌ها", route: "/dashboard/growth/campaigns" },
-  { key: "gift-cards", label: "کارت هدیه", route: "/dashboard/growth/gift-cards" },
-  { key: "commission", label: "پورسانت فروشندگان", route: "/dashboard/growth/commission" },
+  { key: "growth", label: "رشد و بازاریابی", route: "/growth" },
+  { key: "loyalty", label: "وفاداری", route: "/growth/loyalty" },
+  { key: "campaigns", label: "کمپین‌ها", route: "/growth/campaigns" },
+  { key: "gift-cards", label: "کارت هدیه", route: "/growth/gift-cards" },
+  { key: "commission", label: "پورسانت فروشندگان", route: "/growth/commission" },
   { key: "jewelry", label: "طلا و جواهر", route: "/dashboard/jewelry" },
   { key: "watch", label: "ساعت", route: "/dashboard/watch" },
   { key: "accessories", label: "اکسسوری", route: "/dashboard/accessories" },
@@ -75,7 +81,7 @@ export function isKnownKnowledgeSection(key: string): boolean {
 
 /**
  * Which section a dashboard pathname belongs to — the longest matching route
- * wins, so `/dashboard/growth/loyalty` resolves to «وفاداری», not to the
+ * wins, so `/growth/loyalty` resolves to «وفاداری», not to the
  * growth home it sits under, and an order detail stays in «سفارش‌ها». Routes
  * the catalogue does not know (the chat home, …) resolve to undefined: their
  * pages simply carry no learning icon.

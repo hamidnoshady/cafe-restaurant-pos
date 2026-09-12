@@ -50,7 +50,7 @@ export function CreditBadge({ compact = false }: { compact?: boolean }) {
 
   return (
     <Link
-      href="/dashboard/billing"
+      href="/settings/billing"
       title="اعتبار و شارژ حساب"
       aria-label={`اعتبار حساب: ${balance == null ? "نامشخص" : formatToman(balance ?? 0)} تومان`}
       className={`group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300/60 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 transition hover:border-amber-400 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20 ${

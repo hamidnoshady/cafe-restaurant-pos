@@ -295,7 +295,7 @@ describe("moduleForPagePath", () => {
     expect(moduleForPagePath("/dashboard/floor")).toBe("tables");
     expect(moduleForPagePath("/dashboard/orders/abc")).toBe("orders");
     expect(moduleForPagePath("/dashboard/website/wp/connections")).toBe("integrations");
-    expect(moduleForPagePath("/dashboard/connections")).toBe("connections");
+    expect(moduleForPagePath("/settings/connections")).toBe("connections");
   });
 
   it("leaves the dashboard root ungated and attributes settings to its module", () => {

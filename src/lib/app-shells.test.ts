@@ -43,7 +43,7 @@ describe("appShellForPathname", () => {
       "/dashboard/commission",
       "/dashboard/projects",
       "/dashboard/settings",
-      "/dashboard/connections",
+      "/settings/connections",
     ]) {
       expect(appShellForPathname(pathname)).toBeNull();
     }
@@ -67,6 +67,7 @@ describe("appShellForPathname", () => {
   it("registers each shell against a real app and its public route", () => {
     const apps = new Set(APPS.map((app) => app.key));
     const publicHomes = {
+      accounting: "/accounting",
       growth: "/growth",
       crm: "/crm",
       website: "/websites",
@@ -74,8 +75,9 @@ describe("appShellForPathname", () => {
 
     for (const shell of APP_SHELLS) {
       expect(apps.has(shell.app)).toBe(true);
-      // The browser-facing routes are app-first. Middleware rewrites these to
-      // the dashboard implementation tree without changing the address bar.
+      // The browser-facing routes are app-first, and they are *real* route
+      // directories under `src/app/(app)`: nothing is rewritten, so the address
+      // bar, the server's route resolution and the client router agree.
       expect(shell.prefix).toBe(publicHomes[shell.app as keyof typeof publicHomes]);
     }
   });
@@ -86,8 +88,11 @@ describe("isInsideAnyAppShell", () => {
     // The entry that made the app look like a page of accounting…
     expect(isInsideAnyAppShell("/growth")).toBe(true);
     expect(isInsideAnyAppShell("/growth/campaigns")).toBe(true);
-    // …and nothing else. The old flat pages are redirects, not nav entries, and
-    // the accounting suite stays exactly as it was.
+    // …the accounting suite, which owns a shell of its own now…
+    expect(isInsideAnyAppShell("/accounting/overview")).toBe(true);
+    expect(isInsideAnyAppShell("/accounting/entries")).toBe(true);
+    // …and nothing else. The old flat pages are redirects, not nav entries,
+    // and the business's own workspace pages keep the flat nav.
     expect(isInsideAnyAppShell("/dashboard/loyalty")).toBe(false);
     expect(isInsideAnyAppShell("/dashboard/ledger")).toBe(false);
     expect(isInsideAnyAppShell("/dashboard/reports")).toBe(false);

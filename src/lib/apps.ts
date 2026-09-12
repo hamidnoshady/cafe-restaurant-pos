@@ -120,7 +120,7 @@ export const APPS: AppDef[] = [
     // sync preferences. The *technical connection* behind each manager (the
     // CMS credential, the WooCommerce/WordPress link) is not a section here:
     // every technical connection in the product lives in the «اتصال‌های فنی»
-    // hub (/dashboard/connections), which is deliberately not an app, and any
+    // hub (/settings/connections), which is deliberately not an app, and any
     // connection surface anywhere else redirects to it.
     //
     // Both modules therefore belong here: `website` gates the CMS half
@@ -168,7 +168,7 @@ export const APPS: AppDef[] = [
 ];
 
 // NOTE — there is deliberately no "connections" app. «اتصال‌های فنی»
-// (/dashboard/connections) is the one hub for every technical connection in
+// (/settings/connections) is the one hub for every technical connection in
 // the product — desktop pairing, WordPress/WooCommerce, the Eshobe CMS site,
 // Holoo, the remote server sync, MCP and API keys — but it is a technical
 // utility of the shell, not a سکو: it is never listed in the platform

@@ -10,7 +10,7 @@
  *     knowledge base) and the schema/migration state — encrypted with the
  *     console's own passphrase, mirrored to a second directory and to
  *     S3-compatible storage, pruned to a retention count, scheduled on the
- *     console's own schedule. The Owner-side `/dashboard/settings?tab=backup`
+ *     console's own schedule. The Owner-side `/settings/backup`
  *     pipeline (Phase 10) is *per business*: its config, its runs, its alert,
  *     its retention. An operator who owns the deployment cannot reasonably be
  *     expected to reason about "the backup of the server" as the union of N

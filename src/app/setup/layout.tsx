@@ -17,8 +17,10 @@ export default async function SetupLayout({
   if (!session) redirect("/login");
   if (session.role !== "owner" && session.role !== "manager")
     redirect("/dashboard");
-  if (await isSetupComplete(session.businessId))
-    redirect("/dashboard/settings");
+  // The platform settings area's canonical address. `/dashboard/settings`
+  // still 308s here, but a redirect the app issues itself should land on the
+  // real URL rather than spend a hop.
+  if (await isSetupComplete(session.businessId)) redirect("/settings");
   const industry =
     (await getBusinessIndustry(session.businessId)) ?? "food_service";
   const prefs = await getSetting<{ currencyDisplay?: "toman" | "rial" }>(

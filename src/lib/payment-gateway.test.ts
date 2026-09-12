@@ -17,7 +17,7 @@ const liveConfig: PaymentGatewayConfig = {
   gateway: "zarinpal",
   merchantId: "abcd-1234",
   sandbox: false,
-  callbackUrl: "https://app.example.com/dashboard/billing",
+  callbackUrl: "https://app.example.com/settings/billing",
   currency: "IRR",
 };
 const sandboxConfig: PaymentGatewayConfig = { ...liveConfig, sandbox: true };
@@ -68,7 +68,7 @@ describe("zarinpalRequest", () => {
     expect(body).toMatchObject({
       merchant_id: "abcd-1234",
       amount: 500_000,
-      callback_url: "https://app.example.com/dashboard/billing?payment=pay-1",
+      callback_url: "https://app.example.com/settings/billing?payment=pay-1",
       description: "شارژ",
     });
   });

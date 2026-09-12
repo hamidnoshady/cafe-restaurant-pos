@@ -5,7 +5,7 @@ import {
   accountingSectionForLegacyTab,
   accountingSectionHref,
   canOpenAccounting,
-} from "../accounting/accounting-routes";
+} from "@/app/(app)/accounting/accounting-routes";
 
 /**
  * The Accounting app's old address, forwarding onward.

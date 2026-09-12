@@ -22,6 +22,7 @@ import {
   type RateLimitEntry,
 } from "@/lib/rate-limit";
 import { isInternalCall } from "@/lib/internal-auth";
+import { legacyRedirectTarget } from "@/lib/app-routes";
 import {
   ADMIN_HOST_LABEL,
   hostRoutingEnabled,
@@ -795,45 +796,28 @@ function handleLegacyPathRedirect(
 }
 
 async function handle(request: NextRequest, requestHeaders: Headers) {
-  // Public product URLs are intentionally app-first. Keep the existing
-  // dashboard route tree as the implementation boundary, but rewrite the
-  // browser-facing URLs internally so the address bar never exposes the old
-  // `/dashboard/<app>` hierarchy.
-  const publicAppRoutes: Record<string, string> = {
-    "/accounting/overview": "/dashboard/accounting",
-    "/growth/overview": "/dashboard/growth",
-    "/crm/overview": "/dashboard/crm",
-    "/websites/overview": "/dashboard/website",
-    "/accounting": "/dashboard/accounting",
-    "/growth": "/dashboard/growth",
-    "/crm": "/dashboard/crm",
-    "/websites": "/dashboard/website",
-    "/projects": "/dashboard/projects",
-    "/settings": "/dashboard/settings",
-  };
-  const originalPathname = request.nextUrl.pathname;
-  const legacyAppRoutes: Record<string, string> = {
-    "/dashboard/accounting": "/accounting",
-    "/dashboard/growth": "/growth",
-    "/dashboard/crm": "/crm",
-    "/dashboard/website": "/websites",
-    "/dashboard/projects": "/projects",
-    "/dashboard/settings": "/settings",
-  };
-  const legacyRoute = Object.entries(legacyAppRoutes).find(([legacyPath]) =>
-    originalPathname === legacyPath || originalPathname.startsWith(`${legacyPath}/`),
-  );
-  if (legacyRoute) {
-    const suffix = originalPathname.slice(legacyRoute[0].length);
-    const target = `${legacyRoute[1]}${suffix || "/overview"}`;
-    return NextResponse.redirect(new URL(`${target}${request.nextUrl.search}`, request.url), 308);
+  // ---- Legacy app URLs -----------------------------------------------------
+  //
+  // The apps are real route directories now (`src/app/(app)/…`), so the public
+  // URLs need no rewrite at all: `/crm/segments` *is* the route Next resolves,
+  // and the pathname the browser holds is the pathname the server rendered.
+  // The earlier attempt mutated `request.nextUrl.pathname` to point back at
+  // `/dashboard/<app>`, which desynchronised server rendering from the client
+  // router and is exactly what made these URLs answer 404.
+  //
+  // What remains is one permanent redirect per old address, ahead of the
+  // session check on purpose: an old bookmark should land on the canonical URL
+  // whether or not the visitor is signed in, and the destination then does its
+  // own authentication. The suffix is carried verbatim (so `/dashboard/crm`
+  // becomes `/crm/overview` while `/dashboard/crm/segments` becomes
+  // `/crm/segments`, never `/crm/segments/overview`), and so is the query
+  // string. `src/lib/app-routes.ts` owns the table; `app-routes.test.ts` holds
+  // the `/crm/overview/overview` regression.
+  const legacyTarget = legacyRedirectTarget(request.nextUrl.pathname, request.nextUrl.search);
+  if (legacyTarget) {
+    return NextResponse.redirect(new URL(legacyTarget, request.url), 308);
   }
-  const rewrittenPath = Object.entries(publicAppRoutes).find(([publicPath]) =>
-    originalPathname === publicPath || originalPathname.startsWith(`${publicPath}/`),
-  );
-  if (rewrittenPath) {
-    request.nextUrl.pathname = `${rewrittenPath[1]}${originalPathname.slice(rewrittenPath[0].length)}`;
-  }
+
   const { pathname } = request.nextUrl;
   const now = Date.now();
   maybeSweep(now);

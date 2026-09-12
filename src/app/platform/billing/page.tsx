@@ -231,13 +231,13 @@ export default function PlatformBillingPage() {
                 placeholder="00000000-0000-0000-0000-000000000000"
               />
             </Field>
-            <Field label="نشانی بازگشت (Callback URL)" hint="نشانی کامل صفحهٔ بازگشت پرداخت، مثلاً https://app.example.com/dashboard/billing">
+            <Field label="نشانی بازگشت (Callback URL)" hint="نشانی کامل صفحهٔ بازگشت پرداخت، مثلاً https://app.example.com/settings/billing">
               <input
                 name="callbackUrl"
                 className={inputClass}
                 dir="ltr"
                 defaultValue={config.callbackUrl}
-                placeholder="https://app.example.com/dashboard/billing"
+                placeholder="https://app.example.com/settings/billing"
               />
             </Field>
             <label className="flex items-center gap-2 text-sm text-foreground">

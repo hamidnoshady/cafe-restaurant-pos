@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * route forwards to its section so old links land in the right place.
  */
 export default function CommissionRedirect() {
-  redirect("/dashboard/growth/commission");
+  redirect("/growth/commission");
 }

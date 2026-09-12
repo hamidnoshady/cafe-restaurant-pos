@@ -45,7 +45,7 @@ export default function FinishPage() {
       return;
     }
     setCompleted(true);
-    router.replace("/dashboard/settings");
+    router.replace("/settings");
   }
 
   if (state === null) return <SetupDataSkeleton rows={5} />;

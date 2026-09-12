@@ -59,7 +59,7 @@ export const MODULE_KEYS = [
   "stock",
   "ledger",
   "integrations",
-  // The «اتصال‌های فنی» hub (/dashboard/connections): every technical
+  // The «اتصال‌های فنی» hub (/settings/connections): every technical
   // connection in the product — desktop pairing, WordPress/WooCommerce, the
   // Eshobe CMS site, Holoo, the remote server sync, MCP and API keys. The hub
   // is shell infrastructure, not an app (src/lib/apps.ts), so this module is
@@ -373,17 +373,21 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // (core for every trade) like its nav entry: the app is the container for
   // loyalty, promotions and commission, and a business that had any of the
   // three has loyalty.
+  ["/growth", "loyalty"],
   ["/dashboard/growth", "loyalty"],
   // Phase 36 — the CRM app's home. Anchored on `customers` (core for every
   // trade, exactly like the flat «مشتریان» page it absorbs) rather than on the
   // `crm` module key: a business that has customers has a CRM, and gating the
   // app on a module no industry profile lists yet would hide it from everyone.
+  ["/crm", "customers"],
   ["/dashboard/crm", "customers"],
   // «مدیریت وب‌سایت» — one app, two managers, and therefore two module
   // answers under one prefix. The WordPress/WooCommerce manager keeps its own
   // `integrations` module, so a trade that has WordPress but not the CMS (or
   // the reverse) still gets exactly the manager it has. The longer prefix is
   // listed first because the first match wins.
+  ["/websites/wp", "integrations"],
+  ["/websites", "website"],
   ["/dashboard/website/wp", "integrations"],
   ["/dashboard/website", "website"],
   // The legacy WordPress manager prefix and the legacy integrations page both
@@ -395,12 +399,13 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // The «اتصال‌های فنی» hub. Its module is intentionally unassigned in
   // `apps.ts` — the hub is shell infrastructure, not an app — so this prefix
   // answers the module question without ever blocking the page.
-  ["/dashboard/connections", "connections"],
+  ["/settings/connections", "connections"],
   ["/dashboard/stock", "stock"],
   // The accounting suite's own pages. The Accounting app lives at
   // `/dashboard/accounting/*` now; the old `/dashboard/ledger` address
   // forwards into it but is mapped too, so the gate answers on both sides of
   // the forward.
+  ["/accounting", "ledger"],
   ["/dashboard/accounting", "ledger"],
   ["/dashboard/ledger", "ledger"],
   ["/dashboard/reports", "reports"],
@@ -408,8 +413,9 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // centre), including the legacy routes that redirect into settings. The nav
   // badges all of these with the settings app's state, so the gate must block
   // on the same app rather than waving them through.
+  ["/settings", "settings"],
   ["/dashboard/settings", "settings"],
-  ["/dashboard/billing", "settings"],
+  ["/settings/billing", "settings"],
   ["/dashboard/support", "settings"],
   ["/dashboard/knowledge", "settings"],
   ["/dashboard/team", "settings"],

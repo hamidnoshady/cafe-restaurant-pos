@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { WEBSITE_HOME } from "../../website/website-routes";
-import { WP_SECTION_KEYS } from "../../website/wp/wp-routes";
+import { WEBSITE_HOME } from "@/app/(app)/websites/website-routes";
+import { WP_SECTION_KEYS } from "@/app/(app)/websites/wp/wp-routes";
 
 /**
  * The standalone WordPress manager's old home, forwarding onward.
@@ -26,7 +26,7 @@ export default async function LegacyWpRedirect({
 }) {
   const { section } = await params;
   const first = section?.[0];
-  if (first === "connections") redirect("/dashboard/connections?tab=woocommerce");
+  if (first === "connections") redirect("/settings/connections?tab=woocommerce");
   const known = (WP_SECTION_KEYS as readonly string[]).includes(first ?? "");
   redirect(known ? `${WEBSITE_HOME}/wp/${section!.join("/")}` : `${WEBSITE_HOME}/wp`);
 }

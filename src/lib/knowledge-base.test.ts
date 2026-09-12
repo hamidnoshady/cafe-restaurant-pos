@@ -21,7 +21,11 @@ describe("KNOWLEDGE_SECTIONS", () => {
   it("labels are non-empty Persian display names", () => {
     for (const section of KNOWLEDGE_SECTIONS) {
       expect(section.label.trim().length).toBeGreaterThan(0);
-      expect(section.route.startsWith("/dashboard")).toBe(true);
+      // A section's route is a real, public page — the workspace's own
+      // (`/dashboard/...`) or an app's top-level prefix, which is where the
+      // apps live since they stopped being folders of the dashboard.
+      expect(section.route.startsWith("/")).toBe(true);
+      expect(section.route).not.toContain("?");
     }
   });
 });
@@ -44,9 +48,9 @@ describe("sectionForPathname", () => {
   });
 
   it("resolves the longest route, so a growth subpage beats the growth home", () => {
-    expect(sectionForPathname("/dashboard/growth")?.key).toBe("growth");
-    expect(sectionForPathname("/dashboard/growth/loyalty")?.key).toBe("loyalty");
-    expect(sectionForPathname("/dashboard/growth/gift-cards")?.key).toBe("gift-cards");
+    expect(sectionForPathname("/growth")?.key).toBe("growth");
+    expect(sectionForPathname("/growth/loyalty")?.key).toBe("loyalty");
+    expect(sectionForPathname("/growth/gift-cards")?.key).toBe("gift-cards");
   });
 
   it("keeps a section's own sub-routes (an order detail stays the orders section)", () => {
