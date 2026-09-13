@@ -170,7 +170,7 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     // only the fallback for a member whose role cannot open the accounting
     // pages or the reports at all; the old `/dashboard/ledger` address stays
     // as a preference-list entry for any surface still holding it.
-    hrefs: ["/accounting/overview", "/dashboard/ledger", "/dashboard/reports", "/dashboard/overview"],
+    hrefs: ["/accounting/overview", "/dashboard/ledger", "/accounting/reports", "/dashboard/overview"],
   },
   {
     key: "crm",
@@ -313,8 +313,8 @@ function entryIsActive(entry: WorkspaceNavEntry, pathname: string, search: strin
         !pathname.startsWith("/settings/billing"))
     );
   }
-  if (base === "/dashboard/products") {
-    return pathname === "/dashboard/products";
+  if (base === "/accounting/products") {
+    return pathname === "/accounting/products";
   }
   if (base === "/dashboard") return pathname === "/dashboard";
   return pathname === base || pathname.startsWith(`${base}/`);
@@ -1397,7 +1397,7 @@ export function DashboardSidebar({
         <MobileBottomNavigation
           navItems={navItems}
           pathname={pathname}
-          hrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, isActive(pathname, "/dashboard/pos"))}
+          hrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, isActive(pathname, "/accounting/pos"))}
         />
       ) : null}
     </SidebarProvider>

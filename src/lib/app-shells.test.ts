@@ -78,7 +78,11 @@ describe("appShellForPathname", () => {
       // The browser-facing routes are app-first, and they are *real* route
       // directories under `src/app/(app)`: nothing is rewritten, so the address
       // bar, the server's route resolution and the client router agree.
-      expect(shell.prefix).toBe(publicHomes[shell.app as keyof typeof publicHomes]);
+      if (shell.prefix === "/products") {
+        expect(shell.app).toBe("accounting");
+      } else {
+        expect(shell.prefix).toBe(publicHomes[shell.app as keyof typeof publicHomes]);
+      }
     }
   });
 });
@@ -91,6 +95,7 @@ describe("isInsideAnyAppShell", () => {
     // …the accounting suite, which owns a shell of its own now…
     expect(isInsideAnyAppShell("/accounting/overview")).toBe(true);
     expect(isInsideAnyAppShell("/accounting/entries")).toBe(true);
+    expect(isInsideAnyAppShell("/products/prices")).toBe(true);
     // …and nothing else. The old flat pages are redirects, not nav entries,
     // and the business's own workspace pages keep the flat nav.
     expect(isInsideAnyAppShell("/dashboard/loyalty")).toBe(false);

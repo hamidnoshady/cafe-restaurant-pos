@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * the old page forwards so saved links and bookmarks keep working.
  */
 export default function HaberdasheryPage() {
-  redirect("/dashboard/products");
+  redirect("/accounting/products");
 }

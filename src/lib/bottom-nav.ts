@@ -17,9 +17,9 @@ export const BOTTOM_NAV_MAX = 4;
 export const BOTTOM_NAV_STORAGE_KEY = "dashboard-bottom-nav";
 
 /** The bar before anyone configures it — the set that shipped before this was a choice. */
-const DEFAULT_HREFS = ["/dashboard", "/dashboard/orders", "/dashboard/reports"];
+const DEFAULT_HREFS = ["/dashboard", "/dashboard/orders", "/accounting/reports"];
 /** On the sell screen, the cashier tab replaces reports so the active workflow stays visible. */
-const DEFAULT_POS_HREFS = ["/dashboard", "/dashboard/pos", "/dashboard/orders"];
+const DEFAULT_POS_HREFS = ["/dashboard", "/accounting/pos", "/dashboard/orders"];
 
 /** Reads the stored list, tolerating anything a hand-edited localStorage might hold. */
 export function parseBottomNavHrefs(raw: string | null): string[] | null {

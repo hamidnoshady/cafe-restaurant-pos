@@ -96,6 +96,16 @@ export function isPlatformSettingsPathname(pathname: string): boolean {
  * `/dashboard/website`, or the `wp` manager's URLs lose their manager.
  */
 const LEGACY_PREFIX_MAP: readonly (readonly [string, string])[] = [
+  // Operational pages now belong to their owning Accounting/product app. Keep
+  // these before the broad legacy app rules so deep links preserve their exact
+  // destination instead of falling back to the old dashboard tree.
+  ["/dashboard/products/prices", "/products/prices"],
+  ["/dashboard/products/new", "/accounting/products/new"],
+  ["/dashboard/products", "/accounting/products"],
+  ["/dashboard/pos", "/accounting/pos"],
+  ["/dashboard/stock", "/accounting/stock"],
+  ["/dashboard/cosmetics", "/accounting/cosmetics"],
+  ["/dashboard/reports", "/accounting/reports"],
   ["/dashboard/accounting", "/accounting"],
   // The two platform surfaces that moved into the settings area: money and
   // the technical connections hub. They were never app pages, and they are
