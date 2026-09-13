@@ -41,10 +41,10 @@ interface ReportLink {
 
 const IN_APP_REPORTS: ReportLink[] = [
   {
-    label: "تراز آزمایشی",
-    description: "مانده بدهکار و بستانکار همهٔ حساب‌ها در یک نگاه.",
-    href: accountingSectionHref("trial-balance"),
-    icon: CalculatorIcon,
+    label: "گزارش فروش شیفت",
+    description: "فروش‌ها و سفارش‌های شیفت جاری؛ با بستن شیفت و شروع شیفت بعدی، گزارش از صفر شروع می‌شود.",
+    href: "/dashboard/reports?tab=shift-orders",
+    icon: BarChart3Icon,
   },
   {
     label: "دفتر روزنامه",
