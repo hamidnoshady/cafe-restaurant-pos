@@ -1384,7 +1384,7 @@ export function OrderDetailModal({
                           برای مهمانی که تازه به {order.table_name ?? "این میز"} اضافه شده، سفارش جداگانه ثبت کنید: صورت‌حساب، تخفیف، تسویه و چاپ آن کاملاً مستقل از این سفارش است. مشتری‌اش را در صندوق انتخاب می‌کنید.
                         </p>
                         <Link
-                          href={`/accounting/pos?table=${encodeURIComponent(order.table_id)}`}
+                          href={`/dashboard/pos?table=${encodeURIComponent(order.table_id)}`}
                           className={`${SECONDARY_BUTTON} flex min-h-12 w-full items-center justify-center`}
                         >
                           سفارش جدا برای مهمان جدید

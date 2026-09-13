@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * now; the old page forwards so saved links and bookmarks keep working.
  */
 export default function WholesalePage() {
-  redirect("/accounting/products");
+  redirect("/dashboard/products");
 }

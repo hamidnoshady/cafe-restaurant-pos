@@ -85,7 +85,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     description: "فاکتورها، صندوق و مشتریان",
     slots: [
       { href: "/dashboard/orders" },
-      { href: "/accounting/pos" },
+      { href: "/dashboard/pos" },
       { href: "/crm/overview", label: "ارتباط با مشتری" },
     ],
   },
@@ -94,11 +94,11 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     label: "خرید و انبار",
     description: "تأمین، موجودی و کالا",
     slots: [
-      { href: "/accounting/stock" },
+      { href: "/dashboard/stock" },
       { href: "/dashboard/inventory" },
-      { href: "/accounting/products" },
-      { href: "/accounting/products/new" },
-      { href: "/products/prices" },
+      { href: "/dashboard/products" },
+      { href: "/dashboard/products/new" },
+      { href: "/dashboard/products/prices" },
       { href: "/dashboard/menu" },
     ],
   },
@@ -114,7 +114,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
       { href: "/dashboard/delivery" },
       { href: "/dashboard/jewelry" },
       { href: "/dashboard/watch" },
-      { href: "/accounting/cosmetics" },
+      { href: "/dashboard/cosmetics" },
       { href: "/dashboard/accessories" },
       { href: "/dashboard/wholesale" },
       { href: "/dashboard/tools-fittings" },
@@ -125,7 +125,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
 
 /** The reports group's business entries — kept apart because it sits after the ledger. */
 const REPORTS_SLOTS: readonly WorkspaceSlot[] = [
-  { href: "/accounting/reports", label: "گزارش‌های کسب‌وکار" },
+  { href: "/dashboard/reports", label: "گزارش‌های کسب‌وکار" },
 ];
 
 /** The configuration group's business entries. */

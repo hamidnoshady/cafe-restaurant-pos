@@ -294,7 +294,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: Math.abs(net),
       suggestion: "شیفت‌ها را با صندوق‌دار مرور کنید. اختلاف تکرارشونده معمولاً یا از ثبت‌نشدن یک پرداخت است یا از تحویل نادرست صندوق؛ مانده را در سرفصل «کسری و اضافهٔ صندوق» ببندید.",
-      href: "/accounting/reports",
+      href: "/dashboard/reports",
       samples: firstSamples(rows, (row) => sample(`${row.employeeName} — ${money(row.varianceRial)}`, row.shiftId)),
     };
   },

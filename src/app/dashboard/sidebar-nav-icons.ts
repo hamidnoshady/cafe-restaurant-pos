@@ -42,7 +42,7 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboardIcon,
   "/dashboard/overview": LayoutDashboardIcon,
   "/dashboard/orders": ClipboardListIcon,
-  "/accounting/pos": ShoppingCartIcon,
+  "/dashboard/pos": ShoppingCartIcon,
   "/dashboard/persons": UsersIcon,
   "/dashboard/floor": ArmchairIcon,
   "/dashboard/waiter": ArmchairIcon,
@@ -52,7 +52,7 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/inventory": PackageIcon,
   // Phase 42 — the products workspace group's icon (nav entries derive theirs
   // from href; the group has none, so it names this key via `iconKey`).
-  "/accounting/products": PackageIcon,
+  "/dashboard/products": PackageIcon,
   "/dashboard/jewelry": GemIcon,
   "/dashboard/watch": WatchIcon,
   "/dashboard/accessories": SparklesIcon,
@@ -69,7 +69,7 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   // back to the generic circle.
   "/accounting/overview": CalculatorIcon,
   "/settings/connections": PlugIcon,
-  "/accounting/reports": BarChart3Icon,
+  "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
   "/settings/billing": WalletIcon,
   "/settings": SettingsIcon,

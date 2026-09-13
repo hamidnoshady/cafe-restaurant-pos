@@ -63,7 +63,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: labelFor(industry, "sellScreen"),
       module: "pos",
-      href: "/accounting/pos",
+      href: "/dashboard/pos",
       roles: ["owner", "manager", "cashier"],
     },
     // The CRM app's door (Phase 36 — it is its own app, not a section of any
@@ -117,7 +117,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: "خرید و انبار",
       module: "stock",
-      href: "/accounting/stock",
+      href: "/dashboard/stock",
       roles: ["owner", "manager"],
     },
     { label: "میزها", module: "tables", href: "/dashboard/floor", roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
@@ -139,7 +139,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
           {
             label: "محصولات",
             module: industry,
-            iconKey: "/accounting/products",
+            iconKey: "/dashboard/products",
             roles: ["owner", "manager"],
             children: PRODUCT_WORKSPACE_SECTIONS.map((section) => ({
               label: section.label,
@@ -151,7 +151,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
         ]
       : []),
     ...(industry === "cosmetics"
-      ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: "/accounting/cosmetics", roles: ["owner", "manager"] }]
+      ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: "/dashboard/cosmetics", roles: ["owner", "manager"] }]
       : []),
     // The «حسابداری» sub-menu — the Accounting app's sections, each a real
     // route under the app's own prefix (`/accounting/…`), drawn as a
@@ -208,7 +208,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: "گزارش‌ها",
       module: "reports",
-      href: "/accounting/reports",
+      href: "/dashboard/reports",
       roles: ["owner", "manager", "accountant"],
       flag: "reporting",
       children: REPORTS_TABS.map((tab) => ({

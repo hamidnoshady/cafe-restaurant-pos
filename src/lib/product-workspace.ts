@@ -5,7 +5,7 @@
  * each trade's own page «کالاها» tab (the shared VariantsSection over
  * `items`/`item_stock`). The workspace is the catalogue's one door: a
  * collapsible sidebar group — افزودن محصول، لیست محصولات، لیست قیمت، ویژگی
- * محصول، الگوی بارکد وزنی (+ each trade's گزارش‌ها) — over `/accounting/products/*`,
+ * محصول، الگوی بارکد وزنی (+ each trade's گزارش‌ها) — over `/dashboard/products/*`,
  * with the trade's own items/stock APIs still doing the writing. Jewellery
  * and watch keep their own managers: their subject is one weighted piece or
  * one serialised unit per row, not a priced variant board.
@@ -49,11 +49,11 @@ export function productApiBaseFor(industry: ProductWorkspaceIndustry): string {
 
 /** The sidebar group's sub-sections, in the order the reference seats them. */
 export const PRODUCT_WORKSPACE_SECTIONS = [
-  { key: "new", label: "افزودن محصول", href: "/accounting/products/new" },
-  { key: "list", label: "لیست محصولات", href: "/accounting/products" },
-  { key: "prices", label: "لیست قیمت", href: "/products/prices" },
-  { key: "attributes", label: "ویژگی محصول", href: "/accounting/products/attributes" },
-  { key: "barcodes", label: "الگوی بارکد وزنی", href: "/accounting/products/barcode-templates" },
-  { key: "reports", label: "گزارش‌ها", href: "/accounting/products/reports" },
+  { key: "new", label: "افزودن محصول", href: "/dashboard/products/new" },
+  { key: "list", label: "لیست محصولات", href: "/dashboard/products" },
+  { key: "prices", label: "لیست قیمت", href: "/dashboard/products/prices" },
+  { key: "attributes", label: "ویژگی محصول", href: "/dashboard/products/attributes" },
+  { key: "barcodes", label: "الگوی بارکد وزنی", href: "/dashboard/products/barcode-templates" },
+  { key: "reports", label: "گزارش‌ها", href: "/dashboard/products/reports" },
 ] as const;
 export type ProductWorkspaceSectionKey = (typeof PRODUCT_WORKSPACE_SECTIONS)[number]["key"];

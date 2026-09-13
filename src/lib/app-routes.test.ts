@@ -87,13 +87,6 @@ describe("legacy redirects", () => {
     expect(canonicalPathForLegacy("/dashboard/crm/segments")).toBe("/crm/segments");
     expect(canonicalPathForLegacy("/dashboard/growth/gift-cards")).toBe("/growth/gift-cards");
     expect(canonicalPathForLegacy("/dashboard/accounting/entries")).toBe("/accounting/entries");
-    expect(canonicalPathForLegacy("/dashboard/pos")).toBe("/accounting/pos");
-    expect(canonicalPathForLegacy("/dashboard/stock")).toBe("/accounting/stock");
-    expect(canonicalPathForLegacy("/dashboard/products")).toBe("/accounting/products");
-    expect(canonicalPathForLegacy("/dashboard/products/new")).toBe("/accounting/products/new");
-    expect(canonicalPathForLegacy("/dashboard/products/prices")).toBe("/products/prices");
-    expect(canonicalPathForLegacy("/dashboard/cosmetics")).toBe("/accounting/cosmetics");
-    expect(canonicalPathForLegacy("/dashboard/reports")).toBe("/accounting/reports");
     // Nested paths and route params survive too — the CRM's customer file was
     // one of the URLs the rewrite table simply did not know about.
     expect(canonicalPathForLegacy("/dashboard/crm/persons/42")).toBe("/crm/persons/42");

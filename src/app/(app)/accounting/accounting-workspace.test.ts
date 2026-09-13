@@ -31,13 +31,13 @@ import { partyDirectoryHref } from "@/lib/party-directory";
 const BUSINESS_NAV = [
   { label: "داشبورد", href: "/dashboard/overview" },
   { label: "سفارش‌ها", href: "/dashboard/orders" },
-  { label: "صندوق (فروش)", href: "/accounting/pos" },
+  { label: "صندوق (فروش)", href: "/dashboard/pos" },
   { label: "ارتباط با مشتری", href: "/crm/overview" },
-  { label: "خرید و انبار", href: "/accounting/stock" },
+  { label: "خرید و انبار", href: "/dashboard/stock" },
   { label: "انبار", href: "/dashboard/inventory" },
-  { label: "محصولات", href: "/accounting/products", iconKey: "/accounting/products" },
-  { label: "لیست قیمت", href: "/products/prices" },
-  { label: "گزارش‌ها", href: "/accounting/reports" },
+  { label: "محصولات", href: "/dashboard/products", iconKey: "/dashboard/products" },
+  { label: "لیست قیمت", href: "/dashboard/products/prices" },
+  { label: "گزارش‌ها", href: "/dashboard/reports" },
   { label: "تنظیمات", href: "/settings" },
   { label: "مرکز آموزش", href: "/dashboard/knowledge" },
 ];
@@ -59,11 +59,11 @@ describe("the Accounting workspace menu", () => {
     const hrefs = accountingWorkspaceHrefs(groupsFor("owner"));
     for (const expected of [
       "/dashboard/orders",
-      "/accounting/pos",
-      "/accounting/stock",
+      "/dashboard/pos",
+      "/dashboard/stock",
       "/dashboard/inventory",
-      "/accounting/products",
-      "/accounting/reports",
+      "/dashboard/products",
+      "/dashboard/reports",
       "/settings",
     ]) {
       expect(hrefs, `«حسابداری» must expose ${expected} as a primary work area`).toContain(expected);
@@ -116,7 +116,7 @@ describe("the Accounting workspace menu", () => {
       ),
     );
     expect(hrefs).not.toContain("/dashboard/inventory");
-    expect(hrefs).toContain("/accounting/stock");
+    expect(hrefs).toContain("/dashboard/stock");
   });
 
   it("never adopts a page that is not a work area", () => {
@@ -136,7 +136,7 @@ describe("the Accounting workspace menu", () => {
   it("restricts a non-accounting role to their authorized business groups without ledger sections", () => {
     const cashierHrefs = accountingWorkspaceHrefs(groupsFor("cashier"));
     expect(cashierHrefs).toContain("/dashboard/orders");
-    expect(cashierHrefs).toContain("/accounting/pos");
+    expect(cashierHrefs).toContain("/dashboard/pos");
     expect(cashierHrefs).not.toContain(accountingSectionHref("dashboard"));
     expect(cashierHrefs).not.toContain(accountingSectionHref("trial-balance"));
     expect(cashierHrefs).not.toContain(accountingSectionHref("payroll"));
