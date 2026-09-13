@@ -31,8 +31,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
   if (!body.locationId) return NextResponse.json({ error: "missing_location" }, { status: 400 });
 
-  const { rows } = await query<{ role: Role; location_id: string | null }>(
-    "SELECT role, location_id FROM users WHERE id = $1",
+  const { rows } = await query<{ role: Role; location_id: string | null; is_active: boolean }>(
+    "SELECT role, location_id, is_active FROM users WHERE id = $1",
     [session.sub],
   );
   const { rows: assignmentRows } = await query<{ location_id: string }>(
@@ -40,7 +40,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     [session.sub],
   );
   const membership = rows[0];
-  if (!membership) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // A membership deleted or deactivated since login must not be able to keep
+  // moving between branches on the strength of a still-valid cookie.
+  if (!membership || !membership.is_active) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
 
   const locations = await businessLocations(session.businessId);
   const ctx = {
@@ -55,11 +59,17 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const token = await signSession({
     sub: session.sub,
-    role: session.role,
+    // The freshly-read role and home branch, not the token's copies. The
+    // access check above already ran on the database's answer, so re-signing
+    // the stale ones would hand back a cookie that disagrees with the
+    // decision that was just made — a member demoted from manager to cashier
+    // since login would keep a `manager` token for another full session
+    // lifetime, and every screen reading `session.role` would believe it.
+    role: membership.role,
     businessId: session.businessId,
     businessSlug: session.businessSlug,
     businessSubdomain: session.businessSubdomain,
-    locationId: session.locationId,
+    locationId: membership.location_id,
     activeLocationId: body.locationId,
     fullName: session.fullName,
     platformUserId: session.platformUserId ?? null,

@@ -189,10 +189,15 @@ const ERROR_MESSAGES: Record<string, string> = {
     business_suspended: "دسترسی این کسب‌وکار موقتاً معلق شده است.",
     // Phase 14 — branches
     last_active_branch: "این تنها شعبهٔ فعال کسب‌وکار است و قابل غیرفعال‌سازی نیست.",
-    branch_has_open_orders: "این شعبه سفارش باز دارد و قابل غیرفعال‌سازی نیست.",
-    branch_has_open_sessions: "این شعبه نشست میز باز دارد و قابل غیرفعال‌سازی نیست.",
+    branch_has_open_orders: "این شعبه سفارش باز دارد و قابل غیرفعال‌سازی نیست. ابتدا سفارش‌های باز را تسویه یا باطل کنید.",
+    branch_has_open_sessions: "این شعبه نشست میز باز دارد و قابل غیرفعال‌سازی نیست. ابتدا میزهای باز را ببندید.",
     source_branch_not_found: "شعبهٔ مبدأ برای کپی منو پیدا نشد.",
     missing_location: "شعبه‌ای انتخاب نشده است.",
+    branch_name_taken: "شعبهٔ دیگری با این نام وجود دارد. نام متفاوتی انتخاب کنید.",
+    branch_already_active: "این شعبه از قبل فعال است.",
+    branch_already_inactive: "این شعبه از قبل غیرفعال است.",
+    invalid_timezone: "منطقهٔ زمانی معتبر نیست.",
+    invalid_color: "رنگ انتخاب‌شده معتبر نیست.",
     // Phase 22 Wave 4 (tip capture) — issue #160 §4
     invalid_tip_amount: "مبلغ انعام معتبر نیست.",
     // Phase 16 — AR subledger

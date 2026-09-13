@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { INDUSTRIES } from "./industries";
-import { PERMISSIONS } from "./permissions";
+import { PERMISSIONS, roleBasePermissions } from "./permissions";
 import { SETTINGS_TABS, visibleSettingsTabs } from "./settings-tabs";
 
 describe("visibleSettingsTabs", () => {
@@ -106,7 +106,7 @@ describe("visibleSettingsTabs", () => {
     ).toEqual(["notifications", "backup"]);
 
     expect(
-      visibleSettingsTabs([], {
+      visibleSettingsTabs([PERMISSIONS.locationsManage], {
         role: "owner",
         features: { backup: true, offline_mode: true },
       }).map((tab) => tab.key),
@@ -115,17 +115,41 @@ describe("visibleSettingsTabs", () => {
     ).toEqual(["branch-management", "notifications", "backup"]);
 
     expect(
-      visibleSettingsTabs([], {
+      visibleSettingsTabs([PERMISSIONS.locationsManage], {
         role: "owner",
         features: { backup: false, offline_mode: false },
       }).map((tab) => tab.key),
     ).toEqual(["notifications"]);
 
     expect(
-      visibleSettingsTabs([], {
+      visibleSettingsTabs([PERMISSIONS.locationsManage], {
         role: "owner",
         features: { backup: false, offline_mode: false, multi_location: true },
       }).map((tab) => tab.key),
     ).toEqual(["branch-management", "notifications"]);
+  });
+
+  it("gates branch management on locations.manage, the permission its API checks", () => {
+    // The tab used to be `allowedRoles: ["owner"]` while /api/branches asked
+    // for PERMISSIONS.locationsManage. The two disagreed in both directions:
+    // an owner who delegated locations.manage to a manager handed over a
+    // permission with no reachable screen, and the tab claimed an authority
+    // the routes behind it did not actually require of the caller.
+    const features = { multi_location: true };
+
+    expect(
+      visibleSettingsTabs([], { role: "owner", features }).map((tab) => tab.key),
+    ).not.toContain("branch-management");
+
+    expect(
+      visibleSettingsTabs([PERMISSIONS.locationsManage], { role: "manager", features }).map(
+        (tab) => tab.key,
+      ),
+    ).toContain("branch-management");
+
+    // Still owner-only out of the box: locations.manage is in no role preset,
+    // so a manager only sees it once an owner deliberately grants it.
+    expect(roleBasePermissions("manager")).not.toContain(PERMISSIONS.locationsManage);
+    expect(roleBasePermissions("owner")).toContain(PERMISSIONS.locationsManage);
   });
 });

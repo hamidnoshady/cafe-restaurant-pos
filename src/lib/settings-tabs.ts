@@ -145,7 +145,14 @@ export const SETTINGS_TABS: SettingsTab[] = [
     key: "branch-management",
     label: "مدیریت شعب",
     description: "مدیریت شعب کسب‌وکار و همگام‌سازی داده‌های شعب با سرور مرکزی",
-    allowedRoles: ["owner"],
+    // The same permission `/api/branches` is gated on, not `allowedRoles:
+    // ["owner"]`. A hard role list disagreed with the routes behind the tab:
+    // an owner who granted `locations.manage` to a manager gave them a
+    // permission whose only screen they still could not open, and the manage
+    // /add forms were reachable by API alone. `locations.manage` is in no
+    // role's preset, so this is still owner-only until it is deliberately
+    // delegated — the difference is that delegating it now works.
+    requiredAnyPermission: [PERMISSIONS.locationsManage],
     requiredAnyFeature: ["multi_location", "offline_mode"],
   },
   {

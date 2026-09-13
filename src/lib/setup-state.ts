@@ -154,6 +154,13 @@ export interface LocationRow extends Record<string, unknown> {
   name: string;
   address: string | null;
   phone: string | null;
+  /**
+   * The branch's identifying colour (migration 0149). Carried on every
+   * location read because the switcher in the shell header paints itself with
+   * the *active* branch's colour, and that control renders before any
+   * branch-management screen has been opened.
+   */
+  color: string;
 }
 
 /**
@@ -166,7 +173,7 @@ export async function getPrimaryLocation(
   businessId: string,
 ): Promise<LocationRow | null> {
   const { rows } = await query<LocationRow>(
-    `SELECT id, name, address, phone FROM locations
+    `SELECT id, name, address, phone, color FROM locations
       WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1`,
     [businessId],
   );
@@ -178,7 +185,7 @@ export async function businessLocations(
   businessId: string,
 ): Promise<LocationRow[]> {
   const { rows } = await query<LocationRow>(
-    `SELECT id, name, address, phone FROM locations
+    `SELECT id, name, address, phone, color FROM locations
       WHERE business_id = $1 AND is_active ORDER BY created_at`,
     [businessId],
   );
@@ -244,6 +251,7 @@ export async function resolveActiveLocation(
 export async function accessibleLocationsFor(session: SessionPayload): Promise<{
   locations: LocationRow[];
   canSwitch: boolean;
+  businessLocationCount: number;
 }> {
   const [locations, ctx] = await Promise.all([
     businessLocations(session.businessId),
@@ -254,6 +262,16 @@ export async function accessibleLocationsFor(session: SessionPayload): Promise<{
   return {
     locations: locations.filter((l) => accessible.has(l.id)),
     canSwitch: canSwitchBranches(ctx, ids),
+    /**
+     * How many branches the *business* has, before this member's access is
+     * applied. `locations` above is already filtered, so a cashier pinned to
+     * one branch of a five-branch business is indistinguishable from a member
+     * of a single-branch business by its length alone — and the two want
+     * opposite things from the switcher: the first needs to be told which
+     * branch they are in, the second has no such question and should not be
+     * given a permanent header chip answering it.
+     */
+    businessLocationCount: locations.length,
   };
 }
 

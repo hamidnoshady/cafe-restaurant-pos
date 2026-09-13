@@ -44,7 +44,17 @@ interface WarehousesResponse {
 
 const WAREHOUSE_ERRORS: Record<string, string> = {
   missing_fields: "نام انبار را وارد کنید.",
+  // A warehouse *is* a branch (both screens write through branch-service's
+  // createBranch), so these are the codes that service actually throws.
+  // `location_name_taken` was the spelling this map guessed at; nothing has
+  // ever thrown it, which is why a duplicate name used to fall through to
+  // «خطای غیرمنتظره».
+  branch_name_taken: "انباری با این نام وجود دارد.",
   location_name_taken: "انباری با این نام وجود دارد.",
+  name_too_long: "نام انبار بیش از حد طولانی است.",
+  address_too_long: "آدرس بیش از حد طولانی است.",
+  phone_too_long: "شمارهٔ تلفن بیش از حد طولانی است.",
+  branch_limit_exceeded: "به سقف تعداد انبار/شعبه در پلن فعلی رسیده‌اید.",
 };
 
 export function warehouseErrorMessage(code: string | undefined): string {

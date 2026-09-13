@@ -13,10 +13,15 @@ export const GET = withTenantScope(async () => {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const [active, { locations, canSwitch }] = await Promise.all([
+  const [active, { locations, canSwitch, businessLocationCount }] = await Promise.all([
     resolveActiveLocation(session),
     accessibleLocationsFor(session),
   ]);
 
-  return NextResponse.json({ active, locations, canSwitch });
+  // businessLocationCount is deliberately separate from locations.length: the
+  // latter is already narrowed to what this member may reach, so it cannot
+  // tell a single-branch business apart from a member pinned to one branch of
+  // a larger one. The switcher shows nothing for the former and a static
+  // label for the latter, so it needs both numbers.
+  return NextResponse.json({ active, locations, canSwitch, businessLocationCount });
 });

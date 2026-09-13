@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { BranchesManager } from "@/app/dashboard/branches/branches-manager";
 import { LocationsManager } from "@/app/dashboard/locations/locations-manager";
 import { SectionNav } from "@/app/dashboard/section-nav";
@@ -31,6 +31,8 @@ function requestedBranchManagementTab(
 }
 
 export function BranchManagementSettings({ features }: BranchManagementSettingsProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const availableTabs = useMemo(
     () => BRANCH_MANAGEMENT_TABS.filter((item) => features[item.requiredFeature]),
@@ -41,11 +43,33 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
   const firstTab = availableTabKeys[0];
   const [tab, setTab] = useState<BranchManagementTabKey>(() => requestedTab ?? firstTab ?? "branches");
 
+  /**
+   * The `?branchTab=` the URL arrived with is honoured **once per value**, not
+   * on every render.
+   *
+   * Re-applying it unconditionally made the two tabs unclickable whenever the
+   * parameter was present: `/settings/branch-management?branchTab=sync` (which
+   * is exactly where the legacy `/dashboard/locations` bookmark and the
+   * `?tab=branch-sync` deep link land) set the tab to «همگام‌سازی شعب», and a
+   * click on «مدیریت شعب» was immediately undone by the effect re-running —
+   * the parameter never changes, so it won every time. Remembering which
+   * request has already been applied lets the link still open the right tab
+   * while leaving the tabs usable afterwards.
+   */
+  const appliedRequest = useRef<BranchManagementTabKey | null>(null);
+
   useEffect(() => {
     if (requestedTab && availableTabKeys.includes(requestedTab)) {
-      setTab(requestedTab);
+      if (appliedRequest.current !== requestedTab) {
+        appliedRequest.current = requestedTab;
+        setTab(requestedTab);
+      }
       return;
     }
+    // A request for a tab this business cannot see (asking for «همگام‌سازی»
+    // without `offline_mode`) is not remembered, so it can't block the
+    // fallback below from taking effect.
+    appliedRequest.current = null;
     if (firstTab && !availableTabKeys.includes(tab)) {
       setTab(firstTab);
     }
@@ -53,6 +77,22 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
 
   if (!firstTab) return null;
   const activeTab = availableTabKeys.includes(tab) ? tab : firstTab;
+
+  /**
+   * Switching tabs rewrites `?branchTab=`, so the address bar keeps naming the
+   * section on screen — the tab is then shareable and survives a reload, which
+   * is the whole reason the parameter is read in the first place. `replace`
+   * rather than `push`: flipping between two tabs of one settings section
+   * should not stack up history entries a person has to press Back through.
+   */
+  function selectTab(next: BranchManagementTabKey) {
+    setTab(next);
+    appliedRequest.current = next;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("tab");
+    params.set("branchTab", next);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
 
   // No header of its own: this renders *inside* the settings rail, which
   // already names the open section (SettingsManager's section card from `md`
@@ -66,7 +106,7 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
         label="بخش‌های مدیریت شعب"
         sections={availableTabs}
         active={activeTab}
-        onChange={setTab}
+        onChange={selectTab}
       >
         {activeTab === "branches" ? <BranchesManager /> : null}
         {activeTab === "sync" ? <LocationsManager /> : null}
