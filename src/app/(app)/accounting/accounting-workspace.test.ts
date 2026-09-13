@@ -89,9 +89,23 @@ describe("the Accounting workspace menu", () => {
       "payables",
       "receipts",
       "installments",
+      "settings",
     ]) {
       expect(keys).toContain(expected);
     }
+  });
+
+  it("moves accounting settings into «فضای کار حسابداری» without duplicating its route", () => {
+    const groups = groupsFor("owner");
+    const settingsHref = accountingSectionHref("settings");
+    const containingGroups = groups.filter((group) =>
+      group.entries.some((entry) => entry.href === settingsHref),
+    );
+
+    expect(containingGroups.map((group) => group.key)).toEqual([LEDGER_WORKSPACE_GROUP_KEY]);
+    expect(containingGroups[0].entries.find((entry) => entry.href === settingsHref)?.label).toBe(
+      "تنظیمات حسابداری",
+    );
   });
 
   it("gives every accounting section a home somewhere in the menu", () => {
@@ -177,13 +191,14 @@ describe("the ledger group's own section list", () => {
     expect(new Set(LEDGER_WORKSPACE_SECTION_KEYS).size).toBe(LEDGER_WORKSPACE_SECTION_KEYS.length);
   });
 
-  it("leaves the app-level sections out of it", () => {
-    // The home, the directory, the two report views and the settings screen
-    // are top-level areas of the workspace — putting them back inside the
-    // ledger group is how Accounting became "the ledger" in the first place.
-    for (const outside of ["dashboard", "directory", "reports", "growth", "settings"]) {
+  it("leaves app-level areas out while keeping accounting settings in the workspace", () => {
+    // The home, directory and report views remain top-level areas. Accounting
+    // settings is a ledger concern, so its existing route now lives in the one
+    // «فضای کار حسابداری» group instead of a second configuration location.
+    for (const outside of ["dashboard", "directory", "reports", "growth"]) {
       expect(LEDGER_WORKSPACE_SECTION_KEYS).not.toContain(outside);
     }
+    expect(LEDGER_WORKSPACE_SECTION_KEYS).toContain("settings");
     // Together they are exhaustive: nothing in the app is homeless.
     const accounted = new Set<string>([
       ...LEDGER_WORKSPACE_SECTION_KEYS,
@@ -191,7 +206,6 @@ describe("the ledger group's own section list", () => {
       "directory",
       "reports",
       "growth",
-      "settings",
     ]);
     for (const section of ACCOUNTING_SECTIONS) {
       expect(accounted, `section "${section.key}" is in no Accounting menu group`).toContain(section.key);

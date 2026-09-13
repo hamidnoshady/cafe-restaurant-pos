@@ -139,10 +139,13 @@ const CONFIG_SLOTS: readonly WorkspaceSlot[] = [
 /**
  * The ledger's own sections, in the order «فضای کار حسابداری» lists them.
  *
- * Everything `ACCOUNTING_SECTIONS` holds except the four that are not ledger
- * tools: the app's home (a group of its own at the top), the directory (the
- * people group), the reports index and the growth view (the reports group),
- * and the app's settings (the configuration group).
+ * Everything `ACCOUNTING_SECTIONS` holds except the four app-level areas: the
+ * app's home (a group of its own at the top), the directory (the people
+ * group), and the reports index and growth view (the reports group).
+ *
+ * Accounting settings belongs here as the final ledger tool. It is the same
+ * `/accounting/settings` route as before — moved, not copied — so there is one
+ * place named «فضای کار حسابداری» for both daily ledger work and its setup.
  */
 export const LEDGER_WORKSPACE_SECTION_KEYS: readonly AccountingSectionKey[] = [
   "trial-balance",
@@ -160,6 +163,7 @@ export const LEDGER_WORKSPACE_SECTION_KEYS: readonly AccountingSectionKey[] = [
   "fiscal-periods",
   "vat",
   "payroll",
+  "settings",
 ];
 
 /** The label «فضای کار حسابداری» wears wherever it is drawn — menu and page alike. */
@@ -265,11 +269,10 @@ export function accountingWorkspaceGroups({
     groups.push({ key: "reports", label: "گزارش و تحلیل", entries: reports });
   }
 
-  // 6. Configuration, last — the app's own settings first, then the platform's.
-  const config = [
-    ...sectionEntry("settings", "تنظیمات حسابداری"),
-    ...businessEntries(CONFIG_SLOTS),
-  ];
+  // 6. Platform configuration, last. Accounting's own settings was moved into
+  // «فضای کار حسابداری» above; keep only the business/platform destinations
+  // here so `/accounting/settings` has exactly one row in this menu.
+  const config = businessEntries(CONFIG_SLOTS);
   if (config.length > 0) {
     groups.push({ key: "config", label: "پیکربندی", entries: config });
   }

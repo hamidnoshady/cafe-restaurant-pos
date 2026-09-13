@@ -29,9 +29,9 @@ sources, and neither of them is a copy:
 | خرید و انبار | existing `/dashboard/*` pages | خرید و انبار، انبار، محصولات (+ trade sections)، منو |
 | عملیات | existing `/dashboard/*` pages | the trade's own screens — میزها، آشپزخانه، رزروها، ارسال، or the industry manager |
 | اشخاص | accounting route | اشخاص (`/accounting/directory`) + مشتریان / تأمین‌کنندگان deep links |
-| **فضای کار حسابداری** | accounting routes | تراز آزمایشی، دفتر روزنامه، ثبت سند دستی، سرفصل حساب‌ها، دریافتنی، پرداختنی، دریافت و پرداخت، اقساط، چک‌ها، هزینه‌ها، تطبیق بانکی، دارایی ثابت، دوره‌های مالی، مالیات، حقوق و دستمزد |
+| **فضای کار حسابداری** | accounting routes | تراز آزمایشی، دفتر روزنامه، ثبت سند دستی، سرفصل حساب‌ها، دریافتنی، پرداختنی، دریافت و پرداخت، اقساط، چک‌ها، هزینه‌ها، تطبیق بانکی، دارایی ثابت، دوره‌های مالی، مالیات، حقوق و دستمزد، تنظیمات حسابداری |
 | گزارش و تحلیل | accounting + dashboard | گزارش‌های مالی، گزارش‌های کسب‌وکار، رشد و بازاریابی |
-| پیکربندی | accounting + platform | تنظیمات حسابداری، تنظیمات کسب‌وکار، اتصال‌های فنی، اعتبار و پرداخت‌ها |
+| پیکربندی | platform | تنظیمات کسب‌وکار، اتصال‌های فنی، اعتبار و پرداخت‌ها |
 
 «فضای کار حسابداری» is therefore a **named group inside** the complete
 Accounting menu, never a competing shell. It is the one collapsible group (it
@@ -40,10 +40,11 @@ open/closed state is remembered per device.
 
 Its **in-page rail** — the `SectionNav` that used to list every section in the
 app, i.e. a second copy of the whole menu inside the page — is now scoped to
-exactly that group. On a page outside the group (`/accounting/overview`,
-`/accounting/directory`, `/accounting/reports`, `/accounting/settings`) there
-is no rail at all: those are top-level areas of the workspace and render as
-plain pages.
+exactly that group. `/accounting/settings` now appears in this rail as the
+single «تنظیمات حسابداری» destination; the route and page were moved into the
+group rather than copied. On a page outside the group (`/accounting/overview`,
+`/accounting/directory`, `/accounting/reports`) there is no rail at all: those
+are top-level areas of the workspace and render as plain pages.
 
 ### Where the business entries come from
 
