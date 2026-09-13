@@ -53,6 +53,94 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
+interface ShiftSales {
+  since: string;
+  lastShiftEndedAt: string | null;
+  hasOpenShift: boolean;
+  summary: {
+    orderCount: number;
+    grossTotal: number;
+    cashTotal: number;
+    cardTotal: number;
+    onlineTotal: number;
+    creditTotal: number;
+  };
+}
+
+/**
+ * The quick report box at the top of the Accounting home: the branch's total
+ * sales for the shift now in progress, with the per-method breakdown the
+ * cash-up will reconcile against.
+ *
+ * The till's counter, not the books': it reads orders/payments through
+ * `/api/ledger/shift-sales` and goes back to zero at every shift close —
+ * `branchShiftSales` starts the window at the branch's most recent cash-up
+ * (bounded by the business day), so «بستن شیفت» is what resets this number.
+ */
+function ShiftSalesQuickReport({ refreshKey }: { refreshKey: number }) {
+  const money = useMoney();
+  const [sales, setSales] = useState<ShiftSales | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<{ shiftSales: ShiftSales | null }>("/api/ledger/shift-sales").then(({ ok, data }) => {
+      if (!cancelled) setSales(ok ? data.shiftSales : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  // No branch (or the read failed): the box simply is not there — the rest of
+  // the dashboard is the ledger's and stands on its own.
+  if (sales === null) return null;
+
+  if (sales === undefined) {
+    return <SectionCardSkeleton rows={2} label="در حال بارگذاری فروش شیفت جاری" />;
+  }
+
+  const { summary } = sales;
+  const methods = [
+    { label: "نقدی", value: summary.cashTotal },
+    { label: "کارت", value: summary.cardTotal },
+    { label: "آنلاین", value: summary.onlineTotal },
+    { label: "نسیه", value: summary.creditTotal },
+  ];
+
+  return (
+    <div className={`p-4 sm:p-5 ${cardClass}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش سریع</p>
+          <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">فروش شیفت جاری</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            از {formatJalali(sales.since, { withTime: true })} — با هر بستن شیفت صفر می‌شود.
+          </p>
+        </div>
+        <StatusBadge tone={sales.hasOpenShift ? "active" : "neutral"}>
+          {sales.hasOpenShift ? "شیفت باز است" : "شیفت بازی ثبت نشده"}
+        </StatusBadge>
+      </div>
+
+      <p className="mt-3 truncate text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+        {money.format(summary.grossTotal)}
+      </p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        {formatPersianNumber(summary.orderCount)} سفارش تکمیل‌شده در این شیفت
+      </p>
+
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/80 pt-3 sm:grid-cols-4">
+        {methods.map((method) => (
+          <div key={method.label} className="min-w-0">
+            <dt className="text-xs font-medium leading-5 text-muted-foreground">{method.label}</dt>
+            <dd className="truncate text-sm font-bold text-foreground">{money.format(method.value)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 export function LedgerDashboardSection({
   onGoToTab,
   refreshKey,
@@ -89,6 +177,9 @@ export function LedgerDashboardSection({
   return (
     <div className="space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
+
+      {/* First thing on the home: the shift's running total (resets at each close). */}
+      <ShiftSalesQuickReport refreshKey={refreshKey} />
 
       {!hasActivity ? (
         <SectionCard
