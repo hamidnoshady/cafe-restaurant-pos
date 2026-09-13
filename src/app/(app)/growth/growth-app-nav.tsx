@@ -48,10 +48,10 @@ export function GrowthAppNav({
 }: AppShellNavProps) {
   const items = growthNavItemsForRole(role);
   // The workspace shell launches apps from the rail on the chat home, so that is
-  // «back»; without it, /dashboard is the legacy dashboard and /dashboard/overview
-  // is the page the nav calls «داشبورد». Losing the app's own menu is never an
+  // «back»; without it, /dashboard is the legacy dashboard and /accounting/overview
+  // is the main accounting dashboard. Losing the app's own menu is never an
   // option, so this is the only exit the sidebar offers.
-  const backHref = workspaceShell ? "/dashboard" : "/dashboard/overview";
+  const backHref = workspaceShell ? "/dashboard" : "/accounting/overview";
   const backLabel = workspaceShell ? "بازگشت به میز کار" : "بازگشت به داشبورد";
 
   return (

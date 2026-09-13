@@ -132,6 +132,7 @@ const REPORTS_SLOTS: readonly WorkspaceSlot[] = [
 const CONFIG_SLOTS: readonly WorkspaceSlot[] = [
   { href: "/settings", label: "تنظیمات کسب‌وکار" },
   { href: "/settings/connections" },
+  { href: "/websites/overview", label: "وب‌سایت" },
   { href: "/settings/billing" },
 ];
 
@@ -183,11 +184,6 @@ export function accountingWorkspaceGroups({
   navItems: readonly { label: string; href: string; iconKey?: string }[];
 }): WorkspaceNavGroup[] {
   const allowed = accountingSectionsForRole(role);
-  // A role that cannot open the app has no menu for it. Without this the
-  // business groups would still compose — and a cashier who somehow reached an
-  // `/accounting/*` URL would be shown a full workspace menu for an app whose
-  // every page redirects them away.
-  if (allowed.length === 0) return [];
   const byKey = new Map<AccountingSectionKey, AccountingSectionDef>(
     allowed.map((section) => [section.key, section]),
   );
@@ -215,13 +211,15 @@ export function accountingWorkspaceGroups({
 
   const groups: WorkspaceNavGroup[] = [];
 
-  // 1. The app's home. Opening «حسابداری» lands on a complete overview, not on
-  //    the ledger rail — that is the whole point of the change.
-  groups.push({
-    key: "home",
-    label: "میز کار",
-    entries: sectionEntry("dashboard", "داشبورد حسابداری"),
-  });
+  // 1. The main dashboard / workspace home: «میز کار» with «داشبورد حسابداری»
+  const homeEntries = sectionEntry("dashboard", "داشبورد حسابداری");
+  if (homeEntries.length > 0) {
+    groups.push({
+      key: "home",
+      label: "میز کار",
+      entries: homeEntries,
+    });
+  }
 
   // 2. The business work areas, in the order a day runs: sell, buy, operate.
   for (const group of WORKSPACE_GROUP_SLOTS) {
@@ -230,9 +228,7 @@ export function accountingWorkspaceGroups({
     groups.push({ key: group.key, label: group.label, description: group.description, entries });
   }
 
-  // 3. The one people directory, with its useful views as deep links. Not four
-  //    sidebar rows over four routes any more — one row, plus the filters a
-  //    person actually asks for.
+  // 3. The one people directory, with its useful views as deep links.
   const directory = sectionEntry("directory", "اشخاص");
   if (directory.length > 0) {
     groups.push({
@@ -247,7 +243,7 @@ export function accountingWorkspaceGroups({
     });
   }
 
-  // 4. «فضای کار حسابداری» — the ledger, as a named group *inside* this menu.
+  // 4. «فضای کار حسابداری» — the ledger, as a named group inside this menu.
   const ledgerEntries = LEDGER_WORKSPACE_SECTION_KEYS.flatMap((key) => sectionEntry(key));
   if (ledgerEntries.length > 0) {
     groups.push({
@@ -259,15 +255,21 @@ export function accountingWorkspaceGroups({
     });
   }
 
-  // 5. Reports — the ledger's own, then the business's, so an accountant does
-  //    not have to leave the app to answer a question about sales.
-  const reports = [...sectionEntry("reports", "گزارش‌های مالی"), ...businessEntries(REPORTS_SLOTS), ...sectionEntry("growth")];
+  // 5. Reports — the ledger's own, then the business's.
+  const reports = [
+    ...sectionEntry("reports", "گزارش‌های مالی"),
+    ...businessEntries(REPORTS_SLOTS),
+    ...sectionEntry("growth"),
+  ];
   if (reports.length > 0) {
     groups.push({ key: "reports", label: "گزارش و تحلیل", entries: reports });
   }
 
   // 6. Configuration, last — the app's own settings first, then the platform's.
-  const config = [...sectionEntry("settings", "تنظیمات حسابداری"), ...businessEntries(CONFIG_SLOTS)];
+  const config = [
+    ...sectionEntry("settings", "تنظیمات حسابداری"),
+    ...businessEntries(CONFIG_SLOTS),
+  ];
   if (config.length > 0) {
     groups.push({ key: "config", label: "پیکربندی", entries: config });
   }

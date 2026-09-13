@@ -33,7 +33,7 @@ import { crmSectionHref, isCrmSectionPathname } from "./crm-routes";
 
 export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }: AppShellNavProps) {
   const items = crmNavItemsForRole(role);
-  const backHref = workspaceShell ? "/dashboard" : "/dashboard/overview";
+  const backHref = workspaceShell ? "/dashboard" : "/accounting/overview";
   const backLabel = workspaceShell ? "بازگشت به میز کار" : "بازگشت به داشبورد";
 
   return (
