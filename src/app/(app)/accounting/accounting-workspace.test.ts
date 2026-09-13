@@ -133,9 +133,14 @@ describe("the Accounting workspace menu", () => {
     expect(accountingWorkspaceHrefs(groupsFor("owner"))).toContain(accountingSectionHref("payroll"));
   });
 
-  it("gives a role that cannot open the app no menu at all", () => {
-    expect(accountingWorkspaceHrefs(groupsFor("cashier"))).toEqual([]);
-    expect(accountingWorkspaceHrefs(groupsFor("waiter"))).toEqual([]);
+  it("restricts a non-accounting role to their authorized business groups without ledger sections", () => {
+    const cashierHrefs = accountingWorkspaceHrefs(groupsFor("cashier"));
+    expect(cashierHrefs).toContain("/dashboard/orders");
+    expect(cashierHrefs).toContain("/dashboard/pos");
+    expect(cashierHrefs).not.toContain(accountingSectionHref("dashboard"));
+    expect(cashierHrefs).not.toContain(accountingSectionHref("trial-balance"));
+    expect(cashierHrefs).not.toContain(accountingSectionHref("payroll"));
+    expect(cashierHrefs).not.toContain(accountingSectionHref("entries"));
   });
 
   it("offers exactly one people directory, plus filtered deep links", () => {

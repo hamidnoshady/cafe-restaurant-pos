@@ -55,6 +55,14 @@ import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
 import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
+import { ACCOUNTING_SECTION_ICONS } from "@/app/(app)/accounting/accounting-icons";
+import { isAccountingSectionPathname } from "@/app/(app)/accounting/accounting-routes";
+import {
+  accountingWorkspaceGroups,
+  LEDGER_WORKSPACE_GROUP_KEY,
+  type WorkspaceNavEntry,
+  type WorkspaceNavGroup,
+} from "@/app/(app)/accounting/accounting-workspace";
 import { AppStateBadge } from "./app-availability-gate";
 import { CreditBadge } from "./credit-badge";
 import { popoverPanelClass } from "./page-chrome";
@@ -280,225 +288,183 @@ function isActive(pathname: string, href: string, search?: ReadonlyURLSearchPara
 /** Which collapsible nav groups the member left open, per device. */
 const OPEN_NAV_GROUPS_KEY = "dashboard-sidebar-open-groups";
 
-function readOpenGroups(): Record<string, boolean> {
-  try {
-    const raw = window.localStorage.getItem(OPEN_NAV_GROUPS_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    // The value is hand-editable localStorage: anything but an object of
-    // booleans is treated as "no saved choice" rather than crashing the menu.
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).filter(([, open]) => typeof open === "boolean"),
-    ) as Record<string, boolean>;
-  } catch {
-    return {};
+function entryIsActive(entry: WorkspaceNavEntry, pathname: string, search: string): boolean {
+  if (entry.section) {
+    if (!isAccountingSectionPathname(pathname, entry.section)) return false;
+    const view = new URLSearchParams(entry.href.split("?")[1] ?? "").get("view");
+    const current = new URLSearchParams(search).get("view");
+    return view ? current === view : !current;
   }
+  const [base, query] = entry.href.split("?");
+  if (query) {
+    if (pathname !== base) return false;
+    const expectedTab = new URLSearchParams(query).get("tab");
+    if (expectedTab) {
+      const actualTab = new URLSearchParams(search).get("tab");
+      return actualTab === expectedTab;
+    }
+    return true;
+  }
+  if (base === "/settings") {
+    return (
+      pathname === "/settings" ||
+      (pathname.startsWith("/settings/") &&
+        !pathname.startsWith("/settings/connections") &&
+        !pathname.startsWith("/settings/billing"))
+    );
+  }
+  if (base === "/dashboard/products") {
+    return pathname === "/dashboard/products";
+  }
+  if (base === "/dashboard") return pathname === "/dashboard";
+  return pathname === base || pathname.startsWith(`${base}/`);
 }
 
-/**
- * Phase 42 — a collapsible group in the flat nav («محصولات» and its
- * sub-sections). The parent is a disclosure, not a link; children wear the
- * same amber selection as every other nav entry, with an inline-start bar
- * marking the one you are on. A group that holds the active page opens on
- * its own the first time you land there, so a deep link never arrives behind a
- * closed door — but it can still be closed by hand afterwards, which the old
- * always-forced-open rule made impossible. The member's opens/closes are
- * remembered per device.
- *
- * On a collapsed rail there is no room to disclose anything, so the row acts as
- * a plain launcher: it opens the group's home if it has one, and otherwise asks
- * the rail to expand rather than swallowing the click.
- */
-function NavGroupItem({
-  item,
+function EntryIcon({ entry }: { entry: WorkspaceNavEntry }) {
+  const Icon = entry.section
+    ? ACCOUNTING_SECTION_ICONS[entry.section]
+    : (NAV_ICONS[entry.iconKey ?? entry.href] ?? NAV_ICONS[entry.href.split("?")[0]] ?? CircleIcon);
+  return <Icon aria-hidden="true" className="size-5 shrink-0" />;
+}
+
+function NavEntries({
+  entries,
+  pathname,
+  search,
+  onNavigate,
+  indented,
+}: {
+  entries: readonly WorkspaceNavEntry[];
+  pathname: string;
+  search: string;
+  onNavigate: () => void;
+  indented?: boolean;
+}) {
+  return (
+    <SidebarMenu
+      className={
+        indented
+          ? "ms-4 space-y-1.5 border-s border-border/70 ps-2 group-data-[state=collapsed]/sidebar:ms-0 group-data-[state=collapsed]/sidebar:border-s-0 group-data-[state=collapsed]/sidebar:ps-0"
+          : "space-y-1.5"
+      }
+    >
+      {entries.map((entry) => {
+        const active = entryIsActive(entry, pathname, search);
+        return (
+          <SidebarMenuItem key={entry.href}>
+            <SidebarMenuButton
+              asChild
+              isActive={active}
+              tooltip={entry.label}
+              className={APP_NAV_BUTTON_CLASS}
+            >
+              <Link href={entry.href} onClick={onNavigate} aria-current={active ? "page" : undefined}>
+                <EntryIcon entry={entry} />
+                <span className={NAV_LABEL_CLASS}>{entry.label}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
+  );
+}
+
+function CollapsibleGroup({
+  group,
   pathname,
   search,
   onNavigate,
   open,
   onToggle,
 }: {
-  item: NavItem & { children: NavItem[] };
+  group: WorkspaceNavGroup;
   pathname: string;
-  search: ReadonlyURLSearchParams | null;
+  search: string;
   onNavigate: () => void;
   open: boolean;
   onToggle: () => void;
 }) {
-  const { state, expandSidebar } = useSidebar();
-  const collapsedRail = state === "collapsed";
-  const Icon = NAV_ICONS[item.iconKey ?? item.href ?? ""] ?? CircleIcon;
-  const childActive = item.children.some((child) => child.href && isActive(pathname, child.href, search));
-  const hrefActive = item.href ? isActive(pathname, item.href, search) : false;
-  const active = childActive || hrefActive;
-  // A group that *has* a home keeps its label a link to that home («حسابداری»
-  // → the dashboard) and puts the disclosure on a separate chevron, so tapping
-  // the section still opens its main page — while a pure group («محصولات»)
-  // toggles on the whole row, exactly as before. A collapsed rail has no room
-  // for the split, so the row is one target there.
-  const hasHref = Boolean(item.href) && !collapsedRail;
-  // How many of this group's pages are the one you are on — spoken next to the
-  // group's name so a collapsed group still says it holds the current page.
-  const groupTooltip = item.appState ? `${item.label} — ${item.appState.label}` : item.label;
-
+  const panelId = `dashboard-nav-${group.key}`;
   return (
-    <SidebarMenuItem>
-      <div className="relative">
-        <SidebarMenuButton
-          asChild={hasHref}
-          isActive={active}
-          tooltip={groupTooltip}
-          className={`${APP_NAV_BUTTON_CLASS} ${hasHref ? "pe-9" : ""}`}
-          aria-expanded={hasHref || collapsedRail ? undefined : open}
-          aria-label={item.appState ? `${item.label} (${item.appState.label})` : undefined}
-          onClick={
-            hasHref
-              ? undefined
-              : collapsedRail
-                ? () => {
-                    // No labels to disclose against at 4rem wide: widen first,
-                    // then leave the group open so the click has a visible
-                    // result instead of toggling something nobody can see.
-                    expandSidebar();
-                    if (!open) onToggle();
-                  }
-                : onToggle
-          }
-        >
-          {hasHref ? (
-            <Link
-              href={item.href!}
-              onClick={onNavigate}
-              aria-current={hrefActive ? "page" : undefined}
-            >
-              <Icon aria-hidden="true" className="size-5 shrink-0" />
-              <span className={NAV_LABEL_CLASS}>{item.label}</span>
-              {item.appState ? (
-                <AppStateBadge
-                  state={item.appState.state}
-                  label={item.appState.label}
-                  className="shrink-0 group-data-[state=collapsed]/sidebar:hidden"
-                />
-              ) : null}
-            </Link>
-          ) : (
-            <>
-              <Icon aria-hidden="true" className="size-5 shrink-0" />
-              <span className={NAV_LABEL_CLASS}>{item.label}</span>
-              {item.appState ? (
-                <AppStateBadge
-                  state={item.appState.state}
-                  label={item.appState.label}
-                  className="shrink-0 group-data-[state=collapsed]/sidebar:hidden"
-                />
-              ) : null}
-              <ChevronDownIcon
-                aria-hidden="true"
-                className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-data-[state=collapsed]/sidebar:hidden ${open ? "" : "-rotate-90"}`}
-              />
-            </>
-          )}
-        </SidebarMenuButton>
-        {hasHref ? (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={open}
-            aria-label={`${open ? "بستن" : "باز کردن"} زیربخش‌های ${item.label}`}
-            title={`${open ? "بستن" : "باز کردن"} زیربخش‌های ${item.label}`}
-            /*
-              Sits on top of the row's link, so it needs its own hit area: 28px
-              of ink inside a 40px-tall target, which is what a thumb on a POS
-              tablet actually lands on.
-            */
-            className="absolute end-1 top-1/2 flex h-10 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:hover:bg-amber-500/20 dark:hover:text-amber-300 dark:focus-visible:ring-amber-400/45 group-data-[state=collapsed]/sidebar:hidden"
-          >
-            <ChevronDownIcon
-              aria-hidden="true"
-              className={`size-4 transition-transform duration-200 ease-out ${open ? "" : "-rotate-90"}`}
-            />
-          </button>
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex min-h-10 w-full items-center gap-2 rounded-xl px-2 text-start text-[11px] font-bold text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 group-data-[state=collapsed]/sidebar:hidden"
+      >
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={`size-4 shrink-0 transition-transform duration-200 ease-out ${open ? "" : "-rotate-90 rtl:rotate-90"}`}
+        />
+        <span className="min-w-0 flex-1 truncate">{group.label}</span>
+      </button>
+      <div id={panelId} hidden={!open}>
+        {group.description ? (
+          <p className="mb-1.5 px-2 text-[11px] leading-5 text-muted-foreground group-data-[state=collapsed]/sidebar:hidden">
+            {group.description}
+          </p>
         ) : null}
+        <NavEntries entries={group.entries} pathname={pathname} search={search} onNavigate={onNavigate} indented />
       </div>
-      {open ? (
-        <ul className="mt-1 space-y-0.5 border-s border-border/70 pe-0 ps-2 ms-4 group-data-[state=collapsed]/sidebar:hidden">
-          {item.children.map((child) => {
-            if (!child.href) return null;
-            const active = isActive(pathname, child.href, search);
-            return (
-              <li key={child.href}>
-                <Link
-                  href={child.href}
-                  onClick={onNavigate}
-                  data-active={active}
-                  aria-current={active ? "page" : undefined}
-                  title={child.label}
-                  className="flex min-h-10 w-full items-center rounded-lg border-s-2 border-transparent px-3 text-sm text-foreground/75 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 data-[active=true]:border-amber-500 dark:data-[active=true]:border-amber-400 data-[active=true]:bg-amber-100 dark:data-[active=true]:bg-amber-500/20 data-[active=true]:font-semibold data-[active=true]:text-amber-700 dark:data-[active=true]:text-amber-200"
-                >
-                  <span className="min-w-0 flex-1 truncate">{child.label}</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </SidebarMenuItem>
+    </div>
   );
 }
 
-function NavLinks({
+function SidebarNavigation({
   navItems,
+  role,
   pathname,
-  onNavigate,
   showWorkspaceHome = false,
 }: {
   navItems: NavItem[];
+  role: string;
   pathname: string;
-  onNavigate: () => void;
-  /** True while the business has the workspace shell: adds a «میز کار» entry back to the chat home. */
   showWorkspaceHome?: boolean;
 }) {
+  const { setOpenMobile } = useSidebar();
   const search = useSearchParams();
+  const searchStr = search?.toString() ?? "";
+  const groups = accountingWorkspaceGroups({ role, navItems: flattenNav(navItems) });
+
+  const inLedger = groups
+    .find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY)
+    ?.entries.some((entry) => entryIsActive(entry, pathname, searchStr));
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  useEffect(() => setOpenGroups(readOpenGroups()), []);
-  const toggleGroup = useCallback((label: string) => {
+  const [restored, setRestored] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(OPEN_NAV_GROUPS_KEY);
+      if (raw) setOpenGroups(JSON.parse(raw) as Record<string, boolean>);
+    } catch {
+      // Storage read fallback
+    }
+    setRestored(true);
+  }, []);
+
+  const toggleGroup = useCallback((key: string, currentlyOpen: boolean) => {
     setOpenGroups((current) => {
-      const next = { ...current, [label]: !current[label] };
+      const next = { ...current, [key]: !currentlyOpen };
       try {
         window.localStorage.setItem(OPEN_NAV_GROUPS_KEY, JSON.stringify(next));
       } catch {
-        // A device that refuses storage keeps the choice for the session.
+        // Storage write fallback
       }
       return next;
     });
   }, []);
 
-  // Auto-opening a group is an arrival behaviour, not a permanent rule: the
-  // group that holds the page you just landed on opens itself, and from then
-  // on it obeys the member. It used to be OR-ed into `open` on every render,
-  // so the chevron on the group you were standing in did nothing at all.
-  const openGroupsRef = useRef(openGroups);
-  openGroupsRef.current = openGroups;
-  useEffect(() => {
-    const holder = navItems.find(
-      (item) =>
-        item.children &&
-        item.children.length > 0 &&
-        (item.children.some((child) => child.href && isActive(pathname, child.href, search)) ||
-          (item.href ? isActive(pathname, item.href, search) : false)),
-    );
-    if (!holder || openGroupsRef.current[holder.label]) return;
-    setOpenGroups((current) => ({ ...current, [holder.label]: true }));
-    // Deliberately not persisted: arriving somewhere is not the member
-    // choosing to keep that group open forever.
-  }, [navItems, pathname, search]);
+  const onNavigate = useCallback(() => setOpenMobile(false), [setOpenMobile]);
 
   return (
     <SidebarContent className="px-3 py-4">
-      <nav aria-label="ناوبری داشبورد" className="space-y-3">
+      <nav aria-label="ناوبری اصلی" className="space-y-3">
         {showWorkspaceHome ? (
           <>
-            <SidebarMenu>
+            <SidebarMenu className="space-y-1.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
@@ -513,86 +479,46 @@ function NavLinks({
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
-            {/* The way out is a control, not a menu entry: separate it from the
-                sections below so it reads as "leave this app" rather than as
-                another page. */}
             <div aria-hidden="true" className="border-t border-border/80" />
           </>
         ) : null}
-        <SidebarMenu className="space-y-1.5">
-          {navItems.map((item) => {
-            if (item.children && item.children.length > 0) {
-              return (
-                <NavGroupItem
-                  key={item.label}
-                  item={item as NavItem & { children: NavItem[] }}
-                  pathname={pathname}
-                  search={search}
-                  onNavigate={onNavigate}
-                  open={Boolean(openGroups[item.label])}
-                  onToggle={() => toggleGroup(item.label)}
-                />
-              );
-            }
-            if (!item.href) return null;
-            const Icon = NAV_ICONS[item.href] ?? CircleIcon;
-            const active = isActive(pathname, item.href, search);
-            // The collapsed rail shows icons only, so the tooltip has to carry
-            // everything the row's badges say — otherwise «به‌زودی» and the
-            // padlock simply vanish at 4rem wide.
-            const tooltip = item.locked
-              ? `${item.label} — فعال نیست`
-              : item.appState
-                ? `${item.label} — ${item.appState.label}`
-                : item.label;
+
+        {groups.map((group) => {
+          if (group.entries.length === 0) return null;
+
+          if (group.collapsible) {
+            const open = restored ? (openGroups[group.key] ?? Boolean(inLedger)) : Boolean(inLedger);
             return (
-              <SidebarMenuItem key={item.label}>
-                <SidebarMenuButton
-                  asChild
-                  isActive={active}
-                  tooltip={tooltip}
-                  className={APP_NAV_BUTTON_CLASS}
-                >
-                  <Link
-                    href={item.href}
-                    onClick={onNavigate}
-                    aria-current={active ? "page" : undefined}
-                    aria-label={
-                      item.locked
-                        ? `${item.label} (فعال نیست)`
-                        : item.appState
-                          ? `${item.label} (${item.appState.label})`
-                          : item.label
-                    }
-                    title={
-                      item.locked
-                        ? `${item.label} — برای کسب‌وکار شما فعال نیست`
-                        : item.appState && !item.appState.usable
-                          ? `${item.label} — ${item.appState.label}`
-                          : undefined
-                    }
-                  >
-                    <Icon aria-hidden="true" className="size-5 shrink-0" />
-                    <span className={NAV_LABEL_CLASS}>{item.label}</span>
-                    {item.appState ? (
-                      <AppStateBadge
-                        state={item.appState.state}
-                        label={item.appState.label}
-                        className="shrink-0 group-data-[state=collapsed]/sidebar:hidden"
-                      />
-                    ) : null}
-                    {item.locked ? (
-                      <LockIcon
-                        aria-hidden="true"
-                        className="size-3.5 shrink-0 text-muted-foreground group-data-[state=collapsed]/sidebar:hidden"
-                      />
-                    ) : null}
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <CollapsibleGroup
+                key={group.key}
+                group={group}
+                pathname={pathname}
+                search={searchStr}
+                onNavigate={onNavigate}
+                open={open}
+                onToggle={() => toggleGroup(group.key, open)}
+              />
             );
-          })}
-        </SidebarMenu>
+          }
+
+          return (
+            <div key={group.key} className="space-y-1.5">
+              <div
+                aria-hidden="true"
+                className="mx-2 hidden border-t border-border/70 group-data-[state=collapsed]/sidebar:block"
+              />
+              <p className="px-2 text-[11px] font-bold text-muted-foreground group-data-[state=collapsed]/sidebar:hidden">
+                {group.label}
+              </p>
+              <NavEntries
+                entries={group.entries}
+                pathname={pathname}
+                search={searchStr}
+                onNavigate={onNavigate}
+              />
+            </div>
+          );
+        })}
       </nav>
     </SidebarContent>
   );
@@ -971,18 +897,6 @@ function CloseDrawerOnNavigate({ pathname }: { pathname: string }) {
     setOpenMobile(false);
   }, [pathname, setOpenMobile]);
   return null;
-}
-
-function SidebarNavigation({ navItems, pathname, showWorkspaceHome }: Pick<SidebarProps, "navItems"> & { pathname: string; showWorkspaceHome: boolean }) {
-  const { setOpenMobile } = useSidebar();
-  return (
-    <NavLinks
-      navItems={navItems}
-      pathname={pathname}
-      showWorkspaceHome={showWorkspaceHome}
-      onNavigate={() => setOpenMobile(false)}
-    />
-  );
 }
 
 /**
@@ -1443,7 +1357,7 @@ export function DashboardSidebar({
         <SidebarBrand title={brandTitle} subtitle={brandSubtitle} />
         {showWorkspaceRail ? (
           <WorkspaceRail navItems={navItems} pathname={pathname} />
-        ) : appShell ? (
+        ) : appShell && appShell.shell.app !== "accounting" ? (
           <AppShellNavigation
             nav={appShell.nav}
             shell={appShell.shell}
@@ -1453,7 +1367,12 @@ export function DashboardSidebar({
             workspaceShell={workspaceShell}
           />
         ) : (
-          <SidebarNavigation navItems={appNavItems} pathname={pathname} showWorkspaceHome={workspaceShell} />
+          <SidebarNavigation
+            navItems={navItems}
+            role={role}
+            pathname={pathname}
+            showWorkspaceHome={workspaceShell}
+          />
         )}
         <DashboardSidebarFooter
           role={role}

@@ -168,7 +168,6 @@ function CollapsibleGroup({
 }
 
 export function AccountingAppNav({
-  shell,
   role,
   pathname,
   search = "",
@@ -178,17 +177,12 @@ export function AccountingAppNav({
 }: AppShellNavProps) {
   const groups = accountingWorkspaceGroups({ role, navItems });
 
-  // The ledger group opens on arrival when you are standing in it, so an
-  // accountant who bookmarked «دفتر روزنامه» does not land on a closed group
-  // with no sign of where they are.
   const inLedger = groups
     .find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY)
     ?.entries.some((entry) => entryIsActive(entry, pathname, search));
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [restored, setRestored] = useState(false);
 
-  // Read after mount: localStorage does not exist on the server, and the first
-  // client paint has to match the markup the server sent.
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(OPEN_GROUPS_KEY);
@@ -211,37 +205,32 @@ export function AccountingAppNav({
     });
   }
 
-  const backHref = workspaceShell ? "/dashboard" : "/dashboard/overview";
-  const backLabel = workspaceShell ? "بازگشت به میز کار" : "بازگشت به داشبورد";
+  const backHref = "/dashboard";
+  const backLabel = "بازگشت به میز کار";
 
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="منوی حسابداری" className="space-y-3">
-        <div className="px-2 group-data-[state=collapsed]/sidebar:hidden">
-          <p className="text-sm font-bold text-foreground">{shell.label}</p>
-          <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">{shell.description}</p>
-        </div>
-
-        {/* The way out, first — a control, not another section. */}
-        <SidebarMenu className="space-y-1.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
-              <Link href={backHref} onClick={onNavigate}>
-                <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
-                <span className={NAV_LABEL_CLASS}>{backLabel}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <div aria-hidden="true" className="border-t border-border/80" />
+        {workspaceShell ? (
+          <>
+            <SidebarMenu className="space-y-1.5">
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
+                  <Link href={backHref} onClick={onNavigate}>
+                    <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
+                    <span className={NAV_LABEL_CLASS}>{backLabel}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+            <div aria-hidden="true" className="border-t border-border/80" />
+          </>
+        ) : null}
 
         {groups.map((group) => {
           if (group.entries.length === 0) return null;
 
           if (group.collapsible) {
-            // Before the stored preference has been read, the group's state is
-            // "am I standing in it" — the same answer on the server and on the
-            // first paint, so nothing flickers.
             const open = restored ? (openGroups[group.key] ?? Boolean(inLedger)) : Boolean(inLedger);
             return (
               <CollapsibleGroup
@@ -258,8 +247,6 @@ export function AccountingAppNav({
 
           return (
             <div key={group.key} className="space-y-1.5">
-              {/* Collapsed to a rail the headings are hidden, so a rule keeps
-                  the groups from reading as one undivided column of glyphs. */}
               <div
                 aria-hidden="true"
                 className="mx-2 hidden border-t border-border/70 group-data-[state=collapsed]/sidebar:block"

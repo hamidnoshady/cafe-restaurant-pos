@@ -146,7 +146,7 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate, workspaceShel
     };
   }, []);
 
-  const backHref = workspaceShell ? "/dashboard" : "/dashboard/overview";
+  const backHref = workspaceShell ? "/dashboard" : "/accounting/overview";
   const backLabel = workspaceShell ? "بازگشت به میز کار" : "بازگشت به داشبورد";
   const canManage = role === "owner" || role === "manager";
 
