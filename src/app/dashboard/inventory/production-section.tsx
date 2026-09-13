@@ -115,7 +115,7 @@ export function ProductionSection({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <FormulaCard items={items} formulas={formulas} busy={busy} run={runAndReload} />
       <RunCard formulas={formulas} runs={runs} busy={busy} run={runAndReload} />
     </div>

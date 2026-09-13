@@ -36,10 +36,8 @@ import {
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { formatQuantity } from "@/lib/digits";
 import { SectionNav } from "../section-nav";
 import { api, ErrorBox } from "../ui";
-import { useRealtime } from "../use-realtime";
 import { ItemsSection } from "./items-section";
 import { ProductionSection } from "./production-section";
 import { RecipesSection } from "./recipes-section";
@@ -118,14 +116,6 @@ interface InventoryData {
   inventorySystem: "perpetual" | "periodic" | null;
 }
 
-interface LowStockItem {
-  id: string;
-  name: string;
-  unit: string;
-  reorderLevel: number | null;
-  stock: number;
-}
-
 // The section list and the دائمی/ادواری visibility rule live framework-free
 // in inventory-nav.ts (unit-tested there); this component only dresses the
 // entries with their icons, the way accounting-manager keeps its own icon map.
@@ -167,7 +157,6 @@ export function InventoryManager({ role }: { role: string }) {
   // The warehouse the «موجودی انبار» panel is pointed at; the warehouses list
   // jumps here when a row is opened.
   const [stockLocationId, setStockLocationId] = useState<string | null>(null);
-  const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
 
   // An error from one tab shouldn't keep showing once the user has moved on
   // to look at something else.
@@ -179,22 +168,6 @@ export function InventoryManager({ role }: { role: string }) {
     });
   }, []);
   useEffect(load, [load]);
-
-  const loadLowStock = useCallback(() => {
-    api<{ items: LowStockItem[] }>("/api/inventory/low-stock").then(({ ok, data }) => {
-      if (ok) setLowStock(data.items);
-    });
-  }, []);
-  useEffect(loadLowStock, [loadLowStock]);
-
-  useRealtime(
-    useCallback(
-      (event) => {
-        if (event.type === "inventory.low_stock") loadLowStock();
-      },
-      [loadLowStock],
-    ),
-  );
 
   async function run(
     fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
@@ -208,7 +181,6 @@ export function InventoryManager({ role }: { role: string }) {
       return false;
     }
     load();
-    loadLowStock();
     return true;
   }
 
@@ -218,20 +190,6 @@ export function InventoryManager({ role }: { role: string }) {
   return (
     <div className={`${styles.workspace} min-w-0 space-y-4 sm:space-y-5`}>
       <ErrorBox>{error}</ErrorBox>
-
-      {lowStock.length > 0 ? (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-4 py-3 text-sm text-amber-950 dark:text-amber-200">
-          <p className="mb-1 font-semibold">هشدار کمبود موجودی</p>
-          <ul className="list-inside list-disc space-y-0.5 leading-6">
-            {lowStock.map((it) => (
-              <li key={it.id}>
-                {it.name}: {formatQuantity(it.stock)} {it.unit} باقی مانده
-                (آستانه سفارش: {formatQuantity(it.reorderLevel ?? 0)} {it.unit})
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
 
       <SectionNav
         idPrefix="inventory"
@@ -257,7 +215,6 @@ export function InventoryManager({ role }: { role: string }) {
           <DocumentFormSection
             onCreated={() => {
               load();
-              loadLowStock();
               setTab("documents");
             }}
           />

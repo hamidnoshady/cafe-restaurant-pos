@@ -10,6 +10,7 @@ import { printLabel } from "@/lib/print-agent-client";
 import type { LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { SectionCard } from "../page-chrome";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
@@ -139,7 +140,7 @@ export function BarcodesSection({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <SectionCard
         title={
           <div>
@@ -194,24 +195,24 @@ export function BarcodesSection({
         description="اگر بسته‌بندی تأمین‌کننده بارکد چاپی دارد، همان را ثبت کنید تا نیازی به لیبل تازه نباشد."
       >
         <Field label="قلم انبار">
-          <select
-            className={inputClass}
+          <SearchableSelect
             value={itemId}
-            onChange={(e) => setItemId(e.target.value)}
-          >
-            <option value="">انتخاب قلم</option>
-            {items
-              .filter((i) => i.is_active)
-              .map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-          </select>
+            onChange={setItemId}
+            options={[
+              { value: "", label: "انتخاب قلم" },
+              ...items
+                .filter((i) => i.is_active)
+                .map((i) => ({
+                  value: i.id,
+                  label: `${i.name} (${i.unit})`,
+                  searchString: [i.name, i.sku, i.unit].filter(Boolean).join(" "),
+                })),
+            ]}
+          />
         </Field>
-        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_auto_auto]">
+        <div className="mt-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
           <input
-            className={inputClass}
+            className={`${inputClass} col-span-2 sm:col-span-1`}
             dir="ltr"
             value={manualCode}
             onChange={(e) => setManualCode(e.target.value)}
