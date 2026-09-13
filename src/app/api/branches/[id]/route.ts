@@ -7,6 +7,7 @@ import {
   reactivateBranch,
   updateBranch,
 } from "@/lib/branch-service";
+import { branchPatchIntent } from "@/lib/branch-patch-intent";
 
 function errorResponse(err: unknown): NextResponse {
   if (err instanceof BranchError) {
@@ -46,28 +47,16 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const editsFields =
-    body.name !== undefined ||
-    body.address !== undefined ||
-    body.phone !== undefined ||
-    body.timezone !== undefined ||
-    body.color !== undefined;
-  const togglesActive = body.isActive !== undefined;
-
-  if (togglesActive && typeof body.isActive !== "boolean") {
-    return NextResponse.json({ error: "bad_request" }, { status: 400 });
-  }
-  if (togglesActive && editsFields) {
-    return NextResponse.json({ error: "bad_request" }, { status: 400 });
-  }
-  // An empty body used to answer `{ ok: true }` having done nothing at all.
-  if (!togglesActive && !editsFields) {
-    return NextResponse.json({ error: "nothing_to_change" }, { status: 400 });
+  // Classified in one place, with its own tests — see branch-patch-intent.ts
+  // for why edits and the active toggle are never accepted together.
+  const intent = branchPatchIntent(body);
+  if (intent.kind === "bad_request" || intent.kind === "nothing_to_change") {
+    return NextResponse.json({ error: intent.kind }, { status: 400 });
   }
 
   try {
-    if (togglesActive) {
-      if (body.isActive) await reactivateBranch(session.businessId, id, session.sub);
+    if (intent.kind !== "edit") {
+      if (intent.kind === "activate") await reactivateBranch(session.businessId, id, session.sub);
       else await deactivateBranch(session.businessId, id, session.sub);
     } else {
       await updateBranch({

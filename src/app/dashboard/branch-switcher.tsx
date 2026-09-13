@@ -21,10 +21,11 @@
  *     branches, so it is short, and the previous searchable select made
  *     switching a click-then-read-then-click.
  *
- * Unlike before, it renders for a single-branch member too — as a static
- * label rather than a menu. Knowing where you are is not conditional on
- * having somewhere else to go, and a cashier fixed to one branch is exactly
- * who benefits from seeing it named.
+ * It has three shapes — a menu, a static label, or nothing at all — and which
+ * one it takes is decided by branchSwitcherMode(), where the reasoning and
+ * its tests live. In short: a member who cannot switch but belongs to a
+ * multi-branch business still needs telling which branch they are in, while a
+ * single-branch business has no such question and gets no chip.
  */
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -40,6 +41,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { branchColorStyle } from "@/lib/branch-color";
+import { branchSwitcherMode } from "@/lib/branch-switcher-mode";
 
 interface Branch {
   id: string;
@@ -141,17 +143,22 @@ export function BranchSwitcher({ compact = false }: { compact?: boolean }) {
     compact ? "w-auto max-w-32 px-2.5 sm:max-w-44 sm:px-3" : "w-full px-3",
   );
 
-  if (!state.canSwitch) {
-    // Nothing at all for a business with one branch: "which branch am I in"
-    // is not a question they have, and a permanent chip in the header would
-    // be pure clutter for what is most businesses on the platform.
-    //
-    // But a member *fixed* to one branch of a business that has several does
-    // have the question — they can be looking at North while the owner talks
-    // about Main — so they get a static, colour-coded label. It is a status,
-    // not a control: a menu whose only item is where you already are is dead.
-    if ((state.businessLocationCount ?? state.locations.length) < 2) return null;
+  // Which shape this control takes is a rule with its own tests — see
+  // branch-switcher-mode.ts for why the member's reachable count is not
+  // enough to decide it.
+  const mode = branchSwitcherMode({
+    canSwitch: state.canSwitch,
+    businessLocationCount: state.businessLocationCount,
+    accessibleCount: state.locations.length,
+  });
 
+  if (mode === "hidden") return null;
+
+  if (mode === "label") {
+    // A member fixed to one branch of a business that has several still needs
+    // telling which one — they can be looking at North while the owner talks
+    // about Main. It is a status, not a control: a menu whose only item is
+    // where you already are is dead.
     return (
       <div className={compact ? "" : "mb-3"}>
         {!compact ? (

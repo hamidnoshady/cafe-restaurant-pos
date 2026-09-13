@@ -113,14 +113,19 @@ beforeEach(async () => {
   );
   biz.id = bizRow.rows[0].id;
 
+  // Colours are set explicitly because this fixture inserts branches with raw
+  // SQL, which no production path does: createBranch() picks the next free
+  // palette entry, and migration 0149 backfilled existing rows the same way.
+  // Leaving both to the column default would give two branches the same
+  // 'slate' and misrepresent what a real two-branch business looks like.
   const main = await db.query<{ id: string }>(
-    "INSERT INTO locations (business_id, name) VALUES ($1, 'Main') RETURNING id",
+    "INSERT INTO locations (business_id, name, color) VALUES ($1, 'Main', 'slate') RETURNING id",
     [biz.id],
   );
   biz.mainLocationId = main.rows[0].id;
 
   const north = await db.query<{ id: string }>(
-    "INSERT INTO locations (business_id, name) VALUES ($1, 'North') RETURNING id",
+    "INSERT INTO locations (business_id, name, color) VALUES ($1, 'North', 'rose') RETURNING id",
     [biz.id],
   );
   biz.northLocationId = north.rows[0].id;
