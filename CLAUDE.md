@@ -658,7 +658,7 @@ and the CMS-side surface `/api/platform/*` (its own
 - **A quote in a currency this app cannot express in Rial is refused, not
   converted** at a guessed rate (`quoteToRial`). Charging a business a number
   nobody can reconcile is worse than saying the platform cannot sell that TLD.
-- **Money is integer Rial in storage and Toman on screen**, and every date on
+- **Money is integer Rial in storage and calculations, while the UI uses the business-selected unit (Toman or Rial) on screen and for inputs.** Use `useMoney()`/`formatMoney`/`formatMoneyText`; never hard-code «تومان» or «ریال», never divide by 10 in a component, and convert inputs to Rial before API writes. When the user selects Rial, all labels, inputs, totals, exports, and display text must use Rial; when Toman is selected they must use Toman. Every date on
   these screens goes through `formatJalali` — the site's billing is not exempt
   from either rule.
 

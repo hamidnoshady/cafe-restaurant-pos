@@ -63,7 +63,7 @@ const DOC_ERRORS: Record<string, string> = {
   no_items: "حداقل یک قلم لازم است.",
   invalid_line: "یکی از سندها کامل نیست؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",
   invalid_quantity: "مقدار هر قلم باید بزرگ‌تر از صفر باشد.",
-  invalid_rial: "قیمت واحد باید عدد صحیح به ریال باشد.",
+  invalid_rial: "قیمت واحد باید یک عدد صحیح معتبر باشد.",
   location_not_found: "انبار انتخاب‌شده پیدا نشد.",
   location_inactive: "این انبار غیرفعال است؛ انبار دیگری را انتخاب کنید.",
   supplier_not_found: "تأمین‌کننده انتخاب‌شده در این انبار نیست.",
@@ -135,16 +135,18 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
     [items],
   );
 
+  // Inputs are in the business display unit, while all totals and API payloads
+  // are integer Rial. Keep this conversion at the UI boundary.
   const receiptTotal = useMemo(() => {
     if (kind !== "receipt") return null;
     let total = 0;
     for (const line of lines) {
       const qty = Number(line.quantity);
       const cost = Number(line.unitCost);
-      if (Number.isFinite(qty) && Number.isFinite(cost)) total += qty * cost;
+      if (Number.isFinite(qty) && Number.isFinite(cost)) total += qty * money.fromInput(cost);
     }
     return total;
-  }, [kind, lines]);
+  }, [kind, lines, money]);
 
   function updateLine(key: string, patch: Partial<DocLine>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
@@ -166,7 +168,8 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
       lines: lines.map((line) => ({
         inventoryItemId: line.inventoryItemId,
         quantity: line.quantity,
-        unitCost: kind === "receipt" ? line.unitCost || "0" : "0",
+        unitCost:
+          kind === "receipt" ? money.parseText(line.unitCost || "0") : "0",
       })),
     };
     setBusy(true);
@@ -254,7 +257,7 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
           <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(110px,1fr)_minmax(130px,1fr)_2.75rem] md:items-center md:gap-2 text-xs font-medium text-stone-500 dark:text-stone-400">
             <span>قلم انبار</span>
             <span>مقدار</span>
-            {kind === "receipt" ? <span>قیمت واحد (ریال)</span> : <span>ارزش (محاسبه‌شده)</span>}
+            {kind === "receipt" ? <span>قیمت واحد ({money.unitLabel})</span> : <span>ارزش (محاسبه‌شده)</span>}
             <span className="sr-only">حذف</span>
           </div>
           {items === null ? (
@@ -285,7 +288,7 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
                 </label>
                 {kind === "receipt" ? (
                   <label className="grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400">
-                    <span className="md:sr-only">قیمت واحد (ریال)</span>
+                    <span className="md:sr-only">قیمت واحد ({money.unitLabel})</span>
                     <PersianNumberInput
                       className={inputClass}
                       dir="ltr"
@@ -293,7 +296,7 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
                       value={line.unitCost}
                       onChange={(e) => updateLine(line.key, { unitCost: e.target.value })}
                       placeholder="۰"
-                      aria-label="قیمت واحد به ریال"
+                      aria-label={`قیمت واحد به ${money.unitLabel}`}
                     />
                   </label>
                 ) : (

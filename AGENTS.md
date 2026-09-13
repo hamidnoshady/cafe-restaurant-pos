@@ -85,7 +85,7 @@ building or restyling any screen. The short form:
   `rounded-xl` pills, `rounded-lg` controls.
 - **Amber = selection** (active nav/tabs/chips, warnings); **teal = brand** (filled buttons,
   links) and the **form focus ring**; emerald/red only for success/danger. Numbers: Persian
-  digits are display-only; money is Toman text via `formatMoneyText`.
+  digits are display-only; money uses the business-selected display unit via `formatMoneyText`/`useMoney` (Toman or Rial). Never hard-code a user-facing currency label or divide by 10 directly. Storage, calculations, journal lines, and internal API contracts remain integer Rial; every user input must be converted from the selected unit at the UI/API boundary and every displayed amount must be formatted with the selected unit. If the user selects Rial, inputs, labels, totals, exports, and display text must say Rial; if Toman, they must say Toman.
 - Hovers are quiet washes (`hover:bg-stone-50`); motion is 150–650 ms ease-out, skeletons
   instead of spinners, and `prefers-reduced-motion` is respected.
 - When prose and a screenshot disagree, the screenshot wins.
