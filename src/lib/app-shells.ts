@@ -58,6 +58,15 @@ export const APP_SHELLS: readonly AppShellDef[] = [
     description: "دفتر کل، اسناد، اشخاص، دریافت و پرداخت و گزارش‌های مالی.",
   },
   {
+    // Price lists have the deliberately short public URL `/products/prices`,
+    // but remain a room in the Accounting workspace rather than falling back
+    // to the legacy dashboard sidebar.
+    app: "accounting",
+    prefix: "/products",
+    label: "محصولات",
+    description: "فهرست و بروزرسانی قیمت محصولات.",
+  },
+  {
     app: "growth",
     prefix: "/growth",
     label: "رشد و بازاریابی",

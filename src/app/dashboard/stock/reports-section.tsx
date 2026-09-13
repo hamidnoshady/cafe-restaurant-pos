@@ -2,7 +2,7 @@
 
 /**
  * Phase 42b — the «گزارش» tab: the low-stock and dead-stock report cards,
- * extracted unchanged from the old one-page /dashboard/stock (Phase 27 Wave
+ * extracted unchanged from the old one-page /accounting/stock (Phase 27 Wave
  * 8's reports) into the warehouse module's «اقلام و عملیات» group.
  */
 import { useCallback, useEffect, useState } from "react";
