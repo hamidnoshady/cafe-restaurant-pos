@@ -228,7 +228,7 @@ export function ChatBubble({
         ) : null}
 
         {!isUser && message.content && !busy ? (
-          <div className="flex items-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="flex items-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <button
               type="button"
               onClick={() => void copyContent()}
