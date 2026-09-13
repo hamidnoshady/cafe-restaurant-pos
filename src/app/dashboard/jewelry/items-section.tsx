@@ -310,7 +310,7 @@ function ItemRow({
             // catalogue; it deliberately no longer offers a second, parallel
             // way to sell one piece straight to the ledger.
             <Link
-              href="/accounting/pos"
+              href="/dashboard/pos"
               className="inline-flex min-h-[44px] items-center rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-100 dark:bg-amber-500/20 px-3 text-xs font-semibold text-amber-950 dark:text-amber-200 transition-colors hover:bg-amber-200 dark:hover:bg-amber-500/25"
             >
               فروش در فاکتور

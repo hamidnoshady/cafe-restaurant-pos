@@ -4,7 +4,7 @@
  * Accounting → «گزارش‌های مالی».
  *
  * The financial statements themselves are built by the business's reports
- * workspace (`/accounting/reports`), which is a *platform* surface shared with
+ * workspace (`/dashboard/reports`), which is a *platform* surface shared with
  * the sales and operations reporting. What was missing was an entrance to them
  * from inside Accounting: an accountant looking for a trial balance had to
  * leave the app, find «گزارش‌ها» in the business nav and know which tab held
@@ -71,7 +71,7 @@ const PLATFORM_REPORTS: ReportLink[] = [
     label: "گزارش‌های کسب‌وکار (پلتفرم)",
     description:
       "صورت سود و زیان، ترازنامه و گزارش‌ساز در بخش گزارش‌های کسب‌وکار قرار دارد — بیرون از برنامهٔ حسابداری.",
-    href: "/accounting/reports",
+    href: "/dashboard/reports",
     icon: BarChart3Icon,
     external: true,
   },

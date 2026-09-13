@@ -104,7 +104,7 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   ["/dashboard/floor", "reservations"],
   ["/dashboard/waiter", "reservations"],
   ["/dashboard/delivery", "delivery"],
-  ["/accounting/reports", "reporting"],
+  ["/dashboard/reports", "reporting"],
   ["/dashboard/branches", "multi_location"],
   ["/dashboard/locations", "offline_mode"],
   ["/dashboard/backup", "backup"],

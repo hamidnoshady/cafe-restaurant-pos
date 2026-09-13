@@ -30,8 +30,8 @@ export function flattenNav<T extends NavNode>(items: T[]): (T & { href: string }
 /**
  * Which of `items` is the page you are on — the *longest* matching href.
  *
- * "First match wins" is what made the mobile header call «/products/prices»
- * by the name of «/accounting/products», and what lit two tabs of the bottom bar
+ * "First match wins" is what made the mobile header call «/dashboard/products/prices»
+ * by the name of «/dashboard/products», and what lit two tabs of the bottom bar
  * at once when a member pinned both a section and one of its pages. The longest
  * match is the most specific one, which is always the answer.
  */

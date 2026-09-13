@@ -2,7 +2,7 @@
 
 /**
  * Phase 42b — the «حواله بازگشت» tab: the supplier-return form, extracted
- * unchanged from the old one-page /accounting/stock (Phase 27 Wave 8's retail
+ * unchanged from the old one-page /dashboard/stock (Phase 27 Wave 8's retail
  * supplier returns) into the warehouse module's «اقلام و عملیات» group. The
  * form's fields and POST payload are byte-for-byte the originals; only the
  * data loading moved into the section. Kept separate from the warehouse

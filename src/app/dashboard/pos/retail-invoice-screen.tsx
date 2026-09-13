@@ -7,7 +7,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * Phase 25 Wave 3 — the retail industries' selling screen.
  *
  * The café POS sells `menu_items` from a category grid; a jewellery shop has
- * none, so `/accounting/pos` branches on `salesModel` (see page.tsx) and lands
+ * none, so `/dashboard/pos` branches on `salesModel` (see page.tsx) and lands
  * here instead. What a shop counter does is build up a few priced lines for one
  * customer and settle them together — so this is a cart over the industry's own
  * catalogue, and it posts one invoice.

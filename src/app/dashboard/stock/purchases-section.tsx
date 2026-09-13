@@ -2,7 +2,7 @@
 
 /**
  * Phase 42b — the «خرید» tab: the purchase-receiving form and the recent
- * purchases list, extracted unchanged from the old one-page /accounting/stock
+ * purchases list, extracted unchanged from the old one-page /dashboard/stock
  * (Phase 27 Wave 8's retail purchasing) into the warehouse module's «اقلام و
  * عملیات» group. The form's fields, line building and POST payload are
  * byte-for-byte the originals; only the data loading moved into the section.
