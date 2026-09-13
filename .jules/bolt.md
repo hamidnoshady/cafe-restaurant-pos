@@ -14,3 +14,8 @@
 ## 2026-09-11 - Documenting useDeferredValue Intentions
 **Learning:** When using `useDeferredValue` and a precomputed search index as a React list view performance optimization, missing comments on these mechanisms can be rejected in code review because it violates 'Bolt' persona rules about code documentation.
 **Action:** Always add inline comments explaining the `useDeferredValue` deferral and the O(N) pre-computation index optimizations directly in the code to ensure intent is clear.
+## 2024-09-12 - O(N) filtering inside list rendering
+
+**Learning:** When a list view (like the POS screen products list) calls a seemingly lightweight helper function (`attachedGroups`) that filters arrays under the hood on every item mapping iteration, it causes significant typing delay in search bars due to repeated O(N * M) calculations on the main thread.
+
+**Action:** Identify and lift expensive O(N) array filtering operations from inside `.map()` render loops by using `useMemo` to construct a pre-computed data structure (like a `Map`) keyed by the entity ID, allowing the render loop to perform fast O(1) lookups instead.

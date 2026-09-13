@@ -177,7 +177,11 @@ interface CheckoutResult {
   lines: CartUiLine[];
 }
 
-export function PosScreen({ initialTableId }: { initialTableId?: string | null }) {
+export function PosScreen({
+  initialTableId,
+}: {
+  initialTableId?: string | null;
+}) {
   const [menu, setMenu] = useState<MenuData | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -238,7 +242,8 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   // The ways this business takes money, in its own order — no longer three
   // hard-coded buttons. `paymentDraft` is what the cashier has chosen,
   // including a split across several of them (src/lib/payment-draft.ts).
-  const { methods: paymentMethods, loaded: paymentMethodsLoaded } = usePaymentMethods();
+  const { methods: paymentMethods, loaded: paymentMethodsLoaded } =
+    usePaymentMethods();
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() =>
     emptyPaymentDraft([]),
   );
@@ -396,11 +401,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   // reach the product search behind it.
   const hasOpenOverlay = Boolean(
     pickerItem ||
-      editingLineKey ||
-      reviewOpen ||
-      cartSheetOpen ||
-      result ||
-      tablePickerFor,
+    editingLineKey ||
+    reviewOpen ||
+    cartSheetOpen ||
+    result ||
+    tablePickerFor,
   );
   useEffect(() => {
     function handleGlobalShortcut(event: KeyboardEvent) {
@@ -449,22 +454,61 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
   }, [activeCategories, cart.length, checkoutIntent, hasOpenOverlay]);
 
+  // ⚡ Bolt: Extract grouping logic into a useMemo map to prevent O(N * M) operations
+  // inside the visibleProducts rendering loop. This caches the modifier groups per item
+  // so the lookup is O(1) during render instead of filtering three arrays per product.
+  const attachedGroupsMap = useMemo(() => {
+    const map = new Map<
+      string,
+      (ModifierGroup & { modifiers: Modifier[] })[]
+    >();
+    if (!menu) return map;
+
+    // First group active modifiers by group_id
+    const modifiersByGroup = new Map<string, Modifier[]>();
+    for (const m of menu.modifiers) {
+      if (!m.is_active) continue;
+      let arr = modifiersByGroup.get(m.group_id);
+      if (!arr) {
+        arr = [];
+        modifiersByGroup.set(m.group_id, arr);
+      }
+      arr.push(m);
+    }
+
+    // Build the resolved groups keyed by group_id
+    const resolvedGroupsById = new Map<
+      string,
+      ModifierGroup & { modifiers: Modifier[] }
+    >();
+    for (const g of menu.modifierGroups) {
+      resolvedGroupsById.set(g.id, {
+        ...g,
+        modifiers: modifiersByGroup.get(g.id) ?? [],
+      });
+    }
+
+    // Finally, group those resolved groups by item_id
+    for (const link of menu.itemModifierGroups) {
+      const resolved = resolvedGroupsById.get(link.modifier_group_id);
+      if (!resolved) continue;
+
+      let arr = map.get(link.menu_item_id);
+      if (!arr) {
+        arr = [];
+        map.set(link.menu_item_id, arr);
+      }
+      arr.push(resolved);
+    }
+
+    return map;
+  }, [menu]);
+
   const attachedGroups = useCallback(
     (itemId: string): (ModifierGroup & { modifiers: Modifier[] })[] => {
-      if (!menu) return [];
-      const groupIds = menu.itemModifierGroups
-        .filter((l) => l.menu_item_id === itemId)
-        .map((l) => l.modifier_group_id);
-      return menu.modifierGroups
-        .filter((g) => groupIds.includes(g.id))
-        .map((g) => ({
-          ...g,
-          modifiers: menu.modifiers.filter(
-            (m) => m.group_id === g.id && m.is_active,
-          ),
-        }));
+      return attachedGroupsMap.get(itemId) ?? [];
     },
-    [menu],
+    [attachedGroupsMap],
   );
 
   function categoryTaxRate(categoryId: string | null): number {
@@ -638,7 +682,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             type: discountType,
             value:
               discountType === "amount"
-                ? money.fromInput(Math.max(0, Math.round(Number(discountValue) || 0)))
+                ? money.fromInput(
+                    Math.max(0, Math.round(Number(discountValue) || 0)),
+                  )
                 : Number(discountValue) || 0,
           }
         : { type: null },
@@ -706,7 +752,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
     orderType === "delivery"
       ? money.fromInput(Math.max(0, Math.round(Number(deliveryFee) || 0)))
       : 0;
-  const tipNum = money.fromInput(Math.max(0, Math.round(Number(tipInput) || 0)));
+  const tipNum = money.fromInput(
+    Math.max(0, Math.round(Number(tipInput) || 0)),
+  );
   const totals = useMemo(
     () => computeOrderTotals(cartLines, discount, feeNum),
     [cartLines, discount, feeNum],
@@ -812,7 +860,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             type: discountType,
             value:
               discountType === "amount"
-                ? money.fromInput(Math.max(0, Math.round(Number(discountValue) || 0)))
+                ? money.fromInput(
+                    Math.max(0, Math.round(Number(discountValue) || 0)),
+                  )
                 : Number(discountValue) || 0,
           }
         : undefined,
@@ -1093,7 +1143,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         simply runs down the page and the page scrolls, the way every other
         screen does; from `md` up the two-column till is unchanged.
       */}
-      <div className={`flex flex-col overflow-hidden ${cardClass} md:min-h-0 md:flex-1`}>
+      <div
+        className={`flex flex-col overflow-hidden ${cardClass} md:min-h-0 md:flex-1`}
+      >
         <div className="border-b border-border/80 p-3 md:p-4">
           <div className="mb-3 hidden flex-wrap items-center gap-2 md:flex">
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1164,78 +1216,78 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           </label>
           <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
-            <SearchIcon
-              className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <input
-              ref={searchInputRef}
-              id="pos-product-search"
-              className={
-                inputClass +
-                " min-h-12 border-border/80 bg-muted ps-10 shadow-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-500/25 dark:focus-visible:ring-amber-400/45"
-              }
-              value={searchQuery}
-              onChange={(event) => {
-                setSearchQuery(event.target.value);
-                setSearchActiveIndex(0);
-              }}
-              onKeyDown={(event) => {
-                if (
-                  visibleProducts.length === 0 ||
-                  event.nativeEvent.isComposing
-                )
-                  return;
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  const offset = event.key === "ArrowDown" ? 1 : -1;
-                  setSearchActiveIndex(
-                    (index) =>
-                      (index + offset + visibleProducts.length) %
-                      visibleProducts.length,
-                  );
+              <SearchIcon
+                className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <input
+                ref={searchInputRef}
+                id="pos-product-search"
+                className={
+                  inputClass +
+                  " min-h-12 border-border/80 bg-muted ps-10 shadow-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-500/25 dark:focus-visible:ring-amber-400/45"
                 }
-                if (event.key === "Enter") {
-                  event.preventDefault();
-
-                  // ⚡ Bolt: Handle fast-input race conditions (like barcode scanners)
-                  // If the user hit enter before the deferred query caught up, we must compute
-                  // the results synchronously on the immediate query so we don't drop the scan.
-                  let currentResults = visibleProducts;
-                  if (searchQuery !== deferredSearchQuery) {
-                    const immediateSearchResults = searchPosMenuItems({
-                      categories: menu?.categories ?? [],
-                      // ⚡ Bolt: Re-use precomputed items array
-                      items: posItems,
-                      selectedCategoryId: activeCategory,
-                      query: searchQuery,
-                    });
-
-                    currentResults = immediateSearchResults.flatMap(
-                      (result) => {
-                        // ⚡ Bolt: Re-use precomputed items map
-                        const item = itemsById.get(result.id);
-                        return item
-                          ? [{ item, categoryLabel: result.categoryLabel }]
-                          : [];
-                      },
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setSearchActiveIndex(0);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    visibleProducts.length === 0 ||
+                    event.nativeEvent.isComposing
+                  )
+                    return;
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    const offset = event.key === "ArrowDown" ? 1 : -1;
+                    setSearchActiveIndex(
+                      (index) =>
+                        (index + offset + visibleProducts.length) %
+                        visibleProducts.length,
                     );
                   }
+                  if (event.key === "Enter") {
+                    event.preventDefault();
 
-                  const selected = currentResults[searchActiveIndex];
-                  if (selected) pickItem(selected.item);
+                    // ⚡ Bolt: Handle fast-input race conditions (like barcode scanners)
+                    // If the user hit enter before the deferred query caught up, we must compute
+                    // the results synchronously on the immediate query so we don't drop the scan.
+                    let currentResults = visibleProducts;
+                    if (searchQuery !== deferredSearchQuery) {
+                      const immediateSearchResults = searchPosMenuItems({
+                        categories: menu?.categories ?? [],
+                        // ⚡ Bolt: Re-use precomputed items array
+                        items: posItems,
+                        selectedCategoryId: activeCategory,
+                        query: searchQuery,
+                      });
+
+                      currentResults = immediateSearchResults.flatMap(
+                        (result) => {
+                          // ⚡ Bolt: Re-use precomputed items map
+                          const item = itemsById.get(result.id);
+                          return item
+                            ? [{ item, categoryLabel: result.categoryLabel }]
+                            : [];
+                        },
+                      );
+                    }
+
+                    const selected = currentResults[searchActiveIndex];
+                    if (selected) pickItem(selected.item);
+                  }
+                }}
+                placeholder="جستجوی محصول (/)"
+                role="combobox"
+                aria-expanded={visibleProducts.length > 0}
+                aria-controls="pos-product-results"
+                aria-activedescendant={
+                  visibleProducts[searchActiveIndex]
+                    ? `pos-product-${visibleProducts[searchActiveIndex].item.id}`
+                    : undefined
                 }
-              }}
-              placeholder="جستجوی محصول (/)"
-              role="combobox"
-              aria-expanded={visibleProducts.length > 0}
-              aria-controls="pos-product-results"
-              aria-activedescendant={
-                visibleProducts[searchActiveIndex]
-                  ? `pos-product-${visibleProducts[searchActiveIndex].item.id}`
-                  : undefined
-              }
-            />
+              />
             </div>
             {/* Mobile: the top bar above is desktop-only, so the learning icon
                 rides beside the search row on phones. */}
@@ -1297,7 +1349,8 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             // picker. Otherwise + adds without add-ons, even when a customised
             // sibling is already in the cart.
             const plusOpensPicker = plusDecision.type === "configure";
-            const variantCount = inCart > 0 ? countLinesForItem(cart, item.id) : 0;
+            const variantCount =
+              inCart > 0 ? countLinesForItem(cart, item.id) : 0;
             const active = index === searchActiveIndex;
             return (
               /*
@@ -1365,7 +1418,10 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   aria-label={"تعداد، افزودنی و یادداشت برای " + item.name}
                   title="تعداد، افزودنی و یادداشت"
                 >
-                  <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
+                  <SlidersHorizontalIcon
+                    className="size-4"
+                    aria-hidden="true"
+                  />
                 </button>
                 {inCart > 0 ? (
                   <div className="flex items-center justify-between gap-1 border-t border-amber-200 dark:border-amber-500/30 bg-white/70 px-1.5 py-1">
@@ -1374,8 +1430,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       onClick={() => stepTileQuantity(item, -1)}
                       className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
                       aria-label={
-                        "کاهش تعداد آخرین " + item.name +
-                        (variantCount > 1 ? " (تنظیمات افزودنی در سبد خرید)" : "")
+                        "کاهش تعداد آخرین " +
+                        item.name +
+                        (variantCount > 1
+                          ? " (تنظیمات افزودنی در سبد خرید)"
+                          : "")
                       }
                     >
                       <MinusIcon className="size-4" aria-hidden="true" />
@@ -1391,7 +1450,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       onClick={() => stepTileQuantity(item, 1)}
                       className={
                         "flex size-11 items-center justify-center rounded-lg text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 " +
-                        (plusOpensPicker ? "ring-1 ring-amber-500/50 dark:ring-amber-400/45" : "")
+                        (plusOpensPicker
+                          ? "ring-1 ring-amber-500/50 dark:ring-amber-400/45"
+                          : "")
                       }
                       aria-label={
                         plusOpensPicker
@@ -1407,7 +1468,10 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       }
                     >
                       {plusOpensPicker ? (
-                        <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
+                        <SlidersHorizontalIcon
+                          className="size-4"
+                          aria-hidden="true"
+                        />
                       ) : (
                         <PlusIcon className="size-4" aria-hidden="true" />
                       )}
@@ -1440,7 +1504,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         scroll. `min-h-40` on the list is its floor, and the column itself
         scrolls once the three sections together outgrow the viewport.
       */}
-      <div className={`hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto ${cardClass} md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]`}>
+      <div
+        className={`hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto ${cardClass} md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]`}
+      >
         <div className="shrink-0 border-b border-border/80 p-4">
           <ErrorBox>{error}</ErrorBox>
           <OrderTypeTabs value={orderType} onChange={changeOrderType} />
@@ -1452,11 +1518,16 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 occupied={isTableOccupied(selectedTable?.status)}
                 onPick={() => setTablePickerFor("select")}
               />
-              <label className="mt-3 block text-xs font-semibold text-muted-foreground" htmlFor="pos-guest-count">
+              <label
+                className="mt-3 block text-xs font-semibold text-muted-foreground"
+                htmlFor="pos-guest-count"
+              >
                 تعداد مهمان
                 <PersianNumberInput
                   id="pos-guest-count"
-                  className={inputClass + " mt-1 min-h-11 border-border/80 bg-muted"}
+                  className={
+                    inputClass + " mt-1 min-h-11 border-border/80 bg-muted"
+                  }
                   dir="ltr"
                   inputMode="numeric"
                   value={guestCount}
@@ -1494,8 +1565,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   <input
                     id="pos-delivery-phone"
                     className={
-                      inputClass +
-                      " mt-1 min-h-11 border-border/80 bg-muted"
+                      inputClass + " mt-1 min-h-11 border-border/80 bg-muted"
                     }
                     dir="ltr"
                     inputMode="tel"
@@ -1512,8 +1582,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   <PersianNumberInput
                     id="pos-delivery-fee"
                     className={
-                      inputClass +
-                      " mt-1 min-h-11 border-border/80 bg-muted"
+                      inputClass + " mt-1 min-h-11 border-border/80 bg-muted"
                     }
                     dir="ltr"
                     inputMode="numeric"
@@ -1613,7 +1682,13 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 inputMode={discountType === "percent" ? "decimal" : "numeric"}
                 value={discountValue}
                 onChange={(e) => setDiscountValue(e.target.value)}
-                placeholder={discountType === "percent" ? "درصد" : money.unit === "rial" ? "ریال" : "تومان"}
+                placeholder={
+                  discountType === "percent"
+                    ? "درصد"
+                    : money.unit === "rial"
+                      ? "ریال"
+                      : "تومان"
+                }
               />
             ) : null}
           </div>
@@ -1623,7 +1698,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             {cartAddOnTotal !== 0 ? (
               <Row
                 label="از این مبلغ، افزودنی‌ها"
-                value={formatModifierDelta(cartAddOnTotal, { unit: money.unit })}
+                value={formatModifierDelta(cartAddOnTotal, {
+                  unit: money.unit,
+                })}
               />
             ) : null}
             {totals.discount > 0 ? (
@@ -1670,7 +1747,10 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         viewport, which is the thing it is supposed to be attached to, and
         every engine measures it the same way.
       */}
-      <div data-bottom-dock className="fixed inset-x-2 bottom-[var(--app-bottom-nav)] z-30 md:hidden">
+      <div
+        data-bottom-dock
+        className="fixed inset-x-2 bottom-[var(--app-bottom-nav)] z-30 md:hidden"
+      >
         <button
           type="button"
           onClick={() => setCartSheetOpen(true)}
@@ -1726,11 +1806,16 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     occupied={isTableOccupied(selectedTable?.status)}
                     onPick={() => setTablePickerFor("select")}
                   />
-                  <label className="mt-3 block text-xs font-semibold text-muted-foreground" htmlFor="pos-mobile-guest-count">
+                  <label
+                    className="mt-3 block text-xs font-semibold text-muted-foreground"
+                    htmlFor="pos-mobile-guest-count"
+                  >
                     تعداد مهمان
                     <PersianNumberInput
                       id="pos-mobile-guest-count"
-                      className={inputClass + " mt-1 min-h-11 border-border/80 bg-muted"}
+                      className={
+                        inputClass + " mt-1 min-h-11 border-border/80 bg-muted"
+                      }
                       dir="ltr"
                       inputMode="numeric"
                       value={guestCount}
@@ -1805,8 +1890,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     پیک
                     <SearchableSelect
                       className={
-                        inputClass +
-                        " mt-1 min-h-11 border-border/80 bg-muted"
+                        inputClass + " mt-1 min-h-11 border-border/80 bg-muted"
                       }
                       value={deliveryCourierId}
                       onChange={setDeliveryCourierId}
@@ -1874,10 +1958,18 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   <PersianNumberInput
                     className={inputClass}
                     dir="ltr"
-                    inputMode={discountType === "percent" ? "decimal" : "numeric"}
+                    inputMode={
+                      discountType === "percent" ? "decimal" : "numeric"
+                    }
                     value={discountValue}
                     onChange={(event) => setDiscountValue(event.target.value)}
-                    placeholder={discountType === "percent" ? "درصد" : money.unit === "rial" ? "ریال" : "تومان"}
+                    placeholder={
+                      discountType === "percent"
+                        ? "درصد"
+                        : money.unit === "rial"
+                          ? "ریال"
+                          : "تومان"
+                    }
                     aria-label="مقدار تخفیف"
                   />
                 ) : null}
@@ -1885,14 +1977,18 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               {cartAddOnTotal !== 0 ? (
                 <Row
                   label="از این مبلغ، افزودنی‌ها"
-                  value={formatModifierDelta(cartAddOnTotal, { unit: money.unit })}
+                  value={formatModifierDelta(cartAddOnTotal, {
+                    unit: money.unit,
+                  })}
                 />
               ) : null}
             </div>
           </div>
           <div className="shrink-0 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-xs font-bold text-muted-foreground">جمع کل</span>
+              <span className="text-xs font-bold text-muted-foreground">
+                جمع کل
+              </span>
               <span className="text-base font-bold text-foreground">
                 {money.format(totals.total)}
               </span>
@@ -1973,7 +2069,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 {cartAddOnTotal !== 0 ? (
                   <Row
                     label="افزودنی‌ها"
-                    value={formatModifierDelta(cartAddOnTotal, { unit: money.unit })}
+                    value={formatModifierDelta(cartAddOnTotal, {
+                      unit: money.unit,
+                    })}
                   />
                 ) : null}
                 <Row
@@ -2176,7 +2274,9 @@ function CheckoutLineRow({ line }: { line: CartUiLine }) {
         className="mt-2"
       />
       {line.note ? (
-        <p className="mt-2 text-[11px] text-muted-foreground">یادداشت: {line.note}</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          یادداشت: {line.note}
+        </p>
       ) : null}
     </li>
   );
@@ -2298,8 +2398,13 @@ function PosLoadingState({
 }) {
   if (!loading && error) {
     return (
-      <section className={`mx-auto flex min-h-[55dvh] max-w-md flex-col items-center justify-center ${cardClass} p-6 text-center`}>
-        <WifiOffIcon className="size-7 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+      <section
+        className={`mx-auto flex min-h-[55dvh] max-w-md flex-col items-center justify-center ${cardClass} p-6 text-center`}
+      >
+        <WifiOffIcon
+          className="size-7 text-amber-700 dark:text-amber-300"
+          aria-hidden="true"
+        />
         <h1 className="mt-4 text-base font-bold text-foreground">
           صندوق در دسترس نیست
         </h1>
@@ -2321,7 +2426,9 @@ function PosLoadingState({
       aria-busy="true"
       aria-label="در حال بارگذاری صندوق"
     >
-      <div className={`grid gap-3 ${cardClass} p-3 md:grid-cols-[0.8fr_1.2fr_0.7fr]`}>
+      <div
+        className={`grid gap-3 ${cardClass} p-3 md:grid-cols-[0.8fr_1.2fr_0.7fr]`}
+      >
         <div className="ops-skeleton h-12 rounded-xl" />
         <div className="ops-skeleton h-12 rounded-xl" />
         <div className="ops-skeleton h-12 rounded-xl" />
@@ -2342,7 +2449,9 @@ function PosLoadingState({
             ))}
           </div>
         </section>
-        <aside className={`hidden w-[23rem] shrink-0 ${cardClass} p-4 md:block`}>
+        <aside
+          className={`hidden w-[23rem] shrink-0 ${cardClass} p-4 md:block`}
+        >
           <div className="ops-skeleton h-7 w-28 rounded-lg" />
           <div className="mt-4 grid grid-cols-3 gap-2">
             {[1, 2, 3].map((item) => (
@@ -2482,7 +2591,9 @@ function TableField({
 }) {
   return (
     <div className="mt-3">
-      <span className="block text-xs font-semibold text-muted-foreground">میز</span>
+      <span className="block text-xs font-semibold text-muted-foreground">
+        میز
+      </span>
       <button
         type="button"
         onClick={onPick}
