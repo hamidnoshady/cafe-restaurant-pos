@@ -80,7 +80,7 @@ const ADDABLE: BlockType[] = [
 ];
 
 function newBlock(type: BlockType): TemplateBlock {
-  const base: TemplateBlock = { id: `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, type, visible: true };
+  const base: TemplateBlock = { id: crypto.randomUUID(), type, visible: true };
   if (type === "items") return { ...base, columns: ["name", "qty", "total"] };
   if (type === "spacer") return { ...base, heightMm: 4 };
   if (type === "logo") return { ...base, align: "center", logoHeightMm: 14 };

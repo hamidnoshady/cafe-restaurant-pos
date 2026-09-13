@@ -43,3 +43,7 @@
 **Vulnerability:** Rate limiter `clientIpFrom` index calculation had an off-by-one error `parts.length - 1 - trustedHops`, resolving to the IP before the actual client IP.
 **Learning:** When navigating `X-Forwarded-For` from right-to-left based on a `trustedHops` count, the correct index of the first untrusted IP is `parts.length - trustedHops`. Off-by-one errors here mean the system trusts an attacker-provided proxy IP instead of locking onto the true client, effectively granting IP spoofing capabilities even when `trustedHops` is correctly configured.
 **Prevention:** When skipping N trusted proxies in `X-Forwarded-For` arrays, index by `length - N` to find the last untrusted origin.
+## 2025-03-01 - Secure Random ID Generation
+**Vulnerability:** Weak random number generation using `Math.random()` for generating identifiers in the print template designer.
+**Learning:** `Math.random()` does not provide cryptographically secure entropy, making identifiers predictable and increasing the risk of ID collisions in concurrent usage or loops.
+**Prevention:** Always use `crypto.randomUUID()` for string identifiers instead of `Math.random()`.
