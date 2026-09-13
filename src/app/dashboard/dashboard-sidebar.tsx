@@ -715,6 +715,23 @@ function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) 
           <SidebarTrigger className="hidden text-muted-foreground md:inline-flex" />
         </div>
       </div>
+      {/*
+        The branch control sits here, directly under the business name, rather
+        than at the bottom of the rail where it used to live among the
+        sign-out/lock/shift buttons. Which branch you are working in is
+        context for everything on screen — the same class of information as
+        *which business* — not an account action, and at the foot of a long
+        scrolling rail it was both hard to find and easy to never notice.
+        Colour-coded, so the answer arrives before it is read (see
+        branch-switcher.tsx).
+
+        Hidden when the rail is collapsed to icons: the trigger needs its name
+        to be useful, and the branch colour still shows on the mobile header
+        and on the POS/overview page headers.
+      */}
+      <div className="mt-3 group-data-[state=collapsed]/sidebar:hidden">
+        <BranchSwitcher compact />
+      </div>
     </SidebarHeader>
   );
 }
@@ -832,7 +849,10 @@ function DashboardSidebarFooter({
   return (
     <SidebarFooter className="border-border/80 bg-card group-data-[state=collapsed]/sidebar:p-2">
       <div className="space-y-2 group-data-[state=collapsed]/sidebar:hidden">
-        <BranchSwitcher />
+        {/* The branch switcher used to be here. It moved to the rail's header,
+            beside the business name: it answers "where am I working", which is
+            context for the whole screen rather than one of the account actions
+            it was sitting among. */}
         {/* #541's user menu owns the member's identity and the way out. It is
             kept as the one identity control; the truncation below is this
             branch's fix, since a long name used to push the chevron out of the
@@ -986,6 +1006,10 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
           <span className="truncate">{today}</span>
         </p>
       </div>
+      {/* On a phone the rail is behind the hamburger, so without this the
+          active branch was invisible on every screen until the drawer was
+          opened — the one place a mis-set branch does the most damage. */}
+      <BranchSwitcher compact />
       <CreditBadge />
       <span
         className="flex min-h-11 min-w-8 items-center justify-center"

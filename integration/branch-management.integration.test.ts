@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import { BRANCH_COLORS } from "../src/lib/branch-color";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -315,6 +316,298 @@ describe("branch lifecycle", () => {
       );
       expect(resolved?.id).toBe(biz.mainLocationId);
     });
+  });
+
+  it("refuses a second branch whose name only differs in digit script or spacing", async () => {
+    await expect(
+      asBusiness(biz.id, () =>
+        branchService.createBranch({ businessId: biz.id, name: "  Main ", actorId: null }),
+      ),
+    ).rejects.toMatchObject({ message: "branch_name_taken", status: 409 });
+
+    await asBusiness(biz.id, () =>
+      branchService.createBranch({ businessId: biz.id, name: "شعبه ۲", actorId: null }),
+    );
+    await expect(
+      asBusiness(biz.id, () =>
+        branchService.createBranch({ businessId: biz.id, name: "شعبه 2", actorId: null }),
+      ),
+    ).rejects.toMatchObject({ message: "branch_name_taken" });
+  });
+
+  it("refuses a timezone Postgres could not bucket a business day by", async () => {
+    await expect(
+      asBusiness(biz.id, () =>
+        branchService.createBranch({
+          businessId: biz.id,
+          name: "Bad Zone",
+          timezone: "Mars/Olympus",
+          actorId: null,
+        }),
+      ),
+    ).rejects.toMatchObject({ message: "invalid_timezone", status: 400 });
+
+    // Nothing was written, so no branch can be left in a state where every
+    // report for it raises inside app_business_date().
+    const { rows } = await db.query("SELECT 1 FROM locations WHERE name = 'Bad Zone'");
+    expect(rows).toHaveLength(0);
+  });
+
+  it("renames, re-addresses and re-zones a branch — and refuses a blank rename", async () => {
+    await asBusiness(biz.id, () =>
+      branchService.updateBranch({
+        businessId: biz.id,
+        locationId: biz.northLocationId,
+        actorId: null,
+        name: "  North   Star ",
+        address: " خیابان ولیعصر ",
+        timezone: "Asia/Dubai",
+      }),
+    );
+
+    const { rows } = await db.query<{ name: string; address: string; timezone: string }>(
+      "SELECT name, address, timezone FROM locations WHERE id = $1",
+      [biz.northLocationId],
+    );
+    expect(rows[0]).toEqual({
+      name: "North Star",
+      address: "خیابان ولیعصر",
+      timezone: "Asia/Dubai",
+    });
+
+    // A whitespace-only rename used to be folded into coalesce() and reported
+    // as success while changing nothing.
+    await expect(
+      asBusiness(biz.id, () =>
+        branchService.updateBranch({
+          businessId: biz.id,
+          locationId: biz.northLocationId,
+          actorId: null,
+          name: "   ",
+        }),
+      ),
+    ).rejects.toMatchObject({ message: "missing_fields", status: 400 });
+
+    const after = await db.query<{ name: string }>("SELECT name FROM locations WHERE id = $1", [
+      biz.northLocationId,
+    ]);
+    expect(after.rows[0].name).toBe("North Star");
+  });
+
+  it("refuses a rename onto another branch's name, but allows a branch to keep its own", async () => {
+    await expect(
+      asBusiness(biz.id, () =>
+        branchService.updateBranch({
+          businessId: biz.id,
+          locationId: biz.northLocationId,
+          actorId: null,
+          name: "Main",
+        }),
+      ),
+    ).rejects.toMatchObject({ message: "branch_name_taken", status: 409 });
+
+    // Re-saving a branch under its own name is an edit of the other fields,
+    // not a duplicate.
+    await asBusiness(biz.id, () =>
+      branchService.updateBranch({
+        businessId: biz.id,
+        locationId: biz.northLocationId,
+        actorId: null,
+        name: "North",
+        phone: "02112345678",
+      }),
+    );
+    const { rows } = await db.query<{ phone: string }>("SELECT phone FROM locations WHERE id = $1", [
+      biz.northLocationId,
+    ]);
+    expect(rows[0].phone).toBe("02112345678");
+  });
+
+  it("records what changed in the audit log, not merely that something did", async () => {
+    await asBusiness(biz.id, () =>
+      branchService.updateBranch({
+        businessId: biz.id,
+        locationId: biz.northLocationId,
+        actorId: null,
+        timezone: "Asia/Dubai",
+      }),
+    );
+    const { rows } = await db.query<{ payload: { timezone?: string } | null }>(
+      `SELECT payload FROM audit_log
+        WHERE business_id = $1 AND action = 'branch.updated' AND entity_id = $2
+        ORDER BY created_at DESC LIMIT 1`,
+      [biz.id, biz.northLocationId],
+    );
+    expect(rows[0].payload).toMatchObject({ timezone: "Asia/Dubai" });
+  });
+
+  it("rejects an edit that changes nothing rather than writing a no-op audit row", async () => {
+    await expect(
+      asBusiness(biz.id, () =>
+        branchService.updateBranch({
+          businessId: biz.id,
+          locationId: biz.northLocationId,
+          actorId: null,
+        }),
+      ),
+    ).rejects.toMatchObject({ message: "nothing_to_change", status: 400 });
+  });
+
+  it("answers 404 rather than crashing when the branch id is not a uuid", async () => {
+    // `WHERE id = $1` against a uuid column raises invalid_text_representation
+    // for a non-uuid, which surfaced as a 500 and «خطای غیرمنتظره».
+    for (const call of [
+      () => branchService.updateBranch({ businessId: biz.id, locationId: "nope", actorId: null, name: "X" }),
+      () => branchService.deactivateBranch(biz.id, "nope", null),
+      () => branchService.reactivateBranch(biz.id, "nope", null),
+    ]) {
+      await expect(asBusiness(biz.id, call)).rejects.toMatchObject({
+        message: "not_found",
+        status: 404,
+      });
+    }
+
+    await expect(
+      asBusiness(biz.id, () =>
+        branchService.createBranch({
+          businessId: biz.id,
+          name: "Copied",
+          copyMenuFromLocationId: "not-a-uuid",
+          actorId: null,
+        }),
+      ),
+    ).rejects.toMatchObject({ message: "source_branch_not_found", status: 404 });
+  });
+
+  it("refuses to toggle a branch into the state it is already in", async () => {
+    await expect(
+      asBusiness(biz.id, () => branchService.reactivateBranch(biz.id, biz.mainLocationId, null)),
+    ).rejects.toMatchObject({ message: "branch_already_active", status: 409 });
+
+    await branchService.deactivateBranch(biz.id, biz.northLocationId, null);
+    await expect(
+      asBusiness(biz.id, () => branchService.deactivateBranch(biz.id, biz.northLocationId, null)),
+    ).rejects.toMatchObject({ message: "branch_already_inactive", status: 409 });
+  });
+
+  it("holds reactivation to the plan's branch ceiling, exactly as creation is", async () => {
+    // Creation refusing what reactivation waved through was the hole: a
+    // business could exceed its cap by deactivating one branch and
+    // reactivating another, or simply after a downgrade.
+    await branchService.deactivateBranch(biz.id, biz.northLocationId, null);
+    await db.query("UPDATE businesses SET plan = 'free' WHERE id = $1", [biz.id]);
+
+    await expect(
+      asBusiness(biz.id, () => branchService.reactivateBranch(biz.id, biz.northLocationId, null)),
+    ).rejects.toMatchObject({ message: "branch_limit_exceeded", status: 403 });
+
+    await db.query("UPDATE businesses SET plan = 'business' WHERE id = $1", [biz.id]);
+    await asBusiness(biz.id, () =>
+      branchService.reactivateBranch(biz.id, biz.northLocationId, null),
+    );
+    const { rows } = await db.query<{ is_active: boolean }>(
+      "SELECT is_active FROM locations WHERE id = $1",
+      [biz.northLocationId],
+    );
+    expect(rows[0].is_active).toBe(true);
+  });
+
+  it("never lets concurrent deactivations empty a business of active branches", async () => {
+    await Promise.allSettled([
+      asBusiness(biz.id, () => branchService.deactivateBranch(biz.id, biz.mainLocationId, null)),
+      asBusiness(biz.id, () => branchService.deactivateBranch(biz.id, biz.northLocationId, null)),
+    ]);
+
+    const { rows } = await db.query<{ n: string }>(
+      "SELECT count(*) AS n FROM locations WHERE business_id = $1 AND is_active",
+      [biz.id],
+    );
+    expect(Number(rows[0].n)).toBe(1);
+  });
+
+  it("gives each new branch a colour no sibling is using, without being asked", async () => {
+    // An owner who never opens the picker must still end up with branches the
+    // switcher can tell apart — that is the entire point of the colour.
+    for (const name of ["Colour A", "Colour B", "Colour C"]) {
+      await asBusiness(biz.id, () =>
+        branchService.createBranch({ businessId: biz.id, name, actorId: null }),
+      );
+    }
+
+    const branches = await asBusiness(biz.id, () => branchService.listBranches(biz.id));
+    const colors = branches.map((b) => b.color);
+    expect(new Set(colors).size).toBe(branches.length);
+    expect(colors.every((color) => BRANCH_COLORS.includes(color))).toBe(true);
+  });
+
+  it("honours an explicitly chosen colour and refuses one outside the palette", async () => {
+    await asBusiness(biz.id, () =>
+      branchService.createBranch({
+        businessId: biz.id,
+        name: "Violet Branch",
+        color: "violet",
+        actorId: null,
+      }),
+    );
+    const branches = await asBusiness(biz.id, () => branchService.listBranches(biz.id));
+    expect(branches.find((b) => b.name === "Violet Branch")?.color).toBe("violet");
+
+    // A raw hex would hit 0149's CHECK and surface as a 500; it is refused
+    // with a Persian-labelled code instead.
+    await expect(
+      asBusiness(biz.id, () =>
+        branchService.createBranch({
+          businessId: biz.id,
+          name: "Hex Branch",
+          color: "#ff0000",
+          actorId: null,
+        }),
+      ),
+    ).rejects.toMatchObject({ message: "invalid_color", status: 400 });
+
+    const after = await db.query("SELECT 1 FROM locations WHERE name = 'Hex Branch'");
+    expect(after.rows).toHaveLength(0);
+  });
+
+  it("re-colours a branch, and the switcher's source of truth reflects it", async () => {
+    await asBusiness(biz.id, () =>
+      branchService.updateBranch({
+        businessId: biz.id,
+        locationId: biz.northLocationId,
+        actorId: null,
+        color: "teal",
+      }),
+    );
+
+    const branches = await asBusiness(biz.id, () => branchService.listBranches(biz.id));
+    expect(branches.find((b) => b.id === biz.northLocationId)?.color).toBe("teal");
+
+    // accessibleLocationsFor is what /api/locations/active (and therefore the
+    // header switcher) reads, so the colour has to travel on that path too.
+    const ownerId = await createMember("owner", null);
+    await asBusiness(biz.id, async () => {
+      const { locations } = await setupState.accessibleLocationsFor(session({ sub: ownerId }));
+      expect(locations.find((l) => l.id === biz.northLocationId)?.color).toBe("teal");
+    });
+  });
+
+  it("lists each branch with what would block its deactivation", async () => {
+    await db.query(
+      `INSERT INTO orders (location_id, order_number, type, status, total)
+       VALUES ($1, 1, 'dine_in', 'open', 0)`,
+      [biz.northLocationId],
+    );
+    await db.query("INSERT INTO table_sessions (location_id, opened_at) VALUES ($1, now())", [
+      biz.northLocationId,
+    ]);
+    await createMember("cashier", biz.northLocationId);
+
+    const branches = await asBusiness(biz.id, () => branchService.listBranches(biz.id));
+    const north = branches.find((b) => b.id === biz.northLocationId);
+    expect(north).toMatchObject({ openOrderCount: 1, openSessionCount: 1, memberCount: 1 });
+
+    const main = branches.find((b) => b.id === biz.mainLocationId);
+    expect(main).toMatchObject({ openOrderCount: 0, openSessionCount: 0, memberCount: 0 });
   });
 });
 

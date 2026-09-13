@@ -12,6 +12,15 @@
 import { randomUUID } from "node:crypto";
 import { getPool, query } from "./db";
 import { activeBranchCount, planLimitsFor } from "./plan-limits";
+import {
+  DEFAULT_BRANCH_TIMEZONE,
+  branchFieldsError,
+  isSameBranchName,
+  normalizeBranchName,
+  normalizeOptionalText,
+} from "./branch-input";
+import { type BranchColor, nextBranchColor, toBranchColor } from "./branch-color";
+import { isUuid } from "./uuid";
 
 export class BranchError extends Error {
   status: number;
@@ -27,8 +36,20 @@ export interface Branch {
   address: string | null;
   phone: string | null;
   timezone: string;
+  /** Palette key identifying the branch at a glance in the switcher (0149). */
+  color: BranchColor;
   isActive: boolean;
   createdAt: string;
+  /**
+   * What the branch is currently holding, so the management screen can say
+   * *why* a branch cannot be deactivated before the owner presses the button
+   * and gets a 409 back. These are exactly the two conditions
+   * `deactivateBranch` refuses on, plus the member count, which is the thing
+   * an owner always asks next ("who am I locking out?").
+   */
+  openOrderCount: number;
+  openSessionCount: number;
+  memberCount: number;
 }
 
 interface BranchRow extends Record<string, unknown> {
@@ -37,8 +58,12 @@ interface BranchRow extends Record<string, unknown> {
   address: string | null;
   phone: string | null;
   timezone: string;
+  color: string;
   is_active: boolean;
   created_at: Date;
+  open_order_count: string;
+  open_session_count: string;
+  member_count: string;
 }
 
 function toBranch(row: BranchRow): Branch {
@@ -48,19 +73,92 @@ function toBranch(row: BranchRow): Branch {
     address: row.address,
     phone: row.phone,
     timezone: row.timezone,
+    color: toBranchColor(row.color),
     isActive: row.is_active,
     createdAt: row.created_at.toISOString(),
+    openOrderCount: Number(row.open_order_count),
+    openSessionCount: Number(row.open_session_count),
+    memberCount: Number(row.member_count),
   };
 }
 
 /** Every branch of a business, active and inactive, for the management screen. */
 export async function listBranches(businessId: string): Promise<Branch[]> {
   const { rows } = await query<BranchRow>(
-    `SELECT id, name, address, phone, timezone, is_active, created_at
-       FROM locations WHERE business_id = $1 ORDER BY created_at`,
+    `SELECT l.id, l.name, l.address, l.phone, l.timezone, l.color, l.is_active, l.created_at,
+            (SELECT count(*) FROM orders o
+              WHERE o.location_id = l.id AND o.status IN ('open', 'held'))::text
+              AS open_order_count,
+            (SELECT count(*) FROM table_sessions ts
+              WHERE ts.location_id = l.id AND ts.closed_at IS NULL)::text
+              AS open_session_count,
+            -- A member counts for the branch they are assigned to *or* pinned
+            -- to by users.location_id — the same two sources location-access.ts
+            -- resolves access from, so the number matches who actually works
+            -- there rather than only who has an explicit assignment row.
+            (SELECT count(DISTINCT u.id) FROM users u
+              WHERE u.business_id = l.business_id AND u.is_active
+                AND (u.location_id = l.id
+                     OR EXISTS (SELECT 1 FROM user_locations ul
+                                 WHERE ul.user_id = u.id AND ul.location_id = l.id)))::text
+              AS member_count
+       FROM locations l
+      WHERE l.business_id = $1
+      ORDER BY l.created_at`,
     [businessId],
   );
   return rows.map(toBranch);
+}
+
+/**
+ * Serialises every branch lifecycle write for one business.
+ *
+ * Create, deactivate and reactivate all read a count (the plan ceiling, the
+ * "last active branch" rule) and then write against it, so each pair of them
+ * races: two creates can exceed a plan's cap, and two deactivations can leave
+ * a business with zero active branches — a state nothing in the UI can undo,
+ * because every screen needs a branch to resolve. One transaction-scoped
+ * advisory lock per business makes all three mutually exclusive without
+ * blocking anything else, the same pattern `business-provisioning.ts` and
+ * `reservation-service.ts` already use. It is released on COMMIT or ROLLBACK.
+ */
+async function lockBranchMutations(
+  client: import("pg").PoolClient,
+  businessId: string,
+): Promise<void> {
+  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+    `branch-lifecycle:${businessId}`,
+  ]);
+}
+
+/**
+ * Is another branch of this business already called that?
+ *
+ * Compared on `branchNameKey`, not on the raw string, so «شعبه ۲» and
+ * «شعبه 2» collide — see branch-input.ts. Done in JS over the business's own
+ * branches rather than as a unique index because the comparison is a Persian
+ * text rule (yeh/kaf variants, digit scripts, ZWNJ) that a Postgres index
+ * would have to duplicate in SQL, and a business has a handful of branches,
+ * not thousands.
+ */
+async function branchNameTaken(
+  exec: {
+    query: <T extends Record<string, unknown>>(
+      text: string,
+      params?: unknown[],
+    ) => Promise<{ rows: T[] }>;
+  },
+  businessId: string,
+  name: string,
+  exceptLocationId?: string,
+): Promise<boolean> {
+  const { rows } = await exec.query<{ id: string; name: string }>(
+    "SELECT id, name FROM locations WHERE business_id = $1",
+    [businessId],
+  );
+  return rows.some(
+    (row) => row.id !== exceptLocationId && isSameBranchName(row.name, name),
+  );
 }
 
 export interface CreateBranchInput {
@@ -69,6 +167,11 @@ export interface CreateBranchInput {
   address?: string | null;
   phone?: string | null;
   timezone?: string;
+  /**
+   * Palette key for the branch's identifying colour. Omitted means "choose a
+   * distinct one for me" — see nextBranchColor.
+   */
+  color?: string | null;
   /** An existing, active branch of the same business to copy the menu structure from. */
   copyMenuFromLocationId?: string | null;
   actorId: string | null;
@@ -95,16 +198,26 @@ async function copyMenuStructure(
     name: string;
     sort_order: number;
     is_active: boolean;
+    tax_rate: string;
   }>(
-    "SELECT id, name, sort_order, is_active FROM menu_categories WHERE location_id = $1",
+    // tax_rate travels with the category (0002): a copied menu whose VAT rates
+    // silently reset to 0 would under-charge tax on every order the new branch
+    // rings up, and nothing on screen would show the difference.
+    "SELECT id, name, sort_order, is_active, tax_rate FROM menu_categories WHERE location_id = $1",
     [fromLocationId],
   );
   const categoryIdMap = new Map<string, string>();
   for (const category of categories) {
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO menu_categories (location_id, name, sort_order, is_active)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [toLocationId, category.name, category.sort_order, category.is_active],
+      `INSERT INTO menu_categories (location_id, name, sort_order, is_active, tax_rate)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [
+        toLocationId,
+        category.name,
+        category.sort_order,
+        category.is_active,
+        category.tax_rate,
+      ],
     );
     categoryIdMap.set(category.id, rows[0].id);
   }
@@ -140,27 +253,37 @@ async function copyMenuStructure(
       WHERE location_id = $1`,
     [fromLocationId],
   );
-  const modifierIdMap = new Map<string, string>();
   const validModifiers = modifiers.filter((m) => groupIdMap.has(m.group_id));
 
   if (validModifiers.length > 0) {
-    const oldIds = validModifiers.map((m) => m.id);
-    const groupIds = validModifiers.map((m) => groupIdMap.get(m.group_id));
+    // Ids are generated here rather than read back from RETURNING: a bulk
+    // INSERT ... SELECT unnest(...) RETURNING id makes no promise that the
+    // returned rows come back in the order they were supplied, so the old
+    // code's positional pairing of `rows[i]` with `oldIds[i]` was true only by
+    // luck. Nothing downstream needs the old→new modifier mapping today
+    // (modifier_ingredients is deliberately not copied), so the rows are
+    // simply inserted with ids of our own choosing, the way menu_items below
+    // already does.
+    const newIds = validModifiers.map(() => randomUUID());
+    const groupIds = validModifiers.map((m) => groupIdMap.get(m.group_id)!);
     const names = validModifiers.map((m) => m.name);
     const priceDeltas = validModifiers.map((m) => m.price_delta);
     const isActives = validModifiers.map((m) => m.is_active);
     const sortOrders = validModifiers.map((m) => m.sort_order);
 
-    const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO modifiers (location_id, group_id, name, price_delta, is_active, sort_order)
-       SELECT $1, unnest($2::uuid[]), unnest($3::text[]), unnest($4::numeric[]), unnest($5::boolean[]), unnest($6::integer[])
-       RETURNING id`,
-      [toLocationId, groupIds, names, priceDeltas, isActives, sortOrders],
+    await client.query(
+      `INSERT INTO modifiers (id, location_id, group_id, name, price_delta, is_active, sort_order)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::numeric[], $6::boolean[], $7::integer[])`,
+      [
+        newIds,
+        validModifiers.map(() => toLocationId),
+        groupIds,
+        names,
+        priceDeltas,
+        isActives,
+        sortOrders,
+      ],
     );
-
-    for (let i = 0; i < oldIds.length; i++) {
-      modifierIdMap.set(oldIds[i], rows[i].id);
-    }
   }
 
   const { rows: items } = await client.query<{
@@ -173,8 +296,10 @@ async function copyMenuStructure(
     image_url: string | null;
     is_active: boolean;
     sort_order: number;
+    target_margin_percent: string | null;
   }>(
-    `SELECT id, category_id, name, description, sku, price, image_url, is_active, sort_order
+    `SELECT id, category_id, name, description, sku, price, image_url, is_active, sort_order,
+            target_margin_percent
        FROM menu_items WHERE location_id = $1`,
     [fromLocationId],
   );
@@ -200,6 +325,10 @@ async function copyMenuStructure(
     const imageUrls: (string | null)[] = [];
     const isActives: boolean[] = [];
     const sortOrders: number[] = [];
+    // The per-item margin override (0035) is part of how the item is priced,
+    // so a copied menu that dropped it would quietly fall back to the
+    // business-wide default and suggest different prices at the new branch.
+    const targetMargins: (string | null)[] = [];
 
     const itemIdMap = new Map<string, string>();
 
@@ -219,12 +348,14 @@ async function copyMenuStructure(
       imageUrls.push(item.image_url);
       isActives.push(item.is_active);
       sortOrders.push(item.sort_order);
+      targetMargins.push(item.target_margin_percent);
     }
 
     await client.query(
       `INSERT INTO menu_items
-         (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
-       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::boolean[], $10::int[])`,
+         (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order,
+          target_margin_percent)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::boolean[], $10::int[], $11::numeric[])`,
       [
         itemIds,
         locationIds,
@@ -236,6 +367,7 @@ async function copyMenuStructure(
         imageUrls,
         isActives,
         sortOrders,
+        targetMargins,
       ],
     );
 
@@ -260,30 +392,71 @@ async function copyMenuStructure(
       );
     }
   }
-  // modifierIdMap is retained for symmetry with the other maps and potential
-  // future use (e.g. copying modifier_ingredients); nothing reads it today
-  // because ingredient links are deliberately not copied (see doc comment above).
-  void modifierIdMap;
 }
 
 /** Creates a branch, optionally seeded with another branch's menu structure. */
 export async function createBranch(
   input: CreateBranchInput,
 ): Promise<{ locationId: string }> {
-  const name = input.name.trim();
-  if (!name) throw new BranchError("missing_fields");
+  const name = normalizeBranchName(input.name ?? "");
+  const fieldError = branchFieldsError({
+    name: input.name,
+    address: input.address,
+    phone: input.phone,
+    // `undefined` means "the caller didn't choose", which lands on the default
+    // below; anything present is validated, because an unknown zone makes
+    // every report for this branch fail in Postgres later (see branch-input.ts).
+    timezone: input.timezone,
+    // Likewise absent = "pick one for me" (see below); present = must be in
+    // the palette, or 0149's CHECK turns it into a 500.
+    color: input.color,
+  });
+  if (fieldError) throw new BranchError(fieldError, 400);
+
+  // A non-uuid source id would make the lookup below raise
+  // `invalid input syntax for type uuid` — a 500 and «خطای غیرمنتظره» instead
+  // of the honest "that branch doesn't exist" this already knows how to say.
+  if (input.copyMenuFromLocationId && !isUuid(input.copyMenuFromLocationId)) {
+    throw new BranchError("source_branch_not_found", 404);
+  }
 
   const limits = await planLimitsFor(input.businessId);
-  if (
-    limits.branchLimit !== null &&
-    (await activeBranchCount(input.businessId)) >= limits.branchLimit
-  ) {
-    throw new BranchError("branch_limit_exceeded", 403);
-  }
 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await lockBranchMutations(client, input.businessId);
+
+    // Counted *inside* the lock rather than before it: the plan ceiling is a
+    // count-then-insert, so two simultaneous «ایجاد شعبه» clicks on a
+    // one-branch plan would otherwise both read "0 used" and both insert.
+    if (
+      limits.branchLimit !== null &&
+      (await activeBranchCount(input.businessId, client)) >= limits.branchLimit
+    ) {
+      await client.query("ROLLBACK");
+      throw new BranchError("branch_limit_exceeded", 403);
+    }
+
+    // One read serves both the duplicate check and the colour assignment, and
+    // it is inside the lock so a concurrent create cannot pick the same free
+    // colour we are about to take.
+    const { rows: siblings } = await client.query<{ id: string; name: string; color: string }>(
+      "SELECT id, name, color FROM locations WHERE business_id = $1",
+      [input.businessId],
+    );
+
+    if (siblings.some((row) => isSameBranchName(row.name, name))) {
+      await client.query("ROLLBACK");
+      throw new BranchError("branch_name_taken", 409);
+    }
+
+    // An owner who expresses no preference still gets a branch they can tell
+    // apart at a glance — the whole feature is worthless if every branch is
+    // the same default grey until someone opens a picker.
+    const color = input.color?.trim()
+      ? toBranchColor(input.color.trim())
+      : nextBranchColor(siblings.map((row) => row.color));
 
     if (input.copyMenuFromLocationId) {
       const { rows } = await client.query(
@@ -297,14 +470,15 @@ export async function createBranch(
     }
 
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO locations (business_id, name, address, phone, timezone)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      `INSERT INTO locations (business_id, name, address, phone, timezone, color)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
       [
         input.businessId,
         name,
-        input.address?.trim() || null,
-        input.phone?.trim() || null,
-        input.timezone ?? "Asia/Tehran",
+        normalizeOptionalText(input.address),
+        normalizeOptionalText(input.phone),
+        input.timezone?.trim() || DEFAULT_BRANCH_TIMEZONE,
+        color,
       ],
     );
     const locationId = rows[0].id;
@@ -325,6 +499,7 @@ export async function createBranch(
         locationId,
         JSON.stringify({
           name,
+          color,
           copiedMenuFrom: input.copyMenuFromLocationId ?? null,
         }),
       ],
@@ -347,33 +522,140 @@ export interface UpdateBranchInput {
   name?: string;
   address?: string | null;
   phone?: string | null;
+  /** The branch's own zone — what `app_business_date` buckets its day by. */
+  timezone?: string;
+  /** Palette key for the branch's identifying colour (0149). */
+  color?: string;
 }
 
+/**
+ * Edits a branch's name, address, phone or timezone.
+ *
+ * Every field is optional and `undefined` means "leave it alone"; an explicit
+ * `null` on address/phone clears it. A blank `name` is rejected rather than
+ * ignored: the previous implementation folded it into `coalesce($3, name)`, so
+ * renaming a branch to whitespace answered `{ ok: true }` and changed nothing,
+ * which reads as "the rename didn't save" with no reason given.
+ *
+ * The audit payload records what actually changed, not merely that something
+ * did — «شعبه ویرایش شد» with no fields is not an audit trail, and the
+ * timezone in particular re-buckets the branch's whole reporting history
+ * (migration 0076), so it must be visible in the log.
+ */
 export async function updateBranch(input: UpdateBranchInput): Promise<void> {
-  const { rows } = await query(
-    `UPDATE locations
-        SET name    = coalesce($3, name),
-            address = CASE WHEN $4::boolean THEN $5 ELSE address END,
-            phone   = CASE WHEN $6::boolean THEN $7 ELSE phone END
-      WHERE id = $1 AND business_id = $2
-      RETURNING id`,
-    [
-      input.locationId,
-      input.businessId,
-      input.name?.trim() || null,
-      input.address !== undefined,
-      input.address?.trim() || null,
-      input.phone !== undefined,
-      input.phone?.trim() || null,
-    ],
-  );
-  if (rows.length === 0) throw new BranchError("not_found", 404);
+  const fieldError = branchFieldsError({
+    name: input.name,
+    address: input.address,
+    phone: input.phone,
+    timezone: input.timezone,
+    color: input.color,
+  });
+  if (fieldError) throw new BranchError(fieldError, 400);
 
-  await query(
-    `INSERT INTO audit_log (business_id, location_id, user_id, action, entity, entity_id)
-     VALUES ($1, $2, $3, 'branch.updated', 'location', $4)`,
-    [input.businessId, input.locationId, input.actorId, input.locationId],
-  );
+  const name =
+    input.name !== undefined ? normalizeBranchName(input.name) : undefined;
+  const address =
+    input.address !== undefined
+      ? normalizeOptionalText(input.address)
+      : undefined;
+  const phone =
+    input.phone !== undefined ? normalizeOptionalText(input.phone) : undefined;
+  const timezone =
+    input.timezone !== undefined ? input.timezone.trim() : undefined;
+  const color =
+    input.color !== undefined ? toBranchColor(input.color.trim()) : undefined;
+
+  if (
+    name === undefined &&
+    address === undefined &&
+    phone === undefined &&
+    timezone === undefined &&
+    color === undefined
+  ) {
+    throw new BranchError("nothing_to_change", 400);
+  }
+
+  if (!isUuid(input.locationId)) throw new BranchError("not_found", 404);
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    // A rename is a check-then-write against the same names `createBranch`
+    // checks, so it takes the same lock: otherwise two branches renamed to the
+    // same thing at once both pass, and the duplicate this refuses by hand can
+    // still appear (there is no unique index to catch it — see branchNameTaken).
+    await lockBranchMutations(client, input.businessId);
+
+    if (
+      name !== undefined &&
+      (await branchNameTaken(client, input.businessId, name, input.locationId))
+    ) {
+      await client.query("ROLLBACK");
+      throw new BranchError("branch_name_taken", 409);
+    }
+
+    const { rows } = await client.query<{
+      id: string;
+      name: string;
+      address: string | null;
+      phone: string | null;
+      timezone: string;
+      color: string;
+    }>(
+      `UPDATE locations
+        SET name     = CASE WHEN $3::boolean  THEN $4          ELSE name     END,
+            address  = CASE WHEN $5::boolean  THEN $6          ELSE address  END,
+            phone    = CASE WHEN $7::boolean  THEN $8          ELSE phone    END,
+            timezone = CASE WHEN $9::boolean  THEN $10::text   ELSE timezone END,
+            color    = CASE WHEN $11::boolean THEN $12::text   ELSE color    END
+      WHERE id = $1 AND business_id = $2
+      RETURNING id, name, address, phone, timezone, color`,
+      [
+        input.locationId,
+        input.businessId,
+        name !== undefined,
+        name ?? null,
+        address !== undefined,
+        address,
+        phone !== undefined,
+        phone,
+        timezone !== undefined,
+        timezone ?? null,
+        color !== undefined,
+        color ?? null,
+      ],
+    );
+    if (rows.length === 0) {
+      await client.query("ROLLBACK");
+      throw new BranchError("not_found", 404);
+    }
+
+    const changed: Record<string, unknown> = {};
+    if (name !== undefined) changed.name = name;
+    if (address !== undefined) changed.address = address;
+    if (phone !== undefined) changed.phone = phone;
+    if (timezone !== undefined) changed.timezone = timezone;
+    if (color !== undefined) changed.color = color;
+
+    await client.query(
+      `INSERT INTO audit_log (business_id, location_id, user_id, action, entity, entity_id, payload)
+       VALUES ($1, $2, $3, 'branch.updated', 'location', $4, $5)`,
+      [
+        input.businessId,
+        input.locationId,
+        input.actorId,
+        input.locationId,
+        JSON.stringify(changed),
+      ],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -393,55 +675,145 @@ export async function deactivateBranch(
   locationId: string,
   actorId: string | null,
 ): Promise<void> {
-  const activeCount = await query<{ n: string }>(
-    "SELECT count(*) AS n FROM locations WHERE business_id = $1 AND is_active",
-    [businessId],
-  );
-  if (Number(activeCount.rows[0].n) <= 1) {
-    throw new BranchError("last_active_branch", 409);
+  if (!isUuid(locationId)) throw new BranchError("not_found", 404);
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+
+    // Check-then-write, so it has to be exclusive: without the lock, two
+    // owners (or two tabs) deactivating the last two branches at the same
+    // instant both read "2 active" and both succeed — leaving a business with
+    // zero active branches, which is unrecoverable from the UI: every screen
+    // resolves no branch, `resolveActiveLocation` answers null, and the branch
+    // list itself is behind a guard that needs one.
+    await lockBranchMutations(client, businessId);
+
+    const { rows: locked } = await client.query<{
+      id: string;
+      is_active: boolean;
+    }>("SELECT id, is_active FROM locations WHERE business_id = $1", [
+      businessId,
+    ]);
+    const target = locked.find((row) => row.id === locationId);
+    if (!target) {
+      await client.query("ROLLBACK");
+      throw new BranchError("not_found", 404);
+    }
+    if (!target.is_active) {
+      await client.query("ROLLBACK");
+      throw new BranchError("branch_already_inactive", 409);
+    }
+    if (locked.filter((row) => row.is_active).length <= 1) {
+      await client.query("ROLLBACK");
+      throw new BranchError("last_active_branch", 409);
+    }
+
+    const { rows: openOrders } = await client.query(
+      "SELECT 1 FROM orders WHERE location_id = $1 AND status IN ('open', 'held') LIMIT 1",
+      [locationId],
+    );
+    if (openOrders.length > 0) {
+      await client.query("ROLLBACK");
+      throw new BranchError("branch_has_open_orders", 409);
+    }
+
+    const { rows: openSessions } = await client.query(
+      "SELECT 1 FROM table_sessions WHERE location_id = $1 AND closed_at IS NULL LIMIT 1",
+      [locationId],
+    );
+    if (openSessions.length > 0) {
+      await client.query("ROLLBACK");
+      throw new BranchError("branch_has_open_sessions", 409);
+    }
+
+    await client.query(
+      "UPDATE locations SET is_active = false WHERE id = $1 AND business_id = $2",
+      [locationId, businessId],
+    );
+
+    await client.query(
+      `INSERT INTO audit_log (business_id, location_id, user_id, action, entity, entity_id)
+       VALUES ($1, $2, $3, 'branch.deactivated', 'location', $4)`,
+      [businessId, locationId, actorId, locationId],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const { rows: openOrders } = await query(
-    "SELECT 1 FROM orders WHERE location_id = $1 AND status IN ('open', 'held') LIMIT 1",
-    [locationId],
-  );
-  if (openOrders.length > 0)
-    throw new BranchError("branch_has_open_orders", 409);
-
-  const { rows: openSessions } = await query(
-    "SELECT 1 FROM table_sessions WHERE location_id = $1 AND closed_at IS NULL LIMIT 1",
-    [locationId],
-  );
-  if (openSessions.length > 0)
-    throw new BranchError("branch_has_open_sessions", 409);
-
-  const { rows } = await query(
-    "UPDATE locations SET is_active = false WHERE id = $1 AND business_id = $2 RETURNING id",
-    [locationId, businessId],
-  );
-  if (rows.length === 0) throw new BranchError("not_found", 404);
-
-  await query(
-    `INSERT INTO audit_log (business_id, location_id, user_id, action, entity, entity_id)
-     VALUES ($1, $2, $3, 'branch.deactivated', 'location', $4)`,
-    [businessId, locationId, actorId, locationId],
-  );
 }
 
+/**
+ * Brings a deactivated branch back.
+ *
+ * Subject to the plan's branch ceiling, exactly as creation is: `branchLimit`
+ * is counted against *active* branches (plan-limits.ts's `activeBranchCount`),
+ * so without this check a business could keep as many branches as it liked by
+ * deactivating one and reactivating another — or simply exceed a plan it had
+ * been downgraded to, since a downgrade leaves the extra branches in place.
+ * Creation refusing what reactivation waves through was the hole.
+ */
 export async function reactivateBranch(
   businessId: string,
   locationId: string,
   actorId: string | null,
 ): Promise<void> {
-  const { rows } = await query(
-    "UPDATE locations SET is_active = true WHERE id = $1 AND business_id = $2 RETURNING id",
-    [locationId, businessId],
-  );
-  if (rows.length === 0) throw new BranchError("not_found", 404);
+  if (!isUuid(locationId)) throw new BranchError("not_found", 404);
 
-  await query(
-    `INSERT INTO audit_log (business_id, location_id, user_id, action, entity, entity_id)
-     VALUES ($1, $2, $3, 'branch.reactivated', 'location', $4)`,
-    [businessId, locationId, actorId, locationId],
-  );
+  const limits = await planLimitsFor(businessId);
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+
+    // Same lock as create/deactivate: reactivation is a count-then-write
+    // against the very same ceiling creation checks.
+    await lockBranchMutations(client, businessId);
+
+    const { rows: locked } = await client.query<{
+      id: string;
+      is_active: boolean;
+    }>("SELECT id, is_active FROM locations WHERE business_id = $1", [
+      businessId,
+    ]);
+    const target = locked.find((row) => row.id === locationId);
+    if (!target) {
+      await client.query("ROLLBACK");
+      throw new BranchError("not_found", 404);
+    }
+    if (target.is_active) {
+      await client.query("ROLLBACK");
+      throw new BranchError("branch_already_active", 409);
+    }
+
+    if (
+      limits.branchLimit !== null &&
+      locked.filter((row) => row.is_active).length >= limits.branchLimit
+    ) {
+      await client.query("ROLLBACK");
+      throw new BranchError("branch_limit_exceeded", 403);
+    }
+
+    await client.query(
+      "UPDATE locations SET is_active = true WHERE id = $1 AND business_id = $2",
+      [locationId, businessId],
+    );
+
+    await client.query(
+      `INSERT INTO audit_log (business_id, location_id, user_id, action, entity, entity_id)
+       VALUES ($1, $2, $3, 'branch.reactivated', 'location', $4)`,
+      [businessId, locationId, actorId, locationId],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
