@@ -66,6 +66,11 @@ const NAV: NavItem[] = [
   // to read the health line); the page hides every control the operator's role
   // cannot use, and the routes re-check each one.
   { label: "پشتیبان‌گیری", href: "/platform/backup", cap: "system.read" },
+  // Migration 0149 — the tenant media library's object storage (Parspack/S3)
+  // and its daily price policy. Readable by every role (support answers «چرا
+  // امروز از کیفم کم شد؟» from the usage strip); writes need backup.manage,
+  // the capability that already governs the deployment's other S3 credential.
+  { label: "رسانه و فایل‌ها", href: "/platform/media", cap: "system.read" },
   {
     label: "سیستم",
     href: "/platform/system",

@@ -24,6 +24,7 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ChevronDown } from "lucide-react";
 import { SectionCard } from "../page-chrome";
+import { MediaImageField, mediaFileUrl } from "../media/media-picker";
 
 interface Category {
   id: string;
@@ -40,6 +41,8 @@ interface Item {
   price: string | number;
   is_active: boolean;
   target_margin_percent: string | number | null;
+  /** Catalogue photo from «کتابخانهٔ رسانه» (migration 0149). */
+  image_media_id: string | null;
 }
 interface SuggestedPrice {
   materialCost: number;
@@ -429,10 +432,23 @@ function ItemRow({
   return (
     <li className="min-w-0 px-4 py-3 text-sm">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span
-          className={`min-w-0 break-words ${item.is_active ? "" : "text-muted-foreground line-through"}`}
-        >
-          {item.name}
+        <span className="flex min-w-0 items-center gap-2.5">
+          {item.image_media_id ? (
+            <span className="block size-9 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={mediaFileUrl(item.image_media_id)}
+                alt={item.name}
+                loading="lazy"
+                className="size-full object-cover"
+              />
+            </span>
+          ) : null}
+          <span
+            className={`min-w-0 break-words ${item.is_active ? "" : "text-muted-foreground line-through"}`}
+          >
+            {item.name}
+          </span>
         </span>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-muted-foreground">
@@ -544,6 +560,9 @@ function EditItemRow({
   const [categoryId, setCategoryId] = useState(item.category_id ?? "");
   const [name, setName] = useState(item.name);
   const [price, setPrice] = useState(String(money.toInput(Number(item.price))));
+  const [imageMediaId, setImageMediaId] = useState<string | null>(
+    item.image_media_id,
+  );
   const selectableCategories = categories.filter(
     (category) => category.is_active || category.id === item.category_id,
   );
@@ -560,7 +579,7 @@ function EditItemRow({
     const ok = await run(() =>
       api(`/api/menu/items/${item.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ categoryId, name, price: priceRial }),
+        body: JSON.stringify({ categoryId, name, price: priceRial, imageMediaId }),
       }),
     );
     if (ok) onDone();
@@ -603,6 +622,16 @@ function EditItemRow({
             required
           />
         </Field>
+        <div className="sm:col-span-2 xl:col-span-3">
+          {/* The catalogue photo — picked from the shared media library so the
+              same upload serves the menu, the website, and visual counting. */}
+          <MediaImageField
+            label="تصویر آیتم"
+            value={imageMediaId}
+            onChange={setImageMediaId}
+            disabled={busy}
+          />
+        </div>
         <div className="flex flex-col gap-2 sm:col-span-2 xl:col-span-3 sm:flex-row">
           <div className="w-full sm:w-40">
             <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>

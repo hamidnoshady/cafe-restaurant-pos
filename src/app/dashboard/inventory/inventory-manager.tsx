@@ -68,6 +68,8 @@ export interface InventoryItem {
   is_active: boolean;
   /** Made in-house through a production formula rather than bought (Phase 29). */
   is_produced: boolean;
+  /** Reference photo from «کتابخانهٔ رسانه» — what the visual counter matches against (0149). */
+  image_media_id: string | null;
   stock: number;
 }
 export interface Supplier {

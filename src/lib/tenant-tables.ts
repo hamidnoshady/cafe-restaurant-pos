@@ -124,6 +124,15 @@ export const EXEMPT_TABLES = new Set([
   "platform_cms_config",
   "platform_cms_sites",
   "platform_cms_sync_runs",
+  // Migration 0149 — the deployment-wide media/object-storage connection and
+  // its storage price policy: one S3 bucket (Parspack et al.) every tenant's
+  // media lands in, isolated by per-business key prefixes rather than
+  // per-tenant buckets. Same shape as platform_backup_config: no business_id,
+  // and a tenant must never read the credential that opens every business's
+  // files. The three tenant tables (media_folders, media_assets,
+  // media_usage_charges) are RLS-protected in that migration and deliberately
+  // NOT listed here.
+  "platform_media_config",
 ]);
 
 export interface ForeignKeyEdge {

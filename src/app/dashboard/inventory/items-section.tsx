@@ -10,6 +10,7 @@ import { useMoney } from "@/components/money/money-context";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 import { EmptyState, SectionCard } from "../page-chrome";
+import { MediaImageField, mediaFileUrl } from "../media/media-picker";
 
 export function ItemsSection({
   items,
@@ -195,6 +196,18 @@ function ItemRow({
 
   return (
     <li className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
+        {item.image_media_id ? (
+          <span className="mt-0.5 block size-12 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mediaFileUrl(item.image_media_id)}
+              alt={item.name}
+              loading="lazy"
+              className="size-full object-cover"
+            />
+          </span>
+        ) : null}
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
           <h3
@@ -233,6 +246,7 @@ function ItemRow({
             <ItemCost item={item} />
           </MetaItem>
         </dl>
+      </div>
       </div>
 
       <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
@@ -328,6 +342,9 @@ function EditItemRow({
   const [purchaseFactor, setPurchaseFactor] = useState(
     String(Number(item.purchase_unit_factor)),
   );
+  const [imageMediaId, setImageMediaId] = useState<string | null>(
+    item.image_media_id,
+  );
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -343,6 +360,7 @@ function EditItemRow({
           purchaseUnitFactor: purchaseFactor.trim()
             ? Number(purchaseFactor)
             : 1,
+          imageMediaId,
         }),
       }),
     );
@@ -398,6 +416,16 @@ function EditItemRow({
             onChange={(e) => setPurchaseFactor(e.target.value)}
           />
         </Field>
+        <div className="sm:col-span-2 xl:col-span-5">
+          {/* The photo the visual stock counter matches against — pulled from
+              the shared media library so one upload serves menu and counting. */}
+          <MediaImageField
+            label="تصویر قلم (برای شمارش تصویری)"
+            value={imageMediaId}
+            onChange={setImageMediaId}
+            disabled={busy}
+          />
+        </div>
         <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row xl:col-span-5">
           <Button
             type="submit"

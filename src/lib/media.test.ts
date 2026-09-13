@@ -1,0 +1,198 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildMediaKey,
+  dailyStorageCharge,
+  DEFAULT_MEDIA_CONFIG,
+  hasMatchingMediaSignature,
+  keyBelongsToBusiness,
+  maskMediaConfig,
+  mediaKindForMime,
+  normalizeKeyPrefix,
+  parseCategory,
+  parseTags,
+  safeFileName,
+  validateMediaConfigInput,
+  type MediaStorageConfig,
+} from "./media";
+
+const BIZ = "11111111-2222-3333-4444-555555555555";
+const ASSET = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+describe("mediaKindForMime", () => {
+  it("shelves the accepted types and refuses the rest", () => {
+    expect(mediaKindForMime("image/png")).toBe("image");
+    expect(mediaKindForMime("image/webp")).toBe("image");
+    expect(mediaKindForMime("video/mp4")).toBe("video");
+    expect(mediaKindForMime("application/pdf")).toBe("document");
+    expect(mediaKindForMime("text/csv")).toBe("document");
+    expect(mediaKindForMime("application/x-msdownload")).toBeNull();
+    expect(mediaKindForMime("text/html")).toBeNull();
+  });
+});
+
+describe("hasMatchingMediaSignature", () => {
+  it("accepts a real PNG header and refuses a fake one", () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]);
+    expect(hasMatchingMediaSignature("image/png", png)).toBe(true);
+    expect(hasMatchingMediaSignature("image/png", new Uint8Array([0, 1, 2, 3]))).toBe(false);
+    // A script claiming to be a PNG must not pass.
+    expect(hasMatchingMediaSignature("image/png", new TextEncoder().encode("<script>"))).toBe(false);
+  });
+
+  it("checks mp4 by the ftyp box at offset 4", () => {
+    const mp4 = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+    expect(hasMatchingMediaSignature("video/mp4", mp4)).toBe(true);
+    expect(hasMatchingMediaSignature("video/mp4", new Uint8Array(12))).toBe(false);
+  });
+
+  it("refuses an SVG that carries a script", () => {
+    const clean = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    const evil = new TextEncoder().encode("<svg><script>alert(1)</script></svg>");
+    expect(hasMatchingMediaSignature("image/svg+xml", clean)).toBe(true);
+    expect(hasMatchingMediaSignature("image/svg+xml", evil)).toBe(false);
+  });
+
+  it("accepts a PDF magic and a ZIP-based office file", () => {
+    expect(hasMatchingMediaSignature("application/pdf", new TextEncoder().encode("%PDF-1.7"))).toBe(true);
+    const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    expect(
+      hasMatchingMediaSignature("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zip),
+    ).toBe(true);
+  });
+});
+
+describe("safeFileName", () => {
+  it("keeps Persian, flattens separators and junk", () => {
+    expect(safeFileName("عکس منو.jpg")).toBe("عکس-منو.jpg");
+    expect(safeFileName("../../../etc/passwd")).toBe("etc-passwd");
+    expect(safeFileName('a"b<c>d?e#f.png')).toBe("a-b-c-d-e-f.png");
+  });
+  it("never returns empty", () => {
+    expect(safeFileName("   ")).toBe("file");
+    expect(safeFileName("///")).toBe("file");
+  });
+});
+
+describe("object-key grammar and tenant isolation", () => {
+  it("builds {prefix}{businessId}/{assetId}/{file}", () => {
+    expect(buildMediaKey("media/", BIZ, ASSET, "photo.png")).toBe(`media/${BIZ}/${ASSET}/photo.png`);
+    // Prefix is normalized either way it is stored.
+    expect(buildMediaKey("media", BIZ, ASSET, "photo.png")).toBe(`media/${BIZ}/${ASSET}/photo.png`);
+    expect(buildMediaKey("", BIZ, ASSET, "photo.png")).toBe(`${BIZ}/${ASSET}/photo.png`);
+  });
+
+  it("accepts only a key under the owning business's own prefix", () => {
+    const key = buildMediaKey("media/", BIZ, ASSET, "photo.png");
+    expect(keyBelongsToBusiness(key, "media/", BIZ)).toBe(true);
+    // Another tenant's id — the exact leak the rule exists to prevent.
+    expect(keyBelongsToBusiness(key, "media/", "99999999-2222-3333-4444-555555555555")).toBe(false);
+    // Outside the configured prefix entirely.
+    expect(keyBelongsToBusiness(`backups/${BIZ}/${ASSET}/photo.png`, "media/", BIZ)).toBe(false);
+    // Traversal and malformed shapes fail closed.
+    expect(keyBelongsToBusiness(`media/${BIZ}/${ASSET}/../x`, "media/", BIZ)).toBe(false);
+    expect(keyBelongsToBusiness(`media/${BIZ}/not-a-uuid/photo.png`, "media/", BIZ)).toBe(false);
+    expect(keyBelongsToBusiness(`media/${BIZ}/${ASSET}`, "media/", BIZ)).toBe(false);
+    expect(keyBelongsToBusiness(`media/${BIZ}/${ASSET}/a/b`, "media/", BIZ)).toBe(false);
+  });
+
+  it("normalizes prefixes to a single trailing slash", () => {
+    expect(normalizeKeyPrefix("media")).toBe("media/");
+    expect(normalizeKeyPrefix("/media//")).toBe("media/");
+    expect(normalizeKeyPrefix("  ")).toBe("");
+  });
+});
+
+describe("validateMediaConfigInput", () => {
+  const stored: MediaStorageConfig = {
+    ...DEFAULT_MEDIA_CONFIG,
+    endpoint: "https://s3.parspack.com",
+    bucket: "pos-media",
+    accessKeyId: "AK",
+    secretAccessKey: "stored-secret",
+  };
+
+  it("keeps the stored secret when the field is omitted, clears it on empty string", () => {
+    const kept = validateMediaConfigInput({ bucket: "pos-media-2" }, stored);
+    expect(kept.ok && kept.config.secretAccessKey).toBe("stored-secret");
+    const cleared = validateMediaConfigInput({ secretAccessKey: "", enabled: false }, stored);
+    expect(cleared.ok && cleared.config.secretAccessKey).toBe("");
+  });
+
+  it("requires endpoint/bucket/credentials only when enabling", () => {
+    expect(validateMediaConfigInput({ enabled: false }, DEFAULT_MEDIA_CONFIG).ok).toBe(true);
+    const missing = validateMediaConfigInput({ enabled: true }, DEFAULT_MEDIA_CONFIG);
+    expect(missing.ok).toBe(false);
+    const bad = validateMediaConfigInput({ enabled: true, endpoint: "not-a-url", bucket: "b", accessKeyId: "a", secretAccessKey: "s" }, DEFAULT_MEDIA_CONFIG);
+    expect(bad.ok === false && bad.error).toBe("endpoint_invalid");
+    const good = validateMediaConfigInput(
+      { enabled: true, endpoint: "https://s3.parspack.com/", bucket: "b", accessKeyId: "a", secretAccessKey: "s" },
+      DEFAULT_MEDIA_CONFIG,
+    );
+    expect(good.ok && good.config.endpoint).toBe("https://s3.parspack.com");
+  });
+
+  it("refuses negative or non-numeric prices", () => {
+    expect(validateMediaConfigInput({ dailyFlatRial: -5 }, stored).ok).toBe(false);
+    expect(validateMediaConfigInput({ dailyPerGbRial: "x" }, stored).ok).toBe(false);
+    const ok = validateMediaConfigInput({ dailyFlatRial: 5000, dailyPerGbRial: 20000, freeQuotaMb: 100 }, stored);
+    expect(ok.ok && ok.config.dailyFlatRial).toBe(5000);
+  });
+
+  it("masks the secret on read", () => {
+    const masked = maskMediaConfig(stored);
+    expect("secretAccessKey" in masked).toBe(false);
+    expect(masked.secretAccessKeySet).toBe(true);
+  });
+});
+
+describe("dailyStorageCharge", () => {
+  const config: MediaStorageConfig = {
+    ...DEFAULT_MEDIA_CONFIG,
+    billingEnabled: true,
+    dailyFlatRial: 5000,
+    dailyPerGbRial: 20000,
+    freeQuotaMb: 100,
+  };
+  const GB = 1024 * 1024 * 1024;
+  const MB = 1024 * 1024;
+
+  it("charges nothing when billing is off or nothing is stored", () => {
+    expect(dailyStorageCharge(5 * GB, { ...config, billingEnabled: false }).totalRial).toBe(0);
+    expect(dailyStorageCharge(0, config).totalRial).toBe(0);
+  });
+
+  it("charges the flat base for anything stored, per-GB only above the free quota", () => {
+    // 50 MB — inside the quota, flat only.
+    const small = dailyStorageCharge(50 * MB, config);
+    expect(small.flatRial).toBe(5000);
+    expect(small.perGbRial).toBe(0);
+    expect(small.totalRial).toBe(5000);
+    // 1 GB + 100 MB quota → exactly 1 GB billable.
+    const oneGb = dailyStorageCharge(1 * GB + 100 * MB, config);
+    expect(oneGb.billableBytes).toBe(1 * GB);
+    expect(oneGb.perGbRial).toBe(20000);
+    expect(oneGb.totalRial).toBe(25000);
+  });
+
+  it("rounds a fraction of a GB up, never down to free", () => {
+    // 1 byte over the quota still owes 1 Rial of the per-GB rate.
+    const justOver = dailyStorageCharge(100 * MB + 1, config);
+    expect(justOver.perGbRial).toBe(1);
+  });
+});
+
+describe("tag/category parsing", () => {
+  it("cleans, dedupes and caps tags", () => {
+    expect(parseTags(["  قهوه ", "قهوه", "منو"])).toEqual(["قهوه", "منو"]);
+    expect(parseTags(undefined)).toEqual([]);
+    expect(parseTags("not-an-array")).toBeNull();
+    expect(parseTags([1])).toBeNull();
+    expect(parseTags(["x".repeat(61)])).toBeNull();
+  });
+  it("treats empty category as null and refuses oversize", () => {
+    expect(parseCategory("")).toBeNull();
+    expect(parseCategory("  غذا ")).toBe("غذا");
+    expect(parseCategory("x".repeat(81))).toBeUndefined();
+    expect(parseCategory(5)).toBeUndefined();
+  });
+});

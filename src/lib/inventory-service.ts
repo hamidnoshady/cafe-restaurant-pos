@@ -99,7 +99,7 @@ export async function getInventoryOverview(
     inventorySystem,
   ] = await Promise.all([
     query(
-      "SELECT id, name, sku, unit, reorder_level, avg_cost, purchase_unit, purchase_unit_factor, is_active, is_produced FROM inventory_items WHERE location_id = $1 ORDER BY name",
+      "SELECT id, name, sku, unit, reorder_level, avg_cost, purchase_unit, purchase_unit_factor, is_active, is_produced, image_media_id FROM inventory_items WHERE location_id = $1 ORDER BY name",
       [locationId],
     ),
     query<Record<string, unknown>>(

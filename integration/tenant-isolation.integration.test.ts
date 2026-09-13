@@ -261,6 +261,11 @@ describe("every tenant table is protected", () => {
       "platform_cms_config",
       "platform_cms_sites",
       "platform_cms_sync_runs",
+      // Migration 0149 — the singleton S3/Parspack connection and price policy
+      // behind every business's media library. One bucket credential for the
+      // deployment, no business_id; tenant separation happens inside the bucket
+      // (per-business key prefixes) and in the RLS-protected media_* tables.
+      "platform_media_config",
       // Phase 37 — singleton message provider config + rates (no business_id;
       // the business side of messaging billing is RLS-protected).
       "platform_message_config",

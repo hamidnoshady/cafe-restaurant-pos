@@ -7,6 +7,8 @@ export interface MenuItemPatchInput {
   description?: string | null;
   sku?: string | null;
   imageUrl?: string | null;
+  /** The catalogue photo: a media_assets id from «کتابخانهٔ رسانه» (migration 0149). */
+  imageMediaId?: string | null;
   sortOrder?: number;
   isActive?: boolean;
   targetMarginPercent?: number | null;
@@ -25,7 +27,7 @@ export async function getMenuTree(locationId: string) {
         [locationId],
       ),
       query(
-        "SELECT id, category_id, name, description, sku, price, image_url, sort_order, is_active, target_margin_percent FROM menu_items WHERE location_id = $1 ORDER BY sort_order, name",
+        "SELECT id, category_id, name, description, sku, price, image_url, image_media_id, sort_order, is_active, target_margin_percent FROM menu_items WHERE location_id = $1 ORDER BY sort_order, name",
         [locationId],
       ),
       query(
@@ -106,6 +108,19 @@ export async function updateMenuItem(
   if (body.imageUrl !== undefined) {
     if (body.imageUrl !== null && typeof body.imageUrl !== "string") return { ok: false, error: "bad_request", status: 400 };
     set("image_url", body.imageUrl?.trim() || null);
+  }
+  if (body.imageMediaId !== undefined) {
+    if (body.imageMediaId !== null && typeof body.imageMediaId !== "string") return { ok: false, error: "bad_request", status: 400 };
+    if (body.imageMediaId) {
+      // The asset must be this business's own image. RLS already scopes the
+      // read; the explicit kind check keeps a PDF from becoming a menu photo.
+      const { rows: media } = await query(
+        "SELECT id FROM media_assets WHERE id = $1 AND kind = 'image'",
+        [body.imageMediaId],
+      );
+      if (media.length === 0) return { ok: false, error: "bad_request", status: 400 };
+    }
+    set("image_media_id", body.imageMediaId || null);
   }
   if (body.sortOrder !== undefined) set("sort_order", Number(body.sortOrder) || 0);
   if (body.isActive !== undefined) set("is_active", Boolean(body.isActive));

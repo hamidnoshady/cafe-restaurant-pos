@@ -29,6 +29,8 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     purchaseUnit?: string | null;
     purchaseUnitFactor?: number;
     isActive?: boolean;
+    /** The item's reference photo: a media_assets id from «کتابخانهٔ رسانه» (0149). */
+    imageMediaId?: string | null;
   };
   try {
     body = await request.json();
@@ -71,6 +73,21 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     set("purchase_unit_factor", factor);
   }
   if (body.isActive !== undefined) set("is_active", Boolean(body.isActive));
+  if (body.imageMediaId !== undefined) {
+    if (body.imageMediaId !== null && typeof body.imageMediaId !== "string") {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+    if (body.imageMediaId) {
+      // RLS scopes the read to this business; the kind check keeps a video or
+      // PDF from becoming the counter's reference photo.
+      const { rows: media } = await query(
+        "SELECT id FROM media_assets WHERE id = $1 AND kind = 'image'",
+        [body.imageMediaId],
+      );
+      if (media.length === 0) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+    set("image_media_id", body.imageMediaId || null);
+  }
   if (fields.length === 0) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   await query(`UPDATE inventory_items SET ${fields.join(", ")} WHERE id = $1`, [id, ...values]);
