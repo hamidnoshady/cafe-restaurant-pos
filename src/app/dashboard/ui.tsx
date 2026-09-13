@@ -197,6 +197,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     branch_already_active: "این شعبه از قبل فعال است.",
     branch_already_inactive: "این شعبه از قبل غیرفعال است.",
     invalid_timezone: "منطقهٔ زمانی معتبر نیست.",
+    invalid_color: "رنگ انتخاب‌شده معتبر نیست.",
     // Phase 22 Wave 4 (tip capture) — issue #160 §4
     invalid_tip_amount: "مبلغ انعام معتبر نیست.",
     // Phase 16 — AR subledger

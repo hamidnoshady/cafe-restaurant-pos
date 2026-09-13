@@ -151,6 +151,42 @@ describe("branch access is confined to assignment", () => {
     });
   });
 
+  it("reports the business's branch count separately from the member's reachable set", async () => {
+    // The switcher needs both numbers. `locations` is narrowed to what the
+    // member may reach, so a cashier pinned to North looks identical to a
+    // member of a one-branch business by its length — but the first must be
+    // told which branch they are in and the second must not be given a
+    // permanent header chip answering a question they never have.
+    const cashierId = await createMember("cashier", biz.northLocationId);
+
+    await asBusiness(biz.id, async () => {
+      const pinned = await setupState.accessibleLocationsFor(
+        session({ sub: cashierId, role: "cashier" }),
+      );
+      expect(pinned.locations).toHaveLength(1);
+      expect(pinned.canSwitch).toBe(false);
+      expect(pinned.businessLocationCount).toBe(2);
+    });
+
+    // An owner of the same business sees both, and may switch.
+    const ownerId = await createMember("owner", null);
+    await asBusiness(biz.id, async () => {
+      const roaming = await setupState.accessibleLocationsFor(session({ sub: ownerId }));
+      expect(roaming.locations).toHaveLength(2);
+      expect(roaming.canSwitch).toBe(true);
+      expect(roaming.businessLocationCount).toBe(2);
+    });
+
+    // Deactivating one leaves a genuinely single-branch business: the count
+    // follows, because it is only ever the active branches.
+    await branchService.deactivateBranch(biz.id, biz.northLocationId, null);
+    await asBusiness(biz.id, async () => {
+      const single = await setupState.accessibleLocationsFor(session({ sub: ownerId }));
+      expect(single.businessLocationCount).toBe(1);
+      expect(single.canSwitch).toBe(false);
+    });
+  });
+
   it("lets an owner reach and resolve to every branch", async () => {
     const ownerId = await createMember("owner", null);
 

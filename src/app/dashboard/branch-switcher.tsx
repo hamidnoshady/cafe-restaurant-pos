@@ -51,6 +51,8 @@ interface ActiveResponse {
   active: Branch | null;
   locations: Branch[];
   canSwitch: boolean;
+  /** Branches the business has, before this member's access narrows the list. */
+  businessLocationCount?: number;
 }
 
 /**
@@ -140,8 +142,16 @@ export function BranchSwitcher({ compact = false }: { compact?: boolean }) {
   );
 
   if (!state.canSwitch) {
-    // One branch, or a member fixed to one: still worth naming, but a menu
-    // whose only item is where you already are is a dead control.
+    // Nothing at all for a business with one branch: "which branch am I in"
+    // is not a question they have, and a permanent chip in the header would
+    // be pure clutter for what is most businesses on the platform.
+    //
+    // But a member *fixed* to one branch of a business that has several does
+    // have the question — they can be looking at North while the owner talks
+    // about Main — so they get a static, colour-coded label. It is a status,
+    // not a control: a menu whose only item is where you already are is dead.
+    if ((state.businessLocationCount ?? state.locations.length) < 2) return null;
+
     return (
       <div className={compact ? "" : "mb-3"}>
         {!compact ? (

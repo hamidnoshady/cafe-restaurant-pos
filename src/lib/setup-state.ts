@@ -251,6 +251,7 @@ export async function resolveActiveLocation(
 export async function accessibleLocationsFor(session: SessionPayload): Promise<{
   locations: LocationRow[];
   canSwitch: boolean;
+  businessLocationCount: number;
 }> {
   const [locations, ctx] = await Promise.all([
     businessLocations(session.businessId),
@@ -261,6 +262,16 @@ export async function accessibleLocationsFor(session: SessionPayload): Promise<{
   return {
     locations: locations.filter((l) => accessible.has(l.id)),
     canSwitch: canSwitchBranches(ctx, ids),
+    /**
+     * How many branches the *business* has, before this member's access is
+     * applied. `locations` above is already filtered, so a cashier pinned to
+     * one branch of a five-branch business is indistinguishable from a member
+     * of a single-branch business by its length alone — and the two want
+     * opposite things from the switcher: the first needs to be told which
+     * branch they are in, the second has no such question and should not be
+     * given a permanent header chip answering it.
+     */
+    businessLocationCount: locations.length,
   };
 }
 
