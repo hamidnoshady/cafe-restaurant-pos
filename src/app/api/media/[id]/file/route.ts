@@ -1,0 +1,46 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireRole, withTenantScope } from "@/lib/auth";
+import { getMediaConfig, isMediaStorageReady, readMediaObject } from "@/lib/media-service";
+
+/**
+ * The object's bytes, served through the app: the browser never talks to the
+ * bucket, so the S3 credential stays server-side and the tenant check
+ * (`keyBelongsToBusiness`, inside readMediaObject) runs on every read.
+ *
+ * Images and videos render inline (the library grid's thumbnails and the
+ * item pickers); everything else downloads — a "document" that turned out to
+ * be active content must never execute on this origin.
+ */
+export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+  const { id } = await context.params;
+
+  const config = await getMediaConfig();
+  if (!isMediaStorageReady(config)) {
+    return NextResponse.json({ error: "storage_not_configured" }, { status: 503 });
+  }
+
+  let result: Awaited<ReturnType<typeof readMediaObject>>;
+  try {
+    result = await readMediaObject(session.businessId, id, config);
+  } catch (err) {
+    console.error("media read failed:", err);
+    return NextResponse.json({ error: "storage_error" }, { status: 502 });
+  }
+  if (!result) return NextResponse.json({ error: "asset_not_found" }, { status: 404 });
+
+  const { asset, bytes } = result;
+  const inline = asset.kind === "image" || asset.kind === "video";
+  const fileName = encodeURIComponent(asset.fileName);
+  return new NextResponse(new Uint8Array(bytes), {
+    headers: {
+      // SVG can carry markup; force download for it despite being an "image".
+      "Content-Type": asset.mimeType === "image/svg+xml" ? "application/octet-stream" : asset.mimeType,
+      "Content-Length": String(bytes.byteLength),
+      "Content-Disposition": `${inline && asset.mimeType !== "image/svg+xml" ? "inline" : "attachment"}; filename*=UTF-8''${fileName}`,
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+});

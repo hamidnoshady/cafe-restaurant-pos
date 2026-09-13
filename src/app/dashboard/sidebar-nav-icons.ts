@@ -23,6 +23,7 @@ import {
   ContactIcon,
   GemIcon,
   GlobeIcon,
+  ImageIcon,
   LayoutDashboardIcon,
   LifeBuoyIcon,
   PackageIcon,
@@ -69,6 +70,8 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   // back to the generic circle.
   "/accounting/overview": CalculatorIcon,
   "/settings/connections": PlugIcon,
+  // Migration 0149 — the media library.
+  "/dashboard/media": ImageIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
   "/settings/billing": WalletIcon,

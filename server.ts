@@ -58,6 +58,7 @@ app.prepare().then(async () => {
   const { describeDeploymentRole } = await import("./src/lib/deployment-role");
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runWebsiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS } = await import("./src/lib/website/billing-service");
+  const { runMediaBillingTick } = await import("./src/lib/media-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
   const { runWebsiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/website/sync-service");
@@ -191,6 +192,17 @@ app.prepare().then(async () => {
   const websiteBillingTick = () =>
     runWebsiteBillingTick().catch((err) => console.error("website billing tick failed:", err));
   scheduleBackgroundTick(websiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS, 90_000);
+
+  // Migration 0149: the media library's daily storage charge. The tick runs
+  // hourly but the charge is claimed once per (business, local Tehran day) —
+  // a UNIQUE row per day, ON CONFLICT DO NOTHING — so the hour it fires in
+  // never matters and a restart never double-bills. A wallet that cannot
+  // cover today rolls the claim back and is retried tomorrow; the library
+  // keeps serving either way, the same "never cut off from a cron" rule as
+  // the website tick above.
+  const mediaBillingTick = () =>
+    runMediaBillingTick().catch((err) => console.error("media billing tick failed:", err));
+  scheduleBackgroundTick(mediaBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS, 95_000);
 
   // Migration 0139: the website platform's control plane. Two jobs in one tick —
   // refresh the mirror of every site on eshobe-cms (on the operator's configured

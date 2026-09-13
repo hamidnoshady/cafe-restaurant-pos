@@ -82,6 +82,14 @@ export const MODULE_KEYS = [
   "crm",
   "website",
   "messaging",
+  // Migration 0149 — «کتابخانهٔ رسانه»: the business's shared library of
+  // images, videos and documents (folders, categories, AI tagging, the
+  // standard product-shot refine). Core for every trade — a jeweller stores
+  // product photos exactly as a café stores menu shots — and deliberately
+  // unassigned in `apps.ts` like `connections`: the library is shared shell
+  // infrastructure every app's pickers read from, not an app of its own, so
+  // the module gates visibility, never availability.
+  "media",
 ] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
@@ -192,6 +200,9 @@ const CORE_MODULES: readonly ModuleKey[] = [
   "ledger",
   "integrations",
   "connections",
+  // Migration 0149 — the media library ships to every trade for the same
+  // reason `customers` does: every business has photos and documents to keep.
+  "media",
   "reports",
   "ai",
   "settings",
@@ -401,6 +412,10 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // answers the module question without ever blocking the page.
   ["/settings/connections", "connections"],
   ["/dashboard/stock", "stock"],
+  // Migration 0149 — the media library. Its module has no owning app (like
+  // `connections`), so this row gates visibility by trade without the
+  // availability guard ever locking the page.
+  ["/dashboard/media", "media"],
   // The accounting suite's own pages. The Accounting app lives at
   // `/dashboard/accounting/*` now; the old `/dashboard/ledger` address
   // forwards into it but is mapped too, so the gate answers on both sides of
@@ -469,6 +484,11 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/api/deliveries", "delivery"],
   ["/api/couriers", "delivery"],
   ["/api/inventory", "inventory"],
+  // Migration 0149 — the media library's data routes. `media` is core for
+  // every trade and owned by no app (the availability guard fails open, like
+  // `connections`), so this row exists for the industry guard's completeness
+  // rather than to lock anything.
+  ["/api/media", "media"],
   ["/api/loyalty", "loyalty"],
   ["/api/promotions", "promotions"],
   ["/api/commission", "commission"],

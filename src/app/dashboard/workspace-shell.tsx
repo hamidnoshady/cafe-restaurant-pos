@@ -186,6 +186,17 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
         })),
       ],
     },
+    // «کتابخانهٔ رسانه» (migration 0149) — the business's shared library of
+    // images, videos and documents. Shell infrastructure like the connections
+    // hub: its module is core for every trade and unassigned in `apps.ts`,
+    // so the door is never badged and never gated; every app's image picker
+    // (menu items, inventory items, the website) opens the same library.
+    {
+      label: "کتابخانهٔ رسانه",
+      module: "media",
+      href: "/dashboard/media",
+      roles: ["owner", "manager"],
+    },
     // The «اتصال‌های فنی» hub — every technical connection in the product
     // (desktop, WordPress/WooCommerce, the CMS site, Holoo, the remote server
     // sync, MCP, API keys). A shell utility, not an app: its module is
