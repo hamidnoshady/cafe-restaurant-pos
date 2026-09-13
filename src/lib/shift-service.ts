@@ -128,6 +128,76 @@ export async function shiftCashSummary(
   return toCashSummary(rows[0]);
 }
 
+export interface BranchShiftSales {
+  /** Where the running total starts counting from, as an ISO instant. */
+  since: string;
+  /** The branch's most recent shift close, if it has ever had one. */
+  lastShiftEndedAt: string | null;
+  /** True while anyone is still clocked in at the branch. */
+  hasOpenShift: boolean;
+  summary: ShiftCashSummary;
+}
+
+/**
+ * The branch's running sales since its last shift close — the Accounting
+ * home's «فروش شیفت جاری» quick-report box.
+ *
+ * The window starts at the *later* of the branch's live-window start (the
+ * business day's own start, or a manual «بستن روز کاری») and the branch's most
+ * recent shift cash-up. Deliberately **every** cash-up, not only the one that
+ * emptied the floor: `resolveLiveWindow` treats a close with a colleague still
+ * clocked in as a handover and keeps the board running, which is right for the
+ * day's KPIs — but this box is the till counter, and the till counter goes
+ * back to zero at each cash-up. Bounding it by the day's start is what keeps a
+ * branch whose staff never clock in from accumulating a week of sales into
+ * \"the current shift\".
+ *
+ * Branch-scoped rather than per-employee (`shiftCashSummary`): the box reports
+ * what the branch has sold this shift, whoever rang each order up.
+ */
+export async function branchShiftSales(locationId: string): Promise<BranchShiftSales | null> {
+  const status = await getBusinessDayStatus(locationId);
+  if (!status) return null;
+
+  const dayStart = status.windowStart;
+  const lastShiftEndedAt = status.lastShiftEndedAt;
+  const since =
+    lastShiftEndedAt && Date.parse(lastShiftEndedAt) > Date.parse(dayStart)
+      ? lastShiftEndedAt
+      : dayStart;
+
+  // Orders and payments aggregated *separately*, not through one LEFT JOIN:
+  // an order settled in two payments (split cash/card) has two joined rows,
+  // and `sum(o.total)` over them would report the order's total twice.
+  const { rows } = await query<CashSummaryRow>(
+    `WITH window_orders AS (
+       SELECT o.id, o.total
+         FROM orders o
+        WHERE o.location_id = $1
+          AND o.status = 'completed'
+          AND o.closed_at IS NOT NULL
+          AND o.closed_at >= $2::timestamptz
+     )
+     SELECT
+       (SELECT count(*) FROM window_orders)                                    AS order_count,
+       (SELECT coalesce(sum(total), 0) FROM window_orders)                     AS gross_total,
+       coalesce(sum(p.amount) FILTER (WHERE p.method = 'cash'), 0)             AS cash_total,
+       coalesce(sum(p.amount) FILTER (WHERE p.method IN ('card', 'card_to_card')), 0) AS card_total,
+       coalesce(sum(p.amount) FILTER (WHERE p.method = 'online'), 0)           AS online_total,
+       coalesce(sum(p.amount) FILTER (WHERE p.method = 'credit'), 0)           AS credit_total
+       FROM payments p
+      WHERE p.order_id IN (SELECT id FROM window_orders)`,
+    [locationId, since],
+  );
+
+  return {
+    since,
+    lastShiftEndedAt,
+    hasOpenShift: status.hasOpenShift,
+    summary: toCashSummary(rows[0]),
+  };
+}
+
 export interface EmployeeShift {
   id: string;
   employeeId: string;
