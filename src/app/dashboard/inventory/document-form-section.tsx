@@ -244,8 +244,14 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
           </Field>
         </div>
 
+        {/*
+          The line editor. One shared four-column grid from `md` up (with a
+          header row naming the columns); below that each line becomes its own
+          bordered mini-card with per-field labels, because four columns never
+          fit a phone — the item combobox was the thing that got crushed.
+        */}
         <div className="min-w-0 space-y-2">
-          <div className="grid grid-cols-[minmax(0,2fr)_minmax(90px,1fr)_minmax(110px,1fr)_40px] items-center gap-2 text-xs font-medium text-stone-500 dark:text-stone-400">
+          <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(110px,1fr)_minmax(130px,1fr)_2.75rem] md:items-center md:gap-2 text-xs font-medium text-stone-500 dark:text-stone-400">
             <span>قلم انبار</span>
             <span>مقدار</span>
             {kind === "receipt" ? <span>قیمت واحد (ریال)</span> : <span>ارزش (محاسبه‌شده)</span>}
@@ -257,41 +263,56 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
             </div>
           ) : (
             lines.map((line) => (
-              <div key={line.key} className="grid min-w-0 grid-cols-[minmax(0,2fr)_minmax(90px,1fr)_minmax(110px,1fr)_40px] items-center gap-2">
-                <SearchableSelect value={line.inventoryItemId} onChange={(v) => updateLine(line.key, { inventoryItemId: v })} options={itemOptions} />
-                <PersianNumberInput
-                  className={inputClass}
-                  dir="ltr"
-                  inputMode="decimal"
-                  value={line.quantity}
-                  onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                  placeholder="۰"
-                  aria-label="مقدار قلم"
-                />
-                {kind === "receipt" ? (
+              <div
+                key={line.key}
+                className="grid min-w-0 grid-cols-1 gap-2 rounded-xl border border-border/80 p-3 md:grid-cols-[minmax(0,2fr)_minmax(110px,1fr)_minmax(130px,1fr)_2.75rem] md:items-center md:rounded-none md:border-0 md:p-0"
+              >
+                <label className="grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400">
+                  <span className="md:sr-only">قلم انبار</span>
+                  <SearchableSelect value={line.inventoryItemId} onChange={(v) => updateLine(line.key, { inventoryItemId: v })} options={itemOptions} ariaLabel="قلم انبار" />
+                </label>
+                <label className="grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400">
+                  <span className="md:sr-only">مقدار</span>
                   <PersianNumberInput
                     className={inputClass}
                     dir="ltr"
-                    inputMode="numeric"
-                    value={line.unitCost}
-                    onChange={(e) => updateLine(line.key, { unitCost: e.target.value })}
+                    inputMode="decimal"
+                    value={line.quantity}
+                    onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
                     placeholder="۰"
-                    aria-label="قیمت واحد به ریال"
+                    aria-label="مقدار قلم"
                   />
+                </label>
+                {kind === "receipt" ? (
+                  <label className="grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400">
+                    <span className="md:sr-only">قیمت واحد (ریال)</span>
+                    <PersianNumberInput
+                      className={inputClass}
+                      dir="ltr"
+                      inputMode="numeric"
+                      value={line.unitCost}
+                      onChange={(e) => updateLine(line.key, { unitCost: e.target.value })}
+                      placeholder="۰"
+                      aria-label="قیمت واحد به ریال"
+                    />
+                  </label>
                 ) : (
-                  <span className="truncate text-xs tabular-nums text-muted-foreground">در لحظه ثبت</span>
+                  <span className="truncate text-xs tabular-nums text-muted-foreground">
+                    <span className="md:hidden">ارزش: </span>در لحظه ثبت
+                  </span>
                 )}
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon-sm"
-                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  size="sm"
+                  className="w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive md:w-auto"
                   onClick={() => removeLine(line.key)}
                   disabled={lines.length === 1}
                   aria-label="حذف این قلم"
                   title="حذف این قلم"
                 >
                   <Trash2Icon aria-hidden="true" className="size-4" />
+                  <span className="md:sr-only">حذف این قلم</span>
                 </Button>
               </div>
             ))

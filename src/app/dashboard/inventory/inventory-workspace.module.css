@@ -9,10 +9,25 @@
   --muted: oklch(0.965 0.008 85);
 }
 
-.workspace :global(input),
+/*
+ * Touch-height form controls, uniformly.
+ *
+ * The height must land on every control-shaped thing or the row looks broken:
+ * `SearchableSelect` and `JalaliDatePicker` render their triggers as plain
+ * <button>s (no data-slot), so the original input/button-only rule left every
+ * dropdown a head shorter than the input next to it — the "tiny selects" bug.
+ * They are reachable by the aria-haspopup they already carry (listbox for the
+ * combobox, dialog for the date picker and other popover triggers).
+ *
+ * Checkboxes and radios are excluded: a 1rem box forced to 3.25rem tall
+ * misaligns its own label row.
+ */
+.workspace :global(input:not([type="checkbox"]):not([type="radio"])),
 .workspace :global(select),
 .workspace :global(textarea),
-.workspace :global(button[data-slot="button"]) {
+.workspace :global(button[data-slot="button"]),
+.workspace :global(button[aria-haspopup="listbox"]),
+.workspace :global(button[aria-haspopup="dialog"]) {
   min-height: 3.25rem;
 }
 

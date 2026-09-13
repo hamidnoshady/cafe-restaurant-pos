@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { CountScanField, type ScanMatch } from "./count-scan-field";
 import { VisionCountPanel } from "./vision-count-panel";
 import type { InventoryItem, Runner } from "./inventory-manager";
-import { cardClass, overlayPanelClass, SectionCard, EmptyState, StatusBadge } from "../page-chrome";
+import { overlayPanelClass, SectionCard, EmptyState, StatusBadge } from "../page-chrome";
 
 interface StockCount {
   id: string;
@@ -192,7 +192,7 @@ export function StockCountsSection({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <SectionCard
         title={
           <div>
@@ -246,7 +246,7 @@ export function StockCountsSection({
                     <div className="flex items-end gap-1.5">
                       <button
                         type="button"
-                        className="rounded-lg border border-border px-2.5 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                        className="flex min-h-[3.25rem] min-w-11 items-center justify-center rounded-lg border border-border px-3 text-base font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
                         onClick={() =>
                           setCountedQty((prev) => {
                             const current = prev[i.id]?.trim();
@@ -275,7 +275,7 @@ export function StockCountsSection({
                       </label>
                       <button
                         type="button"
-                        className="rounded-lg border border-border px-2.5 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                        className="flex min-h-[3.25rem] min-w-11 items-center justify-center rounded-lg border border-border px-3 text-base font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
                         onClick={() =>
                           setCountedQty((prev) => {
                             const current = prev[i.id]?.trim();

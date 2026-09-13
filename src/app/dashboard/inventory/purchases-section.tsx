@@ -17,7 +17,7 @@ import {
   InvoiceOcrPanel,
   type InvoiceOcrApplyPayload,
 } from "./invoice-ocr-panel";
-import { cardClass, SectionCard } from "../page-chrome";
+import { SectionCard, StatusBadge } from "../page-chrome";
 
 interface Purchase {
   id: string;
@@ -72,6 +72,13 @@ const STATUS_LABELS: Record<Purchase["status"], string> = {
   ordered: "سفارش داده‌شده",
   received: "دریافت‌شده",
   cancelled: "لغوشده",
+};
+
+const STATUS_TONES: Record<Purchase["status"], "active" | "positive" | "neutral" | "danger"> = {
+  draft: "active",
+  ordered: "active",
+  received: "positive",
+  cancelled: "neutral",
 };
 
 const SETTLEMENT_LABELS: Record<string, string> = {
@@ -449,7 +456,7 @@ export function PurchasesSection({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <InvoiceOcrPanel
         items={items}
         supplierOptions={activeSuppliersOptions}
@@ -536,13 +543,18 @@ export function PurchasesSection({
             const isExpanded = expandedId === p.id;
             return (
               <li key={p.id} className="min-w-0 px-3 py-4 text-sm sm:px-4">
-                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <span className="min-w-0 break-words">
+                    <StatusBadge tone={STATUS_TONES[p.status]}>{STATUS_LABELS[p.status]}</StatusBadge>{" "}
                     {p.supplier_name ?? "بدون تأمین‌کننده"} — {money.formatText(String(p.total))} —{" "}
                     <span className="text-xs text-muted-foreground">{formatJalali(p.purchase_date)}</span>
                   </span>
-                  <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-end">
-                    <span className="text-xs">{STATUS_LABELS[p.status]}</span>
+                  {/*
+                    Actions and the settlement pickers. Selects get a full row
+                    of their own on a phone (col-span-2) so they never shrink
+                    below a readable width; buttons pair up two per row.
+                  */}
+                  <div className="grid w-full grid-cols-2 gap-2 lg:flex lg:w-auto lg:flex-wrap lg:items-end lg:justify-end">
                     {p.status !== "cancelled" ? (
                       <Button type="button" variant="outline" onClick={() => toggleExpanded(p.id)}>
                         {isExpanded ? "بستن" : "مشاهده جزئیات"}
@@ -555,7 +567,7 @@ export function PurchasesSection({
                             ثبت سفارش
                           </Button>
                         ) : null}
-                        <label className="grid min-w-36 max-w-full gap-1 text-xs font-medium">
+                        <label className="col-span-2 grid min-w-0 gap-1 text-xs font-medium lg:col-span-1 lg:w-44">
                           <span>روش تسویه</span>
                           <SearchableSelect
                             value={settlementByPurchase[p.id] ?? "credit"}
@@ -567,7 +579,7 @@ export function PurchasesSection({
                           />
                         </label>
                         {!p.supplier_name && (settlementByPurchase[p.id] ?? "credit") === "credit" ? (
-                          <div className="grid min-w-36 max-w-full gap-1 text-xs font-medium">
+                          <div className="col-span-2 grid min-w-0 gap-1 text-xs font-medium lg:col-span-1 lg:w-44">
                             <span>تأمین‌کنندهٔ خرید نسیه</span>
                             <SearchableSelect
                               value={supplierByPurchase[p.id] ?? ""}

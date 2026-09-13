@@ -17,6 +17,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useMoney } from "@/components/money/money-context";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { MAX_RECEIPT_IMAGE_BYTES, parseReceiptImageDataUrl } from "@/lib/ai-receipt";
@@ -454,7 +455,7 @@ export function InvoiceOcrPanel({
                       />
                     </Field>
                     <Field label={`مقدار${line.unit ? ` (${line.unit})` : ""}`}>
-                      <input
+                      <PersianNumberInput
                         className={inputClass}
                         dir="ltr"
                         inputMode="decimal"
@@ -463,7 +464,7 @@ export function InvoiceOcrPanel({
                       />
                     </Field>
                     <Field label={`مبلغ (${money.unitLabel})`}>
-                      <input
+                      <PersianNumberInput
                         className={inputClass}
                         dir="ltr"
                         inputMode="numeric"
