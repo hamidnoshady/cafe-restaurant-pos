@@ -114,9 +114,10 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
    * the whole menu sitting inside the page: two navigations, one of them
    * looking like the app's real one. The app's menu is the sidebar now
    * (`accounting-app-nav.tsx`, the complete workspace), and this rail is the
-   * ledger group's own sub-navigation — the same fifteen keys the sidebar
-   * group holds, from the same `accounting-workspace.ts` list, so the two can
-   * never disagree about what «فضای کار حسابداری» contains.
+   * ledger group's own sub-navigation — the same keys the sidebar group holds,
+   * including the existing «تنظیمات حسابداری» route in its new location, from
+   * the same `accounting-workspace.ts` list. The route is moved, not copied, so
+   * the two menus cannot disagree about what «فضای کار حسابداری» contains.
    *
    * Wages stay owner + accountant: the keys are filtered through
    * `accountingSectionsForRole`, the same gate the pages use.
@@ -126,10 +127,9 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
     const def = allowed.find((candidate) => candidate.key === key);
     return def ? [{ ...def, icon: SECTION_ICONS[def.key] }] : [];
   });
-  // Outside the ledger group the rail has nothing to say: «اشخاص», the
-  // reports index and the settings screen are top-level entries of the app's
-  // own menu, so they render as plain pages rather than under a menu that
-  // does not contain them.
+  // Outside the ledger group the rail has nothing to say: «اشخاص» and the
+  // report views are top-level entries of the app's own menu. Accounting
+  // settings is now part of this rail and renders under the shared workspace.
   const inLedgerWorkspace = sections.some((candidate) => candidate.key === section);
 
   const [loadFailed, setLoadFailed] = useState(false);
