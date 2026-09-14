@@ -18,8 +18,8 @@ export async function requireProductWorkspace(): Promise<{
 }> {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  if (session.role !== "owner" && session.role !== "manager") redirect("/accounting/overview");
   const industry = await getBusinessIndustry(session.businessId);
-  if (!isProductWorkspaceIndustry(industry)) redirect("/dashboard");
+  if (!isProductWorkspaceIndustry(industry)) redirect("/accounting/overview");
   return { industry, apiBase: productApiBaseFor(industry) };
 }

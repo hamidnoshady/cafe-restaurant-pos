@@ -19,6 +19,8 @@
  * under a platform session.
  */
 
+import { ACCOUNTING_WORKSPACE_HREFS } from "./app-routes";
+
 export interface KnowledgeSection {
   /** Stable key stored in `knowledge_base_entries.section`. */
   key: string;
@@ -42,22 +44,21 @@ export interface KnowledgeSection {
  */
 export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
   { key: "overview", label: "نمای کلی", route: "/dashboard/overview" },
-  { key: "pos", label: "فروش (صندوق)", route: "/dashboard/pos" },
+  { key: "pos", label: "فروش (صندوق)", route: ACCOUNTING_WORKSPACE_HREFS.pos },
   { key: "orders", label: "سفارش‌ها", route: "/dashboard/orders" },
   { key: "customers", label: "مشتریان", route: "/dashboard/customers" },
-  { key: "inventory", label: "انبار", route: "/dashboard/inventory" },
-  { key: "stock", label: "خرید و انبار", route: "/dashboard/stock" },
-  { key: "reports", label: "گزارش‌ها", route: "/dashboard/reports" },
+  { key: "inventory", label: "انبار", route: ACCOUNTING_WORKSPACE_HREFS.inventory },
+  { key: "reports", label: "گزارش‌ها", route: ACCOUNTING_WORKSPACE_HREFS.reports },
   { key: "settings", label: "تنظیمات", route: "/settings" },
   { key: "ledger", label: "حسابداری", route: "/accounting" },
-  { key: "reservations", label: "رزروها", route: "/dashboard/reservations" },
-  { key: "delivery", label: "ارسال سفارش", route: "/dashboard/delivery" },
+  { key: "reservations", label: "رزروها", route: ACCOUNTING_WORKSPACE_HREFS.reservations },
+  { key: "delivery", label: "ارسال سفارش", route: ACCOUNTING_WORKSPACE_HREFS.delivery },
   { key: "connections", label: "اتصال‌های فنی", route: "/settings/connections" },
   { key: "website", label: "وب‌سایت", route: "/websites" },
   { key: "projects", label: "پروژه‌ها", route: "/projects" },
   { key: "ai", label: "دستیار هوشمند", route: "/dashboard/ai" },
-  { key: "kitchen", label: "آشپزخانه", route: "/dashboard/kitchen" },
-  { key: "floor", label: "نقشهٔ سالن", route: "/dashboard/floor" },
+  { key: "kitchen", label: "آشپزخانه", route: ACCOUNTING_WORKSPACE_HREFS.kitchen },
+  { key: "floor", label: "نقشهٔ سالن", route: ACCOUNTING_WORKSPACE_HREFS.floor },
   { key: "waiter", label: "میزهای من", route: "/dashboard/waiter" },
   { key: "growth", label: "رشد و بازاریابی", route: "/growth" },
   { key: "loyalty", label: "وفاداری", route: "/growth/loyalty" },
@@ -67,7 +68,7 @@ export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
   { key: "jewelry", label: "طلا و جواهر", route: "/dashboard/jewelry" },
   { key: "watch", label: "ساعت", route: "/dashboard/watch" },
   { key: "accessories", label: "اکسسوری", route: "/dashboard/accessories" },
-  { key: "cosmetics", label: "آرایشی و بهداشتی", route: "/dashboard/cosmetics" },
+  { key: "cosmetics", label: "آرایشی و بهداشتی", route: ACCOUNTING_WORKSPACE_HREFS.cosmetics },
 ];
 
 /** The catalogue entry for a key, or undefined for a key the code does not know. */

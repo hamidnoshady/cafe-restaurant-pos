@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { featureForApiPath, featureForPagePath, isLockableFeature } from "./features";
+import {
+  featureForApiPath,
+  featureForPagePath,
+  isLockableFeature,
+} from "./features";
 
 describe("featureForApiPath", () => {
   it("maps a gated prefix and its sub-paths to the right flag", () => {
     expect(featureForApiPath("/api/inventory")).toBe("inventory");
     expect(featureForApiPath("/api/inventory/purchases/123")).toBe("inventory");
     expect(featureForApiPath("/api/ledger/entries/drafts")).toBe("ledger");
-    expect(featureForApiPath("/api/reports/standard/cash_flow")).toBe("reporting");
+    expect(featureForApiPath("/api/reports/standard/cash_flow")).toBe(
+      "reporting",
+    );
     expect(featureForApiPath("/api/ai/chat")).toBe("ai_assistant");
   });
 
@@ -32,17 +38,20 @@ describe("featureForApiPath", () => {
 });
 
 describe("featureForPagePath", () => {
-  it("maps gated dashboard pages to their flag", () => {
-    expect(featureForPagePath("/dashboard/inventory")).toBe("inventory");
+  it("maps gated canonical workspaces to their flag", () => {
+    // Inventory decides food-service inventory versus retail stock on the
+    // server, so it intentionally has no generic page-prefix flag here.
+    expect(featureForPagePath("/accounting/inventory")).toBeNull();
+    expect(featureForPagePath("/accounting/floor")).toBe("reservations");
     expect(featureForPagePath("/dashboard/branches")).toBe("multi_location");
     expect(featureForPagePath("/dashboard/locations")).toBe("offline_mode");
     expect(featureForPagePath("/dashboard/waiter")).toBe("reservations");
   });
 
-  it("leaves ungated pages (dashboard home, kitchen, pos, team, …) alone", () => {
+  it("leaves ungated pages (dashboard home, kitchen, POS, team, …) alone", () => {
     expect(featureForPagePath("/dashboard")).toBeNull();
-    expect(featureForPagePath("/dashboard/kitchen")).toBeNull();
-    expect(featureForPagePath("/dashboard/pos")).toBeNull();
+    expect(featureForPagePath("/accounting/kitchen")).toBeNull();
+    expect(featureForPagePath("/accounting/pos")).toBeNull();
     expect(featureForPagePath("/dashboard/team")).toBeNull();
   });
 });
@@ -64,8 +73,12 @@ describe("isLockableFeature", () => {
     const lockablePages = featureForPagePath("/dashboard/ai");
     expect(lockablePages).toBe("ai_assistant");
     expect(featureForPagePath("/dashboard/integrations")).toBe("integrations");
-    expect(featureForPagePath("/dashboard/website/wp/connections")).toBe("integrations");
-    expect(featureForPagePath("/settings/connections/holoo")).toBe("integrations");
+    expect(featureForPagePath("/dashboard/website/wp/connections")).toBe(
+      "integrations",
+    );
+    expect(featureForPagePath("/settings/connections/holoo")).toBe(
+      "integrations",
+    );
     expect(isLockableFeature(featureForApiPath("/api/ai/chat")!)).toBe(true);
   });
 });

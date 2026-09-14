@@ -427,7 +427,7 @@ export function LedgerDashboardSection({
           <Button
             variant="outline"
             className="min-h-11 justify-start"
-            onClick={() => onGoToTab("reports")}
+            onClick={() => onGoToTab("financial-reports")}
           >
             گزارش‌های مالی
           </Button>

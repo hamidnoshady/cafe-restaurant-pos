@@ -1,15 +1,26 @@
 import { describe, expect, test } from "vitest";
-import { resolveSidebarMode, toggleDashboardSidebarPreference } from "./sidebar-state";
+import {
+  resolveSidebarMode,
+  toggleDashboardSidebarPreference,
+} from "./sidebar-state";
 
 describe("resolveSidebarMode", () => {
   test("keeps navigation available for POS at every responsive breakpoint", () => {
-    expect(resolveSidebarMode("/dashboard/pos", "collapsed")).toBe("collapsed");
-    expect(resolveSidebarMode("/dashboard/pos/orders", "expanded")).toBe("expanded");
+    expect(resolveSidebarMode("/accounting/pos", "collapsed")).toBe(
+      "collapsed",
+    );
+    expect(resolveSidebarMode("/accounting/pos/orders", "expanded")).toBe(
+      "expanded",
+    );
   });
 
   test("uses the persisted desktop preference on regular dashboard routes", () => {
-    expect(resolveSidebarMode("/dashboard/orders", "collapsed")).toBe("collapsed");
-    expect(resolveSidebarMode("/dashboard/orders", "expanded")).toBe("expanded");
+    expect(resolveSidebarMode("/dashboard/orders", "collapsed")).toBe(
+      "collapsed",
+    );
+    expect(resolveSidebarMode("/dashboard/orders", "expanded")).toBe(
+      "expanded",
+    );
   });
 });
 

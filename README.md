@@ -73,7 +73,7 @@ The seed also creates 3 sample dining tables and a small demo menu (2 categories
 - **`/dashboard/menu`** (Owner/Manager) — CRUD for categories, items, modifier groups and
   modifiers, plus attaching modifier groups to items. Independent of the wizard's initial
   import — ongoing management.
-- **`/dashboard/pos`** (Owner/Manager/Cashier) — the cashier screen: category tabs → item
+- **`/accounting/pos`** (Owner/Manager/Cashier) — the cashier screen: category tabs → item
   grid → cart with per-item modifiers, quantity, and an order-level discount (percent or
   fixed amount). Choose dine-in (pick a table from the stub list) or takeaway (gets a
   queue number, e.g. `T-42`), then submit.
@@ -90,7 +90,7 @@ kitchen": its items land on the KDS as `sent` immediately.
   sections assigned to the logged-in waiter (`floor_sections.assigned_waiter_id`, set on
   the floor plan). Tap a seated table to add items to its open order/round, see each
   item's live kitchen status, and mark a `ready` item `served` once it's delivered.
-- **`/dashboard/kitchen`** (Kitchen, + Owner/Manager) — the KDS: one ticket per table
+- **`/accounting/kitchen`** (Kitchen, + Owner/Manager) — the KDS: one ticket per table
   (grouping every round on that table's open session) or per takeaway order. Its deterministic
   next-ticket queue places overdue tickets first, then `sent`, `preparing`, and `ready`, with
   oldest-first ties—no AI call or credit charge. Tickets outstanding ≥ 10 minutes
@@ -352,7 +352,7 @@ sauce). The recipe model on its own is one level deep and cannot express that: p
 materials in the per-slice recipe and every sale deducts a whole cake; leave them out and the cake
 has no cost.
 
-`/dashboard/inventory` ← «تولید» adds the missing middle step, for the minority of items that need
+`/accounting/inventory` ← «تولید» adds the missing middle step, for the minority of items that need
 it. A **فرمول تولید** says what one batch consumes and how much it yields; a **سند تولید** records
 an actual batch, taking the materials out of stock and putting the product in.
 
@@ -1014,7 +1014,7 @@ The console (dark chrome, deliberately unlike the tenant dashboard's light theme
 
 The Phase 7 double-entry ledger (chart of accounts, auto-posting for payments/purchases/COGS/
 waste, trial balance) becomes a suite an accountant can actually close a year on, all under
-`/dashboard/ledger` and `/dashboard/reports` (Owner/Manager + the `accountant` role):
+`/accounting` and `/accounting/reports` (Owner/Manager + the `accountant` role):
 
 - **Fiscal years & periods** — soft-close and hard-lock a period so nothing posts into it, with
   a controlled reopen; year-end closing entries roll P&L into retained earnings.

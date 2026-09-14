@@ -9,7 +9,7 @@ import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass 
 import { SectionCard } from "@/app/dashboard/page-chrome";
 
 interface PricingResponse {
-  pricing: { defaultMarginPercent: number | null; fallbackOverheadPercent: number | null };
+  pricing: { defaultMarginPercent: number | null; fallbackOverheadPercent: number | null; overheadMode?: "automatic" | "manual"; costDriftThresholdPercent?: number };
   error?: string;
 }
 
@@ -26,6 +26,7 @@ function parsePercentInput(raw: string, max: number): { ok: true; value: number 
 export function PricingSettings() {
   const [defaultMarginPercent, setDefaultMarginPercent] = useState("");
   const [fallbackOverheadPercent, setFallbackOverheadPercent] = useState("");
+  const [overheadMode, setOverheadMode] = useState<"automatic" | "manual">("automatic");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -39,6 +40,7 @@ export function PricingSettings() {
       setFallbackOverheadPercent(
         data.pricing.fallbackOverheadPercent != null ? String(data.pricing.fallbackOverheadPercent) : "",
       );
+      setOverheadMode(data.pricing.overheadMode === "manual" ? "manual" : "automatic");
       setError("");
     } else {
       setError(errorMessage(data.error));
@@ -67,7 +69,7 @@ export function PricingSettings() {
     setSaved(false);
     const { ok, data } = await api<{ error?: string }>("/api/settings/pricing", {
       method: "PUT",
-      body: JSON.stringify({ defaultMarginPercent: margin.value, fallbackOverheadPercent: overhead.value }),
+      body: JSON.stringify({ defaultMarginPercent: margin.value, fallbackOverheadPercent: overhead.value, overheadMode }),
     });
     setSaving(false);
     if (!ok) {
@@ -120,9 +122,21 @@ export function PricingSettings() {
             <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">سربار برآوردی برای کسب‌وکار تازه</h2>
           </div>
         }
-        description="سربار (اجاره، آب و برق، حقوق) در حالت عادی خودکار و از روی ۳۰ روز اخیر دفتر حسابداری محاسبه می‌شود. تا وقتی فروش کافی برای این محاسبه ثبت نشده — مثلاً در روزهای اول کسب‌وکار — این عدد به‌جای آن استفاده می‌شود. به‌محض آنکه محاسبهٔ خودکار ممکن شود، این مقدار نادیده گرفته می‌شود."
+        description="سربار (اجاره، آب و برق، حقوق) می‌تواند از روی ۳۰ روز اخیر دفتر حسابداری محاسبه شود یا همیشه از درصد دستی شما استفاده کند. در حالت خودکار، درصد دستی فقط تا زمانی به‌کار می‌رود که دادهٔ کافی برای محاسبه وجود نداشته باشد؛ با انتخاب حالت دستی، درصد شما هیچ‌وقت خودکار جایگزین نمی‌شود."
       >
         <div className="max-w-xs">
+          <Field label="روش محاسبه سربار">
+            <div className="space-y-2 text-sm">
+              <label className="flex cursor-pointer items-start gap-2">
+                <input type="radio" name="overheadMode" checked={overheadMode === "automatic"} onChange={() => { setSaved(false); setOverheadMode("automatic"); }} />
+                <span>خودکار از داده‌های ۳۰ روز اخیر دفتر حسابداری</span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2">
+                <input type="radio" name="overheadMode" checked={overheadMode === "manual"} onChange={() => { setSaved(false); setOverheadMode("manual"); }} />
+                <span>استفاده از درصد دستی، حتی پس از تکمیل داده‌ها</span>
+              </label>
+            </div>
+          </Field>
           <Field label="درصد سربار برآوردی">
             <div className="relative">
               <PersianNumberInput
@@ -130,6 +144,7 @@ export function PricingSettings() {
                 dir="ltr"
                 inputMode="decimal"
                 value={fallbackOverheadPercent}
+                disabled={overheadMode === "automatic"}
                 onChange={(e) => {
                   setSaved(false);
                   setFallbackOverheadPercent(e.target.value);

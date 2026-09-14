@@ -16,7 +16,7 @@ describe("REPORTS_TABS", () => {
   it("points every section at the reports tabbed route", () => {
     for (const tab of REPORTS_TABS) {
       const href = reportsTabHref(tab.key);
-      expect(href.startsWith("/dashboard/reports")).toBe(true);
+      expect(href.startsWith("/accounting/reports")).toBe(true);
       expect(href).toContain(`tab=${tab.key}`);
     }
   });

@@ -138,7 +138,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
               <AlertTriangleIcon aria-hidden="true" className="size-4" />
               بچ‌های نزدیک به انقضا
             </h2>
-            <Link href="/dashboard/cosmetics" className="text-sm font-semibold text-amber-800 dark:text-amber-300 hover:underline">
+            <Link href="/accounting/cosmetics" className="text-sm font-semibold text-amber-800 dark:text-amber-300 hover:underline">
               مدیریت کالاها ←
             </Link>
           </div>
@@ -216,7 +216,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
 
       <div className="flex flex-wrap gap-3">
         <Link
-          href="/dashboard/pos"
+          href="/accounting/pos"
           className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-amber-500/35 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-4 text-sm font-semibold text-amber-800 dark:text-amber-300 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15"
         >
           {labelFor(industry, "sellScreen")} ←

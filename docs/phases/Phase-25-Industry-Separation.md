@@ -38,7 +38,7 @@ What was never built is the **product boundary in front of it**. Four concrete g
    `sellAccessoryUnits` each sold exactly one item straight from an admin panel into the ledger.
    No order row, no customer, no line items, no invoice number, nothing printable, and nothing in
    any sales history. The shop's main daily act — writing an invoice for a customer buying two
-   rings and a chain — had no screen at all, while `/dashboard/pos` offered a grid of `menu_items`
+   rings and a chain — had no screen at all, while `/accounting/pos` offered a grid of `menu_items`
    the shop does not have.
 4. **There was no terminology layer.** No i18n module; ~5,000 lines of Persian literals across 329
    files. The only industry-keyed strings anywhere were `INDUSTRY_LABELS` — four display names.
@@ -54,7 +54,7 @@ from. No industry re-implements anything the core already does.
 |---|---|
 | Super-admin control of industry | Picks it at create **and can change it at any time**, regardless of existing data |
 | Retail sale document | Reuse `orders`/`order_items` — a retail invoice *is* an order |
-| Where retail sells from | Same `/dashboard/pos` route, branching on the profile's `salesModel` |
+| Where retail sells from | Same `/accounting/pos` route, branching on the profile's `salesModel` |
 | `/dashboard/orders` for retail | **No.** It is a board of *open* tickets; a settled invoice would never appear there. The shop's history lives on its selling screen |
 | Scope of the label layer | Only the nouns that genuinely differ by trade. This is **not** an i18n layer and must not become one |
 
@@ -204,7 +204,7 @@ Manually:
   new accounts appear, nothing is deleted, and `business.industry_change` lands in
   `/platform/audit`.
 - **W2** — log into that business: no میزها/آشپزخانه/رزروها/منو in the sidebar, no
-  «کافه و رستوران», and both `/dashboard/floor` and `/api/tables` refuse rather than render empty.
+  «کافه و رستوران», and both `/accounting/floor` and `/api/tables` refuse rather than render empty.
   Log into an F&B business and confirm its nav, settings tabs and POS are what they were.
 - **W3** — write an invoice with two pieces and a customer, settle it, confirm it appears under
   فاکتورهای اخیر and that the printed document shows the وزن/عیار/اجرت breakdown. Repeat for a

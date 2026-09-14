@@ -7,7 +7,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * Full floor-plan snapshot for the map: sections (with their assigned waiter),
  * every table with its canvas geometry + live status + open-session summary,
  * and each table's next upcoming reservation. One call powers the whole
- * /dashboard/floor screen.
+ * /accounting/floor screen.
  */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");

@@ -49,10 +49,10 @@ export const ACCOUNTING_SECTION_KEYS = [
   "payroll",
   "vat",
   "fixed-assets",
-  // The app's own report index — the accounting reports, from inside
-  // Accounting, rather than sending the accountant to the business's reports
-  // workspace to find them.
-  "reports",
+  // The accounting-only report index. The business reporting workspace owns
+  // `/accounting/reports`; keeping the financial index explicit avoids two
+  // different report screens competing for one public URL.
+  "financial-reports",
   "growth",
   // Accounting's *own* settings, last — the shape every app's menu ends with.
   // Deliberately not the platform settings page: `/settings` is the platform

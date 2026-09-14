@@ -23,6 +23,7 @@ import {
   LEDGER_WORKSPACE_DESCRIPTION,
   LEDGER_WORKSPACE_LABEL,
   LEDGER_WORKSPACE_SECTION_KEYS,
+  LEDGER_WORKSPACE_SUBGROUPS,
 } from "./accounting-workspace";
 import { ACCOUNTING_SECTION_ICONS as SECTION_ICONS } from "./accounting-icons";
 import { TrialBalanceSection } from "./trial-balance-section";
@@ -127,6 +128,13 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
     const def = allowed.find((candidate) => candidate.key === key);
     return def ? [{ ...def, icon: SECTION_ICONS[def.key] }] : [];
   });
+  // The rail's headings are the sidebar group's own sub-groups, from the same
+  // list: sixteen rows in one undivided column is what the sidebar group used
+  // to be, and the rail should not be the place that keeps it.
+  const sectionGroups = LEDGER_WORKSPACE_SUBGROUPS.flatMap((subGroup) => {
+    const keys = subGroup.keys.filter((key) => sections.some((candidate) => candidate.key === key));
+    return keys.length > 0 ? [{ label: subGroup.label, keys }] : [];
+  });
   // Outside the ledger group the rail has nothing to say: «اشخاص» and the
   // report views are top-level entries of the app's own menu. Accounting
   // settings is now part of this rail and renders under the shared workspace.
@@ -201,7 +209,7 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
           {section === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {section === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
           {section === "fixed-assets" ? <FixedAssetsSection busy={busy} refreshKey={refreshKey} /> : null}
-          {section === "reports" ? <AccountingReportsSection /> : null}
+          {section === "financial-reports" ? <AccountingReportsSection /> : null}
           {section === "settings" ? <AccountingSettingsSection /> : null}
           {section === "growth" ? <GrowthAccountingView /> : null}
     </>
@@ -219,6 +227,7 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
           description={LEDGER_WORKSPACE_DESCRIPTION}
           variant="rail"
           sections={sections}
+          groups={sectionGroups}
           active={section}
           onChange={goToSection}
         >

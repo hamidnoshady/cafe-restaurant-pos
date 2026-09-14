@@ -57,6 +57,6 @@ Defaults chosen to keep moving; each is easy to revisit.
 
 | Criterion | Where |
 |---|---|
-| Cashier adds items with modifiers, applies a discount, submits dine-in (stub table) or takeaway (queue number) | `/dashboard/pos` (`src/app/dashboard/pos/pos-screen.tsx`) → `POST /api/orders` |
+| Cashier adds items with modifiers, applies a discount, submits dine-in (stub table) or takeaway (queue number) | `/accounting/pos` (`src/app/dashboard/pos/pos-screen.tsx`) → `POST /api/orders` |
 | Order records correct and queryable | `orders` + `order_items` + `order_item_modifiers` (migration `0003_menu_cashier_order_flow.sql`); view/edit at `/dashboard/orders/[id]` |
 | Menu CRUD independent of the wizard's import | `/dashboard/menu` (`src/app/dashboard/menu/menu-manager.tsx`) → `/api/menu/categories`, `/api/menu/items`, `/api/menu/modifier-groups`, `/api/menu/modifiers`, `/api/menu/item-modifier-groups` |

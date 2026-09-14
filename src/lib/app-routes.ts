@@ -23,6 +23,32 @@
 /** The main platform home. Unchanged — it is the business's own workspace. */
 export const DASHBOARD_HOME = "/dashboard";
 
+/**
+ * The business work areas that belong to the primary Accounting workspace.
+ *
+ * These are public paths, not aliases. Every sidebar entry, link and redirect
+ * that opens one of these areas must use this table; `/dashboard/<section>` is
+ * retained only as a middleware redirect for a saved bookmark. Keeping the
+ * canonical names here gives the nav, route tree and redirect table one source
+ * of truth instead of letting a second dashboard URL slip back into the app.
+ */
+export const ACCOUNTING_WORKSPACE_HREFS = {
+  pos: "/accounting/pos",
+  inventory: "/accounting/inventory",
+  products: "/accounting/products",
+  cosmetics: "/accounting/cosmetics",
+  reports: "/accounting/reports",
+  floor: "/accounting/floor",
+  kitchen: "/accounting/kitchen",
+  reservations: "/accounting/reservations",
+  delivery: "/accounting/delivery",
+} as const;
+
+/** One products-workspace sub-section, under the one canonical products door. */
+export function accountingProductsHref(section?: string): string {
+  return section ? `${ACCOUNTING_WORKSPACE_HREFS.products}/${section}` : ACCOUNTING_WORKSPACE_HREFS.products;
+}
+
 /** The platform settings area. Never an app's settings — see `APP_SETTINGS_HREFS`. */
 export const PLATFORM_SETTINGS_HOME = "/settings";
 
@@ -97,6 +123,22 @@ export function isPlatformSettingsPathname(pathname: string): boolean {
  */
 const LEGACY_PREFIX_MAP: readonly (readonly [string, string])[] = [
   ["/dashboard/accounting", "/accounting"],
+  // The business work areas now live inside the primary Accounting workspace.
+  // These are redirects only: there is no `page.tsx` left below the old
+  // dashboard paths, so a stale URL cannot render a second copy of a page.
+  // Products owns nested public sections, hence the prefix entry rather than
+  // one row per child route. Retail's old `stock` alias intentionally joins
+  // the same single inventory door.
+  ["/dashboard/pos", ACCOUNTING_WORKSPACE_HREFS.pos],
+  ["/dashboard/stock", ACCOUNTING_WORKSPACE_HREFS.inventory],
+  ["/dashboard/inventory", ACCOUNTING_WORKSPACE_HREFS.inventory],
+  ["/dashboard/products", ACCOUNTING_WORKSPACE_HREFS.products],
+  ["/dashboard/cosmetics", ACCOUNTING_WORKSPACE_HREFS.cosmetics],
+  ["/dashboard/reports", ACCOUNTING_WORKSPACE_HREFS.reports],
+  ["/dashboard/floor", ACCOUNTING_WORKSPACE_HREFS.floor],
+  ["/dashboard/kitchen", ACCOUNTING_WORKSPACE_HREFS.kitchen],
+  ["/dashboard/reservations", ACCOUNTING_WORKSPACE_HREFS.reservations],
+  ["/dashboard/delivery", ACCOUNTING_WORKSPACE_HREFS.delivery],
   // The two platform surfaces that moved into the settings area: money and
   // the technical connections hub. They were never app pages, and they are
   // not app pages now — they are platform settings, addressed as such.

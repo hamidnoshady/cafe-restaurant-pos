@@ -486,7 +486,7 @@ Jewelry UI/routes slice — implemented. Everything Waves 2-4 built (weight/puri
 prices, stones, consignors, consignment sales) was service-layer-only until now; this slice is the
 first time a person can actually reach any of it — `/api/jewelry/*` route handlers and a
 `/dashboard/jewelry` page, following the exact conventions `/api/inventory/*` and
-`/dashboard/inventory` already established (`requireRole`/`withTenantScope` guard on every handler,
+`/accounting/inventory` already established (`requireRole`/`withTenantScope` guard on every handler,
 `resolveActiveLocation` for the caller's branch, tabbed client manager + section components using the
 shared `api()`/`Field`/`ErrorBox` helpers from `../ui`).
 
@@ -523,7 +523,7 @@ shared `api()`/`Field`/`ErrorBox` helpers from `../ui`).
   existing `withTenant` `Promise.all` and passes it into `canSee`, so "طلا و جواهر" only ever appears
   in the sidebar for a jewelry business — the same "filtered out server-side before it reaches the
   client" property every flag-gated nav item already has. The page itself calls
-  `requireIndustryForPage` the same way `/dashboard/inventory` calls `requireFeatureForPage`.
+  `requireIndustryForPage` the same way `/accounting/inventory` calls `requireFeatureForPage`.
 - Manually verified end-to-end in a browser (Playwright against a seeded business flipped to
   `industry = 'jewelry'` with a jewelry chart of accounts inserted): recorded a gold price, created an
   owned piece with weight/purity/cost basis, added a stone, sold it, and independently created a

@@ -108,7 +108,7 @@ and `src/lib`):
   accounting-standard terminology consistency" as an explicit goal).
 
 **Gap:** a full label-by-label pass across every accounting-adjacent page (`/dashboard/ledger`,
-`/dashboard/reports`, `/dashboard/inventory`'s costing surfaces, `/dashboard/jewelry`, the setup
+`/accounting/reports`, `/accounting/inventory`'s costing surfaces, `/dashboard/jewelry`, the setup
 wizard's `/setup/accounts` and `/setup/tax` steps) against professional Persian accounting
 terminology has not been done. This is real, scoped work — not a rewrite, a review-and-relabel pass
 — and per #160's own added requirement (comment, §9), it needs to happen **before every future wave's
@@ -360,8 +360,8 @@ editable afterward through the ledger tab), flagged here in case a future wave d
 
 **Wave 3 — Terminology & UI/UX standards audit — implemented**, closing §3 and the epic's §9
 requirement: a label-by-label pass across every accounting-adjacent dashboard page
-(`/dashboard/ledger` except the already-correct `chart-of-accounts-section.tsx`, `/dashboard/reports`,
-`/dashboard/jewelry`, the costing-adjacent parts of `/dashboard/inventory`, `/setup/accounts`,
+(`/dashboard/ledger` except the already-correct `chart-of-accounts-section.tsx`, `/accounting/reports`,
+`/dashboard/jewelry`, the costing-adjacent parts of `/accounting/inventory`, `/setup/accounts`,
 `/setup/tax`, `src/app/dashboard/settings/accounts-settings.tsx`). Result: the vocabulary was already
 correct and consistent almost everywhere (سند/دفتر روزنامه/تراز آزمایشی/تأیید/بدهکار-بستانکار/
 حساب‌های دریافتنی-پرداختنی/صورت گردش وجوه نقد all checked across every file they appear in and found

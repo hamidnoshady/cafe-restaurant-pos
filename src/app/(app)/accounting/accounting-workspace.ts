@@ -30,6 +30,7 @@
 import type { AccountingSectionKey } from "./accounting-routes";
 import { accountingSectionHref } from "./accounting-routes";
 import { accountingSectionsForRole, type AccountingSectionDef } from "./accounting-nav";
+import { ACCOUNTING_WORKSPACE_HREFS, accountingProductsHref } from "@/lib/app-routes";
 import { partyDirectoryHref } from "@/lib/party-directory";
 
 /** A nav entry as the composer needs it — the business nav's shape, narrowed. */
@@ -44,20 +45,44 @@ export interface WorkspaceNavEntry {
   iconKey?: string;
 }
 
+/**
+ * A named division *inside* a group.
+ *
+ * Only the long collapsible group needs them: sixteen ledger tools under one
+ * heading is the same unreadable column the flat menu was, so the ledger is
+ * divided the way an accountant divides the work — دفتر، دریافتنی و پرداختنی،
+ * وجوه و هزینه، دوره و مالیات، پیکربندی. Every other group in this menu is
+ * short enough to read as one list.
+ */
+export interface WorkspaceNavSubGroup {
+  key: string;
+  label: string;
+  entries: WorkspaceNavEntry[];
+}
+
 export interface WorkspaceNavGroup {
   /** The group's own id, stable across renders — used for the open/closed memory. */
   key: string;
   label: string;
   /** One line under the heading, for the groups whose contents are not obvious. */
   description?: string;
+  /**
+   * Every entry of the group, flat and in menu order — what a picker, a test
+   * or a bottom-nav reads. `subGroups`, when present, is the *same* entries
+   * arranged under headings; it is never a second list.
+   */
   entries: WorkspaceNavEntry[];
+  /** The group's own glyph (an `NAV_ICONS` key), drawn on a disclosure header. */
+  iconKey?: string;
   /**
    * A group that discloses rather than always being open. «فضای کار حسابداری»
-   * is the long one — fifteen ledger tools — and it is the group a
+   * is the long one — sixteen ledger tools — and it is the group a
    * non-accountant opens least often, so it starts closed unless you are
    * standing in it.
    */
   collapsible?: boolean;
+  /** Headings inside the group, for a group too long to read as one list. */
+  subGroups?: WorkspaceNavSubGroup[];
 }
 
 /** The business nav entries this menu is willing to adopt, by href, in menu order. */
@@ -85,7 +110,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     description: "فاکتورها، صندوق و مشتریان",
     slots: [
       { href: "/dashboard/orders" },
-      { href: "/dashboard/pos" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.pos },
       { href: "/crm/overview", label: "ارتباط با مشتری" },
     ],
   },
@@ -94,11 +119,10 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     label: "خرید و انبار",
     description: "تأمین، موجودی و کالا",
     slots: [
-      { href: "/dashboard/stock" },
-      { href: "/dashboard/inventory" },
-      { href: "/dashboard/products" },
-      { href: "/dashboard/products/new" },
-      { href: "/dashboard/products/prices" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.inventory },
+      { href: accountingProductsHref() },
+      { href: accountingProductsHref("new") },
+      { href: accountingProductsHref("prices") },
       { href: "/dashboard/menu" },
     ],
   },
@@ -107,14 +131,14 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     label: "عملیات",
     description: "بخش‌های عملیاتی این صنف",
     slots: [
-      { href: "/dashboard/floor" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.floor },
       { href: "/dashboard/waiter" },
-      { href: "/dashboard/kitchen" },
-      { href: "/dashboard/reservations" },
-      { href: "/dashboard/delivery" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.kitchen },
+      { href: ACCOUNTING_WORKSPACE_HREFS.reservations },
+      { href: ACCOUNTING_WORKSPACE_HREFS.delivery },
       { href: "/dashboard/jewelry" },
       { href: "/dashboard/watch" },
-      { href: "/dashboard/cosmetics" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.cosmetics },
       { href: "/dashboard/accessories" },
       { href: "/dashboard/wholesale" },
       { href: "/dashboard/tools-fittings" },
@@ -125,7 +149,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
 
 /** The reports group's business entries — kept apart because it sits after the ledger. */
 const REPORTS_SLOTS: readonly WorkspaceSlot[] = [
-  { href: "/dashboard/reports", label: "گزارش‌های کسب‌وکار" },
+  { href: ACCOUNTING_WORKSPACE_HREFS.reports, label: "گزارش‌های کسب‌وکار" },
 ];
 
 /** The configuration group's business entries. */
@@ -137,7 +161,10 @@ const CONFIG_SLOTS: readonly WorkspaceSlot[] = [
 ];
 
 /**
- * The ledger's own sections, in the order «فضای کار حسابداری» lists them.
+ * The ledger's own sections — everything «فضای کار حسابداری» holds.
+ *
+ * Membership lives here; the *order* and the headings live in
+ * `LEDGER_WORKSPACE_SUBGROUPS` below, which arranges exactly these keys.
  *
  * Everything `ACCOUNTING_SECTIONS` holds except the four app-level areas: the
  * app's home (a group of its own at the top), the directory (the people
@@ -166,10 +193,47 @@ export const LEDGER_WORKSPACE_SECTION_KEYS: readonly AccountingSectionKey[] = [
   "settings",
 ];
 
+/**
+ * How «فضای کار حسابداری» divides its own sections inside the menu.
+ *
+ * Every other group in the Accounting menu carries a heading over a short
+ * list. The ledger carried sixteen rows under a single heading, which is why
+ * it read as an unstructured drawer rather than as part of the menu: it was
+ * the one group with a disclosure and no internal structure. These are the
+ * accountant's own divisions — the same ones the in-page rail already draws
+ * (`ACCOUNTING_NAV_GROUPS`), narrowed to the keys this group holds.
+ *
+ * The union of these keys is exactly `LEDGER_WORKSPACE_SECTION_KEYS`, asserted
+ * in `accounting-workspace.test.ts`, so a ledger section can never be added
+ * without a home — and the sub-groups can never become a second, disagreeing
+ * list.
+ */
+export const LEDGER_WORKSPACE_SUBGROUPS: readonly {
+  key: string;
+  label: string;
+  keys: readonly AccountingSectionKey[];
+}[] = [
+  { key: "ledger-books", label: "دفتر و اسناد", keys: ["trial-balance", "entries", "manual", "chart-of-accounts"] },
+  {
+    key: "ledger-receivables",
+    label: "دریافتنی و پرداختنی",
+    keys: ["receivables", "payables", "installments", "cheques"],
+  },
+  { key: "ledger-funds", label: "وجوه و هزینه", keys: ["receipts", "expenses", "reconciliation", "fixed-assets"] },
+  { key: "ledger-periods", label: "دوره، مالیات و حقوق", keys: ["fiscal-periods", "vat", "payroll"] },
+  { key: "ledger-config", label: "پیکربندی حسابداری", keys: ["settings"] },
+];
+
 /** The label «فضای کار حسابداری» wears wherever it is drawn — menu and page alike. */
 export const LEDGER_WORKSPACE_LABEL = "فضای کار حسابداری";
 export const LEDGER_WORKSPACE_DESCRIPTION = "دفتر، اسناد و عملیات مالی";
 export const LEDGER_WORKSPACE_GROUP_KEY = "ledger";
+/**
+ * The glyph the ledger group's own header wears — the same calculator the
+ * workspace rail and the bottom nav already use for «حسابداری», so the group
+ * is recognisable at 4rem where headings are hidden.
+ */
+export const LEDGER_WORKSPACE_ICON_KEY = "/accounting";
 
 /**
  * Compose the Accounting app's complete menu.
@@ -247,21 +311,30 @@ export function accountingWorkspaceGroups({
     });
   }
 
-  // 4. «فضای کار حسابداری» — the ledger, as a named group inside this menu.
-  const ledgerEntries = LEDGER_WORKSPACE_SECTION_KEYS.flatMap((key) => sectionEntry(key));
+  // 4. «فضای کار حسابداری» — the ledger, as a named group inside this menu,
+  // divided into the same named sub-groups every other part of the menu has.
+  const ledgerSubGroups = LEDGER_WORKSPACE_SUBGROUPS.flatMap((subGroup) => {
+    const entries = subGroup.keys.flatMap((key) => sectionEntry(key));
+    return entries.length > 0 ? [{ key: subGroup.key, label: subGroup.label, entries }] : [];
+  });
+  // The flat list stays the source of truth for order and membership; the
+  // sub-groups only arrange it, so the two can never hold different entries.
+  const ledgerEntries = ledgerSubGroups.flatMap((subGroup) => subGroup.entries);
   if (ledgerEntries.length > 0) {
     groups.push({
       key: LEDGER_WORKSPACE_GROUP_KEY,
       label: LEDGER_WORKSPACE_LABEL,
       description: LEDGER_WORKSPACE_DESCRIPTION,
       entries: ledgerEntries,
+      iconKey: LEDGER_WORKSPACE_ICON_KEY,
       collapsible: true,
+      subGroups: ledgerSubGroups,
     });
   }
 
   // 5. Reports — the ledger's own, then the business's.
   const reports = [
-    ...sectionEntry("reports", "گزارش‌های مالی"),
+    ...sectionEntry("financial-reports", "گزارش‌های مالی"),
     ...businessEntries(REPORTS_SLOTS),
     ...sectionEntry("growth"),
   ];

@@ -38,7 +38,9 @@ import { query, withTenant } from "./db";
  * then redirected away from the page (this one had not been). Naming the
  * business here makes the answer independent of what else is in flight.
  */
-export async function effectiveFeatures(businessId: string): Promise<Record<string, boolean>> {
+export async function effectiveFeatures(
+  businessId: string,
+): Promise<Record<string, boolean>> {
   const { rows } = await withTenant(businessId, () =>
     query<{ key: string; default_enabled: boolean; override: boolean | null }>(
       `SELECT f.key, f.default_enabled, bf.enabled AS override
@@ -48,10 +50,15 @@ export async function effectiveFeatures(businessId: string): Promise<Record<stri
       [businessId],
     ),
   );
-  return Object.fromEntries(rows.map((r) => [r.key, r.override ?? r.default_enabled]));
+  return Object.fromEntries(
+    rows.map((r) => [r.key, r.override ?? r.default_enabled]),
+  );
 }
 
-export async function isFeatureEnabled(businessId: string, flagKey: string): Promise<boolean> {
+export async function isFeatureEnabled(
+  businessId: string,
+  flagKey: string,
+): Promise<boolean> {
   const features = await effectiveFeatures(businessId);
   // A key with no matching feature_flags row fails open: every prefix below
   // is expected to name a real flag, so this only matters if that mapping
@@ -91,20 +98,38 @@ export function featureForApiPath(pathname: string): string | null {
   return null;
 }
 
+/**
+ * Canonical workspaces whose server page owns its industry/module gate.
+ *
+ * They must be checked before the broad `/accounting` ledger prefix below:
+ * applying `ledger` to inventory, POS, products, cosmetics or kitchen would
+ * make a retail business pass the wrong entitlement check before its own
+ * adapter and module guard get a chance to run.
+ */
+const INDUSTRY_GUARDED_ACCOUNTING_PREFIXES = [
+  "/accounting/pos",
+  "/accounting/inventory",
+  "/accounting/products",
+  "/accounting/cosmetics",
+  "/accounting/kitchen",
+] as const;
+
 /** Dashboard page prefix -> the flag that gates it, for the nav list and each gated page's own redirect. */
 export const PAGE_FEATURE_PREFIXES: [string, string][] = [
-  ["/dashboard/inventory", "inventory"],
-  // The Accounting app's own public prefix; the old `/dashboard/accounting`
-  // and `/dashboard/ledger` addresses forward into it, so every half stays
-  // entitlement-gated on both sides of the redirect.
+  // The public work areas inside Accounting. Inventory is special: its page
+  // chooses the food-service inventory entitlement or the retail stock model
+  // from the industry profile, so it guards that choice server-side rather
+  // than falsely applying the food-only flag to retail.
+  ["/accounting/reservations", "reservations"],
+  ["/accounting/floor", "reservations"],
+  ["/dashboard/waiter", "reservations"],
+  ["/accounting/delivery", "delivery"],
+  ["/accounting/reports", "reporting"],
+  // The Accounting app's own ledger prefix; old `/dashboard/accounting` and
+  // `/dashboard/ledger` bookmarks still forward here before any page renders.
   ["/accounting", "ledger"],
   ["/dashboard/accounting", "ledger"],
   ["/dashboard/ledger", "ledger"],
-  ["/dashboard/reservations", "reservations"],
-  ["/dashboard/floor", "reservations"],
-  ["/dashboard/waiter", "reservations"],
-  ["/dashboard/delivery", "delivery"],
-  ["/dashboard/reports", "reporting"],
   ["/dashboard/branches", "multi_location"],
   ["/dashboard/locations", "offline_mode"],
   ["/dashboard/backup", "backup"],
@@ -128,6 +153,13 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
 ];
 
 export function featureForPagePath(pathname: string): string | null {
+  if (
+    INDUSTRY_GUARDED_ACCOUNTING_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    )
+  ) {
+    return null;
+  }
   for (const [prefix, flag] of PAGE_FEATURE_PREFIXES) {
     if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return flag;
   }
@@ -158,7 +190,10 @@ export function isLockableFeature(flagKey: string): boolean {
 }
 
 /** Called from a gated dashboard page's server component; redirects away if the feature is off for this business. */
-export async function requireFeatureForPage(businessId: string, flagKey: string): Promise<void> {
+export async function requireFeatureForPage(
+  businessId: string,
+  flagKey: string,
+): Promise<void> {
   if (!(await isFeatureEnabled(businessId, flagKey))) redirect("/dashboard");
 }
 
@@ -169,7 +204,10 @@ export async function requireFeatureForPage(businessId: string, flagKey: string)
  * A flag that is not lockable keeps the redirect, so this stays a per-feature
  * decision made in one place rather than something each page invents.
  */
-export async function featureLockedForPage(businessId: string, flagKey: string): Promise<boolean> {
+export async function featureLockedForPage(
+  businessId: string,
+  flagKey: string,
+): Promise<boolean> {
   if (await isFeatureEnabled(businessId, flagKey)) return false;
   if (!isLockableFeature(flagKey)) redirect("/dashboard");
   return true;

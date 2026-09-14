@@ -28,9 +28,12 @@ export interface PricingConfig {
    * of real revenue to derive a rate from — a new business (or one that's
    * posted rent/setup expenses before its first sale) would otherwise get
    * suggestions with zero overhead baked in, since there's nothing to divide
-   * by yet. Ignored the moment the ledger-derived rate becomes available.
+   * by yet. In automatic mode it is used until the ledger-derived rate is
+   * available; in manual mode it remains active indefinitely.
    */
   fallbackOverheadPercent: number | null;
+  /** Selects whether a configured estimate remains in use after ledger data is available. */
+  overheadMode?: "automatic" | "manual";
   /** Phase 27 Wave 12 — flag a recipe whose ingredient cost rose this many percent or more. Optional: absent = the default. */
   costDriftThresholdPercent?: number;
 }
@@ -40,6 +43,7 @@ export async function getPricingConfig(businessId: string): Promise<PricingConfi
   return {
     defaultMarginPercent: stored?.defaultMarginPercent ?? null,
     fallbackOverheadPercent: stored?.fallbackOverheadPercent ?? null,
+    overheadMode: stored?.overheadMode === "manual" ? "manual" : "automatic",
     costDriftThresholdPercent: stored?.costDriftThresholdPercent ?? DEFAULT_COST_DRIFT_THRESHOLD_PERCENT,
   };
 }
@@ -64,8 +68,11 @@ export interface SuggestedPriceBreakdown {
 
 export async function getSuggestedPrice(businessId: string, menuItemId: string): Promise<SuggestedPriceBreakdown | null> {
   const { rows: itemRows } = await query<{ price: string; target_margin_percent: string | null }>(
-    `SELECT price, target_margin_percent FROM menu_items WHERE id = $1`,
-    [menuItemId],
+    `SELECT mi.price, mi.target_margin_percent
+       FROM menu_items mi
+       JOIN locations l ON l.id = mi.location_id
+      WHERE mi.id = $1 AND l.business_id = $2`,
+    [menuItemId, businessId],
   );
   const item = itemRows[0];
   if (!item) return null;
@@ -82,12 +89,23 @@ export async function getSuggestedPrice(businessId: string, menuItemId: string):
 
   const config = await getPricingConfig(businessId);
   const dateTo = new Date().toISOString().slice(0, 10);
-  const pnl = await getProfitAndLoss(businessId, { dateFrom: addDays(dateTo, -OVERHEAD_LOOKBACK_DAYS), dateTo });
+  const pnl = await getProfitAndLoss(businessId, { dateFrom: addDays(dateTo, -(OVERHEAD_LOOKBACK_DAYS - 1)), dateTo });
   const ledgerOverheadRatePercent =
     pnl.totalRevenue > 0 ? ((pnl.operatingExpenses + pnl.laborCost) / pnl.totalRevenue) * 100 : null;
-  const overheadRatePercent = ledgerOverheadRatePercent ?? config.fallbackOverheadPercent;
+  // A manual estimate is an intentional choice, not merely a bootstrap value.
+  // Previously it was silently disabled as soon as a single revenue entry
+  // existed, which made the setting misleading for owners who prefer their
+  // own rate even after the 30-day ledger window is populated.
+  const useLedgerOverhead = config.overheadMode !== "manual";
+  const overheadRatePercent = useLedgerOverhead
+    ? ledgerOverheadRatePercent ?? config.fallbackOverheadPercent
+    : config.fallbackOverheadPercent;
   const overheadSource: SuggestedPriceBreakdown["overheadSource"] =
-    ledgerOverheadRatePercent != null ? "ledger" : config.fallbackOverheadPercent != null ? "fallback" : "none";
+    useLedgerOverhead && ledgerOverheadRatePercent != null
+      ? "ledger"
+      : config.fallbackOverheadPercent != null
+        ? "fallback"
+        : "none";
 
   const itemMargin = item.target_margin_percent != null ? Number(item.target_margin_percent) : null;
   const marginPercent = itemMargin ?? config.defaultMarginPercent;

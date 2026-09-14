@@ -292,7 +292,7 @@ describe("moduleForApiPath", () => {
 
 describe("moduleForPagePath", () => {
   it("maps a page and its children", () => {
-    expect(moduleForPagePath("/dashboard/floor")).toBe("tables");
+    expect(moduleForPagePath("/accounting/floor")).toBe("tables");
     expect(moduleForPagePath("/dashboard/orders/abc")).toBe("orders");
     expect(moduleForPagePath("/dashboard/website/wp/connections")).toBe("integrations");
     expect(moduleForPagePath("/settings/connections")).toBe("connections");

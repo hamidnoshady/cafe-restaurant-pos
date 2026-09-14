@@ -1,7 +1,7 @@
 # Phase 42b — the retail warehouse module: the same warehouse menu, on the retail stock model
 
-Phase 42 gave F&B (`/dashboard/inventory`) the warehouse's own menu — warehouses, documents,
-levels, the count. The retail trades' «خرید و انبار» (`/dashboard/stock`) still answered the
+Phase 42 gave F&B (`/accounting/inventory`) the warehouse's own menu — warehouses, documents,
+levels, the count. The retail trades' «خرید و انبار» (`/accounting/inventory`) still answered the
 purchasing question only: one page with the purchase form, the supplier return and the
 low/dead-stock reports, everything at once. This phase rebuilds that screen into the same
 warehouse module shape Phase 42 established, **on the retail stock model**
@@ -149,13 +149,13 @@ per-test BEGIN/ROLLBACK, real cosmetics chart of accounts via
 
 **Smoke** (manual, against a running production server as the unprivileged app role): a demo
 cosmetics business receives an item (new lot with expiry, then a top-up at another cost),
-issues part of the lot, and the checks confirm (a) `/dashboard/stock` renders all sections
+issues part of the lot, and the checks confirm (a) `/accounting/inventory` renders all sections
 and (b) GL 1350/4900/5900 reconcile exactly with the batch ledger — SUM of batches =
 `item_stock` quantity and value, and the inventory account's net balance equals stock on hand.
 
 ## What is deliberately not here
 
-- **The F&B warehouse module is untouched** — `/dashboard/inventory`, the `inventory` feature
+- **The F&B warehouse module is untouched** — `/accounting/inventory`, the `inventory` feature
   and everything under `inventory_items`/`stock_movements` were used purely as pattern
   reference, per the Phase 21 decision that the two stock worlds stay separate.
 - **Back-dating and deletion** — a document posts "now" and is corrected by the opposite
