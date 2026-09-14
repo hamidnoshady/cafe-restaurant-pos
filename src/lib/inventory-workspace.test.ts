@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ACCOUNTING_WORKSPACE_HREFS } from "./app-routes";
+import { INDUSTRY_PROFILES, hasModule } from "./industry-profile";
 import {
   inventoryModuleForWorkspace,
   inventoryWorkspaceModel,
@@ -12,8 +13,18 @@ describe("the unified inventory workspace", () => {
     expect(inventoryWorkspaceModel(false)).toBe("retail");
   });
 
-  it("preserves each model's correct module guard without creating another route", () => {
-    expect(inventoryModuleForWorkspace("food-service")).toBe("inventory");
-    expect(inventoryModuleForWorkspace("retail")).toBe("stock");
+  it("uses the food-service guard for F&B and the stock guard for every retail industry", () => {
+    for (const industry of Object.keys(INDUSTRY_PROFILES)) {
+      const model = inventoryWorkspaceModel(
+        hasModule(industry as keyof typeof INDUSTRY_PROFILES, "inventory"),
+      );
+      if (industry === "food_service") {
+        expect(model).toBe("food-service");
+        expect(inventoryModuleForWorkspace(model)).toBe("inventory");
+      } else {
+        expect(model, industry).toBe("retail");
+        expect(inventoryModuleForWorkspace(model), industry).toBe("stock");
+      }
+    }
   });
 });
