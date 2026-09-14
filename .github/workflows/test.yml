@@ -27,7 +27,7 @@ env:
 jobs:
   typecheck:
     name: type check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,7 +39,7 @@ jobs:
 
   unit-tests:
     name: unit tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,7 +51,7 @@ jobs:
 
   build:
     name: production build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,7 +63,7 @@ jobs:
 
   integration-tests:
     name: integration tests (real database)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
 
     services:
       postgres:
@@ -107,7 +107,7 @@ jobs:
   # cancelled, or never ran.
   required:
     name: all checks passed
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     needs: [typecheck, unit-tests, build, integration-tests]
     if: always()
     steps:
