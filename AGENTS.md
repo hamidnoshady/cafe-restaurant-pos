@@ -70,6 +70,18 @@ Two rules when you touch that menu:
 
 Route/nav map and the legacy-URL table: [`docs/accounting-workspace-ia.md`](docs/accounting-workspace-ia.md).
 
+### Canonical route migration rule
+
+When a business workspace route is moved, **only its new canonical route may be
+used by application code, navigation, tests, and documentation**. Move the
+`page.tsx` out of the old route tree in the same change so the old URL cannot
+render the old app page. Preserve existing bookmarks only through the central
+permanent redirect table in `src/lib/app-routes.ts`; never leave a duplicate
+legacy page, link to the legacy URL, or add a new legacy URL. In particular,
+the operational Accounting workspaces use `/accounting/{section}` — not
+`/dashboard/{section}`. Reuse `ACCOUNTING_WORKSPACE_HREFS` and
+`accountingProductsHref()` instead of spelling former dashboard work-area URLs.
+
 ## Design system
 
 **The visual canon is [`docs/design-system.md`](docs/design-system.md), backed by the

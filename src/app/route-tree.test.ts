@@ -23,16 +23,24 @@ import { describe, expect, it } from "vitest";
 import { ACCOUNTING_SECTION_KEYS } from "./(app)/accounting/accounting-routes";
 import { CRM_SECTION_KEYS } from "./(app)/crm/crm-routes";
 import { GROWTH_SECTION_KEYS } from "./(app)/growth/growth-routes";
-import { CMS_SECTION_KEYS, WEBSITE_HOME } from "./(app)/websites/website-routes";
+import {
+  CMS_SECTION_KEYS,
+  WEBSITE_HOME,
+} from "./(app)/websites/website-routes";
 import { WP_SECTION_KEYS } from "./(app)/websites/wp/wp-routes";
 import {
   APP_HOME_HREFS,
   APP_ROUTE_PREFIXES,
   APP_SETTINGS_HREFS,
+  ACCOUNTING_WORKSPACE_HREFS,
+  accountingProductsHref,
   DASHBOARD_HOME,
   PLATFORM_SETTINGS_HOME,
 } from "@/lib/app-routes";
-import { PLATFORM_SETTINGS_PAGES, settingsTabHref } from "@/lib/settings-routes";
+import {
+  PLATFORM_SETTINGS_PAGES,
+  settingsTabHref,
+} from "@/lib/settings-routes";
 import { SETTINGS_TAB_KEYS } from "@/lib/settings-tabs";
 
 const APP_DIR = fileURLToPath(new URL("./", import.meta.url));
@@ -79,7 +87,9 @@ function resolves(pathname: string): boolean {
 }
 
 function expectRoute(pathname: string) {
-  expect(resolves(pathname), `${pathname} has no page.tsx — it would 404`).toBe(true);
+  expect(resolves(pathname), `${pathname} has no page.tsx — it would 404`).toBe(
+    true,
+  );
 }
 
 describe("the route tree resolves every promised URL", () => {
@@ -101,7 +111,23 @@ describe("the route tree resolves every promised URL", () => {
 
   it("finds every Accounting section", () => {
     for (const key of ACCOUNTING_SECTION_KEYS) {
-      expectRoute(key === "dashboard" ? "/accounting/overview" : `/accounting/${key}`);
+      expectRoute(
+        key === "dashboard" ? "/accounting/overview" : `/accounting/${key}`,
+      );
+    }
+  });
+
+  it("finds each operational workspace at its canonical Accounting URL", () => {
+    for (const pathname of Object.values(ACCOUNTING_WORKSPACE_HREFS))
+      expectRoute(pathname);
+    for (const section of [
+      "new",
+      "prices",
+      "attributes",
+      "barcode-templates",
+      "reports",
+    ]) {
+      expectRoute(accountingProductsHref(section));
     }
   });
 
@@ -110,7 +136,12 @@ describe("the route tree resolves every promised URL", () => {
     // their own. They are `?view=` filters of `/accounting/directory` now, and
     // their old addresses must still resolve — the `[section]` catch-all
     // answers them with a route-level redirect that carries the view.
-    for (const legacy of ["/accounting/customers", "/accounting/suppliers", "/accounting/vendors", "/accounting/parties"]) {
+    for (const legacy of [
+      "/accounting/customers",
+      "/accounting/suppliers",
+      "/accounting/vendors",
+      "/accounting/parties",
+    ]) {
       expectRoute(legacy);
     }
     // The canonical directory itself, of course.
@@ -135,35 +166,32 @@ describe("the route tree resolves every promised URL", () => {
   it("finds both website managers and all their sections", () => {
     expectRoute(`${WEBSITE_HOME}/overview`);
     for (const key of CMS_SECTION_KEYS) {
-      expectRoute(key === "overview" ? `${WEBSITE_HOME}/cms` : `${WEBSITE_HOME}/cms/${key}`);
+      expectRoute(
+        key === "overview"
+          ? `${WEBSITE_HOME}/cms`
+          : `${WEBSITE_HOME}/cms/${key}`,
+      );
     }
     for (const key of WP_SECTION_KEYS) {
-      expectRoute(key === "overview" ? `${WEBSITE_HOME}/wp` : `${WEBSITE_HOME}/wp/${key}`);
+      expectRoute(
+        key === "overview" ? `${WEBSITE_HOME}/wp` : `${WEBSITE_HOME}/wp/${key}`,
+      );
     }
   });
 
   it("finds every platform settings section", () => {
     for (const key of SETTINGS_TAB_KEYS) expectRoute(settingsTabHref(key));
-    for (const page of PLATFORM_SETTINGS_PAGES) expectRoute(`/settings/${page}`);
+    for (const page of PLATFORM_SETTINGS_PAGES)
+      expectRoute(`/settings/${page}`);
   });
 
-  it("finds the legacy addresses that must keep redirecting rather than 404ing", () => {
-    // These pages still exist; they are redirects now. A bookmark, a saved
-    // bottom-nav slot or an old guide must land somewhere.
+  it("keeps the remaining Dashboard pages as real routes", () => {
+    // These are not part of the operational Accounting move.
     for (const pathname of [
       "/dashboard/ledger",
       "/dashboard/customers",
       "/dashboard/persons",
-      // The business work areas the Accounting workspace adopts into its own
-      // menu. They are still real pages at their own `/dashboard/*` URLs —
-      // adopting a page into an app's menu must never move it.
       "/dashboard/orders",
-      "/dashboard/pos",
-      "/dashboard/stock",
-      "/dashboard/inventory",
-      "/dashboard/products",
-      "/dashboard/products/prices",
-      "/dashboard/reports",
       "/dashboard/loyalty",
       "/dashboard/promotions",
       "/dashboard/commission",
@@ -177,6 +205,28 @@ describe("the route tree resolves every promised URL", () => {
     }
   });
 
+  it("removes retired Dashboard route modules instead of serving duplicate pages", () => {
+    for (const pathname of [
+      "/dashboard/pos",
+      "/dashboard/stock",
+      "/dashboard/inventory",
+      "/dashboard/products",
+      "/dashboard/products/new",
+      "/dashboard/products/prices",
+      "/dashboard/cosmetics",
+      "/dashboard/reports",
+      "/dashboard/floor",
+      "/dashboard/kitchen",
+      "/dashboard/reservations",
+      "/dashboard/delivery",
+    ]) {
+      expect(
+        resolves(pathname),
+        `${pathname} must be redirect-only, without a page.tsx`,
+      ).toBe(false);
+    }
+  });
+
   it("agrees with the production build, when one has been made", () => {
     // The filesystem walk above proves a `page.tsx` exists; it cannot prove
     // Next actually compiled it into the server bundle. `next build` writes
@@ -184,9 +234,14 @@ describe("the route tree resolves every promised URL", () => {
     // present it is the closest thing to "the deployed server has this URL"
     // that a unit test can read. Skipped when there is no build, so the suite
     // still runs on a fresh clone.
-    const manifestPath = fileURLToPath(new URL("../../.next/server/app-paths-manifest.json", import.meta.url));
+    const manifestPath = fileURLToPath(
+      new URL("../../.next/server/app-paths-manifest.json", import.meta.url),
+    );
     if (!existsSync(manifestPath)) return;
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, string>;
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<
+      string,
+      string
+    >;
     // Manifest keys keep the `(group)` segments the URL does not have.
     const built = new Set(
       Object.keys(manifest).map(
@@ -194,7 +249,9 @@ describe("the route tree resolves every promised URL", () => {
           key
             .replace(/\/page$/, "")
             .split("/")
-            .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")))
+            .filter(
+              (segment) => !(segment.startsWith("(") && segment.endsWith(")")),
+            )
             .join("/") || "/",
       ),
     );
@@ -212,7 +269,8 @@ describe("the route tree resolves every promised URL", () => {
         if (got.length !== wanted.length) return false;
         return got.every(
           (segment, i) =>
-            (segment.startsWith("[") && segment.endsWith("]")) || segment === wanted[i],
+            (segment.startsWith("[") && segment.endsWith("]")) ||
+            segment === wanted[i],
         );
       });
     };
@@ -227,9 +285,39 @@ describe("the route tree resolves every promised URL", () => {
         APP_HOME_HREFS[prefix],
         APP_SETTINGS_HREFS[prefix],
       ]),
+      ...Object.values(ACCOUNTING_WORKSPACE_HREFS),
+      ...["new", "prices", "attributes", "barcode-templates", "reports"].map(
+        accountingProductsHref,
+      ),
     ];
     for (const pathname of promised) {
-      expect(servedByBuild(pathname), `${pathname} is not in the production bundle`).toBe(true);
+      expect(
+        servedByBuild(pathname),
+        `${pathname} is not in the production bundle`,
+      ).toBe(true);
+    }
+
+    // A route file under a retired Dashboard path would silently revive a
+    // duplicate app page. Redirect-only compatibility belongs in middleware,
+    // so none of these may be emitted in a production app manifest.
+    for (const retired of [
+      "/dashboard/pos",
+      "/dashboard/stock",
+      "/dashboard/inventory",
+      "/dashboard/products",
+      "/dashboard/products/new",
+      "/dashboard/products/prices",
+      "/dashboard/cosmetics",
+      "/dashboard/reports",
+      "/dashboard/floor",
+      "/dashboard/kitchen",
+      "/dashboard/reservations",
+      "/dashboard/delivery",
+    ]) {
+      expect(
+        servedByBuild(retired),
+        `${retired} must not be in the production bundle`,
+      ).toBe(false);
     }
   });
 

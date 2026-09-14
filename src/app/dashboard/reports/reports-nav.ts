@@ -1,11 +1,13 @@
 /**
  * The «گزارش‌ها» section list — the reports sub-menu.
  *
- * Reports are one in-page tabbed workspace (`/dashboard/reports`), so like the
- * ledger they are query-string targets. Kept framework-free so the sidebar
- * (`layout.tsx`) and the in-page rail (`reports-manager.tsx`) read the same
- * list and never disagree about what «گزارش‌ها» contains.
+ * Reports are one in-page tabbed workspace (`/accounting/reports`), so like
+ * the ledger they are query-string targets. Kept framework-free so the
+ * sidebar and the in-page rail (`reports-manager.tsx`) read the same list and
+ * never disagree about what «گزارش‌ها» contains.
  */
+
+import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 
 export const REPORTS_TAB_KEYS = ["standard", "shift-orders", "builder", "growth", "branches"] as const;
 export type ReportsTabKey = (typeof REPORTS_TAB_KEYS)[number];
@@ -29,10 +31,10 @@ export const REPORTS_TABS: readonly ReportsTabDef[] = [
 /**
  * The route for a section. Every entry is an explicit `?tab=` target — the
  * first tab included — so the sidebar can tell «گزارش‌های آماده» apart from a
- * sibling tab; the bare `/dashboard/reports` still lands on the first tab.
+ * sibling tab; the bare `/accounting/reports` still lands on the first tab.
  */
 export function reportsTabHref(key: ReportsTabKey): string {
-  return `/dashboard/reports?tab=${key}`;
+  return `${ACCOUNTING_WORKSPACE_HREFS.reports}?tab=${key}`;
 }
 
 /** The app's own door — `reports/page.tsx` refuses everyone else. */

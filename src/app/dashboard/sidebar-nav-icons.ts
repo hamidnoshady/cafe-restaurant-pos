@@ -43,17 +43,20 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboardIcon,
   "/dashboard/overview": LayoutDashboardIcon,
   "/dashboard/orders": ClipboardListIcon,
-  "/dashboard/pos": ShoppingCartIcon,
+  // Business work areas now sit under the primary Accounting workspace. The
+  // retired dashboard URLs are redirect-only and intentionally have no icon
+  // entries, so a new menu item cannot accidentally reintroduce one.
+  "/accounting/pos": ShoppingCartIcon,
   "/dashboard/persons": UsersIcon,
-  "/dashboard/floor": ArmchairIcon,
+  "/accounting/floor": ArmchairIcon,
   "/dashboard/waiter": ArmchairIcon,
-  "/dashboard/kitchen": ChefHatIcon,
-  "/dashboard/reservations": CalendarDaysIcon,
-  "/dashboard/delivery": TruckIcon,
-  "/dashboard/inventory": PackageIcon,
-  // Phase 42 — the products workspace group's icon (nav entries derive theirs
-  // from href; the group has none, so it names this key via `iconKey`).
-  "/dashboard/products": PackageIcon,
+  "/accounting/kitchen": ChefHatIcon,
+  "/accounting/reservations": CalendarDaysIcon,
+  "/accounting/delivery": TruckIcon,
+  "/accounting/inventory": PackageIcon,
+  // The products workspace group's icon (nav entries derive theirs from href;
+  // the group has none, so it names this key via `iconKey`).
+  "/accounting/products": PackageIcon,
   "/dashboard/jewelry": GemIcon,
   "/dashboard/watch": WatchIcon,
   "/dashboard/accessories": SparklesIcon,
@@ -72,7 +75,8 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   "/settings/connections": PlugIcon,
   // Migration 0149 — the media library.
   "/dashboard/media": ImageIcon,
-  "/dashboard/reports": BarChart3Icon,
+  "/accounting/reports": BarChart3Icon,
+  "/accounting/cosmetics": SparklesIcon,
   "/dashboard/ai": BotIcon,
   "/settings/billing": WalletIcon,
   "/settings": SettingsIcon,

@@ -13,6 +13,8 @@ import {
   APP_HOME_HREFS,
   APP_ROUTE_PREFIXES,
   APP_SETTINGS_HREFS,
+  ACCOUNTING_WORKSPACE_HREFS,
+  accountingProductsHref,
   DASHBOARD_HOME,
   PLATFORM_BILLING_HREF,
   PLATFORM_ROUTES,
@@ -56,6 +58,15 @@ describe("canonical routes", () => {
     expect(appPrefixForPathname(PLATFORM_SUBSCRIPTION_HREF)).toBeNull();
     expect(PLATFORM_ROUTES).toContain(PLATFORM_BILLING_HREF);
     expect(PLATFORM_ROUTES).toContain(PLATFORM_SUBSCRIPTION_HREF);
+  });
+
+  it("keeps every moved work area inside Accounting", () => {
+    for (const href of Object.values(ACCOUNTING_WORKSPACE_HREFS)) {
+      expect(href.startsWith("/accounting/")).toBe(true);
+      expect(href.startsWith("/dashboard/")).toBe(false);
+      expect(isCanonicalAppPathname(href)).toBe(true);
+    }
+    expect(accountingProductsHref("new")).toBe("/accounting/products/new");
   });
 
   it("leaves the workspace home where it is", () => {
@@ -108,6 +119,28 @@ describe("legacy redirects", () => {
     }
   });
 
+  it("moves every retired dashboard work area to Accounting, retaining nested paths and queries", () => {
+    const moved: readonly (readonly [string, string])[] = [
+      ["/dashboard/pos", ACCOUNTING_WORKSPACE_HREFS.pos],
+      ["/dashboard/stock", ACCOUNTING_WORKSPACE_HREFS.inventory],
+      ["/dashboard/inventory", ACCOUNTING_WORKSPACE_HREFS.inventory],
+      ["/dashboard/products", ACCOUNTING_WORKSPACE_HREFS.products],
+      ["/dashboard/products/new", accountingProductsHref("new")],
+      ["/dashboard/products/prices", accountingProductsHref("prices")],
+      ["/dashboard/products/attributes", accountingProductsHref("attributes")],
+      ["/dashboard/cosmetics", ACCOUNTING_WORKSPACE_HREFS.cosmetics],
+      ["/dashboard/reports", ACCOUNTING_WORKSPACE_HREFS.reports],
+      ["/dashboard/floor", ACCOUNTING_WORKSPACE_HREFS.floor],
+      ["/dashboard/kitchen", ACCOUNTING_WORKSPACE_HREFS.kitchen],
+      ["/dashboard/reservations", ACCOUNTING_WORKSPACE_HREFS.reservations],
+      ["/dashboard/delivery", ACCOUNTING_WORKSPACE_HREFS.delivery],
+    ];
+    for (const [legacy, canonical] of moved) {
+      expect(canonicalPathForLegacy(legacy), legacy).toBe(canonical);
+      expect(legacyRedirectTarget(legacy, "?tab=details"), legacy).toBe(`${canonical}?tab=details`);
+    }
+  });
+
   it("moves the platform's own pages into the settings area", () => {
     expect(canonicalPathForLegacy("/dashboard/settings")).toBe("/settings");
     expect(canonicalPathForLegacy("/dashboard/settings/team")).toBe("/settings/team");
@@ -122,7 +155,6 @@ describe("legacy redirects", () => {
       "/dashboard",
       "/dashboard/overview",
       "/dashboard/orders",
-      "/dashboard/reports",
       "/dashboard/ai",
       "/dashboard/knowledge",
       "/dashboard/support",

@@ -43,7 +43,7 @@ const ACCOUNTING_HEADINGS: Partial<Record<AccountingSectionKey, { title: string;
     description:
       "تنظیمات مخصوص برنامهٔ حسابداری — سرفصل حساب‌ها، دوره‌های مالی و قواعد سندزنی. تنظیمات کسب‌وکار و پلتفرم جای دیگری است.",
   },
-  reports: {
+  "financial-reports": {
     title: "گزارش‌های مالی",
     description: "گزارش‌های حسابداری و راه رسیدن به گزارش‌های کسب‌وکار.",
   },

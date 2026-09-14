@@ -3,7 +3,10 @@ import {
   ACCOUNTING_SECTIONS,
   accountingSectionsForRole,
 } from "./accounting-nav";
-import { ACCOUNTING_SECTION_KEYS, accountingSectionHref } from "./accounting-routes";
+import {
+  ACCOUNTING_SECTION_KEYS,
+  accountingSectionHref,
+} from "./accounting-routes";
 import {
   accountingWorkspaceGroups,
   accountingWorkspaceHrefs,
@@ -13,6 +16,10 @@ import {
   LEDGER_WORKSPACE_SUBGROUPS,
 } from "./accounting-workspace";
 import { partyDirectoryHref } from "@/lib/party-directory";
+import {
+  ACCOUNTING_WORKSPACE_HREFS,
+  accountingProductsHref,
+} from "@/lib/app-routes";
 
 /**
  * Accounting is the business's primary workspace.
@@ -32,13 +39,16 @@ import { partyDirectoryHref } from "@/lib/party-directory";
 const BUSINESS_NAV = [
   { label: "داشبورد", href: "/dashboard/overview" },
   { label: "سفارش‌ها", href: "/dashboard/orders" },
-  { label: "صندوق (فروش)", href: "/dashboard/pos" },
+  { label: "صندوق (فروش)", href: ACCOUNTING_WORKSPACE_HREFS.pos },
   { label: "ارتباط با مشتری", href: "/crm/overview" },
-  { label: "خرید و انبار", href: "/dashboard/stock" },
-  { label: "انبار", href: "/dashboard/inventory" },
-  { label: "محصولات", href: "/dashboard/products", iconKey: "/dashboard/products" },
-  { label: "لیست قیمت", href: "/dashboard/products/prices" },
-  { label: "گزارش‌ها", href: "/dashboard/reports" },
+  { label: "انبار", href: ACCOUNTING_WORKSPACE_HREFS.inventory },
+  {
+    label: "محصولات",
+    href: ACCOUNTING_WORKSPACE_HREFS.products,
+    iconKey: ACCOUNTING_WORKSPACE_HREFS.products,
+  },
+  { label: "لیست قیمت", href: accountingProductsHref("prices") },
+  { label: "گزارش‌ها", href: ACCOUNTING_WORKSPACE_HREFS.reports },
   { label: "تنظیمات", href: "/settings" },
   { label: "مرکز آموزش", href: "/dashboard/knowledge" },
 ];
@@ -60,20 +70,24 @@ describe("the Accounting workspace menu", () => {
     const hrefs = accountingWorkspaceHrefs(groupsFor("owner"));
     for (const expected of [
       "/dashboard/orders",
-      "/dashboard/pos",
-      "/dashboard/stock",
-      "/dashboard/inventory",
-      "/dashboard/products",
-      "/dashboard/reports",
+      ACCOUNTING_WORKSPACE_HREFS.pos,
+      ACCOUNTING_WORKSPACE_HREFS.inventory,
+      ACCOUNTING_WORKSPACE_HREFS.products,
+      ACCOUNTING_WORKSPACE_HREFS.reports,
       "/settings",
     ]) {
-      expect(hrefs, `«حسابداری» must expose ${expected} as a primary work area`).toContain(expected);
+      expect(
+        hrefs,
+        `«حسابداری» must expose ${expected} as a primary work area`,
+      ).toContain(expected);
     }
   });
 
   it("keeps «فضای کار حسابداری» as one named group inside the menu", () => {
     const groups = groupsFor("owner");
-    const ledger = groups.find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY);
+    const ledger = groups.find(
+      (group) => group.key === LEDGER_WORKSPACE_GROUP_KEY,
+    );
     expect(ledger).toBeDefined();
     expect(ledger?.label).toBe(LEDGER_WORKSPACE_LABEL);
     // A group, not the menu: there is strictly more in the menu than it.
@@ -103,10 +117,13 @@ describe("the Accounting workspace menu", () => {
       group.entries.some((entry) => entry.href === settingsHref),
     );
 
-    expect(containingGroups.map((group) => group.key)).toEqual([LEDGER_WORKSPACE_GROUP_KEY]);
-    expect(containingGroups[0].entries.find((entry) => entry.href === settingsHref)?.label).toBe(
-      "تنظیمات حسابداری",
-    );
+    expect(containingGroups.map((group) => group.key)).toEqual([
+      LEDGER_WORKSPACE_GROUP_KEY,
+    ]);
+    expect(
+      containingGroups[0].entries.find((entry) => entry.href === settingsHref)
+        ?.label,
+    ).toBe("تنظیمات حسابداری");
   });
 
   it("gives every accounting section a home somewhere in the menu", () => {
@@ -115,9 +132,10 @@ describe("the Accounting workspace menu", () => {
     // section that silently vanished from the app.
     const hrefs = new Set(accountingWorkspaceHrefs(groupsFor("owner")));
     for (const section of accountingSectionsForRole("owner")) {
-      expect(hrefs, `section "${section.key}" has no entry in the Accounting menu`).toContain(
-        accountingSectionHref(section.key),
-      );
+      expect(
+        hrefs,
+        `section "${section.key}" has no entry in the Accounting menu`,
+      ).toContain(accountingSectionHref(section.key));
     }
   });
 
@@ -127,11 +145,13 @@ describe("the Accounting workspace menu", () => {
     const hrefs = accountingWorkspaceHrefs(
       groupsFor(
         "owner",
-        BUSINESS_NAV.filter((item) => item.href !== "/dashboard/inventory"),
+        BUSINESS_NAV.filter(
+          (item) => item.href !== ACCOUNTING_WORKSPACE_HREFS.inventory,
+        ),
       ),
     );
-    expect(hrefs).not.toContain("/dashboard/inventory");
-    expect(hrefs).toContain("/dashboard/stock");
+    expect(hrefs).not.toContain(ACCOUNTING_WORKSPACE_HREFS.inventory);
+    expect(hrefs).toContain(ACCOUNTING_WORKSPACE_HREFS.products);
   });
 
   it("never adopts a page that is not a work area", () => {
@@ -145,13 +165,15 @@ describe("the Accounting workspace menu", () => {
     const managerHrefs = accountingWorkspaceHrefs(groupsFor("manager"));
     expect(managerHrefs).not.toContain(accountingSectionHref("payroll"));
     expect(managerHrefs).toContain(accountingSectionHref("trial-balance"));
-    expect(accountingWorkspaceHrefs(groupsFor("owner"))).toContain(accountingSectionHref("payroll"));
+    expect(accountingWorkspaceHrefs(groupsFor("owner"))).toContain(
+      accountingSectionHref("payroll"),
+    );
   });
 
   it("restricts a non-accounting role to their authorized business groups without ledger sections", () => {
     const cashierHrefs = accountingWorkspaceHrefs(groupsFor("cashier"));
     expect(cashierHrefs).toContain("/dashboard/orders");
-    expect(cashierHrefs).toContain("/dashboard/pos");
+    expect(cashierHrefs).toContain(ACCOUNTING_WORKSPACE_HREFS.pos);
     expect(cashierHrefs).not.toContain(accountingSectionHref("dashboard"));
     expect(cashierHrefs).not.toContain(accountingSectionHref("trial-balance"));
     expect(cashierHrefs).not.toContain(accountingSectionHref("payroll"));
@@ -217,7 +239,9 @@ describe("the Accounting workspace menu", () => {
 
   it("only marks the long ledger group as collapsible", () => {
     const collapsible = groupsFor("owner").filter((group) => group.collapsible);
-    expect(collapsible.map((group) => group.key)).toEqual([LEDGER_WORKSPACE_GROUP_KEY]);
+    expect(collapsible.map((group) => group.key)).toEqual([
+      LEDGER_WORKSPACE_GROUP_KEY,
+    ]);
   });
 });
 
@@ -239,14 +263,21 @@ describe("the ledger group's own section list", () => {
     for (const key of LEDGER_WORKSPACE_SECTION_KEYS) {
       expect(ACCOUNTING_SECTION_KEYS).toContain(key);
     }
-    expect(new Set(LEDGER_WORKSPACE_SECTION_KEYS).size).toBe(LEDGER_WORKSPACE_SECTION_KEYS.length);
+    expect(new Set(LEDGER_WORKSPACE_SECTION_KEYS).size).toBe(
+      LEDGER_WORKSPACE_SECTION_KEYS.length,
+    );
   });
 
   it("leaves app-level areas out while keeping accounting settings in the workspace", () => {
     // The home, directory and report views remain top-level areas. Accounting
     // settings is a ledger concern, so its existing route now lives in the one
     // «فضای کار حسابداری» group instead of a second configuration location.
-    for (const outside of ["dashboard", "directory", "reports", "growth"]) {
+    for (const outside of [
+      "dashboard",
+      "directory",
+      "financial-reports",
+      "growth",
+    ]) {
       expect(LEDGER_WORKSPACE_SECTION_KEYS).not.toContain(outside);
     }
     expect(LEDGER_WORKSPACE_SECTION_KEYS).toContain("settings");
@@ -255,11 +286,14 @@ describe("the ledger group's own section list", () => {
       ...LEDGER_WORKSPACE_SECTION_KEYS,
       "dashboard",
       "directory",
-      "reports",
+      "financial-reports",
       "growth",
     ]);
     for (const section of ACCOUNTING_SECTIONS) {
-      expect(accounted, `section "${section.key}" is in no Accounting menu group`).toContain(section.key);
+      expect(
+        accounted,
+        `section "${section.key}" is in no Accounting menu group`,
+      ).toContain(section.key);
     }
   });
 });

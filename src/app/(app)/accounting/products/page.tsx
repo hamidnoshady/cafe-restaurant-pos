@@ -1,7 +1,7 @@
-import { PageHeader, PageShell } from "../page-chrome";
-import { KnowledgeHelpButton } from "../knowledge-help";
-import { requireProductWorkspace } from "./workspace-context";
-import { ProductsListSection } from "./products-list-section";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { ProductsListSection } from "@/app/dashboard/products/products-list-section";
+import { requireProductWorkspace } from "@/app/dashboard/products/workspace-context";
 
 /** «لیست محصولات» — the catalogue board as a filterable, paginated table. */
 export default async function ProductsListPage() {

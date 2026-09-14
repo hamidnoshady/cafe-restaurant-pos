@@ -2,7 +2,7 @@
 
 /**
  * Phase 42b — the «حواله بازگشت» tab: the supplier-return form, extracted
- * unchanged from the old one-page /dashboard/stock (Phase 27 Wave 8's retail
+ * unchanged from the former retail stock workspace (Phase 27 Wave 8's retail
  * supplier returns) into the warehouse module's «اقلام و عملیات» group. The
  * form's fields and POST payload are byte-for-byte the originals; only the
  * data loading moved into the section. Kept separate from the warehouse
@@ -31,7 +31,9 @@ export function ReturnsSection() {
   const [done, setDone] = useState("");
 
   const load = useCallback(() => {
-    api<{ items: StockItem[] }>("/api/stock/items").then(({ ok, data }) => ok && setItems(data.items));
+    api<{ items: StockItem[] }>("/api/stock/items").then(
+      ({ ok, data }) => ok && setItems(data.items),
+    );
   }, []);
   useEffect(load, [load]);
 
@@ -50,7 +52,9 @@ export function ReturnsSection() {
         onError={setError}
       />
       <ErrorBox>{error}</ErrorBox>
-      {done ? <p className="text-xs text-emerald-700 dark:text-emerald-300">{done}</p> : null}
+      {done ? (
+        <p className="text-xs text-emerald-700 dark:text-emerald-300">{done}</p>
+      ) : null}
     </div>
   );
 }
@@ -73,10 +77,13 @@ function ReturnForm({
     if (!itemId || !quantity.trim() || !reason.trim()) return;
     setBusy(true);
     onError("");
-    const { ok, data } = await api<{ error?: string; message?: string }>("/api/stock/returns", {
-      method: "POST",
-      body: JSON.stringify({ reason, lines: [{ itemId, quantity }] }),
-    });
+    const { ok, data } = await api<{ error?: string; message?: string }>(
+      "/api/stock/returns",
+      {
+        method: "POST",
+        body: JSON.stringify({ reason, lines: [{ itemId, quantity }] }),
+      },
+    );
     setBusy(false);
     if (!ok) onError(data.message ?? "ثبت برگشت ناموفق بود.");
     else {
@@ -91,22 +98,43 @@ function ReturnForm({
     <SectionCard title="برگشت به تأمین‌کننده" bodyClassName="space-y-3">
       <div className="grid gap-2">
         <Field label="کالا">
-          <select className={inputClass} value={itemId} onChange={(e) => setItemId(e.target.value)}>
+          <select
+            className={inputClass}
+            value={itemId}
+            onChange={(e) => setItemId(e.target.value)}
+          >
             <option value="">انتخاب کنید…</option>
             {items.map((i) => (
-              <option key={i.id} value={i.id}>{i.name}</option>
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
             ))}
           </select>
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="تعداد">
-            <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            <PersianNumberInput
+              inputMode="decimal"
+              className={inputClass}
+              dir="ltr"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
           </Field>
           <Field label="دلیل">
-            <input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <input
+              className={inputClass}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
           </Field>
         </div>
-        <Button type="button" disabled={busy} onClick={() => void submit()} className="min-h-11 w-full">
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={() => void submit()}
+          className="min-h-11 w-full"
+        >
           ثبت برگشت
         </Button>
       </div>

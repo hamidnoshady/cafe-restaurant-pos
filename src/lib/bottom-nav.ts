@@ -7,6 +7,8 @@
  * business row. Nothing here touches the network.
  */
 
+import { canonicalPathForLegacy } from "./app-routes";
+
 /**
  * How many pages the bar can hold, and now all it holds: the «پروفایل» button
  * that used to sit in the last slot is gone, since the drawer it opened is
@@ -17,9 +19,17 @@ export const BOTTOM_NAV_MAX = 4;
 export const BOTTOM_NAV_STORAGE_KEY = "dashboard-bottom-nav";
 
 /** The bar before anyone configures it — the set that shipped before this was a choice. */
-const DEFAULT_HREFS = ["/dashboard", "/dashboard/orders", "/dashboard/reports"];
+const DEFAULT_HREFS = [
+  "/dashboard",
+  "/dashboard/orders",
+  "/accounting/reports",
+];
 /** On the sell screen, the cashier tab replaces reports so the active workflow stays visible. */
-const DEFAULT_POS_HREFS = ["/dashboard", "/dashboard/pos", "/dashboard/orders"];
+const DEFAULT_POS_HREFS = [
+  "/dashboard",
+  "/accounting/pos",
+  "/dashboard/orders",
+];
 
 /** Reads the stored list, tolerating anything a hand-edited localStorage might hold. */
 export function parseBottomNavHrefs(raw: string | null): string[] | null {
@@ -46,8 +56,20 @@ export function resolveBottomNavHrefs(
   availableHrefs: string[],
   onSellScreen: boolean,
 ): string[] {
-  const preferred = stored?.length ? stored : onSellScreen ? DEFAULT_POS_HREFS : DEFAULT_HREFS;
-  const picked = preferred.filter((href) => availableHrefs.includes(href));
+  const preferred = stored?.length
+    ? stored
+    : onSellScreen
+      ? DEFAULT_POS_HREFS
+      : DEFAULT_HREFS;
+  // A saved pre-migration shortcut is client-side state, not a reason to emit
+  // a retired Dashboard address again. Upgrade it before comparing against the
+  // current nav so it keeps its place in the bar without a redirect round trip.
+  const canonicalPreferred = preferred.map(
+    (href) => canonicalPathForLegacy(href) ?? href,
+  );
+  const picked = canonicalPreferred.filter((href) =>
+    availableHrefs.includes(href),
+  );
   // Deduped because the stored value is user-writable and two identical hrefs
   // would render two links with the same React key.
   return [...new Set(picked)].slice(0, BOTTOM_NAV_MAX);

@@ -209,7 +209,7 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
           {section === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {section === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
           {section === "fixed-assets" ? <FixedAssetsSection busy={busy} refreshKey={refreshKey} /> : null}
-          {section === "reports" ? <AccountingReportsSection /> : null}
+          {section === "financial-reports" ? <AccountingReportsSection /> : null}
           {section === "settings" ? <AccountingSettingsSection /> : null}
           {section === "growth" ? <GrowthAccountingView /> : null}
     </>

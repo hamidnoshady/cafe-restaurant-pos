@@ -1,7 +1,7 @@
-import { PageHeader, PageShell } from "../../page-chrome";
-import { KnowledgeHelpButton } from "../../knowledge-help";
-import { requireProductWorkspace } from "../workspace-context";
-import { ProductAddSection } from "../product-add-section";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { ProductAddSection } from "@/app/dashboard/products/product-add-section";
+import { requireProductWorkspace } from "@/app/dashboard/products/workspace-context";
 
 /** «افزودن محصول» — the tabbed product form with drafts and variant rows. */
 export default async function ProductAddPage() {

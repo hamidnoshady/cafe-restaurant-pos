@@ -52,7 +52,7 @@ export const ACCOUNTING_SECTIONS: readonly AccountingSectionDef[] = [
   { key: "payroll", label: "حقوق و دستمزد", roles: ["owner", "accountant"] },
   { key: "vat", label: "گزارش مالیات" },
   { key: "fixed-assets", label: "دارایی‌های ثابت" },
-  { key: "reports", label: "گزارش‌های مالی" },
+  { key: "financial-reports", label: "گزارش‌های مالی" },
   { key: "growth", label: "رشد و بازاریابی" },
   // Accounting's *own* settings — never the platform settings page. Last in
   // the menu, the way every app's settings entry is.
@@ -76,23 +76,51 @@ export const ACCOUNTING_SECTIONS: readonly AccountingSectionDef[] = [
  * `ACCOUNTING_SECTIONS` without a home here fails the build rather than
  * quietly vanishing from the menu.
  */
-export const ACCOUNTING_NAV_GROUPS: readonly { label: string; keys: readonly AccountingSectionKey[] }[] = [
-  { label: "دفتر", keys: ["dashboard", "trial-balance", "entries", "manual", "chart-of-accounts"] },
+export const ACCOUNTING_NAV_GROUPS: readonly {
+  label: string;
+  keys: readonly AccountingSectionKey[];
+}[] = [
+  {
+    label: "دفتر",
+    keys: [
+      "dashboard",
+      "trial-balance",
+      "entries",
+      "manual",
+      "chart-of-accounts",
+    ],
+  },
   { label: "اشخاص", keys: ["directory"] },
-  { label: "دریافتنی و پرداختنی", keys: ["receivables", "payables", "installments", "cheques"] },
-  { label: "وجوه و هزینه", keys: ["receipts", "expenses", "reconciliation", "fixed-assets"] },
-  { label: "دوره و گزارش", keys: ["fiscal-periods", "vat", "payroll", "reports", "growth"] },
+  {
+    label: "دریافتنی و پرداختنی",
+    keys: ["receivables", "payables", "installments", "cheques"],
+  },
+  {
+    label: "وجوه و هزینه",
+    keys: ["receipts", "expenses", "reconciliation", "fixed-assets"],
+  },
+  {
+    label: "دوره و گزارش",
+    keys: ["fiscal-periods", "vat", "payroll", "financial-reports", "growth"],
+  },
   // The app's settings entry, last — the shape every app's menu ends with.
   { label: "پیکربندی", keys: ["settings"] },
 ];
 
 /** The sections a role may open — the same list the sidebar and the rail draw. */
-export function accountingSectionsForRole(role: string | null | undefined): AccountingSectionDef[] {
+export function accountingSectionsForRole(
+  role: string | null | undefined,
+): AccountingSectionDef[] {
   if (!(ACCOUNTING_ROLES as readonly string[]).includes(role ?? "")) return [];
-  return ACCOUNTING_SECTIONS.filter((section) => !section.roles || section.roles.includes(role ?? ""));
+  return ACCOUNTING_SECTIONS.filter(
+    (section) => !section.roles || section.roles.includes(role ?? ""),
+  );
 }
 
 /** Whether a given role may open a section — the page gate and the menu agree by construction. */
-export function canViewAccountingSection(role: string | null | undefined, key: AccountingSectionKey): boolean {
+export function canViewAccountingSection(
+  role: string | null | undefined,
+  key: AccountingSectionKey,
+): boolean {
   return accountingSectionsForRole(role).some((section) => section.key === key);
 }

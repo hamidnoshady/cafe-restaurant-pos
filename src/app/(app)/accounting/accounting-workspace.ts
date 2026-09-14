@@ -30,6 +30,7 @@
 import type { AccountingSectionKey } from "./accounting-routes";
 import { accountingSectionHref } from "./accounting-routes";
 import { accountingSectionsForRole, type AccountingSectionDef } from "./accounting-nav";
+import { ACCOUNTING_WORKSPACE_HREFS, accountingProductsHref } from "@/lib/app-routes";
 import { partyDirectoryHref } from "@/lib/party-directory";
 
 /** A nav entry as the composer needs it — the business nav's shape, narrowed. */
@@ -109,7 +110,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     description: "فاکتورها، صندوق و مشتریان",
     slots: [
       { href: "/dashboard/orders" },
-      { href: "/dashboard/pos" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.pos },
       { href: "/crm/overview", label: "ارتباط با مشتری" },
     ],
   },
@@ -118,11 +119,10 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     label: "خرید و انبار",
     description: "تأمین، موجودی و کالا",
     slots: [
-      { href: "/dashboard/stock" },
-      { href: "/dashboard/inventory" },
-      { href: "/dashboard/products" },
-      { href: "/dashboard/products/new" },
-      { href: "/dashboard/products/prices" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.inventory },
+      { href: accountingProductsHref() },
+      { href: accountingProductsHref("new") },
+      { href: accountingProductsHref("prices") },
       { href: "/dashboard/menu" },
     ],
   },
@@ -131,14 +131,14 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     label: "عملیات",
     description: "بخش‌های عملیاتی این صنف",
     slots: [
-      { href: "/dashboard/floor" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.floor },
       { href: "/dashboard/waiter" },
-      { href: "/dashboard/kitchen" },
-      { href: "/dashboard/reservations" },
-      { href: "/dashboard/delivery" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.kitchen },
+      { href: ACCOUNTING_WORKSPACE_HREFS.reservations },
+      { href: ACCOUNTING_WORKSPACE_HREFS.delivery },
       { href: "/dashboard/jewelry" },
       { href: "/dashboard/watch" },
-      { href: "/dashboard/cosmetics" },
+      { href: ACCOUNTING_WORKSPACE_HREFS.cosmetics },
       { href: "/dashboard/accessories" },
       { href: "/dashboard/wholesale" },
       { href: "/dashboard/tools-fittings" },
@@ -149,7 +149,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
 
 /** The reports group's business entries — kept apart because it sits after the ledger. */
 const REPORTS_SLOTS: readonly WorkspaceSlot[] = [
-  { href: "/dashboard/reports", label: "گزارش‌های کسب‌وکار" },
+  { href: ACCOUNTING_WORKSPACE_HREFS.reports, label: "گزارش‌های کسب‌وکار" },
 ];
 
 /** The configuration group's business entries. */
@@ -334,7 +334,7 @@ export function accountingWorkspaceGroups({
 
   // 5. Reports — the ledger's own, then the business's.
   const reports = [
-    ...sectionEntry("reports", "گزارش‌های مالی"),
+    ...sectionEntry("financial-reports", "گزارش‌های مالی"),
     ...businessEntries(REPORTS_SLOTS),
     ...sectionEntry("growth"),
   ];

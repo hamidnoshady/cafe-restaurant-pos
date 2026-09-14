@@ -2,7 +2,7 @@
 
 /**
  * Phase 42b — the «خرید» tab: the purchase-receiving form and the recent
- * purchases list, extracted unchanged from the old one-page /dashboard/stock
+ * purchases list, extracted unchanged from the former retail stock workspace
  * (Phase 27 Wave 8's retail purchasing) into the warehouse module's «اقلام و
  * عملیات» group. The form's fields, line building and POST payload are
  * byte-for-byte the originals; only the data loading moved into the section.
@@ -48,8 +48,12 @@ export function PurchasesSection() {
   const [done, setDone] = useState("");
 
   const load = useCallback(() => {
-    api<{ items: StockItem[] }>("/api/stock/items").then(({ ok, data }) => ok && setItems(data.items));
-    api<{ purchases: PurchaseRow[]; suppliers: Supplier[] }>("/api/stock/purchases").then(({ ok, data }) => {
+    api<{ items: StockItem[] }>("/api/stock/items").then(
+      ({ ok, data }) => ok && setItems(data.items),
+    );
+    api<{ purchases: PurchaseRow[]; suppliers: Supplier[] }>(
+      "/api/stock/purchases",
+    ).then(({ ok, data }) => {
       if (ok) {
         setPurchases(data.purchases);
         setSuppliers(data.suppliers);
@@ -81,14 +85,22 @@ export function PurchasesSection() {
 
       <SectionCard title="خریدهای اخیر" bodyClassName="space-y-3">
         {purchases.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هنوز خریدی ثبت نشده است.</p>
+          <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            هنوز خریدی ثبت نشده است.
+          </p>
         ) : (
           <ul className="divide-y divide-border/80 text-sm">
             {purchases.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-                <span className="font-medium text-foreground">{p.supplierName ?? "بدون تأمین‌کننده"}</span>
+              <li
+                key={p.id}
+                className="flex items-center justify-between gap-3 py-2"
+              >
+                <span className="font-medium text-foreground">
+                  {p.supplierName ?? "بدون تأمین‌کننده"}
+                </span>
                 <span className="text-xs text-muted-foreground">
-                  {formatPersianNumber(p.lineCount)} قلم · {money.format(p.total)}
+                  {formatPersianNumber(p.lineCount)} قلم ·{" "}
+                  {money.format(p.total)}
                 </span>
               </li>
             ))}
@@ -97,7 +109,9 @@ export function PurchasesSection() {
       </SectionCard>
 
       <ErrorBox>{error}</ErrorBox>
-      {done ? <p className="text-xs text-emerald-700 dark:text-emerald-300">{done}</p> : null}
+      {done ? (
+        <p className="text-xs text-emerald-700 dark:text-emerald-300">{done}</p>
+      ) : null}
     </div>
   );
 }
@@ -119,14 +133,26 @@ function PurchaseForm({
   const [quantity, setQuantity] = useState("1");
   const [unitCost, setUnitCost] = useState("");
   const [expiry, setExpiry] = useState("");
-  const [lines, setLines] = useState<{ itemId: string; quantity: string; unitCost: number; expiryDate: string | null }[]>([]);
+  const [lines, setLines] = useState<
+    {
+      itemId: string;
+      quantity: string;
+      unitCost: number;
+      expiryDate: string | null;
+    }[]
+  >([]);
   const [busy, setBusy] = useState(false);
 
   function addLine() {
     if (!itemId || !quantity.trim() || !unitCost.trim()) return;
     setLines((prev) => [
       ...prev,
-      { itemId, quantity, unitCost: money.fromInput(Math.max(0, Math.round(Number(unitCost)))), expiryDate: expiry || null },
+      {
+        itemId,
+        quantity,
+        unitCost: money.fromInput(Math.max(0, Math.round(Number(unitCost)))),
+        expiryDate: expiry || null,
+      },
     ]);
     setItemId("");
     setQuantity("1");
@@ -138,10 +164,13 @@ function PurchaseForm({
     if (lines.length === 0) return;
     setBusy(true);
     onError("");
-    const { ok, data } = await api<{ error?: string; message?: string }>("/api/stock/purchases", {
-      method: "POST",
-      body: JSON.stringify({ supplierId: supplierId || null, lines }),
-    });
+    const { ok, data } = await api<{ error?: string; message?: string }>(
+      "/api/stock/purchases",
+      {
+        method: "POST",
+        body: JSON.stringify({ supplierId: supplierId || null, lines }),
+      },
+    );
     setBusy(false);
     if (!ok) onError(data.message ?? "ثبت خرید ناموفق بود.");
     else {
@@ -157,43 +186,85 @@ function PurchaseForm({
     <SectionCard title="دریافت خرید" bodyClassName="space-y-3">
       <div className="grid gap-2">
         <Field label="تأمین‌کننده">
-          <select className={inputClass} value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+          <select
+            className={inputClass}
+            value={supplierId}
+            onChange={(e) => setSupplierId(e.target.value)}
+          >
             <option value="">بدون تأمین‌کننده</option>
             {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
             ))}
           </select>
         </Field>
         <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
           <Field label="کالا">
-            <select className={inputClass} value={itemId} onChange={(e) => setItemId(e.target.value)}>
+            <select
+              className={inputClass}
+              value={itemId}
+              onChange={(e) => setItemId(e.target.value)}
+            >
               <option value="">انتخاب کنید…</option>
               {items.map((i) => (
-                <option key={i.id} value={i.id}>{i.name}</option>
+                <option key={i.id} value={i.id}>
+                  {i.name}
+                </option>
               ))}
             </select>
           </Field>
           <Field label="تعداد">
-            <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            <PersianNumberInput
+              inputMode="decimal"
+              className={inputClass}
+              dir="ltr"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
           </Field>
-          <Button type="button" variant="outline" onClick={addLine} className="min-h-11">+</Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={addLine}
+            className="min-h-11"
+          >
+            +
+          </Button>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Field label={`بهای هر واحد (${money.unitLabel})`}>
-            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
+            <PersianNumberInput
+              className={inputClass}
+              dir="ltr"
+              inputMode="numeric"
+              value={unitCost}
+              onChange={(e) => setUnitCost(e.target.value)}
+            />
           </Field>
           <Field label="انقضا (اختیاری، شمسی)">
-            <JalaliDatePicker className={inputClass} value={expiry} onChange={setExpiry} />
+            <JalaliDatePicker
+              className={inputClass}
+              value={expiry}
+              onChange={setExpiry}
+            />
           </Field>
         </div>
         {lines.length > 0 ? (
           <ul className="text-xs text-muted-foreground">
             {lines.map((l, i) => (
-              <li key={i}>{itemName(l.itemId)} × {formatPersianNumber(Number(l.quantity))}</li>
+              <li key={i}>
+                {itemName(l.itemId)} × {formatPersianNumber(Number(l.quantity))}
+              </li>
             ))}
           </ul>
         ) : null}
-        <Button type="button" disabled={busy || lines.length === 0} onClick={() => void submit()} className="min-h-11 w-full">
+        <Button
+          type="button"
+          disabled={busy || lines.length === 0}
+          onClick={() => void submit()}
+          className="min-h-11 w-full"
+        >
           ثبت خرید
         </Button>
       </div>

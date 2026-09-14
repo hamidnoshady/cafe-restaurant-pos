@@ -20,7 +20,9 @@ describe("the availability vocabulary", () => {
       expect(APP_AVAILABILITY_META[state].label).not.toBe("");
     }
     expect(APP_AVAILABILITY_META.available.badged).toBe(false);
-    for (const state of APP_AVAILABILITY_STATES.filter((s) => s !== "available")) {
+    for (const state of APP_AVAILABILITY_STATES.filter(
+      (s) => s !== "available",
+    )) {
       expect(APP_AVAILABILITY_META[state].badged).toBe(true);
     }
   });
@@ -37,8 +39,11 @@ describe("the availability vocabulary", () => {
 
   it("gives every blocking state something to tell the business", () => {
     for (const state of APP_AVAILABILITY_STATES) {
-      if (APP_AVAILABILITY_META[state].usable && state === "available") continue;
-      expect(APP_AVAILABILITY_META[state].defaultNotice.length).toBeGreaterThan(0);
+      if (APP_AVAILABILITY_META[state].usable && state === "available")
+        continue;
+      expect(APP_AVAILABILITY_META[state].defaultNotice.length).toBeGreaterThan(
+        0,
+      );
     }
   });
 
@@ -74,13 +79,19 @@ describe("resolveAppAvailability", () => {
     expect(resolved.usable).toBe(false);
     expect(resolved.availableFrom).toBe("2026-09-01");
     // No operator note falls back to the state's stock sentence.
-    expect(resolved.notice).toBe(APP_AVAILABILITY_META.coming_soon.defaultNotice);
+    expect(resolved.notice).toBe(
+      APP_AVAILABILITY_META.coming_soon.defaultNotice,
+    );
   });
 
   it("lets a per-business override replace the platform row wholesale", () => {
     const resolved = resolveAppAvailability(
       "growth",
-      { state: "maintenance", note: "ارتقای سرور", availableFrom: "2026-09-01" },
+      {
+        state: "maintenance",
+        note: "ارتقای سرور",
+        availableFrom: "2026-09-01",
+      },
       { state: "beta", note: null, availableFrom: null },
     );
     expect(resolved.source).toBe("business");
@@ -114,7 +125,11 @@ describe("resolveAppAvailability", () => {
 
 describe("isAppUsable", () => {
   const map = {
-    sales: resolveAppAvailability("sales", { state: "maintenance", note: null, availableFrom: null }),
+    sales: resolveAppAvailability("sales", {
+      state: "maintenance",
+      note: null,
+      availableFrom: null,
+    }),
   } as unknown as AppAvailabilityMap;
 
   it("blocks an app the map says is down", () => {
@@ -129,9 +144,9 @@ describe("isAppUsable", () => {
 });
 
 describe("route → app", () => {
-  it("maps a dashboard page to the app that owns its module", () => {
-    expect(appForPagePath("/dashboard/inventory")).toBe("operations");
-    expect(appForPagePath("/dashboard/pos")).toBe("sales");
+  it("maps a canonical workspace page to the app that owns its module", () => {
+    expect(appForPagePath("/accounting/inventory")).toBe("operations");
+    expect(appForPagePath("/accounting/pos")).toBe("sales");
     expect(appForPagePath("/dashboard/crm/segments")).toBe("crm");
     expect(appForPagePath("/dashboard/growth")).toBe("growth");
     expect(appForPagePath("/dashboard/website/wp/products")).toBe("website");
@@ -141,7 +156,9 @@ describe("route → app", () => {
     expect(appForApiPath("/api/orders")).toBe("sales");
     expect(appForApiPath("/api/inventory/purchases/1")).toBe("operations");
     expect(appForApiPath("/api/crm/cases")).toBe("crm");
-    expect(appForApiPath("/api/integrations/wp-manager/overview")).toBe("website");
+    expect(appForApiPath("/api/integrations/wp-manager/overview")).toBe(
+      "website",
+    );
   });
 
   it("leaves the shell surfaces ungated — the explanation screen has to be reachable", () => {

@@ -2,25 +2,18 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getBusinessIndustry, requireModuleForPage } from "@/lib/industry-guard";
 import { industryProfile } from "@/lib/industry-profile";
-import { PosScreen } from "./pos-screen";
-import { RetailInvoiceScreen } from "./retail-invoice-screen";
+import { PosScreen } from "@/app/dashboard/pos/pos-screen";
+import { RetailInvoiceScreen } from "@/app/dashboard/pos/retail-invoice-screen";
 
 /**
- * The selling screen, whichever selling means here.
- *
- * One route and one nav entry for both, branching on the industry's
- * `salesModel` rather than on a named industry, so a fifth trade is a profile
- * entry rather than another `if` — and so role guards, the offline banner and
- * the print wiring stay in one place. F&B's screen is untouched.
+ * The one public selling screen. Both hospitality and retail businesses enter
+ * through `/accounting/pos`; the industry profile chooses the sale workflow,
+ * not a second public route.
  */
 export default async function PosPage({
   searchParams,
 }: {
-  /**
-   * `?table=<id>` starts the sale already seated at that table — how «مهمان جدید
-   * روی این میز» on an order's detail sends a friend at a busy table to the till
-   * for their own, separate bill.
-   */
+  /** `?table=<id>` starts a hospitality sale already seated at that table. */
   searchParams: Promise<{ table?: string }>;
 }) {
   const session = await getSession();

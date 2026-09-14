@@ -64,7 +64,7 @@ const OPEN_GROUPS_KEY = "accounting-nav-open-groups";
  * is matched by its section key (so `/accounting/directory?view=customers`
  * lights «اشخاص» and its «مشتریان» deep link both). A business page is matched
  * by path prefix, the way the flat nav matches — and exactly, for the roots
- * (`/settings`, `/dashboard/products`) that would otherwise swallow every page
+ * (`/settings`, `/accounting/products`) that would otherwise swallow every page
  * beneath them.
  */
 function entryIsActive(entry: WorkspaceNavEntry, pathname: string, search: string): boolean {

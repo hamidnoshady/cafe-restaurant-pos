@@ -51,6 +51,7 @@ import {
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
+import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
 import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
@@ -171,7 +172,7 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     // only the fallback for a member whose role cannot open the accounting
     // pages or the reports at all; the old `/dashboard/ledger` address stays
     // as a preference-list entry for any surface still holding it.
-    hrefs: ["/accounting/overview", "/dashboard/ledger", "/dashboard/reports", "/dashboard/overview"],
+    hrefs: ["/accounting/overview", "/accounting/financial-reports", "/accounting/reports", "/dashboard/overview"],
   },
   {
     key: "crm",
@@ -314,8 +315,8 @@ function entryIsActive(entry: WorkspaceNavEntry, pathname: string, search: strin
         !pathname.startsWith("/settings/billing"))
     );
   }
-  if (base === "/dashboard/products") {
-    return pathname === "/dashboard/products";
+  if (base === ACCOUNTING_WORKSPACE_HREFS.products) {
+    return pathname === ACCOUNTING_WORKSPACE_HREFS.products;
   }
   if (base === "/dashboard") return pathname === "/dashboard";
   return pathname === base || pathname.startsWith(`${base}/`);
@@ -1314,7 +1315,7 @@ export function DashboardSidebar({
         <MobileBottomNavigation
           navItems={navItems}
           pathname={pathname}
-          hrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, isActive(pathname, "/dashboard/pos"))}
+          hrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, isActive(pathname, ACCOUNTING_WORKSPACE_HREFS.pos))}
         />
       ) : null}
     </SidebarProvider>

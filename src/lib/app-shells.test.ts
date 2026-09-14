@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { APPS, appForKey } from "./apps";
-import { APP_SHELLS, appShellForPathname, isInsideAnyAppShell } from "./app-shells";
+import {
+  APP_SHELLS,
+  appShellForPathname,
+  isInsideAnyAppShell,
+} from "./app-shells";
 
 describe("appShellForPathname", () => {
   it("hands Growth & Marketing's routes to the growth shell", () => {
@@ -8,7 +12,12 @@ describe("appShellForPathname", () => {
     // route under the prefix, so no section page falls back to the business nav.
     expect(appShellForPathname("/growth")?.app).toBe("growth");
     expect(appShellForPathname("/growth/overview")?.app).toBe("growth");
-    for (const section of ["campaigns", "gift-cards", "loyalty", "commission"]) {
+    for (const section of [
+      "campaigns",
+      "gift-cards",
+      "loyalty",
+      "commission",
+    ]) {
       expect(appShellForPathname(`/growth/${section}`)?.app).toBe("growth");
     }
     // …and a page nested deeper still, the way a detail route would be.
@@ -18,17 +27,35 @@ describe("appShellForPathname", () => {
   it("hands both website managers to the one website shell", () => {
     expect(appShellForPathname("/websites")?.app).toBe("website");
     // The CMS manager…
-    for (const section of ["setup", "content", "store", "settings", "billing"]) {
-      expect(appShellForPathname(`/websites/cms/${section}`)?.app).toBe("website");
+    for (const section of [
+      "setup",
+      "content",
+      "store",
+      "settings",
+      "billing",
+    ]) {
+      expect(appShellForPathname(`/websites/cms/${section}`)?.app).toBe(
+        "website",
+      );
     }
     // …and the WordPress/WooCommerce manager, now inside the same app. No
     // `connections` section: the store connection lives in the «اتصال‌های
     // فنی» hub, and the old path redirects there — but a redirect is still
     // under this prefix, so it still wears this shell.
-    for (const section of ["products", "orders", "customers", "content", "queue"]) {
-      expect(appShellForPathname(`/websites/wp/${section}`)?.app).toBe("website");
+    for (const section of [
+      "products",
+      "orders",
+      "customers",
+      "content",
+      "queue",
+    ]) {
+      expect(appShellForPathname(`/websites/wp/${section}`)?.app).toBe(
+        "website",
+      );
     }
-    expect(appShellForPathname("/websites/wp/connections")?.app).toBe("website");
+    expect(appShellForPathname("/websites/wp/connections")?.app).toBe(
+      "website",
+    );
   });
 
   it("leaves every other dashboard route to the business nav", () => {
@@ -38,7 +65,6 @@ describe("appShellForPathname", () => {
       "/dashboard",
       "/dashboard/overview",
       "/dashboard/ledger",
-      "/dashboard/reports",
       "/dashboard/loyalty",
       "/dashboard/commission",
       "/dashboard/projects",
@@ -78,7 +104,9 @@ describe("appShellForPathname", () => {
       // The browser-facing routes are app-first, and they are *real* route
       // directories under `src/app/(app)`: nothing is rewritten, so the address
       // bar, the server's route resolution and the client router agree.
-      expect(shell.prefix).toBe(publicHomes[shell.app as keyof typeof publicHomes]);
+      expect(shell.prefix).toBe(
+        publicHomes[shell.app as keyof typeof publicHomes],
+      );
     }
   });
 });
@@ -91,8 +119,10 @@ describe("isInsideAnyAppShell", () => {
     // …the accounting suite, which owns a shell of its own now…
     expect(isInsideAnyAppShell("/accounting/overview")).toBe(true);
     expect(isInsideAnyAppShell("/accounting/entries")).toBe(true);
-    // …and nothing else. The old flat pages are redirects, not nav entries,
-    // and the business's own workspace pages keep the flat nav.
+    expect(isInsideAnyAppShell("/accounting/inventory")).toBe(true);
+    expect(isInsideAnyAppShell("/accounting/reports")).toBe(true);
+    // Retired Dashboard aliases are not app-nav entries; middleware redirects
+    // them before any page shell renders.
     expect(isInsideAnyAppShell("/dashboard/loyalty")).toBe(false);
     expect(isInsideAnyAppShell("/dashboard/ledger")).toBe(false);
     expect(isInsideAnyAppShell("/dashboard/reports")).toBe(false);

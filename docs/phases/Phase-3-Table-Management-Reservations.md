@@ -63,7 +63,7 @@ Defaults chosen to keep moving; each is easy to revisit.
 
 | Criterion | Where |
 |---|---|
-| Manager designs a floor plan matching the venue | `/dashboard/floor` edit mode (`src/app/dashboard/floor/floor-plan.tsx`): drag to place, add/edit tables & sections, assign waiters → `/api/tables`, `/api/tables/[id]`, `/api/floor/sections*` |
+| Manager designs a floor plan matching the venue | `/accounting/floor` edit mode (`src/app/dashboard/floor/floor-plan.tsx`): drag to place, add/edit tables & sections, assign waiters → `/api/tables`, `/api/tables/[id]`, `/api/floor/sections*` |
 | Walk-in seated at a free table opens a correct `TableSession` | `openSession` (`src/lib/table-session-service.ts`) via `POST /api/table-sessions`; dine-in orders auto-attach through `ensureSessionForTable` in `POST /api/orders` |
 | Reservation booked, shown on the floor at its window, seating converts to an active session | Booking + conflict check in `POST /api/reservations`; upcoming-reservation overlay in `GET /api/floor`; `PATCH /api/reservations/[id]` `action:"seat"` → `openSession` |
 | Two overlapping reservations on the same table are flagged | `findConflicts`/`windowsOverlap` (`src/lib/reservations.ts`) enforced in `tableConflicts` (`src/lib/reservation-service.ts`); returns `409 reservation_conflict` |

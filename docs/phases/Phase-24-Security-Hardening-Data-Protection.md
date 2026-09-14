@@ -294,7 +294,7 @@ authenticated page already reads `cookies()`.
 **`CSP_MODE` defaults to `report-only`.** A CSP mistake is a white screen for a café in the
 middle of service. The header name switches to `Content-Security-Policy-Report-Only` in that
 mode. Flipping to `enforce` is a deliberate later step, listed in Wave 4's scope, taken only
-after a manual pass over `/dashboard/pos`, `/dashboard/floor` and `/dashboard/kitchen` with
+after a manual pass over `/accounting/pos`, `/accounting/floor` and `/accounting/kitchen` with
 devtools open reports zero violations.
 
 **Wiring.** The existing `export async function middleware` (`src/middleware.ts:495`) is
@@ -900,6 +900,6 @@ curl -si -X POST https://<host>/api/orders -H 'Cookie: pos_session=…' -H 'Orig
 curl -si https://<host>/api/server-sync/push -H "Authorization: Bearer $REMOTE_SYNC_TOKEN"               # expect 401
 ```
 
-Plus a manual browser pass with devtools open on `/dashboard/pos`, `/dashboard/floor`
-(react-grid-layout is the most likely CSP violator) and `/dashboard/kitchen`, confirming zero
+Plus a manual browser pass with devtools open on `/accounting/pos`, `/accounting/floor`
+(react-grid-layout is the most likely CSP violator) and `/accounting/kitchen`, confirming zero
 CSP reports before `CSP_MODE=enforce` is ever considered.

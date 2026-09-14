@@ -21,9 +21,8 @@ describe("KNOWLEDGE_SECTIONS", () => {
   it("labels are non-empty Persian display names", () => {
     for (const section of KNOWLEDGE_SECTIONS) {
       expect(section.label.trim().length).toBeGreaterThan(0);
-      // A section's route is a real, public page — the workspace's own
-      // (`/dashboard/...`) or an app's top-level prefix, which is where the
-      // apps live since they stopped being folders of the dashboard.
+      // A section's route is a real public page: either a remaining workspace
+      // surface or an app-first canonical route.
       expect(section.route.startsWith("/")).toBe(true);
       expect(section.route).not.toContain("?");
     }
@@ -32,7 +31,7 @@ describe("KNOWLEDGE_SECTIONS", () => {
 
 describe("knowledgeSection / isKnownKnowledgeSection", () => {
   it("finds a known key", () => {
-    expect(knowledgeSection("pos")?.route).toBe("/dashboard/pos");
+    expect(knowledgeSection("pos")?.route).toBe("/accounting/pos");
     expect(isKnownKnowledgeSection("pos")).toBe(true);
   });
 
@@ -54,9 +53,11 @@ describe("sectionForPathname", () => {
   });
 
   it("keeps a section's own sub-routes (an order detail stays the orders section)", () => {
-    expect(sectionForPathname("/dashboard/orders/01234567-0000-0000-0000-000000000000")?.key).toBe(
-      "orders",
-    );
+    expect(
+      sectionForPathname(
+        "/dashboard/orders/01234567-0000-0000-0000-000000000000",
+      )?.key,
+    ).toBe("orders");
   });
 
   it("returns undefined for routes the catalogue does not know", () => {
@@ -85,11 +86,26 @@ describe("parseKnowledgeUrl", () => {
 
   it("rejects empty, non-http and garbage input", () => {
     expect(parseKnowledgeUrl("")).toEqual({ ok: false, error: "invalid_url" });
-    expect(parseKnowledgeUrl("   ")).toEqual({ ok: false, error: "invalid_url" });
-    expect(parseKnowledgeUrl("example.com/pos")).toEqual({ ok: false, error: "invalid_url" });
-    expect(parseKnowledgeUrl("ftp://help.example.com/pos")).toEqual({ ok: false, error: "invalid_url" });
-    expect(parseKnowledgeUrl("javascript:alert(1)")).toEqual({ ok: false, error: "invalid_url" });
-    expect(parseKnowledgeUrl(null)).toEqual({ ok: false, error: "invalid_url" });
+    expect(parseKnowledgeUrl("   ")).toEqual({
+      ok: false,
+      error: "invalid_url",
+    });
+    expect(parseKnowledgeUrl("example.com/pos")).toEqual({
+      ok: false,
+      error: "invalid_url",
+    });
+    expect(parseKnowledgeUrl("ftp://help.example.com/pos")).toEqual({
+      ok: false,
+      error: "invalid_url",
+    });
+    expect(parseKnowledgeUrl("javascript:alert(1)")).toEqual({
+      ok: false,
+      error: "invalid_url",
+    });
+    expect(parseKnowledgeUrl(null)).toEqual({
+      ok: false,
+      error: "invalid_url",
+    });
     expect(parseKnowledgeUrl(42)).toEqual({ ok: false, error: "invalid_url" });
   });
 });

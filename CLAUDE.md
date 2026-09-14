@@ -12,6 +12,20 @@ See [README.md](README.md) for setup, scripts, and the storage conventions (mone
 integer Rial, dates in ISO/Gregorian, Persian digits are display-only, etc.) — those
 conventions are load-bearing; don't casually deviate from them.
 
+## Canonical route migration rule
+
+A moved route has one live address: **application code, navigation, tests, and
+documentation use only the new canonical URL**. Delete/move the old route's
+`page.tsx` in the same change so it cannot keep rendering a duplicate app page.
+Keep old bookmarks working only as a permanent redirect in the central
+`LEGACY_PREFIX_MAP` in `src/lib/app-routes.ts`; a redirect is compatibility, not
+a second route. Do not add links, nav entries, route producers, or new pages at
+a retired URL. Operational Accounting workspaces are canonical at
+`/accounting/{section}`, not `/dashboard/{section}`. Use
+`ACCOUNTING_WORKSPACE_HREFS` and `accountingProductsHref()` for those URLs, and
+update `docs/accounting-workspace-ia.md` and the route tests whenever an entry
+moves.
+
 ## Prompt vocabulary — how the user names things
 
 These words have a specific meaning in prompts from the user. Interpret a request
@@ -824,7 +838,7 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
 - **In-house production (Phase 29)** — some F&B items are *made*, not assembled: a cake is built
   from raw materials once, yields 8 slices, and each slice is sold through its own serving recipe.
   A formula (`production_formulas`) and a run (`production_runs`) sit between the two, under the
-  «تولید» tab of `/dashboard/inventory` and `/api/inventory/production/*` — so they inherit the
+  «تولید» tab of `/accounting/inventory` and `/api/inventory/production/*` — so they inherit the
   `inventory` flag and F&B module with **no new gating**. The load-bearing rule: **the produced good
   is an ordinary `inventory_items` row** flagged `is_produced`, which is why recipes, costing,
   sale-time deduction, stock counts, pricing and cost drift all needed no change. Don't build a
@@ -840,8 +854,8 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   the running container itself (e.g. `check-app-update.ts`, invoked via `docker compose exec`
   by the on-site launcher — see the README's "On-site deployment" section).
 - **Warehouse counting** — barcode assignment and label printing for F&B live under the
-  «بارکد و لیبل» tab of `/dashboard/inventory` (`/api/inventory/barcodes*`), and the retail
-  physical count under `/dashboard/stock` (`/api/stock/counts*`). Both inherit an existing
+  «بارکد و لیبل» tab of `/accounting/inventory` (`/api/inventory/barcodes*`), and the retail
+  physical count under `/accounting/inventory` (`/api/stock/counts*`). Both inherit an existing
   module (`inventory` and `stock` respectively) with **no new gating**, the way Phase 29's
   production tab does — gate a new tab, never the hub.
 - **Connections (Phase 28, Phase 34, Phase 38w)** — everything a business connects *to* lives behind one hub,

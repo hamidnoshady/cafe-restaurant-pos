@@ -1,16 +1,16 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { effectiveFeatures, requireFeatureForPage } from "@/lib/features";
-import { PageHeader, PageShell } from "../page-chrome";
-import { KnowledgeHelpButton } from "../knowledge-help";
-import { ReportsManager } from "./reports-manager";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { ReportsManager } from "@/app/dashboard/reports/reports-manager";
 import { AskAssistant } from "@/components/ai/ask-assistant";
 
+/** The business reporting workspace, moved under the primary Accounting app. */
 export default async function ReportsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!["owner", "manager", "accountant"].includes(session.role))
-    redirect("/dashboard");
+  if (!["owner", "manager", "accountant"].includes(session.role)) redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "reporting");
   const features = await effectiveFeatures(session.businessId);
 

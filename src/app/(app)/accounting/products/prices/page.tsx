@@ -1,7 +1,7 @@
-import { PageHeader, PageShell } from "../../page-chrome";
-import { KnowledgeHelpButton } from "../../knowledge-help";
-import { requireProductWorkspace } from "../workspace-context";
-import { PriceListsSection } from "../price-lists-section";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { PriceListsSection } from "@/app/dashboard/products/price-lists-section";
+import { requireProductWorkspace } from "@/app/dashboard/products/workspace-context";
 
 /** «لیست قیمت» — the price-update matrix over sale/purchase and named lists. */
 export default async function PriceListsPage() {

@@ -60,7 +60,7 @@ slice). The only guard needed is a cycle check (`formulaWouldCycle`, `src/lib/pr
   enough that the produced item routinely carries open shortages when a run lands. The run settles
   them oldest-first at their real cost, and only the residual becomes positive stock.
 - **Reversal.** A posted run is never mutated; it is undone by a reversing document.
-- **A «تولید» tab** inside `/dashboard/inventory`, and a `v_production_summary` report.
+- **A «تولید» tab** inside `/accounting/inventory`, and a `v_production_summary` report.
 
 ## Decisions
 

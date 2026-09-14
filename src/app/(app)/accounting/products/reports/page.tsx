@@ -1,7 +1,7 @@
-import { PageHeader, PageShell } from "../../page-chrome";
-import { KnowledgeHelpButton } from "../../knowledge-help";
-import { requireProductWorkspace } from "../workspace-context";
-import { ReportsSection } from "../../accessories/reports-section";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { ReportsSection } from "@/app/dashboard/accessories/reports-section";
+import { requireProductWorkspace } from "@/app/dashboard/products/workspace-context";
 
 /** «گزارش‌ها» — the trade's sales-by-variant report, kept in the group. */
 export default async function ProductsReportsPage() {

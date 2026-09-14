@@ -26,6 +26,7 @@ import { isFeatureEnabled } from "./features";
 import { recordNotification } from "./notification-events";
 import { notificationDedupeKey } from "./notifications";
 import { formatQuantity } from "./digits";
+import { ACCOUNTING_WORKSPACE_HREFS } from "./app-routes";
 
 /**
  * Slow on purpose. A reorder level is a "order more this week" signal, not a
@@ -91,7 +92,7 @@ export async function scanLowStock(businessId: string): Promise<number> {
       severity: "important",
       title: `${row.name} به نقطهٔ سفارش رسید`,
       body: `موجودی ${formatQuantity(row.on_hand)} ${row.unit} — نقطهٔ سفارش ${formatQuantity(row.reorder_level)} ${row.unit}`,
-      url: "/dashboard/inventory",
+      url: ACCOUNTING_WORKSPACE_HREFS.inventory,
       dedupeKey: notificationDedupeKey("inventory.low_stock", row.id, row.business_date),
       payload: { inventoryItemId: row.id, onHand: row.on_hand, reorderLevel: row.reorder_level },
     });
