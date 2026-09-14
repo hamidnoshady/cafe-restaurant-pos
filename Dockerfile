@@ -37,11 +37,15 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Keep the heap override scoped to Next's build command rather than the runtime
+# image. CI passes 3072 MB so Next can use the resized runner without starving
+# Docker and PostgreSQL of memory.
+ARG NODE_OPTIONS
 # next build only needs JWT_SECRET to be *set* to satisfy the prod env check;
 # pages that read cookies() render dynamically at request time, not at build.
 ENV NODE_ENV=production
 ENV JWT_SECRET=build-time-placeholder-not-used-at-runtime
-RUN npm run build
+RUN NODE_OPTIONS="$NODE_OPTIONS" npm run build
 # The app currently ships no public/ assets (fonts are bundled via the source
 # tree), but Next serves public/ when present — make sure the dir exists so the
 # runner's COPY always succeeds and future assets are picked up automatically.

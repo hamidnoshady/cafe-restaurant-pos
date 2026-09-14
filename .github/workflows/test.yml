@@ -19,6 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  NODE_OPTIONS: --max-old-space-size=3072
   # Session signing is not what's under test here, but the auth/webauthn
   # suites do need a real (non-placeholder) secret, and vitest/next build
   # don't read .env. Throwaway value, CI-only, never used to sign anything real.
