@@ -23,7 +23,8 @@
  */
 import { query } from "./db";
 
-export type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
+export type AccountType =
+  "asset" | "liability" | "equity" | "revenue" | "expense";
 
 interface AccountTotalRow extends Record<string, unknown> {
   id: string;
@@ -35,6 +36,28 @@ interface AccountTotalRow extends Record<string, unknown> {
   credit: string;
 }
 
+interface LedgerIntegrityRow extends Record<string, unknown> {
+  entry_count: string;
+  line_count: string;
+  total_debit: string;
+  total_credit: string;
+  balance_difference: string;
+  unbalanced_entry_count: string;
+  invalid_entry_count: string;
+  balanced: boolean;
+}
+
+interface LedgerIntegritySummary {
+  entryCount: number;
+  lineCount: number;
+  totalDebit: number;
+  totalCredit: number;
+  balanceDifference: number;
+  unbalancedEntryCount: number;
+  invalidEntryCount: number;
+  balanced: boolean;
+}
+
 /**
  * Every account that belongs in a report, with its lifetime debit and credit
  * totals: the active chart, plus any archived account that carries postings.
@@ -42,8 +65,8 @@ interface AccountTotalRow extends Record<string, unknown> {
 async function accountTotals(businessId: string): Promise<AccountTotalRow[]> {
   const { rows } = await query<AccountTotalRow>(
     `SELECT a.id, a.code, a.name, a.type, a.is_active,
-            COALESCE(SUM(jl.debit), 0) AS debit,
-            COALESCE(SUM(jl.credit), 0) AS credit
+            COALESCE(SUM(jl.debit), 0)::text AS debit,
+            COALESCE(SUM(jl.credit), 0)::text AS credit
        FROM accounts a
        LEFT JOIN journal_lines jl ON jl.account_id = a.id
       WHERE a.business_id = $1
@@ -53,6 +76,70 @@ async function accountTotals(businessId: string): Promise<AccountTotalRow[]> {
     [businessId],
   );
   return rows;
+}
+
+/**
+ * Ledger health is an entry-level question, not only a grand-total question.
+ *
+ * The old dashboard did `SUM(debit) === SUM(credit)` over account totals. That
+ * has two dangerous false positives: an empty ledger (0 = 0) and two broken
+ * entries whose differences cancel each other out. This summary keeps those
+ * states separate so the UI can say «بدون سند» or «نامتوازن» instead of a
+ * green, fake all-clear.
+ */
+async function ledgerIntegritySummary(
+  businessId: string,
+): Promise<LedgerIntegritySummary> {
+  const { rows } = await query<LedgerIntegrityRow>(
+    `WITH per_entry AS (
+       SELECT je.id,
+              COUNT(jl.id)::bigint AS line_count,
+              COALESCE(SUM(jl.debit), 0) AS debit,
+              COALESCE(SUM(jl.credit), 0) AS credit
+         FROM journal_entries je
+         LEFT JOIN journal_lines jl ON jl.entry_id = je.id
+        WHERE je.business_id = $1
+        GROUP BY je.id
+     )
+     SELECT COUNT(*)::text AS entry_count,
+            COALESCE(SUM(line_count), 0)::text AS line_count,
+            COALESCE(SUM(debit), 0)::text AS total_debit,
+            COALESCE(SUM(credit), 0)::text AS total_credit,
+            (COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0))::text AS balance_difference,
+            COUNT(*) FILTER (WHERE debit <> credit)::text AS unbalanced_entry_count,
+            COUNT(*) FILTER (WHERE line_count < 2)::text AS invalid_entry_count,
+            (COUNT(*) > 0
+              AND COUNT(*) FILTER (WHERE line_count < 2) = 0
+              AND COUNT(*) FILTER (WHERE debit <> credit) = 0
+              AND COALESCE(SUM(debit), 0) = COALESCE(SUM(credit), 0)) AS balanced
+       FROM per_entry`,
+    [businessId],
+  );
+
+  const row = rows[0];
+  return {
+    entryCount: Number(row?.entry_count ?? 0),
+    lineCount: Number(row?.line_count ?? 0),
+    totalDebit: Number(row?.total_debit ?? 0),
+    totalCredit: Number(row?.total_credit ?? 0),
+    balanceDifference: Number(row?.balance_difference ?? 0),
+    unbalancedEntryCount: Number(row?.unbalanced_entry_count ?? 0),
+    invalidEntryCount: Number(row?.invalid_entry_count ?? 0),
+    balanced: row?.balanced ?? false,
+  };
+}
+
+function accountCodeNumber(code: string): number | null {
+  // The system templates use ASCII digit account codes. Treat any decorated or
+  // free-form code as outside a numeric range rather than guessing.
+  if (!/^\d+$/.test(code)) return null;
+  const value = Number(code);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+function accountCodeInRange(code: string, start: number, end: number): boolean {
+  const value = accountCodeNumber(code);
+  return value !== null && value >= start && value <= end;
 }
 
 export interface TrialBalanceRow {
@@ -71,18 +158,30 @@ export interface TrialBalance {
   totalDebit: number;
   totalCredit: number;
   balanced: boolean;
+  /** Posted journal entries. Zero means there is nothing to call balanced yet. */
+  entryCount: number;
+  lineCount: number;
+  /** Entries whose debit and credit totals differ, even if the grand totals cancel out. */
+  unbalancedEntryCount: number;
+  /** Persisted journal entries with fewer than two lines. */
+  invalidEntryCount: number;
+  /** debit − credit across posted journal lines. */
+  balanceDifference: number;
 }
 
 /**
- * Every account's total debit/credit across all journal lines. Since every
- * posted entry is validated balanced (`postJournalEntry` / the manual-journal
- * path), the grand totals always match — this report surfaces that as a visible
- * integrity check rather than an assumption.
+ * Every account's total debit/credit across all journal lines. The posting
+ * services validate new entries, but imported or hand-repaired data can still be
+ * bad, so the health flag is checked at the journal-entry level rather than
+ * inferred from a grand total.
  */
-export async function getTrialBalance(businessId: string): Promise<TrialBalance> {
-  const rows = await accountTotals(businessId);
-  const totalDebit = rows.reduce((sum, a) => sum + Number(a.debit), 0);
-  const totalCredit = rows.reduce((sum, a) => sum + Number(a.credit), 0);
+export async function getTrialBalance(
+  businessId: string,
+): Promise<TrialBalance> {
+  const [rows, integrity] = await Promise.all([
+    accountTotals(businessId),
+    ledgerIntegritySummary(businessId),
+  ]);
   return {
     accounts: rows.map((a) => ({
       id: a.id,
@@ -93,9 +192,14 @@ export async function getTrialBalance(businessId: string): Promise<TrialBalance>
       debit: a.debit,
       credit: a.credit,
     })),
-    totalDebit,
-    totalCredit,
-    balanced: totalDebit === totalCredit,
+    totalDebit: integrity.totalDebit,
+    totalCredit: integrity.totalCredit,
+    balanced: integrity.balanced,
+    entryCount: integrity.entryCount,
+    lineCount: integrity.lineCount,
+    unbalancedEntryCount: integrity.unbalancedEntryCount,
+    invalidEntryCount: integrity.invalidEntryCount,
+    balanceDifference: integrity.balanceDifference,
   };
 }
 
@@ -103,6 +207,15 @@ export interface LedgerOverview {
   balanced: boolean;
   totalDebit: number;
   totalCredit: number;
+  /** Posted journal entries. Zero means there is nothing to call balanced yet. */
+  journalEntryCount: number;
+  journalLineCount: number;
+  /** Entries whose debit and credit totals differ, even if the grand totals cancel out. */
+  unbalancedEntryCount: number;
+  /** Persisted journal entries with fewer than two lines. */
+  invalidEntryCount: number;
+  /** debit − credit across posted journal lines. */
+  balanceDifference: number;
   cashAndBank: number;
   receivables: number;
   payables: number;
@@ -120,8 +233,9 @@ export interface LedgerOverview {
   }[];
 }
 
-/** Cash and bank equivalents: صندوق (1100), بانک (1110), کارت‌خوان (1120) and تنخواه (1130). */
-const CASH_CODES = new Set(["1100", "1110", "1120", "1130"]);
+/** Cash and bank equivalents: the 1100–1130 block (صندوق، بانک، کارت‌خوان، تنخواه and their custom sub-accounts). */
+const CASH_AND_BANK_CODE_START = 1100;
+const CASH_AND_BANK_CODE_END = 1130;
 
 /**
  * The Accounting app's dashboard, in one read.
@@ -131,14 +245,17 @@ const CASH_CODES = new Set(["1100", "1110", "1120", "1130"]);
  * number always means "we have / we owe / we earned", never a signed ledger
  * figure the owner has to decode.
  */
-export async function getLedgerOverview(businessId: string): Promise<LedgerOverview> {
-  const accounts = await accountTotals(businessId);
+export async function getLedgerOverview(
+  businessId: string,
+): Promise<LedgerOverview> {
+  const [accounts, integrity] = await Promise.all([
+    accountTotals(businessId),
+    ledgerIntegritySummary(businessId),
+  ]);
 
   const balance = (row: AccountTotalRow, debitNormal: boolean) =>
     (Number(row.debit) - Number(row.credit)) * (debitNormal ? 1 : -1);
 
-  let totalDebit = 0;
-  let totalCredit = 0;
   let cashAndBank = 0;
   let receivables = 0;
   let payables = 0;
@@ -146,9 +263,15 @@ export async function getLedgerOverview(businessId: string): Promise<LedgerOverv
   let expenses = 0;
 
   for (const row of accounts) {
-    totalDebit += Number(row.debit);
-    totalCredit += Number(row.credit);
-    if (CASH_CODES.has(row.code)) cashAndBank += balance(row, true);
+    if (
+      accountCodeInRange(
+        row.code,
+        CASH_AND_BANK_CODE_START,
+        CASH_AND_BANK_CODE_END,
+      )
+    ) {
+      cashAndBank += balance(row, true);
+    }
     // حساب‌های دریافتنی و اسناد دریافتنی: the 12xx asset block.
     if (row.code.startsWith("12")) receivables += balance(row, true);
     // حساب‌های پرداختنی و اسناد پرداختنی: the 21xx liability block.
@@ -157,7 +280,10 @@ export async function getLedgerOverview(businessId: string): Promise<LedgerOverv
     if (row.type === "expense") expenses += balance(row, true);
   }
 
-  const { rows: cheques } = await query<{ open_receivable: string; open_payable: string }>(
+  const { rows: cheques } = await query<{
+    open_receivable: string;
+    open_payable: string;
+  }>(
     `SELECT COUNT(*) FILTER (WHERE direction = 'receivable' AND status IN ('on_hand', 'in_collection', 'endorsed')) AS open_receivable,
             COUNT(*) FILTER (WHERE direction = 'payable' AND status = 'issued') AS open_payable
        FROM cheques
@@ -186,9 +312,14 @@ export async function getLedgerOverview(businessId: string): Promise<LedgerOverv
   );
 
   return {
-    balanced: totalDebit === totalCredit,
-    totalDebit,
-    totalCredit,
+    balanced: integrity.balanced,
+    totalDebit: integrity.totalDebit,
+    totalCredit: integrity.totalCredit,
+    journalEntryCount: integrity.entryCount,
+    journalLineCount: integrity.lineCount,
+    unbalancedEntryCount: integrity.unbalancedEntryCount,
+    invalidEntryCount: integrity.invalidEntryCount,
+    balanceDifference: integrity.balanceDifference,
     cashAndBank,
     receivables,
     payables,

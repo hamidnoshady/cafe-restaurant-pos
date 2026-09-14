@@ -156,6 +156,40 @@ afterAll(async () => {
 });
 
 describe("warehouse documents (رسید/حواله انبار)", () => {
+  it("refuses a service-level empty document before creating shell rows", async () => {
+    const client = await connect();
+    await client.query("BEGIN");
+    const fixture = await seed(client);
+
+    await expect(
+      createWarehouseDocumentInTransaction(client as never, {
+        businessId: fixture.business_id,
+        locationId: fixture.location_id,
+        kind: "receipt",
+        supplierId: null,
+        recipient: null,
+        documentNumber: null,
+        note: null,
+        createdBy: null,
+        lines: [],
+      }),
+    ).rejects.toThrow("no_items");
+
+    const { rows: docs } = await client.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM warehouse_documents WHERE business_id = $1",
+      [fixture.business_id],
+    );
+    expect(docs[0].n).toBe(0);
+    const { rows: events } = await client.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM inventory_events WHERE business_id = $1",
+      [fixture.business_id],
+    );
+    expect(events[0].n).toBe(0);
+
+    await client.query("ROLLBACK");
+    await client.end();
+  });
+
   it("posts a receipt: stock in, a FIFO lot per line, and Debit inventory / Credit other income", async () => {
     const client = await connect();
     await client.query("BEGIN");

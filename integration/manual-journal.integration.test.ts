@@ -21,6 +21,7 @@ let manualJournal: typeof import("../src/lib/manual-journal-service");
 let fiscalService: typeof import("../src/lib/fiscal-periods-service");
 
 const biz = { id: "" };
+const loc = { front: "", back: "" };
 const acct = { cash: "", expense: "" };
 const user = { id: "" };
 
@@ -60,13 +61,18 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.end();
-  await dbLib?.getPool().end().catch(() => {});
+  await dbLib
+    ?.getPool()
+    .end()
+    .catch(() => {});
   process.env.DATABASE_URL = rootDatabaseUrl;
 
   const maintenance = new Client({ connectionString: maintenanceUrl() });
   await maintenance.connect();
   try {
-    await maintenance.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+    await maintenance.query(
+      `DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`,
+    );
   } finally {
     await maintenance.end();
   }
@@ -84,6 +90,17 @@ beforeEach(async () => {
     [`journal-${randomUUID().slice(0, 8)}`],
   );
   biz.id = bizRow.rows[0].id;
+
+  const locations = await db.query<{ id: string; name: string }>(
+    `INSERT INTO locations (business_id, name)
+     VALUES ($1, 'Front branch'), ($1, 'Back branch')
+     RETURNING id, name`,
+    [biz.id],
+  );
+  for (const row of locations.rows) {
+    if (row.name === "Front branch") loc.front = row.id;
+    if (row.name === "Back branch") loc.back = row.id;
+  }
 
   const userRow = await db.query<{ id: string }>(
     `INSERT INTO users (business_id, role, full_name, pin_hash) VALUES ($1, 'owner', 'Owner', 'x') RETURNING id`,
@@ -121,7 +138,10 @@ describe("createDraft", () => {
     });
     expect(draft.id).toBeTruthy();
 
-    const { rows } = await db.query("SELECT count(*)::int AS n FROM journal_entries WHERE business_id = $1", [biz.id]);
+    const { rows } = await db.query(
+      "SELECT count(*)::int AS n FROM journal_entries WHERE business_id = $1",
+      [biz.id],
+    );
     expect(rows[0].n).toBe(0);
 
     const listed = await manualJournal.listDrafts(biz.id);
@@ -153,6 +173,30 @@ describe("createDraft", () => {
       }),
     ).rejects.toThrow("memo_required");
   });
+
+  it("rejects malformed or impossible document dates before Postgres sees them", async () => {
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        entryDate: "2025-02-30",
+        memo: "Bad date",
+        lines: balancedLines(),
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("invalid_entry_date");
+
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        entryDate: "not-a-date",
+        memo: "Bad date",
+        lines: balancedLines(),
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("invalid_entry_date");
+  });
 });
 
 describe("deleteDraft (reject)", () => {
@@ -169,7 +213,9 @@ describe("deleteDraft (reject)", () => {
   });
 
   it("404s deleting an already-gone draft", async () => {
-    await expect(manualJournal.deleteDraft(biz.id, randomUUID())).rejects.toThrow("draft_not_found");
+    await expect(
+      manualJournal.deleteDraft(biz.id, randomUUID()),
+    ).rejects.toThrow("draft_not_found");
   });
 });
 
@@ -197,7 +243,11 @@ describe("approveDraft", () => {
       "SELECT source_type, memo, entry_date::text AS entry_date FROM journal_entries WHERE id = $1",
       [entryId],
     );
-    expect(entryRows[0]).toMatchObject({ source_type: "manual", memo: "Rent", entry_date: "2025-04-15" });
+    expect(entryRows[0]).toMatchObject({
+      source_type: "manual",
+      memo: "Rent",
+      entry_date: "2025-04-15",
+    });
 
     const { rows: lineRows } = await db.query(
       "SELECT account_id, debit, credit FROM journal_lines WHERE entry_id = $1 ORDER BY debit DESC",
@@ -209,9 +259,79 @@ describe("approveDraft", () => {
     ]);
   });
 
+  it("posts the approved document to the draft's branch, not the approver's current branch", async () => {
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: loc.front,
+      entryDate: "2025-04-16",
+      memo: "Branch rent",
+      lines: balancedLines(),
+      createdBy: user.id,
+    });
+
+    const { entryId } = await manualJournal.approveDraft({
+      businessId: biz.id,
+      // Simulates an approver whose active branch differs from the drafter's.
+      locationId: loc.back,
+      draftId: draft.id,
+      actorId: user.id,
+    });
+
+    const { rows } = await db.query<{ location_id: string | null }>(
+      "SELECT location_id FROM journal_entries WHERE id = $1",
+      [entryId],
+    );
+    expect(rows[0].location_id).toBe(loc.front);
+  });
+
+  it("serializes concurrent approvals so one draft cannot create duplicate documents", async () => {
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: loc.front,
+      memo: "Concurrent approval",
+      lines: balancedLines(),
+      createdBy: user.id,
+    });
+
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 4 }, () =>
+        manualJournal.approveDraft({
+          businessId: biz.id,
+          locationId: loc.back,
+          draftId: draft.id,
+          actorId: user.id,
+        }),
+      ),
+    );
+
+    expect(
+      attempts.filter((attempt) => attempt.status === "fulfilled"),
+    ).toHaveLength(1);
+    const rejected = attempts.filter(
+      (attempt): attempt is PromiseRejectedResult =>
+        attempt.status === "rejected",
+    );
+    expect(rejected).toHaveLength(3);
+    expect(
+      rejected.map((attempt) => (attempt.reason as Error).message),
+    ).toEqual(["draft_not_found", "draft_not_found", "draft_not_found"]);
+
+    const { rows: entries } = await db.query<{ n: string }>(
+      "SELECT count(*) AS n FROM journal_entries WHERE business_id = $1 AND memo = 'Concurrent approval'",
+      [biz.id],
+    );
+    expect(Number(entries[0].n)).toBe(1);
+    expect(await manualJournal.listDrafts(biz.id)).toHaveLength(0);
+  });
+
   it("404s approving a draft that doesn't exist", async () => {
     await expect(
-      manualJournal.approveDraft({ businessId: biz.id, locationId: null, draftId: randomUUID(), actorId: user.id }),
+      manualJournal.approveDraft({
+        businessId: biz.id,
+        locationId: null,
+        draftId: randomUUID(),
+        actorId: user.id,
+      }),
     ).rejects.toThrow("draft_not_found");
   });
 
@@ -219,8 +339,18 @@ describe("approveDraft", () => {
     await fiscalService.createFiscalYear(biz.id, 1404);
     const [year] = await fiscalService.listFiscalYears(biz.id);
     const [farvardin] = await fiscalService.listPeriods(biz.id, year.id);
-    await fiscalService.setPeriodStatus(biz.id, farvardin.id, "soft_closed", user.id);
-    await fiscalService.setPeriodStatus(biz.id, farvardin.id, "locked", user.id);
+    await fiscalService.setPeriodStatus(
+      biz.id,
+      farvardin.id,
+      "soft_closed",
+      user.id,
+    );
+    await fiscalService.setPeriodStatus(
+      biz.id,
+      farvardin.id,
+      "locked",
+      user.id,
+    );
 
     const draft = await manualJournal.createDraft({
       businessId: biz.id,
@@ -232,7 +362,12 @@ describe("approveDraft", () => {
     });
 
     await expect(
-      manualJournal.approveDraft({ businessId: biz.id, locationId: null, draftId: draft.id, actorId: user.id }),
+      manualJournal.approveDraft({
+        businessId: biz.id,
+        locationId: null,
+        draftId: draft.id,
+        actorId: user.id,
+      }),
     ).rejects.toThrow("fiscal_period_locked");
 
     // The rejected approval must not have consumed the draft.
@@ -241,17 +376,19 @@ describe("approveDraft", () => {
 });
 
 describe("reverseEntry", () => {
-  async function approvedEntryId(): Promise<string> {
+  async function approvedEntryId(
+    locationId: string | null = null,
+  ): Promise<string> {
     const draft = await manualJournal.createDraft({
       businessId: biz.id,
-      locationId: null,
+      locationId,
       memo: "Rent",
       lines: balancedLines(),
       createdBy: user.id,
     });
     const { entryId } = await manualJournal.approveDraft({
       businessId: biz.id,
-      locationId: null,
+      locationId,
       draftId: draft.id,
       actorId: user.id,
     });
@@ -294,9 +431,101 @@ describe("reverseEntry", () => {
     }
   });
 
+  it("posts the reversal to the original document's branch", async () => {
+    const entryId = await approvedEntryId(loc.front);
+
+    const { entryId: reversalId } = await manualJournal.reverseEntry({
+      businessId: biz.id,
+      locationId: loc.back,
+      entryId,
+      actorId: user.id,
+    });
+
+    const { rows } = await db.query<{ location_id: string | null }>(
+      "SELECT location_id FROM journal_entries WHERE id = $1",
+      [reversalId],
+    );
+    expect(rows[0].location_id).toBe(loc.front);
+  });
+
+  it("serializes concurrent reversals so one manual document receives one reversal", async () => {
+    const entryId = await approvedEntryId(loc.front);
+
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 4 }, () =>
+        manualJournal.reverseEntry({
+          businessId: biz.id,
+          locationId: loc.back,
+          entryId,
+          actorId: user.id,
+        }),
+      ),
+    );
+
+    expect(
+      attempts.filter((attempt) => attempt.status === "fulfilled"),
+    ).toHaveLength(1);
+    const rejected = attempts.filter(
+      (attempt): attempt is PromiseRejectedResult =>
+        attempt.status === "rejected",
+    );
+    expect(rejected).toHaveLength(3);
+    expect(
+      rejected.map((attempt) => (attempt.reason as Error).message),
+    ).toEqual(["already_reversed", "already_reversed", "already_reversed"]);
+
+    const { rows } = await db.query<{ n: string }>(
+      "SELECT count(*) AS n FROM journal_entries WHERE reverses_entry_id = $1",
+      [entryId],
+    );
+    expect(Number(rows[0].n)).toBe(1);
+  });
+
+  it("rejects invalid reversal dates before posting a new document", async () => {
+    const entryId = await approvedEntryId();
+
+    await expect(
+      manualJournal.reverseEntry({
+        businessId: biz.id,
+        locationId: null,
+        entryId,
+        actorId: user.id,
+        entryDate: "2025-13-01",
+      }),
+    ).rejects.toThrow("invalid_entry_date");
+
+    const { rows } = await db.query<{ n: string }>(
+      "SELECT count(*) AS n FROM journal_entries WHERE reverses_entry_id = $1",
+      [entryId],
+    );
+    expect(Number(rows[0].n)).toBe(0);
+  });
+
+  it("refuses to reverse a corrupted manual document with no lines", async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type)
+       VALUES ($1, $2, '2025-04-01', 'Broken manual', 'manual') RETURNING id`,
+      [biz.id, loc.front],
+    );
+
+    await expect(
+      manualJournal.reverseEntry({
+        businessId: biz.id,
+        locationId: null,
+        entryId: rows[0].id,
+        actorId: user.id,
+      }),
+    ).rejects.toThrow("entry_has_no_lines");
+  });
+
   it("404s reversing an entry that doesn't exist", async () => {
     await expect(
-      manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId: randomUUID(), actorId: user.id }),
+      manualJournal.reverseEntry({
+        businessId: biz.id,
+        locationId: null,
+        entryId: randomUUID(),
+        actorId: user.id,
+      }),
     ).rejects.toThrow("entry_not_found");
   });
 
@@ -306,16 +535,31 @@ describe("reverseEntry", () => {
       [biz.id],
     );
     await expect(
-      manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId: rows[0].id, actorId: user.id }),
+      manualJournal.reverseEntry({
+        businessId: biz.id,
+        locationId: null,
+        entryId: rows[0].id,
+        actorId: user.id,
+      }),
     ).rejects.toThrow("not_reversible");
   });
 
   it("refuses to reverse an already-reversed entry", async () => {
     const entryId = await approvedEntryId();
-    await manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId, actorId: user.id });
+    await manualJournal.reverseEntry({
+      businessId: biz.id,
+      locationId: null,
+      entryId,
+      actorId: user.id,
+    });
 
     await expect(
-      manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId, actorId: user.id }),
+      manualJournal.reverseEntry({
+        businessId: biz.id,
+        locationId: null,
+        entryId,
+        actorId: user.id,
+      }),
     ).rejects.toThrow("already_reversed");
   });
 
@@ -329,7 +573,12 @@ describe("reverseEntry", () => {
     });
 
     await expect(
-      manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId: reversalId, actorId: user.id }),
+      manualJournal.reverseEntry({
+        businessId: biz.id,
+        locationId: null,
+        entryId: reversalId,
+        actorId: user.id,
+      }),
     ).rejects.toThrow("cannot_reverse_a_reversal");
   });
 });

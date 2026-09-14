@@ -238,6 +238,7 @@ function errorMessage(code: string | undefined): string {
     memo_required: "شرح سند الزامی است.",
     no_lines: "حداقل یک سطر با مبلغ لازم است.",
     invalid_line: "یکی از سطرها معتبر نیست (حساب، یا فقط بدهکار یا بستانکار).",
+    invalid_entry_date: "تاریخ سند معتبر نیست.",
     not_balanced: "مجموع بدهکار و بستانکار برابر نیست.",
     unknown_account: "یکی از حساب‌های انتخاب‌شده معتبر نیست.",
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد.",
@@ -279,6 +280,7 @@ function errorMessage(code: string | undefined): string {
     not_reversible: "فقط اسناد دستی قابل برگشت هستند.",
     cannot_reverse_a_reversal: "سند برگشتی را نمی‌توان دوباره برگشت زد.",
     already_reversed: "این سند قبلاً برگشت خورده است.",
+    entry_has_no_lines: "این سند ردیف حسابداری ندارد و قابل برگشت نیست.",
     // Phase 16 — chart of accounts customisation
     well_known_account: "این حساب برای عملکرد سیستم لازم است و قابل غیرفعال یا حذف نیست.",
     account_not_found: "حساب پیدا نشد.",
