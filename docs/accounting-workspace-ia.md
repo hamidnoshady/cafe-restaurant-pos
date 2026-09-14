@@ -38,6 +38,38 @@ Accounting menu, never a competing shell. It is the one collapsible group (it
 is the long one), it opens automatically when you are standing in it, and its
 open/closed state is remembered per device.
 
+### How the group is drawn
+
+Every group in this menu — plain or collapsible — is rendered by the shared
+[`src/app/dashboard/sidebar-nav-group.tsx`](../src/app/dashboard/sidebar-nav-group.tsx),
+so the sidebar has one spelling of a group instead of one per menu.
+
+- The ledger group's **disclosure header is a nav row**, not a caption with an
+  arrow: `min-h-12 rounded-xl px-3`, its own glyph, the label, and a chevron —
+  the same `APP_NAV_BUTTON_CLASS` amber hover/selection skin as the rows it
+  opens (docs/design-system.md §Rail navigation, §Colour roles). Before this it
+  was a bespoke 11px caption with a small chevron, the only control in the
+  menu that shared nothing with the menu.
+- Closed **over the page you are on**, the header keeps the selected skin, so
+  «you are here» survives collapsing.
+- The group has **named sub-groups**, the way every other group has a heading:
+
+  | sub-group | sections |
+  | --- | --- |
+  | دفتر و اسناد | تراز آزمایشی، دفتر روزنامه، ثبت سند دستی، سرفصل حساب‌ها |
+  | دریافتنی و پرداختنی | دریافتنی، پرداختنی، اقساط، چک‌ها |
+  | وجوه و هزینه | دریافت و پرداخت، هزینه‌ها، تطبیق بانکی، دارایی ثابت |
+  | دوره، مالیات و حقوق | دوره‌های مالی، مالیات، حقوق و دستمزد |
+  | پیکربندی حسابداری | تنظیمات حسابداری |
+
+  They are an *arrangement* of `LEDGER_WORKSPACE_SECTION_KEYS`, never a second
+  list: the group's flat `entries` are built from the sub-groups, and a test
+  asserts the two sets are identical, so a section cannot end up in one and not
+  the other.
+- At the 4rem icon rail the headings and the chevron hide and the rows stay
+  listed — a closed group must never leave the rail empty, because collapsed
+  there is no chevron to reopen it with.
+
 Its **in-page rail** — the `SectionNav` that used to list every section in the
 app, i.e. a second copy of the whole menu inside the page — is now scoped to
 exactly that group. `/accounting/settings` now appears in this rail as the
