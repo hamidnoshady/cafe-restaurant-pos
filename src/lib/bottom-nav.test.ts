@@ -9,17 +9,17 @@ import {
 const ALL = [
   "/dashboard",
   "/dashboard/orders",
-  "/dashboard/pos",
-  "/dashboard/reports",
-  "/dashboard/inventory",
+  "/accounting/pos",
+  "/accounting/reports",
+  "/accounting/inventory",
   "/dashboard/settings",
 ];
 
 describe("parseBottomNavHrefs", () => {
   it("reads a stored list", () => {
-    expect(parseBottomNavHrefs('["/dashboard","/dashboard/pos"]')).toEqual([
+    expect(parseBottomNavHrefs('["/dashboard","/accounting/pos"]')).toEqual([
       "/dashboard",
-      "/dashboard/pos",
+      "/accounting/pos",
     ]);
   });
 
@@ -30,7 +30,9 @@ describe("parseBottomNavHrefs", () => {
   });
 
   it("drops non-string entries rather than rendering them", () => {
-    expect(parseBottomNavHrefs('["/dashboard",7,null]')).toEqual(["/dashboard"]);
+    expect(parseBottomNavHrefs('["/dashboard",7,null]')).toEqual([
+      "/dashboard",
+    ]);
   });
 });
 
@@ -39,26 +41,29 @@ describe("resolveBottomNavHrefs", () => {
     expect(resolveBottomNavHrefs(null, ALL, false)).toEqual([
       "/dashboard",
       "/dashboard/orders",
-      "/dashboard/reports",
+      "/accounting/reports",
     ]);
   });
 
   it("swaps reports for the sell screen while on it", () => {
     expect(resolveBottomNavHrefs(null, ALL, true)).toEqual([
       "/dashboard",
-      "/dashboard/pos",
+      "/accounting/pos",
       "/dashboard/orders",
     ]);
   });
 
-  it("uses the configured list, in the configured order, ignoring the POS default", () => {
-    const stored = ["/dashboard/inventory", "/dashboard"];
-    expect(resolveBottomNavHrefs(stored, ALL, true)).toEqual(stored);
+  it("upgrades a stored legacy shortcut to the configured canonical route", () => {
+    expect(
+      resolveBottomNavHrefs(["/dashboard/inventory", "/dashboard"], ALL, true),
+    ).toEqual(["/accounting/inventory", "/dashboard"]);
   });
 
   it("drops a page the member can no longer see", () => {
-    const stored = ["/dashboard", "/dashboard/reports"];
-    expect(resolveBottomNavHrefs(stored, ["/dashboard"], false)).toEqual(["/dashboard"]);
+    const stored = ["/dashboard", "/accounting/reports"];
+    expect(resolveBottomNavHrefs(stored, ["/dashboard"], false)).toEqual([
+      "/dashboard",
+    ]);
   });
 
   it("never renders more than the cap, and never renders a duplicate", () => {

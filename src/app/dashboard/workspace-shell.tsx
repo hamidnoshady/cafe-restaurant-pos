@@ -9,7 +9,7 @@ import { visibleConnectionKinds, type ConnectionKind } from "@/lib/connection-ki
 import { ACCOUNTING_ROLES, ACCOUNTING_SECTIONS } from "@/app/(app)/accounting/accounting-nav";
 import { PARTY_DIRECTORY_NAV_VIEWS, partyDirectoryHref } from "@/lib/party-directory";
 import { accountingSectionHref } from "@/app/(app)/accounting/accounting-routes";
-import { PLATFORM_BILLING_HREF, PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
+import { ACCOUNTING_WORKSPACE_HREFS, PLATFORM_BILLING_HREF, PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
 import { settingsTabHref } from "@/lib/settings-routes";
 import { REPORTS_TABS, reportsTabHref } from "./reports/reports-nav";
 import { effectiveAppAvailability } from "@/lib/app-availability-service";
@@ -63,7 +63,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: labelFor(industry, "sellScreen"),
       module: "pos",
-      href: "/dashboard/pos",
+      href: ACCOUNTING_WORKSPACE_HREFS.pos,
       roles: ["owner", "manager", "cashier"],
     },
     // The CRM app's door (Phase 36 — it is its own app, not a section of any
@@ -117,15 +117,15 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: "خرید و انبار",
       module: "stock",
-      href: "/dashboard/stock",
+      href: ACCOUNTING_WORKSPACE_HREFS.inventory,
       roles: ["owner", "manager"],
     },
-    { label: "میزها", module: "tables", href: "/dashboard/floor", roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
+    { label: "میزها", module: "tables", href: ACCOUNTING_WORKSPACE_HREFS.floor, roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
     { label: "میزهای من", module: "waiter", href: "/dashboard/waiter", roles: ["cashier", "waiter"], flag: "reservations" },
-    { label: "آشپزخانه", module: "kitchen", href: "/dashboard/kitchen", roles: ["owner", "manager", "kitchen"] },
-    { label: "رزروها", module: "reservations", href: "/dashboard/reservations", roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
-    { label: "ارسال و پیک", module: "delivery", href: "/dashboard/delivery", roles: ["owner", "manager", "cashier"], flag: "delivery" },
-    { label: "انبار", module: "inventory", href: "/dashboard/inventory", roles: ["owner", "manager"], flag: "inventory" },
+    { label: "آشپزخانه", module: "kitchen", href: ACCOUNTING_WORKSPACE_HREFS.kitchen, roles: ["owner", "manager", "kitchen"] },
+    { label: "رزروها", module: "reservations", href: ACCOUNTING_WORKSPACE_HREFS.reservations, roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
+    { label: "ارسال و پیک", module: "delivery", href: ACCOUNTING_WORKSPACE_HREFS.delivery, roles: ["owner", "manager", "cashier"], flag: "delivery" },
+    { label: "انبار", module: "inventory", href: ACCOUNTING_WORKSPACE_HREFS.inventory, roles: ["owner", "manager"], flag: "inventory" },
     { label: INDUSTRY_LABELS.jewelry, module: "jewelry", href: "/dashboard/jewelry", roles: ["owner", "manager"] },
     { label: INDUSTRY_LABELS.watch, module: "watch", href: "/dashboard/watch", roles: ["owner", "manager"] },
     // Phase 42 — the retail trade-goods trades manage their catalogue in the
@@ -139,7 +139,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
           {
             label: "محصولات",
             module: industry,
-            iconKey: "/dashboard/products",
+            iconKey: ACCOUNTING_WORKSPACE_HREFS.products,
             roles: ["owner", "manager"],
             children: PRODUCT_WORKSPACE_SECTIONS.map((section) => ({
               label: section.label,
@@ -151,7 +151,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
         ]
       : []),
     ...(industry === "cosmetics"
-      ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: "/dashboard/cosmetics", roles: ["owner", "manager"] }]
+      ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: ACCOUNTING_WORKSPACE_HREFS.cosmetics, roles: ["owner", "manager"] }]
       : []),
     // The «حسابداری» sub-menu — the Accounting app's sections, each a real
     // route under the app's own prefix (`/accounting/…`), drawn as a
@@ -219,7 +219,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: "گزارش‌ها",
       module: "reports",
-      href: "/dashboard/reports",
+      href: ACCOUNTING_WORKSPACE_HREFS.reports,
       roles: ["owner", "manager", "accountant"],
       flag: "reporting",
       children: REPORTS_TABS.map((tab) => ({

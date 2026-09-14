@@ -211,7 +211,7 @@ const CORE_MODULES: readonly ModuleKey[] = [
 /**
  * Selling modules.
  *
- * Both industries sell from `/dashboard/pos` — the route branches on
+ * Both industries sell from `/accounting/pos` — the route branches on
  * `salesModel` — so every profile has "pos".
  *
  * "orders" is F&B-only, and not as an oversight: `/dashboard/orders` is a live
@@ -354,26 +354,29 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // The sales overview. `/dashboard` itself stays ungated (see above).
   ["/dashboard/overview", "dashboard"],
   ["/dashboard/orders", "orders"],
-  ["/dashboard/pos", "pos"],
+  // Business work areas now render beneath Accounting. The page itself picks
+  // the food-service inventory model or the retail stock model; both belong to
+  // Operations, so the availability gate stays coherent regardless of trade.
+  ["/accounting/pos", "pos"],
+  ["/accounting/floor", "tables"],
+  ["/dashboard/waiter", "waiter"],
+  ["/accounting/kitchen", "kitchen"],
+  ["/accounting/reservations", "reservations"],
+  ["/accounting/delivery", "delivery"],
+  ["/accounting/inventory", "inventory"],
+  ["/dashboard/menu", "menu"],
   // The flat «مشتریان» route redirects into the CRM app; mapping it to the
   // same module keeps the badge and the gate on the same app before the
   // redirect lands.
   ["/dashboard/customers", "customers"],
-  ["/dashboard/floor", "tables"],
-  ["/dashboard/waiter", "waiter"],
-  ["/dashboard/kitchen", "kitchen"],
-  ["/dashboard/reservations", "reservations"],
-  ["/dashboard/delivery", "delivery"],
-  ["/dashboard/inventory", "inventory"],
-  ["/dashboard/menu", "menu"],
   ["/dashboard/jewelry", "jewelry"],
   ["/dashboard/watch", "watch"],
   ["/dashboard/accessories", "accessories"],
-  // Phase 42 — the products workspace is the catalogue door every retail
-  // trade-goods industry shares; anchored on `stock`, the module all five of
-  // those profiles carry, so a trade without the variant board never sees it.
-  ["/dashboard/products", "stock"],
-  ["/dashboard/cosmetics", "cosmetics"],
+  // The products workspace is the catalogue door every retail trade-goods
+  // industry shares; anchored on `stock`, the module all five of those
+  // profiles carry, so a trade without the variant board never sees it.
+  ["/accounting/products", "stock"],
+  ["/accounting/cosmetics", "cosmetics"],
   ["/dashboard/wholesale", "wholesale"],
   ["/dashboard/tools-fittings", "tools_fittings"],
   ["/dashboard/haberdashery", "haberdashery"],
@@ -411,19 +414,17 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // `apps.ts` — the hub is shell infrastructure, not an app — so this prefix
   // answers the module question without ever blocking the page.
   ["/settings/connections", "connections"],
-  ["/dashboard/stock", "stock"],
   // Migration 0149 — the media library. Its module has no owning app (like
   // `connections`), so this row gates visibility by trade without the
   // availability guard ever locking the page.
   ["/dashboard/media", "media"],
-  // The accounting suite's own pages. The Accounting app lives at
-  // `/dashboard/accounting/*` now; the old `/dashboard/ledger` address
-  // forwards into it but is mapped too, so the gate answers on both sides of
-  // the forward.
+  // The remaining ledger sections are covered by this broad Accounting row;
+  // the business work-area rows above deliberately precede it so their owning
+  // app availability remains accurate. Retired dashboard paths redirect in
+  // middleware before this table is consulted.
   ["/accounting", "ledger"],
   ["/dashboard/accounting", "ledger"],
   ["/dashboard/ledger", "ledger"],
-  ["/dashboard/reports", "reports"],
   // Settings and everything anchored on it (billing, support, the knowledge
   // centre), including the legacy routes that redirect into settings. The nav
   // badges all of these with the settings app's state, so the gate must block
@@ -471,7 +472,7 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
 const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/api/orders", "orders"],
   // Retail invoices are written and read from the selling screen itself
-  // (`/dashboard/pos` in invoice mode), so they belong to `pos`, not `orders`.
+  // (`/accounting/pos` in invoice mode), so they belong to `pos`, not `orders`.
   ["/api/sales", "pos"],
   ["/api/dashboard", "dashboard"],
   ["/api/waiter", "waiter"],

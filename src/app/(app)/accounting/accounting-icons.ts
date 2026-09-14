@@ -43,7 +43,7 @@ export const ACCOUNTING_SECTION_ICONS: Record<AccountingSectionKey, LucideIcon> 
   payroll: UsersIcon,
   vat: CircleIcon,
   "fixed-assets": CircleIcon,
-  reports: BarChart3Icon,
+  "financial-reports": BarChart3Icon,
   growth: TrendingUpIcon,
   settings: SettingsIcon,
 };

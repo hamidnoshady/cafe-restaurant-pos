@@ -1,7 +1,7 @@
-import { PageHeader, PageShell } from "../../page-chrome";
-import { KnowledgeHelpButton } from "../../knowledge-help";
-import { requireProductWorkspace } from "../workspace-context";
-import { BarcodeTemplatesSection } from "../barcode-templates-section";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { BarcodeTemplatesSection } from "@/app/dashboard/products/barcode-templates-section";
+import { requireProductWorkspace } from "@/app/dashboard/products/workspace-context";
 
 /** «الگوی بارکد وزنی» — weight barcode patterns with a live label preview. */
 export default async function BarcodeTemplatesPage() {

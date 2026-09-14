@@ -20,6 +20,7 @@
 import { formatJalali } from "./jalali";
 import { formatRial } from "./money";
 import { formatQuantity, toPersianDigits } from "./digits";
+import { ACCOUNTING_WORKSPACE_HREFS } from "./app-routes";
 
 export type AccountingReviewSeverity = "high" | "medium" | "low";
 
@@ -226,7 +227,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: null,
       suggestion: "این رویدادها معمولاً به‌دلیل نبودِ یک سرفصل حساب متوقف می‌مانند. ابتدا سرفصل‌های جاافتاده را بسازید، سپس رویداد را دوباره ثبت کنید.",
-      href: "/dashboard/inventory",
+      href: ACCOUNTING_WORKSPACE_HREFS.inventory,
       samples: firstSamples(rows, (row) => sample(`${row.eventType} — ${day(row.occurredAt)} (${row.status})`, row.id)),
     };
   },
@@ -294,7 +295,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: Math.abs(net),
       suggestion: "شیفت‌ها را با صندوق‌دار مرور کنید. اختلاف تکرارشونده معمولاً یا از ثبت‌نشدن یک پرداخت است یا از تحویل نادرست صندوق؛ مانده را در سرفصل «کسری و اضافهٔ صندوق» ببندید.",
-      href: "/dashboard/reports",
+      href: ACCOUNTING_WORKSPACE_HREFS.reports,
       samples: firstSamples(rows, (row) => sample(`${row.employeeName} — ${money(row.varianceRial)}`, row.shiftId)),
     };
   },
@@ -366,7 +367,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: null,
       suggestion: "رسید خریدهای ثبت‌نشدهٔ این کالاها را وارد کنید. اگر خریدی در کار نبوده، با یک شمارش انبار موجودی را اصلاح کنید.",
-      href: "/dashboard/inventory",
+      href: ACCOUNTING_WORKSPACE_HREFS.inventory,
       // formatQuantity already returns Persian digits, and trims the nine
       // decimal places migration 0015 stores cost-basis quantities with.
       samples: firstSamples(rows, (row) => sample(`${row.name} — ${formatQuantity(row.quantity)} ${row.unit}`, row.id)),
@@ -384,7 +385,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: null,
       suggestion: "اگر کالا رسیده، رسید خرید را ثبت کنید تا موجودی و بدهی تأمین‌کننده درست شود؛ اگر منتفی شده، پیش‌نویس را لغو کنید.",
-      href: "/dashboard/inventory",
+      href: ACCOUNTING_WORKSPACE_HREFS.inventory,
       samples: firstSamples(rows, (row) => sample(`${row.supplierName ?? "بدون تأمین‌کننده"} — ${fa(row.ageDays)} روز`, row.id)),
     };
   },

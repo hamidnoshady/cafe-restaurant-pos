@@ -272,7 +272,7 @@ export function LedgerDashboardSection({
           <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("reconciliation")}>
             تطبیق بانکی
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("reports")}>
+          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("financial-reports")}>
             گزارش‌های مالی
           </Button>
         </div>

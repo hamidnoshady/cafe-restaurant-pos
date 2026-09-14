@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The retail stock workspace (خرید و انبار).
+ * The retail adapter for the unified inventory workspace (خرید و انبار).
  *
  * Phase 42b reshapes the menu around the warehouse module's own terms — the
  * same order the F&B module adopted in Phase 42, implemented on the RETAIL
@@ -26,14 +26,20 @@ import { useSearchParams } from "next/navigation";
 import { SectionNav } from "../section-nav";
 import { api, ErrorBox } from "../ui";
 import { LoadingSkeleton } from "../page-chrome";
-import { StockCountSection, type CountableItem } from "./stock-count-section";
-import { AddWarehouseSection, WarehouseListSection } from "./warehouses-section";
-import { DocumentFormSection } from "./document-form-section";
-import { DocumentsSection } from "./documents-section";
-import { StockLevelsSection } from "./stock-levels-section";
-import { PurchasesSection } from "./purchases-section";
-import { ReturnsSection } from "./returns-section";
-import { ReportsSection } from "./reports-section";
+import {
+  StockCountSection,
+  type CountableItem,
+} from "../stock/stock-count-section";
+import {
+  AddWarehouseSection,
+  WarehouseListSection,
+} from "../stock/warehouses-section";
+import { DocumentFormSection } from "../stock/document-form-section";
+import { DocumentsSection } from "../stock/documents-section";
+import { StockLevelsSection } from "../stock/stock-levels-section";
+import { PurchasesSection } from "../stock/purchases-section";
+import { ReturnsSection } from "../stock/returns-section";
+import { ReportsSection } from "../stock/reports-section";
 
 const TABS = [
   { key: "warehouse-new", label: "افزودن انبار", icon: PlusIcon },
@@ -53,16 +59,24 @@ const GROUPS = [
   { label: "سند انبار", keys: ["document-new", "documents"] as const },
   {
     label: "اقلام و عملیات",
-    keys: ["stock-levels", "counts", "purchases", "returns", "reports"] as const,
+    keys: [
+      "stock-levels",
+      "counts",
+      "purchases",
+      "returns",
+      "reports",
+    ] as const,
   },
 ];
 
-export function StockManager() {
+export function RetailInventoryManager() {
   // `?tab=` so another screen can send a person straight to one section of
   // this workspace; an unknown name is ignored rather than opening a section
   // that does not exist.
   const tabParam = useSearchParams().get("tab");
-  const [tab, setTab] = useState<TabKey>(() => (TABS.find((item) => item.key === tabParam)?.key ?? "warehouses"));
+  const [tab, setTab] = useState<TabKey>(
+    () => TABS.find((item) => item.key === tabParam)?.key ?? "warehouses",
+  );
   // The warehouse the «موجودی انبار» panel is pointed at; the warehouses list
   // jumps here when a row is opened.
   const [stockLocationId, setStockLocationId] = useState<string | null>(null);
@@ -89,7 +103,11 @@ export function StockManager() {
   return (
     <div className="min-w-0 space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
-      {countDone ? <p className="text-xs text-emerald-700 dark:text-emerald-300">{countDone}</p> : null}
+      {countDone ? (
+        <p className="text-xs text-emerald-700 dark:text-emerald-300">
+          {countDone}
+        </p>
+      ) : null}
 
       <SectionNav
         idPrefix="stock"
@@ -111,12 +129,22 @@ export function StockManager() {
         ) : null}
         {tab === "document-new" ? <DocumentFormSection /> : null}
         {tab === "documents" ? <DocumentsSection /> : null}
-        {tab === "stock-levels" ? <StockLevelsSection locationId={stockLocationId} /> : null}
+        {tab === "stock-levels" ? (
+          <StockLevelsSection locationId={stockLocationId} />
+        ) : null}
         {tab === "counts" ? (
           countItems === null ? (
-            <LoadingSkeleton rows={4} label="در حال بارگذاری اقلام برای انبارگردانی" />
+            <LoadingSkeleton
+              rows={4}
+              label="در حال بارگذاری اقلام برای انبارگردانی"
+            />
           ) : (
-            <StockCountSection items={countItems} onDone={setCountDone} onError={setError} reload={loadItems} />
+            <StockCountSection
+              items={countItems}
+              onDone={setCountDone}
+              onError={setError}
+              reload={loadItems}
+            />
           )
         ) : null}
         {tab === "purchases" ? <PurchasesSection /> : null}

@@ -1,7 +1,7 @@
-import { PageHeader, PageShell } from "../../page-chrome";
-import { KnowledgeHelpButton } from "../../knowledge-help";
-import { requireProductWorkspace } from "../workspace-context";
-import { AttributesSection } from "../attributes-section";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { AttributesSection } from "@/app/dashboard/products/attributes-section";
+import { requireProductWorkspace } from "@/app/dashboard/products/workspace-context";
 
 /** «ویژگی محصول» — the attribute master: cards, add and edit. */
 export default async function AttributesPage() {

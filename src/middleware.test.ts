@@ -54,6 +54,16 @@ describe("isPublicPath", () => {
       "/accounting",
       "/accounting/overview",
       "/accounting/expenses",
+      "/accounting/pos",
+      "/accounting/inventory",
+      "/accounting/products",
+      "/accounting/products/new",
+      "/accounting/cosmetics",
+      "/accounting/reports",
+      "/accounting/floor",
+      "/accounting/kitchen",
+      "/accounting/reservations",
+      "/accounting/delivery",
       "/accounting/settings",
       "/crm/persons/42",
       "/growth/campaigns",
@@ -66,7 +76,9 @@ describe("isPublicPath", () => {
       "/settings/subscription",
       "/settings/connections",
     ]) {
-      expect(isPublicPath(pathname), `${pathname} must require a session`).toBe(false);
+      expect(isPublicPath(pathname), `${pathname} must require a session`).toBe(
+        false,
+      );
     }
   });
 });

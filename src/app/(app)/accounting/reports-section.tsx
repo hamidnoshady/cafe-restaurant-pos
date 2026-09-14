@@ -3,18 +3,14 @@
 /**
  * Accounting → «گزارش‌های مالی».
  *
- * The financial statements themselves are built by the business's reports
- * workspace (`/dashboard/reports`), which is a *platform* surface shared with
- * the sales and operations reporting. What was missing was an entrance to them
- * from inside Accounting: an accountant looking for a trial balance had to
- * leave the app, find «گزارش‌ها» in the business nav and know which tab held
- * the ledger reports.
+ * The financial statements themselves are built by the business-reporting
+ * workspace (`/accounting/reports`). This financial index remains a ledger
+ * section at `/accounting/financial-reports`, so the two report surfaces have
+ * different names and there is no competing `/dashboard/reports` address.
  *
- * So this section is an index, not a second report engine. Every link says
- * plainly where it goes, and the two that leave the app say so in words — the
- * rule the settings separation follows everywhere: a surface that belongs to
- * another area is *labelled* as belonging to it rather than silently rendered
- * here.
+ * This section is an index, not a second report engine. Its links make the
+ * destination clear while keeping both financial and operational reporting in
+ * the same primary Accounting application.
  */
 
 import Link from "next/link";
@@ -43,7 +39,7 @@ const IN_APP_REPORTS: ReportLink[] = [
   {
     label: "گزارش فروش شیفت",
     description: "فروش‌ها و سفارش‌های شیفت جاری؛ با بستن شیفت و شروع شیفت بعدی، گزارش از صفر شروع می‌شود.",
-    href: "/dashboard/reports?tab=shift-orders",
+    href: "/accounting/reports?tab=shift-orders",
     icon: BarChart3Icon,
   },
   {
@@ -66,14 +62,13 @@ const IN_APP_REPORTS: ReportLink[] = [
   },
 ];
 
-const PLATFORM_REPORTS: ReportLink[] = [
+const BUSINESS_REPORTS: ReportLink[] = [
   {
-    label: "گزارش‌های کسب‌وکار (پلتفرم)",
+    label: "گزارش‌های کسب‌وکار",
     description:
-      "صورت سود و زیان، ترازنامه و گزارش‌ساز در بخش گزارش‌های کسب‌وکار قرار دارد — بیرون از برنامهٔ حسابداری.",
-    href: "/dashboard/reports",
+      "صورت سود و زیان، ترازنامه و گزارش‌ساز در فضای گزارش‌های کسب‌وکارِ همین برنامه قرار دارد.",
+    href: "/accounting/reports",
     icon: BarChart3Icon,
-    external: true,
   },
 ];
 
@@ -113,11 +108,11 @@ export function AccountingReportsSection() {
       </SectionCard>
 
       <SectionCard
-        title="گزارش‌های پلتفرم"
-        description="این گزارش‌ها بیرون از برنامهٔ حسابداری و در بخش گزارش‌های کسب‌وکار قرار دارند."
+        title="گزارش‌های کسب‌وکار"
+        description="گزارش‌های عملیاتی و گزارش‌سازِ همین فضای کاری."
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          {PLATFORM_REPORTS.map((link) => (
+          {BUSINESS_REPORTS.map((link) => (
             <ReportCard key={link.href} link={link} />
           ))}
         </div>

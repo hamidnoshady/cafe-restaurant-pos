@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireIndustryForPage } from "@/lib/industry-guard";
-import { PageHeader, PageShell } from "../page-chrome";
-import { KnowledgeHelpButton } from "../knowledge-help";
-import { CosmeticsManager } from "./cosmetics-manager";
+import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
+import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
+import { CosmeticsManager } from "@/app/dashboard/cosmetics/cosmetics-manager";
 
 export default async function CosmeticsPage() {
   const session = await getSession();

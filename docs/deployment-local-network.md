@@ -30,7 +30,7 @@ just a **browser** pointed at your HTTPS subdomain:
   │ phones    │
   └───────────┘
   ┌───────────┐
-  │ Kitchen   │──HTTPS──►  https://pos.example.com/dashboard/kitchen
+  │ Kitchen   │──HTTPS──►  https://pos.example.com/accounting/kitchen
   │ display   │
   └───────────┘
 ```
@@ -97,9 +97,9 @@ inside the app container (Komodo terminal / exec).
   browser → **PIN tab** → 4-digit PIN → they land on their waiter board (only
   the floor sections assigned to them). "Add to Home Screen" makes it feel like
   a native app.
-- **Kitchen display:** open `https://pos.example.com/dashboard/kitchen` on the
+- **Kitchen display:** open `https://pos.example.com/accounting/kitchen` on the
   KDS screen and log in with the kitchen PIN.
-- **Cashier / till:** open `https://pos.example.com/dashboard/pos`.
+- **Cashier / till:** open `https://pos.example.com/accounting/pos`.
 
 All screens refetch on the relevant WebSocket event, so a new order appears on
 the KDS and the waiter board instantly — no refresh, no polling.

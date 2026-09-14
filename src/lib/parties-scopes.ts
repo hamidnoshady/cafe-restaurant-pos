@@ -21,6 +21,7 @@
  */
 import type { AppKey } from "./apps";
 import { PARTY_ROLE_LABELS, type PartyRole } from "./parties";
+import { ACCOUNTING_WORKSPACE_HREFS } from "./app-routes";
 
 export const PARTY_SCOPES = [
   "crm",
@@ -147,7 +148,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Supplier",
     label: "تأمین‌کنندگان",
     description: "پروندهٔ تأمین‌کنندگان انبار و خرید",
-    href: "/dashboard/inventory?tab=suppliers",
+    href: `${ACCOUNTING_WORKSPACE_HREFS.inventory}?tab=suppliers`,
     columns: ["displayName", "phone", "city", "accountingCode", "status"],
     accounting: "readonly",
     readOnly: false,
