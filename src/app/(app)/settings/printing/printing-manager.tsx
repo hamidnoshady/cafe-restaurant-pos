@@ -97,7 +97,7 @@ export function PrintingManager() {
       if (!result.ok) {
         setError(
           result.unreachable
-            ? "عامل چاپ محلی پاسخ نداد؛ سند در پنجرهٔ چاپ مرورگر باز نشد."
+            ? "هیچ مسیر چاپ سخت‌افزاری پاسخ نداد (نه عامل چاپ محلی و نه سرور برنامه)."
             : "چاپ نمونه انجام نشد.",
         );
         return;
@@ -176,7 +176,7 @@ export function PrintingManager() {
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-      <AgentBanner online={agent.online} checking={agent.checking} onRecheck={() => void agent.recheck()} />
+      <AgentBanner online={agent.online} via={agent.via} checking={agent.checking} onRecheck={() => void agent.recheck()} />
 
       <TabBar idPrefix="printing" label="بخش‌های چاپ" tabs={TABS} active={tab} onChange={setTab} />
 
@@ -227,7 +227,17 @@ export function PrintingManager() {
  * browser is a supported way to run this section, and a shop with a laser
  * printer and a tablet may never install the agent at all.
  */
-function AgentBanner({ online, checking, onRecheck }: { online: boolean; checking: boolean; onRecheck: () => void }) {
+function AgentBanner({
+  online,
+  via,
+  checking,
+  onRecheck,
+}: {
+  online: boolean;
+  via: "agent" | "server" | null;
+  checking: boolean;
+  onRecheck: () => void;
+}) {
   if (checking) return <LoadingSkeleton rows={1} label="در حال بررسی عامل چاپ" />;
 
   return (
@@ -241,11 +251,17 @@ function AgentBanner({ online, checking, onRecheck }: { online: boolean; checkin
           )}
           <div className="min-w-0">
             <p className="font-semibold text-foreground">
-              {online ? "عامل چاپ محلی فعال است" : "عامل چاپ محلی اجرا نیست"}
+              {online
+                ? via === "server"
+                  ? "چاپ سخت‌افزاری از طریق سرور برنامه فعال است"
+                  : "عامل چاپ محلی فعال است"
+                : "چاپ سخت‌افزاری در دسترس نیست"}
             </p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {online
-                ? "چاپگرهای حرارتی، کشوی پول و چاپگرهای نصب‌شدهٔ ویندوز در دسترس‌اند."
+                ? via === "server"
+                  ? "عامل چاپ محلی اجرا نیست، اما سرور برنامه روی همین شبکه است و چاپگرهای نصب‌شدهٔ آن دستگاه، چاپگرهای حرارتی و کشوی پول از طریق آن در دسترس‌اند."
+                  : "چاپگرهای حرارتی، کشوی پول و چاپگرهای نصب‌شدهٔ ویندوز در دسترس‌اند."
                 : "بدون آن هم می‌توانید قالب طراحی کنید و با پنجرهٔ چاپ مرورگر روی هر چاپگری چاپ بگیرید؛ برای چاپگر حرارتی و کشوی پول، عامل چاپ را روی دستگاه صندوق اجرا کنید."}
             </p>
           </div>

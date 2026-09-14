@@ -143,6 +143,7 @@ export function PrinterHardware({
   const [notice, setNotice] = useState("");
 
   const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[] | null>(null);
+  const [systemVia, setSystemVia] = useState<"agent" | "server" | null>(null);
   const [lanPrinters, setLanPrinters] = useState<LanPrinter[] | null>(null);
   const [discovering, setDiscovering] = useState<"system" | "lan" | null>(null);
 
@@ -155,17 +156,21 @@ export function PrinterHardware({
   const discoverSystem = useCallback(async () => {
     setDiscovering("system");
     setError("");
+    // The client tries the loopback print agent first, then falls back to the
+    // app server's /api/print/system-printers — so on a local deployment the
+    // Windows list appears with nothing extra running on this device.
     const result = await listSystemPrinters();
     setDiscovering(null);
     if (!result.ok) {
       setError(
         result.unreachable
-          ? "عامل چاپ محلی در دسترس نیست؛ آن را روی همین دستگاه اجرا کنید تا چاپگرهای نصب‌شدهٔ ویندوز خوانده شوند."
+          ? "نه عامل چاپ محلی در دسترس است و نه سرور برنامه توانست چاپگرها را بخواند؛ عامل چاپ را روی همین دستگاه اجرا کنید تا چاپگرهای نصب‌شدهٔ ویندوز خوانده شوند."
           : "خواندن فهرست چاپگرهای سیستم ممکن نشد.",
       );
       return;
     }
     setSystemPrinters(result.data?.printers ?? []);
+    setSystemVia(result.via ?? "agent");
   }, []);
 
   const discoverLan = useCallback(async () => {
@@ -176,7 +181,7 @@ export function PrinterHardware({
     if (!result.ok) {
       setError(
         result.unreachable
-          ? "عامل چاپ محلی در دسترس نیست؛ جست‌وجوی شبکه از روی همان دستگاهی انجام می‌شود که چاپگر به آن وصل است."
+          ? "نه عامل چاپ محلی در دسترس است و نه سرور برنامه؛ جست‌وجوی شبکه از روی دستگاهی انجام می‌شود که به شبکهٔ چاپگر وصل است."
           : "جست‌وجوی شبکه ناموفق بود.",
       );
       return;
@@ -287,8 +292,12 @@ export function PrinterHardware({
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <DiscoveryList
-              title="نصب‌شده روی این دستگاه"
-              hint="همان فهرستی که در «Printers & scanners» ویندوز می‌بینید."
+              title={systemVia === "server" ? "نصب‌شده روی دستگاه سرور" : "نصب‌شده روی این دستگاه"}
+              hint={
+                systemVia === "server"
+                  ? "فهرست چاپگرهای دستگاهی که سرور برنامه روی آن اجراست (عامل چاپ محلی اجرا نیست)."
+                  : "همان فهرستی که در «Printers & scanners» ویندوز می‌بینید."
+              }
               empty={
                 systemPrinters === null
                   ? "برای خواندن فهرست، دکمهٔ بالا را بزنید."
@@ -577,7 +586,7 @@ function PrinterCard({
     setTesting(false);
     setStatus(result.ok && result.data?.reachable ? "online" : "offline");
     if (!result.ok && result.unreachable) {
-      onError("عامل چاپ محلی در دسترس نیست؛ وضعیت چاپگر قابل بررسی نیست.");
+      onError("نه عامل چاپ محلی در دسترس است و نه سرور برنامه؛ وضعیت چاپگر قابل بررسی نیست.");
     }
   }
 
@@ -589,7 +598,7 @@ function PrinterCard({
     if (!result.ok) {
       onError(
         result.unreachable
-          ? "عامل چاپ محلی در دسترس نیست؛ آن را روی دستگاه صندوق اجرا و اتصال شبکه را بررسی کنید."
+          ? "هیچ مسیر چاپی در دسترس نیست؛ عامل چاپ را روی دستگاه صندوق اجرا کنید یا اتصال به سرور را بررسی کنید."
           : "فرمان چاپگر با خطا روبه‌رو شد.",
       );
       return;

@@ -25,9 +25,10 @@ string. There is no second implementation of the layout anywhere, which is why
 | `src/lib/business-logo.ts` | Logo validation + the stored record. Pure. |
 | `src/lib/printer-connection.ts` | The four transports and how a `printers.connection` row is read. Pure. |
 | `src/lib/printer-input.ts` | The one parser both printer routes write through. Pure. |
-| `src/lib/print-agent-client.ts` | Talking to the local agent, **and** the browser-dialog fallback. |
-| `print-agent/discovery.ts` | Windows/CUPS queue enumeration + the LAN sweep. |
-| `print-agent/spooler.ts` | Raw ESC/POS to a queue or device; PDF to a sheet queue. |
+| `src/lib/print-agent-client.ts` | The browser's print client: local agent first, `/api/print/*` on the app server second, **and** the browser-dialog fallback. |
+| `src/lib/system-print/**` | The shared printing machinery: discovery (Windows/CUPS queues + the LAN sweep), the spooler, Chromium rendering, and `service.ts` — one implementation used by both the agent and the app server. Server-only. |
+| `src/app/api/print/**` | The app server's own print endpoints — the agent's twin, for deployments where the server can see the printers. |
+| `print-agent/server.ts` | The standalone loopback agent for the till PC (thin HTTP shell over `system-print/service.ts`). |
 | `src/app/dashboard/settings/printing/**` | The section: gallery, designer, hardware, logo. |
 
 ## Papers
@@ -79,17 +80,30 @@ checked, and an SVG carrying `<script>` is refused outright.
 | Transport | Reached by | Needs |
 | --- | --- | --- |
 | `network` | raw TCP to port 9100 | an IP |
-| `system` | the OS spooler, by queue name | the agent running |
-| `usb` | a raw device path (`USB001`, `/dev/usb/lp0`) | the agent running |
+| `system` | the OS spooler, by queue name | the agent **or** the app server on the printer's machine |
+| `usb` | a raw device path (`USB001`, `/dev/usb/lp0`) | the agent **or** the app server on the printer's machine |
 | `browser` | the browser's own print dialog | nothing |
 
 Rows written before transports existed read as `network`, unchanged.
 
+**Two hardware backends, one fallback order.** Every hardware operation in
+`print-agent-client.ts` tries the loopback print agent (`127.0.0.1:9123`)
+first, and when it does not answer, the same operation against the app
+server's `/api/print/*` twin routes. On every local deployment shape — the
+Electron shell, Docker on the till laptop, an on-prem LAN server — the app
+server is a machine that can see the printers, so «چاپگرهای ویندوز» works with
+nothing extra installed or running on the till. The separate agent remains
+the answer when the app server is somewhere the printers are not (a cloud
+tenant). A *reachable* backend's error is final — it is never retried against
+the other backend, because the two may be different machines.
+
 **Discovery.** The section leads with two buttons instead of an IP field:
-«چاپگرهای ویندوز» reads the machine's installed queues (PowerShell `Get-Printer`
-on Windows, `lpstat` on macOS/Linux) and «جست‌وجوی شبکه» sweeps the local /24
-for an open 9100. Pairing is picking a row. Typing an address by hand is still
-there for a printer on another subnet.
+«چاپگرهای ویندوز» reads the installed queues (PowerShell `Get-Printer`
+on Windows, `lpstat` on macOS/Linux) — from the till PC when the agent is
+running, otherwise from the app server's machine, and the list says which —
+and «جست‌وجوی شبکه» sweeps the local /24 for an open 9100. Pairing is picking
+a row. Typing an address by hand is still there for a printer on another
+subnet.
 
 **Sheets vs rolls.** A thermal roll takes the raster path (screenshot → ESC/POS
 `GS v 0`). A sheet on an installed queue is rendered to a real PDF
@@ -98,11 +112,22 @@ wants a page, not a bitmap.
 
 ## Printing without the agent
 
-The section is fully usable with nothing installed: design, preview, and print
-through the browser dialog (`printViaBrowser` — a hidden iframe, not a popup,
-so nothing is blocked and focus stays in the POS). The agent's state is stated
-plainly at the top of the section rather than discovered as a failed print at
-the counter. A shop with a laser printer and a tablet may never install it.
+With the app server on the same machine/LAN as the printers, hardware printing
+works with no agent at all — the client falls back to `/api/print/*`
+automatically, and receipts/invoices go straight to the paired printer with
+no browser dialog. And with neither backend reachable, the section is still
+fully usable: design, preview, and print through the browser dialog
+(`printViaBrowser` — a hidden iframe, not a popup, so nothing is blocked and
+focus stays in the POS). The printing state (agent / server / browser-only) is
+stated plainly at the top of the section rather than discovered as a failed
+print at the counter. A shop with a laser printer and a tablet may never
+install anything.
+
+**Chromium for rendering.** Both backends render with `playwright-core`
+against an existing browser: `PRINT_AGENT_CHROMIUM_PATH` (or
+`PDF_CHROMIUM_PATH`) if set, otherwise the machine's own Chrome/Edge/Chromium
+is auto-detected (`src/lib/system-print/render.ts`) — on a Windows till, the
+very browser the dashboard is open in.
 
 ## Testing
 

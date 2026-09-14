@@ -12,9 +12,13 @@
 # are TypeScript too, so anything they import (dotenv, pg) must also be a
 # runtime dependency. src/lib/runtime-dependencies.test.ts guards this.
 #
-# Chromium is intentionally NOT installed here: only the print-agent renders
-# receipts, and that runs on the till PC next to the printer — not in this
-# container. See docs/deployment-local-network.md.
+# Chromium IS installed in the runner: the app server renders print jobs
+# itself now (src/app/api/print/* on top of src/lib/system-print/) — the
+# browser's print client falls back to it when no local print agent answers
+# on the till — and report PDF export (src/lib/pdf-render.ts) needs the same
+# engine. Network (ESC/POS over TCP) printers are reachable from the
+# container; Windows-installed queues still need the local print agent on the
+# till PC, since a Linux container cannot enumerate the host's spooler.
 
 # ---- deps: install all dependencies (dev deps are needed to build) ----------
 FROM node:20-alpine AS deps
@@ -74,7 +78,14 @@ ENV APP_IMAGE_SHA=$GIT_SHA
 # system (Phase 10) shells out to pg_dump/pg_restore, and the entrypoint uses
 # pg_isready to wait for the DB before migrating.
 # su-exec is used to drop privileges from root after fixing volume permissions.
-RUN apk add --no-cache postgresql16-client su-exec
+# chromium is the rendering engine for server-side printing (/api/print/*) and
+# report PDF export — playwright-core drives it, it is never downloaded by npm.
+# ttf-dejavu satisfies fontconfig; the actual receipt font (Vazirmatn) is
+# embedded into the HTML as a data URI by the renderer.
+RUN apk add --no-cache postgresql16-client su-exec chromium ttf-dejavu
+# Both renderers (src/lib/pdf-render.ts and src/lib/system-print/render.ts)
+# honour this before falling back to their auto-detection.
+ENV PDF_CHROMIUM_PATH=/usr/bin/chromium-browser
 
 # Production tree only — dev dependencies pruned out, so dependencies only.
 # tsx belongs there (see the note at the top of this file): the entrypoint
