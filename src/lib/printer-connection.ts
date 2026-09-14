@@ -17,18 +17,25 @@
  *     picks from a list instead of hunting for an IP.
  *   `usb`     — a raw USB/serial device path (`USB001`, `/dev/usb/lp0`) for a
  *     printer with no OS driver worth using.
- *   `browser` — no agent at all: the document opens in the browser's own print
- *     dialog. This is what makes an A4 invoice printable from a tablet, a
- *     phone, or a till whose printer nobody has paired yet, and it is why the
- *     printing section works before any hardware exists.
+ *   `webusb`  — the browser itself as the delivery middleman: the app server
+ *     renders the ESC/POS job (it has the Chromium raster pipeline) and the
+ *     browser hands the bytes to a USB receipt printer over WebUSB. This is
+ *     the transport for a *server* installation — the app server runs
+ *     somewhere the printers are not, no local agent is installed, but the
+ *     browser is physically on the till next to the printer. No dialog opens.
+ *   `browser` — no hardware path at all: the document opens in the browser's
+ *     own print dialog. This is what makes an A4 invoice printable from a
+ *     tablet, a phone, or a till whose printer nobody has paired yet, and it
+ *     is why the printing section works before any hardware exists.
  */
 
-export type PrinterTransport = "network" | "system" | "usb" | "browser";
+export type PrinterTransport = "network" | "system" | "usb" | "webusb" | "browser";
 
 export const PRINTER_TRANSPORT_LABELS: Record<PrinterTransport, string> = {
   network: "شبکه (LAN / Wi-Fi)",
   system: "چاپگر نصب‌شده روی ویندوز",
   usb: "USB / پورت مستقیم",
+  webusb: "USB از طریق مرورگر (WebUSB)",
   browser: "چاپ با مرورگر (بدون عامل چاپ)",
 };
 
@@ -49,6 +56,14 @@ export interface PrinterConnection {
   systemName?: string | null;
   /** `usb`: the raw device path / port name. */
   devicePath?: string | null;
+  /** `webusb`: the paired device's USB vendor id — how the browser re-finds it without re-prompting. */
+  usbVendorId?: number | null;
+  /** `webusb`: the paired device's USB product id. */
+  usbProductId?: number | null;
+  /** `webusb`: the paired device's serial number, when it reports one — disambiguates two identical printers. */
+  usbSerial?: string | null;
+  /** `webusb`: the product name shown at pairing time, kept for the hardware list. */
+  usbProductName?: string | null;
   driverMode?: DriverMode;
   /** 58mm or 80mm thermal paper; defaults to 80mm if unset. Kept for the ESC/POS raster path. */
   paperWidthMm?: 58 | 80;
@@ -66,7 +81,7 @@ export interface PrinterConnection {
 
 export function resolvedTransport(conn: PrinterConnection): PrinterTransport {
   const value = conn.transport;
-  return value === "system" || value === "usb" || value === "browser" ? value : "network";
+  return value === "system" || value === "usb" || value === "webusb" || value === "browser" ? value : "network";
 }
 
 /**
@@ -86,6 +101,10 @@ export function isValidPrinterConnection(conn: unknown): conn is PrinterConnecti
       return typeof c.systemName === "string" && c.systemName.trim() !== "";
     case "usb":
       return typeof c.devicePath === "string" && c.devicePath.trim() !== "";
+    case "webusb":
+      // The vendor id is the one thing pairing always yields; product id and
+      // serial narrow the match down when present.
+      return typeof c.usbVendorId === "number" && Number.isInteger(c.usbVendorId) && c.usbVendorId > 0;
     case "browser":
       return true;
   }
@@ -112,6 +131,12 @@ export function describeConnection(conn: PrinterConnection): string {
       return conn.systemName ?? "—";
     case "usb":
       return conn.devicePath ?? "—";
+    case "webusb": {
+      if (conn.usbProductName) return conn.usbProductName;
+      const vid = typeof conn.usbVendorId === "number" ? conn.usbVendorId.toString(16).padStart(4, "0") : "????";
+      const pid = typeof conn.usbProductId === "number" ? conn.usbProductId.toString(16).padStart(4, "0") : "????";
+      return `USB ${vid}:${pid}`;
+    }
     case "browser":
       return "پنجرهٔ چاپ مرورگر";
   }

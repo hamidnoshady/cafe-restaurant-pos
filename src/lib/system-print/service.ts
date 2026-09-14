@@ -61,17 +61,25 @@ function rasterWidthFor(connection: PrinterConnection, paper?: PaperKey): number
   return PAPER_WIDTH_PRESETS[resolvedPaperWidthMm(connection)];
 }
 
-/** ESC/POS raster: screenshot the HTML, pack it, and hand it to the transport. */
+/** ESC/POS raster job bytes: screenshot the HTML and pack it — no sending. */
+async function rasterJobBytes(
+  connection: PrinterConnection,
+  html: string,
+  opts: { kickDrawer?: boolean; paper?: PaperKey } = {},
+): Promise<Buffer> {
+  const png = await renderHtmlToPng(html, rasterWidthFor(connection, opts.paper));
+  const gray = decodePngToGrayscale(png);
+  const raster = packMonochromeRaster(gray.pixels, gray.width, gray.height);
+  return buildPrintJob(raster, { kickDrawer: opts.kickDrawer ?? connection.openDrawer, cut: true });
+}
+
+/** ESC/POS raster: render the job and hand it to the transport. */
 async function printRaster(
   connection: PrinterConnection,
   html: string,
   opts: { kickDrawer?: boolean; paper?: PaperKey } = {},
 ): Promise<void> {
-  const png = await renderHtmlToPng(html, rasterWidthFor(connection, opts.paper));
-  const gray = decodePngToGrayscale(png);
-  const raster = packMonochromeRaster(gray.pixels, gray.width, gray.height);
-  const job = buildPrintJob(raster, { kickDrawer: opts.kickDrawer ?? connection.openDrawer, cut: true });
-  await sendBytes(connection, job);
+  await sendBytes(connection, await rasterJobBytes(connection, html, opts));
 }
 
 /** The one place raw ESC/POS bytes leave the process, whatever the transport. */
@@ -83,6 +91,12 @@ async function sendBytes(connection: PrinterConnection, job: Buffer): Promise<vo
       return sendRawToSystemPrinter(connection.systemName!, job);
     case "usb":
       return sendRawToDevice(connection.devicePath!, job);
+    case "webusb":
+      // The webusb transport delivers through the *browser* (WebUSB): the
+      // server only renders the job bytes (see buildJobBytes below) and the
+      // client pushes them to the device. Reaching this line means a caller
+      // routed a webusb printer at a server-side sender by mistake.
+      throw new Error("webusb_transport_is_client_side");
     case "browser":
       throw new Error("browser_transport_is_client_side");
   }
@@ -136,11 +150,60 @@ export async function kickDrawerJob(connection: PrinterConnection): Promise<void
   await sendBytes(connection, buildDrawerKickJob());
 }
 
+/* ─────────────── rendering without sending (the WebUSB path) ─────────────── */
+
+export type RenderableJob =
+  | { op: "document"; html: string; paper?: PaperKey }
+  | { op: "receipt"; receipt: ReceiptData }
+  | { op: "kitchen-ticket"; ticket: KitchenTicketData }
+  | { op: "label"; label: LabelData }
+  | { op: "test"; kind: "receipt" | "kitchen" }
+  | { op: "drawer-kick" };
+
+/**
+ * Render a print job to its raw ESC/POS byte stream WITHOUT sending it —
+ * the server half of the `webusb` transport, where the browser is the
+ * delivery middleman: the server owns the Chromium raster pipeline (Persian
+ * shaping needs a real browser engine — see ../escpos.ts) and the browser,
+ * which is physically at the till, owns the USB cable. Only raster output:
+ * a sheet PDF has no meaning on a raw ESC/POS device.
+ */
+export async function buildJobBytes(connection: PrinterConnection, job: RenderableJob): Promise<Buffer> {
+  switch (job.op) {
+    case "document": {
+      const spec = job.paper ? PAPERS[job.paper] : null;
+      if (spec && spec.kind === "sheet") throw new Error("sheet_printing_needs_a_system_printer");
+      return rasterJobBytes(connection, job.html, { paper: job.paper });
+    }
+    case "receipt":
+      return rasterJobBytes(connection, renderReceiptHtml(job.receipt, { paperWidthMm: resolvedPaperWidthMm(connection) }));
+    case "kitchen-ticket":
+      return rasterJobBytes(
+        connection,
+        renderKitchenTicketHtml(job.ticket, { paperWidthMm: resolvedPaperWidthMm(connection) }),
+      );
+    case "label":
+      return rasterJobBytes(connection, renderLabelHtml(job.label));
+    case "test":
+      return rasterJobBytes(
+        connection,
+        job.kind === "kitchen"
+          ? renderKitchenTicketHtml(SAMPLE_TICKET, { paperWidthMm: resolvedPaperWidthMm(connection) })
+          : renderReceiptHtml(SAMPLE_RECEIPT, { paperWidthMm: resolvedPaperWidthMm(connection) }),
+      );
+    case "drawer-kick":
+      return buildDrawerKickJob();
+  }
+}
+
 /** Is this printer answering right now? A TCP handshake, or the OS's queue list. */
 export async function probeConnection(connection: PrinterConnection): Promise<{ reachable: boolean; detail?: string }> {
   const transport = resolvedTransport(connection);
   if (transport === "browser") return { reachable: true, detail: "browser" };
   if (transport === "usb") return { reachable: true, detail: "unverifiable" };
+  // Only the browser holding the WebUSB permission can see the device; the
+  // client checks it locally (print-agent-client.ts) before ever asking here.
+  if (transport === "webusb") return { reachable: true, detail: "unverifiable_from_server" };
   if (transport === "system") {
     const printers = await listSystemPrinters();
     const match = printers.find((p) => p.name === connection.systemName);

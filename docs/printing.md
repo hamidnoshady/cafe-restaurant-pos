@@ -82,6 +82,7 @@ checked, and an SVG carrying `<script>` is refused outright.
 | `network` | raw TCP to port 9100 | an IP |
 | `system` | the OS spooler, by queue name | the agent **or** the app server on the printer's machine |
 | `usb` | a raw device path (`USB001`, `/dev/usb/lp0`) | the agent **or** the app server on the printer's machine |
+| `webusb` | the browser itself, over WebUSB | Chrome/Edge on HTTPS, one pairing click |
 | `browser` | the browser's own print dialog | nothing |
 
 Rows written before transports existed read as `network`, unchanged.
@@ -109,6 +110,22 @@ subnet.
 `GS v 0`). A sheet on an installed queue is rendered to a real PDF
 (`renderHtmlToPdf`, `preferCSSPageSize`) and spooled, because a laser driver
 wants a page, not a bitmap.
+
+**The browser as delivery middleman (`webusb`).** A *server* installation —
+the app in a container or another building — can see neither the till's
+Windows queues nor its USB cable, and the local agent may simply not be
+installed. But the browser at the counter can: WebUSB gives a secure-context
+Chromium page a direct pipe to a USB device the user paired once («اتصال USB
+از مرورگر» in the printers tab). The job splits by who has what: the server
+renders the ESC/POS bytes (`/api/print/render`, on the same
+`system-print/service.ts` raster pipeline — Persian shaping needs a real
+browser engine), and the page pushes them down the cable
+(`src/lib/webusb-print.ts`). No print dialog anywhere, drawer kick included.
+Limits stated in the UI: Chromium-only, HTTPS/localhost-only, raster papers
+only (a sheet PDF has no meaning on a raw ESC/POS device), and on Windows a
+printer whose vendor driver has claimed the interface refuses
+`claimInterface` (`usb_claim_failed`) — install it as a plain USB device or
+use `windows/usb-printer-bridge.js` instead.
 
 ## Printing without the agent
 

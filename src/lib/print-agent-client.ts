@@ -28,6 +28,7 @@ import type { KitchenTicketData } from "./kitchen-ticket-template";
 import type { LabelData } from "./label-template";
 import type { PaperKey } from "./print-template";
 import type { ReceiptData } from "./receipt-template";
+import { probeWebUsbPrinter, sendBytesViaWebUsb } from "./webusb-print";
 
 function agentBaseUrl(): string {
   return process.env.NEXT_PUBLIC_PRINT_AGENT_URL || "http://127.0.0.1:9123";
@@ -119,6 +120,45 @@ async function callWithFallback<T = { ok: boolean }>(
   return server();
 }
 
+/**
+ * The `webusb` transport — the browser as the delivery middleman for a
+ * server installation that cannot see the till's local printers. The server
+ * renders the ESC/POS bytes (/api/print/render — it owns the Chromium raster
+ * pipeline that shapes Persian text), and THIS page pushes them to the USB
+ * printer over WebUSB (webusb-print.ts). No print dialog opens anywhere.
+ */
+async function printViaWebUsb(
+  connection: PrinterConnection,
+  job: Record<string, unknown>,
+): Promise<AgentResult> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45_000);
+    const res = await fetch("/api/print/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...job, connection }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      let error = "render_failed";
+      try {
+        error = ((await res.json()) as { error?: string }).error ?? error;
+      } catch {
+        // non-JSON error body
+      }
+      return { ok: false, error, via: "server" };
+    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const sent = await sendBytesViaWebUsb(connection, bytes);
+    if (!sent.ok) return { ok: false, error: sent.error, via: "server" };
+    return { ok: true, via: "server" };
+  } catch {
+    return { ok: false, unreachable: true, error: "server_unreachable" };
+  }
+}
+
 /* ─────────────────────── agent status & discovery ─────────────────────── */
 
 export interface AgentHealth {
@@ -167,7 +207,13 @@ export function scanLanPrinters(body: { subnets?: string[]; ports?: number[] } =
   );
 }
 
-export function probePrinter(connection: PrinterConnection) {
+export async function probePrinter(connection: PrinterConnection): Promise<AgentResult<{ reachable: boolean; detail?: string }>> {
+  // A WebUSB printer is only visible to the browser holding the pairing
+  // permission — neither the agent nor the server can answer for it.
+  if (resolvedTransport(connection) === "webusb") {
+    const probed = await probeWebUsbPrinter(connection);
+    return { ok: true, data: probed };
+  }
   return callWithFallback(
     () => callAgent<{ reachable: boolean; detail?: string }>("/printers/probe", { connection }, { timeoutMs: 10_000 }),
     () => callServer<{ reachable: boolean; detail?: string }>("/api/print/probe", { connection }, { timeoutMs: 15_000 }),
@@ -188,6 +234,9 @@ export async function printDocument(
 ): Promise<AgentResult> {
   if (!connection || resolvedTransport(connection) === "browser") {
     return printViaBrowser(html);
+  }
+  if (resolvedTransport(connection) === "webusb") {
+    return printViaWebUsb(connection, { op: "document", html, paper });
   }
   return callWithFallback(
     () => callAgent("/print/document", { connection, html, paper }, { timeoutMs: 30_000 }),
@@ -250,6 +299,9 @@ export function printViaBrowser(html: string): Promise<AgentResult> {
 }
 
 export function printReceipt(connection: PrinterConnection, receipt: ReceiptData) {
+  if (resolvedTransport(connection) === "webusb") {
+    return printViaWebUsb(connection, { op: "receipt", receipt });
+  }
   return callWithFallback(
     () => callAgent("/print/receipt", { connection, receipt }),
     () => callServer("/api/print/job", { op: "receipt", connection, receipt }),
@@ -257,6 +309,9 @@ export function printReceipt(connection: PrinterConnection, receipt: ReceiptData
 }
 
 export function printKitchenTicket(connection: PrinterConnection, ticket: KitchenTicketData) {
+  if (resolvedTransport(connection) === "webusb") {
+    return printViaWebUsb(connection, { op: "kitchen-ticket", ticket });
+  }
   return callWithFallback(
     () => callAgent("/print/kitchen-ticket", { connection, ticket }),
     () => callServer("/api/print/job", { op: "kitchen-ticket", connection, ticket }),
@@ -264,6 +319,9 @@ export function printKitchenTicket(connection: PrinterConnection, ticket: Kitche
 }
 
 export function printLabel(connection: PrinterConnection, label: LabelData) {
+  if (resolvedTransport(connection) === "webusb") {
+    return printViaWebUsb(connection, { op: "label", label });
+  }
   return callWithFallback(
     () => callAgent("/print/label", { connection, label }),
     () => callServer("/api/print/job", { op: "label", connection, label }),
@@ -271,6 +329,9 @@ export function printLabel(connection: PrinterConnection, label: LabelData) {
 }
 
 export function testPrint(connection: PrinterConnection, kind: "receipt" | "kitchen") {
+  if (resolvedTransport(connection) === "webusb") {
+    return printViaWebUsb(connection, { op: "test", kind });
+  }
   return callWithFallback(
     () => callAgent("/print/test", { connection, kind }),
     () => callServer("/api/print/job", { op: "test", connection, kind }),
@@ -278,6 +339,9 @@ export function testPrint(connection: PrinterConnection, kind: "receipt" | "kitc
 }
 
 export function kickDrawer(connection: PrinterConnection) {
+  if (resolvedTransport(connection) === "webusb") {
+    return printViaWebUsb(connection, { op: "drawer-kick" });
+  }
   return callWithFallback(
     () => callAgent("/drawer/kick", { connection }),
     () => callServer("/api/print/job", { op: "drawer-kick", connection }),

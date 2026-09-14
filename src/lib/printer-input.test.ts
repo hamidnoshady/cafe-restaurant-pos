@@ -25,6 +25,26 @@ describe("parsePrinterInput", () => {
     expect(parsePrinterInput({ ...base, transport: "network", ip: "" })).toBeNull();
     expect(parsePrinterInput({ ...base, transport: "system", systemName: "  " })).toBeNull();
     expect(parsePrinterInput({ ...base, transport: "usb" })).toBeNull();
+    expect(parsePrinterInput({ ...base, transport: "webusb" })).toBeNull();
+  });
+
+  it("accepts a webusb printer by its pairing identifiers and clamps them to 16 bits", () => {
+    const input = parsePrinterInput({
+      ...base,
+      transport: "webusb",
+      usbVendorId: 0x04b8,
+      usbProductId: 0x0e15,
+      usbSerial: "SN123",
+      usbProductName: "TM-T20III",
+    })!;
+    expect(input.connection.transport).toBe("webusb");
+    expect(input.connection.usbVendorId).toBe(0x04b8);
+    expect(input.connection.usbProductId).toBe(0x0e15);
+    expect(input.connection.usbSerial).toBe("SN123");
+    expect(input.connection.usbProductName).toBe("TM-T20III");
+    // Out-of-range or non-numeric ids are not a device.
+    expect(parsePrinterInput({ ...base, transport: "webusb", usbVendorId: 0x1_0000 })).toBeNull();
+    expect(parsePrinterInput({ ...base, transport: "webusb", usbVendorId: "04b8" })).toBeNull();
   });
 
   it("rejects a missing name, an unknown kind and an out-of-range port", () => {

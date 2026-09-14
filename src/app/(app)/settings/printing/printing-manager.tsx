@@ -89,7 +89,12 @@ export function PrintingManager() {
         printers.printers.find((p) => p.is_active && p.kind === kind && p.connection?.isDefault) ??
         printers.printers.find((p) => p.is_active && p.kind === kind);
 
-      const canUseAgent = agent.online && match && resolvedTransport(match.connection) !== "browser";
+      // A webusb printer needs no backend to be "online" — this browser is
+      // the delivery path and printDocument routes it itself.
+      const canUseAgent =
+        match &&
+        resolvedTransport(match.connection) !== "browser" &&
+        (agent.online || resolvedTransport(match.connection) === "webusb");
       const result = canUseAgent
         ? await printDocument(match!.connection, html, template.paper)
         : await printViaBrowser(html);
@@ -262,7 +267,7 @@ function AgentBanner({
                 ? via === "server"
                   ? "عامل چاپ محلی اجرا نیست، اما سرور برنامه روی همین شبکه است و چاپگرهای نصب‌شدهٔ آن دستگاه، چاپگرهای حرارتی و کشوی پول از طریق آن در دسترس‌اند."
                   : "چاپگرهای حرارتی، کشوی پول و چاپگرهای نصب‌شدهٔ ویندوز در دسترس‌اند."
-                : "بدون آن هم می‌توانید قالب طراحی کنید و با پنجرهٔ چاپ مرورگر روی هر چاپگری چاپ بگیرید؛ برای چاپگر حرارتی و کشوی پول، عامل چاپ را روی دستگاه صندوق اجرا کنید."}
+                : "بدون آن هم می‌توانید قالب طراحی کنید و با پنجرهٔ چاپ مرورگر چاپ بگیرید؛ برای چاپگر حرارتی USB، در تب «چاپگرها» گزینهٔ «اتصال USB از مرورگر» را بزنید تا خود مرورگر واسطهٔ چاپ شود، یا عامل چاپ را روی دستگاه صندوق اجرا کنید."}
             </p>
           </div>
         </div>
