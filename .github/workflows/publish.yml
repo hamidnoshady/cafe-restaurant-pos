@@ -65,7 +65,7 @@ env:
 jobs:
   gates:
     name: pre-publish gates
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
     steps:
@@ -81,7 +81,7 @@ jobs:
 
   docker-publish:
     name: publish image (GHCR)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     needs: [gates]
     permissions:
       contents: read
