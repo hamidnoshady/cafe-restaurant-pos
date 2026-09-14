@@ -30,6 +30,7 @@ permissions:
 
 env:
   IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/cafe-restaurant-pos
+  NODE_OPTIONS: --max-old-space-size=3072
   # Session signing is not what's under test here, but `next build` does not
   # read .env and needs a real (non-placeholder) secret to prerender.
   # Throwaway, CI-only, never used to sign anything real.
@@ -59,6 +60,7 @@ jobs:
           push: true
           build-args: |
             GIT_SHA=${{ steps.sha.outputs.short }}
+            NODE_OPTIONS=${{ env.NODE_OPTIONS }}
           tags: |
             ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}
             ${{ env.IMAGE }}:latest
