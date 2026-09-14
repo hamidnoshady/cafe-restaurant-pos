@@ -50,7 +50,9 @@ export function parsePrinterInput(
 
   const transportValue = body.transport ?? existing.transport ?? "network";
   const transport: PrinterTransport =
-    transportValue === "system" || transportValue === "usb" || transportValue === "browser" ? transportValue : "network";
+    transportValue === "system" || transportValue === "usb" || transportValue === "webusb" || transportValue === "browser"
+      ? transportValue
+      : "network";
 
   const text = (value: unknown, previous: string | null | undefined) =>
     (typeof value === "string" ? value.trim() : (previous ?? "")).slice(0, 255);
@@ -58,6 +60,17 @@ export function parsePrinterInput(
   const ip = text(body.ip, existing.ip);
   const systemName = text(body.systemName, existing.systemName);
   const devicePath = text(body.devicePath, existing.devicePath);
+
+  // `webusb` — the pairing chooser's identifiers. USB vendor/product ids are
+  // 16-bit; anything else is a malformed payload rather than a device.
+  const usbId = (value: unknown, previous: number | null | undefined): number | null => {
+    const n = typeof value === "number" ? value : (previous ?? null);
+    return typeof n === "number" && Number.isInteger(n) && n > 0 && n <= 0xffff ? n : null;
+  };
+  const usbVendorId = usbId(body.usbVendorId, existing.usbVendorId);
+  const usbProductId = usbId(body.usbProductId, existing.usbProductId);
+  const usbSerial = text(body.usbSerial, existing.usbSerial) || null;
+  const usbProductName = text(body.usbProductName, existing.usbProductName) || null;
   const port = Number(body.port ?? existing.port ?? 9100);
   const paperWidthMm = Number(body.paperWidthMm ?? existing.paperWidthMm ?? 80);
   const paperValue = body.paper ?? existing.paper;
@@ -74,6 +87,7 @@ export function parsePrinterInput(
   if (transport === "network" && (!ip || !Number.isInteger(port) || port < 1 || port > 65535)) return null;
   if (transport === "system" && !systemName) return null;
   if (transport === "usb" && !devicePath) return null;
+  if (transport === "webusb" && !usbVendorId) return null;
 
   const connection: PrinterConnection = {
     ...existing,
@@ -82,6 +96,10 @@ export function parsePrinterInput(
     port: Number.isInteger(port) ? port : 9100,
     systemName: systemName || null,
     devicePath: devicePath || null,
+    usbVendorId,
+    usbProductId,
+    usbSerial,
+    usbProductName,
     paper,
     paperWidthMm: paperWidthMm as 58 | 80,
     driverMode,

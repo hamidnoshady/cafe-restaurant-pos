@@ -53,6 +53,11 @@ describe("transports", () => {
 
     expect(isValidPrinterConnection({ transport: "usb", devicePath: "USB001" })).toBe(true);
     expect(isValidPrinterConnection({ transport: "usb" })).toBe(false);
+
+    // webusb pairs by USB ids — the vendor id is the one hard requirement.
+    expect(isValidPrinterConnection({ transport: "webusb", usbVendorId: 0x04b8 })).toBe(true);
+    expect(isValidPrinterConnection({ transport: "webusb" })).toBe(false);
+    expect(isValidPrinterConnection({ transport: "webusb", usbVendorId: 0 })).toBe(false);
   });
 
   it("accepts the browser transport with nothing configured — that is the point of it", () => {
@@ -68,6 +73,8 @@ describe("transports", () => {
     expect(describeConnection({ ip: "192.168.1.50", port: 9100 })).toBe("192.168.1.50:9100");
     expect(describeConnection({ transport: "system", systemName: "TM-T20" })).toBe("TM-T20");
     expect(describeConnection({ transport: "usb", devicePath: "/dev/usb/lp0" })).toBe("/dev/usb/lp0");
+    expect(describeConnection({ transport: "webusb", usbProductName: "TM-T20III" })).toBe("TM-T20III");
+    expect(describeConnection({ transport: "webusb", usbVendorId: 0x04b8, usbProductId: 0x0e15 })).toBe("USB 04b8:0e15");
     expect(describeConnection({ transport: "browser" })).toContain("مرورگر");
   });
 });

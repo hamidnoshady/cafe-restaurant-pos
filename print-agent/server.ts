@@ -6,13 +6,19 @@
  * by passing that printer's `connection` (from the `printers` table) with
  * every request. Run with `npm run print-agent`.
  *
- * It now speaks four transports rather than one (see
- * src/lib/printer-connection.ts): a raw TCP socket to a LAN/Wi-Fi printer, an
- * installed Windows/CUPS queue by name, a raw USB/serial device path, and —
- * handled entirely in the browser, never here — the browser's own print
- * dialog. And it can *find* printers rather than only use ones somebody typed
- * an IP for: /printers/system lists the OS's installed queues, /printers/scan
- * sweeps the LAN for port 9100.
+ * All of the actual printing machinery lives in src/lib/system-print/ and is
+ * shared with the app server's own /api/print/* routes — when the app runs on
+ * the same machine as the printers (Electron shell, Docker on the till
+ * laptop, an on-prem LAN server), the browser can print through the app
+ * server directly and this agent is optional. The agent remains the answer
+ * when the app server runs somewhere the printers are not (a cloud tenant).
+ *
+ * It speaks four transports (see src/lib/printer-connection.ts): a raw TCP
+ * socket to a LAN/Wi-Fi printer, an installed Windows/CUPS queue by name, a
+ * raw USB/serial device path, and — handled entirely in the browser, never
+ * here — the browser's own print dialog. And it can *find* printers rather
+ * than only use ones somebody typed an IP for: /printers/system lists the
+ * OS's installed queues, /printers/scan sweeps the LAN for port 9100.
  *
  * Endpoints (all POST except the GETs), loopback-only:
  *   GET  /health
@@ -27,131 +33,24 @@
  *   POST /drawer/kick                  { connection }
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { Socket } from "net";
+import type { KitchenTicketData } from "../src/lib/kitchen-ticket-template";
+import type { LabelData } from "../src/lib/label-template";
+import { isValidPrinterConnection, type PrinterConnection } from "../src/lib/printer-connection";
+import { isPaperKey } from "../src/lib/print-template";
+import type { ReceiptData } from "../src/lib/receipt-template";
 import {
-  buildDrawerKickJob,
-  buildPrintJob,
-  packMonochromeRaster,
-} from "../src/lib/escpos";
-import { renderKitchenTicketHtml, type KitchenTicketData } from "../src/lib/kitchen-ticket-template";
-import { renderLabelHtml, type LabelData } from "../src/lib/label-template";
-import {
-  isValidPrinterConnection,
-  resolvedDriverMode,
-  resolvedPaperWidthMm,
-  resolvedPort,
-  resolvedTransport,
-  type PrinterConnection,
-} from "../src/lib/printer-connection";
-import { PAPERS, isPaperKey, type PaperKey } from "../src/lib/print-template";
-import { PAPER_WIDTH_PRESETS, renderReceiptHtml, type ReceiptData } from "../src/lib/receipt-template";
-import { listSystemPrinters, scanLanPrinters } from "./discovery";
-import { decodePngToGrayscale } from "./png";
-import { renderHtmlToPdf, renderHtmlToPng } from "./render";
-import { sendRawToDevice, sendDocumentToSystemPrinter, sendRawToSystemPrinter } from "./spooler";
-import { sendToPrinter } from "./transport";
+  kickDrawerJob,
+  listSystemPrinters,
+  printDocumentJob,
+  printKitchenTicketJob,
+  printLabelJob,
+  printReceiptJob,
+  printTestJob,
+  probeConnection,
+  scanLanPrinters,
+} from "../src/lib/system-print/service";
 
 const PORT = Number(process.env.PRINT_AGENT_PORT) || 9123;
-
-const SAMPLE_RECEIPT: ReceiptData = {
-  business: { name: "کافه نمونه", footerMessage: "این یک چاپ آزمایشی است" },
-  orderLabel: "#0",
-  orderTypeLabel: "چاپ آزمایشی",
-  issuedAt: new Date(),
-  lines: [{ name: "آیتم نمونه", quantity: 1, lineTotal: 100_000 }],
-  subtotal: 100_000,
-  discount: 0,
-  tax: 0,
-  total: 100_000,
-};
-
-const SAMPLE_TICKET: KitchenTicketData = {
-  label: "چاپ آزمایشی",
-  orderTypeLabel: "آزمایشی",
-  sentAt: new Date(),
-  lines: [{ name: "آیتم نمونه", quantity: 1 }],
-};
-
-/** Raster width for a paper: the template's own preset, or the ESC/POS default. */
-function rasterWidthFor(connection: PrinterConnection, paper?: PaperKey): number {
-  if (paper && PAPERS[paper]?.rasterPx) return PAPERS[paper].rasterPx!;
-  return PAPER_WIDTH_PRESETS[resolvedPaperWidthMm(connection)];
-}
-
-/** ESC/POS raster: screenshot the HTML, pack it, and hand it to the transport. */
-async function printRaster(
-  connection: PrinterConnection,
-  html: string,
-  opts: { kickDrawer?: boolean; paper?: PaperKey } = {},
-): Promise<void> {
-  const png = await renderHtmlToPng(html, rasterWidthFor(connection, opts.paper));
-  const gray = decodePngToGrayscale(png);
-  const raster = packMonochromeRaster(gray.pixels, gray.width, gray.height);
-  const job = buildPrintJob(raster, { kickDrawer: opts.kickDrawer ?? connection.openDrawer, cut: true });
-  await sendBytes(connection, job);
-}
-
-/** The one place raw ESC/POS bytes leave the agent, whatever the transport. */
-async function sendBytes(connection: PrinterConnection, job: Buffer): Promise<void> {
-  switch (resolvedTransport(connection)) {
-    case "network":
-      return sendToPrinter(connection.ip!, resolvedPort(connection), job);
-    case "system":
-      return sendRawToSystemPrinter(connection.systemName!, job);
-    case "usb":
-      return sendRawToDevice(connection.devicePath!, job);
-    case "browser":
-      throw new Error("browser_transport_is_client_side");
-  }
-}
-
-/**
- * Print a document the template renderer produced. A thermal roll takes the
- * raster path; a sheet on an installed queue is rendered to PDF and spooled,
- * because a laser driver wants a page rather than a bitmap.
- */
-async function printDocument(
-  connection: PrinterConnection,
-  html: string,
-  paper: PaperKey | undefined,
-): Promise<void> {
-  const spec = paper ? PAPERS[paper] : null;
-  const transport = resolvedTransport(connection);
-  const wantsDocument = spec ? spec.kind === "sheet" : resolvedDriverMode(connection) === "document";
-
-  if (wantsDocument) {
-    if (transport !== "system") throw new Error("sheet_printing_needs_a_system_printer");
-    const pdf = await renderHtmlToPdf(html);
-    return sendDocumentToSystemPrinter(connection.systemName!, pdf, { copies: connection.copies });
-  }
-  return printRaster(connection, html, { paper });
-}
-
-/** Is this printer answering right now? A TCP handshake, or the OS's queue list. */
-async function probeConnection(connection: PrinterConnection): Promise<{ reachable: boolean; detail?: string }> {
-  const transport = resolvedTransport(connection);
-  if (transport === "browser") return { reachable: true, detail: "browser" };
-  if (transport === "usb") return { reachable: true, detail: "unverifiable" };
-  if (transport === "system") {
-    const printers = await listSystemPrinters();
-    const match = printers.find((p) => p.name === connection.systemName);
-    return { reachable: Boolean(match), detail: match?.status ?? undefined };
-  }
-  return new Promise((resolve) => {
-    const socket = new Socket();
-    let settled = false;
-    const finish = (reachable: boolean, detail?: string) => {
-      if (settled) return;
-      settled = true;
-      socket.destroy();
-      resolve({ reachable, detail });
-    };
-    socket.setTimeout(3000);
-    socket.once("timeout", () => finish(false, "timeout"));
-    socket.once("error", (err) => finish(false, err.message));
-    socket.connect(resolvedPort(connection), connection.ip!, () => finish(true));
-  });
-}
 
 function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -229,42 +128,32 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       const html = typeof body.html === "string" ? body.html : "";
       if (!html) return send(res, 400, { ok: false, error: "missing_html" });
       const paper = isPaperKey(body.paper) ? body.paper : undefined;
-      await printDocument(connection!, html, paper);
+      await printDocumentJob(connection!, html, paper);
       return send(res, 200, { ok: true });
     }
 
     if (req.url === "/print/receipt") {
-      const receipt = body.receipt as ReceiptData;
-      const html = renderReceiptHtml(receipt, { paperWidthMm: resolvedPaperWidthMm(connection!) });
-      await printRaster(connection!, html);
+      await printReceiptJob(connection!, body.receipt as ReceiptData);
       return send(res, 200, { ok: true });
     }
 
     if (req.url === "/print/kitchen-ticket") {
-      const ticket = body.ticket as KitchenTicketData;
-      const html = renderKitchenTicketHtml(ticket, { paperWidthMm: resolvedPaperWidthMm(connection!) });
-      await printRaster(connection!, html);
+      await printKitchenTicketJob(connection!, body.ticket as KitchenTicketData);
       return send(res, 200, { ok: true });
     }
 
     if (req.url === "/print/label") {
-      const label = body.label as LabelData;
-      await printRaster(connection!, renderLabelHtml(label));
+      await printLabelJob(connection!, body.label as LabelData);
       return send(res, 200, { ok: true });
     }
 
     if (req.url === "/print/test") {
-      const kind = body.kind === "kitchen" ? "kitchen" : "receipt";
-      const html =
-        kind === "kitchen"
-          ? renderKitchenTicketHtml(SAMPLE_TICKET, { paperWidthMm: resolvedPaperWidthMm(connection!) })
-          : renderReceiptHtml(SAMPLE_RECEIPT, { paperWidthMm: resolvedPaperWidthMm(connection!) });
-      await printRaster(connection!, html);
+      await printTestJob(connection!, body.kind === "kitchen" ? "kitchen" : "receipt");
       return send(res, 200, { ok: true });
     }
 
     if (req.url === "/drawer/kick") {
-      await sendBytes(connection!, buildDrawerKickJob());
+      await kickDrawerJob(connection!);
       return send(res, 200, { ok: true });
     }
 
