@@ -161,6 +161,8 @@ export async function createWarehouseDocumentInTransaction(
   client: PoolClient,
   params: CreateWarehouseDocumentParams,
 ): Promise<CreatedWarehouseDocument> {
+  if (params.lines.length === 0) throw new Error("no_items");
+
   const { rows: locationRows } = await client.query<{ id: string; is_active: boolean }>(
     "SELECT id, is_active FROM locations WHERE id = $1 AND business_id = $2",
     [params.locationId, params.businessId],

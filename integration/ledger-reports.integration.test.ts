@@ -1,5 +1,5 @@
 /**
- * Two ledger-section regressions, pinned.
+ * Ledger-section regressions, pinned.
  *
  * 1. **An archived account still reports its postings.** `setAccountActive`
  *    lets any non-well-known account be archived, postings and all — its own
@@ -10,7 +10,16 @@
  *    matching and both screens announced «دفتر نامتوازن است» about a book that
  *    was fine.
  *
- * 2. **An installment plan's «مانده» is the sum of its unpaid slices.** It used
+ * 2. **The green "دفتر متوازن است" badge is not a zero-equals-zero shortcut.**
+ *    An empty ledger has no document to audit yet, and two corrupt documents
+ *    can cancel each other in the grand totals. The reports therefore expose
+ *    entry-level health alongside debit/credit totals.
+ *
+ * 3. **Cash and bank means the 1100–1130 block, not four exact account codes.**
+ *    A business can add its own bank/cash sub-account in that range and it must
+ *    still appear in the Accounting dashboard's liquidity tile.
+ *
+ * 4. **An installment plan's «مانده» is the sum of its unpaid slices.** It used
  *    to be `principal - paidTotal`, which is a different number as soon as a
  *    plan has a down payment (the down payment is not a slice, so the balance
  *    never reached zero — «تسویه شده» sat next to a non-zero مانده) or interest
@@ -76,13 +85,18 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.end();
-  await dbLib?.getPool().end().catch(() => {});
+  await dbLib
+    ?.getPool()
+    .end()
+    .catch(() => {});
   process.env.DATABASE_URL = rootDatabaseUrl;
 
   const maintenance = new Client({ connectionString: maintenanceUrl() });
   await maintenance.connect();
   try {
-    await maintenance.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+    await maintenance.query(
+      `DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`,
+    );
   } finally {
     await maintenance.end();
   }
@@ -139,6 +153,104 @@ async function postRentEntry(): Promise<void> {
     [entry.rows[0].id, acct.rent, acct.cash],
   );
 }
+
+async function postManualLines(
+  memo: string,
+  lines: { accountId: string; debit: number; credit: number }[],
+): Promise<void> {
+  const entry = await db.query<{ id: string }>(
+    `INSERT INTO journal_entries (business_id, entry_date, memo, source_type, created_by)
+     VALUES ($1, CURRENT_DATE, $2, 'manual', $3) RETURNING id`,
+    [biz.id, memo, user.id],
+  );
+  for (const line of lines) {
+    await db.query(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES ($1, $2, $3, $4)`,
+      [entry.rows[0].id, line.accountId, line.debit, line.credit],
+    );
+  }
+}
+
+describe("ledger health in the trial balance and accounting dashboard", () => {
+  it("does not call an empty ledger balanced just because both totals are zero", async () => {
+    const trial = await reports.getTrialBalance(biz.id);
+    expect(trial.totalDebit).toBe(0);
+    expect(trial.totalCredit).toBe(0);
+    expect(trial.entryCount).toBe(0);
+    expect(trial.unbalancedEntryCount).toBe(0);
+    expect(trial.invalidEntryCount).toBe(0);
+    expect(trial.balanced).toBe(false);
+
+    const overview = await reports.getLedgerOverview(biz.id);
+    expect(overview.totalDebit).toBe(0);
+    expect(overview.totalCredit).toBe(0);
+    expect(overview.journalEntryCount).toBe(0);
+    expect(overview.balanced).toBe(false);
+  });
+
+  it("catches offsetting unbalanced entries even when the grand totals match", async () => {
+    await postManualLines("سند خراب اول", [
+      { accountId: acct.rent, debit: 100, credit: 0 },
+      { accountId: acct.cash, debit: 0, credit: 90 },
+    ]);
+    await postManualLines("سند خراب دوم", [
+      { accountId: acct.rent, debit: 90, credit: 0 },
+      { accountId: acct.cash, debit: 0, credit: 100 },
+    ]);
+
+    const trial = await reports.getTrialBalance(biz.id);
+    expect(trial.totalDebit).toBe(190);
+    expect(trial.totalCredit).toBe(190);
+    expect(trial.balanceDifference).toBe(0);
+    expect(trial.entryCount).toBe(2);
+    expect(trial.unbalancedEntryCount).toBe(2);
+    expect(trial.balanced).toBe(false);
+
+    const overview = await reports.getLedgerOverview(biz.id);
+    expect(overview.totalDebit).toBe(190);
+    expect(overview.totalCredit).toBe(190);
+    expect(overview.unbalancedEntryCount).toBe(2);
+    expect(overview.balanced).toBe(false);
+  });
+
+  it("flags a persisted journal header with no lines as invalid, not balanced", async () => {
+    await db.query(
+      `INSERT INTO journal_entries (business_id, entry_date, memo, source_type, created_by)
+       VALUES ($1, CURRENT_DATE, 'سند بدون ردیف', 'manual', $2)`,
+      [biz.id, user.id],
+    );
+
+    const trial = await reports.getTrialBalance(biz.id);
+    expect(trial.entryCount).toBe(1);
+    expect(trial.lineCount).toBe(0);
+    expect(trial.invalidEntryCount).toBe(1);
+    expect(trial.balanced).toBe(false);
+  });
+});
+
+describe("the accounting dashboard KPI buckets", () => {
+  it("counts custom cash and bank sub-accounts inside the 1100–1130 block", async () => {
+    const bank = await db.query<{ id: string }>(
+      `INSERT INTO accounts (business_id, code, name, type)
+       VALUES ($1, '1111', 'حساب بانک ملت', 'asset') RETURNING id`,
+      [biz.id],
+    );
+    const capital = await db.query<{ id: string }>(
+      `INSERT INTO accounts (business_id, code, name, type)
+       VALUES ($1, '3100', 'سرمایه', 'equity') RETURNING id`,
+      [biz.id],
+    );
+
+    await postManualLines("واریز سرمایه به بانک", [
+      { accountId: bank.rows[0].id, debit: 500000, credit: 0 },
+      { accountId: capital.rows[0].id, debit: 0, credit: 500000 },
+    ]);
+
+    const overview = await reports.getLedgerOverview(biz.id);
+    expect(overview.balanced).toBe(true);
+    expect(overview.cashAndBank).toBe(500000);
+  });
+});
 
 describe("the trial balance and the accounting dashboard, after an account is archived", () => {
   it("keeps an archived account's postings and stays balanced", async () => {
@@ -204,12 +316,17 @@ describe("an installment plan's remaining balance", () => {
     expect(plan).not.toBeNull();
     expect(plan!.scheduledTotal).toBe(800000);
     expect(plan!.remaining).toBe(800000);
-    expect((plan!.items ?? []).map((i) => i.amount)).toEqual([200000, 200000, 200000, 200000]);
+    expect((plan!.items ?? []).map((i) => i.amount)).toEqual([
+      200000, 200000, 200000, 200000,
+    ]);
 
     // Settle every slice by hand — the point under test is the reported
     // balance, not the posting path (`payInstallmentItem` needs a full chart of
     // accounts, which `integration/ar.integration.test.ts` already covers).
-    await db.query(`UPDATE installment_items SET paid_at = now(), paid_method = 'cash' WHERE installment_id = $1`, [id]);
+    await db.query(
+      `UPDATE installment_items SET paid_at = now(), paid_method = 'cash' WHERE installment_id = $1`,
+      [id],
+    );
 
     const settled = await installments.getInstallmentPlan(biz.id, id);
     expect(settled!.status).toBe("settled");

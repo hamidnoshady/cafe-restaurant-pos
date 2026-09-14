@@ -7,7 +7,13 @@ import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
-import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
+import {
+  cardClass,
+  EmptyState,
+  SectionCard,
+  SectionCardSkeleton,
+  StatusBadge,
+} from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import type { AccountingSectionKey } from "./accounting-routes";
 
@@ -25,6 +31,11 @@ interface LedgerOverview {
   balanced: boolean;
   totalDebit: number;
   totalCredit: number;
+  journalEntryCount: number;
+  journalLineCount: number;
+  unbalancedEntryCount: number;
+  invalidEntryCount: number;
+  balanceDifference: number;
   cashAndBank: number;
   receivables: number;
   payables: number;
@@ -43,12 +54,88 @@ interface LedgerOverview {
 }
 
 /** A KPI tile: cardClass composed, not restated (design-lint holds this line). */
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
-      <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
+      <p className="text-xs font-medium leading-5 text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+        {value}
+      </p>
+      {hint ? (
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function LedgerHealthNotice({ overview }: { overview: LedgerOverview }) {
+  const money = useMoney();
+
+  if (overview.journalEntryCount === 0) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge tone="neutral">
+          دفتر هنوز سند ثبت‌شده‌ای ندارد.
+        </StatusBadge>
+        <p className="text-xs leading-5 text-muted-foreground">
+          {formatPersianNumber(overview.journalEntryCount)} سند و{" "}
+          {formatPersianNumber(overview.journalLineCount)} ردیف ثبت شده است؛ صفر
+          بودن بدهکار و بستانکار در دفتر خالی، توازن حسابداری محسوب نمی‌شود.
+        </p>
+      </div>
+    );
+  }
+
+  if (overview.balanced) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge tone="positive">
+          دفتر متوازن است — {formatPersianNumber(overview.journalEntryCount)}{" "}
+          سند و {formatPersianNumber(overview.journalLineCount)} ردیف کنترل شد.
+        </StatusBadge>
+        <p className="text-xs leading-5 text-muted-foreground">
+          جمع بدهکار: {money.format(overview.totalDebit)}، جمع بستانکار:{" "}
+          {money.format(overview.totalCredit)}
+        </p>
+      </div>
+    );
+  }
+
+  const problemParts: string[] = [];
+  if (overview.unbalancedEntryCount > 0) {
+    problemParts.push(
+      `${formatPersianNumber(overview.unbalancedEntryCount)} سند نامتوازن`,
+    );
+  }
+  if (overview.invalidEntryCount > 0) {
+    problemParts.push(
+      `${formatPersianNumber(overview.invalidEntryCount)} سند ناقص`,
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <StatusBadge tone="danger">
+        دفتر نامتوازن است — اسناد ثبت‌شده را بازبینی کنید.
+      </StatusBadge>
+      <p className="text-xs leading-5 text-muted-foreground">
+        {formatPersianNumber(overview.journalEntryCount)} سند و{" "}
+        {formatPersianNumber(overview.journalLineCount)} ردیف؛{" "}
+        {problemParts.length > 0 ? `${problemParts.join("، ")}؛ ` : ""}
+        جمع بدهکار: {money.format(overview.totalDebit)}، جمع بستانکار:{" "}
+        {money.format(overview.totalCredit)}، اختلاف:{" "}
+        {money.format(Math.abs(overview.balanceDifference))}
+      </p>
     </div>
   );
 }
@@ -83,9 +170,11 @@ function ShiftSalesQuickReport({ refreshKey }: { refreshKey: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    api<{ shiftSales: ShiftSales | null }>("/api/ledger/shift-sales").then(({ ok, data }) => {
-      if (!cancelled) setSales(ok ? data.shiftSales : null);
-    });
+    api<{ shiftSales: ShiftSales | null }>("/api/ledger/shift-sales").then(
+      ({ ok, data }) => {
+        if (!cancelled) setSales(ok ? data.shiftSales : null);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -96,7 +185,9 @@ function ShiftSalesQuickReport({ refreshKey }: { refreshKey: number }) {
   if (sales === null) return null;
 
   if (sales === undefined) {
-    return <SectionCardSkeleton rows={2} label="در حال بارگذاری فروش شیفت جاری" />;
+    return (
+      <SectionCardSkeleton rows={2} label="در حال بارگذاری فروش شیفت جاری" />
+    );
   }
 
   const { summary } = sales;
@@ -111,10 +202,15 @@ function ShiftSalesQuickReport({ refreshKey }: { refreshKey: number }) {
     <div className={`p-4 sm:p-5 ${cardClass}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش سریع</p>
-          <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">فروش شیفت جاری</h2>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+            گزارش سریع
+          </p>
+          <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+            فروش شیفت جاری
+          </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            از {formatJalali(sales.since, { withTime: true })} — با هر بستن شیفت صفر می‌شود.
+            از {formatJalali(sales.since, { withTime: true })} — با هر بستن شیفت
+            صفر می‌شود.
           </p>
         </div>
         <StatusBadge tone={sales.hasOpenShift ? "active" : "neutral"}>
@@ -132,8 +228,12 @@ function ShiftSalesQuickReport({ refreshKey }: { refreshKey: number }) {
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/80 pt-3 sm:grid-cols-4">
         {methods.map((method) => (
           <div key={method.label} className="min-w-0">
-            <dt className="text-xs font-medium leading-5 text-muted-foreground">{method.label}</dt>
-            <dd className="truncate text-sm font-bold text-foreground">{money.format(method.value)}</dd>
+            <dt className="text-xs font-medium leading-5 text-muted-foreground">
+              {method.label}
+            </dt>
+            <dd className="truncate text-sm font-bold text-foreground">
+              {money.format(method.value)}
+            </dd>
           </div>
         ))}
       </dl>
@@ -154,10 +254,12 @@ export function LedgerDashboardSection({
 
   const load = useCallback(() => {
     setError("");
-    api<{ overview: LedgerOverview }>("/api/ledger/overview").then(({ ok, data }) => {
-      if (ok) setOverview(data.overview);
-      else setError("بارگذاری داشبورد حسابداری ناموفق بود.");
-    });
+    api<{ overview: LedgerOverview }>("/api/ledger/overview").then(
+      ({ ok, data }) => {
+        if (ok) setOverview(data.overview);
+        else setError("بارگذاری داشبورد حسابداری ناموفق بود.");
+      },
+    );
   }, []);
   useEffect(load, [load, refreshKey]);
 
@@ -167,12 +269,17 @@ export function LedgerDashboardSection({
     return (
       <>
         <ErrorBox>{error}</ErrorBox>
-        {error ? null : <SectionCardSkeleton rows={4} label="در حال بارگذاری داشبورد حسابداری" />}
+        {error ? null : (
+          <SectionCardSkeleton
+            rows={4}
+            label="در حال بارگذاری داشبورد حسابداری"
+          />
+        )}
       </>
     );
   }
 
-  const hasActivity = overview.totalDebit !== 0 || overview.totalCredit !== 0;
+  const hasActivity = overview.journalEntryCount > 0;
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -185,7 +292,9 @@ export function LedgerDashboardSection({
         <SectionCard
           title={
             <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شروع سریع</p>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                شروع سریع
+              </p>
               <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100 sm:text-lg">
                 دفتر شما هنوز خالی است
               </h2>
@@ -194,24 +303,32 @@ export function LedgerDashboardSection({
           description="اولین سند را ثبت کنید تا تراز، دریافتی‌ها و پرداختی‌ها اینجا شکل بگیرند."
         >
           <div className="grid gap-3 sm:grid-cols-3">
-            <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("manual")}>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              onClick={() => onGoToTab("manual")}
+            >
               ۱. اولین سند دستی را ثبت کن
             </Button>
-            <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("chart-of-accounts")}>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              onClick={() => onGoToTab("chart-of-accounts")}
+            >
               ۲. سرفصل حساب‌ها را بازبینی کن
             </Button>
-            <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("fiscal-periods")}>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              onClick={() => onGoToTab("fiscal-periods")}
+            >
               ۳. دورهٔ مالی را تعریف کن
             </Button>
           </div>
         </SectionCard>
       ) : null}
 
-      {overview.balanced ? (
-        <StatusBadge tone="positive">دفتر متوازن است — جمع بدهکار و بستانکار برابر است.</StatusBadge>
-      ) : (
-        <StatusBadge tone="danger">دفتر نامتوازن است — اسناد ثبت‌شده را بازبینی کنید.</StatusBadge>
-      )}
+      <LedgerHealthNotice overview={overview} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard
@@ -231,14 +348,21 @@ export function LedgerDashboardSection({
         />
         <StatCard label="درآمد" value={money.format(overview.revenue)} />
         <StatCard label="هزینه‌ها" value={money.format(overview.expenses)} />
-        <StatCard label="سود (زیان) خالص" value={money.format(overview.netIncome)} />
+        <StatCard
+          label="سود (زیان) خالص"
+          value={money.format(overview.netIncome)}
+        />
       </div>
 
       <SectionCard
         title={
           <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دسترسی سریع</p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">کارهای رایج</h2>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+              دسترسی سریع
+            </p>
+            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+              کارهای رایج
+            </h2>
           </div>
         }
         description="از اینجا مستقیم به بخشی بروید که باید در آن کار کنید."
@@ -251,28 +375,60 @@ export function LedgerDashboardSection({
           محصولات) is in the app's sidebar, gated once by the shell.
         */}
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("directory")}>
+          <Button
+            variant="outline"
+            className="min-h-11 justify-start"
+            onClick={() => onGoToTab("directory")}
+          >
             اشخاص
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("receivables")}>
+          <Button
+            variant="outline"
+            className="min-h-11 justify-start"
+            onClick={() => onGoToTab("receivables")}
+          >
             حساب‌های دریافتنی
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("payables")}>
+          <Button
+            variant="outline"
+            className="min-h-11 justify-start"
+            onClick={() => onGoToTab("payables")}
+          >
             حساب‌های پرداختنی
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("manual")}>
+          <Button
+            variant="outline"
+            className="min-h-11 justify-start"
+            onClick={() => onGoToTab("manual")}
+          >
             ثبت سند دستی
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("entries")}>
+          <Button
+            variant="outline"
+            className="min-h-11 justify-start"
+            onClick={() => onGoToTab("entries")}
+          >
             دفتر روزنامه
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("cheques")}>
+          <Button
+            variant="outline"
+            className="min-h-11 justify-start"
+            onClick={() => onGoToTab("cheques")}
+          >
             چک‌ها
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("reconciliation")}>
+          <Button
+            variant="outline"
+            className="min-h-11 justify-start"
+            onClick={() => onGoToTab("reconciliation")}
+          >
             تطبیق بانکی
           </Button>
-          <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToTab("financial-reports")}>
+          <Button
+            variant="outline"
+            className="min-h-11 justify-start"
+            onClick={() => onGoToTab("financial-reports")}
+          >
             گزارش‌های مالی
           </Button>
         </div>
@@ -281,8 +437,12 @@ export function LedgerDashboardSection({
       <SectionCard
         title={
           <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">آخرین رویدادها</p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">اسناد اخیر</h2>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+              آخرین رویدادها
+            </p>
+            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+              اسناد اخیر
+            </h2>
           </div>
         }
         description="پنج سند آخر ثبت‌شده، از جدیدترین."
@@ -297,7 +457,9 @@ export function LedgerDashboardSection({
                   {entry.memo?.trim() || "سند بدون شرح"}
                   {/* What posted it — a fact the endpoint already returned and this
                       list dropped, leaving five look-alike rows. */}
-                  <span className="ms-2 text-xs text-muted-foreground">{ledgerSourceLabel(entry.sourceType)}</span>
+                  <span className="ms-2 text-xs text-muted-foreground">
+                    {ledgerSourceLabel(entry.sourceType)}
+                  </span>
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatJalali(entry.date)}

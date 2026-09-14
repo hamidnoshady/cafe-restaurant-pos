@@ -8,21 +8,28 @@
  * through `postJournalEntry` (which re-validates balance), with a
  * `source_type` marking it imported; an unbalanced voucher is reported as a
  * discrepancy, never balanced with a synthetic adjustment line. The opening
- * balance uses the app's own opening mechanism (`withAutoOffset` on the تراز
- * افتتاحیه equity account) — the one place a synthetic offset is legitimate.
+ * balance uses the app's own opening-equity offset, but posts through the exact
+ * RialText path so large imported balances are not rounded by JavaScript numbers.
  */
 import { getPool, query } from "../../db";
 import { getConnection } from "../connections-service";
-import { accountIdsByCode, postJournalEntry } from "../../ledger-service";
+import {
+  accountIdsByCode,
+  postExactJournalEntry,
+  postJournalEntry,
+} from "../../ledger-service";
 import { WELL_KNOWN_CODES } from "../../coa-template";
-import { withAutoOffset } from "../../opening";
+import { rialText, type RialText } from "../../inventory-exact";
 import { upsertMapping } from "../mapping-service";
 import { planJournalImport, type HolooVoucher } from "./journal-plan";
 import { writeIntegrationAudit } from "../audit";
 
 export const HOLOO_IMPORT_SOURCE_TYPE = "holoo_import";
 
-async function accountIdForCode(businessId: string, code: string): Promise<string | null> {
+async function accountIdForCode(
+  businessId: string,
+  code: string,
+): Promise<string | null> {
   const { rows } = await query<{ id: string }>(
     `SELECT id FROM accounts WHERE business_id = $1 AND code = $2`,
     [businessId, code],
@@ -59,7 +66,10 @@ export async function importJournalVouchers(
         if (line.debit === 0 && line.credit === 0) continue;
         const accountId = await accountIdForCode(businessId, line.accountCode);
         if (!accountId) {
-          unmappedAccounts.push({ remoteId: voucher.remoteId, accountCode: line.accountCode });
+          unmappedAccounts.push({
+            remoteId: voucher.remoteId,
+            accountCode: line.accountCode,
+          });
           hasUnmapped = true;
           break;
         }
@@ -80,7 +90,14 @@ export async function importJournalVouchers(
           createdBy,
         });
         if (entryId) {
-          await upsertMapping(businessId, connectionId, "holoo_journal", voucher.remoteId, entryId, importRunId);
+          await upsertMapping(
+            businessId,
+            connectionId,
+            "holoo_journal",
+            voucher.remoteId,
+            entryId,
+            importRunId,
+          );
           imported += 1;
         }
         await client.query("COMMIT");
@@ -98,7 +115,10 @@ export async function importJournalVouchers(
     });
     return {
       imported,
-      unbalanced: unbalanced.map((v) => ({ remoteId: v.remoteId, difference: v.difference })),
+      unbalanced: unbalanced.map((v) => ({
+        remoteId: v.remoteId,
+        difference: v.difference,
+      })),
       unmappedAccounts,
     };
   } finally {
@@ -122,15 +142,29 @@ export async function importOpeningBalance(
   const connection = await getConnection(businessId, connectionId);
   if (!connection) throw new Error("not_found");
 
-  const openingLines: { accountId: string; debit: number; credit: number }[] = [];
+  const openingLines: {
+    accountId: string;
+    debit: RialText;
+    credit: RialText;
+  }[] = [];
   const unmappedAccounts: string[] = [];
+  let totalDebit = 0n;
+  let totalCredit = 0n;
   for (const line of lines) {
     const accountId = await accountIdForCode(businessId, line.accountCode);
     if (!accountId) {
       unmappedAccounts.push(line.accountCode);
       continue;
     }
-    openingLines.push({ accountId, debit: Number(line.debitRial ?? 0n), credit: Number(line.creditRial ?? 0n) });
+    const debit = line.debitRial ?? 0n;
+    const credit = line.creditRial ?? 0n;
+    openingLines.push({
+      accountId,
+      debit: rialText(debit.toString()),
+      credit: rialText(credit.toString()),
+    });
+    totalDebit += debit;
+    totalCredit += credit;
   }
 
   // The app's own opening mechanism: balance against the equity offset account.
@@ -138,21 +172,39 @@ export async function importOpeningBalance(
   try {
     let offsetId: string;
     try {
-      offsetId = (await accountIdsByCode(client, businessId, [WELL_KNOWN_CODES.openingEquity])).get(WELL_KNOWN_CODES.openingEquity)!;
+      offsetId = (
+        await accountIdsByCode(client, businessId, [
+          WELL_KNOWN_CODES.openingEquity,
+        ])
+      ).get(WELL_KNOWN_CODES.openingEquity)!;
     } catch {
       return { entryId: null, unmappedAccounts };
     }
 
-    const balanced = withAutoOffset(openingLines, offsetId);
+    const difference = totalDebit - totalCredit;
+    if (difference > 0n) {
+      openingLines.push({
+        accountId: offsetId,
+        debit: rialText("0"),
+        credit: rialText(difference.toString()),
+      });
+    } else if (difference < 0n) {
+      openingLines.push({
+        accountId: offsetId,
+        debit: rialText((-difference).toString()),
+        credit: rialText("0"),
+      });
+    }
+
     await client.query("BEGIN");
-    const entryId = await postJournalEntry(client, {
+    const entryId = await postExactJournalEntry(client, {
       businessId,
       locationId: connection.location_id,
       entryDate: null,
       memo: "ماندهٔ افتتاحیه (واردشده از هلو)",
       sourceType: "opening",
       sourceId: null,
-      lines: balanced,
+      lines: openingLines,
       createdBy,
     });
     await client.query("COMMIT");

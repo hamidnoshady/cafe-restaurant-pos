@@ -4,6 +4,7 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useEffect, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
+import { formatPersianNumber } from "@/lib/digits";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import { cardClass } from "@/app/dashboard/page-chrome";
 
@@ -23,6 +24,11 @@ interface TrialBalanceData {
   totalDebit: number;
   totalCredit: number;
   balanced: boolean;
+  entryCount: number;
+  lineCount: number;
+  unbalancedEntryCount: number;
+  invalidEntryCount: number;
+  balanceDifference: number;
 }
 
 const TYPE_LABELS: Record<TrialBalanceRow["type"], string> = {
@@ -44,7 +50,8 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
     setError("");
     api<TrialBalanceData>("/api/ledger/trial-balance").then(({ ok, data }) => {
       if (ok) setData(data);
-      else setError("بارگذاری تراز آزمایشی ناموفق بود. صفحه را دوباره باز کنید.");
+      else
+        setError("بارگذاری تراز آزمایشی ناموفق بود. صفحه را دوباره باز کنید.");
     });
   }, [refreshKey]);
 
@@ -52,34 +59,80 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
     return (
       <>
         <ErrorBox>{error}</ErrorBox>
-        {error ? null : <SectionCardSkeleton rows={4} label="در حال بارگذاری تراز آزمایشی" />}
+        {error ? null : (
+          <SectionCardSkeleton rows={4} label="در حال بارگذاری تراز آزمایشی" />
+        )}
       </>
     );
   }
 
   // Keep the API response as the financial source of truth. This UI only
   // removes entirely empty accounts from display, exactly as before.
-  const rows = data.accounts.filter((a) => Number(a.debit) !== 0 || Number(a.credit) !== 0);
+  const rows = data.accounts.filter(
+    (a) => Number(a.debit) !== 0 || Number(a.credit) !== 0,
+  );
+  const hasEntries = data.entryCount > 0;
+  const statusTone = !hasEntries
+    ? "neutral"
+    : data.balanced
+      ? "positive"
+      : "danger";
+  const statusText = !hasEntries
+    ? "بدون سند"
+    : data.balanced
+      ? "متوازن"
+      : "نامتوازن";
+  const problemParts: string[] = [];
+  if (data.unbalancedEntryCount > 0) {
+    problemParts.push(
+      `${formatPersianNumber(data.unbalancedEntryCount)} سند نامتوازن`,
+    );
+  }
+  if (data.invalidEntryCount > 0) {
+    problemParts.push(
+      `${formatPersianNumber(data.invalidEntryCount)} سند ناقص`,
+    );
+  }
+  const statusDescription = !hasEntries
+    ? `${formatPersianNumber(data.entryCount)} سند و ${formatPersianNumber(data.lineCount)} ردیف ثبت شده است؛ صفر بودن دو طرف دفتر خالی توازن محسوب نمی‌شود.`
+    : data.balanced
+      ? `${formatPersianNumber(data.entryCount)} سند و ${formatPersianNumber(data.lineCount)} ردیف ثبت‌شده؛ کنترل توازن در سطح سند انجام شد.`
+      : `${formatPersianNumber(data.entryCount)} سند و ${formatPersianNumber(data.lineCount)} ردیف ثبت‌شده؛ ${problemParts.join("، ") || "نیازمند بازبینی"}؛ اختلاف کل: ${money.format(Math.abs(data.balanceDifference))}`;
+  const emptyRowsMessage = hasEntries
+    ? "برای اسناد موجود ردیف حسابداری قابل نمایش وجود ندارد؛ این وضعیت نیازمند بازبینی است."
+    : "هنوز سندی ثبت نشده است.";
 
   return (
     <section aria-labelledby="trial-balance-heading" className={cardClass}>
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش مالی</p>
-          <h2 id="trial-balance-heading" className="mt-1 text-base font-semibold text-foreground">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+            گزارش مالی
+          </p>
+          <h2
+            id="trial-balance-heading"
+            className="mt-1 text-base font-semibold text-foreground"
+          >
             تراز آزمایشی
           </h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">مانده حساب‌ها بر پایه اسناد ثبت‌شده</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {statusDescription}
+          </p>
         </div>
         <span
           className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${
-            data.balanced
+            statusTone === "positive"
               ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200"
-              : "bg-destructive/10 text-destructive"
+              : statusTone === "danger"
+                ? "bg-destructive/10 text-destructive"
+                : "bg-muted text-muted-foreground"
           }`}
         >
-          <span aria-hidden="true" className={`size-1.5 rounded-full bg-current`} />
-          {data.balanced ? "متوازن" : "نامتوازن"}
+          <span
+            aria-hidden="true"
+            className="size-1.5 rounded-full bg-current"
+          />
+          {statusText}
         </span>
       </header>
 
@@ -89,27 +142,47 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
             <table className="w-full text-sm">
               <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
                 <tr className="border-b border-border">
-                  <th scope="col" className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm">
+                  <th
+                    scope="col"
+                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
+                  >
                     کد
                   </th>
-                  <th scope="col" className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm">
+                  <th
+                    scope="col"
+                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
+                  >
                     حساب
                   </th>
-                  <th scope="col" className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm">
+                  <th
+                    scope="col"
+                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
+                  >
                     نوع
                   </th>
-                  <th scope="col" className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm">
+                  <th
+                    scope="col"
+                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
+                  >
                     بدهکار
                   </th>
-                  <th scope="col" className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm">
+                  <th
+                    scope="col"
+                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
+                  >
                     بستانکار
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((a) => (
-                  <tr key={a.id} className="border-b border-border last:border-b-0">
-                    <td className="whitespace-nowrap px-4 py-3.5 font-medium text-muted-foreground">{a.code}</td>
+                  <tr
+                    key={a.id}
+                    className="border-b border-border last:border-b-0"
+                  >
+                    <td className="whitespace-nowrap px-4 py-3.5 font-medium text-muted-foreground">
+                      {a.code}
+                    </td>
                     <td className="px-4 py-3.5 font-medium text-foreground">
                       {a.name}
                       {a.isActive === false ? (
@@ -118,7 +191,9 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
+                    <td className="px-4 py-3.5 text-muted-foreground">
+                      {TYPE_LABELS[a.type]}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-foreground">
                       {money.format(Number(a.debit))}
                     </td>
@@ -129,19 +204,30 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                 ))}
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      هنوز سندی ثبت نشده است.
+                    <td
+                      colSpan={5}
+                      className="px-4 py-10 text-center text-sm text-muted-foreground"
+                    >
+                      {emptyRowsMessage}
                     </td>
                   </tr>
                 ) : null}
               </tbody>
               <tfoot>
                 <tr className="border-t border-border bg-stone-50/60 text-foreground dark:bg-stone-800/30">
-                  <th scope="row" className="px-4 py-3.5 text-start font-semibold" colSpan={3}>
+                  <th
+                    scope="row"
+                    className="px-4 py-3.5 text-start font-semibold"
+                    colSpan={3}
+                  >
                     جمع کل
                   </th>
-                  <td className="whitespace-nowrap px-4 py-3.5 font-bold">{money.format(data.totalDebit)}</td>
-                  <td className="whitespace-nowrap px-4 py-3.5 font-bold">{money.format(data.totalCredit)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 font-bold">
+                    {money.format(data.totalDebit)}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3.5 font-bold">
+                    {money.format(data.totalCredit)}
+                  </td>
                 </tr>
               </tfoot>
             </table>
@@ -150,13 +236,22 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
 
         <div className="space-y-3 lg:hidden">
           {rows.map((a) => (
-            <article key={a.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+            <article
+              key={a.id}
+              className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-muted-foreground">{a.code}</p>
-                  <h3 className="mt-1 truncate text-sm font-semibold text-foreground">{a.name}</h3>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {a.code}
+                  </p>
+                  <h3 className="mt-1 truncate text-sm font-semibold text-foreground">
+                    {a.name}
+                  </h3>
                   {a.isActive === false ? (
-                    <p className="mt-1 text-xs font-semibold text-muted-foreground">غیرفعال</p>
+                    <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                      غیرفعال
+                    </p>
                   ) : null}
                 </div>
                 <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
@@ -181,18 +276,22 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
           ))}
           {rows.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-              هنوز سندی ثبت نشده است.
+              {emptyRowsMessage}
             </p>
           ) : null}
           <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
             <div>
-              <dt className="text-xs font-medium text-muted-foreground">جمع کل بدهکار</dt>
+              <dt className="text-xs font-medium text-muted-foreground">
+                جمع کل بدهکار
+              </dt>
               <dd className="mt-1 whitespace-nowrap text-sm font-bold text-foreground">
                 {money.format(data.totalDebit)}
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-muted-foreground">جمع کل بستانکار</dt>
+              <dt className="text-xs font-medium text-muted-foreground">
+                جمع کل بستانکار
+              </dt>
               <dd className="mt-1 whitespace-nowrap text-sm font-bold text-foreground">
                 {money.format(data.totalCredit)}
               </dd>
