@@ -1,6 +1,5 @@
-# Manual-only copy of the local checklist CLAUDE.md documents (tsc, unit tests,
-# integration tests, build). Does not run on push, pull request, or merge —
-# start it from the Actions tab (workflow_dispatch) when you want a CI run.
+# Runs the local checklist CLAUDE.md documents (tsc, unit tests, integration
+# tests, build) for every pull request targeting main and on manual dispatch.
 #
 # Speed: the four checks are independent of each other, so they run as four
 # parallel jobs instead of one long sequential job — wall-clock time is the
@@ -11,12 +10,17 @@
 name: test
 
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
-# A new dispatch on the same branch makes the previous run pointless.
+# Superseded commits on the same PR/branch do not need to finish.
 concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
+  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   NODE_OPTIONS: --max-old-space-size=3072
