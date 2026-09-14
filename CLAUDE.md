@@ -105,66 +105,56 @@ never edit an already-applied migration.
 
 ## CI — `.github/workflows/test.yml`
 
-Both workflows in `.github/workflows/` are **manual only** (`workflow_dispatch`). They do
-**not** run on push, on a pull request, or after a merge to `main`. Start them from the
-Actions tab when you want a run.
+`.github/workflows/test.yml` runs automatically for every pull request targeting `main`
+and can also be started manually (`workflow_dispatch`). It runs the checklist above — type
+check, unit tests, integration tests, and production build — as four independent jobs in
+parallel, then fans them into one `required` status check. A new commit on the same PR
+cancels its obsolete run.
 
-`test.yml` is the same checklist as above — type check, unit tests, integration tests,
-production build — as four independent jobs in parallel (not one sequential job) so the
-run's wall-clock time is the slowest single check, not their sum; a `required` job fans
-the four back in to one status check. It is not a gate on PRs or on `main`.
+The workflow uses the normal `pull_request` event with read-only repository permissions; it
+does not expose repository secrets to PR code. Because these jobs execute on a self-hosted
+runner, automatic PR runs are appropriate only while contributors are trusted (for example,
+in this private repository). Do not replace this with `pull_request_target`.
 
 What follows from that:
 
-- **Run the local checklist above yourself, every time, in full — don't wait on CI.**
-  Nothing runs unless you dispatch it; nothing else will catch a change that breaks the
-  type check or a test as fast as running it yourself.
+- **Run the local checklist above yourself, every time, in full — don't wait on CI.** CI is
+  a required independent check, not a substitute for validating work before pushing it.
 - Don't report a change as done on the strength of a partial run. `npm test` passing while
   `npm run test:db` was never started is not a green checklist; say which steps you actually ran.
 - Keep `.github/workflows/test.yml` in sync with the checklist above — if a step is added, removed
   or renamed here, update the workflow (and vice versa) in the same change.
-- Don't re-add `push` / `pull_request` / `workflow_run` triggers. Manual-only is the
-  decision; an automatic run on CI or after merge is a regression.
+- Keep both the `pull_request` trigger for `main` and `workflow_dispatch`.
 
-`.github/workflows/build-and-push.yml` is the same: dispatch it from the Actions tab when
-you want an image. It builds and pushes `docker.io/<DOCKERHUB_USERNAME>/cafe-restaurant-pos:sha-<short-sha>`
-(and `:latest`) to Docker Hub for the commit you selected — it does **not** wait on `test`,
-and it does **not** run after merge. Don't assume a Docker Hub image exists for a branch, a
-PR, or a commit nobody dispatched against.
+### Production publishing and deployment: `publish.yml` (GHCR + Coolify)
 
-### The one automatic workflow: `publish.yml` (GHCR)
+`.github/workflows/publish.yml` is the only image-publishing workflow. It runs on every
+push to `main` (and on `v*` tags and manual dispatch), publishes the production image to
+GHCR, and asks Coolify to redeploy after a branch publication. Making it manual would mean
+a merge produces no image while production silently keeps running the previous one.
 
-`.github/workflows/publish.yml` runs on **every push to `main`** (and on `v*` tags, and on
-dispatch), and that is deliberate: it is what deployment consumes. Making it manual would
-mean a merge produces no image while a deployed stack silently keeps running the previous
-one. Don't remove its `push` trigger.
+It is not ungated: its `gates` job re-runs type checking, unit tests, and the production
+build on the exact commit before publishing. Keep these gates even though PR testing is
+automatic; they also protect direct pushes, tag publications, and manual runs.
 
-It is not ungated either — its `gates` job re-runs the static half of the local checklist
-(type check, unit tests, production build) on the exact merge commit before the image is
-built. The database-backed suite stays in the manual `test.yml`: it needs a service
-container and several minutes, and the local checklist is the real gate.
-
-Two details are load-bearing:
+Three details are load-bearing:
 
 - **The tag shape is `sha-<short>` plus `latest`**, matching `imageRefFor()` in
-  `src/lib/app-update-status.ts`. A long-sha tag (what the sibling `eshobe-cms` repo uses)
-  would leave the café laptop's self-update check looking for a tag that does not exist.
+  `src/lib/app-update-status.ts`. A `v*` ref additionally publishes its release tag.
   `GIT_SHA` is passed as a build arg because the `Dockerfile` bakes it into
   `APP_IMAGE_SHA` — how a running container knows which build it is.
-- **GHCR is the registry the rest of the product already assumed.**
-  `docker-compose.local.yml` pulls `ghcr.io/hamidnoshady/cafe-restaurant-pos`, and
-  `src/lib/app-update.ts` defaults `GHCR_IMAGE` to it and mints short-lived GHCR pull
-  tokens; nothing had ever pushed there. srv1 can't reach `ghcr.io` (filtered at the
-  network layer), which is why Docker Hub was adopted — and why the root
-  `docker-compose.srv1.yml` pulls the same GHCR image through the `ghcr-mirror.liara.ir`
-  cache instead, exactly as the CMS stack on that host does. In that file the image tag is
-  **literal**: Komodo resolves the image reference without variable interpolation, so a
-  `${VAR}` there breaks the lookup silently.
+- **The 3 GB Node heap limit is workflow-wide and passed into the Docker build.** Keep
+  `NODE_OPTIONS=--max-old-space-size=3072` so both runner jobs and the Dockerfile's Next.js
+  build fit the 4 GB self-hosted runner.
+- **GHCR is the production registry.** `docker-compose.local.yml` pulls
+  `ghcr.io/hamidnoshady/cafe-restaurant-pos`, and `src/lib/app-update.ts` defaults
+  `GHCR_IMAGE` to it. Hosts that cannot reach `ghcr.io` directly can pull that same image
+  through the `ghcr-mirror.liara.ir` cache as documented in `docker-compose.srv1.yml`.
 
-**Production (Runflare) does not consume any of this yet** — it still builds from the
-`Dockerfile` itself per `docs/server-migration.md`'s Runflare recipe. Repointing it, or
-standing up the Komodo stack in that doc's recipe A′, is a separate, deliberate step, not
-something merging a compose file does on its own.
+Coolify's restart request uses `latest=true` so it pulls the newly published image rather
+than recreating the previous local image. When `PRODUCTION_HEALTH_URL` is set, the workflow
+also verifies the live image SHA and canonical routes; without it, the rollout is explicitly
+reported as unverified.
 
 ## Tenancy — read before touching the database
 

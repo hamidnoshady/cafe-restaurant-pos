@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { lookup } from "node:dns/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { assertPublicHttpsUrl, isPrivateAddress } from "./ssrf";
+
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
+
+afterEach(() => {
+  vi.mocked(lookup).mockReset();
+});
 
 describe("isPrivateAddress", () => {
   it("names the ranges that reach this deployment's own network", () => {
@@ -61,8 +68,14 @@ describe("assertPublicHttpsUrl", () => {
     // Refusing this would buy no safety — fetch fails on its own — while making
     // a resolver blip reject a legitimate endpoint. The property is "nothing
     // leaves to a private address", and an unreachable name is not one.
+    const dnsError = Object.assign(new Error("getaddrinfo ENOTFOUND push.example.test"), {
+      code: "ENOTFOUND",
+    });
+    vi.mocked(lookup).mockRejectedValueOnce(dnsError);
+
     const result = await assertPublicHttpsUrl("https://push.example.test/abc");
 
+    expect(lookup).toHaveBeenCalledWith("push.example.test", { all: true });
     expect(result).toMatchObject({ ok: true });
   });
 
