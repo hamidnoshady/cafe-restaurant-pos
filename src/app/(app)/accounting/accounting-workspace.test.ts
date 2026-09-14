@@ -13,6 +13,7 @@ import {
   LEDGER_WORKSPACE_GROUP_KEY,
   LEDGER_WORKSPACE_LABEL,
   LEDGER_WORKSPACE_SECTION_KEYS,
+  LEDGER_WORKSPACE_SUBGROUPS,
 } from "./accounting-workspace";
 import { partyDirectoryHref } from "@/lib/party-directory";
 import {
@@ -199,11 +200,61 @@ describe("the Accounting workspace menu", () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
+  it("divides the long ledger group into named sub-groups, like every other group", () => {
+    // The regression: «فضای کار حسابداری» was the one group in the menu with
+    // sixteen rows under a single heading and no internal structure, which is
+    // what made it read as a drawer bolted onto the menu rather than a part
+    // of it.
+    const ledger = groupsFor("owner").find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY);
+    expect(ledger?.subGroups?.length).toBeGreaterThan(1);
+    for (const subGroup of ledger!.subGroups!) {
+      expect(subGroup.label).not.toBe("");
+      expect(subGroup.entries.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the sub-groups an arrangement of the group, never a second list", () => {
+    const ledger = groupsFor("owner").find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY);
+    const fromSubGroups = ledger!.subGroups!.flatMap((subGroup) => subGroup.entries.map((e) => e.href));
+    expect(fromSubGroups).toEqual(ledger!.entries.map((entry) => entry.href));
+    // …and each entry sits in exactly one of them.
+    expect(new Set(fromSubGroups).size).toBe(fromSubGroups.length);
+  });
+
+  it("drops a sub-group the member's role empties, rather than showing an empty heading", () => {
+    // Payroll is owner + accountant; a manager keeps «دوره، مالیات و حقوق»
+    // (it still holds دوره‌های مالی و مالیات) but never an empty heading.
+    for (const role of ["owner", "manager", "accountant"]) {
+      const ledger = groupsFor(role).find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY);
+      for (const subGroup of ledger?.subGroups ?? []) {
+        expect(subGroup.entries.length, `«${subGroup.label}» is empty for ${role}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("gives the collapsible group a glyph, because its heading hides at the icon rail", () => {
+    const ledger = groupsFor("owner").find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY);
+    expect(ledger?.iconKey).toBeTruthy();
+  });
+
   it("only marks the long ledger group as collapsible", () => {
     const collapsible = groupsFor("owner").filter((group) => group.collapsible);
     expect(collapsible.map((group) => group.key)).toEqual([
       LEDGER_WORKSPACE_GROUP_KEY,
     ]);
+  });
+});
+
+describe("the ledger group's own sub-groups", () => {
+  it("gives every ledger section exactly one sub-group", () => {
+    const placed = LEDGER_WORKSPACE_SUBGROUPS.flatMap((subGroup) => subGroup.keys);
+    expect(new Set(placed).size).toBe(placed.length);
+    expect([...placed].sort()).toEqual([...LEDGER_WORKSPACE_SECTION_KEYS].sort());
+  });
+
+  it("names each sub-group once", () => {
+    const keys = LEDGER_WORKSPACE_SUBGROUPS.map((subGroup) => subGroup.key);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

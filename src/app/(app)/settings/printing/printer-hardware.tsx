@@ -13,7 +13,7 @@
  * cannot be swept for.
  */
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2Icon, PlugZapIcon, RadarIcon, RefreshCwIcon, XCircleIcon } from "lucide-react";
+import { CheckCircle2Icon, PlugZapIcon, RadarIcon, RefreshCwIcon, UsbIcon, XCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
@@ -27,6 +27,7 @@ import {
   type LanPrinter,
   type SystemPrinter,
 } from "@/lib/print-agent-client";
+import { requestWebUsbPrinter, webUsbSupported } from "@/lib/webusb-print";
 import {
   PRINTER_TRANSPORT_LABELS,
   describeConnection,
@@ -47,6 +48,10 @@ interface Draft {
   port: string;
   systemName: string;
   devicePath: string;
+  usbVendorId: number | null;
+  usbProductId: number | null;
+  usbSerial: string | null;
+  usbProductName: string | null;
   paper: PaperKey;
   templateKey: string;
   openDrawer: boolean;
@@ -62,6 +67,10 @@ const EMPTY: Draft = {
   port: "9100",
   systemName: "",
   devicePath: "",
+  usbVendorId: null,
+  usbProductId: null,
+  usbSerial: null,
+  usbProductName: null,
   paper: "thermal80",
   templateKey: "",
   openDrawer: false,
@@ -79,6 +88,10 @@ function toDraft(printer: PrinterRow): Draft {
     port: String(c.port ?? 9100),
     systemName: c.systemName ?? "",
     devicePath: c.devicePath ?? "",
+    usbVendorId: c.usbVendorId ?? null,
+    usbProductId: c.usbProductId ?? null,
+    usbSerial: c.usbSerial ?? null,
+    usbProductName: c.usbProductName ?? null,
     paper: (c.paper as PaperKey) ?? (c.paperWidthMm === 58 ? "thermal58" : "thermal80"),
     templateKey: c.templateKey ?? "",
     openDrawer: c.openDrawer === true,
@@ -97,6 +110,10 @@ function payload(draft: Draft) {
     port: Number(draft.port) || 9100,
     systemName: draft.systemName,
     devicePath: draft.devicePath,
+    usbVendorId: draft.usbVendorId,
+    usbProductId: draft.usbProductId,
+    usbSerial: draft.usbSerial,
+    usbProductName: draft.usbProductName,
     paper: draft.paper,
     // Kept in step with `paper` so the ESC/POS raster path (which only knows
     // 58/80) still gets the right width from an old-shaped read.
@@ -117,6 +134,10 @@ function connectionOf(draft: Draft): PrinterConnection {
     port: p.port,
     systemName: p.systemName,
     devicePath: p.devicePath,
+    usbVendorId: p.usbVendorId,
+    usbProductId: p.usbProductId,
+    usbSerial: p.usbSerial,
+    usbProductName: p.usbProductName,
     paper: p.paper,
     paperWidthMm: p.paperWidthMm as 58 | 80,
     driverMode: p.driverMode as "raster" | "document",
@@ -143,6 +164,7 @@ export function PrinterHardware({
   const [notice, setNotice] = useState("");
 
   const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[] | null>(null);
+  const [systemVia, setSystemVia] = useState<"agent" | "server" | null>(null);
   const [lanPrinters, setLanPrinters] = useState<LanPrinter[] | null>(null);
   const [discovering, setDiscovering] = useState<"system" | "lan" | null>(null);
 
@@ -155,17 +177,21 @@ export function PrinterHardware({
   const discoverSystem = useCallback(async () => {
     setDiscovering("system");
     setError("");
+    // The client tries the loopback print agent first, then falls back to the
+    // app server's /api/print/system-printers — so on a local deployment the
+    // Windows list appears with nothing extra running on this device.
     const result = await listSystemPrinters();
     setDiscovering(null);
     if (!result.ok) {
       setError(
         result.unreachable
-          ? "عامل چاپ محلی در دسترس نیست؛ آن را روی همین دستگاه اجرا کنید تا چاپگرهای نصب‌شدهٔ ویندوز خوانده شوند."
+          ? "نه عامل چاپ محلی در دسترس است و نه سرور برنامه توانست چاپگرها را بخواند؛ عامل چاپ را روی همین دستگاه اجرا کنید تا چاپگرهای نصب‌شدهٔ ویندوز خوانده شوند."
           : "خواندن فهرست چاپگرهای سیستم ممکن نشد.",
       );
       return;
     }
     setSystemPrinters(result.data?.printers ?? []);
+    setSystemVia(result.via ?? "agent");
   }, []);
 
   const discoverLan = useCallback(async () => {
@@ -176,7 +202,7 @@ export function PrinterHardware({
     if (!result.ok) {
       setError(
         result.unreachable
-          ? "عامل چاپ محلی در دسترس نیست؛ جست‌وجوی شبکه از روی همان دستگاهی انجام می‌شود که چاپگر به آن وصل است."
+          ? "نه عامل چاپ محلی در دسترس است و نه سرور برنامه؛ جست‌وجوی شبکه از روی دستگاهی انجام می‌شود که به شبکهٔ چاپگر وصل است."
           : "جست‌وجوی شبکه ناموفق بود.",
       );
       return;
@@ -261,6 +287,38 @@ export function PrinterHardware({
     setNotice(`${printer.ip} در فرم زیر قرار گرفت؛ نام و نوع را بررسی و ذخیره کنید.`);
   }
 
+  /**
+   * The `webusb` pairing flow — for a server installation where neither the
+   * agent nor the server can see the till's USB printer, but this very
+   * browser can. One chooser dialog, once; afterwards every job renders on
+   * the server and travels down this browser's USB cable with no print modal.
+   */
+  async function pairWebUsbPrinter() {
+    setError("");
+    const result = await requestWebUsbPrinter();
+    if (!result.ok) {
+      setError(
+        result.error === "unsupported"
+          ? "این مرورگر WebUSB را پشتیبانی نمی‌کند؛ از Chrome یا Edge (روی HTTPS) استفاده کنید."
+          : "چاپگری انتخاب نشد.",
+      );
+      return;
+    }
+    setDraft((prev) => ({
+      ...prev,
+      transport: "webusb",
+      usbVendorId: result.printer.usbVendorId,
+      usbProductId: result.printer.usbProductId,
+      usbSerial: result.printer.usbSerial,
+      usbProductName: result.printer.usbProductName,
+      name: prev.name || result.printer.usbProductName || "چاپگر USB",
+      paper: prev.paper === "a4" ? "thermal80" : prev.paper,
+    }));
+    setNotice(
+      `«${result.printer.usbProductName || "چاپگر USB"}» به مرورگر متصل شد و در فرم زیر قرار گرفت؛ نام و نوع را بررسی و ذخیره کنید.`,
+    );
+  }
+
   return (
     <div className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
@@ -279,6 +337,12 @@ export function PrinterHardware({
               <RadarIcon aria-hidden="true" />
               {discovering === "lan" ? "در حال جست‌وجو…" : "جست‌وجوی شبکه"}
             </Button>
+            {webUsbSupported() ? (
+              <Button type="button" variant="outline" onClick={() => void pairWebUsbPrinter()} disabled={discovering !== null}>
+                <UsbIcon aria-hidden="true" />
+                اتصال USB از مرورگر
+              </Button>
+            ) : null}
           </div>
         }
       >
@@ -287,8 +351,12 @@ export function PrinterHardware({
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <DiscoveryList
-              title="نصب‌شده روی این دستگاه"
-              hint="همان فهرستی که در «Printers & scanners» ویندوز می‌بینید."
+              title={systemVia === "server" ? "نصب‌شده روی دستگاه سرور" : "نصب‌شده روی این دستگاه"}
+              hint={
+                systemVia === "server"
+                  ? "فهرست چاپگرهای دستگاهی که سرور برنامه روی آن اجراست (عامل چاپ محلی اجرا نیست)."
+                  : "همان فهرستی که در «Printers & scanners» ویندوز می‌بینید."
+              }
               empty={
                 systemPrinters === null
                   ? "برای خواندن فهرست، دکمهٔ بالا را بزنید."
@@ -508,6 +576,45 @@ function PrinterForm({
         </Field>
       ) : null}
 
+      {value.transport === "webusb" ? (
+        <Field
+          label="چاپگر متصل به مرورگر"
+          hint="سرور سند را می‌سازد و همین مرورگر آن را از راه WebUSB به چاپگر می‌فرستد — بدون پنجرهٔ چاپ. مخصوص نصب سروری که عامل چاپ ندارد؛ فقط Chrome/Edge و فقط کاغذ حرارتی. اگر چاپ با خطای usb_claim_failed برگشت، درایور ویندوزیِ چاپگر دستگاه را قفل کرده است."
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-foreground" dir="auto">
+              {value.usbVendorId
+                ? value.usbProductName ||
+                  `USB ${value.usbVendorId.toString(16).padStart(4, "0")}:${(value.usbProductId ?? 0)
+                    .toString(16)
+                    .padStart(4, "0")}`
+                : "هنوز چاپگری به مرورگر متصل نشده است."}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                void requestWebUsbPrinter().then((result) => {
+                  if (!result.ok) return;
+                  onChange({
+                    ...value,
+                    usbVendorId: result.printer.usbVendorId,
+                    usbProductId: result.printer.usbProductId,
+                    usbSerial: result.printer.usbSerial,
+                    usbProductName: result.printer.usbProductName,
+                    name: value.name || result.printer.usbProductName || "چاپگر USB",
+                  });
+                })
+              }
+            >
+              <UsbIcon aria-hidden="true" />
+              {value.usbVendorId ? "اتصال دوباره" : "انتخاب چاپگر USB"}
+            </Button>
+          </div>
+        </Field>
+      ) : null}
+
       <Field label="کاغذ" hint={PAPERS[value.paper].hint}>
         <SearchableSelect
           value={value.paper}
@@ -577,7 +684,7 @@ function PrinterCard({
     setTesting(false);
     setStatus(result.ok && result.data?.reachable ? "online" : "offline");
     if (!result.ok && result.unreachable) {
-      onError("عامل چاپ محلی در دسترس نیست؛ وضعیت چاپگر قابل بررسی نیست.");
+      onError("نه عامل چاپ محلی در دسترس است و نه سرور برنامه؛ وضعیت چاپگر قابل بررسی نیست.");
     }
   }
 
@@ -589,7 +696,7 @@ function PrinterCard({
     if (!result.ok) {
       onError(
         result.unreachable
-          ? "عامل چاپ محلی در دسترس نیست؛ آن را روی دستگاه صندوق اجرا و اتصال شبکه را بررسی کنید."
+          ? "هیچ مسیر چاپی در دسترس نیست؛ عامل چاپ را روی دستگاه صندوق اجرا کنید یا اتصال به سرور را بررسی کنید."
           : "فرمان چاپگر با خطا روبه‌رو شد.",
       );
       return;

@@ -122,18 +122,23 @@ export function usePrintIdentity() {
 }
 
 /**
- * Is the local print agent running? Polled once on mount and on demand — the
+ * Is hardware printing available? Polled once on mount and on demand — the
  * answer decides whether the section offers hardware printing or only the
  * browser dialog, and saying so plainly is better than a failed print later.
+ * Two backends can say yes: the loopback print agent on this device, or the
+ * app server's own /api/print routes (`via: "server"`) — the client tries
+ * the agent first and falls back to the server (print-agent-client.ts).
  */
 export function useAgentStatus() {
   const [health, setHealth] = useState<AgentHealth | null>(null);
+  const [via, setVia] = useState<"agent" | "server" | null>(null);
   const [checking, setChecking] = useState(true);
 
   const recheck = useCallback(async () => {
     setChecking(true);
     const result = await checkAgent();
     setHealth(result.ok ? (result.data ?? { ok: true }) : null);
+    setVia(result.ok ? (result.via ?? "agent") : null);
     setChecking(false);
   }, []);
 
@@ -141,5 +146,5 @@ export function useAgentStatus() {
     void recheck();
   }, [recheck]);
 
-  return { health, online: health?.ok === true, checking, recheck };
+  return { health, online: health?.ok === true, via, checking, recheck };
 }
