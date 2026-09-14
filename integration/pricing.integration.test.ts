@@ -244,4 +244,23 @@ describe("getSuggestedPrice", () => {
     expect(result?.overheadRatePercent).toBe(40);
     expect(result?.overheadSource).toBe("ledger");
   });
+  it("keeps using the manual overhead after ledger data becomes available when selected", async () => {
+    await db.query(
+      "INSERT INTO menu_item_ingredients (menu_item_id, inventory_item_id, quantity) VALUES ($1, $2, 18)",
+      [item.menuItemId, item.inventoryItemId],
+    );
+    await pricingService.setPricingConfig(biz.id, {
+      defaultMarginPercent: null,
+      fallbackOverheadPercent: 25,
+      overheadMode: "manual",
+    });
+    await postEntry(today(), acct.cash, acct.revenue, 1_000_000);
+    await postEntry(today(), acct.rent, acct.cash, 300_000);
+    await postEntry(today(), acct.salaries, acct.cash, 100_000);
+
+    const result = await pricingService.getSuggestedPrice(biz.id, item.menuItemId);
+    expect(result?.overheadRatePercent).toBe(25);
+    expect(result?.overheadSource).toBe("fallback");
+  });
+
 });
