@@ -1,5 +1,8 @@
 # Running the POS like normal software on Windows (Phase 12)
 
+> Maintainers: the manual self-hosted Windows installer workflow is documented
+> in [windows-desktop-release.md](windows-desktop-release.md).
+
 This guide is for the person setting up the café laptop. The goal: after a
 one-time setup, the staff just **double-click one icon** (or the app opens by
 itself when the laptop turns on) — no Docker, no terminal, no technical steps.

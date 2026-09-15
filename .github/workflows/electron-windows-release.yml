@@ -1,0 +1,97 @@
+# Build the Windows desktop installer on the project's self-hosted Windows
+# runner and publish it to GitHub Releases. This workflow is intentionally
+# manual: run it only when a desktop update should be released.
+name: Windows desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Desktop version without the v prefix (for example 1.0.6)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark this GitHub Release as a pre-release"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-desktop-release
+  cancel-in-progress: false
+
+env:
+  NODE_OPTIONS: --max-old-space-size=3072
+
+jobs:
+  build-and-release:
+    name: Build and publish Windows installer
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 45
+    steps:
+      - name: Check out selected ref
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Build the web application
+        run: npm run build
+
+      - name: Install Electron builder dependencies
+        working-directory: electron
+        run: npm ci
+
+      - name: Set the installer version
+        working-directory: electron
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Prepare Electron builder cache
+        working-directory: electron
+        run: npm run predist
+
+      - name: Build the NSIS Windows installer
+        working-directory: electron
+        run: npm run dist
+
+      - name: Prepare the release assets
+        shell: pwsh
+        run: |
+          $assetDir = Join-Path $env:GITHUB_WORKSPACE "release-assets"
+          New-Item -ItemType Directory -Force $assetDir | Out-Null
+          $installer = Get-ChildItem -Path "electron/dist" -Filter "*.exe" -File
+          if (-not $installer) {
+            throw "electron-builder did not produce a Windows installer"
+          }
+          Copy-Item $installer.FullName -Destination $assetDir
+          Get-ChildItem -Path "electron/dist/*" -File |
+            Where-Object { $_.Name -like "*.blockmap" -or $_.Name -like "latest*.yml" } |
+            Copy-Item -Destination $assetDir
+
+      - name: Upload installer to workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-suite-windows-${{ inputs.version }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Business Suite v${{ inputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease }}
+          fail_on_unmatched_files: true
+          files: release-assets/*
