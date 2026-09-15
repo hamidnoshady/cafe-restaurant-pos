@@ -58,23 +58,78 @@ export interface WpContentRow {
   syncedAt: string;
 }
 
+/**
+ * The named HTML entities WordPress's `title.rendered` actually emits.
+ *
+ * WordPress runs titles through `wptexturize`, which turns straight quotes,
+ * apostrophes, dashes and ellipses into their typographic entities — so a
+ * post literally called «Café's “Menu”…» arrives as
+ * `Café&#8217;s &#8220;Menu&#8221;&#8230;`. The old decoder handled only a
+ * handful of these, so the WP Manager's content list showed raw `&#8217;`
+ * and `&hellip;` sprinkled through every title. Numeric entities (decimal and
+ * hex) are decoded generically below; this map is for the named ones that
+ * have no numeric form in a WordPress title.
+ */
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&apos;": "'",
+  "&nbsp;": " ",
+  "&hellip;": "…",
+  "&ndash;": "–",
+  "&mdash;": "—",
+  "&laquo;": "«",
+  "&raquo;": "»",
+  "&rsquo;": "\u2019",
+  "&lsquo;": "\u2018",
+  "&rdquo;": "\u201d",
+  "&ldquo;": "\u201c",
+  "&copy;": "©",
+  "&reg;": "®",
+  "&trade;": "™",
+  "&deg;": "°",
+};
+
+/**
+ * Decode the HTML entities WordPress puts in a title, both numeric and named.
+ *
+ * `&amp;` is intentionally resolved last: a double-encoded string such as
+ * `&amp;#8217;` must first become `&#8217;` and only then the apostrophe,
+ * never `&` mid-way through, which would strand the rest of the entity.
+ */
+export function decodeWpEntities(text: string): string {
+  return text
+    // Decimal numeric entities: &#8217; → ’
+    .replace(/&#(\d+);/g, (_m, code: string) => codePointToString(Number.parseInt(code, 10)))
+    // Hex numeric entities: &#x2019; / &#X2019; → ’
+    .replace(/&#[xX]([0-9a-fA-F]+);/g, (_m, code: string) => codePointToString(Number.parseInt(code, 16)))
+    // Named entities, with &amp; kept for the very end.
+    .replace(/&(?:apos|nbsp|hellip|ndash|mdash|laquo|raquo|rsquo|lsquo|rdquo|ldquo|copy|reg|trade|deg|quot|lt|gt);/g,
+      (m) => NAMED_HTML_ENTITIES[m] ?? m)
+    .replace(/&amp;/g, "&");
+}
+
+/** A code point → its string, leaving an out-of-range or invalid value untouched-but-safe. */
+function codePointToString(code: number): string {
+  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return "";
+  try {
+    return String.fromCodePoint(code);
+  } catch {
+    return "";
+  }
+}
+
 /** Strip the HTML WordPress's `title.rendered` carries and decode entities. */
-function plainTitle(raw: unknown): string {
+export function plainTitle(raw: unknown): string {
   const text =
     typeof raw === "string"
       ? raw
       : raw && typeof raw === "object" && "rendered" in raw
         ? String((raw as { rendered?: string }).rendered ?? "")
         : "";
-  return text
-    .replace(/<[^>]*>/g, "")
-    .replace(/&#8211;/g, "–")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .trim();
+  return decodeWpEntities(text.replace(/<[^>]*>/g, "")).trim();
 }
 
 /** Normalise one pushed/REST content object and upsert the mirror row. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyWooProductType,
+  formatWooVariationAttribute,
   inferWooProductType,
   isSellableWooProduct,
   isWooAttributeTaxonomy,
@@ -11,6 +12,7 @@ import {
   wooAttributeSlug,
   wooLineCandidateIds,
   wooLineParentFallback,
+  wooProductRemoteIds,
   wooProductShape,
   wooTaxonomyLabel,
   wooTermPath,
@@ -387,5 +389,36 @@ describe("shouldImportWooOrder", () => {
   it("is case- and whitespace-tolerant", () => {
     expect(shouldImportWooOrder("Pending")).toBe(false);
     expect(shouldImportWooOrder(" Processing ")).toBe(true);
+  });
+});
+
+describe("formatWooVariationAttribute", () => {
+  it("renders «name: value» when both halves are present", () => {
+    expect(formatWooVariationAttribute({ name: "رنگ", option: "قرمز" })).toBe("رنگ: قرمز");
+  });
+
+  it("trims whitespace on each half before joining", () => {
+    expect(formatWooVariationAttribute({ name: "  Size ", option: " L " })).toBe("Size: L");
+  });
+
+  it("is empty when either half is missing, so a bare «رنگ» never dangles off a name", () => {
+    // A name with no value reads like a truncated string, not a variation.
+    expect(formatWooVariationAttribute({ name: "رنگ", option: "" })).toBe("");
+    expect(formatWooVariationAttribute({ name: "", option: "قرمز" })).toBe("");
+    expect(formatWooVariationAttribute({ name: "  ", option: "  " })).toBe("");
+    expect(
+      formatWooVariationAttribute({ name: undefined as never, option: undefined as never }),
+    ).toBe("");
+  });
+});
+
+describe("wooProductRemoteIds", () => {
+  it("is the product's own id as a string — the key the mapping is stored under", () => {
+    expect(wooProductRemoteIds({ id: 42 } as never)).toEqual(["42"]);
+  });
+
+  it("keeps a mapping for a container too, so an unmapped variation line can fall back to it", () => {
+    expect(wooProductRemoteIds({ id: 10, type: "variable" } as never)).toEqual(["10"]);
+    expect(wooProductRemoteIds({ id: 5, type: "grouped" } as never)).toEqual(["5"]);
   });
 });

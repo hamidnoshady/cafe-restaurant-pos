@@ -599,11 +599,14 @@ export function createWooCommerceClient(
         query: { context: "view", ...query },
         namespace: "wp/v2",
       }),
+    // wp/v2 uses POST for both create (…/posts) and update (…/posts/{id}) —
+    // it has no PUT for content — so the method is constant and only the path
+    // gains the id when updating.
     wpUpsertPost: (type, body, id) =>
       request<Record<string, unknown>>(
         credentials,
         fetchImpl,
-        id ? "POST" : "POST",
+        "POST",
         id ? `${type}/${id}` : type,
         { body, namespace: "wp/v2" },
       ),

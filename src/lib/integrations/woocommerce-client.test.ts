@@ -203,6 +203,40 @@ describe("taxonomies", () => {
   });
 });
 
+describe("WordPress core content (wp/v2)", () => {
+  it("lists a content type over wp/v2 with a view context by default", async () => {
+    const fetch = vi.fn().mockResolvedValue(paged([{ id: 1, title: { rendered: "خانه" } }], 3));
+    const client = createWooCommerceClient(credentials, fetch);
+    const { items, totalPages } = await client.wpListPage("pages", { page: 2, per_page: 100 });
+    expect(items).toHaveLength(1);
+    expect(totalPages).toBe(3);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://shop.example.com/wp-json/wp/v2/pages?context=view&page=2&per_page=100",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("creates a post with POST to the collection when no id is given", async () => {
+    const fetch = vi.fn().mockResolvedValue(json(201, { id: 99 }));
+    const client = createWooCommerceClient(credentials, fetch);
+    await client.wpUpsertPost("posts", { title: "تازه", status: "draft" });
+    expect(fetch).toHaveBeenCalledWith(
+      "https://shop.example.com/wp-json/wp/v2/posts",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ title: "تازه", status: "draft" }) }),
+    );
+  });
+
+  it("updates a post with POST to the item path — wp/v2 has no PUT for content", async () => {
+    const fetch = vi.fn().mockResolvedValue(json(200, { id: 42 }));
+    const client = createWooCommerceClient(credentials, fetch);
+    await client.wpUpsertPost("pages", { title: "به‌روز" }, 42);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://shop.example.com/wp-json/wp/v2/pages/42",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ title: "به‌روز" }) }),
+    );
+  });
+});
+
 describe("orders and refunds", () => {
   it("updates an order's status", async () => {
     const fetch = vi.fn().mockResolvedValue(json(200, { id: 77, status: "completed" }));
