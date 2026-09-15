@@ -280,6 +280,146 @@ describe("payPayroll", () => {
       payrollService.payPayroll({ businessId: biz.id, locationId: null, runId: run.id, method: "cash", actorId: owner.id }),
     ).rejects.toThrow("already_paid");
   });
+
+  it("treats an empty-string paidDate as today rather than crashing on a date cast", async () => {
+    const run = await payrollService.accruePayroll({
+      businessId: biz.id,
+      locationId: null,
+      periodLabel: "مرداد",
+      createdBy: owner.id,
+    });
+    const paid = await payrollService.payPayroll({
+      businessId: biz.id,
+      locationId: null,
+      runId: run.id,
+      method: "cash",
+      paidDate: "   ",
+      actorId: owner.id,
+    });
+    expect(paid.status).toBe("paid");
+    expect(paid.paidDate).not.toBeNull();
+
+    // The run's paid_date and the payment entry's date agree (both today).
+    const { rows } = await db.query<{ entry_date: string }>(
+      `SELECT entry_date::text AS entry_date FROM journal_entries WHERE business_id = $1 AND source_type = 'payroll_payment'`,
+      [biz.id],
+    );
+    expect(rows[0].entry_date).toBe(paid.paidDate);
+  });
+});
+
+describe("voidPayrollRun", () => {
+  it("reverses an accrued (unpaid) run with a single mirror entry and marks it voided", async () => {
+    const run = await payrollService.accruePayroll({
+      businessId: biz.id,
+      locationId: null,
+      periodLabel: "مرداد",
+      accrualDate: "2025-05-20",
+      createdBy: owner.id,
+    });
+
+    const voided = await payrollService.voidPayrollRun({
+      businessId: biz.id,
+      locationId: null,
+      runId: run.id,
+      actorId: owner.id,
+    });
+    expect(voided.status).toBe("voided");
+    expect(voided.voidedDate).not.toBeNull();
+
+    // Original accrual + its mirror = two entries; the mirror swaps debit/credit.
+    const { rows: entries } = await db.query<{ source_type: string; reverses_entry_id: string | null }>(
+      `SELECT source_type, reverses_entry_id FROM journal_entries WHERE business_id = $1 ORDER BY created_at`,
+      [biz.id],
+    );
+    expect(entries.map((e) => e.source_type).sort()).toEqual(["payroll_accrual", "payroll_accrual_void"]);
+    const mirror = entries.find((e) => e.source_type === "payroll_accrual_void")!;
+    expect(mirror.reverses_entry_id).not.toBeNull();
+
+    // The two entries net to zero on every account (5200 and 2300).
+    const { rows: net } = await db.query<{ code: string; net: string }>(
+      `SELECT a.code, (SUM(jl.debit) - SUM(jl.credit))::text AS net
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.entry_id
+         JOIN accounts a ON a.id = jl.account_id
+        WHERE je.business_id = $1 GROUP BY a.code`,
+      [biz.id],
+    );
+    for (const r of net) expect(Number(r.net)).toBe(0);
+  });
+
+  it("reverses both the accrual and the payment of a paid run", async () => {
+    const run = await payrollService.accruePayroll({
+      businessId: biz.id,
+      locationId: null,
+      periodLabel: "مرداد",
+      createdBy: owner.id,
+    });
+    await payrollService.payPayroll({ businessId: biz.id, locationId: null, runId: run.id, method: "cash", actorId: owner.id });
+
+    const voided = await payrollService.voidPayrollRun({
+      businessId: biz.id,
+      locationId: null,
+      runId: run.id,
+      actorId: owner.id,
+    });
+    expect(voided.status).toBe("voided");
+
+    const { rows: bySource } = await db.query<{ source_type: string; count: string }>(
+      `SELECT source_type, COUNT(*)::text AS count FROM journal_entries WHERE business_id = $1 GROUP BY source_type ORDER BY source_type`,
+      [biz.id],
+    );
+    const counts = Object.fromEntries(bySource.map((r) => [r.source_type, Number(r.count)]));
+    expect(counts).toMatchObject({
+      payroll_accrual: 1,
+      payroll_accrual_void: 1,
+      payroll_payment: 1,
+      payroll_payment_void: 1,
+    });
+
+    // Every account nets to zero once both halves are reversed.
+    const { rows: net } = await db.query<{ net: string }>(
+      `SELECT (SUM(jl.debit) - SUM(jl.credit))::text AS net
+         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE je.business_id = $1 GROUP BY jl.account_id`,
+      [biz.id],
+    );
+    for (const r of net) expect(Number(r.net)).toBe(0);
+  });
+
+  it("refuses to void an already-voided run", async () => {
+    const run = await payrollService.accruePayroll({
+      businessId: biz.id,
+      locationId: null,
+      periodLabel: "مرداد",
+      createdBy: owner.id,
+    });
+    await payrollService.voidPayrollRun({ businessId: biz.id, locationId: null, runId: run.id, actorId: owner.id });
+
+    await expect(
+      payrollService.voidPayrollRun({ businessId: biz.id, locationId: null, runId: run.id, actorId: owner.id }),
+    ).rejects.toThrow("already_voided");
+  });
+
+  it("404s voiding a run that doesn't exist", async () => {
+    await expect(
+      payrollService.voidPayrollRun({ businessId: biz.id, locationId: null, runId: randomUUID(), actorId: owner.id }),
+    ).rejects.toThrow("run_not_found");
+  });
+
+  it("refuses to pay a voided run", async () => {
+    const run = await payrollService.accruePayroll({
+      businessId: biz.id,
+      locationId: null,
+      periodLabel: "مرداد",
+      createdBy: owner.id,
+    });
+    await payrollService.voidPayrollRun({ businessId: biz.id, locationId: null, runId: run.id, actorId: owner.id });
+
+    await expect(
+      payrollService.payPayroll({ businessId: biz.id, locationId: null, runId: run.id, method: "cash", actorId: owner.id }),
+    ).rejects.toThrow("run_voided");
+  });
 });
 
 /**
