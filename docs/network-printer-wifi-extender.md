@@ -140,17 +140,15 @@ Test-NetConnection 192.168.1.50 -Port 9100
 If the port test fails, stop here — nothing in the app can fix a printer the
 till PC cannot reach.
 
-## 4. Start the print agent on the till PC
+## 4. Install the Windows print connector on the till PC
 
-```bash
-npm install
-PRINT_AGENT_CHROMIUM_PATH=/path/to/chromium npm run print-agent
-```
-
-It listens on `127.0.0.1:9123` (loopback only, by design). Set
-`NEXT_PUBLIC_PRINT_AGENT_URL` only if you change that port. The agent needs a
-real Chromium because Persian/RTL receipts are rendered to an image and sent as
-an ESC/POS raster — see [`docs/deployment-local-network.md`](deployment-local-network.md).
+In the POS, open «تنظیمات → چاپ و فاکتور → چاپگرها», click **«دانلود و نصب رابط
+چاپ ویندوز»**, and open the downloaded file once. It needs no Node.js, command
+line, administrator account, or manual configuration. It listens on
+`127.0.0.1:9123` (loopback only), starts immediately, and starts automatically
+at each Windows login. Persian/RTL receipt rasterization stays on the app
+server; the connector only delivers the finished bytes on the till's local
+network — see [`docs/deployment-local-network.md`](deployment-local-network.md).
 
 ## 5. Register the printer in the app
 

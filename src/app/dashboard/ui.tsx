@@ -54,6 +54,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     nothing_to_import: "آیتمی برای ورود پیدا نشد.",
     invalid_import: "فایل برای ورود آماده نیست.",
     invalid_printer: "اطلاعات چاپگر معتبر نیست؛ نام و اطلاعات اتصال (IP و پورت، نام چاپگر ویندوز یا مسیر USB) را بررسی کنید.",
+    printer_save_failed: "ذخیرهٔ چاپگر در سرور انجام نشد. گزارش سرور را بررسی و دوباره تلاش کنید.",
+    printer_list_failed: "خواندن چاپگرهای ذخیره‌شده از سرور انجام نشد.",
     // چاپ و فاکتور — the print template designer and the business logo.
     invalid_template: "قالب معتبر نیست؛ نام، کاغذ و بخش‌های قالب را بررسی کنید.",
     duplicate_template_name: "قالبی با این نام از قبل وجود دارد.",

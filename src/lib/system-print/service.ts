@@ -162,11 +162,11 @@ export type RenderableJob =
 
 /**
  * Render a print job to its raw ESC/POS byte stream WITHOUT sending it —
- * the server half of the `webusb` transport, where the browser is the
- * delivery middleman: the server owns the Chromium raster pipeline (Persian
- * shaping needs a real browser engine — see ../escpos.ts) and the browser,
- * which is physically at the till, owns the USB cable. Only raster output:
- * a sheet PDF has no meaning on a raw ESC/POS device.
+ * the server half of browser-mediated delivery through either WebUSB or the
+ * lightweight Windows connector. The server owns the Chromium raster pipeline
+ * (Persian shaping needs a real browser engine — see ../escpos.ts), while the
+ * till PC owns the USB cable or Windows spooler queue. Only raster output: a
+ * sheet PDF has no meaning in this raw-byte protocol.
  */
 export async function buildJobBytes(connection: PrinterConnection, job: RenderableJob): Promise<Buffer> {
   switch (job.op) {

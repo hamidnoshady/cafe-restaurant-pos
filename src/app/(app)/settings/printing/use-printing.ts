@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/app/dashboard/ui";
-import { checkAgent, type AgentHealth } from "@/lib/print-agent-client";
+import { allowPrintAgentRetry, checkAgent, type AgentHealth } from "@/lib/print-agent-client";
 import type { PrinterConnection } from "@/lib/printer-connection";
 import type { PrintBusinessInfo, PrintTemplate } from "@/lib/print-template";
 
@@ -134,17 +134,25 @@ export function useAgentStatus() {
   const [via, setVia] = useState<"agent" | "server" | null>(null);
   const [checking, setChecking] = useState(true);
 
-  const recheck = useCallback(async () => {
+  const recheck = useCallback(async (forceAgentProbe = false) => {
     setChecking(true);
-    const result = await checkAgent();
+    if (forceAgentProbe) allowPrintAgentRetry();
+    const result = await checkAgent({ forceAgentProbe });
     setHealth(result.ok ? (result.data ?? { ok: true }) : null);
     setVia(result.ok ? (result.via ?? "agent") : null);
     setChecking(false);
   }, []);
 
   useEffect(() => {
-    void recheck();
+    void recheck(false);
   }, [recheck]);
 
-  return { health, online: health?.ok === true, via, checking, recheck };
+  return {
+    health,
+    online: health?.ok === true,
+    localAgentOnline: health?.ok === true && via === "agent",
+    via,
+    checking,
+    recheck,
+  };
 }
