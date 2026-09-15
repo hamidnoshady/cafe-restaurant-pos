@@ -140,6 +140,61 @@ export function lockoutMessage(reason: Exclude<LockoutReason, null>): string {
 }
 
 // ---------------------------------------------------------------------------
+// Branch assignment
+// ---------------------------------------------------------------------------
+
+/**
+ * What a membership's branch assignment becomes after validation — the pure
+ * answer `resolveMemberLocations` (team-service.ts) reaches after reading the
+ * business's locations out of the database.
+ */
+export interface MemberLocationAssignment {
+  /** Deduplicated, order preserved; the default folded in when it was named. */
+  locationIds: string[];
+  defaultLocationId: string | null;
+}
+
+/**
+ * The rule a branch-touching membership write obeys, given the ids that really
+ * exist in this business.
+ *
+ * Branch ids arrive from a request body, so nothing downstream may trust them:
+ * a foreign business's location id used to be stored as-is into
+ * `user_locations`/`location_id` (RLS kept the *listing* honest, not the
+ * write). Every such write validates here, and anything the business does not
+ * own is refused — `null` is the refusal, `unknown_location` is what the
+ * service reports.
+ *
+ * The rule for the default: it must be one of the branches being assigned (the
+ * UI ticks it in the same list), so it is folded in rather than rejected — a
+ * default outside the assignment is unreachable by `location-access.ts`, which
+ * is a confusing state, not a dangerous one.
+ *
+ * Pure and framework-free: the DB half (which ids *are* ours) stays in
+ * team-service.ts, and this half is what team.test.ts pins.
+ */
+export function resolveMemberLocationAssignment(
+  knownLocationIds: Iterable<string>,
+  locationIds: readonly string[] | undefined,
+  defaultLocationId: string | null | undefined,
+): MemberLocationAssignment | null {
+  // Empty strings and duplicates are folded away before anything is compared.
+  const asked = [...new Set((locationIds ?? []).filter(Boolean))];
+  const hasDefault = Boolean(defaultLocationId);
+  if (asked.length === 0 && !hasDefault) return { locationIds: [], defaultLocationId: null };
+
+  const known = new Set(knownLocationIds);
+  const ids = [...new Set([...asked, ...(defaultLocationId ? [defaultLocationId] : [])])];
+  if (ids.some((id) => !known.has(id))) return null;
+
+  // Preserve the caller's order (minus duplicates) with the default folded in,
+  // so an audit diff and the UI's checkbox list agree.
+  const ordered = asked.filter((id) => ids.includes(id));
+  if (defaultLocationId && !ordered.includes(defaultLocationId)) ordered.push(defaultLocationId);
+  return { locationIds: ordered, defaultLocationId: defaultLocationId ?? null };
+}
+
+// ---------------------------------------------------------------------------
 // Permission override validation
 // ---------------------------------------------------------------------------
 

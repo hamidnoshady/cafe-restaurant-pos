@@ -22,6 +22,7 @@
 import type { AppKey } from "./apps";
 import { PARTY_ROLE_LABELS, type PartyRole } from "./parties";
 import { ACCOUNTING_WORKSPACE_HREFS } from "./app-routes";
+import { PERMISSIONS } from "./permissions";
 
 export const PARTY_SCOPES = [
   "crm",
@@ -265,4 +266,49 @@ export function partyOwnerScopeForRole(role: PartyRole): PartyScopeDef {
 export function partyEditHrefForScope(scope: PartyScopeDef, role: PartyRole | null | undefined): string {
   if (!scope.readOnly) return scope.href;
   return partyOwnerScopeForRole((role ?? "Customer") as PartyRole).href;
+}
+
+/**
+ * The roles whose *presets* may write a party — the fallback the party section
+ * uses when the mounting page could not read the member's effective
+ * permissions. Mirrors the presets in `permissions.ts` so a cashier sees
+ * «افزودن مشتری» in the CRM and a waiter does not.
+ */
+export const PARTIES_PRESET_MANAGING_ROLES: readonly string[] = ["owner", "manager", "cashier", "accountant"];
+
+/** Roles whose presets may read the ledger's figures, for the same fallback. */
+export const PARTIES_PRESET_LEDGER_ROLES: readonly string[] = ["owner", "manager", "accountant"];
+
+export interface PartiesSectionAbilities {
+  /** Whether the «افزودن» button and row actions may be drawn at all. */
+  canManage: boolean;
+  /** Whether the money-shaped columns (balance, tax) may be filled in. */
+  canSeeLedger: boolean;
+}
+
+/**
+ * What a member may do on a party screen: the real answer when their effective
+ * permissions are known, the preset answer when they are not.
+ *
+ * The write gate is `parties.manage` and the money gate is `ledger.view` — the
+ * API enforces both regardless — so this decides only which *buttons* are
+ * drawn. A cashier whose grant was revoked sees a read-only list rather than an
+ * «افزودن» that answers 403, and a waiter who was *granted* one sees it and it
+ * works. `scope.readOnly` is the caller's to combine in: a read-only scope
+ * refuses the write no matter who is asking.
+ */
+export function partiesSectionAbilities(
+  role: string,
+  permissions?: readonly string[] | null,
+): PartiesSectionAbilities {
+  return {
+    canManage:
+      permissions !== undefined && permissions !== null
+        ? permissions.includes(PERMISSIONS.partiesManage)
+        : PARTIES_PRESET_MANAGING_ROLES.includes(role),
+    canSeeLedger:
+      permissions !== undefined && permissions !== null
+        ? permissions.includes(PERMISSIONS.ledgerView)
+        : PARTIES_PRESET_LEDGER_ROLES.includes(role),
+  };
 }

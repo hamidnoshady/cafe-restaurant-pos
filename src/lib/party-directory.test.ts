@@ -3,6 +3,7 @@ import {
   PARTY_DIRECTORY_HREF,
   PARTY_DIRECTORY_VIEWS,
   PARTY_DIRECTORY_VIEW_KEYS,
+  directoryFilterCategories,
   isPartyDirectoryViewKey,
   partyDirectoryHref,
   partyDirectoryView,
@@ -113,5 +114,41 @@ describe("no duplicate party screens", () => {
     const hrefs = PARTY_SCOPES_DEF.map((def) => def.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
     for (const href of hrefs) expect(href.startsWith("/")).toBe(true);
+  });
+});
+
+describe("the categories offered as filters", () => {
+  const categories = [
+    { id: "c1", role: null, isActive: true, name: "همه" },
+    { id: "c2", role: "Customer", isActive: true, name: "VIP" },
+    { id: "c3", role: "Supplier", isActive: true, name: "روزی" },
+    { id: "c4", role: "Customer", isActive: false, name: "بایگانی‌شده" },
+    { id: "c5", role: null, isActive: false, name: "قدیمی" },
+  ];
+
+  it("offers active categories whose role is listed, or that have no role", () => {
+    // The customers view: the shared and the customer-only grouping.
+    expect(directoryFilterCategories(categories, ["Customer"]).map((c) => c.id)).toEqual(["c1", "c2"]);
+    // The suppliers view: the same shared grouping, the supplier-only one.
+    expect(directoryFilterCategories(categories, ["Supplier"]).map((c) => c.id)).toEqual(["c1", "c3"]);
+  });
+
+  it("never offers an archived category, whatever its role", () => {
+    expect(directoryFilterCategories(categories, ["Customer", "Supplier", "Employee"])).not.toContain(
+      expect.objectContaining({ id: "c4" }),
+    );
+    expect(directoryFilterCategories(categories, PARTY_ROLES).map((c) => c.id)).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("keeps the personnel-only grouping out of a customers list, and in the personnel view", () => {
+    const staffCategories = [...categories, { id: "c6", role: "Employee", isActive: true, name: "شیفтик" }];
+    expect(directoryFilterCategories(staffCategories, ["Customer"]).map((c) => c.id)).toEqual(["c1", "c2"]);
+    expect(directoryFilterCategories(staffCategories, ["Employee"]).map((c) => c.id)).toEqual(["c1", "c6"]);
+  });
+
+  it("keeps offering the «همه» categories when the view names no role", () => {
+    // A role-less category is for every role, so it survives even a degenerate
+    // empty view — while every scoped one is gone, because none is listed.
+    expect(directoryFilterCategories(categories, []).map((c) => c.id)).toEqual(["c1"]);
   });
 });

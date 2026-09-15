@@ -23,15 +23,16 @@ import { ExternalLinkIcon } from "lucide-react";
 import {
   PARTY_COLUMN_LABELS,
   partyOwnerScopeForRole,
+  partiesSectionAbilities,
   roleLabelInScope,
   showsColumn,
   type PartyColumn,
   type PartyScopeDef,
 } from "@/lib/parties-scopes";
 import { PARTY_ROLE_LABELS, type PartyApiRecord, type PartyRole } from "@/lib/parties";
+import { directoryFilterCategories } from "@/lib/party-directory";
 import { toPersianDigits } from "@/lib/digits";
 import { formatPhoneDisplay } from "@/lib/phone";
-import { PERMISSIONS, type Permission } from "@/lib/permissions";
 import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -54,20 +55,6 @@ import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import { PartyFormDialog } from "./party-form";
 
 const PAGE_SIZE = 20;
-
-/**
- * The roles that may write a party *from a screen*, when the mounting page
- * could not hand the member's effective permissions down (see the
- * `permissions` prop for the real gate). The permission itself is
- * `parties.manage` and the API is the boundary — this list only decides
- * whether a button is drawn at all, and it mirrors the presets in
- * `permissions.ts` so a cashier sees «افزودن مشتری» in the CRM and a waiter
- * does not.
- */
-const MANAGING_ROLES = [ "owner", "manager", "cashier", "accountant"] as const;
-
-/** Roles whose presets may read the ledger's figures, for the same fallback. */
-const LEDGER_ROLES = ["owner", "manager", "accountant"] as const;
 
 interface CategoryRow {
   id: string;
@@ -147,23 +134,15 @@ export function PartiesSection({
     const allowed = activeView.roles.filter((candidate) => scope.roles.includes(candidate));
     return allowed.length > 0 ? allowed : scope.roles;
   }, [activeView, scope]);
-  /**
-   * The member's real rights when the page could read them, the role presets
-   * when it could not. One helper so the two never disagree about which is
-   * which.
-   */
-  const holds = useCallback(
-    (permission: Permission) =>
-      permissions ? permissions.includes(permission) : undefined,
-    [permissions],
-  );
-  const canManage =
-    !scope.readOnly &&
-    (holds(PERMISSIONS.partiesManage) ?? (MANAGING_ROLES as readonly string[]).includes(role));
-  // Money-shaped columns follow the ledger's own access rule, not the section's: a
-  // cashier browsing customers is not a cashier reading balances.
-  const canSeeLedger =
-    holds(PERMISSIONS.ledgerView) ?? (LEDGER_ROLES as readonly string[]).includes(role);
+  // What this member may do here: their effective permissions when the page
+  // could read them, the role presets when it could not (one definition —
+  // parties-scopes.ts). `scope.readOnly` still wins over both: a read-only
+  // scope never draws a write button no matter who is asking. Money-shaped
+  // columns follow the ledger's own access rule, not the section's — a cashier
+  // browsing customers is not a cashier reading balances.
+  const abilities = partiesSectionAbilities(role, permissions);
+  const canManage = !scope.readOnly && abilities.canManage;
+  const canSeeLedger = abilities.canSeeLedger;
 
   const [parties, setParties] = useState<PartyListRow[] | null>(null);
   /**
@@ -180,20 +159,11 @@ export function PartiesSection({
   const [categoryId, setCategoryId] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
-  /**
-   * The categories offered as *filters*: active ones whose role (when they
-   * have one) is among the roles being listed. The manage dialog keeps
-   * showing everything including the archived — it is editing the reference
-   * list — but a filter that offers «بایگانی‌شده» or a personnel-only grouping
-   * while the list shows customers is a control that answers with nothing.
-   */
+  // The categories offered as filters — the one rule lives in
+  // `party-directory.ts` (`directoryFilterCategories`), shared with the effect
+  // that retires a selection the view switch made stale.
   const filterCategories = useMemo(
-    () =>
-      categories.filter(
-        (category) =>
-          category.isActive &&
-          (!category.role || listedRoles.includes(category.role as PartyRole)),
-      ),
+    () => directoryFilterCategories(categories, listedRoles),
     [categories, listedRoles],
   );
   const [showCategories, setShowCategories] = useState(false);

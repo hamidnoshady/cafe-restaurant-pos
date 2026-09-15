@@ -28,6 +28,7 @@ import {
   invitationStatus,
   isPasswordRole,
   isPinRole,
+  resolveMemberLocationAssignment,
   type InvitationStatus,
   type MemberSummary,
 } from "./team";
@@ -392,8 +393,10 @@ export interface UpdateMembershipInput {
 }
 
 /**
- * Branch ids a write may attach to a membership — validated, deduplicated, and
- * with the default folded in.
+ * Branch ids a write may attach to a membership — the DB half of the rule in
+ * `resolveMemberLocationAssignment` (team.ts): read the business's locations,
+ * hand the known ids to the pure validator, and translate its refusal into the
+ * `unknown_location` the API reports.
  *
  * The ids arrive from a request body, and until now nothing checked they
  * belonged to *this* business: an owner (or anyone holding `team.manage`) could
@@ -402,12 +405,6 @@ export interface UpdateMembershipInput {
  * written under the acting business's scope with a foreign id — garbage at best,
  * a cross-tenant reference at worst. Every branch-touching write now goes
  * through here, on the same connection as the write it feeds.
- *
- * The rule for the default: it must be one of the branches being assigned (the
- * UI ticks it in the same list), so it is folded in rather than rejected — a
- * default outside the assignment is unreachable by `location-access.ts`, which
- * is a confusing state, not a dangerous one. A default that names no listed
- * branch at all is `unknown_location`.
  */
 async function resolveMemberLocations(
   client: Executor,
@@ -424,13 +421,13 @@ async function resolveMemberLocations(
     "SELECT id FROM locations WHERE business_id = $1 AND id = ANY($2::uuid[])",
     [businessId, ids],
   );
-  if (rows.length !== ids.length) throw new TeamError("unknown_location", 400);
-
-  // Preserve the caller's order (minus duplicates) with the default folded in
-  // at its original place, so an audit diff and the UI's checkbox list agree.
-  const ordered = asked.filter((id) => ids.includes(id));
-  if (defaultLocationId && !ordered.includes(defaultLocationId)) ordered.push(defaultLocationId);
-  return { locationIds: ordered, defaultLocationId: defaultLocationId ?? null };
+  const resolved = resolveMemberLocationAssignment(
+    rows.map((row) => row.id),
+    locationIds,
+    defaultLocationId,
+  );
+  if (!resolved) throw new TeamError("unknown_location", 400);
+  return resolved;
 }
 
 

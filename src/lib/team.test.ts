@@ -8,9 +8,9 @@ import {
   invitationStatus,
   isPasswordRole,
   isPinRole,
-  isValidPin,
   lockoutMessage,
   overridesAreEmpty,
+  resolveMemberLocationAssignment,
   sanitizeOverrides,
   type MemberSummary,
 } from "./team";
@@ -186,21 +186,71 @@ describe("sanitizeOverrides", () => {
   });
 });
 
-describe("isValidPin", () => {
-  it("accepts four digits — the legacy length every existing member holds", () => {
-    expect(isValidPin("1234")).toBe(true);
-    expect(isValidPin("0000")).toBe(true);
+describe("resolveMemberLocationAssignment", () => {
+  // Three branches of one business, in creation order.
+  const known = ["loc-1", "loc-2", "loc-3"];
+  const foreign = "loc-of-another-business";
+
+  it("keeps a plain assignment, order preserved and duplicates folded", () => {
+    expect(resolveMemberLocationAssignment(known, ["loc-3", "loc-1", "loc-3"], undefined)).toEqual({
+      locationIds: ["loc-3", "loc-1"],
+      defaultLocationId: null,
+    });
   });
 
-  it("accepts longer PINs — Phase 42 opened the length up to twelve", () => {
-    expect(isValidPin("123456")).toBe(true);
-    expect(isValidPin("12345678")).toBe(true);
-    expect(isValidPin("123456789012")).toBe(true);
+  it("folds the default into the assignment it must belong to", () => {
+    expect(resolveMemberLocationAssignment(known, ["loc-1"], "loc-2")).toEqual({
+      locationIds: ["loc-1", "loc-2"],
+      defaultLocationId: "loc-2",
+    });
   });
 
-  it("rejects anything else", () => {
-    for (const pin of ["123", "1234567890123", "12a4", "", " 1234", "۱۲۳۴"]) {
-      expect(isValidPin(pin), pin).toBe(false);
-    }
+  it("keeps the default when it is already in the list, without duplicating it", () => {
+    expect(resolveMemberLocationAssignment(known, ["loc-1", "loc-2"], "loc-2")).toEqual({
+      locationIds: ["loc-1", "loc-2"],
+      defaultLocationId: "loc-2",
+    });
+  });
+
+  it("accepts a default alone — assigning only a home branch", () => {
+    expect(resolveMemberLocationAssignment(known, undefined, "loc-1")).toEqual({
+      locationIds: ["loc-1"],
+      defaultLocationId: "loc-1",
+    });
+  });
+
+  it("answers empty for a write that names nothing", () => {
+    expect(resolveMemberLocationAssignment(known, [], null)).toEqual({
+      locationIds: [],
+      defaultLocationId: null,
+    });
+    expect(resolveMemberLocationAssignment(known, undefined, undefined)).toEqual({
+      locationIds: [],
+      defaultLocationId: null,
+    });
+    // Blank strings are "not chosen", the same as absent — an untouched form
+    // field must not become an unknown-location refusal.
+    expect(resolveMemberLocationAssignment(known, [""], "")).toEqual({
+      locationIds: [],
+      defaultLocationId: null,
+    });
+  });
+
+  it("refuses a branch the business does not own, wherever it appears", () => {
+    // In the assignment — the cross-tenant reference this rule exists to stop.
+    expect(resolveMemberLocationAssignment(known, ["loc-1", foreign], null)).toBeNull();
+    // In both lists at once.
+    expect(resolveMemberLocationAssignment(known, [foreign], foreign)).toBeNull();
+    // As the default alone: a home branch nobody owns is still foreign.
+    expect(resolveMemberLocationAssignment(known, [], foreign)).toBeNull();
+  });
+
+  it("refuses nothing when the write is empty even though the business has branches", () => {
+    // The guard must not turn "clear the assignment" into "unknown location":
+    // an owner unticking every branch is a legal write.
+    expect(resolveMemberLocationAssignment(known, [], undefined)).toEqual({
+      locationIds: [],
+      defaultLocationId: null,
+    });
   });
 });
