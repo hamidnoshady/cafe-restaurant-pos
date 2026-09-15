@@ -17,12 +17,7 @@ import {
   retryAfterMs,
   useNextPath,
 } from "@/components/auth/login-helpers";
-
-const ROLE_LABELS: Record<string, string> = {
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
-};
+import { roleLabel } from "@/lib/role-labels";
 
 /**
  * The client half of the login page. Kept separate from the route so the
@@ -673,7 +668,7 @@ function PinLogin() {
                 {employee.fullName}
               </span>
               <span className="text-[11px] text-muted-foreground">
-                {ROLE_LABELS[employee.role] ?? employee.role}
+                {roleLabel(employee.role)}
               </span>
             </button>
           ))}

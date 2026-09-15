@@ -6,17 +6,11 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
+import { PIN_MAX_LENGTH, isValidPin } from "@/lib/pin-policy";
+import { roleLabel } from "@/lib/role-labels";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, StepShell } from "../ui";
 
-type CreatableRole = "manager" | "cashier" | "waiter" | "kitchen";
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
-};
+type CreatableRole = "manager" | "accountant" | "cashier" | "waiter" | "kitchen";
 
 interface UserRow {
   id: string;
@@ -45,7 +39,8 @@ export default function UsersStep() {
   }, []);
   useEffect(load, [load]);
 
-  const needsEmail = role === "manager";
+  // The two password roles the wizard can create (the owner already exists).
+  const needsEmail = role === "manager" || role === "accountant";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -93,10 +88,11 @@ export default function UsersStep() {
               value={role}
               onChange={(value) => setRole(value as CreatableRole)}
               options={[
-                { value: "manager", label: "مدیر" },
-                { value: "cashier", label: "صندوق‌دار" },
-                { value: "waiter", label: "گارسون" },
-                { value: "kitchen", label: "آشپزخانه" },
+                { value: "manager", label: roleLabel("manager") },
+                { value: "accountant", label: roleLabel("accountant") },
+                { value: "cashier", label: roleLabel("cashier") },
+                { value: "waiter", label: roleLabel("waiter") },
+                { value: "kitchen", label: roleLabel("kitchen") },
               ]}
             />
           </Field>
@@ -160,7 +156,12 @@ export default function UsersStep() {
             />
           </Field>
           <div className="mt-4">
-            <PrimaryButton disabled={busy}>افزودن کاربر</PrimaryButton>
+            {/* The PIN's shape is checked here too (pin-policy.ts, the same
+                rule the route applies after folding Persian digits), so the
+                button refuses before a request can answer 400. */}
+            <PrimaryButton disabled={busy || !fullName.trim() || (needsEmail ? false : !isValidPin(pin))}>
+              افزودن کاربر
+            </PrimaryButton>
           </div>
         </form>
 
@@ -174,7 +175,7 @@ export default function UsersStep() {
                 <span>
                   <span className="font-medium">{u.full_name}</span>
                   <span className="ms-2 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    {ROLE_LABELS[u.role] ?? u.role}
+                    {roleLabel(u.role)}
                   </span>
                 </span>
                 <span className="text-xs text-muted-foreground" dir="ltr">

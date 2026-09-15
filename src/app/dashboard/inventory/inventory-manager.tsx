@@ -29,13 +29,16 @@ export type {
 export function InventoryManager({
   role,
   model,
+  permissions,
 }: {
   role: string;
   model: InventoryWorkspaceModel;
+  /** The member's effective permission keys — the suppliers list's buttons follow them. */
+  permissions?: readonly string[];
 }) {
   return model === "retail" ? (
     <RetailInventoryManager />
   ) : (
-    <FoodServiceInventoryManager role={role} />
+    <FoodServiceInventoryManager role={role} permissions={permissions} />
   );
 }

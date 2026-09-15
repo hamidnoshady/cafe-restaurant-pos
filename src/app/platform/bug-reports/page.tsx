@@ -34,6 +34,7 @@ import {
   inputClass,
   selectClass,
 } from "../ui";
+import { roleLabel } from "@/lib/role-labels";
 
 interface BugReport {
   id: string;
@@ -69,15 +70,6 @@ const STATUS_STYLES: Record<string, string> = {
   in_progress: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
   resolved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   closed: "border-border bg-muted text-muted-foreground",
-};
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  accountant: "حسابدار",
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
 };
 
 function statusLabel(status: string): string {
@@ -266,7 +258,7 @@ export default function BugReportsPage() {
                     <p className="truncate font-semibold text-foreground">{report.businessName}</p>
                     <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                       <span>{report.userName ?? "کاربر حذف‌شده"}</span>
-                      {report.userRole ? <span>({ROLE_LABELS[report.userRole] ?? report.userRole})</span> : null}
+                      {report.userRole ? <span>({roleLabel(report.userRole)})</span> : null}
                       {report.locationName ? <span>• {report.locationName}</span> : null}
                     </p>
                   </div>
@@ -364,7 +356,7 @@ function BugReportDetails({
           </DetailItem>
           <DetailItem icon={<UserRoundIcon className="size-3.5" />} label="گزارش‌دهنده">
             {report.userName ?? "کاربر حذف‌شده"}
-            {report.userRole ? <span className="text-muted-foreground"> — {ROLE_LABELS[report.userRole] ?? report.userRole}</span> : null}
+            {report.userRole ? <span className="text-muted-foreground"> — {roleLabel(report.userRole)}</span> : null}
           </DetailItem>
           {report.locationName ? (
             <DetailItem icon={<MapPinIcon className="size-3.5" />} label="شعبه">

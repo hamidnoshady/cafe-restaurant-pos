@@ -10,6 +10,7 @@ import {
   inventoryModuleForWorkspace,
   inventoryWorkspaceModel,
 } from "@/lib/inventory-workspace";
+import { memberAccessFor } from "@/lib/member-access";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
 import { InventoryManager } from "@/app/dashboard/inventory/inventory-manager";
@@ -28,7 +29,10 @@ export default async function InventoryPage() {
   if (session.role !== "owner" && session.role !== "manager")
     redirect("/dashboard");
 
-  const industry = await getBusinessIndustry(session.businessId);
+  const [industry, member] = await Promise.all([
+    getBusinessIndustry(session.businessId),
+    memberAccessFor(session),
+  ]);
   const model = inventoryWorkspaceModel(
     Boolean(industry && hasModule(industry, "inventory")),
   );
@@ -46,7 +50,11 @@ export default async function InventoryPage() {
         description="انبارها، موجودی، انبارگردانی، رسید و حواله، خرید و عملیات کالا در یک مسیر واحد."
         actions={<KnowledgeHelpButton section="inventory" />}
       />
-      <InventoryManager role={session.role} model={model} />
+      <InventoryManager
+        role={member?.role ?? session.role}
+        model={model}
+        permissions={member ? [...member.permissions] : undefined}
+      />
     </PageShell>
   );
 }

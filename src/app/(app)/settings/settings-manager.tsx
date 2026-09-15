@@ -56,6 +56,12 @@ interface SettingsManagerProps {
   isOwner: boolean;
   /** The signed-in role, for the sections that mount a scoped party directory. */
   role: string;
+  /**
+   * The member's effective permission keys, so the sections that mount a
+   * scoped party directory draw buttons the API will actually allow (see
+   * `member-access.ts` and the section's own `permissions` prop).
+   */
+  permissions?: readonly string[];
 }
 
 const TAB_ICONS: Record<SettingsTabKey, LucideIcon> = {
@@ -106,6 +112,7 @@ export function SettingsManager({
   currentUserId,
   isOwner,
   role,
+  permissions,
 }: SettingsManagerProps) {
   const router = useRouter();
   const firstTab = tabs[0]?.key;
@@ -175,7 +182,9 @@ export function SettingsManager({
       {activeTab === "online-platforms" ? <OnlinePlatformsSettings /> : null}
       {activeTab === "payment-methods" ? <PaymentMethodsSettings /> : null}
       {activeTab === "accounts" ? <AccountsSettings /> : null}
-      {activeTab === "team" ? <TeamManager currentUserId={currentUserId} role={role} /> : null}
+      {activeTab === "team" ? (
+        <TeamManager currentUserId={currentUserId} role={role} permissions={permissions} />
+      ) : null}
       {activeTab === "menu" ? <MenuSettings /> : null}
       {activeTab === "printers" ? <PrintingManager /> : null}
       {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}

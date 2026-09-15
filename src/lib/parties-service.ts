@@ -1149,7 +1149,7 @@ export async function updateCustomer(
 }
 
 /**
- * The personnel party of one membership, created on demand.
+ * The personnel party of one membership, created on demand and kept named.
  *
  * A cashier added from «مدیریت تیم» is a counterparty from the moment their first
  * مساعده is recorded, and the payroll screen should not have to care whether the
@@ -1157,6 +1157,13 @@ export async function updateCustomer(
  * `INSERT` of their own: one place decides that a membership has exactly one party
  * row (0137's unique index is what makes "exactly" true), and the link means the
  * Team view and the ledger agree about who the money belongs to.
+ *
+ * The row is also *repaired*, not just created: when the party already exists and
+ * the caller names a display name, the party is renamed with it. The team screen
+ * is where a member's name is managed, and the promise its layout makes — the
+ * membership above and the personnel file below are two views of one person —
+ * is only true if a rename travels to both. A caller that names no name (the
+ * suspend button, a status flip) changes nothing but the party's existence.
  */
 export async function ensureEmployeeParty(
   businessId: string,
@@ -1167,12 +1174,16 @@ export async function ensureEmployeeParty(
     `SELECT id FROM parties WHERE business_id = $1 AND employee_user_id = $2`,
     [businessId, userId],
   );
-  if (rows[0]) return getParty(businessId, rows[0].id);
+  const name = details.displayName?.trim() || null;
+  if (rows[0]) {
+    if (!name) return getParty(businessId, rows[0].id);
+    return updateParty(businessId, rows[0].id, { displayName: name });
+  }
   const created = await createParty(businessId, {
     role: "Employee",
     personType: "Real",
-    displayName: details.displayName ?? "",
-    firstName: details.displayName ?? "",
+    displayName: name ?? "",
+    firstName: name ?? "",
     phone: details.phone ?? null,
     email: details.email ?? null,
     employeeUserId: userId,

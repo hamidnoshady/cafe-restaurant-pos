@@ -35,15 +35,18 @@ export function SuppliersSection({
   busy,
   run,
   role,
+  permissions,
 }: {
   suppliers: Supplier[];
   busy: boolean;
   run: Runner;
   role: string;
+  /** The member's effective permission keys — the party list's buttons follow them. */
+  permissions?: readonly string[];
 }) {
   return (
     <div className="min-w-0 space-y-4 sm:space-y-5">
-      <PartiesSection scope={partyScopeFor("operations")} role={role} />
+      <PartiesSection scope={partyScopeFor("operations")} role={role} permissions={permissions} />
       <BranchSupplierLinks suppliers={suppliers} busy={busy} run={run} />
     </div>
   );

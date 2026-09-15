@@ -150,7 +150,14 @@ function visibleTabs(system: "perpetual" | "periodic" | null) {
 
 const GROUPS = INVENTORY_TAB_GROUPS;
 
-export function FoodServiceInventoryManager({ role }: { role: string }) {
+export function FoodServiceInventoryManager({
+  role,
+  permissions,
+}: {
+  role: string;
+  /** The member's effective permission keys — the suppliers list's buttons follow them. */
+  permissions?: readonly string[];
+}) {
   const [data, setData] = useState<InventoryData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -253,6 +260,7 @@ export function FoodServiceInventoryManager({ role }: { role: string }) {
             busy={busy}
             run={run}
             role={role}
+            permissions={permissions}
           />
         ) : null}
         {tab === "purchases" ? (

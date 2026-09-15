@@ -16,15 +16,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { SectionCard } from "@/app/dashboard/page-chrome";
 import { TwoFactorSettings } from "../two-factor-settings";
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  accountant: "حسابدار",
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
-};
+import { roleLabel } from "@/lib/role-labels";
 
 export function ProfileSection({
   fullName,
@@ -53,7 +45,7 @@ export function ProfileSection({
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">نقش</dt>
-            <dd className="mt-1 font-semibold text-foreground">{ROLE_LABELS[role] ?? role}</dd>
+            <dd className="mt-1 font-semibold text-foreground">{roleLabel(role)}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">شمارهٔ ورود</dt>
