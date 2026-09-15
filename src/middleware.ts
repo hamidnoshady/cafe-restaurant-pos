@@ -996,7 +996,7 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
     }
     try {
       const originUrl = new URL(origin);
-      const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+      const host = requestHost(request.headers);
       if (originUrl.host !== host) {
         return NextResponse.json({ error: "bad_origin" }, { status: 403 });
       }
