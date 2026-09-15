@@ -552,7 +552,7 @@ class POS_Connector_Settings {
 
 			<p class="description">
 
-				<?php esc_html_e( 'این افزونه در مخزن وردپرس نیست؛ نسخه‌های جدید را از گیت‌هاب همین پروژه بررسی و نصب می‌کند — همان‌جا که به‌روزرسانی بقیهٔ افزونه‌ها دیده می‌شود.', 'pos-accounting-connector' ); ?>
+				<?php esc_html_e( 'این افزونه در مخزن وردپرس نیست؛ نسخه‌های جدید را از منبع زیر بررسی و نصب می‌کند — همان‌جا که به‌روزرسانی بقیهٔ افزونه‌ها دیده می‌شود.', 'pos-accounting-connector' ); ?>
 
 			</p>
 
@@ -567,6 +567,32 @@ class POS_Connector_Settings {
 						<th style="width:230px"><?php esc_html_e( 'نسخهٔ نصب‌شده', 'pos-accounting-connector' ); ?></th>
 
 						<td><code dir="ltr"><?php echo esc_html( POS_CONNECTOR_VERSION ); ?></code></td>
+
+					</tr>
+
+					<tr>
+
+						<th><?php esc_html_e( 'منبع به‌روزرسانی', 'pos-accounting-connector' ); ?></th>
+
+						<td>
+
+							<?php $update_source = POS_Connector_Updater::update_url(); ?>
+
+							<?php if ( '' !== $update_source ) : ?>
+
+								<?php esc_html_e( 'سرور خودتان — مانیفست:', 'pos-accounting-connector' ); ?>
+
+								<code dir="ltr"><?php echo esc_html( $update_source ); ?></code>
+
+								<p class="description"><?php esc_html_e( 'بررسی و دانلود به‌روزرسانی از همین سرور انجام می‌شود، نه از گیت‌هاب.', 'pos-accounting-connector' ); ?></p>
+
+							<?php else : ?>
+
+								<?php esc_html_e( 'گیت‌هاب (انتشارها و برچسب‌های پروژه)', 'pos-accounting-connector' ); ?>
+
+							<?php endif; ?>
+
+						</td>
 
 					</tr>
 
@@ -610,7 +636,7 @@ class POS_Connector_Settings {
 
 							<?php if ( ! empty( $update['error'] ) ) : ?>
 
-								<br /><span style="color:#b32d2e"><?php echo esc_html( sprintf( __( 'آخرین بررسی ناموفق بود: %s', 'pos-accounting-connector' ), $update['error'] ) ); ?></span>
+								<br /><span style="color:#b32d2e"><?php echo esc_html( sprintf( __( 'آخرین بررسی ناموفق بود: %s', 'pos-accounting-connector' ), POS_Connector_Updater::explain_error( $update['error'] ) ) ); ?></span>
 
 							<?php endif; ?>
 

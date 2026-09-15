@@ -60,8 +60,16 @@ class POS_Connector_CLI {
 		WP_CLI::log( WP_CLI::colorize( '%B' . __( 'اتصال حسابداری', 'pos-accounting-connector' ) . '%n' ) );
 		WP_CLI::log( '  ' . sprintf( 'نسخهٔ افزونه: %s', POS_CONNECTOR_VERSION ) );
 		// The cached answer only — `status` prints what is known, it does not
-		// wait on GitHub. `check-update` is the command that asks.
+		// wait on the update server. `check-update` is the command that asks.
 		$update = POS_Connector_Updater::cached();
+		WP_CLI::log(
+			'  ' . sprintf(
+				'منبع به‌روزرسانی: %s',
+				POS_Connector_Updater::update_url()
+					? POS_Connector_Updater::update_url()
+					: 'GitHub (' . POS_CONNECTOR_UPDATE_REPO . ')'
+			)
+		);
 		if ( '' !== $update['version'] ) {
 			WP_CLI::log(
 				'  ' . sprintf(
@@ -177,7 +185,7 @@ class POS_Connector_CLI {
 		WP_CLI::log( '  ' . sprintf( 'آخرین نسخهٔ منتشرشده: %s', '' !== $latest['version'] ? $latest['version'] : '—' ) );
 
 		if ( '' !== $latest['error'] ) {
-			WP_CLI::error( sprintf( 'بررسی به‌روزرسانی ناموفق بود: %s', $latest['error'] ) );
+			WP_CLI::error( sprintf( 'بررسی به‌روزرسانی ناموفق بود: %s', POS_Connector_Updater::explain_error( $latest['error'] ) ) );
 		}
 
 		if ( POS_Connector_Updater::is_newer( $latest['version'] ) ) {

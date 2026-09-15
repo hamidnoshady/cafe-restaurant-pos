@@ -1,108 +1,171 @@
-# WordPress plugin updates — the self-updater and the release runbook
+# WordPress plugin updates — build, host, update
 
 The WooCommerce plugin (`wordpress-plugin/pos-accounting-connector/`) is not in the
 WordPress.org directory and never will be: its source of truth is this repository.
 Since 1.4.0 it carries its own update system (`includes/class-pos-updater.php`), so a
 store owner updates it exactly like a directory plugin — from **«افزونه‌ها ←
 به‌روزرسانی‌های موجود»**, **«پیشخوان ← به‌روزرسانی‌ها»**, WordPress auto-updates, or
-`wp plugin update pos-accounting-connector` — with GitHub releases and tags standing
-in for the directory API.
+`wp plugin update pos-accounting-connector`.
 
-## What a store sees
+There are two update sources, and which one a store uses is decided by one constant:
 
-- WordPress's normal twice-daily update cycle checks GitHub (cached six hours per
-  store; a failed check retries after fifteen minutes and never erases the last good
-  answer — an update nag that was already showing survives a GitHub hiccup).
-- A new release shows on the Plugins screen with the standard
-  «مشاهدهٔ جزئیات نسخهٔ …» modal (description + the release notes) and one-click
-  install. Auto-update toggles and `wp plugin update` work, because the update rides
-  the same `update_plugins` transient every other plugin does.
-- The plugin's own settings screen («ووکامرس ← اتصال حسابداری») shows the installed
-  version, the newest found version, the last check time, and a
-  «بررسی به‌روزرسانی» button — the one user-initiated GitHub call. `wp pos-connector
-  check-update` is its WP-CLI twin, and `wp pos-connector status` prints the cached
-  answer.
-- The updater initializes **before** the WooCommerce gate, so the plugin can still
-  update itself on a store where WooCommerce is deactivated or missing.
+| Mode | Configured by | Version info from | Zip downloaded from |
+| --- | --- | --- | --- |
+| **Self-hosted** (recommended for networks where GitHub is slow/filtered) | `POS_CONNECTOR_UPDATE_URL` in `pos-accounting-connector.php` — a full `update.json` URL on your own host | your `update.json` | your host, same folder |
+| **GitHub** (the default while the URL is empty) | nothing — always available | GitHub releases → tags | GitHub release asset / tag zipball |
 
-## How it works
+Both modes feed the same WordPress update UI. Switching is a one-line change and
+never a behavioural one.
 
-`POS_Connector_Updater` hooks the three standard third-party update points:
+## Building a release — the manual workflow
 
-| Hook | What it does here |
-| --- | --- |
-| `pre_set_site_transient_update_plugins` | Puts a newer release into the `update_plugins` transient (`response`) as a `package` pointing at the GitHub zip; marks the plugin `no_update` when current. |
-| `plugins_api` | Answers the «مشاهدهٔ جزئیات» modal (release notes as the changelog section). |
-| `upgrader_source_selection` | Makes a GitHub zip installable (see below). |
+**`.github/workflows/build-plugin-zip.yml`** runs **manually only** — there is no
+push, tag or release trigger, on purpose: a build is a release decision.
 
-Plus `upgrader_process_complete` (drops the cache, writes the «به‌روز شد» log line)
-and an `admin_post_` handler for the manual check button, following the screen's
-existing nonce/notice pattern.
+Run it from GitHub (**Actions → build-plugin-zip → Run workflow**) or the CLI:
 
-**Package selection**, in order:
+```bash
+gh workflow run build-plugin-zip.yml -f bump=patch -f notes="چه چیزی عوض شد"
+```
 
-1. The release asset named `pos-accounting-connector.zip` (built by
-   `wordpress-plugin/package-release.sh`) — extracts to the right folder, installs
-   as-is.
-2. Any other `.zip` release asset.
-3. The tag's **zipball** — the whole repository. `fix_source_dir()` re-points the
-   installer at the `wordpress-plugin/pos-accounting-connector/` subfolder inside it
-   before WordPress copies it over the installed plugin; the rest of the extracted
-   tree is deleted by the upgrader's own working-directory cleanup.
+Inputs:
 
-**Version rules:** a tag `v1.4.0` means version `1.4.0`. Anything that does not parse
-as `X.Y.Z(-suffix)` is refused rather than guessed. An update is offered only when
-`version_compare()` says the found version is newer.
+- `bump` — `patch` (default) / `minor` / `major`. **Every build bumps the version**;
+  there is no "build the same version again" — the workflow refuses if the
+  resulting tag already exists, because a version that was already shipped is never
+  rebuilt.
+- `notes` — the release notes; written into the `readme.txt` changelog and into
+  `update.json`. Defaults to «بهبودها و رفع اشکال.» when left empty.
 
-**Security:** the `package` URL is rebuilt locally and constrained to this
-repository's tags and assets on GitHub's own download hosts (`github.com`,
-`codeload.github.com`, `objects.githubusercontent.com`, `api.github.com`) before
-WordPress is allowed to download and run it. Release notes shown in the modal pass
-through `wp_kses_post`.
+One run does all of this, in order:
 
-**Costs:** unauthenticated GitHub API, two calls per store per day — nowhere near
-the 60/hour-per-IP limit. Private forks can point the updater at themselves
-(`pos_connector_update_repo` filter) and add `Authorization` headers
-(`pos_connector_updater_headers` filter) without forking the class.
+1. Computes the next version from `POS_CONNECTOR_VERSION`.
+2. Bumps it in the three places the repo rule names (`Version:` header,
+   `POS_CONNECTOR_VERSION`, `Stable tag`) and inserts the changelog entry.
+3. Builds the **clean zip** — only `pos-accounting-connector/` at the root, nothing
+   else (asserted by the workflow: any entry outside the folder fails the build).
+4. Generates **`update.json`** (self-hosted mode only) with the new version, the
+   notes, and `download_url` pointing at the zip **in the same folder as the
+   manifest**.
+5. Commits the bump and pushes tag `vX.Y.Z` — so the repo always says which version
+   was actually shipped, and GitHub mode keeps working for stores that still use it.
+6. Uploads `pos-accounting-connector.zip` (+ `update.json`) as the run's artifact
+   `pos-accounting-connector-vX.Y.Z`.
 
-## Release runbook
+## Hosting it on your own server (self-hosted mode)
 
-1. Bump the version in **three places** (repo rule, see CLAUDE.md): the `Version:`
-   header and `POS_CONNECTOR_VERSION` in `pos-accounting-connector.php`, and the
-   `Stable tag` in `readme.txt`. Write the `readme.txt` changelog entry.
-2. Merge to `main`, then tag the release:
+1. **Decide the update folder** on a host you control, e.g.
+   `https://dl.mybusiness.ir/pos-updates/`. It only needs to serve static files
+   over HTTPS.
+2. **Set the manifest URL once** in
+   `wordpress-plugin/pos-accounting-connector/pos-accounting-connector.php`:
 
-   ```bash
-   git tag -a v1.4.0 -m "POS Accounting Connector 1.4.0"
-   git push origin v1.4.0
+   ```php
+   define( 'POS_CONNECTOR_UPDATE_URL', 'https://dl.mybusiness.ir/pos-updates/update.json' );
    ```
 
-3. Build the zip asset and attach it to a GitHub release for that tag
-   (gh CLI shown; the web UI works too):
+   This single line is the whole configuration: the workflow reads it to generate
+   the manifest, and every build from this repo carries it. Changing hosts later is
+   editing this line and building again.
 
-   ```bash
-   cd wordpress-plugin
-   ./package-release.sh
-   gh release create v1.4.0 pos-accounting-connector.zip \
-     --title "POS Accounting Connector 1.4.0" \
-     --notes-file changelog-entry.md
+3. **Build** (workflow above), **download the artifact**, and upload **both files**
+   to that folder:
+
+   ```
+   https://dl.mybusiness.ir/pos-updates/update.json
+   https://dl.mybusiness.ir/pos-updates/pos-accounting-connector.zip
    ```
 
-   The release notes you write here are what the plugin's details modal shows, so
-   paste the changelog entry.
+   The zip file name is fixed (`pos-accounting-connector.zip`) because
+   `update.json`'s `download_url` points at it.
 
-4. Done. Stores pick it up on their next update cycle (or immediately via
-   «بررسی دوباره» / the plugin's own «بررسی به‌روزرسانی» button).
+4. Done. Every store running a build with that URL checks **your server** on
+   WordPress's normal update cycle (twice daily; six-hour cache per store, failures
+   retried after fifteen minutes and the last good answer kept), sees the new
+   version in «به‌روزرسانی‌های موجود», and installs with one click / auto-update /
+   `wp plugin update pos-accounting-connector`.
 
-**A bare tag with no release works too** — the updater falls back to the tag's
-zipball — but the asset path is the good one: a ~50 KB zip instead of the whole
-repository, and no source-directory fixing. When a release exists, its asset wins.
+The manifest is what WordPress cannot do without: it is how the plugin learns a new
+version exists without downloading the whole zip. The workflow generates it, so
+hosting a release is uploading two files.
 
-### Rules that keep it working
+**Manifest shape** (generated; documented here because the updater validates it):
 
-- Tag names must start with `v` + a plain version (`v1.4.0`, `v1.4.1`).
-- The plugin folder name stays `pos-accounting-connector` — it is the slug WordPress
-  indexes updates by and what `wp plugin update pos-accounting-connector` expects.
-- The `Update URI:` header in the main plugin file must stay a non-WordPress.org
-  URI: it tells core never to ask the directory about this plugin (so a same-slug
-  directory plugin can never shadow ours).
+```json
+{
+  "name": "POS Accounting Connector",
+  "version": "1.5.1",
+  "download_url": "https://dl.mybusiness.ir/pos-updates/pos-accounting-connector.zip",
+  "notes": "Release notes shown in the «مشاهدهٔ جزئیات» modal",
+  "published_at": "2026-09-16T12:00:00Z"
+}
+```
+
+Only `version` and `download_url` are required. `version` must be a plain
+`X.Y.Z(-suffix)` — anything else is refused rather than guessed. `download_url`
+must be **HTTPS and on the same host as the manifest**; anything else is rejected
+(`unexpected_download_url`), so a manifest can never point the plugin at an
+arbitrary URL on the internet.
+
+### Transitioning stores from GitHub mode to self-hosted
+
+Stores running 1.4.x don't know your URL yet — they still check GitHub. The
+transition is automatic: every workflow build pushes tag `vX.Y.Z`, so the next
+build after you set the URL is visible in GitHub mode too. Stores update to it and
+from then on check your server. After that, GitHub no longer needs releases — the
+workflow's tags alone keep the old path alive for anyone left behind.
+
+## GitHub mode (the default)
+
+With `POS_CONNECTOR_UPDATE_URL` empty, the updater asks GitHub:
+
+1. `/releases/latest` — a release with a `pos-accounting-connector.zip` asset
+   (built by `wordpress-plugin/package-release.sh` locally, or the workflow
+   artifact) installs as-is; any other `.zip` asset is used; with no asset, the
+   tag's **zipball** (the whole repository) is used and
+   `upgrader_source_selection` digs the plugin folder out of it.
+2. No releases at all → the newest **tag** (the workflow's `vX.Y.Z` tags make this
+   path work with zero extra effort).
+
+A GitHub **Release** is therefore optional in GitHub mode: publish one when you
+want the release notes in the details modal; otherwise tagging is enough.
+
+## What a store sees (both modes)
+
+- The normal twice-daily update cycle does the checking — the plugin adds no cron
+  of its own, and no page view ever waits on the update server.
+- New version in «افزونه‌ها ← به‌روزرسانی‌های موجود» with the standard
+  «مشاهدهٔ جزئیات نسخهٔ …» modal (notes as the changelog) and one-click install.
+  Auto-update toggles and `wp plugin update` work.
+- The plugin's settings screen («ووکامرس ← اتصال حسابداری») shows the installed
+  version, the update **source** (your server or GitHub), the newest found version,
+  the last check time, and a «بررسی به‌روزرسانی» button — the one user-initiated
+  check. `wp pos-connector check-update` is its WP-CLI twin.
+- The updater initializes **before** the WooCommerce gate, so the plugin can update
+  itself even where WooCommerce is deactivated or missing.
+
+## Security summary
+
+- **Self-hosted mode:** manifest URL is baked in at build time and must be HTTPS.
+  The `download_url` it names must be HTTPS on the **same host** as the manifest.
+  Notes shown in the modal pass through `wp_kses_post`.
+- **GitHub mode:** the `package` URL is rebuilt locally and constrained to this
+  repository's tags and assets on GitHub's own download hosts
+  (`github.com`, `codeload.github.com`, `objects.githubusercontent.com`).
+- In both modes: version strings must parse as real versions, updates are offered
+  only when `version_compare()` says the found version is newer, and the
+  `Update URI:` header tells core never to ask wordpress.org about this plugin.
+
+## Rules that keep it working
+
+- Tag names must be `v` + a plain version (`v1.5.1`) — the workflow enforces this
+  shape for you.
+- The plugin folder name stays `pos-accounting-connector` — it is the slug
+  WordPress indexes updates by and what `wp plugin update` expects.
+- The zip root must be exactly `pos-accounting-connector/` (the workflow asserts
+  this too).
+- The workflow commits and pushes to the branch it was run on — run it on `main`
+  (or a branch without push protection).
+- Prefer the workflow over the local `package-release.sh`; the script remains for
+  building a zip by hand without GitHub, and it does **not** bump the version —
+  the repo rule (bump on every plugin change) still applies to whatever you ship.

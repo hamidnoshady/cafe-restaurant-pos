@@ -1,0 +1,191 @@
+# Builds the WordPress plugin's installable zip — manually, never on a push.
+#
+# One run = one version, decided by a person:
+#   1. bumps the version (patch/minor/major choice) in the three places the
+#      repo rule names — the `Version:` header, POS_CONNECTOR_VERSION, and
+#      readme.txt's `Stable tag` — and writes the changelog entry;
+#   2. builds the clean zip (only the plugin folder, nothing else);
+#   3. generates update.json when self-hosted updates are configured
+#      (POS_CONNECTOR_UPDATE_URL) — upload it next to the zip;
+#   4. commits the bump and tags vX.Y.Z, so the repo always says which
+#      version was actually shipped;
+#   5. uploads the zip (+ update.json) as a downloadable artifact.
+#
+# There is deliberately no push/tag/release trigger here: a build is a
+# release decision, and the download is hosted on the owner's own server,
+# not attached to a GitHub release. Full runbook:
+# docs/wordpress-plugin-updates.md
+name: build-plugin-zip
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump for this build'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      notes:
+        description: 'Release notes — written into the readme.txt changelog and update.json'
+        type: string
+        required: false
+
+# Two quick manual builds in a row must queue, not race: the version bump
+# reads the repo HEAD, and a race would ship two different zips as one version.
+concurrency:
+  group: build-plugin-zip
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: bump, zip, tag
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute the next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+
+          path = "wordpress-plugin/pos-accounting-connector/pos-accounting-connector.php"
+          src = open(path, encoding="utf-8").read()
+          m = re.search(r"define\( 'POS_CONNECTOR_VERSION', '([^']+)' \)", src)
+          assert m, "POS_CONNECTOR_VERSION not found"
+          current = m.group(1)
+          parts = current.split(".")
+          assert len(parts) == 3, f"expected a plain X.Y.Z version, found {current}"
+
+          bump = os.environ["BUMP"]
+          if bump == "major":
+              parts = [str(int(parts[0]) + 1), "0", "0"]
+          elif bump == "minor":
+              parts = [parts[0], str(int(parts[1]) + 1), "0"]
+          else:
+              parts = [parts[0], parts[1], str(int(parts[2]) + 1)]
+          nxt = ".".join(parts)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"current={current}\n")
+              out.write(f"next={nxt}\n")
+          print(f"{current} -> {nxt} ({bump})")
+          PY
+
+      - name: Refuse to shadow a shipped version
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null; then
+            echo "::error::Tag v$NEXT already exists — a version that was already shipped is never rebuilt. Pick another bump." >&2
+            exit 1
+          fi
+
+      - name: Bump version, write changelog, generate update.json
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          python3 - <<'PY'
+          import datetime, json, os, re
+
+          root = "wordpress-plugin/pos-accounting-connector"
+          main = f"{root}/pos-accounting-connector.php"
+          readme = f"{root}/readme.txt"
+          nxt = os.environ["NEXT"]
+
+          # The three version places the repo rule names, plus the changelog.
+          src = open(main, encoding="utf-8").read()
+          src, n = re.subn(r"(\* Version:)[ \t]+\d+(?:\.\d+)*", rf"\g<1>           {nxt}", src, count=1)
+          assert n == 1, "Version: header not found"
+          src, n = re.subn(r"define\( 'POS_CONNECTOR_VERSION', '[^']+' \)", f"define( 'POS_CONNECTOR_VERSION', '{nxt}' )", src, count=1)
+          assert n == 1, "POS_CONNECTOR_VERSION not found"
+          open(main, "w", encoding="utf-8").write(src)
+
+          readme_src = open(readme, encoding="utf-8").read()
+          readme_src, n = re.subn(r"(Stable tag:)[ \t]+\d+(?:\.\d+)*", rf"\g<1> {nxt}", readme_src, count=1)
+          assert n == 1, "Stable tag not found"
+
+          notes = os.environ.get("NOTES", "").strip() or "بهبودها و رفع اشکال."
+          entry = f"= {nxt} =\n" + "\n".join(
+              f"* {line.strip()}" for line in notes.splitlines() if line.strip()
+          ) + "\n"
+          readme_src = readme_src.replace("== Changelog ==\n", f"== Changelog ==\n\n{entry}", 1)
+          open(readme, "w", encoding="utf-8").write(readme_src)
+
+          # update.json, only when self-hosted updates are configured: the
+          # manifest sits next to the zip on the owner's own server.
+          url_m = re.search(r"define\( 'POS_CONNECTOR_UPDATE_URL', '([^']*)' \)", src)
+          manifest_url = url_m.group(1) if url_m else ""
+          if manifest_url:
+              base = manifest_url.rsplit("/", 1)[0]
+              manifest = {
+                  "name": "POS Accounting Connector",
+                  "version": nxt,
+                  "download_url": f"{base}/pos-accounting-connector.zip",
+                  "notes": notes,
+                  "published_at": datetime.datetime.now(datetime.timezone.utc)
+                      .replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              }
+              with open("update.json", "w", encoding="utf-8") as fh:
+                  json.dump(manifest, fh, ensure_ascii=False, indent=2)
+                  fh.write("\n")
+          print("manifest written" if manifest_url else "self-hosted URL not set — GitHub mode, no update.json")
+          PY
+
+      - name: Build the clean zip
+        run: |
+          cd wordpress-plugin
+          rm -f pos-accounting-connector.zip
+          zip -q -r pos-accounting-connector.zip pos-accounting-connector -x '*.DS_Store' '__MACOSX*'
+          cd ..
+          python3 - <<'PY'
+          import zipfile
+
+          names = zipfile.ZipFile("wordpress-plugin/pos-accounting-connector.zip").namelist()
+          assert "pos-accounting-connector/pos-accounting-connector.php" in names, names
+          stray = [n for n in names if not n.startswith("pos-accounting-connector/")]
+          assert not stray, f"entries outside the plugin folder: {stray}"
+          print(f"clean zip: {len(names)} entries, all under pos-accounting-connector/")
+          PY
+
+      - name: Commit the bump and tag it
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add wordpress-plugin/pos-accounting-connector/pos-accounting-connector.php \
+                  wordpress-plugin/pos-accounting-connector/readme.txt
+          git commit -m "WordPress plugin v$NEXT (manual build)"
+          git tag "v$NEXT"
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME" "refs/tags/v$NEXT"
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pos-accounting-connector-v${{ steps.version.outputs.next }}
+          path: |
+            wordpress-plugin/pos-accounting-connector.zip
+            update.json
+          if-no-files-found: error
+
+      - name: Tell the human what to do next
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Plugin v$NEXT built
+
+          1. Download **pos-accounting-connector-v$NEXT** from this run's artifacts.
+          2. Upload \`pos-accounting-connector.zip\`$([ -f update.json ] && echo ' together with update.json — the manifest sits next to the zip') to your update folder on your host.
+          3. Done — stores pick it up on their next update check (or immediately via «بررسی به‌روزرسانی»).
+
+          The version bump was committed and tagged \`v$NEXT\` in this repository.
+          EOF
