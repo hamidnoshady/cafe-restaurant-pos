@@ -329,7 +329,7 @@ describe("voidPayrollRun", () => {
 
     // Original accrual + its mirror = two entries; the mirror swaps debit/credit.
     const { rows: entries } = await db.query<{ source_type: string; reverses_entry_id: string | null }>(
-      `SELECT source_type, reverses_entry_id FROM journal_entries WHERE business_id = $1 ORDER BY created_at`,
+      `SELECT source_type, reverses_entry_id FROM journal_entries WHERE business_id = $1 ORDER BY posted_at`,
       [biz.id],
     );
     expect(entries.map((e) => e.source_type).sort()).toEqual(["payroll_accrual", "payroll_accrual_void"]);

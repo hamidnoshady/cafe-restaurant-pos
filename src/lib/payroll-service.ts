@@ -350,7 +350,7 @@ export async function voidPayrollRun(params: {
           AND source_id = $2
           AND reversed_at IS NULL
           AND reverses_entry_id IS NULL
-        ORDER BY entry_date DESC, created_at DESC`,
+        ORDER BY entry_date DESC, posted_at DESC`,
       [params.businessId, params.runId],
     );
 
