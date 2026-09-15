@@ -347,54 +347,46 @@ export function labelFor(industry: Industry, key: LabelKey): string {
  *
  * Deliberately ungated: `/dashboard` itself (the workspace chat home in the
  * workspace shell — the gate treats it as the sales overview only in the
- * classic shell, where that is what it renders), `/dashboard/projects` and
- * `/dashboard/ai`. The explanation screen has to be reachable from somewhere.
+ * classic shell, where that is what it renders), `/projects` and `/ai`.
+ * The explanation screen has to be reachable from somewhere.
  */
 export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // The sales overview. `/dashboard` itself stays ungated (see above).
-  ["/dashboard/overview", "dashboard"],
-  ["/dashboard/orders", "orders"],
-  // Business work areas now render beneath Accounting. The page itself picks
-  // the food-service inventory model or the retail stock model; both belong to
-  // Operations, so the availability gate stays coherent regardless of trade.
+  ["/overview", "dashboard"],
+  ["/accounting/orders", "orders"],
+  // Business work areas render beneath Accounting. The inventory page itself
+  // picks the food-service inventory model or the retail stock model; both
+  // belong to Operations, so the availability gate stays coherent regardless
+  // of trade. Every retired `/dashboard/<area>` address 308s in middleware
+  // before this table is ever consulted, so only canonical prefixes live here.
   ["/accounting/pos", "pos"],
   ["/accounting/floor", "tables"],
-  ["/dashboard/waiter", "waiter"],
+  ["/accounting/waiter", "waiter"],
   ["/accounting/kitchen", "kitchen"],
   ["/accounting/reservations", "reservations"],
   ["/accounting/delivery", "delivery"],
   ["/accounting/inventory", "inventory"],
-  ["/dashboard/menu", "menu"],
-  // The flat «مشتریان» route redirects into the CRM app; mapping it to the
-  // same module keeps the badge and the gate on the same app before the
-  // redirect lands.
-  ["/dashboard/customers", "customers"],
-  ["/dashboard/jewelry", "jewelry"],
-  ["/dashboard/watch", "watch"],
-  ["/dashboard/accessories", "accessories"],
+  ["/settings/menu", "menu"],
+  ["/accounting/jewelry", "jewelry"],
+  ["/accounting/watch", "watch"],
   // The products workspace is the catalogue door every retail trade-goods
   // industry shares; anchored on `stock`, the module all five of those
   // profiles carry, so a trade without the variant board never sees it.
   ["/accounting/products", "stock"],
   ["/accounting/cosmetics", "cosmetics"],
-  ["/dashboard/wholesale", "wholesale"],
-  ["/dashboard/tools-fittings", "tools_fittings"],
-  ["/dashboard/haberdashery", "haberdashery"],
-  ["/dashboard/loyalty", "loyalty"],
-  ["/dashboard/promotions", "promotions"],
-  ["/dashboard/commission", "commission"],
   // Phase 36b — the Growth & Marketing app's home. Anchored on `loyalty`
   // (core for every trade) like its nav entry: the app is the container for
   // loyalty, promotions and commission, and a business that had any of the
-  // three has loyalty.
+  // three has loyalty. Its own sections carry their own modules first, so a
+  // trade without commission never has its badge lie about the door.
+  ["/growth/commission", "commission"],
+  ["/growth/campaigns", "promotions"],
   ["/growth", "loyalty"],
-  ["/dashboard/growth", "loyalty"],
   // Phase 36 — the CRM app's home. Anchored on `customers` (core for every
-  // trade, exactly like the flat «مشتریان» page it absorbs) rather than on the
+  // trade, exactly like the flat «مشتریان» page it absorbed) rather than on the
   // `crm` module key: a business that has customers has a CRM, and gating the
   // app on a module no industry profile lists yet would hide it from everyone.
   ["/crm", "customers"],
-  ["/dashboard/crm", "customers"],
   // «مدیریت وب‌سایت» — one app, two managers, and therefore two module
   // answers under one prefix. The WordPress/WooCommerce manager keeps its own
   // `integrations` module, so a trade that has WordPress but not the CMS (or
@@ -402,14 +394,6 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // listed first because the first match wins.
   ["/websites/wp", "integrations"],
   ["/websites", "website"],
-  ["/dashboard/website/wp", "integrations"],
-  ["/dashboard/website", "website"],
-  // The legacy WordPress manager prefix and the legacy integrations page both
-  // forward — into the website app and into the connections hub respectively —
-  // but they forward *through* the gate, so they carry the website app's
-  // module and a «به‌زودی» website shows its explanation instead of forwarding.
-  ["/dashboard/wp", "integrations"],
-  ["/dashboard/integrations", "integrations"],
   // The «اتصال‌های فنی» hub. Its module is intentionally unassigned in
   // `apps.ts` — the hub is shell infrastructure, not an app — so this prefix
   // answers the module question without ever blocking the page.
@@ -417,29 +401,17 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // Migration 0149 — the media library. Its module has no owning app (like
   // `connections`), so this row gates visibility by trade without the
   // availability guard ever locking the page.
-  ["/dashboard/media", "media"],
+  ["/media", "media"],
   // The remaining ledger sections are covered by this broad Accounting row;
   // the business work-area rows above deliberately precede it so their owning
-  // app availability remains accurate. Retired dashboard paths redirect in
-  // middleware before this table is consulted.
+  // app availability remains accurate.
   ["/accounting", "ledger"],
-  ["/dashboard/accounting", "ledger"],
-  ["/dashboard/ledger", "ledger"],
   // Settings and everything anchored on it (billing, support, the knowledge
-  // centre), including the legacy routes that redirect into settings. The nav
-  // badges all of these with the settings app's state, so the gate must block
-  // on the same app rather than waving them through.
+  // centre). The nav badges all of these with the settings app's state, so
+  // the gate must block on the same app rather than waving them through.
   ["/settings", "settings"],
-  ["/dashboard/settings", "settings"],
-  ["/settings/billing", "settings"],
-  ["/dashboard/support", "settings"],
-  ["/dashboard/knowledge", "settings"],
-  ["/dashboard/team", "settings"],
-  ["/dashboard/backup", "settings"],
-  ["/dashboard/branches", "settings"],
-  ["/dashboard/locations", "settings"],
-  ["/dashboard/guides", "settings"],
-  ["/dashboard/help", "settings"],
+  ["/support", "settings"],
+  ["/knowledge", "settings"],
 ];
 
 /**

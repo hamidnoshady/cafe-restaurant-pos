@@ -57,7 +57,7 @@ export default function ProjectsPage() {
     if (ok) {
       setNewName("");
       setCreating(false);
-      router.push(`/dashboard/projects/${data.project.id}`);
+      router.push(`/projects/${data.project.id}`);
     } else {
       const err = data as unknown as Record<string, string>;
       setError(err.error ?? "خطا در ساخت پروژه");
@@ -150,7 +150,7 @@ export default function ProjectsPage() {
           {activeProjects.map((project) => (
             <Link
               key={project.id}
-              href={`/dashboard/projects/${project.id}`}
+              href={`/projects/${project.id}`}
               className={cn(
                 cardClass,
                 "group flex flex-col gap-2 p-4 transition hover:border-amber-300/60 dark:hover:border-amber-500/40 hover:shadow-[0_2px_8px_rgb(41_37_36/0.06)]",

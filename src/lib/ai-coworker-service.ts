@@ -802,7 +802,7 @@ export async function fireCoworkerJob(input: {
           severity: "info",
           title: `${job.title}: گزارش آماده است`,
           body: `${built.report.findings.length} مورد برای بررسی پیدا شد.`,
-          url: "/dashboard/ai",
+          url: "/ai",
           dedupeKey: notificationDedupeKey("ai.coworker.reported", runId),
           payload: { runId, jobId: job.id, findings: built.report.findings.length },
         });
@@ -919,7 +919,7 @@ export async function fireCoworkerJob(input: {
         severity: "important",
         title: `${job.title}: در انتظار تأیید شما`,
         body: summary,
-        url: "/dashboard/ai",
+        url: "/ai",
         dedupeKey: notificationDedupeKey("ai.coworker.pending", runId),
         payload: { runId, jobId: job.id, actions: statuses.length },
       });
@@ -931,7 +931,7 @@ export async function fireCoworkerJob(input: {
         severity: "important",
         title: `${job.title}: اجرا کامل نشد`,
         body: summary,
-        url: "/dashboard/ai",
+        url: "/ai",
         dedupeKey: notificationDedupeKey("ai.coworker.failed", runId),
         payload: { runId, jobId: job.id },
       });
@@ -957,7 +957,7 @@ export async function fireCoworkerJob(input: {
       severity: "important",
       title: `${job.title}: اجرای این کار ناموفق بود`,
       body: message.slice(0, 200),
-      url: "/dashboard/ai",
+      url: "/ai",
       dedupeKey: notificationDedupeKey("ai.coworker.failed", runId),
       payload: { runId, jobId: job.id },
     });

@@ -43,7 +43,7 @@ describe("knowledgeSection / isKnownKnowledgeSection", () => {
 
 describe("sectionForPathname", () => {
   it("matches an exact route", () => {
-    expect(sectionForPathname("/dashboard/customers")?.key).toBe("customers");
+    expect(sectionForPathname("/crm/directory")?.key).toBe("customers");
   });
 
   it("resolves the longest route, so a growth subpage beats the growth home", () => {
@@ -55,7 +55,7 @@ describe("sectionForPathname", () => {
   it("keeps a section's own sub-routes (an order detail stays the orders section)", () => {
     expect(
       sectionForPathname(
-        "/dashboard/orders/01234567-0000-0000-0000-000000000000",
+        "/accounting/orders/01234567-0000-0000-0000-000000000000",
       )?.key,
     ).toBe("orders");
   });

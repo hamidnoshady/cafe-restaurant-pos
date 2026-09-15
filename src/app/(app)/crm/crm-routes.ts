@@ -104,9 +104,7 @@ export function isCrmSectionPathname(pathname: string, key: CrmSectionKey): bool
       pathname === href ||
       pathname.startsWith(`${href}/`) ||
       pathname === "/crm/customers" ||
-      pathname.startsWith("/crm/customers/") ||
-      pathname === "/dashboard/crm/customers" ||
-      pathname.startsWith("/dashboard/crm/customers/")
+      pathname.startsWith("/crm/customers/")
     );
   }
   return pathname === href || pathname.startsWith(`${href}/`);

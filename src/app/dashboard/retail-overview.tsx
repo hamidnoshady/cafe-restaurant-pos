@@ -24,6 +24,8 @@ import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { labelFor } from "@/lib/industry-profile";
+import { isProductWorkspaceIndustry } from "@/lib/product-workspace";
+import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 import type { Industry } from "@/lib/industries";
 import { PageHeader, cardClass } from "./page-chrome";
 
@@ -184,7 +186,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
               <GemIcon aria-hidden="true" className="size-4" />
               نرخ طلا
             </h2>
-            <Link href="/dashboard/jewelry" className="text-sm font-semibold text-amber-800 dark:text-amber-300 hover:underline">
+            <Link href="/accounting/jewelry" className="text-sm font-semibold text-amber-800 dark:text-amber-300 hover:underline">
               ثبت نرخ روز ←
             </Link>
           </div>
@@ -222,7 +224,14 @@ export function RetailOverview({ industry }: { industry: Industry }) {
           {labelFor(industry, "sellScreen")} ←
         </Link>
         <Link
-          href={`/dashboard/${industry}`}
+          href={
+            // The trade-goods industries manage their catalogue in the shared
+            // products workspace; jewelry, watch and cosmetics keep managers
+            // of their own under the Accounting workspace.
+            isProductWorkspaceIndustry(industry) && industry !== "cosmetics"
+              ? ACCOUNTING_WORKSPACE_HREFS.products
+              : `/accounting/${industry}`
+          }
           className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-border/80 bg-card px-4 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted"
         >
           مدیریت {labelFor(industry, "catalogue")} ←
