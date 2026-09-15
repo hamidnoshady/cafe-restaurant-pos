@@ -3,10 +3,11 @@
  * Plugin Name:       POS Accounting Connector
  * Plugin URI:        https://github.com/hamidnoshady/cafe-restaurant-pos
  * Description:       اتصال امن دوطرفه فروشگاه ووکامرس به سامانهٔ فروش و حسابداری: ارسال سفارش، برگشت وجه، محصول و مشتری؛ دریافت موجودی و قیمت.
- * Version:           1.3.0
+ * Version:           1.4.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * WC requires at least: 7.0
+ * Update URI:        https://github.com/hamidnoshady/cafe-restaurant-pos
  * Text Domain:       pos-accounting-connector
  * Domain Path:       /languages
  * License:           GPL-2.0-or-later
@@ -22,6 +23,20 @@
  *
  * Every request carries a bearer token, a timestamp, a nonce and an HMAC over
  * the exact request body. See class-pos-client.php.
+ *
+ * ## Self-updates (1.4.0)
+ *
+ * Not being in the WordPress.org directory means core would never learn a new
+ * version exists — the directory's API is the only update source WordPress
+ * ships with. So the plugin carries its own updater
+ * (includes/class-pos-updater.php): the three third-party-update hooks pointed
+ * at this repository's GitHub releases, so «افزونه‌ها ← به‌روزرسانی‌های موجود»
+ * shows a new release and installs it the ordinary one-click way. Checks ride
+ * WordPress's own twice-daily update cycle, cached six hours, so a store costs
+ * GitHub two unauthenticated calls a day. A published release with the
+ * package-release.sh zip attached installs clean; a bare tag still works — its
+ * zipball is the whole repo, and the updater digs the plugin folder out of it
+ * before WordPress copies it over the installed one.
  *
  * ## Five cron events, not one
  *
@@ -55,9 +70,12 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'POS_CONNECTOR_VERSION', '1.3.0' );
+define( 'POS_CONNECTOR_VERSION', '1.4.0' );
 define( 'POS_CONNECTOR_FILE', __FILE__ );
 define( 'POS_CONNECTOR_PATH', plugin_dir_path( __FILE__ ) );
+
+/** The `owner/repo` the self-updater asks about (class-pos-updater.php). */
+define( 'POS_CONNECTOR_UPDATE_REPO', 'hamidnoshady/cafe-restaurant-pos' );
 
 /** Option keys. Grouped in one array option so a single delete removes everything on uninstall. */
 define( 'POS_CONNECTOR_OPTION', 'pos_connector_settings' );
@@ -78,6 +96,7 @@ require_once POS_CONNECTOR_PATH . 'includes/class-pos-client.php';
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-queue.php';
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-sync.php';
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-settings.php';
+require_once POS_CONNECTOR_PATH . 'includes/class-pos-updater.php';
 
 /**
  * WooCommerce is a hard requirement, not a soft one: every hook this plugin
@@ -89,6 +108,13 @@ function pos_connector_woocommerce_active() {
 }
 
 function pos_connector_bootstrap() {
+	// The self-updater runs before the WooCommerce gate on purpose: a store
+	// that deactivated WooCommerce — or lost the plugin it depends on in an
+	// update — still has to be able to update THIS plugin. The fix for a
+	// broken integration is very often the next release, and an updater that
+	// dies with the rest of the plugin cannot deliver it.
+	POS_Connector_Updater::init();
+
 	if ( ! pos_connector_woocommerce_active() ) {
 		add_action(
 			'admin_notices',

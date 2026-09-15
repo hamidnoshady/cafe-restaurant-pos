@@ -17,6 +17,7 @@
  *   wp pos-connector export customers            queue every customer
  *   wp pos-connector export content              queue every post, page and media item
  *   wp pos-connector test                        ping the accounting system
+ *   wp pos-connector check-update                ask GitHub for a newer plugin version
  *
  * Every write command is safe to call as often as a crontab likes: the queue
  * dedups on (topic, remote_id) while a row is pending, and the app dedups on
@@ -58,6 +59,18 @@ class POS_Connector_CLI {
 
 		WP_CLI::log( WP_CLI::colorize( '%B' . __( 'اتصال حسابداری', 'pos-accounting-connector' ) . '%n' ) );
 		WP_CLI::log( '  ' . sprintf( 'نسخهٔ افزونه: %s', POS_CONNECTOR_VERSION ) );
+		// The cached answer only — `status` prints what is known, it does not
+		// wait on GitHub. `check-update` is the command that asks.
+		$update = POS_Connector_Updater::cached();
+		if ( '' !== $update['version'] ) {
+			WP_CLI::log(
+				'  ' . sprintf(
+					'آخرین نسخهٔ منتشرشده: %s%s',
+					$update['version'],
+					POS_Connector_Updater::is_newer( $update['version'] ) ? ' — ' . __( 'به‌روزرسانی موجود است', 'pos-accounting-connector' ) : ''
+				)
+			);
+		}
 		WP_CLI::log( '  ' . sprintf( 'آدرس سامانه: %s', $settings['base_url'] ? $settings['base_url'] : '—' ) );
 		WP_CLI::log( '  ' . sprintf( 'توکن: %s', $settings['token'] ? __( 'ثبت شده', 'pos-accounting-connector' ) : '—' ) );
 		WP_CLI::log( '  ' . sprintf( 'وضعیت: %s', $settings['enabled'] ? __( 'فعال', 'pos-accounting-connector' ) : __( 'غیرفعال', 'pos-accounting-connector' ) ) );
@@ -141,6 +154,43 @@ class POS_Connector_CLI {
 			return;
 		}
 		WP_CLI::error( POS_Connector_Client::explain( $response['error'] ) );
+	}
+
+	/**
+	 * Ask GitHub for a newer version of this plugin.
+	 *
+	 * This is the same call the «بررسی به‌روزرسانی» button makes, and the one
+	 * WordPress's own twice-daily cycle makes for itself. Installing the
+	 * version it finds is left to WordPress — the Plugins screen, the
+	 * Updates screen, or `wp plugin update pos-accounting-connector`.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp pos-connector check-update
+	 *
+	 * @subcommand check-update
+	 */
+	public function check_update( $args, $assoc_args ) {
+		$latest = POS_Connector_Updater::check();
+
+		WP_CLI::log( '  ' . sprintf( 'نسخهٔ نصب‌شده: %s', POS_CONNECTOR_VERSION ) );
+		WP_CLI::log( '  ' . sprintf( 'آخرین نسخهٔ منتشرشده: %s', '' !== $latest['version'] ? $latest['version'] : '—' ) );
+
+		if ( '' !== $latest['error'] ) {
+			WP_CLI::error( sprintf( 'بررسی به‌روزرسانی ناموفق بود: %s', $latest['error'] ) );
+		}
+
+		if ( POS_Connector_Updater::is_newer( $latest['version'] ) ) {
+			WP_CLI::warning(
+				sprintf(
+					'نسخهٔ جدید %s موجود است؛ از صفحهٔ «افزونه‌ها» نصبش کنید یا: wp plugin update pos-accounting-connector',
+					$latest['version']
+				)
+			);
+			return;
+		}
+
+		WP_CLI::success( __( 'افزونه به‌روز است.', 'pos-accounting-connector' ) );
 	}
 
 	/**

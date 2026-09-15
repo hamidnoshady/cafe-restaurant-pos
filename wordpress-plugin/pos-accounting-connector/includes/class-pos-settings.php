@@ -219,6 +219,9 @@ class POS_Connector_Settings {
 			'customers_queued'   => array( 'success', 'همهٔ مشتریان در صف ارسال قرار گرفتند.' ),
 			'content_queued'     => array( 'success', 'نوشته‌ها، برگه‌ها و رسانه‌ها در صف ارسال قرار گرفتند.' ),
 			'schedule_saved'     => array( 'success', 'زمان‌بندی ذخیره شد.' ),
+			'update_available'   => array( 'warning', 'نسخهٔ جدید افزونه در گیت‌هاب منتشر شده است؛ از صفحهٔ «افزونه‌ها ← به‌روزرسانی‌های موجود» یا «پیشخوان ← به‌روزرسانی‌ها» نصبش کنید.' ),
+			'up_to_date'         => array( 'success', 'افزونه به‌روز است.' ),
+			'update_check_failed' => array( 'error', 'بررسی به‌روزرسانی ناموفق بود؛ دلیلش در «گزارش رویدادها» آمده است.' ),
 		);
 		return isset( $map[ $key ] ) ? $map[ $key ] : null;
 	}
@@ -541,6 +544,97 @@ class POS_Connector_Settings {
 			<p class="description">
 
 				<?php esc_html_e( 'دستور wp pos-connector status وضعیت اتصال، صف و زمان اجرای هر سه رویداد را چاپ می‌کند.', 'pos-accounting-connector' ); ?>
+
+			</p>
+
+
+			<h2><?php esc_html_e( 'به‌روزرسانی افزونه', 'pos-accounting-connector' ); ?></h2>
+
+			<p class="description">
+
+				<?php esc_html_e( 'این افزونه در مخزن وردپرس نیست؛ نسخه‌های جدید را از گیت‌هاب همین پروژه بررسی و نصب می‌کند — همان‌جا که به‌روزرسانی بقیهٔ افزونه‌ها دیده می‌شود.', 'pos-accounting-connector' ); ?>
+
+			</p>
+
+			<?php $update = POS_Connector_Updater::cached(); ?>
+
+			<table class="widefat striped" style="max-width:720px">
+
+				<tbody>
+
+					<tr>
+
+						<th style="width:230px"><?php esc_html_e( 'نسخهٔ نصب‌شده', 'pos-accounting-connector' ); ?></th>
+
+						<td><code dir="ltr"><?php echo esc_html( POS_CONNECTOR_VERSION ); ?></code></td>
+
+					</tr>
+
+					<tr>
+
+						<th><?php esc_html_e( 'آخرین نسخهٔ منتشرشده', 'pos-accounting-connector' ); ?></th>
+
+						<td>
+
+							<?php if ( '' !== $update['version'] ) : ?>
+
+								<code dir="ltr"><?php echo esc_html( $update['version'] ); ?></code>
+
+								<?php if ( POS_Connector_Updater::is_newer( $update['version'] ) ) : ?>
+
+									<strong> — <?php esc_html_e( 'به‌روزرسانی موجود است؛ از صفحهٔ «افزونه‌ها» نصبش کنید.', 'pos-accounting-connector' ); ?></strong>
+
+								<?php else : ?>
+
+									<?php esc_html_e( '— به‌روز هستید.', 'pos-accounting-connector' ); ?>
+
+								<?php endif; ?>
+
+							<?php else : ?>
+
+								<?php esc_html_e( 'هنوز نسخه‌ای پیدا نشده است. یک بار «بررسی به‌روزرسانی» را بزنید.', 'pos-accounting-connector' ); ?>
+
+							<?php endif; ?>
+
+						</td>
+
+					</tr>
+
+					<tr>
+
+						<th><?php esc_html_e( 'آخرین بررسی', 'pos-accounting-connector' ); ?></th>
+
+						<td>
+
+							<?php echo esc_html( $update['checked_at'] ? gmdate( 'Y-m-d H:i:s', (int) $update['checked_at'] ) . ' UTC' : '—' ); ?>
+
+							<?php if ( ! empty( $update['error'] ) ) : ?>
+
+								<br /><span style="color:#b32d2e"><?php echo esc_html( sprintf( __( 'آخرین بررسی ناموفق بود: %s', 'pos-accounting-connector' ), $update['error'] ) ); ?></span>
+
+							<?php endif; ?>
+
+						</td>
+
+					</tr>
+
+				</tbody>
+
+			</table>
+
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:8px">
+
+				<?php wp_nonce_field( 'pos_connector_check_update' ); ?>
+
+				<input type="hidden" name="action" value="pos_connector_check_update" />
+
+				<?php submit_button( __( 'بررسی به‌روزرسانی', 'pos-accounting-connector' ), 'secondary' ); ?>
+
+			</form>
+
+			<p class="description">
+
+				<?php esc_html_e( 'بررسی خودکار روی همان چرخهٔ به‌روزرسانی وردپرس سوار است (دو بار در روز). نصب نسخهٔ جدید همان به‌روزرسانی معمولی وردپرس است و به‌روزرسانی خودکار هم کار می‌کند.', 'pos-accounting-connector' ); ?>
 
 			</p>
 
