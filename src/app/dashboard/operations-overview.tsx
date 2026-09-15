@@ -377,7 +377,7 @@ function OrdersTable({ orders, timeZone }: { orders: OverviewData["activeOrders"
         {orders.map((order, index) => (
           <Link
             key={order.id}
-            href={`/dashboard/orders/${order.id}`}
+            href={`/accounting/orders/${order.id}`}
             className="ops-order-row grid min-h-[70px] grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] items-center gap-4 border-b border-border px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.99] lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]"
             style={{ animationDelay: `${index * 60}ms` }}
             aria-label={`مشاهده سفارش ${toPersianDigits(order.orderNumber)}`}
@@ -395,7 +395,7 @@ function OrdersTable({ orders, timeZone }: { orders: OverviewData["activeOrders"
         {orders.map((order, index) => (
           <Link
             key={order.id}
-            href={`/dashboard/orders/${order.id}`}
+            href={`/accounting/orders/${order.id}`}
             className={`ops-order-row block ${cardClass} p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]`}
             style={{ animationDelay: `${index * 60}ms` }}
             aria-label={`مشاهده سفارش ${toPersianDigits(order.orderNumber)}`}
@@ -456,7 +456,7 @@ export function OperationsOverview({
     setError("");
 
     try {
-      const response = await fetch("/api/dashboard/overview", { cache: "no-store" });
+      const response = await fetch("/api/overview", { cache: "no-store" });
       if (!response.ok) throw new Error("overview_failed");
       const next = (await response.json()) as OverviewData;
       const isInitial = dataRef.current === null;
@@ -538,7 +538,7 @@ export function OperationsOverview({
             <span className="max-w-36 truncate">{data?.businessName ?? "کسب‌وکار"}</span>
           </div>
           <BranchSwitcher compact />
-          <Link href="/dashboard/orders" className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-border/80 bg-card text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]" aria-label="مشاهده سفارش‌های باز">
+          <Link href="/accounting/orders" className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-border/80 bg-card text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]" aria-label="مشاهده سفارش‌های باز">
             <BellIcon className="size-5" aria-hidden="true" />
             {data && data.activeOrderCount > 0 ? <span className="absolute -left-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-500/20 px-1 text-[10px] font-bold leading-5 text-amber-700 dark:text-amber-300">{toPersianDigits(String(data.activeOrderCount))}</span> : null}
           </Link>
@@ -583,10 +583,10 @@ export function OperationsOverview({
       <section className={`${cardClass} p-4 sm:p-5`} aria-labelledby="active-orders-heading">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div><h2 id="active-orders-heading" className="font-semibold text-foreground">سفارش‌های فعال</h2><p className="mt-1 text-xs text-muted-foreground">وضعیت سفارش‌های باز همین شعبه</p></div>
-          <Link href="/dashboard/orders" className="hidden min-h-11 items-center gap-1 rounded-xl border border-border/80 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] sm:inline-flex">مشاهده همه<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
+          <Link href="/accounting/orders" className="hidden min-h-11 items-center gap-1 rounded-xl border border-border/80 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] sm:inline-flex">مشاهده همه<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
         </div>
         {showOrders ? <OrdersTable orders={data.activeOrders} timeZone={data.timeZone} /> : <OrdersSkeleton />}
-        <Link href="/dashboard/orders" className="mt-4 flex min-h-12 w-full items-center justify-center gap-1 rounded-xl border border-amber-500/35 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-4 text-sm font-semibold text-amber-800 dark:text-amber-300 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] sm:hidden">مشاهده همه سفارش‌ها<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
+        <Link href="/accounting/orders" className="mt-4 flex min-h-12 w-full items-center justify-center gap-1 rounded-xl border border-amber-500/35 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-4 text-sm font-semibold text-amber-800 dark:text-amber-300 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] sm:hidden">مشاهده همه سفارش‌ها<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
       </section>
 
       {error ? (

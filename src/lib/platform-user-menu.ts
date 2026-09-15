@@ -47,9 +47,9 @@ export function platformUserMenuItems(role: string): PlatformUserMenuItem[] {
       href: PLATFORM_SETTINGS_HOME,
     },
     { key: "profile", label: "حساب کاربری", kind: "link", href: "/settings/profile" },
-    { key: "knowledge", label: "پایگاه دانش", kind: "link", href: "/dashboard/knowledge" },
+    { key: "knowledge", label: "پایگاه دانش", kind: "link", href: "/knowledge" },
     { key: "connections", label: "اتصال‌های فنی", kind: "link", href: "/settings/connections" },
-    { key: "support", label: "پشتیبانی", kind: "link", href: "/dashboard/support" },
+    { key: "support", label: "پشتیبانی", kind: "link", href: "/support" },
     { key: "bug-report", label: "گزارش مشکل", kind: "bug-report" },
     { key: "logout", label: "خروج", kind: "logout", returnTo: logoutReturnTo(role) },
   ];

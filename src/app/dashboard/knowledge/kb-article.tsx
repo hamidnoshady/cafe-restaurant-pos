@@ -96,7 +96,7 @@ export function KbArticleView({ slug }: { slug: string }) {
     <PageShell>
       <div className="mb-4">
         <Link
-          href="/dashboard/knowledge"
+          href="/knowledge"
           className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowRightIcon className="size-4" aria-hidden="true" />
@@ -130,7 +130,7 @@ export function KbArticleView({ slug }: { slug: string }) {
               </p>
               {status === "error" ? <ErrorBox>لطفاً چند لحظهٔ دیگر دوباره تلاش کنید.</ErrorBox> : null}
               <Link
-                href="/dashboard/knowledge"
+                href="/knowledge"
                 className="mt-1 rounded-lg border border-border/80 px-4 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted"
               >
                 رفتن به مرکز آموزش
@@ -188,7 +188,7 @@ export function KbArticleView({ slug }: { slug: string }) {
                       {article.tags.map((t) => (
                         <Link
                           key={t.slug}
-                          href={`/dashboard/knowledge?tag=${encodeURIComponent(t.slug)}`}
+                          href={`/knowledge?tag=${encodeURIComponent(t.slug)}`}
                           className="rounded-full border border-border/80 bg-muted/60 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         >
                           #{t.label}

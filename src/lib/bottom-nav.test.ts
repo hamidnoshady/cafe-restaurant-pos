@@ -8,11 +8,11 @@ import {
 
 const ALL = [
   "/dashboard",
-  "/dashboard/orders",
+  "/accounting/orders",
   "/accounting/pos",
   "/accounting/reports",
   "/accounting/inventory",
-  "/dashboard/settings",
+  "/settings",
 ];
 
 describe("parseBottomNavHrefs", () => {
@@ -40,7 +40,7 @@ describe("resolveBottomNavHrefs", () => {
   it("falls back to the shipped default when nothing is configured", () => {
     expect(resolveBottomNavHrefs(null, ALL, false)).toEqual([
       "/dashboard",
-      "/dashboard/orders",
+      "/accounting/orders",
       "/accounting/reports",
     ]);
   });
@@ -49,7 +49,7 @@ describe("resolveBottomNavHrefs", () => {
     expect(resolveBottomNavHrefs(null, ALL, true)).toEqual([
       "/dashboard",
       "/accounting/pos",
-      "/dashboard/orders",
+      "/accounting/orders",
     ]);
   });
 
@@ -88,7 +88,7 @@ describe("toggleBottomNavHref", () => {
 
   it("refuses to add past the cap but still lets you take one out", () => {
     const full = ALL.slice(0, BOTTOM_NAV_MAX);
-    expect(toggleBottomNavHref(full, "/dashboard/settings")).toEqual(full);
+    expect(toggleBottomNavHref(full, "/settings")).toEqual(full);
     expect(toggleBottomNavHref(full, full[0])).toEqual(full.slice(1));
   });
 });

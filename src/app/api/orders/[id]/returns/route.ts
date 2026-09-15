@@ -47,7 +47,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
         severity: "important",
         title: "برگشت وجه به مشتری",
         body: `${tomanText(Number(result.refundAmount))}${body.reason?.trim() ? ` — ${body.reason.trim()}` : ""}`,
-        url: "/dashboard/orders",
+        url: "/accounting/orders",
         amountRial: Number(result.refundAmount),
         dedupeKey: notificationDedupeKey("payment.refunded", result.id),
         payload: { orderId: id, returnId: result.id },

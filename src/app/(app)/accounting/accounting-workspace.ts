@@ -109,7 +109,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     label: "فروش و درآمد",
     description: "فاکتورها، صندوق و مشتریان",
     slots: [
-      { href: "/dashboard/orders" },
+      { href: "/accounting/orders" },
       { href: ACCOUNTING_WORKSPACE_HREFS.pos },
       { href: "/crm/overview", label: "ارتباط با مشتری" },
     ],
@@ -123,7 +123,7 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
       { href: accountingProductsHref() },
       { href: accountingProductsHref("new") },
       { href: accountingProductsHref("prices") },
-      { href: "/dashboard/menu" },
+      { href: "/settings/menu" },
     ],
   },
   {
@@ -132,17 +132,13 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     description: "بخش‌های عملیاتی این صنف",
     slots: [
       { href: ACCOUNTING_WORKSPACE_HREFS.floor },
-      { href: "/dashboard/waiter" },
+      { href: "/accounting/waiter" },
       { href: ACCOUNTING_WORKSPACE_HREFS.kitchen },
       { href: ACCOUNTING_WORKSPACE_HREFS.reservations },
       { href: ACCOUNTING_WORKSPACE_HREFS.delivery },
-      { href: "/dashboard/jewelry" },
-      { href: "/dashboard/watch" },
+      { href: "/accounting/jewelry" },
+      { href: "/accounting/watch" },
       { href: ACCOUNTING_WORKSPACE_HREFS.cosmetics },
-      { href: "/dashboard/accessories" },
-      { href: "/dashboard/wholesale" },
-      { href: "/dashboard/tools-fittings" },
-      { href: "/dashboard/haberdashery" },
     ],
   },
 ];

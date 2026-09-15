@@ -151,7 +151,7 @@ function AvailabilityNotice({
  *
  * One route needs its shell to answer: `/dashboard` is the chat home (never
  * gated) in the workspace shell, but the very same sales overview
- * `/dashboard/overview` renders in the classic shell. Leaving it ungated in
+ * `/overview` renders in the classic shell. Leaving it ungated in
  * both would leave a sales «به‌زودی» bypassable from the home page, so in the
  * classic shell it is gated as the sales app.
  */
@@ -175,7 +175,7 @@ export function AppAvailabilityGate({
   // that overview is itself sales-gated, so while sales is down the link
   // would only land on this same screen — it is hidden then, and on either
   // home, where the sidebar is the way out.
-  const backHref = workspaceEnabled ? "/dashboard" : "/dashboard/overview";
+  const backHref = workspaceEnabled ? "/dashboard" : "/overview";
   const backUsable = workspaceEnabled || (availability.sales?.usable ?? true);
   return (
     <AvailabilityNotice

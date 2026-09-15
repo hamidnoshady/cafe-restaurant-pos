@@ -43,16 +43,19 @@ describe("featureForPagePath", () => {
     // server, so it intentionally has no generic page-prefix flag here.
     expect(featureForPagePath("/accounting/inventory")).toBeNull();
     expect(featureForPagePath("/accounting/floor")).toBe("reservations");
-    expect(featureForPagePath("/dashboard/branches")).toBe("multi_location");
-    expect(featureForPagePath("/dashboard/locations")).toBe("offline_mode");
-    expect(featureForPagePath("/dashboard/waiter")).toBe("reservations");
+    expect(featureForPagePath("/accounting/waiter")).toBe("reservations");
+    expect(featureForPagePath("/settings/backup")).toBe("backup");
+    // Branch management is deliberately ungated here: its settings tab
+    // carries `requiredAnyFeature: [multi_location, offline_mode]`, and a
+    // single-flag prefix row would lock a sync-only business out.
+    expect(featureForPagePath("/settings/branch-management")).toBeNull();
   });
 
   it("leaves ungated pages (dashboard home, kitchen, POS, team, …) alone", () => {
     expect(featureForPagePath("/dashboard")).toBeNull();
     expect(featureForPagePath("/accounting/kitchen")).toBeNull();
     expect(featureForPagePath("/accounting/pos")).toBeNull();
-    expect(featureForPagePath("/dashboard/team")).toBeNull();
+    expect(featureForPagePath("/settings/team")).toBeNull();
   });
 });
 
@@ -70,10 +73,10 @@ describe("isLockableFeature", () => {
   });
 
   it("agrees with the page map, so a lockable flag always has a page to preview", () => {
-    const lockablePages = featureForPagePath("/dashboard/ai");
+    const lockablePages = featureForPagePath("/ai");
     expect(lockablePages).toBe("ai_assistant");
-    expect(featureForPagePath("/dashboard/integrations")).toBe("integrations");
-    expect(featureForPagePath("/dashboard/website/wp/connections")).toBe(
+    expect(featureForPagePath("/websites/wp")).toBe("integrations");
+    expect(featureForPagePath("/websites/wp/connections")).toBe(
       "integrations",
     );
     expect(featureForPagePath("/settings/connections/holoo")).toBe(

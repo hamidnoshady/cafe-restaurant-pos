@@ -122,30 +122,27 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   // than falsely applying the food-only flag to retail.
   ["/accounting/reservations", "reservations"],
   ["/accounting/floor", "reservations"],
-  ["/dashboard/waiter", "reservations"],
+  ["/accounting/waiter", "reservations"],
   ["/accounting/delivery", "delivery"],
   ["/accounting/reports", "reporting"],
-  // The Accounting app's own ledger prefix; old `/dashboard/accounting` and
-  // `/dashboard/ledger` bookmarks still forward here before any page renders.
+  // The Accounting app's own ledger prefix; retired `/dashboard/accounting`
+  // and `/dashboard/ledger` bookmarks 308 to it in middleware before any page
+  // renders, so only the canonical prefix needs a row.
   ["/accounting", "ledger"],
-  ["/dashboard/accounting", "ledger"],
-  ["/dashboard/ledger", "ledger"],
-  ["/dashboard/branches", "multi_location"],
-  ["/dashboard/locations", "offline_mode"],
-  ["/dashboard/backup", "backup"],
-  ["/dashboard/ai", "ai_assistant"],
-  // The legacy `/dashboard/integrations` route redirects to the «اتصال‌های فنی»
-  // hub's «وردپرس و ووکامرس» tab; the WordPress/WooCommerce manager is a
-  // manager *inside* «مدیریت وب‌سایت» and lives under its prefix. Both halves
-  // stay entitlement-gated — an unentitled business lands on a locked preview,
-  // not a dead end — while `/dashboard/website` itself (the app home and the
-  // Eshobe CMS manager) is not, so a business without `integrations` still
-  // reaches its platform site.
-  ["/dashboard/integrations", "integrations"],
-  // «مدیریت وب‌سایت»'s WordPress manager, at the app's public prefix and at
-  // the legacy one it forwards from.
+  // `/settings/branch-management` is deliberately absent: the tab carries
+  // *either* `multi_location` or `offline_mode` (`requiredAnyFeature` in
+  // settings-tabs.ts), and a single-flag prefix row here would wrongly gate a
+  // sync-only business out of its own sync screen.
+  ["/settings/backup", "backup"],
+  ["/ai", "ai_assistant"],
+  // «مدیریت وب‌سایت»'s WordPress manager. The legacy `/dashboard/integrations`
+  // and `/dashboard/wp` addresses 308 in middleware to the «اتصال‌های فنی»
+  // hub and this prefix respectively, so the entitlement is answered at the
+  // canonical URL — an unentitled business lands on a locked preview, not a
+  // dead end — while `/websites` itself (the app home and the Eshobe CMS
+  // manager) is not gated, so a business without `integrations` still reaches
+  // its platform site.
   ["/websites/wp", "integrations"],
-  ["/dashboard/website/wp", "integrations"],
   ["/settings/connections/holoo", "integrations"],
   // `/settings/connections` is deliberately absent: the technical hub carries
   // connections with different entitlements (and desktop with none), so it

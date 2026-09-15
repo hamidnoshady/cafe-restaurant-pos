@@ -21,14 +21,14 @@ export const BOTTOM_NAV_STORAGE_KEY = "dashboard-bottom-nav";
 /** The bar before anyone configures it — the set that shipped before this was a choice. */
 const DEFAULT_HREFS = [
   "/dashboard",
-  "/dashboard/orders",
+  "/accounting/orders",
   "/accounting/reports",
 ];
 /** On the sell screen, the cashier tab replaces reports so the active workflow stays visible. */
 const DEFAULT_POS_HREFS = [
   "/dashboard",
   "/accounting/pos",
-  "/dashboard/orders",
+  "/accounting/orders",
 ];
 
 /** Reads the stored list, tolerating anything a hand-edited localStorage might hold. */

@@ -1,7 +1,7 @@
 /**
  * Whether a dashboard path is an AI-assistant surface.
  *
- * Two routes host the assistant's full-page workspace: `/dashboard/ai` (its own
+ * Two routes host the assistant's full-page workspace: `/ai` (its own
  * page) and the workspace chat home `/dashboard` when the `workspace` feature is
  * on. On these the assistant owns the whole viewport — its own navigation and a
  * pinned composer — so the dashboard's global chrome (the customizable mobile
@@ -13,8 +13,8 @@
  */
 export function isAssistantSurface(pathname: string, workspaceEnabled: boolean): boolean {
   return (
-    pathname === "/dashboard/ai" ||
-    pathname.startsWith("/dashboard/ai/") ||
+    pathname === "/ai" ||
+    pathname.startsWith("/ai/") ||
     (workspaceEnabled && pathname === "/dashboard")
   );
 }

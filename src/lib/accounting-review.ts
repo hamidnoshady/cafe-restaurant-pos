@@ -244,7 +244,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: total,
       suggestion: "این سفارش‌ها را در صفحهٔ سفارش‌ها بررسی کنید. اگر پرداختشان واقعی بوده، سند فروش را دستی ثبت کنید و علت جاافتادن آن را پیگیری کنید.",
-      href: "/dashboard/orders",
+      href: "/accounting/orders",
       samples: firstSamples(rows, (row) => sample(`${row.reference} — ${money(row.totalRial)}`, row.id)),
     };
   },
@@ -351,7 +351,7 @@ const RULES: Rule[] = [
       count: rows.length,
       amountRial: total,
       suggestion: "فهرست را در گزارش سنی حساب‌های دریافتنی مرور کنید. برای مانده‌هایی که دیگر وصول نمی‌شوند، ذخیرهٔ مطالبات مشکوک‌الوصول ثبت کنید تا سود دوره واقعی شود.",
-      href: "/dashboard/customers",
+      href: "/crm/directory",
       samples: firstSamples(rows, (row) => sample(`${row.customerName} — ${money(row.amountRial)} (${fa(row.ageDays)} روز)`, row.customerId)),
     };
   },

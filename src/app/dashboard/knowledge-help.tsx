@@ -135,7 +135,7 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
           <div className="space-y-4">
             {ready.guide ? (
               <Link
-                href={`/dashboard/knowledge/a/${encodeURIComponent(ready.guide.slug)}`}
+                href={`/knowledge/a/${encodeURIComponent(ready.guide.slug)}`}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-100/70 px-4 py-3 transition-colors hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/15 dark:hover:bg-amber-500/25"
               >
@@ -200,7 +200,7 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
               آموزش سر بزنید.
             </p>
             <Link
-              href="/dashboard/knowledge"
+              href="/knowledge"
               onClick={() => setOpen(false)}
               className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-border/80 px-4 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted"
             >

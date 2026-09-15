@@ -189,7 +189,7 @@ async function finishRun(
         severity: "critical",
         title: "پشتیبان‌گیری ناموفق بود",
         body: outcome.error.slice(0, 200),
-        url: "/dashboard/backup",
+        url: "/settings/backup",
         dedupeKey: notificationDedupeKey("backup.failed", failed.kind, artifactDay ?? runId),
         payload: { runId, kind: failed.kind },
       });

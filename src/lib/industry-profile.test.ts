@@ -293,8 +293,8 @@ describe("moduleForApiPath", () => {
 describe("moduleForPagePath", () => {
   it("maps a page and its children", () => {
     expect(moduleForPagePath("/accounting/floor")).toBe("tables");
-    expect(moduleForPagePath("/dashboard/orders/abc")).toBe("orders");
-    expect(moduleForPagePath("/dashboard/website/wp/connections")).toBe("integrations");
+    expect(moduleForPagePath("/accounting/orders/abc")).toBe("orders");
+    expect(moduleForPagePath("/websites/wp/connections")).toBe("integrations");
     expect(moduleForPagePath("/settings/connections")).toBe("connections");
   });
 
@@ -302,8 +302,8 @@ describe("moduleForPagePath", () => {
     expect(moduleForPagePath("/dashboard")).toBeNull();
     // The settings family belongs to the settings app — a settings «به‌زودی»
     // must block these pages rather than let them through unbadged.
-    expect(moduleForPagePath("/dashboard/settings")).toBe("settings");
-    expect(moduleForPagePath("/dashboard/settings/team")).toBe("settings");
+    expect(moduleForPagePath("/settings")).toBe("settings");
+    expect(moduleForPagePath("/settings/team")).toBe("settings");
   });
 
   it("names only modules that exist", () => {
