@@ -179,6 +179,48 @@ describe("agent-first, server-fallback", () => {
     });
   });
 
+  it("uses the render-to-raw bridge for every rich print operation", async () => {
+    const renderOps: string[] = [];
+    const rawPayloads: Array<Record<string, unknown>> = [];
+    const renderRequired = () => respondJson({ ok: false, error: "render_required" }, 409);
+    const { calls } = mockFetch({
+      [`${AGENT}/print/document`]: renderRequired,
+      [`${AGENT}/print/receipt`]: renderRequired,
+      [`${AGENT}/print/kitchen-ticket`]: renderRequired,
+      [`${AGENT}/print/label`]: renderRequired,
+      [`${AGENT}/print/test`]: renderRequired,
+      [`${AGENT}/drawer/kick`]: renderRequired,
+      "/api/print/render": (_url, init) => {
+        renderOps.push((JSON.parse(String(init?.body)) as { op: string }).op);
+        return respondBytes(Uint8Array.from([renderOps.length]));
+      },
+      [`${AGENT}/print/raw`]: (_url, init) => {
+        rawPayloads.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return respondJson({ ok: true });
+      },
+    });
+
+    await printDocument(SYSTEM, "<html></html>", "thermal80");
+    await printReceipt(SYSTEM, RECEIPT);
+    await printKitchenTicket(SYSTEM, { label: "میز", orderTypeLabel: "حضوری", sentAt: new Date(), lines: [] });
+    await printLabel(SYSTEM, { businessName: "ب", itemName: "آ", code: "1", fields: [] });
+    await testPrint(SYSTEM, "kitchen");
+    await kickDrawer(SYSTEM);
+
+    expect(renderOps).toEqual(["document", "receipt", "kitchen-ticket", "label", "test", "drawer-kick"]);
+    expect(rawPayloads).toHaveLength(6);
+    expect(rawPayloads.map((payload) => payload.connection)).toEqual(Array(6).fill(SYSTEM));
+    expect(rawPayloads.map((payload) => payload.dataBase64)).toEqual([
+      "AQ==",
+      "Ag==",
+      "Aw==",
+      "BA==",
+      "BQ==",
+      "Bg==",
+    ]);
+    expect(calls.map((call) => call.url)).not.toContain("/api/print/job");
+  });
+
   it("never retries a claimed local queue on the cloud if final raw delivery fails", async () => {
     const { calls } = mockFetch({
       [`${AGENT}/print/receipt`]: () => respondJson({ ok: false, error: "render_required" }, 409),
