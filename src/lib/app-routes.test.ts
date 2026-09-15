@@ -150,20 +150,110 @@ describe("legacy redirects", () => {
     expect(canonicalPathForLegacy("/dashboard/connections/holoo")).toBe("/settings/connections/holoo");
   });
 
-  it("leaves the workspace's own pages alone", () => {
-    for (const pathname of [
-      "/dashboard",
-      "/dashboard/overview",
-      "/dashboard/orders",
-      "/dashboard/ai",
-      "/dashboard/knowledge",
-      "/dashboard/support",
-      "/login",
-      "/api/orders",
-    ]) {
+  it("leaves the workspace home and the non-dashboard routes alone", () => {
+    for (const pathname of ["/dashboard", "/login", "/api/orders"]) {
       expect(canonicalPathForLegacy(pathname)).toBeNull();
       expect(legacyRedirectTarget(pathname)).toBeNull();
     }
+  });
+
+  it("moves the workspace's own pages to their top-level routes", () => {
+    const moved: readonly (readonly [string, string])[] = [
+      ["/dashboard/overview", "/overview"],
+      ["/dashboard/ai", "/ai"],
+      ["/dashboard/media", "/media"],
+      ["/dashboard/knowledge", "/knowledge"],
+      ["/dashboard/knowledge/a/pos-basics", "/knowledge/a/pos-basics"],
+      ["/dashboard/support", "/support"],
+      ["/dashboard/guides", "/knowledge"],
+      ["/dashboard/help", "/knowledge"],
+    ];
+    for (const [legacy, canonical] of moved) {
+      expect(canonicalPathForLegacy(legacy), legacy).toBe(canonical);
+      // …and the new address is canonical: running it through the table again
+      // is a no-op, which is what stops a redirect loop.
+      expect(canonicalPathForLegacy(canonical), canonical).toBeNull();
+      expect(isCanonicalAppPathname(canonical), canonical).toBe(true);
+    }
+  });
+
+  it("moves the second-wave work areas into Accounting", () => {
+    const moved: readonly (readonly [string, string])[] = [
+      ["/dashboard/orders", ACCOUNTING_WORKSPACE_HREFS.orders],
+      ["/dashboard/orders/ord-7", `${ACCOUNTING_WORKSPACE_HREFS.orders}/ord-7`],
+      ["/dashboard/waiter", ACCOUNTING_WORKSPACE_HREFS.waiter],
+      ["/dashboard/jewelry", ACCOUNTING_WORKSPACE_HREFS.jewelry],
+      ["/dashboard/watch", ACCOUNTING_WORKSPACE_HREFS.watch],
+      ["/dashboard/accessories", ACCOUNTING_WORKSPACE_HREFS.products],
+      ["/dashboard/wholesale", ACCOUNTING_WORKSPACE_HREFS.products],
+      ["/dashboard/tools-fittings", ACCOUNTING_WORKSPACE_HREFS.products],
+      ["/dashboard/haberdashery", ACCOUNTING_WORKSPACE_HREFS.products],
+    ];
+    for (const [legacy, canonical] of moved) {
+      expect(canonicalPathForLegacy(legacy), legacy).toBe(canonical);
+    }
+  });
+
+  it("moves the last flat pages into the apps and the settings area", () => {
+    const moved: readonly (readonly [string, string])[] = [
+      ["/dashboard/loyalty", "/growth/loyalty"],
+      ["/dashboard/promotions", "/growth/campaigns"],
+      ["/dashboard/commission", "/growth/commission"],
+      ["/dashboard/customers", "/crm/directory"],
+      ["/dashboard/persons", "/crm/directory"],
+      ["/dashboard/menu", "/settings/menu"],
+      ["/dashboard/team", "/settings/team"],
+      ["/dashboard/backup", "/settings/backup"],
+    ];
+    for (const [legacy, canonical] of moved) {
+      expect(canonicalPathForLegacy(legacy), legacy).toBe(canonical);
+    }
+    // The two branch pages carry the tab that names what they were.
+    expect(legacyRedirectTarget("/dashboard/branches")).toBe(
+      "/settings/branch-management?branchTab=branches",
+    );
+    expect(legacyRedirectTarget("/dashboard/locations")).toBe(
+      "/settings/branch-management?branchTab=sync",
+    );
+    // The old integrations pages land on the connections hub; the visitor's
+    // own query is kept alongside the target's tab.
+    expect(legacyRedirectTarget("/dashboard/integrations")).toBe(
+      "/settings/connections?tab=woocommerce",
+    );
+    expect(legacyRedirectTarget("/dashboard/integrations/holoo", "?connectionId=c1")).toBe(
+      "/settings/connections/holoo?connectionId=c1",
+    );
+  });
+
+  it("forwards the tabbed ledger address to the section each tab names now", () => {
+    expect(legacyRedirectTarget("/dashboard/ledger")).toBe("/accounting/overview");
+    expect(legacyRedirectTarget("/dashboard/ledger", "?tab=expenses")).toBe(
+      "/accounting/expenses",
+    );
+    expect(legacyRedirectTarget("/dashboard/ledger", "?tab=ar")).toBe(
+      "/accounting/receivables",
+    );
+    expect(legacyRedirectTarget("/dashboard/ledger", "?tab=parties")).toBe(
+      "/accounting/directory",
+    );
+    // The per-role tabs carry which list was asked for; `?party=` survives.
+    expect(legacyRedirectTarget("/dashboard/ledger", "?tab=suppliers&party=42")).toBe(
+      "/accounting/directory?view=suppliers&party=42",
+    );
+    // An unknown tab is the app's home — never a dead end.
+    expect(legacyRedirectTarget("/dashboard/ledger", "?tab=nonsense")).toBe(
+      "/accounting/overview",
+    );
+  });
+
+  it("splits the old WordPress manager between the website app and the hub", () => {
+    expect(legacyRedirectTarget("/dashboard/wp")).toBe("/websites/wp");
+    expect(legacyRedirectTarget("/dashboard/wp/orders")).toBe("/websites/wp/orders");
+    expect(legacyRedirectTarget("/dashboard/wp/connections")).toBe(
+      "/settings/connections?tab=woocommerce",
+    );
+    // An unknown section lands on the manager's front page, not a 404.
+    expect(legacyRedirectTarget("/dashboard/wp/retired-section")).toBe("/websites/wp");
   });
 
   it("matches whole segments, so a lookalike route is not redirected", () => {

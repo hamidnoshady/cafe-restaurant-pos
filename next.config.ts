@@ -46,7 +46,8 @@ const nextConfig: NextConfig = {
     return [
       { source: "/platform/ai/gateway", destination: "/platform/ai", permanent: false },
       { source: "/platform/ai/prompts", destination: "/platform/ai", permanent: false },
-      { source: "/dashboard/ai/settings", destination: "/dashboard/ai", permanent: false },
+      { source: "/dashboard/ai/settings", destination: "/ai", permanent: false },
+      { source: "/ai/settings", destination: "/ai", permanent: false },
     ];
   },
   /**

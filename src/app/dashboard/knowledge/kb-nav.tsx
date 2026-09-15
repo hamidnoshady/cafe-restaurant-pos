@@ -39,7 +39,7 @@ import { api, inputClass } from "../ui";
 import { cardClass } from "../page-chrome";
 
 export function articleHref(slug: string): string {
-  return `/dashboard/knowledge/a/${encodeURIComponent(slug)}`;
+  return `/knowledge/a/${encodeURIComponent(slug)}`;
 }
 
 /** Sidebar search state, owned here so home/article pages share the behaviour. */
@@ -320,7 +320,7 @@ export function KbSideMenu({
             {catalogue.tags.map((t) => (
               <Link
                 key={t.slug}
-                href={`/dashboard/knowledge?tag=${encodeURIComponent(t.slug)}`}
+                href={`/knowledge?tag=${encodeURIComponent(t.slug)}`}
                 onClick={onNavigate}
                 className="rounded-full border border-border/80 bg-card px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >

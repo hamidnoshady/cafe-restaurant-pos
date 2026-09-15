@@ -336,6 +336,8 @@ function errorMessage(code: string | undefined): string {
     period_label_required: "عنوان دوره الزامی است.",
     run_not_found: "تعهد حقوق پیدا نشد.",
     already_paid: "این تعهد قبلاً پرداخت شده است.",
+    already_voided: "این تعهد قبلاً ابطال شده است.",
+    run_voided: "این تعهد ابطال شده و قابل پرداخت نیست.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

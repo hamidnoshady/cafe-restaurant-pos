@@ -148,7 +148,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       severity: "important",
       title: `سفارش ${toPersianDigits(voided.orderNumber)} باطل شد`,
       body: `${tomanText(voided.total)}${body.void?.reason?.trim() ? ` — ${body.void.reason.trim()}` : ""}`,
-      url: "/dashboard/orders",
+      url: "/accounting/orders",
       // The amount is what an owner's «فقط ابطال‌های بزرگ» threshold is
       // compared against (notification_rules.min_amount_rial).
       amountRial: voided.total,

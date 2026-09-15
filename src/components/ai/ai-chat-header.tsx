@@ -29,8 +29,8 @@ export function AiChatHeader({
   onClose,
 }: AiChatHeaderProps) {
   const fullPageHref = conversationId
-    ? `/dashboard/ai?conversation=${conversationId}`
-    : "/dashboard/ai";
+    ? `/ai?conversation=${conversationId}`
+    : "/ai";
 
   const modeLabel =
     mode === "wizard"

@@ -37,8 +37,8 @@ import {
 
 /** A business nav the way the shell hands it over: already filtered, flattened. */
 const BUSINESS_NAV = [
-  { label: "داشبورد", href: "/dashboard/overview" },
-  { label: "سفارش‌ها", href: "/dashboard/orders" },
+  { label: "داشبورد", href: "/overview" },
+  { label: "سفارش‌ها", href: ACCOUNTING_WORKSPACE_HREFS.orders },
   { label: "صندوق (فروش)", href: ACCOUNTING_WORKSPACE_HREFS.pos },
   { label: "ارتباط با مشتری", href: "/crm/overview" },
   { label: "انبار", href: ACCOUNTING_WORKSPACE_HREFS.inventory },
@@ -50,7 +50,7 @@ const BUSINESS_NAV = [
   { label: "لیست قیمت", href: accountingProductsHref("prices") },
   { label: "گزارش‌ها", href: ACCOUNTING_WORKSPACE_HREFS.reports },
   { label: "تنظیمات", href: "/settings" },
-  { label: "مرکز آموزش", href: "/dashboard/knowledge" },
+  { label: "مرکز آموزش", href: "/knowledge" },
 ];
 
 function groupsFor(role: string, navItems = BUSINESS_NAV) {
@@ -69,7 +69,7 @@ describe("the Accounting workspace menu", () => {
   it("exposes the business's primary work areas, not only the ledger", () => {
     const hrefs = accountingWorkspaceHrefs(groupsFor("owner"));
     for (const expected of [
-      "/dashboard/orders",
+      ACCOUNTING_WORKSPACE_HREFS.orders,
       ACCOUNTING_WORKSPACE_HREFS.pos,
       ACCOUNTING_WORKSPACE_HREFS.inventory,
       ACCOUNTING_WORKSPACE_HREFS.products,
@@ -156,7 +156,7 @@ describe("the Accounting workspace menu", () => {
 
   it("never adopts a page that is not a work area", () => {
     const hrefs = accountingWorkspaceHrefs(groupsFor("owner"));
-    expect(hrefs).not.toContain("/dashboard/knowledge");
+    expect(hrefs).not.toContain("/knowledge");
   });
 
   it("respects the per-section role gate", () => {
@@ -172,7 +172,7 @@ describe("the Accounting workspace menu", () => {
 
   it("restricts a non-accounting role to their authorized business groups without ledger sections", () => {
     const cashierHrefs = accountingWorkspaceHrefs(groupsFor("cashier"));
-    expect(cashierHrefs).toContain("/dashboard/orders");
+    expect(cashierHrefs).toContain(ACCOUNTING_WORKSPACE_HREFS.orders);
     expect(cashierHrefs).toContain(ACCOUNTING_WORKSPACE_HREFS.pos);
     expect(cashierHrefs).not.toContain(accountingSectionHref("dashboard"));
     expect(cashierHrefs).not.toContain(accountingSectionHref("trial-balance"));

@@ -43,10 +43,10 @@ export interface KnowledgeSection {
  * trades' screens (only one of the last four is ever visible to a business).
  */
 export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
-  { key: "overview", label: "نمای کلی", route: "/dashboard/overview" },
+  { key: "overview", label: "نمای کلی", route: "/overview" },
   { key: "pos", label: "فروش (صندوق)", route: ACCOUNTING_WORKSPACE_HREFS.pos },
-  { key: "orders", label: "سفارش‌ها", route: "/dashboard/orders" },
-  { key: "customers", label: "مشتریان", route: "/dashboard/customers" },
+  { key: "orders", label: "سفارش‌ها", route: "/accounting/orders" },
+  { key: "customers", label: "مشتریان", route: "/crm/directory" },
   { key: "inventory", label: "انبار", route: ACCOUNTING_WORKSPACE_HREFS.inventory },
   { key: "reports", label: "گزارش‌ها", route: ACCOUNTING_WORKSPACE_HREFS.reports },
   { key: "settings", label: "تنظیمات", route: "/settings" },
@@ -56,18 +56,18 @@ export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
   { key: "connections", label: "اتصال‌های فنی", route: "/settings/connections" },
   { key: "website", label: "وب‌سایت", route: "/websites" },
   { key: "projects", label: "پروژه‌ها", route: "/projects" },
-  { key: "ai", label: "دستیار هوشمند", route: "/dashboard/ai" },
+  { key: "ai", label: "دستیار هوشمند", route: "/ai" },
   { key: "kitchen", label: "آشپزخانه", route: ACCOUNTING_WORKSPACE_HREFS.kitchen },
   { key: "floor", label: "نقشهٔ سالن", route: ACCOUNTING_WORKSPACE_HREFS.floor },
-  { key: "waiter", label: "میزهای من", route: "/dashboard/waiter" },
+  { key: "waiter", label: "میزهای من", route: "/accounting/waiter" },
   { key: "growth", label: "رشد و بازاریابی", route: "/growth" },
   { key: "loyalty", label: "وفاداری", route: "/growth/loyalty" },
   { key: "campaigns", label: "کمپین‌ها", route: "/growth/campaigns" },
   { key: "gift-cards", label: "کارت هدیه", route: "/growth/gift-cards" },
   { key: "commission", label: "پورسانت فروشندگان", route: "/growth/commission" },
-  { key: "jewelry", label: "طلا و جواهر", route: "/dashboard/jewelry" },
-  { key: "watch", label: "ساعت", route: "/dashboard/watch" },
-  { key: "accessories", label: "اکسسوری", route: "/dashboard/accessories" },
+  { key: "jewelry", label: "طلا و جواهر", route: "/accounting/jewelry" },
+  { key: "watch", label: "ساعت", route: "/accounting/watch" },
+  { key: "accessories", label: "اکسسوری", route: ACCOUNTING_WORKSPACE_HREFS.products },
   { key: "cosmetics", label: "آرایشی و بهداشتی", route: ACCOUNTING_WORKSPACE_HREFS.cosmetics },
 ];
 

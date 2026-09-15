@@ -54,11 +54,11 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     // bare /dashboard route is now the chat home. Links that meant "the
     // dashboard" point here instead, so the legacy surface is still one tap away
     // whether or not the workspace shell is on.
-    { label: "داشبورد", module: "dashboard", href: "/dashboard/overview" },
+    { label: "داشبورد", module: "dashboard", href: "/overview" },
     {
       label: labelFor(industry, "saleDocumentPlural"),
       module: "orders",
-      href: "/dashboard/orders",
+      href: "/accounting/orders",
       roles: ["owner", "manager", "cashier", "waiter"],
     },
     {
@@ -72,7 +72,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     // so a business that has customers has a CRM — and points at the app's own
     // home (`/crm/overview`), the same way «رشد و بازاریابی» points at
     // `/growth/overview` and «مدیریت وب‌سایت» at `/websites/overview`. The old
-    // flat href `/dashboard/customers` is kept only as a redirect page for
+    // flat href `/crm/directory` is kept only as a redirect page for
     // saved bookmarks; using it here made two things go wrong at once:
     //   1. the workspace rail's CRM launcher (which looks for `/crm/overview`)
     //      never matched, so «ارتباط با مشتری» was missing from the rail's
@@ -85,7 +85,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     //      «اشخاص»/«مشتریان» sections.
     // The accountant is deliberately not here: the CRM app does not admit them
     // (see `canOpenCrm`); they manage the shared customer record from
-    // Accounting's own «اشخاص» and «مشتریان» sections, and `/dashboard/customers`
+    // Accounting's own «اشخاص» and «مشتریان» sections, and `/crm/directory`
     // still redirects an accountant there for any old bookmark.
     {
       label: "ارتباط با مشتری",
@@ -122,13 +122,13 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       roles: ["owner", "manager"],
     },
     { label: "میزها", module: "tables", href: ACCOUNTING_WORKSPACE_HREFS.floor, roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
-    { label: "میزهای من", module: "waiter", href: "/dashboard/waiter", roles: ["cashier", "waiter"], flag: "reservations" },
+    { label: "میزهای من", module: "waiter", href: "/accounting/waiter", roles: ["cashier", "waiter"], flag: "reservations" },
     { label: "آشپزخانه", module: "kitchen", href: ACCOUNTING_WORKSPACE_HREFS.kitchen, roles: ["owner", "manager", "kitchen"] },
     { label: "رزروها", module: "reservations", href: ACCOUNTING_WORKSPACE_HREFS.reservations, roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
     { label: "ارسال و پیک", module: "delivery", href: ACCOUNTING_WORKSPACE_HREFS.delivery, roles: ["owner", "manager", "cashier"], flag: "delivery" },
     { label: "انبار", module: "inventory", href: ACCOUNTING_WORKSPACE_HREFS.inventory, roles: ["owner", "manager"], flag: "inventory" },
-    { label: INDUSTRY_LABELS.jewelry, module: "jewelry", href: "/dashboard/jewelry", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.watch, module: "watch", href: "/dashboard/watch", roles: ["owner", "manager"] },
+    { label: INDUSTRY_LABELS.jewelry, module: "jewelry", href: "/accounting/jewelry", roles: ["owner", "manager"] },
+    { label: INDUSTRY_LABELS.watch, module: "watch", href: "/accounting/watch", roles: ["owner", "manager"] },
     // Phase 42 — the retail trade-goods trades manage their catalogue in the
     // shared products workspace: a collapsible sidebar group — افزودن محصول،
     // لیست محصولات، لیست قیمت، ویژگی محصول، الگوی بارکد وزنی and the trade's
@@ -195,7 +195,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     {
       label: "کتابخانهٔ رسانه",
       module: "media",
-      href: "/dashboard/media",
+      href: "/media",
       roles: ["owner", "manager"],
     },
     // The «اتصال‌های فنی» hub — every technical connection in the product
@@ -230,7 +230,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
         roles: tab.roles ?? ["owner", "manager", "accountant"],
       })),
     },
-    { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
+    { label: "دستیار هوشمند", module: "ai", href: "/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
     // Wallet/credits & plans — platform-owned, so the door is the platform
     // settings area's billing page, never an app's. The small credit badge in
     // the chrome links to the same URL.
@@ -254,13 +254,13 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     // Migration 0131 — the in-product knowledge base («مرکز آموزش»): every
     // member learns the platform here, so like the support desk it has no
     // role gate; the `settings` module anchors it because every trade has it.
-    { label: "مرکز آموزش", module: "settings", href: "/dashboard/knowledge" },
+    { label: "مرکز آموزش", module: "settings", href: "/knowledge" },
     // Migration 0130 — the support desk. Every member may open a ticket
     // (asking for help is not a privileged act), so there is no `roles` gate;
     // the `settings` module anchors it because every industry has settings.
     // Owners and managers see the whole business queue, the rest only their
     // own tickets — enforced server-side in src/lib/support-service.ts.
-    { label: "پشتیبانی", module: "settings", href: "/dashboard/support" },
+    { label: "پشتیبانی", module: "settings", href: "/support" },
   ];
 }
 

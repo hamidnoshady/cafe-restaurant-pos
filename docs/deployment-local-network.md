@@ -106,27 +106,27 @@ the KDS and the waiter board instantly — no refresh, no polling.
 
 ## The receipt printer / cash drawer
 
-The **print agent is separate from this container on purpose.** It runs on the
-machine physically attached to the receipt printer / cash drawer (the till PC),
-and the dashboard's browser talks to it directly on `127.0.0.1:9123` — it does
-**not** go through the server or Traefik. It also needs a real Chromium to shape
-Persian/RTL receipts correctly, which is why it isn't baked into the server
-image.
+The **Windows print connector is separate from the cloud/container on purpose.**
+It runs on the cashier PC physically attached to the receipt printer or cash
+drawer, and the dashboard's browser talks to it directly on
+`127.0.0.1:9123`; the traffic does **not** go through the server or Traefik.
 
-On the till PC:
+No technical setup is required on the till. Sign in to the POS on that Windows
+PC, open «تنظیمات → چاپ و فاکتور → چاپگرها», click **«دانلود و نصب رابط چاپ
+ویندوز»**, and open the downloaded file once. The per-user installer needs no
+administrator rights, Node.js, repository checkout, command line, or manual
+configuration. It starts the connector immediately and at each Windows login.
+The connector reads the normal unshared queues shown in Windows «Printers &
+scanners» and sends jobs through the native spooler.
 
-```bash
-# On the machine with the printer plugged in:
-npm install
-PRINT_AGENT_CHROMIUM_PATH=/path/to/chromium npm run print-agent
-```
-
-Set `NEXT_PUBLIC_PRINT_AGENT_URL` only if you change the agent's port from the
-`http://127.0.0.1:9123` default. See the print-agent notes in `.env.example`.
+On Chrome/Edge 142+, allow the site's Local network access prompt (labelled
+**Apps on device** for loopback on newer versions), return to the settings page,
+and click «بررسی دوباره». `NEXT_PUBLIC_PRINT_AGENT_URL` is only for managed
+nonstandard development setups; ordinary Windows users leave it unset.
 
 A printer with an Ethernet port but no WiFi (plugged into a WiFi extender's LAN
-port, e.g. a TP-Link RE200) is a supported and common shape — the extender's
-mode, the printer's fixed IP and how to test the path are in
+port, e.g. a TP-Link RE200) is a supported shape — the extender's mode, the
+printer's fixed IP and diagnostics are in
 [docs/network-printer-wifi-extender.md](network-printer-wifi-extender.md).
 
 ## Backups

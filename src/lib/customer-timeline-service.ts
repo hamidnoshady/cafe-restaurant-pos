@@ -111,7 +111,7 @@ export async function customerTimeline(
         kindLabel: TIMELINE_KIND_LABELS.order,
         summary: `سفارش ${toPersianDigits(row.order_number)} — ${toPersianDigits(row.item_count)} قلم`,
         amount: moneyFields(total),
-        href: `/dashboard/orders/${row.id}`,
+        href: `/accounting/orders/${row.id}`,
         detail:
           row.status === "completed"
             ? undefined

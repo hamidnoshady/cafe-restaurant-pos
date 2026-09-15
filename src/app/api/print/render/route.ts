@@ -9,13 +9,13 @@ import { buildJobBytes, type RenderableJob } from "@/lib/system-print/service";
 
 /**
  * Render a print job to raw ESC/POS bytes and hand them back — the server
- * half of the `webusb` transport, where the BROWSER is the delivery
- * middleman. A server installation cannot see the till's local printers at
- * all (the server is in a container or another building), but the browser
- * sitting at the counter can: WebUSB gives the page a direct pipe to a USB
- * receipt printer. The split follows what each side actually has — the
- * server has the Chromium raster pipeline that shapes Persian text, the
- * browser has the cable. No print dialog is involved anywhere.
+ * half of local browser-mediated delivery. A server installation cannot see
+ * the till's local printers (it is in a container or another building), but
+ * the browser can deliver the rendered bytes either through WebUSB or through
+ * the dependency-free loopback Windows connector's native spooler endpoint.
+ * The split follows what each side actually has — the server has the Chromium
+ * raster pipeline that shapes Persian text, while the till PC has the cable
+ * and Windows queue. No print dialog is involved anywhere.
  *
  * Same body shape as /api/print/job minus the sending; responds with the
  * bytes as application/octet-stream. Same role list as /api/print/job and

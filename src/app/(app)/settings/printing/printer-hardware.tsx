@@ -13,7 +13,7 @@
  * cannot be swept for.
  */
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2Icon, PlugZapIcon, RadarIcon, RefreshCwIcon, UsbIcon, XCircleIcon } from "lucide-react";
+import { CheckCircle2Icon, DownloadIcon, PlugZapIcon, RadarIcon, RefreshCwIcon, UsbIcon, XCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
@@ -149,13 +149,13 @@ export function PrinterHardware({
   printers,
   loading,
   templates,
-  agentOnline,
+  localAgentOnline,
   onChanged,
 }: {
   printers: PrinterRow[];
   loading: boolean;
   templates: SavedTemplateRow[];
-  agentOnline: boolean;
+  localAgentOnline: boolean;
   onChanged: () => Promise<void> | void;
 }) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -190,8 +190,14 @@ export function PrinterHardware({
       );
       return;
     }
-    setSystemPrinters(result.data?.printers ?? []);
+    const found = result.data?.printers ?? [];
+    setSystemPrinters(found);
     setSystemVia(result.via ?? "agent");
+    if (result.via === "server") {
+      setNotice(
+        "عامل چاپ این کامپیوتر پاسخ نداد؛ فهرست زیر مربوط به دستگاه سرور است، نه ویندوز شما. برای چاپگر USB نصب‌شده در ویندوز، عامل چاپ را روی همین کامپیوتر اجرا کنید و دسترسی Apps on device / Local network access مرورگر را Allow کنید.",
+      );
+    }
   }, []);
 
   const discoverLan = useCallback(async () => {
@@ -213,8 +219,11 @@ export function PrinterHardware({
   // Reading the OS's printer list is instant and needs no network, so it runs
   // as soon as the agent says it is up — the common case is "pick yours".
   useEffect(() => {
-    if (agentOnline && systemPrinters === null) void discoverSystem();
-  }, [agentOnline, systemPrinters, discoverSystem]);
+    // Auto-discovery is useful only when the answer comes from this Windows
+    // PC. A cloud server's empty CUPS list is not the user's Windows list and
+    // must not look like successful local discovery.
+    if (localAgentOnline && systemPrinters === null) void discoverSystem();
+  }, [localAgentOnline, systemPrinters, discoverSystem]);
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
@@ -323,6 +332,30 @@ export function PrinterHardware({
     <div className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
+      {!localAgentOnline ? (
+        <InfoBox>
+          <div className="space-y-3">
+            <div>
+              <p className="font-medium text-foreground">اتصال خودکار به چاپگرهای ویندوز</p>
+              <p className="mt-1">
+                برای دیدن چاپگر USB نصب‌شده در Windows، رابط چاپ را یک‌بار روی همین کامپیوتر نصب کنید. فایل دانلودشده را
+                باز کنید و تأیید Windows را بزنید؛ نصب و راه‌اندازی کاملاً خودکار است و از ورود‌های بعدی Windows نیز خودکار
+                اجرا می‌شود.
+              </p>
+            </div>
+            <Button asChild>
+              <a href="/api/print/windows-agent-installer">
+                <DownloadIcon aria-hidden="true" />
+                دانلود و نصب رابط چاپ ویندوز
+              </a>
+            </Button>
+            <p className="text-xs">
+              پس از پیام موفقیت، به این صفحه برگردید، «بررسی دوباره» را بزنید و اگر مرورگر اجازهٔ Apps on device یا Local
+              network access خواست، گزینهٔ Allow را انتخاب کنید.
+            </p>
+          </div>
+        </InfoBox>
+      ) : null}
 
       <SectionCard
         title="پیداکردن چاپگر"

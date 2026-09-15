@@ -103,8 +103,12 @@ const JOURNEY: readonly string[] = [
   settingsTabHref("team"),
   "/settings/profile",
   "/settings/connections",
-  "/dashboard/knowledge",
-  "/dashboard/support",
+  // The workspace's own pages, each a top-level route now.
+  "/overview",
+  "/ai",
+  "/media",
+  "/knowledge",
+  "/support",
 ];
 
 describe("the signed-in journey", () => {
@@ -258,6 +262,36 @@ describe("the legacy addresses", () => {
     ["/dashboard/settings", "/settings"],
     ["/dashboard/billing", PLATFORM_BILLING_HREF],
     ["/dashboard/connections", "/settings/connections"],
+    // The final wave: the workspace's own pages and the last flat dashboard
+    // pages. Every one of them is a middleware 308 now — no page.tsx remains
+    // under /dashboard except the home itself.
+    ["/dashboard/overview", "/overview"],
+    ["/dashboard/ai", "/ai"],
+    ["/dashboard/media", "/media"],
+    ["/dashboard/knowledge", "/knowledge"],
+    ["/dashboard/knowledge/a/pos-basics", "/knowledge/a/pos-basics"],
+    ["/dashboard/support", "/support"],
+    ["/dashboard/guides", "/knowledge"],
+    ["/dashboard/help", "/knowledge"],
+    ["/dashboard/orders", ACCOUNTING_WORKSPACE_HREFS.orders],
+    ["/dashboard/waiter", ACCOUNTING_WORKSPACE_HREFS.waiter],
+    ["/dashboard/jewelry", ACCOUNTING_WORKSPACE_HREFS.jewelry],
+    ["/dashboard/watch", ACCOUNTING_WORKSPACE_HREFS.watch],
+    ["/dashboard/accessories", ACCOUNTING_WORKSPACE_HREFS.products],
+    ["/dashboard/wholesale", ACCOUNTING_WORKSPACE_HREFS.products],
+    ["/dashboard/tools-fittings", ACCOUNTING_WORKSPACE_HREFS.products],
+    ["/dashboard/haberdashery", ACCOUNTING_WORKSPACE_HREFS.products],
+    ["/dashboard/loyalty", "/growth/loyalty"],
+    ["/dashboard/promotions", "/growth/campaigns"],
+    ["/dashboard/commission", "/growth/commission"],
+    ["/dashboard/customers", "/crm/directory"],
+    ["/dashboard/persons", "/crm/directory"],
+    ["/dashboard/menu", "/settings/menu"],
+    ["/dashboard/team", "/settings/team"],
+    ["/dashboard/backup", "/settings/backup"],
+    ["/dashboard/ledger", "/accounting/overview"],
+    ["/dashboard/wp", "/websites/wp"],
+    ["/dashboard/wp/orders", "/websites/wp/orders"],
   ];
 
   it("permanently redirects each one to its canonical replacement", async () => {
@@ -312,6 +346,61 @@ describe("the legacy addresses", () => {
     expect(location?.pathname).toBe(accountingProductsHref("new"));
     expect(location?.searchParams.get("tab")).toBe("new");
     expect(location?.searchParams.get("q")).toBe("vip");
+  });
+
+  it("forwards the old tabbed ledger address to the section each tab names now", async () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["/dashboard/ledger", "/accounting/overview"],
+      ["/dashboard/ledger?tab=expenses", "/accounting/expenses"],
+      ["/dashboard/ledger?tab=ar", "/accounting/receivables"],
+      ["/dashboard/ledger?tab=parties", "/accounting/directory"],
+      ["/dashboard/ledger?tab=nonsense", "/accounting/overview"],
+    ];
+    for (const [legacy, canonical] of cases) {
+      const { status, location } = await visit(legacy, { authed: true });
+      expect(status, `${legacy} should be a permanent redirect`).toBe(308);
+      expect(location?.pathname, `${legacy} → ${canonical}`).toBe(canonical);
+    }
+    // The per-role tabs carry which list was asked for, and a `?party=` deep
+    // link keeps its file-opening parameter.
+    const suppliers = await visit("/dashboard/ledger?tab=suppliers&party=42", {
+      authed: true,
+    });
+    expect(suppliers.location?.pathname).toBe("/accounting/directory");
+    expect(suppliers.location?.searchParams.get("view")).toBe("suppliers");
+    expect(suppliers.location?.searchParams.get("party")).toBe("42");
+  });
+
+  it("splits the old WordPress manager between the website app and the connections hub", async () => {
+    const orders = await visit("/dashboard/wp/orders", { authed: true });
+    expect(orders.status).toBe(308);
+    expect(orders.location?.pathname).toBe("/websites/wp/orders");
+    // The store's technical connection lives in the hub now.
+    const connections = await visit("/dashboard/wp/connections", { authed: true });
+    expect(connections.location?.pathname).toBe("/settings/connections");
+    expect(connections.location?.searchParams.get("tab")).toBe("woocommerce");
+    // An unknown trailing segment lands on the manager's front page, not a 404.
+    const unknown = await visit("/dashboard/wp/definitely-retired", { authed: true });
+    expect(unknown.location?.pathname).toBe("/websites/wp");
+  });
+
+  it("carries the branch-management tab of the two retired branch pages", async () => {
+    const branches = await visit("/dashboard/branches", { authed: true });
+    expect(branches.location?.pathname).toBe("/settings/branch-management");
+    expect(branches.location?.searchParams.get("branchTab")).toBe("branches");
+    const sync = await visit("/dashboard/locations", { authed: true });
+    expect(sync.location?.pathname).toBe("/settings/branch-management");
+    expect(sync.location?.searchParams.get("branchTab")).toBe("sync");
+  });
+
+  it("hands an old order deep link to the queue with the order open", async () => {
+    const { status, location } = await visit("/dashboard/orders/ord-7", {
+      authed: true,
+    });
+    expect(status).toBe(308);
+    // The middleware forwards the path verbatim; the `[id]` route under
+    // /accounting/orders then opens the dialog via `?order=`.
+    expect(location?.pathname).toBe("/accounting/orders/ord-7");
   });
 
   it("never appends the home segment to a path that already names a section", async () => {

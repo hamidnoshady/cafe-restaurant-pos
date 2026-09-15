@@ -178,10 +178,10 @@ export function PrintingManager() {
 
   return (
     <div className="space-y-4">
-      <ErrorBox>{error}</ErrorBox>
+      <ErrorBox>{error || (printers.error ? errorMessage(printers.error) : "")}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-      <AgentBanner online={agent.online} via={agent.via} checking={agent.checking} onRecheck={() => void agent.recheck()} />
+      <AgentBanner online={agent.online} via={agent.via} checking={agent.checking} onRecheck={() => void agent.recheck(true)} />
 
       <TabBar idPrefix="printing" label="بخش‌های چاپ" tabs={TABS} active={tab} onChange={setTab} />
 
@@ -217,7 +217,7 @@ export function PrintingManager() {
           printers={printers.printers}
           loading={printers.loading}
           templates={saved.templates}
-          agentOnline={agent.online}
+          localAgentOnline={agent.localAgentOnline}
           onChanged={printers.reload}
         />
       ) : null}
@@ -258,16 +258,16 @@ function AgentBanner({
             <p className="font-semibold text-foreground">
               {online
                 ? via === "server"
-                  ? "چاپ سخت‌افزاری از طریق سرور برنامه فعال است"
+                  ? "سرور چاپ فعال است؛ عامل ویندوز اجرا نیست"
                   : "عامل چاپ محلی فعال است"
                 : "چاپ سخت‌افزاری در دسترس نیست"}
             </p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {online
                 ? via === "server"
-                  ? "عامل چاپ محلی اجرا نیست، اما سرور برنامه روی همین شبکه است و چاپگرهای نصب‌شدهٔ آن دستگاه، چاپگرهای حرارتی و کشوی پول از طریق آن در دسترس‌اند."
+                  ? "فقط چاپگرهایی که خودِ سرور می‌بیند در دسترس‌اند. برای چاپگر USB نصب‌شده روی این Windows، از تب «چاپگرها» رابط چاپ ویندوز را دانلود و یک‌بار نصب کنید؛ سپس «بررسی دوباره» را بزنید و درخواست Apps on device / Local network access مرورگر را Allow کنید."
                   : "چاپگرهای حرارتی، کشوی پول و چاپگرهای نصب‌شدهٔ ویندوز در دسترس‌اند."
-                : "بدون آن هم می‌توانید قالب طراحی کنید و با پنجرهٔ چاپ مرورگر چاپ بگیرید؛ برای چاپگر حرارتی USB، در تب «چاپگرها» گزینهٔ «اتصال USB از مرورگر» را بزنید تا خود مرورگر واسطهٔ چاپ شود، یا عامل چاپ را روی دستگاه صندوق اجرا کنید."}
+                : "بدون رابط هم می‌توانید قالب طراحی کنید و با پنجرهٔ چاپ مرورگر چاپ بگیرید؛ برای چاپگر نصب‌شده روی Windows، در تب «چاپگرها» دکمهٔ دانلود و نصب خودکار رابط چاپ را بزنید."}
             </p>
           </div>
         </div>

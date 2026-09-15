@@ -185,28 +185,38 @@ describe("the route tree resolves every promised URL", () => {
       expectRoute(`/settings/${page}`);
   });
 
-  it("keeps the remaining Dashboard pages as real routes", () => {
-    // These are not part of the operational Accounting move.
+  it("finds the workspace's own pages at their top-level routes", () => {
     for (const pathname of [
-      "/dashboard/ledger",
-      "/dashboard/customers",
-      "/dashboard/persons",
-      "/dashboard/orders",
-      "/dashboard/loyalty",
-      "/dashboard/promotions",
-      "/dashboard/commission",
-      "/dashboard/team",
-      "/dashboard/menu",
-      "/dashboard/backup",
-      "/dashboard/branches",
-      "/dashboard/locations",
+      "/overview",
+      "/ai",
+      "/media",
+      "/knowledge",
+      "/knowledge/a/pos-basics",
+      "/support",
     ]) {
       expectRoute(pathname);
     }
   });
 
-  it("removes retired Dashboard route modules instead of serving duplicate pages", () => {
+  it("finds the second-wave work areas at their Accounting routes", () => {
     for (const pathname of [
+      "/accounting/orders",
+      "/accounting/orders/00000000-0000-0000-0000-000000000000",
+      "/accounting/waiter",
+      "/accounting/jewelry",
+      "/accounting/watch",
+    ]) {
+      expectRoute(pathname);
+    }
+  });
+
+  it("keeps /dashboard as the single page under its prefix", () => {
+    expectRoute(DASHBOARD_HOME);
+    // Every other old dashboard page is a middleware 308 now; a page.tsx
+    // reappearing under the prefix would serve a duplicate copy of a page
+    // that has one canonical address.
+    for (const pathname of [
+      // The first wave (operational Accounting move).
       "/dashboard/pos",
       "/dashboard/stock",
       "/dashboard/inventory",
@@ -219,6 +229,35 @@ describe("the route tree resolves every promised URL", () => {
       "/dashboard/kitchen",
       "/dashboard/reservations",
       "/dashboard/delivery",
+      // The final wave — the workspace pages and the last flat pages.
+      "/dashboard/overview",
+      "/dashboard/ai",
+      "/dashboard/media",
+      "/dashboard/knowledge",
+      "/dashboard/support",
+      "/dashboard/orders",
+      "/dashboard/waiter",
+      "/dashboard/jewelry",
+      "/dashboard/watch",
+      "/dashboard/ledger",
+      "/dashboard/customers",
+      "/dashboard/persons",
+      "/dashboard/loyalty",
+      "/dashboard/promotions",
+      "/dashboard/commission",
+      "/dashboard/team",
+      "/dashboard/menu",
+      "/dashboard/backup",
+      "/dashboard/branches",
+      "/dashboard/locations",
+      "/dashboard/accessories",
+      "/dashboard/wholesale",
+      "/dashboard/tools-fittings",
+      "/dashboard/haberdashery",
+      "/dashboard/guides",
+      "/dashboard/help",
+      "/dashboard/integrations",
+      "/dashboard/wp",
     ]) {
       expect(
         resolves(pathname),

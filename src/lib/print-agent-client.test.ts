@@ -20,6 +20,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as webusb from "./webusb-print";
 import {
+  allowPrintAgentRetry,
   checkAgent,
   kickDrawer,
   listSystemPrinters,
@@ -81,10 +82,12 @@ const RECEIPT: ReceiptData = {
 };
 
 const NETWORK = { transport: "network" as const, ip: "10.0.0.5", port: 9100 };
+const SYSTEM = { transport: "system" as const, systemName: "EPSON TM-T20III Receipt" };
 const WEBUSB = { transport: "webusb" as const, usbVendorId: 0x04b8, usbProductId: 0x0e15 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  allowPrintAgentRetry();
 });
 
 afterEach(() => {
@@ -120,6 +123,24 @@ describe("agent-first, server-fallback", () => {
     expect(result.unreachable).toBe(true);
   });
 
+  it("does not repeatedly call a refused loopback port until an explicit retry", async () => {
+    const { calls } = mockFetch({
+      "/api/print/health": () => respondJson({ ok: true, source: "server" }),
+      "/api/print/system-printers": () => respondJson({ ok: true, printers: [] }),
+    });
+    await checkAgent();
+    await listSystemPrinters();
+    expect(calls.map((call) => call.url)).toEqual([
+      `${AGENT}/health`,
+      "/api/print/health",
+      "/api/print/system-printers",
+    ]);
+
+    allowPrintAgentRetry();
+    await listSystemPrinters();
+    expect(calls.map((call) => call.url).at(-2)).toBe(`${AGENT}/printers/system`);
+  });
+
   it("a reachable agent's ERROR is final — never retried against the server", async () => {
     const { calls } = mockFetch({
       [`${AGENT}/print/receipt`]: () => respondJson({ ok: false, error: "printer_timeout" }, 502),
@@ -130,6 +151,88 @@ describe("agent-first, server-fallback", () => {
     expect(result.error).toBe("printer_timeout");
     expect(result.via).toBe("agent");
     expect(calls.map((c) => c.url)).toEqual([`${AGENT}/print/receipt`]);
+  });
+
+  it("bridges server-rendered bytes to the dependency-free Windows connector", async () => {
+    const bytes = Uint8Array.from([0x1b, 0x40, 0x1d, 0x56, 0x00]);
+    let rawBody: Record<string, unknown> | null = null;
+    const { calls } = mockFetch({
+      [`${AGENT}/print/receipt`]: () => respondJson({ ok: false, error: "render_required" }, 409),
+      "/api/print/render": () => respondBytes(bytes),
+      [`${AGENT}/print/raw`]: (_url, init) => {
+        rawBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return respondJson({ ok: true });
+      },
+    });
+
+    const result = await printReceipt(SYSTEM, RECEIPT);
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, via: "agent" }));
+    expect(calls.map((call) => call.url)).toEqual([
+      `${AGENT}/print/receipt`,
+      "/api/print/render",
+      `${AGENT}/print/raw`,
+    ]);
+    expect(rawBody).toEqual({
+      connection: SYSTEM,
+      dataBase64: "G0AdVgA=",
+    });
+  });
+
+  it("uses the render-to-raw bridge for every rich print operation", async () => {
+    const renderOps: string[] = [];
+    const rawPayloads: Array<Record<string, unknown>> = [];
+    const renderRequired = () => respondJson({ ok: false, error: "render_required" }, 409);
+    const { calls } = mockFetch({
+      [`${AGENT}/print/document`]: renderRequired,
+      [`${AGENT}/print/receipt`]: renderRequired,
+      [`${AGENT}/print/kitchen-ticket`]: renderRequired,
+      [`${AGENT}/print/label`]: renderRequired,
+      [`${AGENT}/print/test`]: renderRequired,
+      [`${AGENT}/drawer/kick`]: renderRequired,
+      "/api/print/render": (_url, init) => {
+        renderOps.push((JSON.parse(String(init?.body)) as { op: string }).op);
+        return respondBytes(Uint8Array.from([renderOps.length]));
+      },
+      [`${AGENT}/print/raw`]: (_url, init) => {
+        rawPayloads.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return respondJson({ ok: true });
+      },
+    });
+
+    await printDocument(SYSTEM, "<html></html>", "thermal80");
+    await printReceipt(SYSTEM, RECEIPT);
+    await printKitchenTicket(SYSTEM, { label: "میز", orderTypeLabel: "حضوری", sentAt: new Date(), lines: [] });
+    await printLabel(SYSTEM, { businessName: "ب", itemName: "آ", code: "1", fields: [] });
+    await testPrint(SYSTEM, "kitchen");
+    await kickDrawer(SYSTEM);
+
+    expect(renderOps).toEqual(["document", "receipt", "kitchen-ticket", "label", "test", "drawer-kick"]);
+    expect(rawPayloads).toHaveLength(6);
+    expect(rawPayloads.map((payload) => payload.connection)).toEqual(Array(6).fill(SYSTEM));
+    expect(rawPayloads.map((payload) => payload.dataBase64)).toEqual([
+      "AQ==",
+      "Ag==",
+      "Aw==",
+      "BA==",
+      "BQ==",
+      "Bg==",
+    ]);
+    expect(calls.map((call) => call.url)).not.toContain("/api/print/job");
+  });
+
+  it("never retries a claimed local queue on the cloud if final raw delivery fails", async () => {
+    const { calls } = mockFetch({
+      [`${AGENT}/print/receipt`]: () => respondJson({ ok: false, error: "render_required" }, 409),
+      "/api/print/render": () => respondBytes(Uint8Array.from([1, 2, 3])),
+      "/api/print/job": () => respondJson({ ok: true }),
+    });
+
+    const result = await printReceipt(SYSTEM, RECEIPT);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("agent_unreachable");
+    expect(calls.map((call) => call.url)).not.toContain("/api/print/job");
   });
 
   it("system-printer discovery falls back to the server route", async () => {

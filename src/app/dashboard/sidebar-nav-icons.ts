@@ -41,15 +41,15 @@ import {
 
 export const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboardIcon,
-  "/dashboard/overview": LayoutDashboardIcon,
-  "/dashboard/orders": ClipboardListIcon,
+  "/overview": LayoutDashboardIcon,
+  "/accounting/orders": ClipboardListIcon,
   // Business work areas now sit under the primary Accounting workspace. The
   // retired dashboard URLs are redirect-only and intentionally have no icon
   // entries, so a new menu item cannot accidentally reintroduce one.
   "/accounting/pos": ShoppingCartIcon,
-  "/dashboard/persons": UsersIcon,
+  "/crm/directory": UsersIcon,
   "/accounting/floor": ArmchairIcon,
-  "/dashboard/waiter": ArmchairIcon,
+  "/accounting/waiter": ArmchairIcon,
   "/accounting/kitchen": ChefHatIcon,
   "/accounting/reservations": CalendarDaysIcon,
   "/accounting/delivery": TruckIcon,
@@ -57,16 +57,11 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   // The products workspace group's icon (nav entries derive theirs from href;
   // the group has none, so it names this key via `iconKey`).
   "/accounting/products": PackageIcon,
-  "/dashboard/jewelry": GemIcon,
-  "/dashboard/watch": WatchIcon,
-  "/dashboard/accessories": SparklesIcon,
-  "/dashboard/wholesale": TruckIcon,
-  "/dashboard/tools-fittings": PackageIcon,
-  "/dashboard/haberdashery": SparklesIcon,
-  "/dashboard/ledger": CalculatorIcon,
-  // The Accounting app's own home (`/accounting`); the old ledger
-  // address above still forwards into it, and keeps its glyph for any saved
-  // bottom-nav slot that still points there.
+  "/accounting/jewelry": GemIcon,
+  "/accounting/watch": WatchIcon,
+  // The Accounting app's own home (`/accounting`); the old
+  // `/dashboard/ledger` address still forwards into it in middleware, so
+  // nothing keys on the retired URL any more.
   "/accounting": CalculatorIcon,
   // Each app's *home* is its overview, and the nav entry carries that exact
   // href — so the glyph has to be keyed on it too, or the app's own door falls
@@ -74,17 +69,17 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   "/accounting/overview": CalculatorIcon,
   "/settings/connections": PlugIcon,
   // Migration 0149 — the media library.
-  "/dashboard/media": ImageIcon,
+  "/media": ImageIcon,
   "/accounting/reports": BarChart3Icon,
   "/accounting/cosmetics": SparklesIcon,
-  "/dashboard/ai": BotIcon,
+  "/ai": BotIcon,
   "/settings/billing": WalletIcon,
   "/settings": SettingsIcon,
   // Phase 36b — the Growth & Marketing app's home; the trend glyph the
   // workspace rail already uses for «رشد و بازاریابی».
   "/growth": TrendingUpIcon,
   "/growth/overview": TrendingUpIcon,
-  // Phase 36 — the CRM app's home. `/dashboard/persons` keeps the plain
+  // Phase 36 — the CRM app's home. `/crm/directory` keeps the plain
   // people glyph above; this is the app that now owns that record.
   "/crm": ContactIcon,
   "/crm/overview": ContactIcon,
@@ -93,7 +88,7 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   "/websites": GlobeIcon,
   "/websites/overview": GlobeIcon,
   // Migration 0130 — the support desk.
-  "/dashboard/support": LifeBuoyIcon,
+  "/support": LifeBuoyIcon,
   // Migration 0131 — the in-product knowledge base («مرکز آموزش»).
-  "/dashboard/knowledge": BookOpenIcon,
+  "/knowledge": BookOpenIcon,
 };

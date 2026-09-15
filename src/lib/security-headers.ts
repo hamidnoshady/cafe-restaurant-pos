@@ -16,8 +16,35 @@ export function generateNonce(): string {
   return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function contentSecurityPolicy(nonce: string, opts: { https: boolean }): string {
-  const isHttps = opts.https;
+/**
+ * The browser-side print agent is deliberately loopback-only. It is the one
+ * cross-origin connection the app itself makes: an HTTPS cloud dashboard has
+ * to reach the Windows helper on the cashier's own PC. Keep these origins in
+ * CSP or an enforced policy blocks printer discovery before CORS/LNA can even
+ * ask the user for permission.
+ *
+ * A custom URL is accepted only when it is still loopback. The print agent is
+ * not authenticated and must never be exposed to a LAN or public host.
+ */
+function printAgentConnectSources(rawUrl = process.env.NEXT_PUBLIC_PRINT_AGENT_URL): string[] {
+  const sources = new Set(["http://127.0.0.1:9123", "http://localhost:9123"]);
+  if (!rawUrl) return [...sources];
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    const loopback = hostname === "localhost" || hostname === "::1" || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+    if (loopback && (url.protocol === "http:" || url.protocol === "https:")) sources.add(url.origin);
+  } catch {
+    // A malformed override is ignored here. The fetch will fail with the
+    // ordinary agent_unreachable result rather than weakening CSP.
+  }
+  return [...sources];
+}
+
+export function contentSecurityPolicy(
+  nonce: string,
+  opts: { https: boolean; reportOnly?: boolean } = { https: false },
+): string {
   const parts = [
     "default-src 'self'",
     "base-uri 'self'",
@@ -28,11 +55,13 @@ export function contentSecurityPolicy(nonce: string, opts: { https: boolean }): 
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
-    "connect-src 'self' ws: wss:",
+    `connect-src 'self' ws: wss: ${printAgentConnectSources().join(" ")}`,
     "worker-src 'self'",
     "manifest-src 'self'",
   ];
-  if (isHttps) {
+  // Browsers explicitly ignore this directive in a report-only policy and
+  // emit a warning for every response. Add it only when it can take effect.
+  if (opts.https && !opts.reportOnly) {
     parts.push("upgrade-insecure-requests");
   }
   return parts.join("; ");
@@ -45,9 +74,14 @@ export function staticSecurityHeaders(opts: { https: boolean }): Record<string, 
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Cross-Origin-Opener-Policy": "same-origin",
     "X-DNS-Prefetch-Control": "off",
-    // Camera access is needed by the in-app barcode / QR scanner. Keep it
-    // same-origin only; an embedded third party is never allowed to request it.
-    "Permissions-Policy": "camera=(self), publickey-credentials-get=(self)",
+    // Camera access is needed by the in-app barcode / QR scanner. The local
+    // and loopback entries let a top-level cloud dashboard ask the browser for
+    // its one-time Local Network Access permission before calling the Windows
+    // print agent. `local-network-access` is the Chrome 142–144 compatibility
+    // alias; newer browsers split it into local-network / loopback-network.
+    // All remain same-origin document capabilities — embeds get nothing.
+    "Permissions-Policy":
+      "camera=(self), publickey-credentials-get=(self), local-network=(self), loopback-network=(self), local-network-access=(self)",
   };
   if (opts.https) {
     headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";

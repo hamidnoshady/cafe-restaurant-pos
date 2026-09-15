@@ -189,7 +189,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Customer",
     label: "مشتریان",
     description: "انتخاب مشتری برای فاکتور — ویرایش در CRM",
-    href: "/dashboard/orders",
+    href: "/accounting/orders",
     columns: ["displayName", "phone"],
     accounting: "hidden",
     readOnly: true,

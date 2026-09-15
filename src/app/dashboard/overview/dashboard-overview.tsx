@@ -32,7 +32,7 @@ interface DashboardOverviewProps {
 
 /**
  * The legacy dashboard, factored out of `/dashboard/page.tsx` so it can be shown
- * both at `/dashboard/overview` (always) and at `/dashboard` when the workspace
+ * both at `/overview` (always) and at `/dashboard` when the workspace
  * shell is off (Phase 35 Wave 2). Behavior is unchanged — same widgets, same
  * numbers — only its location moved.
  */
@@ -66,7 +66,7 @@ export function DashboardOverview({
 
       {backupHealth?.alert.level === "error" ? (
         <Link
-          href="/dashboard/backup"
+          href="/settings/backup"
           className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/[0.055] px-4 py-3.5 text-sm text-destructive shadow-[0_2px_7px_rgb(41_37_36/0.04)] transition-colors hover:bg-destructive/[0.09] sm:flex-row sm:items-center sm:justify-between sm:px-5"
         >
           <span>
@@ -78,7 +78,7 @@ export function DashboardOverview({
       ) : null}
       {role === "owner" && backupHealth?.alert.reason === "disabled" && setupDone ? (
         <Link
-          href="/dashboard/backup"
+          href="/settings/backup"
           className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-500/[0.075] dark:bg-amber-400/15 px-4 py-3.5 text-sm text-amber-800 dark:text-amber-300 shadow-[0_2px_7px_rgb(41_37_36/0.04)] transition-colors hover:bg-amber-500/[0.12] dark:hover:bg-amber-400/20 sm:flex-row sm:items-center sm:justify-between sm:px-5"
         >
           <span>

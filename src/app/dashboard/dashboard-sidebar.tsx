@@ -163,15 +163,15 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     // only the fallback for a member whose role cannot open the accounting
     // pages or the reports at all; the old `/dashboard/ledger` address stays
     // as a preference-list entry for any surface still holding it.
-    hrefs: ["/accounting/overview", "/accounting/financial-reports", "/accounting/reports", "/dashboard/overview"],
+    hrefs: ["/accounting/overview", "/accounting/financial-reports", "/accounting/reports", "/overview"],
   },
   {
     key: "crm",
     label: "ارتباط با مشتری",
     icon: ContactIcon,
-    // `/dashboard/persons` redirects into the app's directory, so a business
+    // `/crm/directory` redirects into the app's directory, so a business
     // that has customers but has never opened the CRM still gets the launcher.
-    hrefs: ["/crm/overview", "/dashboard/persons"],
+    hrefs: ["/crm/overview", "/crm/directory"],
   },
   {
     key: "growth",
@@ -179,9 +179,9 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     icon: TrendingUpIcon,
     hrefs: [
       "/growth/overview",
-      "/dashboard/loyalty",
-      "/dashboard/promotions",
-      "/dashboard/commission",
+      "/growth/loyalty",
+      "/growth/campaigns",
+      "/growth/commission",
     ],
   },
   {
@@ -1133,7 +1133,7 @@ export function DashboardSidebar({
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(null);
   const [draggingWidth, setDraggingWidth] = useState(false);
   const mode = tabletMode ? (tabletExpanded ? "expanded" : "collapsed") : resolveSidebarMode(pathname, preference);
-  // The assistant surfaces (the `/dashboard/ai` page and, with the workspace
+  // The assistant surfaces (the `/ai` page and, with the workspace
   // shell, the chat home `/dashboard`) have their own in-app nav
   // (conversations/projects) and a pinned composer, so the customizable mobile
   // bottom bar and the global mobile header stand aside there rather than being
@@ -1144,7 +1144,7 @@ export function DashboardSidebar({
   // nav toggle (the conversations/projects drawer), so the dashboard's global
   // mobile header would only duplicate it. The workspace chat home keeps the
   // global header — its hamburger is the only way to reach the rail on a phone.
-  const assistantPage = pathname === "/dashboard/ai" || pathname.startsWith("/dashboard/ai/");
+  const assistantPage = pathname === "/ai" || pathname.startsWith("/ai/");
   // Sub-sections included, so a pinned child page survives the "is this still
   // visible to me?" filter the bottom bar runs on every render.
   const availableHrefs = flattenNav(navItems).map((item) => item.href);
