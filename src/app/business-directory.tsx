@@ -13,6 +13,7 @@
  */
 import { useState } from "react";
 import { cardClass } from "@/app/dashboard/page-chrome";
+import { roleLabel } from "@/lib/role-labels";
 
 interface DirectoryEntry {
   name: string;
@@ -20,15 +21,6 @@ interface DirectoryEntry {
   role: string;
   url: string | null;
 }
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  accountant: "حسابدار",
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
-};
 
 export function BusinessDirectory() {
   const [email, setEmail] = useState("");
@@ -89,7 +81,7 @@ export function BusinessDirectory() {
                       </span>
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {ROLE_LABELS[b.role] ?? b.role}
+                      {roleLabel(b.role)}
                     </span>
                   </a>
                 </li>

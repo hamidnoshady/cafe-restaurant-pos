@@ -12,6 +12,7 @@ import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import type { Runner } from "./accounting-manager";
 import { cardClass } from "@/app/dashboard/page-chrome";
+import { roleLabel } from "@/lib/role-labels";
 
 interface StaffWage {
   id: string;
@@ -40,21 +41,10 @@ interface PayrollRun {
   lines: PayrollRunLine[];
 }
 
-// The team roles a staff member can hold, in the platform's own Persian. Kept
-// here (not imported from the sidebar) so this section owns the labels it shows;
-// an unknown role falls back to its raw key rather than a blank.
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  accountant: "حسابدار",
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
-};
-
-function roleLabel(role: string): string {
-  return ROLE_LABELS[role] ?? role;
-}
+// The team roles a staff member can hold, in the platform's own Persian —
+// one definition (src/lib/role-labels.ts), so this section and the team
+// screen can never disagree about what a role is called; an unknown role
+// falls back to its raw key rather than a blank.
 
 const STATUS_STYLES: Record<PayrollRunStatus, { label: string; className: string }> = {
   paid: {

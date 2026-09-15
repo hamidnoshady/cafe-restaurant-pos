@@ -10,17 +10,36 @@ import {
   isPinTaken,
   listMembers,
 } from "@/lib/team-service";
+import { listBranches } from "@/lib/branch-service";
 import { canonicalMemberPhone } from "@/lib/phone-otp";
 import type { Role } from "@/lib/auth";
 
 const ASSIGNABLE_ROLES: Role[] = ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"];
 
-/** The business's members, with their effective permissions resolved. */
+/**
+ * The business's members, with their effective permissions resolved, and the
+ * business's branches — the team screen assigns members to branches, and it
+ * reads both through this one permission (`locations.manage` alone, which the
+ * branch tab needs, is deliberately *not* required: a manager who may manage
+ * the team but not open branches can still see the names of the places they
+ * are assigning people to).
+ */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
   if (error) return error;
 
-  return NextResponse.json({ members: await listMembers(session.businessId) });
+  const [members, branches] = await Promise.all([
+    listMembers(session.businessId),
+    listBranches(session.businessId),
+  ]);
+  return NextResponse.json({
+    members,
+    locations: branches.map((branch) => ({
+      id: branch.id,
+      name: branch.name,
+      isActive: branch.isActive,
+    })),
+  });
 });
 
 /**

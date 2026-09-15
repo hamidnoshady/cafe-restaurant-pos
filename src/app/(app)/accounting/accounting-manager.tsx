@@ -55,7 +55,16 @@ export interface AccountRow {
 }
 
 
-export function AccountingManager({ role, section }: { role: string; section: AccountingSectionKey }) {
+export function AccountingManager({
+  role,
+  section,
+  permissions,
+}: {
+  role: string;
+  section: AccountingSectionKey;
+  /** The member's effective permission keys — the directory's buttons follow them. */
+  permissions?: readonly string[];
+}) {
   const [accounts, setAccounts] = useState<AccountRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -197,6 +206,7 @@ export function AccountingManager({ role, section }: { role: string; section: Ac
               editPartyId={editPartyId}
               view={directoryView}
               onViewChange={setDirectoryView}
+              permissions={permissions}
             />
           ) : null}
           {section === "receivables" ? <ArSection busy={busy} run={run} /> : null}

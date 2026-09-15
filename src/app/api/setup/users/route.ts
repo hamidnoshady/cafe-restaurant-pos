@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { markStepDone } from "@/lib/settings";
 import { resolveActiveLocation, requireManager } from "@/lib/setup-state";
-import { isPinRole, isValidPin } from "@/lib/team";
+import { toLatinDigits } from "@/lib/digits";
+import { isPasswordRole, isPinRole, isValidPin } from "@/lib/team";
 import { TeamError, createMembership, isPhoneTaken, isPinTaken } from "@/lib/team-service";
 import { canonicalMemberPhone } from "@/lib/phone-otp";
 import type { Role } from "@/lib/auth";
@@ -23,7 +24,14 @@ export const GET = withTenantScope(async () => {
   return NextResponse.json({ users });
 });
 
-const CREATABLE_ROLES: Role[] = ["manager", "cashier", "waiter", "kitchen"];
+/**
+ * The roles the wizard may create. The owner exists from bootstrap; the two
+ * password roles (manager, accountant) and the three PIN roles are creatable
+ * here. The accountant was missing for no recorded reason while the team
+ * screen offered it — a business setting up its books in the wizard had to
+ * stop halfway and finish in Settings.
+ */
+const CREATABLE_ROLES: Role[] = ["manager", "accountant", "cashier", "waiter", "kitchen"];
 
 /**
  * Creates a member during the setup wizard.
@@ -61,7 +69,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   let pin: string | null = null;
   let locationId: string | null = null;
 
-  if (role === "manager") {
+  if (isPasswordRole(role)) {
     const email = body.email?.trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "invalid_email" }, { status: 400 });
@@ -77,7 +85,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       return NextResponse.json({ error: "email_taken" }, { status: 409 });
     }
   } else if (isPinRole(role)) {
-    pin = body.pin ?? "";
+    // Fold Persian digits before the shape check — the numeric pad emits
+    // Persian glyphs, and the same rule the team route applies keeps a
+    // «۱۲۳۴» typed in the wizard from becoming an invalid pin.
+    pin = toLatinDigits(body.pin ?? "");
     if (!isValidPin(pin)) {
       return NextResponse.json({ error: "invalid_pin" }, { status: 400 });
     }
@@ -107,8 +118,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       businessId: session.businessId,
       role,
       fullName,
-      email: role === "manager" ? (body.email ?? null) : null,
-      password: role === "manager" ? (body.password ?? null) : null,
+      email: isPasswordRole(role) ? (body.email ?? null) : null,
+      password: isPasswordRole(role) ? (body.password ?? null) : null,
       pin,
       phoneE164: phone,
       defaultLocationId: locationId,

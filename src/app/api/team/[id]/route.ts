@@ -84,14 +84,21 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
      * the time) gets their personnel file on the next edit of the membership. It
      * runs after the update has committed and its failure is not the member's
      * problem — the edit they asked for is already saved.
+     *
+     * Only a request that actually names the member renames the file: the call
+     * doubles as the repair path in parties-service now (it updates an existing
+     * party's name, not just creates the missing one), and a suspend or a
+     * permission change — which sends no name — must not stamp the party with
+     * whatever stale label the body happened to omit.
      */
-    try {
-      const { ensureEmployeeParty } = await import("@/lib/parties-service");
-      await ensureEmployeeParty(session.businessId, id, {
-        displayName: body.fullName?.trim() || null,
-      });
-    } catch {
-      /* no party row for this member yet */
+    const renameTo = body.fullName?.trim();
+    if (renameTo) {
+      try {
+        const { ensureEmployeeParty } = await import("@/lib/parties-service");
+        await ensureEmployeeParty(session.businessId, id, { displayName: renameTo });
+      } catch {
+        /* no party row for this member yet */
+      }
     }
     return NextResponse.json({ ok: true });
   } catch (err) {

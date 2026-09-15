@@ -6,6 +6,7 @@ import {
   canEditAccountingInScope,
   canSeeAccountingInScope,
   defaultRoleForScope,
+  partiesSectionAbilities,
   partyMatchesScope,
   partyOwnerScopeForRole,
   partyScopeFor,
@@ -13,6 +14,7 @@ import {
   roleLabelInScope,
   showsColumn,
 } from "./parties-scopes";
+import { roleBasePermissions } from "./permissions";
 
 /**
  * The per-app view of one shared record.
@@ -166,6 +168,52 @@ describe("one owner per role", () => {
       const target = partyOwnerScopeForRole(def.defaultRole);
       expect(target.readOnly).toBe(false);
       expect(target.key).not.toBe(def.key);
+    }
+  });
+});
+
+describe("what a member may do on a party screen", () => {
+  it("answers from the role presets when the page could not read permissions", () => {
+    // The preset answer mirrors permissions.ts: a cashier manages parties, a
+    // waiter does not, and only the back-office roles read the ledger.
+    expect(partiesSectionAbilities("cashier")).toEqual({ canManage: true, canSeeLedger: false });
+    expect(partiesSectionAbilities("waiter")).toEqual({ canManage: false, canSeeLedger: false });
+    expect(partiesSectionAbilities("accountant")).toEqual({ canManage: true, canSeeLedger: true });
+  });
+
+  it("answers from the effective permissions when the page supplied them", () => {
+    // A cashier whose parties.manage was revoked sees a read-only list — the
+    // button would only answer 403.
+    expect(partiesSectionAbilities("cashier", ["orders.create"])).toEqual({
+      canManage: false,
+      canSeeLedger: false,
+    });
+    // A waiter who was granted it sees a button that works.
+    expect(partiesSectionAbilities("waiter", ["menu.view", "parties.manage"])).toEqual({
+      canManage: true,
+      canSeeLedger: false,
+    });
+    // The money gate is ledger.view, not the role.
+    expect(partiesSectionAbilities("cashier", ["parties.manage", "ledger.view"])).toEqual({
+      canManage: true,
+      canSeeLedger: true,
+    });
+  });
+
+  it("treats an explicitly empty permission set as «no permissions», not «unknown»", () => {
+    // A member revoked down to nothing must not silently fall back to their
+    // preset — that is exactly the member whose buttons would 403.
+    expect(partiesSectionAbilities("manager", [])).toEqual({ canManage: false, canSeeLedger: false });
+  });
+
+  it("agrees with the presets it falls back to", () => {
+    // The fallback and permissions.ts must never drift: for every role, the
+    // preset answer equals the answer computed from that role's base set.
+    for (const role of ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"] as const) {
+      const preset = roleBasePermissions(role);
+      expect(partiesSectionAbilities(role), role).toEqual(
+        partiesSectionAbilities(role, preset),
+      );
     }
   });
 });

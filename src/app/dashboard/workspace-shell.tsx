@@ -17,7 +17,8 @@ import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures, isLockableFeature } from "@/lib/features";
 import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { hasModule, industryProfile, labelFor } from "@/lib/industry-profile";
-import { effectivePermissions, parseOverrides, type Permission } from "@/lib/permissions";
+import { type Permission } from "@/lib/permissions";
+import { memberAccessFor } from "@/lib/member-access";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { visibleSettingsTabs, type ResolvedSettingsTab } from "@/lib/settings-tabs";
 import { MoneyProvider } from "@/components/money/money-context";
@@ -307,30 +308,34 @@ export async function WorkspaceShell({
   // doc comment in src/lib/auth.ts. Without this, the query below can come
   // back empty non-deterministically and, since it gates access, incorrectly
   // sign an active member out.
-  const [{ rows }, features, { rows: bizRows }, prefs, appAvailability] = await withTenant(
-    session.businessId,
-    () =>
-      Promise.all([
-        query<{ role: Role; permissions: unknown; is_active: boolean }>(
-          "SELECT role, permissions, is_active FROM users WHERE id = $1 AND business_id = $2",
-          [session.sub, session.businessId],
-        ),
-        effectiveFeatures(session.businessId),
-        query<{ industry: Industry }>("SELECT industry FROM businesses WHERE id = $1", [session.businessId]),
-        getSetting<{ currencyDisplay?: "toman" | "rial" }>(session.businessId, SETTING_KEYS.businessPrefs),
-        // Migration 0128 — the app's own state («به‌زودی», «در حال تعمیر», …),
-        // resolved platform row + per-business override. Orthogonal to the
-        // feature flags above: a flag says whether the business is entitled to
-        // a capability, this says whether the app it lives in is working.
-        effectiveAppAvailability(session.businessId),
-      ]),
-    { locationId: session.locationId, userId: session.sub },
-  );
-  const member = rows[0];
-  if (!member?.is_active) redirect("/login");
+  //
+  // The membership read itself is `memberAccessFor`'s one copy
+  // (src/lib/member-access.ts) — the explicit scope and the
+  // effectivePermissions resolution live there, so this shell and the pages
+  // that gate by permission cannot drift about either.
+  const [member, tenantReads] = await Promise.all([
+    memberAccessFor(session),
+    withTenant(
+      session.businessId,
+      () =>
+        Promise.all([
+          query<{ industry: Industry }>("SELECT industry FROM businesses WHERE id = $1", [session.businessId]),
+          getSetting<{ currencyDisplay?: "toman" | "rial" }>(session.businessId, SETTING_KEYS.businessPrefs),
+          // Migration 0128 — the app's own state («به‌زودی», «در حال تعمیر», …),
+          // resolved platform row + per-business override. Orthogonal to the
+          // feature flags above: a flag says whether the business is entitled to
+          // a capability, this says whether the app it lives in is working.
+          effectiveAppAvailability(session.businessId),
+          effectiveFeatures(session.businessId),
+        ]),
+      { locationId: session.locationId, userId: session.sub },
+    ),
+  ]);
+  if (!member?.isActive) redirect("/login");
+  const [industryResult, prefs, appAvailability, features] = tenantReads;
+  const industry = industryResult.rows[0]?.industry ?? "food_service";
   const currencyDisplay = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
-  const industry = bizRows[0]?.industry ?? "food_service";
-  const permissions = effectivePermissions(member.role, parseOverrides(member.permissions));
+  const permissions = member.permissions;
   const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features, industry });
   const connectionKinds = visibleConnectionKinds({ role: member.role, industry });
   const profile = industryProfile(industry);

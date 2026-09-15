@@ -21,12 +21,27 @@ import { ConsentSection } from "./consent-section";
 import { CrmSettingsSection } from "./settings-section";
 import { crmSectionHref, type CrmSectionKey } from "./crm-routes";
 
-export function CrmSection({ section, role }: { section: CrmSectionKey; role: string }) {
+export function CrmSection({
+  section,
+  role,
+  permissions,
+}: {
+  section: CrmSectionKey;
+  role: string;
+  /**
+   * The member's effective permission keys, threaded from the server page so
+   * the directory's buttons follow the member's real rights (see
+   * `member-access.ts`). Only the directory consumes them today; the other
+   * sections gate on role, which their routes already checked.
+   */
+  permissions?: readonly string[];
+}) {
   const router = useRouter();
   const goToSection = (key: CrmSectionKey) => router.push(crmSectionHref(key));
 
   if (section === "overview") return <CrmOverviewSection onGoToSection={goToSection} />;
-  if (section === "directory") return <DirectorySection role={role} />;
+  if (section === "directory")
+    return <DirectorySection role={role} permissions={permissions} />;
   if (section === "segments") return <SegmentsSection />;
   if (section === "deals") return <DealsSection />;
   if (section === "activities") return <ActivitiesSection />;

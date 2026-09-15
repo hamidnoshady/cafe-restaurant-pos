@@ -28,6 +28,7 @@ import {
   invitationStatus,
   isPasswordRole,
   isPinRole,
+  resolveMemberLocationAssignment,
   type InvitationStatus,
   type MemberSummary,
 } from "./team";
@@ -278,6 +279,15 @@ export async function createMembership(
 
     const pinHash = input.pin ? await bcrypt.hash(input.pin, BCRYPT_COST) : null;
 
+    // Branch ids come from a request body; nothing downstream re-checks they
+    // belong to this business, so this is where a foreign id stops.
+    const locations = await resolveMemberLocations(
+      client,
+      input.businessId,
+      input.locationIds,
+      input.defaultLocationId,
+    );
+
     const { rows: created } = await client.query<{ id: string }>(
       `INSERT INTO users
          (business_id, platform_user_id, role, full_name, email, pin_hash,
@@ -291,16 +301,16 @@ export async function createMembership(
         email,
         pinHash,
         input.phoneE164 ?? null,
-        input.defaultLocationId ?? null,
+        locations.defaultLocationId,
         JSON.stringify(input.overrides ?? {}),
       ],
     );
     const userId = created[0].id;
 
-    if (input.locationIds?.length) {
+    if (locations.locationIds.length > 0) {
       await client.query(
         "INSERT INTO user_locations (user_id, location_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING",
-        [userId, input.locationIds],
+        [userId, locations.locationIds],
       );
     }
 
@@ -382,6 +392,45 @@ export interface UpdateMembershipInput {
   defaultLocationId?: string | null;
 }
 
+/**
+ * Branch ids a write may attach to a membership — the DB half of the rule in
+ * `resolveMemberLocationAssignment` (team.ts): read the business's locations,
+ * hand the known ids to the pure validator, and translate its refusal into the
+ * `unknown_location` the API reports.
+ *
+ * The ids arrive from a request body, and until now nothing checked they
+ * belonged to *this* business: an owner (or anyone holding `team.manage`) could
+ * name another business's location id and have it stored as the member's
+ * assignment. RLS kept the *listing* honest, but `user_locations` rows were
+ * written under the acting business's scope with a foreign id — garbage at best,
+ * a cross-tenant reference at worst. Every branch-touching write now goes
+ * through here, on the same connection as the write it feeds.
+ */
+async function resolveMemberLocations(
+  client: Executor,
+  businessId: string,
+  locationIds: readonly string[] | undefined,
+  defaultLocationId: string | null | undefined,
+): Promise<{ locationIds: string[]; defaultLocationId: string | null }> {
+  const asked = [...new Set((locationIds ?? []).filter(Boolean))];
+  const hasDefault = Boolean(defaultLocationId);
+  if (asked.length === 0 && !hasDefault) return { locationIds: [], defaultLocationId: null };
+
+  const ids = [...new Set([...asked, ...(defaultLocationId ? [defaultLocationId] : [])])];
+  const { rows } = await client.query<{ id: string }>(
+    "SELECT id FROM locations WHERE business_id = $1 AND id = ANY($2::uuid[])",
+    [businessId, ids],
+  );
+  const resolved = resolveMemberLocationAssignment(
+    rows.map((row) => row.id),
+    locationIds,
+    defaultLocationId,
+  );
+  if (!resolved) throw new TeamError("unknown_location", 400);
+  return resolved;
+}
+
+
 export async function updateMembership(
   input: UpdateMembershipInput,
 ): Promise<void> {
@@ -410,6 +459,32 @@ export async function updateMembership(
       throw new TeamError("not_found", 404);
     }
 
+    // Branch ids arrive from a request body: validate them here, on the same
+    // connection as the write, before they reach `user_locations`/`location_id`.
+    // The three shapes keep their own semantics — a full assignment replaces,
+    // a default alone only moves the home branch, and neither named leaves
+    // both alone — but every id that is stored has been proven ours.
+    let locationIds: string[] | null = null;
+    let defaultLocationId: string | null | undefined = undefined;
+    if (input.locationIds !== undefined && input.defaultLocationId !== undefined) {
+      const resolved = await resolveMemberLocations(
+        client,
+        input.businessId,
+        input.locationIds,
+        input.defaultLocationId,
+      );
+      locationIds = resolved.locationIds;
+      defaultLocationId = resolved.defaultLocationId;
+    } else if (input.locationIds !== undefined) {
+      locationIds = (
+        await resolveMemberLocations(client, input.businessId, input.locationIds, null)
+      ).locationIds;
+    } else if (input.defaultLocationId !== undefined) {
+      defaultLocationId = (
+        await resolveMemberLocations(client, input.businessId, [], input.defaultLocationId)
+      ).defaultLocationId;
+    }
+
     await client.query(
       `UPDATE users
           SET role        = coalesce($3, role),
@@ -426,19 +501,19 @@ export async function updateMembership(
         input.fullName?.trim() ?? null,
         input.isActive ?? null,
         input.overrides ? JSON.stringify(input.overrides) : null,
-        input.defaultLocationId !== undefined,
-        input.defaultLocationId ?? null,
+        defaultLocationId !== undefined,
+        defaultLocationId ?? null,
       ],
     );
 
-    if (input.locationIds) {
+    if (locationIds !== null) {
       await client.query("DELETE FROM user_locations WHERE user_id = $1", [
         input.userId,
       ]);
-      if (input.locationIds.length > 0) {
+      if (locationIds.length > 0) {
         await client.query(
           "INSERT INTO user_locations (user_id, location_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING",
-          [input.userId, input.locationIds],
+          [input.userId, locationIds],
         );
       }
     }

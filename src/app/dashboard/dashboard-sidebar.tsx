@@ -128,15 +128,6 @@ const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 460;
 const SIDEBAR_KEYBOARD_STEP = 16;
 
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  accountant: "حسابدار",
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
-};
-
 
 /**
  * The apps the workspace rail launches, in rail order — plus the one hub.
@@ -738,7 +729,6 @@ function DashboardSidebarFooter({
 }) {
   const { expandSidebar } = useSidebar();
   const isPinRole = PIN_ROLES.includes(role);
-  const roleLabel = ROLE_LABELS[role] ?? role;
 
   return (
     <SidebarFooter className="border-border/80 bg-card group-data-[state=collapsed]/sidebar:p-2">

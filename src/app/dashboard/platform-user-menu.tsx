@@ -48,15 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useBugReport } from "@/components/bug-report/bug-report-provider";
 import { platformUserMenuItems } from "@/lib/platform-user-menu";
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  accountant: "حسابدار",
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
-};
+import { roleLabel } from "@/lib/role-labels";
 
 const ITEM_CLASS =
   "min-h-10 cursor-pointer rounded-lg px-3 text-sm focus:bg-muted focus-visible:bg-muted";
@@ -76,7 +68,7 @@ export function PlatformUserMenu({
   const pathname = usePathname();
   const router = useRouter();
   const { openReport } = useBugReport();
-  const roleLabel = ROLE_LABELS[role] ?? role;
+  const label = roleLabel(role);
   const items = platformUserMenuItems(role);
 
   // A route change with the menu still open leaves it hanging over the new
@@ -106,8 +98,8 @@ export function PlatformUserMenu({
         {compact ? (
           <button
             type="button"
-            aria-label={`${fullName} — ${roleLabel} — منوی حساب کاربری`}
-            title={`${fullName} — ${roleLabel}`}
+            aria-label={`${fullName} — ${label} — منوی حساب کاربری`}
+            title={`${fullName} — ${label}`}
             className="flex size-9 items-center justify-center rounded-full border border-border bg-muted/60 text-xs font-bold text-foreground transition-colors hover:border-amber-300/70 hover:bg-amber-50 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:hover:border-amber-500/40 dark:hover:bg-amber-500/15 dark:hover:text-amber-300 dark:focus-visible:ring-amber-400/45"
           >
             <UserRoundIcon aria-hidden="true" className="size-4" />
@@ -119,7 +111,7 @@ export function PlatformUserMenu({
           >
             <span className="min-w-0">
               <span className="block truncate font-semibold text-foreground">{fullName}</span>
-              <span className="block text-xs text-muted-foreground">{roleLabel}</span>
+              <span className="block text-xs text-muted-foreground">{label}</span>
             </span>
             <ChevronDownIcon
               aria-hidden="true"

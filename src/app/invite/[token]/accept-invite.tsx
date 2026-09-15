@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { FormLoadingSkeleton } from "@/components/form-loading-skeleton";
 import { useRouter } from "next/navigation";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../../dashboard/ui";
+import { roleLabel } from "@/lib/role-labels";
 
 interface Preview {
   businessName: string;
@@ -12,12 +13,6 @@ interface Preview {
   role: string;
   hasExistingLogin: boolean;
 }
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  accountant: "حسابدار",
-};
 
 export function AcceptInvite({ token }: { token: string }) {
   const router = useRouter();
@@ -64,7 +59,7 @@ export function AcceptInvite({ token }: { token: string }) {
       {preview && (
         <>
           <InfoBox>
-            شما به‌عنوان «{ROLE_LABELS[preview.role] ?? preview.role}» به «{preview.businessName}»
+            شما به‌عنوان «{roleLabel(preview.role)}» به «{preview.businessName}»
             دعوت شده‌اید.
           </InfoBox>
 

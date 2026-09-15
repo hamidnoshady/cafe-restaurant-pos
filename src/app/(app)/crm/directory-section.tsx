@@ -21,7 +21,14 @@ import { useSearchParams } from "next/navigation";
 import { partyScopeFor } from "@/lib/parties-scopes";
 import { PartiesSection } from "@/app/dashboard/parties/parties-section";
 
-export function DirectorySection({ role }: { role: string }) {
+export function DirectorySection({
+  role,
+  permissions,
+}: {
+  role: string;
+  /** The member's effective permission keys — see the section's own prop doc. */
+  permissions?: readonly string[];
+}) {
   const searchParams = useSearchParams();
   const [editPartyId, setEditPartyId] = useState<string | null>(searchParams.get("customer"));
   const openNewOnMount = searchParams.get("new") === "1";
@@ -42,6 +49,7 @@ export function DirectorySection({ role }: { role: string }) {
       role={role}
       editPartyId={editPartyId}
       openNewOnMount={openNewOnMount}
+      permissions={permissions}
     />
   );
 }

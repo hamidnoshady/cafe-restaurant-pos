@@ -1,29 +1,19 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { SectionCard } from "@/app/dashboard/page-chrome";
-import { canViewCrmSection, crmFallbackHref, crmSectionHref } from "../crm-routes";
-import { CustomerPicker } from "./customer-picker";
+import { crmSectionHref } from "../crm-routes";
 
 /**
- * CRM → «پروندهٔ مشتری» with nobody selected.
+ * `/crm/customers` — the address `persons` had before the rename, kept as a
+ * permanent redirect.
  *
- * The menu entry has to lead somewhere, and a file needs a customer, so this is
- * the picker: search, then open. It exists rather than redirecting to the
- * directory because the two screens answer different questions — the directory
- * manages records, the file explains one person — and collapsing them would
- * make the menu entry a lie.
+ * This used to be a full copy of the `persons` page tree (the page, the
+ * picker, the detail route), which is how one screen becomes two that drift.
+ * A redirect is the whole alias: bookmarks and middleware-forwarded
+ * `/dashboard/crm/customers` links land on the one real page, and there is no
+ * second copy of anything to keep honest.
  */
-export default async function CrmCustomerIndexPage() {
+export default async function CrmCustomersAliasPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewCrmSection(session.role, "persons")) redirect(crmFallbackHref(session.role));
-
-  return (
-    <SectionCard
-      title="پروندهٔ مشتری"
-      description="نام یا شمارهٔ مشتری را جست‌وجو کنید تا پروندهٔ کاملش باز شود."
-    >
-      <CustomerPicker directoryHref={crmSectionHref("directory")} />
-    </SectionCard>
-  );
+  redirect(crmSectionHref("persons"));
 }

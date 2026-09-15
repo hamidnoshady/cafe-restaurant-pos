@@ -1,25 +1,19 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { CustomerFileSection } from "../../customer-file-section";
-import { canViewCrmSection, crmFallbackHref } from "../../crm-routes";
+import { crmCustomerHref } from "../../crm-routes";
 
 /**
- * CRM → one customer's 360° file.
- *
- * Floor-accessible: the person on the phone needs to know when the last order
- * was and what the complaint was about. The consent *controls* inside the page
- * are owner/manager only — the role is passed down so the component can render
- * the state without offering the change.
+ * `/crm/customers/<id>` — the pre-rename address of one customer's 360° file,
+ * redirected to `/crm/persons/<id>` rather than rendered by a second copy of
+ * the file page (see the alias page beside this one).
  */
-export default async function CrmCustomerFilePage({
+export default async function CrmCustomerFileAliasPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewCrmSection(session.role, "persons")) redirect(crmFallbackHref(session.role));
-
   const { id } = await params;
-  return <CustomerFileSection customerId={id} role={session.role} />;
+  redirect(crmCustomerHref(id));
 }

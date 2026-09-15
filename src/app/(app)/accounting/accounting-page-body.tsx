@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { effectiveFeatures, requireFeatureForPage } from "@/lib/features";
 import { withTenant } from "@/lib/db";
+import { memberAccessFor } from "@/lib/member-access";
 import { hasActiveHolooCompanion } from "@/lib/integrations/holoo/connection-service";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
@@ -67,6 +68,7 @@ export async function AccountingPageBody({ section }: { section: AccountingSecti
   await requireFeatureForPage(session.businessId, "ledger");
   const holooCompanion = await withTenant(session.businessId, () => hasActiveHolooCompanion(session.businessId));
   const features = await effectiveFeatures(session.businessId);
+  const member = await memberAccessFor(session);
   const heading = ACCOUNTING_HEADINGS[section] ?? DEFAULT_ACCOUNTING_HEADING;
 
   return (
@@ -91,7 +93,11 @@ export async function AccountingPageBody({ section }: { section: AccountingSecti
           </>
         }
       />
-      <AccountingManager role={session.role} section={section} />
+      <AccountingManager
+        role={member?.role ?? session.role}
+        section={section}
+        permissions={member ? [...member.permissions] : undefined}
+      />
     </PageShell>
   );
 }

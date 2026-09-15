@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import { getSession, type Role } from "@/lib/auth";
-import { query, withTenant } from "@/lib/db";
+import { getSession } from "@/lib/auth";
 import { requireModuleForPage } from "@/lib/industry-guard";
-import { effectivePermissions, parseOverrides, PERMISSIONS } from "@/lib/permissions";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { OrdersList } from "@/app/dashboard/orders/orders-list";
 
 export default async function OrdersPage({
@@ -18,25 +18,14 @@ export default async function OrdersPage({
     redirect("/dashboard");
 
   // Amending a *closed* order is its own permission, not part of the till's
-  // edit rights — see permissions.ts. Read the member's effective set the same
-  // way the settings page does (explicit withTenant scope, not the ambient one).
-  const { rows } = await withTenant(
-    session.businessId,
-    () =>
-      query<{ role: Role; permissions: unknown }>(
-        "SELECT role, permissions FROM users WHERE id = $1 AND business_id = $2",
-        [session.sub, session.businessId],
-      ),
-    { locationId: session.locationId, userId: session.sub },
-  );
-  const member = rows[0];
-  const permissions = member
-    ? effectivePermissions(member.role, parseOverrides(member.permissions))
-    : null;
-  const canAmendClosed = permissions?.has(PERMISSIONS.ordersAmendClosed) ?? false;
+  // edit rights — see permissions.ts. The member's effective set comes from
+  // the one shared read (member-access.ts): explicit withTenant scope inside,
+  // so it cannot come back empty non-deterministically.
+  const member = await memberAccessFor(session);
+  const canAmendClosed = member?.permissions.has(PERMISSIONS.ordersAmendClosed) ?? false;
   // Recording a sale that already happened is its own permission again — see
   // permissions.ts. Nothing about the till's edit rights implies it.
-  const canBackdate = permissions?.has(PERMISSIONS.ordersBackdate) ?? false;
+  const canBackdate = member?.permissions.has(PERMISSIONS.ordersBackdate) ?? false;
 
   const { order } = await searchParams;
 

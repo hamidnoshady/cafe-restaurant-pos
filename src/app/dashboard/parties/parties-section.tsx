@@ -23,13 +23,16 @@ import { ExternalLinkIcon } from "lucide-react";
 import {
   PARTY_COLUMN_LABELS,
   partyOwnerScopeForRole,
+  partiesSectionAbilities,
   roleLabelInScope,
   showsColumn,
   type PartyColumn,
   type PartyScopeDef,
 } from "@/lib/parties-scopes";
 import { PARTY_ROLE_LABELS, type PartyApiRecord, type PartyRole } from "@/lib/parties";
+import { directoryFilterCategories } from "@/lib/party-directory";
 import { toPersianDigits } from "@/lib/digits";
+import { formatPhoneDisplay } from "@/lib/phone";
 import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -52,14 +55,6 @@ import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import { PartyFormDialog } from "./party-form";
 
 const PAGE_SIZE = 20;
-
-/**
- * The roles that may write a party *from a screen*. The permission itself is
- * `parties.manage` and the API is the gate — this list only decides whether a
- * button is drawn at all, and it mirrors the presets in `permissions.ts` so a
- * cashier sees «افزودن مشتری» in the CRM and a waiter does not.
- */
-const MANAGING_ROLES = ["owner", "manager", "cashier", "accountant"] as const;
 
 interface CategoryRow {
   id: string;
@@ -95,6 +90,16 @@ export interface PartiesSectionProps {
    */
   view?: PartyDirectoryViewKey;
   onViewChange?: (view: PartyDirectoryViewKey) => void;
+  /**
+   * The signed-in member's effective permissions, when the mounting page
+   * could read them (every server-rendered mount can — see `member-access.ts`).
+   * Supplied, the buttons follow the member's real rights: a cashier whose
+   * `parties.manage` was revoked sees no «افزودن» button that would only
+   * answer 403, and a waiter who was *granted* it sees one that works.
+   * Omitted, the role presets decide — the API remains the boundary either
+   * way.
+   */
+  permissions?: readonly string[];
 }
 
 export function PartiesSection({
@@ -104,6 +109,7 @@ export function PartiesSection({
   openNewOnMount,
   view,
   onViewChange,
+  permissions,
 }: PartiesSectionProps) {
   // The views are offered only where the scope can actually serve them: a
   // «تأمین‌کنندگان» tab inside a customers-only scope would be a filter that
@@ -128,10 +134,15 @@ export function PartiesSection({
     const allowed = activeView.roles.filter((candidate) => scope.roles.includes(candidate));
     return allowed.length > 0 ? allowed : scope.roles;
   }, [activeView, scope]);
-  const canManage = !scope.readOnly && (MANAGING_ROLES as readonly string[]).includes(role);
-  // Money-shaped columns follow the ledger's own access rule, not the section's: a
-  // cashier browsing customers is not a cashier reading balances.
-  const canSeeLedger = role === "owner" || role === "manager" || role === "accountant";
+  // What this member may do here: their effective permissions when the page
+  // could read them, the role presets when it could not (one definition —
+  // parties-scopes.ts). `scope.readOnly` still wins over both: a read-only
+  // scope never draws a write button no matter who is asking. Money-shaped
+  // columns follow the ledger's own access rule, not the section's — a cashier
+  // browsing customers is not a cashier reading balances.
+  const abilities = partiesSectionAbilities(role, permissions);
+  const canManage = !scope.readOnly && abilities.canManage;
+  const canSeeLedger = abilities.canSeeLedger;
 
   const [parties, setParties] = useState<PartyListRow[] | null>(null);
   /**
@@ -148,6 +159,13 @@ export function PartiesSection({
   const [categoryId, setCategoryId] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
+  // The categories offered as filters — the one rule lives in
+  // `party-directory.ts` (`directoryFilterCategories`), shared with the effect
+  // that retires a selection the view switch made stale.
+  const filterCategories = useMemo(
+    () => directoryFilterCategories(categories, listedRoles),
+    [categories, listedRoles],
+  );
   const [showCategories, setShowCategories] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState("");
@@ -172,6 +190,14 @@ export function PartiesSection({
   );
 
   useEffect(() => setPage(1), [query, includeInactive, categoryId, view]);
+  // A view switch can retire the chosen category (a personnel-only grouping
+  // while the list moved to customers); a filter that no longer exists must
+  // not keep silently narrowing the list it names.
+  useEffect(() => {
+    if (categoryId && !filterCategories.some((category) => category.id === categoryId)) {
+      setCategoryId("");
+    }
+  }, [categoryId, filterCategories]);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
@@ -323,14 +349,14 @@ export function PartiesSection({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          {categories.length > 0 ? (
+          {filterCategories.length > 0 ? (
             <select
               className={`${inputClass} w-auto`}
               value={categoryId}
               onChange={(event) => setCategoryId(event.target.value)}
             >
               <option value="">همهٔ دسته‌ها</option>
-              {categories.map((category) => (
+              {filterCategories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
                 </option>
@@ -414,7 +440,7 @@ export function PartiesSection({
                       <p className="mt-1 text-xs text-muted-foreground">
                         {[
                           roleLabelInScope(scope, party.role as PartyRole),
-                          party.phone ? toPersianDigits(party.phone) : null,
+                          party.phone ? toPersianDigits(formatPhoneDisplay(party.phone)) : null,
                           party.categoryName,
                           party.accountingCode ? `کد ${toPersianDigits(party.accountingCode)}` : null,
                           canSeeLedger && balances[party.id]
@@ -567,7 +593,20 @@ function PartyCell({
         <span className="text-muted-foreground">—</span>
       );
     case "phone":
-      return <span className="text-muted-foreground">{party.phone ? toPersianDigits(party.phone) : "—"}</span>;
+      // The same rendering the CRM's picker uses: the national form a person
+      // reads and dials, not the stored shape the search compares, and always
+      // LTR so a number with a leading zero never reorders inside RTL text.
+      return (
+        <span className="text-muted-foreground">
+          {party.phone ? (
+            <span dir="ltr" className="tabular-nums">
+              {toPersianDigits(formatPhoneDisplay(party.phone))}
+            </span>
+          ) : (
+            "—"
+          )}
+        </span>
+      );
     case "email":
       return <span className="text-muted-foreground">{party.email || "—"}</span>;
     case "city":

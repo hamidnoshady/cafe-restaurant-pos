@@ -1,0 +1,174 @@
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+/**
+ * The wiring invariants of the persons directory, the team screen, and the
+ * user section — the seams no other harness reaches.
+ *
+ * The repo's vitest runs in Node with no jsdom and no `@testing-library`
+ * (see accounting-nav-rtl.test.ts), and the cookie-session API routes cannot
+ * be invoked outside a Next request store (see the withTenantScope doc
+ * comment in auth.ts) — so the pure rules these screens obey already live in
+ * framework-free modules and are unit-tested there (`resolveMemberLocationAssignment`
+ * in team.test.ts, `partiesSectionAbilities` in parties-scopes.test.ts,
+ * `directoryFilterCategories` in party-directory.test.ts), and the database
+ * behaviour is pinned in integration/team and integration/parties.
+ *
+ * What only grepping the sources can hold is the *wiring*: that the screen
+ * sends what the route accepts, that a rename reaches the personnel file but a
+ * suspend does not, that the pre-rename CRM addresses are redirects rather
+ * than a second copy of the screen, that the wizard offers every role its
+ * route will create, and that the label maps and permission-threading this
+ * cleanup deduplicated do not quietly grow back.
+ */
+
+const here = (relative: string) =>
+  readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
+
+const TEAM_MANAGER = here("./team-manager.tsx");
+const TEAM_API = here("../../api/team/route.ts");
+const MEMBER_API = here("../../api/team/[id]/route.ts");
+const CREDENTIALS_API = here("../../api/team/[id]/credentials/route.ts");
+const SETUP_USERS_API = here("../../api/setup/users/route.ts");
+const SETUP_USERS_PAGE = here("../../setup/users/page.tsx");
+const PERSONS_ALIAS_INDEX = here("../../(app)/crm/customers/page.tsx");
+const PERSONS_ALIAS_FILE = here("../../(app)/crm/customers/[id]/page.tsx");
+const PARTIES_SECTION = here("../parties/parties-section.tsx");
+
+/** Every .ts/.tsx under a directory, recursively — the design-lint walk. */
+function sourcesUnder(root: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(root)) {
+    const full = join(root, entry);
+    if (statSync(full).isDirectory()) out.push(...sourcesUnder(full));
+    else if (/\.(ts|tsx)$/.test(entry)) out.push(full);
+  }
+  return out;
+}
+
+const APP_SOURCES = sourcesUnder(dirname(fileURLToPath(import.meta.url)) + "/../..");
+
+describe("the team screen sends what the API accepts", () => {
+  it("edits the name, role, branches, default branch and overrides in one PATCH", () => {
+    // The editor's save body and the route's accepted body must name the same
+    // keys — before, the API accepted all of it and the screen offered a role
+    // picker alone, so a name or branch change meant delete + re-add.
+    for (const key of ["fullName", "role", "permissions", "locationIds", "defaultLocationId"]) {
+      expect(TEAM_MANAGER, `team-manager sends ${key}`).toContain(key);
+      expect(MEMBER_API, `the member route accepts ${key}`).toContain(key);
+    }
+  });
+
+  it("resets credentials through the route that owns them", () => {
+    expect(TEAM_MANAGER).toContain("/credentials");
+    expect(TEAM_MANAGER).toContain("{ pin }");
+    expect(TEAM_MANAGER).toContain("{ password }");
+    // The route is the one that decides owner-vs-self rules; the screen must
+    // not invent its own write path.
+    expect(CREDENTIALS_API).toContain("body.pin !== undefined");
+    expect(CREDENTIALS_API).toContain("body.password !== undefined");
+  });
+
+  it("assigns branches from the list the API returned with the members", () => {
+    expect(TEAM_API).toContain("listBranches");
+    expect(TEAM_API).toContain("locations:");
+    expect(TEAM_MANAGER).toContain("member.locationIds");
+  });
+});
+
+describe("the personnel file follows the membership, but only when named", () => {
+  it("renames the party on a rename, and not on a suspend", () => {
+    // The guard is the fix: before it, every PATCH (suspend, permission
+    // change) called ensureEmployeeParty with whatever name the body happened
+    // to omit, stamping the party with a stale or blank label.
+    expect(MEMBER_API).toContain("const renameTo = body.fullName?.trim()");
+    expect(MEMBER_API).toContain("if (renameTo)");
+    expect(MEMBER_API).toContain("ensureEmployeeParty");
+  });
+});
+
+describe("the pre-rename CRM addresses are redirects, not a second screen", () => {
+  it("answers /crm/customers with a redirect to /crm/persons", () => {
+    expect(PERSONS_ALIAS_INDEX).toContain("redirect(");
+    expect(PERSONS_ALIAS_INDEX).toContain('crmSectionHref("persons")');
+    // A second copy of the picker/file is the bug this alias replaced.
+    expect(PERSONS_ALIAS_INDEX).not.toContain("CustomerPicker");
+    expect(PERSONS_ALIAS_INDEX).not.toContain("CustomerFileSection");
+  });
+
+  it("answers /crm/customers/<id> with a redirect to the one file page", () => {
+    expect(PERSONS_ALIAS_FILE).toContain("redirect(");
+    expect(PERSONS_ALIAS_FILE).toContain("crmCustomerHref(id)");
+    expect(PERSONS_ALIAS_FILE).not.toContain("CustomerFileSection");
+  });
+});
+
+describe("the setup wizard and its route agree on the creatable roles", () => {
+  it("offers the accountant the team screen has always offered", () => {
+    // The wizard's copy of the role list was missing «حسابدار» while its own
+    // route would have created one — the screen refused what the API accepted.
+    expect(SETUP_USERS_PAGE).toContain('"accountant"');
+    expect(SETUP_USERS_API).toContain('"accountant"');
+  });
+
+  it("gates the email fields on the shared password-role rule, not one role", () => {
+    // `role === "manager"` was the bug's shape: a second password role (or a
+    // renamed one) silently lost its email/password path.
+    expect(SETUP_USERS_API).toContain("isPasswordRole(role)");
+    expect(SETUP_USERS_API).not.toContain('role === "manager"');
+    expect(SETUP_USERS_PAGE).toContain("needsEmail");
+  });
+
+  it("folds Persian digits out of the PIN before the shape check", () => {
+    // The wizard's numeric pad emits Persian glyphs; the team route folds them
+    // and the wizard must not be the one door that rejects «۱۲۳۴».
+    expect(SETUP_USERS_API).toContain("toLatinDigits");
+  });
+});
+
+describe("the deduplicated definitions stay deduplicated", () => {
+  it("declares ROLE_LABELS in exactly one place", () => {
+    // Nine screens used to carry their own copy and they drifted (the wizard's
+    // had already lost «حسابدار»). role-labels.ts is the one definition;
+    // PARTY_ROLE_LABELS and PLATFORM_ROLE_LABELS are different domains and
+    // stay in their own modules.
+    const redeclares = APP_SOURCES.filter(
+      (file) =>
+        !file.endsWith("role-labels.ts") &&
+        /const ROLE_LABELS\s*[:=]/.test(readFileSync(file, "utf8")),
+    );
+    expect(redeclares).toEqual([]);
+  });
+
+  it("reads its labels through the shared helper, not a local map", () => {
+    expect(TEAM_MANAGER).toContain('from "@/lib/role-labels"');
+    expect(TEAM_MANAGER).not.toMatch(/const ROLE_LABELS/);
+  });
+
+  it("threads the member's permissions into every party-directory mount", () => {
+    // Every screen that mounts the shared section passes `permissions`, so
+    // the buttons follow the member's real rights rather than the role
+    // presets. A new mount that forgets is the bug this catches.
+    const mounts = APP_SOURCES.filter((file) =>
+      readFileSync(file, "utf8").includes("<PartiesSection"),
+    );
+    expect(mounts.length).toBeGreaterThanOrEqual(4);
+    const missing = mounts.filter(
+      (file) => !readFileSync(file, "utf8").includes("permissions={"),
+    );
+    expect(
+      missing,
+      "these mounts draw buttons from role presets instead of the member's effective permissions",
+    ).toEqual([]);
+  });
+
+  it("keeps the section's ability fallback in the shared scope module", () => {
+    // The rule (effective permissions when known, presets when not) is one
+    // definition in parties-scopes.ts; the section composes it with its own
+    // readOnly scope, and neither re-derives it inline.
+    expect(PARTIES_SECTION).toContain("partiesSectionAbilities(");
+    expect(PARTIES_SECTION).not.toMatch(/MANAGING_ROLES|LEDGER_ROLES/);
+  });
+});

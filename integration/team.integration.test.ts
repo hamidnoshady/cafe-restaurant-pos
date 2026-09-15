@@ -587,3 +587,140 @@ describe("team reads stay inside the business", () => {
     expect(alphaMembers.map((m) => m.fullName)).not.toContain("Beta Cashier");
   });
 });
+
+describe("branch assignment", () => {
+  /**
+   * The rule these tests pin: branch ids arrive from a request body, so every
+   * branch-touching membership write proves each id belongs to this business
+   * before it is stored (`resolveMemberLocationAssignment` in team.ts is the
+   * pure half; the service reads the business's locations and delegates).
+   * Before that rule existed, another business's location id was stored into
+   * `user_locations`/`location_id` as-is.
+   */
+  async function secondLocation(businessId: string, name: string): Promise<string> {
+    const { rows } = await db.query<{ id: string }>(
+      "INSERT INTO locations (business_id, name) VALUES ($1, $2) RETURNING id",
+      [businessId, name],
+    );
+    return rows[0].id;
+  }
+
+  async function assignmentOf(userId: string): Promise<{ defaultId: string | null; ids: string[] }> {
+    const { rows } = await db.query<{ location_id: string | null; ids: string[] | null }>(
+      `SELECT u.location_id,
+              (SELECT array_agg(ul.location_id ORDER BY ul.location_id) FROM user_locations ul WHERE ul.user_id = u.id) AS ids
+         FROM users u WHERE u.id = $1`,
+      [userId],
+    );
+    return { defaultId: rows[0].location_id, ids: (rows[0].ids ?? []).sort() };
+  }
+
+  it("refuses a branch that belongs to another business, on create", async () => {
+    await expect(
+      asBusiness(alpha.businessId, () =>
+        team.createMembership({
+          businessId: alpha.businessId,
+          role: "cashier",
+          fullName: "Cross-Tenant Cashier",
+          pin: "1357",
+          locationIds: [alpha.locationId, beta.locationId],
+          actorId: alpha.ownerId,
+        }),
+      ),
+    ).rejects.toMatchObject({ message: "unknown_location" });
+
+    // Nothing was created — the refusal is not a partial write.
+    const { rows } = await db.query(
+      "SELECT 1 FROM users WHERE full_name = 'Cross-Tenant Cashier'",
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it("folds the default branch into the assignment it must belong to", async () => {
+    const second = await secondLocation(alpha.businessId, "Second");
+    const { userId } = await asBusiness(alpha.businessId, () =>
+      team.createMembership({
+        businessId: alpha.businessId,
+        role: "cashier",
+        fullName: "Two-Branch Cashier",
+        pin: "2468",
+        // The default is not in the list; the rule adds it rather than storing
+        // a home branch the member is not assigned to.
+        locationIds: [second],
+        defaultLocationId: alpha.locationId,
+        actorId: alpha.ownerId,
+      }),
+    );
+
+    const assignment = await assignmentOf(userId);
+    expect(assignment.defaultId).toBe(alpha.locationId);
+    expect(assignment.ids).toEqual([alpha.locationId, second].sort());
+  });
+
+  it("replaces an assignment on update, and clears it with an empty list", async () => {
+    const second = await secondLocation(alpha.businessId, "Second");
+    const { userId } = await asBusiness(alpha.businessId, () =>
+      team.createMembership({
+        businessId: alpha.businessId,
+        role: "waiter",
+        fullName: "Rotating Waiter",
+        pin: "9871",
+        locationIds: [alpha.locationId],
+        defaultLocationId: alpha.locationId,
+        actorId: alpha.ownerId,
+      }),
+    );
+
+    await asBusiness(alpha.businessId, () =>
+      team.updateMembership({
+        businessId: alpha.businessId,
+        userId,
+        actorId: alpha.ownerId,
+        locationIds: [second],
+        defaultLocationId: second,
+      }),
+    );
+    expect(await assignmentOf(userId)).toEqual({ defaultId: second, ids: [second] });
+
+    // Clearing: an owner unticking every branch is a legal write, not an
+    // unknown-location refusal.
+    await asBusiness(alpha.businessId, () =>
+      team.updateMembership({
+        businessId: alpha.businessId,
+        userId,
+        actorId: alpha.ownerId,
+        locationIds: [],
+        defaultLocationId: null,
+      }),
+    );
+    expect(await assignmentOf(userId)).toEqual({ defaultId: null, ids: [] });
+  });
+
+  it("refuses a foreign branch on update and leaves the member's assignment untouched", async () => {
+    const { userId } = await asBusiness(alpha.businessId, () =>
+      team.createMembership({
+        businessId: alpha.businessId,
+        role: "cashier",
+        fullName: "Guarded Cashier",
+        pin: "8642",
+        locationIds: [alpha.locationId],
+        defaultLocationId: alpha.locationId,
+        actorId: alpha.ownerId,
+      }),
+    );
+
+    await expect(
+      asBusiness(alpha.businessId, () =>
+        team.updateMembership({
+          businessId: alpha.businessId,
+          userId,
+          actorId: alpha.ownerId,
+          locationIds: [beta.locationId],
+        }),
+      ),
+    ).rejects.toMatchObject({ message: "unknown_location" });
+
+    // The refused update rolled back: the original assignment still stands.
+    expect(await assignmentOf(userId)).toEqual({ defaultId: alpha.locationId, ids: [alpha.locationId] });
+  });
+});

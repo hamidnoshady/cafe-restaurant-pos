@@ -1,38 +1,55 @@
 "use client";
 
-import { LoadingSkeleton, SectionCard } from "../page-chrome";
-import { partyScopeFor } from "@/lib/parties-scopes";
-import { PartiesSection } from "../parties/parties-section";
-
-import { PersianNumberInput } from "@/components/ui/persian-number-input";
-
 /**
- * Phase 13 — the team screen. Three cards:
- *  1. Members — role, branches, status; edit permissions, suspend, remove.
+ * Phase 13 — the team screen. Three cards plus the personnel files:
+ *  1. Members — name, role, branches, login phone, status; the full editor
+ *     (role, per-permission overrides, branches, default branch), credential
+ *     resets, suspend, remove.
  *  2. Invitations — invite by email, show the link exactly once, revoke.
  *  3. Add staff — PIN-based cashier/waiter/kitchen, who have no email.
+ *
+ * The member row's actions map one-to-one onto what the API actually accepts
+ * (`PATCH /api/team/:id` carries `fullName`, `role`, `permissions`,
+ * `locationIds`, `defaultLocationId`, `phone`; `PUT …/credentials` carries
+ * `pin`/`password`) — before, the API offered all of it and the screen showed
+ * a role-and-toggles editor and nothing else, so a member's name or branches
+ * could only be fixed by removing and re-adding the person.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ALL_PERMISSIONS,
   isOwnerOnlyPermission,
   roleBasePermissions,
   type Permission,
 } from "@/lib/permissions";
+import { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin } from "@/lib/pin-policy";
+import { roleLabel } from "@/lib/role-labels";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatPhoneDisplay } from "@/lib/phone";
+import { partyScopeFor } from "@/lib/parties-scopes";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: "مالک",
-  manager: "مدیر",
-  accountant: "حسابدار",
-  cashier: "صندوق‌دار",
-  waiter: "گارسون",
-  kitchen: "آشپزخانه",
-};
+import { LoadingSkeleton, SectionCard } from "../page-chrome";
+import { PartiesSection } from "../parties/parties-section";
+import {
+  ErrorBox,
+  Field,
+  InfoBox,
+  PrimaryButton,
+  SecondaryButton,
+  api,
+  errorMessage,
+  inputClass,
+} from "../ui";
 
 /** Roles that sign in with an email and password, so can be invited. */
 const INVITABLE_ROLES = ["manager", "accountant", "owner"] as const;
@@ -93,6 +110,13 @@ interface Member {
   createdAt: string;
 }
 
+/** A branch as `/api/team` hands it to the screen — enough to assign people to. */
+interface TeamLocation {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
 interface Invitation {
   id: string;
   email: string;
@@ -110,22 +134,47 @@ const INVITATION_STATUS_LABELS: Record<Invitation["status"], string> = {
   expired: "منقضی",
 };
 
-export function TeamManager({ currentUserId, role }: { currentUserId: string; role: string }) {
+/** Which role options the editor offers — every assignable role, labelled once. */
+const ROLE_OPTIONS = (["owner", "manager", "accountant", "cashier", "waiter", "kitchen"] as const).map(
+  (value) => ({ value, label: roleLabel(value) }),
+);
+
+export function TeamManager({
+  currentUserId,
+  role,
+  permissions,
+}: {
+  currentUserId: string;
+  role: string;
+  /** The member's effective permission keys — forwarded to the personnel directory. */
+  permissions?: readonly string[];
+}) {
   const [members, setMembers] = useState<Member[]>([]);
+  const [locations, setLocations] = useState<TeamLocation[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<string | null>(null);
+  /** The member whose full editor dialog is open (name, role, branches, permissions). */
+  const [editing, setEditing] = useState<Member | null>(null);
   /** Phase 42 — which member's login-phone editor is open. */
-  const [phoneEditing, setPhoneEditing] = useState<string | null>(null);
+  const [phoneEditing, setPhoneEditing] = useState<Member | null>(null);
+  /** Which member's PIN/password reset dialog is open. */
+  const [credentialsEditing, setCredentialsEditing] = useState<Member | null>(null);
 
   const load = useCallback(async () => {
     const [membersRes, invitesRes] = await Promise.all([
-      api<{ members: Member[] }>("/api/team"),
+      api<{ members: Member[]; locations?: TeamLocation[] }>("/api/team"),
       api<{ invitations: Invitation[] }>("/api/team/invitations"),
     ]);
-    if (membersRes.ok) setMembers(membersRes.data.members);
-    else setError(errorMessage((membersRes.data as { error?: string }).error));
+    if (membersRes.ok) {
+      setMembers(membersRes.data.members);
+      // Branches travel with the members: assigning a person to a place needs
+      // the place's name, and a second permission-gated call for a list this
+      // screen already owns would only be a way to make it fail separately.
+      if (membersRes.data.locations) setLocations(membersRes.data.locations);
+    } else {
+      setError(errorMessage((membersRes.data as { error?: string }).error));
+    }
     if (invitesRes.ok) setInvitations(invitesRes.data.invitations);
     setLoading(false);
   }, []);
@@ -144,6 +193,11 @@ export function TeamManager({ currentUserId, role }: { currentUserId: string; ro
     await load();
     return true;
   }
+
+  const locationName = useMemo(
+    () => new Map(locations.map((location) => [location.id, location.name])),
+    [locations],
+  );
 
   if (loading) return <LoadingSkeleton rows={3} />;
 
@@ -175,9 +229,14 @@ export function TeamManager({ currentUserId, role }: { currentUserId: string; ro
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {ROLE_LABELS[member.role] ?? member.role}
+                    {roleLabel(member.role)}
                     {member.email ? ` · ${member.email}` : ""}
                     {member.hasPin ? " · ورود با رمز عددی" : ""}
+                    {member.locationIds.length > 0
+                      ? ` · شعبه‌ها: ${member.locationIds
+                          .map((id) => locationName.get(id) ?? "—")
+                          .join("، ")}`
+                      : " · همهٔ شعبه‌ها"}
                   </p>
                   <p className="mt-1 text-xs">
                     {member.phone ? (
@@ -197,17 +256,12 @@ export function TeamManager({ currentUserId, role }: { currentUserId: string; ro
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <SecondaryButton
-                    onClick={() =>
-                      setPhoneEditing(phoneEditing === member.id ? null : member.id)
-                    }
-                  >
+                  <SecondaryButton onClick={() => setEditing(member)}>ویرایش</SecondaryButton>
+                  <SecondaryButton onClick={() => setPhoneEditing(member)}>
                     شمارهٔ موبایل
                   </SecondaryButton>
-                  <SecondaryButton
-                    onClick={() => setEditing(editing === member.id ? null : member.id)}
-                  >
-                    دسترسی‌ها
+                  <SecondaryButton onClick={() => setCredentialsEditing(member)}>
+                    رمز ورود
                   </SecondaryButton>
                   <SecondaryButton
                     onClick={() =>
@@ -230,36 +284,41 @@ export function TeamManager({ currentUserId, role }: { currentUserId: string; ro
                   </SecondaryButton>
                 </div>
               </div>
-
-              {editing === member.id && (
-                <PermissionEditor
-                  member={member}
-                  onSave={async (role, overrides) => {
-                    const ok = await mutate(`/api/team/${member.id}`, {
-                      method: "PATCH",
-                      body: JSON.stringify({ role, permissions: overrides }),
-                    });
-                    if (ok) setEditing(null);
-                  }}
-                />
-              )}
-
-              {phoneEditing === member.id && (
-                <PhoneEditor
-                  member={member}
-                  onSave={async (phone) => {
-                    const ok = await mutate(`/api/team/${member.id}`, {
-                      method: "PATCH",
-                      body: JSON.stringify({ phone }),
-                    });
-                    if (ok) setPhoneEditing(null);
-                  }}
-                />
-              )}
             </div>
           ))}
         </div>
       </SectionCard>
+
+      {editing ? (
+        <MemberEditorDialog
+          member={editing}
+          locations={locations}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load();
+          }}
+        />
+      ) : null}
+
+      {phoneEditing ? (
+        <PhoneEditorDialog
+          member={phoneEditing}
+          onClose={() => setPhoneEditing(null)}
+          onSaved={() => {
+            setPhoneEditing(null);
+            void load();
+          }}
+        />
+      ) : null}
+
+      {credentialsEditing ? (
+        <CredentialsEditorDialog
+          member={credentialsEditing}
+          onClose={() => setCredentialsEditing(null)}
+          onSaved={() => setCredentialsEditing(null)}
+        />
+      ) : null}
 
       <InviteSection invitations={invitations} onChanged={load} onError={setError} />
       <AddStaffSection onChanged={load} onError={setError} />
@@ -274,29 +333,41 @@ export function TeamManager({ currentUserId, role }: { currentUserId: string; ro
       */}
       <div>
         <p className="mb-2 text-xs font-semibold text-amber-700 dark:text-amber-300">پروندهٔ کارکنان</p>
-        <PartiesSection scope={partyScopeFor("team")} role={role} />
+        <PartiesSection scope={partyScopeFor("team")} role={role} permissions={permissions} />
       </div>
     </div>
   );
 }
 
 /**
- * Role picker plus per-permission toggles.
+ * The full member editor — everything a membership carries that a row of
+ * buttons cannot ask for in one line: the name, the role (which re-bases the
+ * permission ticks), the branch assignment, the default branch, and the
+ * per-permission overrides.
  *
- * Toggles are expressed against the *chosen role's preset*, so switching role
- * re-bases them: ticking a box the preset already includes stores nothing, and
- * unticking one it includes stores a revoke. That keeps overrides minimal, so
- * a later change to a preset still reaches members who never customised it.
+ * The name edit doubles as the repair path for the personnel file: the route
+ * keeps the party record named after the member (see `ensureEmployeeParty`),
+ * so «علی رضایی» in the list above and «علی رضایی» in the payroll file stay
+ * one person.
  */
-function PermissionEditor({
+function MemberEditorDialog({
   member,
-  onSave,
+  locations,
+  onClose,
+  onSaved,
 }: {
   member: Member;
-  onSave: (role: string, overrides: { granted: string[]; revoked: string[] }) => void;
+  locations: TeamLocation[];
+  onClose: () => void;
+  onSaved: () => void;
 }) {
+  const [fullName, setFullName] = useState(member.fullName);
   const [role, setRole] = useState(member.role);
   const [selected, setSelected] = useState<Set<string>>(new Set(member.effectivePermissions));
+  const [branchIds, setBranchIds] = useState<string[]>(member.locationIds);
+  const [defaultLocationId, setDefaultLocationId] = useState(member.defaultLocationId ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   // Re-base the ticks whenever the role changes, so the boxes always show what
   // that role would actually grant.
@@ -305,49 +376,148 @@ function PermissionEditor({
     setSelected(new Set(roleBasePermissions(next as never)));
   }
 
-  const preset = new Set<string>(roleBasePermissions(role as never));
-  const isOwner = role === "owner";
+  function toggleBranch(id: string, checked: boolean) {
+    setBranchIds((current) => {
+      const next = checked ? [...current, id] : current.filter((entry) => entry !== id);
+      // Unticking the default branch moves the default back to "none chosen"
+      // rather than leaving it pointing at a branch the member no longer has.
+      if (!checked && defaultLocationId === id) setDefaultLocationId("");
+      return next;
+    });
+  }
 
-  function save() {
+  function chooseDefaultBranch(id: string) {
+    setDefaultLocationId(id);
+    // The default is one of the assigned branches by definition — tick it
+    // rather than storing a default the access rules would ignore.
+    if (id) setBranchIds((current) => (current.includes(id) ? current : [...current, id]));
+  }
+
+  const preset = new Set<string>(roleBasePermissions(role as never));
+  const isOwnerRole = role === "owner";
+
+  async function save() {
+    const name = fullName.trim();
+    if (!name) {
+      setError("نام عضو را بنویسید.");
+      return;
+    }
+    setBusy(true);
+    setError("");
     const granted = [...selected].filter((p) => !preset.has(p)).sort();
     const revoked = [...preset].filter((p) => !selected.has(p)).sort();
-    onSave(role, { granted, revoked });
+    const res = await api<{ error?: string; reason?: string }>(`/api/team/${member.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        fullName: name,
+        role,
+        // An owner's set is not reducible (permissions.ts), so none is sent.
+        ...(isOwnerRole ? {} : { permissions: { granted, revoked } }),
+        locationIds: branchIds,
+        defaultLocationId: defaultLocationId || null,
+      }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.data.reason || errorMessage(res.data.error));
+      return;
+    }
+    onSaved();
   }
 
   return (
-    <div className="mt-3 space-y-3 border-t pt-3">
-      <Field label="نقش">
-        <SearchableSelect
-          value={role}
-          onChange={changeRole}
-          options={Object.keys(ROLE_LABELS).map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
-        />
-      </Field>
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>ویرایش «{member.fullName}»</DialogTitle>
+        </DialogHeader>
+        <ErrorBox>{error}</ErrorBox>
 
-      {isOwner ? (
-        <InfoBox>مالک به همهٔ بخش‌ها دسترسی دارد و دسترسی‌هایش قابل محدود کردن نیست.</InfoBox>
-      ) : (
-        <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
-          {ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)).map((permission: Permission) => (
-            <label key={permission} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={selected.has(permission)}
-                onChange={(e) => {
-                  const next = new Set(selected);
-                  if (e.target.checked) next.add(permission);
-                  else next.delete(permission);
-                  setSelected(next);
-                }}
-              />
-              <span>{PERMISSION_LABELS[permission] ?? permission}</span>
-            </label>
-          ))}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="نام و نام خانوادگی *">
+            <input
+              className={inputClass}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </Field>
+          <Field label="نقش">
+            <SearchableSelect
+              value={role}
+              onChange={changeRole}
+              options={ROLE_OPTIONS}
+            />
+          </Field>
         </div>
-      )}
 
-      <PrimaryButton onClick={save}>ذخیره</PrimaryButton>
-    </div>
+        <Field label="شعبه‌ها" hint="بدون انتخاب، عضو به همهٔ شعبه‌ها دسترسی دارد (به‌جز نقش‌های صندوق و آشپزخانه که به شعبهٔ پیش‌فرض وصل می‌شوند).">
+          {locations.length === 0 ? (
+            <p className="text-xs text-muted-foreground">شعبه‌ای ثبت نشده است.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+              {locations.map((location) => (
+                <label key={location.id} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={branchIds.includes(location.id)}
+                    onCheckedChange={(checked) => toggleBranch(location.id, checked === true)}
+                  />
+                  <span>
+                    {location.name}
+                    {!location.isActive ? (
+                      <span className="ms-1 text-xs text-muted-foreground">(غیرفعال)</span>
+                    ) : null}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </Field>
+
+        <Field label="شعبهٔ پیش‌فرض" hint="شعبه‌ای که ورود این عضو با آن باز می‌شود؛ از میان شعبه‌های انتخاب‌شده.">
+          <SearchableSelect
+            value={defaultLocationId}
+            onChange={chooseDefaultBranch}
+            options={[
+              { value: "", label: "— انتخاب نشده —" },
+              ...locations
+                .filter((location) => branchIds.includes(location.id))
+                .map((location) => ({ value: location.id, label: location.name })),
+            ]}
+          />
+        </Field>
+
+        {isOwnerRole ? (
+          <InfoBox>مالک به همهٔ بخش‌ها دسترسی دارد و دسترسی‌هایش قابل محدود کردن نیست.</InfoBox>
+        ) : (
+          <Field label="دسترسی‌ها" hint="تیک‌ها نسبت به نقش پایه خوانده می‌شوند: برداشتن تیکِ پیش‌فرض یعنی گرفتن آن دسترسی، و تیکِ اضافه یعنی اعطای آن.">
+            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+              {ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)).map((permission: Permission) => (
+                <label key={permission} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(permission)}
+                    onChange={(e) => {
+                      const next = new Set(selected);
+                      if (e.target.checked) next.add(permission);
+                      else next.delete(permission);
+                      setSelected(next);
+                    }}
+                  />
+                  <span>{PERMISSION_LABELS[permission] ?? permission}</span>
+                </label>
+              ))}
+            </div>
+          </Field>
+        )}
+
+        <DialogFooter>
+          <SecondaryButton onClick={onClose}>انصراف</SecondaryButton>
+          <PrimaryButton onClick={save} disabled={busy}>
+            ذخیره
+          </PrimaryButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -360,32 +530,196 @@ function PermissionEditor({
  * become usable for the phone login. The hint says so, because an owner who
  * is not told will assume typing the number was the whole job.
  */
-function PhoneEditor({
+function PhoneEditorDialog({
   member,
-  onSave,
+  onClose,
+  onSaved,
 }: {
   member: Member;
-  onSave: (phone: string) => void;
+  onClose: () => void;
+  onSaved: () => void;
 }) {
   const [phone, setPhone] = useState(member.phone ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setBusy(true);
+    setError("");
+    const res = await api<{ error?: string; reason?: string }>(`/api/team/${member.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ phone: phone.trim() }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.data.reason || errorMessage(res.data.error));
+      return;
+    }
+    onSaved();
+  }
 
   return (
-    <div className="mt-3 space-y-3 border-t pt-3">
-      <Field
-        label="شمارهٔ موبایل ورود"
-        hint="با کد پیامکی که در اولین ورود به خود عضو می‌رسد تأیید می‌شود؛ خالی بگذارید تا حذف شود."
-      >
-        <input
-          className={inputClass}
-          dir="ltr"
-          inputMode="tel"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="09121234567"
-        />
-      </Field>
-      <PrimaryButton onClick={() => onSave(phone)}>ذخیرهٔ شماره</PrimaryButton>
-    </div>
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>شمارهٔ موبایل «{member.fullName}»</DialogTitle>
+        </DialogHeader>
+        <ErrorBox>{error}</ErrorBox>
+        <Field
+          label="شمارهٔ موبایل ورود"
+          hint="با کد پیامکی که در اولین ورود به خود عضو می‌رسد تأیید می‌شود؛ خالی بگذارید تا حذف شود."
+        >
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="09121234567"
+          />
+        </Field>
+        <DialogFooter>
+          <SecondaryButton onClick={onClose}>انصراف</SecondaryButton>
+          <PrimaryButton onClick={save} disabled={busy}>
+            ذخیرهٔ شماره
+          </PrimaryButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The credential reset — a PIN for the shared-device roles, a password for
+ * the email roles, matching `PUT /api/team/:id/credentials` (the owner's
+ * force-reset path; a member changing their *own* password must prove the
+ * current one, which is the security center's business, not this dialog's).
+ *
+ * The two are separate buttons and separate requests on purpose: resetting a
+ * password changes the person's *platform* login everywhere they are a
+ * member, and that deserves its own explicit press rather than riding along
+ * with a PIN change.
+ */
+function CredentialsEditorDialog({
+  member,
+  onClose,
+  onSaved,
+}: {
+  member: Member;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isPinMember = member.hasPin || (PIN_ROLES as readonly string[]).includes(member.role);
+  const [pin, setPin] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState("");
+
+  async function resetPin() {
+    if (!isValidPin(pin)) {
+      setError("رمز عددی باید ۴ تا ۱۲ رقم باشد.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setDone("");
+    const res = await api<{ error?: string }>(`/api/team/${member.id}/credentials`, {
+      method: "PUT",
+      body: JSON.stringify({ pin }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data.error));
+      return;
+    }
+    setPin("");
+    setDone("رمز عددی جدید ثبت شد.");
+  }
+
+  async function resetPassword() {
+    if (password.length < 8) {
+      setError("رمز عبور باید حداقل ۸ نویسه باشد.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setDone("");
+    const res = await api<{ error?: string }>(`/api/team/${member.id}/credentials`, {
+      method: "PUT",
+      body: JSON.stringify({ password }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data.error));
+      return;
+    }
+    setPassword("");
+    setDone("رمز عبور جدید ثبت شد؛ ورود این شخص در همهٔ کسب‌وکارهایش با همین رمز باز می‌شود.");
+  }
+
+  return (
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>رمز ورود «{member.fullName}»</DialogTitle>
+        </DialogHeader>
+        <ErrorBox>{error}</ErrorBox>
+        {done ? <InfoBox>{done}</InfoBox> : null}
+
+        {isPinMember ? (
+          <Field
+            label={`رمز عددی جدید (${toPersianDigits(PIN_MIN_LENGTH)} تا ${toPersianDigits(PIN_MAX_LENGTH)} رقم)`}
+            hint="در هر شعبه باید یکتا باشد."
+          >
+            <PersianNumberInput
+              className={`${inputClass} w-48 text-center tracking-[0.25em]`}
+              dir="ltr"
+              inputMode="numeric"
+              grouping={false}
+              allowNegative={false}
+              maxLength={PIN_MAX_LENGTH}
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+            />
+          </Field>
+        ) : null}
+
+        {member.hasLogin ? (
+          <Field
+            label="رمز عبور جدید"
+            hint="این رمز برای ورودِ ایمیلی این شخص در همهٔ کسب‌وکارها یکی است."
+          >
+            <input
+              className={inputClass}
+              dir="ltr"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={8}
+            />
+          </Field>
+        ) : null}
+
+        {!isPinMember && !member.hasLogin ? (
+          <InfoBox>این عضو نه رمز عددی دارد و نه ورود ایمیلی؛ ابتدا نقش یا روش ورودش را در ویرایش عضو تعیین کنید.</InfoBox>
+        ) : null}
+
+        <DialogFooter>
+          <SecondaryButton onClick={onClose}>بستن</SecondaryButton>
+          {isPinMember ? (
+            <PrimaryButton onClick={resetPin} disabled={busy || !pin}>
+              ثبت رمز عددی
+            </PrimaryButton>
+          ) : null}
+          {member.hasLogin ? (
+            <PrimaryButton onClick={resetPassword} disabled={busy || password.length < 8}>
+              ثبت رمز عبور
+            </PrimaryButton>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -449,7 +783,7 @@ function InviteSection({
           <SearchableSelect
             value={role}
             onChange={setRole}
-            options={INVITABLE_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+            options={INVITABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
           />
         </Field>
       </div>
@@ -474,7 +808,7 @@ function InviteSection({
             <li key={invitation.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
               <span>
                 {invitation.fullName} · <span dir="ltr">{invitation.email}</span> ·{" "}
-                {ROLE_LABELS[invitation.role] ?? invitation.role} ·{" "}
+                {roleLabel(invitation.role)} ·{" "}
                 <span className="text-muted-foreground">
                   {INVITATION_STATUS_LABELS[invitation.status]}
                   {invitation.status === "pending" &&
@@ -510,9 +844,24 @@ function AddStaffSection({
   const [role, setRole] = useState<string>("cashier");
   const [pin, setPin] = useState("");
   // Phase 42 — optional login phone, stored unverified until the member's
-  // first OTP proves it (mirrors PhoneEditor above).
+  // first OTP proves it (mirrors PhoneEditorDialog above).
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
+
+  /**
+   * Switching the role empties the PIN and the phone: a PIN is per-role
+   * length-wise identical but per-member unique, and a number typed for one
+   * person must not silently ride along into another's account. (Before, the
+   * PIN typed for a cashier stayed in the box while the owner picked
+   * «آشپزخانه», and if they did not notice, the kitchen member was created
+   * with the cashier's intended PIN.)
+   */
+  function changeRole(next: string) {
+    if (next === role) return;
+    setRole(next);
+    setPin("");
+    setPhone("");
+  }
 
   async function add() {
     setBusy(true);
@@ -549,18 +898,21 @@ function AddStaffSection({
         <Field label="نقش">
           <SearchableSelect
             value={role}
-            onChange={setRole}
-            options={PIN_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+            onChange={changeRole}
+            options={PIN_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
           />
         </Field>
-        <Field label="رمز عددی (۴ تا ۱۲ رقم)">
+        <Field
+          label={`رمز عددی (${toPersianDigits(PIN_MIN_LENGTH)} تا ${toPersianDigits(PIN_MAX_LENGTH)} رقم)`}
+          hint="در هر شعبه باید یکتا باشد."
+        >
           <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
             grouping={false}
             allowNegative={false}
-            maxLength={12}
+            maxLength={PIN_MAX_LENGTH}
             value={pin}
             onChange={(e) => setPin(e.target.value)}
           />
@@ -580,7 +932,10 @@ function AddStaffSection({
         </Field>
       </div>
       <div className="mt-4">
-        <PrimaryButton onClick={add} disabled={busy || !fullName || pin.length < 4 || pin.length > 12}>
+        {/* The same shape rule the backend gates on (pin-policy.ts) — the
+            button says no before the request leaves, instead of answering
+            with a 400 after it does. */}
+        <PrimaryButton onClick={add} disabled={busy || !fullName.trim() || !isValidPin(pin)}>
           افزودن
         </PrimaryButton>
       </div>

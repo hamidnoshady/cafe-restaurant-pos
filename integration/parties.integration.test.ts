@@ -339,6 +339,51 @@ describe("personnel", () => {
     );
     expect(rows.rows[0].count).toBe("1");
   });
+
+  it("renames the file when the member is renamed — one person, one name", async () => {
+    // The team screen is where a member's name is managed, and its layout
+    // promises the membership above and the personnel file below are two
+    // views of one person. Before the repair half existed, a rename in the
+    // team left the payroll file under the old name forever.
+    const user = await db.query<{ id: string }>(
+      "INSERT INTO users (business_id, full_name, role, pin_hash) VALUES ($1, $2, 'kitchen', $3) RETURNING id",
+      [biz.id, "آشپز قدیم", "$2b$10$notarealhashnotarealhashnotarealhashno"],
+    );
+    const userId = user.rows[0].id;
+
+    const created = await parties.ensureEmployeeParty(biz.id, userId, { displayName: "آشپز قدیم" });
+    const renamed = await parties.ensureEmployeeParty(biz.id, userId, { displayName: "آشپز جدید" });
+
+    expect(renamed?.id).toBe(created?.id);
+    expect(renamed?.displayName).toBe("آشپز جدید");
+    expect(renamed?.employeeUserId).toBe(userId);
+
+    // Still exactly one file — the rename is an update, not a second row.
+    const rows = await db.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM parties WHERE business_id = $1 AND employee_user_id = $2",
+      [biz.id, userId],
+    );
+    expect(rows.rows[0].count).toBe("1");
+  });
+
+  it("leaves the file's name alone when the caller names none", async () => {
+    // A suspend or a permission change sends no name; the call doubles as the
+    // repair path now, so it must not stamp the party with a blank or a stale
+    // label. It still creates the file when it is missing.
+    const user = await db.query<{ id: string }>(
+      "INSERT INTO users (business_id, full_name, role, pin_hash) VALUES ($1, $2, 'waiter', $3) RETURNING id",
+      [biz.id, "گارسون ثابت", "$2b$10$notarealhashnotarealhashnotarealhashno"],
+    );
+    const userId = user.rows[0].id;
+
+    const created = await parties.ensureEmployeeParty(biz.id, userId, { displayName: "گارسون ثابت" });
+    const untouched = await parties.ensureEmployeeParty(biz.id, userId, {});
+    expect(untouched?.id).toBe(created?.id);
+    expect(untouched?.displayName).toBe("گارسون ثابت");
+
+    const blank = await parties.ensureEmployeeParty(biz.id, userId, { displayName: "  " });
+    expect(blank?.displayName).toBe("گارسون ثابت");
+  });
 });
 
 describe("categories", () => {

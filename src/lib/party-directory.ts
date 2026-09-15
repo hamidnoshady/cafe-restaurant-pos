@@ -142,3 +142,32 @@ export function partyDirectoryViewForRole(role: PartyRole): PartyDirectoryViewKe
       return "customers";
   }
 }
+
+/** A category row as the directory's *filter* needs to see it. */
+export interface PartyCategoryFilterRow {
+  id: string;
+  /** The role a category is scoped to, or null for «every role». */
+  role: string | null;
+  isActive: boolean;
+}
+
+/**
+ * The categories the directory offers as filters: active ones whose role (when
+ * they have one) is among the roles being listed.
+ *
+ * The manage dialog shows everything including the archived — it edits the
+ * reference list — but a *filter* that offers «بایگانی‌شده» or a personnel-only
+ * grouping while the list shows customers is a control that answers with
+ * nothing. This is the one definition of that rule, so the section that draws
+ * the select and the effect that retires a stale selection cannot disagree.
+ */
+export function directoryFilterCategories<T extends PartyCategoryFilterRow>(
+  categories: readonly T[],
+  listedRoles: readonly PartyRole[],
+): T[] {
+  return categories.filter(
+    (category) =>
+      category.isActive &&
+      (!category.role || listedRoles.includes(category.role as PartyRole)),
+  );
+}
