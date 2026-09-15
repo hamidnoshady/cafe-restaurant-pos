@@ -80,6 +80,11 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+    // Compatibility with Chromium's older Private Network Access preflight.
+    // Chrome 142+ replaced PNA with a one-time Local Network Access permission,
+    // but older managed Edge/Chrome builds still send this preflight header.
+    "Access-Control-Allow-Private-Network": "true",
+    "Cache-Control": "no-store",
   });
   res.end(json);
 }

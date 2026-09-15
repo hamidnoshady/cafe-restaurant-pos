@@ -28,8 +28,10 @@ string. There is no second implementation of the layout anywhere, which is why
 | `src/lib/print-agent-client.ts` | The browser's print client: local agent first, `/api/print/*` on the app server second, **and** the browser-dialog fallback. |
 | `src/lib/system-print/**` | The shared printing machinery: discovery (Windows/CUPS queues + the LAN sweep), the spooler, Chromium rendering, and `service.ts` — one implementation used by both the agent and the app server. Server-only. |
 | `src/app/api/print/**` | The app server's own print endpoints — the agent's twin, for deployments where the server can see the printers. |
-| `print-agent/server.ts` | The standalone loopback agent for the till PC (thin HTTP shell over `system-print/service.ts`). |
-| `src/app/dashboard/settings/printing/**` | The section: gallery, designer, hardware, logo. |
+| `print-agent/server.ts` | The full Node-based loopback agent, retained for development and managed installations. |
+| `public/windows/cafe-pos-print-agent.ps1` | The dependency-free one-click Windows connector: queue discovery, exact-origin loopback HTTP, and native RAW spooler delivery. |
+| `src/app/api/print/windows-agent-installer/route.ts` | Authenticated per-origin Windows installer download. |
+| `src/app/(app)/settings/printing/**` | The section: gallery, designer, hardware, logo, and the connector install button. |
 
 ## Papers
 
@@ -90,12 +92,13 @@ Rows written before transports existed read as `network`, unchanged.
 **Two hardware backends, one fallback order.** Every hardware operation in
 `print-agent-client.ts` tries the loopback print agent (`127.0.0.1:9123`)
 first, and when it does not answer, the same operation against the app
-server's `/api/print/*` twin routes. On every local deployment shape — the
-Electron shell, Docker on the till laptop, an on-prem LAN server — the app
-server is a machine that can see the printers, so «چاپگرهای ویندوز» works with
-nothing extra installed or running on the till. The separate agent remains
-the answer when the app server is somewhere the printers are not (a cloud
-tenant). A *reachable* backend's error is final — it is never retried against
+server's `/api/print/*` twin routes. The server fallback sees only hardware
+visible to the server process. That includes the standalone Electron install
+(the server is a native Windows process) and printers configured on an
+on-prem Linux/CUPS server. It does **not** include a Windows host's queues when
+the app server is inside a Linux Docker container, and a cloud server can
+never see the cashier PC's USB cable. Those two shapes need the local agent or
+WebUSB. A *reachable* backend's error is final — it is never retried against
 the other backend, because the two may be different machines.
 
 **Discovery.** The section leads with two buttons instead of an IP field:
@@ -104,7 +107,9 @@ on Windows, `lpstat` on macOS/Linux) — from the till PC when the agent is
 running, otherwise from the app server's machine, and the list says which —
 and «جست‌وجوی شبکه» sweeps the local /24 for an open 9100. Pairing is picking
 a row. Typing an address by hand is still there for a printer on another
-subnet.
+subnet. A cloud deployment no longer describes a healthy server fallback as
+proof that the cashier's Windows printers are available; the UI explicitly
+asks for the local helper instead.
 
 **Sheets vs rolls.** A thermal roll takes the raster path (screenshot → ESC/POS
 `GS v 0`). A sheet on an installed queue is rendered to a real PDF
@@ -127,13 +132,50 @@ printer whose vendor driver has claimed the interface refuses
 `claimInterface` (`usb_claim_failed`) — install it as a plain USB device or
 use `windows/usb-printer-bridge.js` instead.
 
+## Windows-installed USB printers with a cloud server
+
+A browser cannot enumerate or silently spool to Windows queues, so each cashier
+PC that owns a Windows-installed printer needs the small local connector. The
+operator installs it directly from «تنظیمات → چاپ و فاکتور → چاپگرها»: click
+**«دانلود و نصب رابط چاپ ویندوز»**, open the downloaded file once, and accept
+the Windows confirmation. There is no repository copy, Node.js, npm command,
+PowerShell command, administrator account, or manual configuration. The
+installer places the dependency-free connector in the current user's
+`LocalAppData`, starts it immediately, and creates the current user's Windows
+Startup shortcut so it runs after every login.
+
+The authenticated download route (`/api/print/windows-agent-installer`) builds
+the installer for the tenant origin serving the request. The installer fetches
+`public/windows/cafe-pos-print-agent.ps1`; that connector is built only from
+Windows PowerShell and .NET, listens only on `127.0.0.1:9123`, and accepts
+browser requests only from the exact baked-in origin. It reads ordinary
+unshared queues through `Win32_Printer` and submits RAW jobs by installed display
+name through Windows' native `OpenPrinter` / `WritePrinter` API.
+
+Rich Persian receipts still use the server's canonical renderer. The lightweight
+connector answers `render_required`; `print-agent-client.ts` calls the
+authenticated `/api/print/render`, Base64-encodes those ESC/POS bytes, and posts
+them to the connector's `/print/raw` endpoint for local spooler delivery. A
+claimed local job is never retried on the cloud server, avoiding both duplicate
+prints and attempts to use a Windows queue name on Linux.
+
+The cloud page must be HTTPS. Chrome/Edge 142+ asks once whether the site may
+access the local network; allow it. In Chrome/Edge 145+ the loopback permission
+is labelled **Apps on device** (older versions say **Local network access**).
+If it was previously blocked, open the site's permissions from the icon beside
+the address bar, change that permission to Allow, reload, and press «بررسی
+dوباره». The CSP explicitly permits only the loopback agent origins; the
+connector itself remains bound to `127.0.0.1` and is never exposed to the LAN.
+
 ## Printing without the agent
 
-With the app server on the same machine/LAN as the printers, hardware printing
-works with no agent at all — the client falls back to `/api/print/*`
-automatically, and receipts/invoices go straight to the paired printer with
-no browser dialog. And with neither backend reachable, the section is still
-fully usable: design, preview, and print through the browser dialog
+When the app server process can genuinely see the printers, hardware printing
+works with no agent — the client falls back to `/api/print/*` automatically,
+and receipts/invoices go straight to the paired printer with no browser
+dialog. This is true for the native Electron install and configured server-side
+CUPS queues, not for a cloud server or a Linux container trying to see its
+Windows host. With neither backend able to reach the hardware, the section is
+still fully usable: design, preview, and print through the browser dialog
 (`printViaBrowser` — a hidden iframe, not a popup, so nothing is blocked and
 focus stays in the POS). The printing state (agent / server / browser-only) is
 stated plainly at the top of the section rather than discovered as a failed

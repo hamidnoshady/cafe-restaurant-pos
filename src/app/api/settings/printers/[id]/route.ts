@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { getPool, query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
 import type { PrinterConnection } from "@/lib/printer-connection";
 import { parsePrinterInput } from "@/lib/printer-input";
@@ -39,22 +39,35 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   const input = parsePrinterInput(body, existing);
   if (!input) return NextResponse.json({ error: "invalid_printer" }, { status: 400 });
 
-  if (input.isDefault) {
-    await query(
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    if (input.isDefault) {
+      await client.query(
+        `UPDATE printers
+            SET connection =
+              CASE WHEN jsonb_typeof(connection) = 'object' THEN connection ELSE '{}'::jsonb END
+              || '{"isDefault": false}'::jsonb
+          WHERE location_id = $1 AND kind = $2 AND id <> $3`,
+        [location.id, input.kind, id],
+      );
+    }
+    const { rows } = await client.query(
       `UPDATE printers
-          SET connection = jsonb_set(COALESCE(connection, '{}'::jsonb), '{isDefault}', 'false'::jsonb, true)
-        WHERE location_id = $1 AND kind = $2 AND id <> $3`,
-      [location.id, input.kind, id],
+          SET name = $1, kind = $2, connection = $3, is_active = $4
+        WHERE id = $5 AND location_id = $6
+        RETURNING id, name, kind, connection, is_active`,
+      [input.name, input.kind, JSON.stringify(input.connection), input.isActive, id, location.id],
     );
+    await client.query("COMMIT");
+    return NextResponse.json({ printer: rows[0] });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("updating printer failed", err);
+    return NextResponse.json({ error: "printer_save_failed" }, { status: 500 });
+  } finally {
+    client.release();
   }
-  const { rows } = await query(
-    `UPDATE printers
-        SET name = $1, kind = $2, connection = $3, is_active = $4
-      WHERE id = $5 AND location_id = $6
-      RETURNING id, name, kind, connection, is_active`,
-    [input.name, input.kind, JSON.stringify(input.connection), input.isActive, id, location.id],
-  );
-  return NextResponse.json({ printer: rows[0] });
 });
 
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {

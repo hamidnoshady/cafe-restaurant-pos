@@ -46,9 +46,9 @@ ARG NODE_OPTIONS
 ENV NODE_ENV=production
 ENV JWT_SECRET=build-time-placeholder-not-used-at-runtime
 RUN NODE_OPTIONS="$NODE_OPTIONS" npm run build
-# The app currently ships no public/ assets (fonts are bundled via the source
-# tree), but Next serves public/ when present — make sure the dir exists so the
-# runner's COPY always succeeds and future assets are picked up automatically.
+# Next serves public/ directly; it includes the dependency-free Windows print
+# connector downloaded by the authenticated one-click installer route. Keep the
+# directory creation defensive for source/export variants that omit assets.
 RUN mkdir -p public
 
 # ---- prod-deps: strip dev dependencies out of the already-installed tree ----

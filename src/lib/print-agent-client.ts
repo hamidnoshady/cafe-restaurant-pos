@@ -11,9 +11,11 @@
  *      server — the app server can see the same printers, so nobody has to
  *      install or start the separate agent for «چاپگرهای ویندوز» to appear.
  *
- * Every call tries the loopback agent first (it is closest to the hardware
- * and the historical behaviour), then falls back to the app server. Only when
- * BOTH are unreachable is the operation reported unreachable.
+ * Every call tries the loopback agent first (it is closest to the hardware)
+ * and falls back to the app server only when the agent is unreachable. The
+ * dependency-free Windows connector can ask the server to render bytes while
+ * retaining local delivery; once it claims a job, failures never fall through
+ * to an unrelated cloud spooler.
  *
  * This module also owns the *no-hardware* path: `printViaBrowser` puts a
  * rendered document into a hidden iframe and calls the browser's own print
@@ -34,6 +36,21 @@ function agentBaseUrl(): string {
   return process.env.NEXT_PUBLIC_PRINT_AGENT_URL || "http://127.0.0.1:9123";
 }
 
+// A cloud page used to hit a missing loopback service once for health, again
+// for discovery, and again for every subsequent action. Apart from noisy
+// ERR_CONNECTION_REFUSED entries, Chrome 142+ treats each attempt as Local
+// Network Access and may repeatedly involve its permission UI. One failed
+// attempt is enough for a short window; the explicit «check again» action
+// clears this backoff immediately after the operator starts the agent.
+const AGENT_RETRY_DELAY_MS = 15_000;
+let agentRetryAfter = 0;
+let agentHealthInFlight: Promise<AgentResult<AgentHealth>> | null = null;
+
+/** Let an explicit user action retry the Windows helper immediately. */
+export function allowPrintAgentRetry(): void {
+  agentRetryAfter = 0;
+}
+
 export interface AgentResult<T = { ok: boolean }> {
   ok: boolean;
   unreachable?: boolean;
@@ -46,19 +63,26 @@ export interface AgentResult<T = { ok: boolean }> {
 async function callAgent<T = { ok: boolean }>(
   path: string,
   body: Record<string, unknown>,
-  opts: { timeoutMs?: number; method?: "GET" | "POST" } = {},
+  opts: { timeoutMs?: number; method?: "GET" | "POST"; force?: boolean } = {},
 ): Promise<AgentResult<T>> {
+  if (!opts.force && Date.now() < agentRetryAfter) {
+    return { ok: false, unreachable: true, error: "agent_unreachable" };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 8000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 8000);
     const method = opts.method ?? "POST";
+    // The literal 127.0.0.1 target lets current Chromium identify this as a
+    // loopback request before mixed-content checks and show its one-time
+    // «Apps on device / Local network access» permission when needed.
     const res = await fetch(`${agentBaseUrl()}${path}`, {
       method,
       headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
       body: method === "POST" ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
-    clearTimeout(timeout);
+    agentRetryAfter = 0;
     let data: unknown = {};
     try {
       data = await res.json();
@@ -69,8 +93,12 @@ async function callAgent<T = { ok: boolean }>(
       return { ok: false, error: (data as { error?: string })?.error ?? "agent_error", data: data as T, via: "agent" };
     return { ok: true, data: data as T, via: "agent" };
   } catch {
-    // agent not running, or unreachable — printing is best-effort, never blocks the flow that triggered it
+    // Agent not running, local-network permission denied, or unreachable —
+    // printing is best-effort and never blocks the sale that triggered it.
+    agentRetryAfter = Date.now() + AGENT_RETRY_DELAY_MS;
     return { ok: false, unreachable: true, error: "agent_unreachable" };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -120,17 +148,15 @@ async function callWithFallback<T = { ok: boolean }>(
   return server();
 }
 
-/**
- * The `webusb` transport — the browser as the delivery middleman for a
- * server installation that cannot see the till's local printers. The server
- * renders the ESC/POS bytes (/api/print/render — it owns the Chromium raster
- * pipeline that shapes Persian text), and THIS page pushes them to the USB
- * printer over WebUSB (webusb-print.ts). No print dialog opens anywhere.
- */
-async function printViaWebUsb(
+interface RenderedJobResult extends AgentResult {
+  bytes?: Uint8Array;
+}
+
+/** Render canonically on the authenticated app server while delivery stays on this PC. */
+async function renderJobBytes(
   connection: PrinterConnection,
   job: Record<string, unknown>,
-): Promise<AgentResult> {
+): Promise<RenderedJobResult> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45_000);
@@ -150,13 +176,70 @@ async function printViaWebUsb(
       }
       return { ok: false, error, via: "server" };
     }
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    const sent = await sendBytesViaWebUsb(connection, bytes);
-    if (!sent.ok) return { ok: false, error: sent.error, via: "server" };
-    return { ok: true, via: "server" };
+    return { ok: true, bytes: new Uint8Array(await res.arrayBuffer()), via: "server" };
   } catch {
-    return { ok: false, unreachable: true, error: "server_unreachable" };
+    return { ok: false, unreachable: true, error: "server_unreachable", via: "server" };
   }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunks: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 32_768)));
+  }
+  return btoa(chunks.join(""));
+}
+
+/**
+ * Send a rich job to either connector generation.
+ *
+ * The original Node agent renders and delivers the request directly. The
+ * dependency-free one-click Windows connector deliberately answers
+ * `render_required`; the browser then fetches the same canonical ESC/POS bytes
+ * used by server printing and hands them back to `/print/raw` for native local
+ * spooling. Once a connector has answered, an error is final — never retry the
+ * local Windows queue against an unrelated cloud-server spooler.
+ */
+async function callLocalAgentPrint(
+  path: string,
+  connection: PrinterConnection,
+  job: Record<string, unknown>,
+  timeoutMs = 8000,
+): Promise<AgentResult> {
+  const first = await callAgent(path, { ...job, connection }, { timeoutMs });
+  if (first.ok || first.error !== "render_required") return first;
+
+  const rendered = await renderJobBytes(connection, job);
+  if (!rendered.ok || !rendered.bytes) {
+    return { ...rendered, unreachable: undefined };
+  }
+
+  const delivered = await callAgent(
+    "/print/raw",
+    { connection, dataBase64: bytesToBase64(rendered.bytes) },
+    { timeoutMs },
+  );
+  // The first request proved this PC owns the job. Do not let callWithFallback
+  // send a second copy (or a local queue name) to the cloud if delivery fails.
+  return delivered.ok ? delivered : { ...delivered, unreachable: undefined };
+}
+
+/**
+ * The `webusb` transport — the browser as the delivery middleman for a
+ * server installation that cannot see the till's local printers. The server
+ * renders the ESC/POS bytes (/api/print/render — it owns the Chromium raster
+ * pipeline that shapes Persian text), and THIS page pushes them to the USB
+ * printer over WebUSB (webusb-print.ts). No print dialog opens anywhere.
+ */
+async function printViaWebUsb(
+  connection: PrinterConnection,
+  job: Record<string, unknown>,
+): Promise<AgentResult> {
+  const rendered = await renderJobBytes(connection, job);
+  if (!rendered.ok || !rendered.bytes) return rendered;
+  const sent = await sendBytesViaWebUsb(connection, rendered.bytes);
+  if (!sent.ok) return { ok: false, error: sent.error, via: "server" };
+  return { ok: true, via: "server" };
 }
 
 /* ─────────────────────── agent status & discovery ─────────────────────── */
@@ -169,11 +252,26 @@ export interface AgentHealth {
   source?: string;
 }
 
-export function checkAgent(): Promise<AgentResult<AgentHealth>> {
-  return callWithFallback(
-    () => callAgent<AgentHealth>("/health", {}, { method: "GET", timeoutMs: 2500 }),
+export function checkAgent(opts: { forceAgentProbe?: boolean } = {}): Promise<AgentResult<AgentHealth>> {
+  if (!opts.forceAgentProbe && agentHealthInFlight) return agentHealthInFlight;
+  const probe = callWithFallback(
+    () =>
+      callAgent<AgentHealth>("/health", {}, {
+        method: "GET",
+        // A first cloud → loopback request may wait while Chrome/Edge shows
+        // the one-time Local Network Access prompt. Give the operator time to
+        // read and allow it; a genuinely closed port still refuses instantly.
+        timeoutMs: 12_000,
+        force: opts.forceAgentProbe === true,
+      }),
     () => callServer<AgentHealth>("/api/print/health", null, { method: "GET", timeoutMs: 8000 }),
   );
+  if (opts.forceAgentProbe) return probe;
+  agentHealthInFlight = probe;
+  void probe.finally(() => {
+    if (agentHealthInFlight === probe) agentHealthInFlight = null;
+  });
+  return probe;
 }
 
 export interface SystemPrinter {
@@ -239,7 +337,7 @@ export async function printDocument(
     return printViaWebUsb(connection, { op: "document", html, paper });
   }
   return callWithFallback(
-    () => callAgent("/print/document", { connection, html, paper }, { timeoutMs: 30_000 }),
+    () => callLocalAgentPrint("/print/document", connection, { op: "document", html, paper }, 30_000),
     () => callServer("/api/print/job", { op: "document", connection, html, paper }, { timeoutMs: 45_000 }),
   );
 }
@@ -303,7 +401,7 @@ export function printReceipt(connection: PrinterConnection, receipt: ReceiptData
     return printViaWebUsb(connection, { op: "receipt", receipt });
   }
   return callWithFallback(
-    () => callAgent("/print/receipt", { connection, receipt }),
+    () => callLocalAgentPrint("/print/receipt", connection, { op: "receipt", receipt }),
     () => callServer("/api/print/job", { op: "receipt", connection, receipt }),
   );
 }
@@ -313,7 +411,7 @@ export function printKitchenTicket(connection: PrinterConnection, ticket: Kitche
     return printViaWebUsb(connection, { op: "kitchen-ticket", ticket });
   }
   return callWithFallback(
-    () => callAgent("/print/kitchen-ticket", { connection, ticket }),
+    () => callLocalAgentPrint("/print/kitchen-ticket", connection, { op: "kitchen-ticket", ticket }),
     () => callServer("/api/print/job", { op: "kitchen-ticket", connection, ticket }),
   );
 }
@@ -323,7 +421,7 @@ export function printLabel(connection: PrinterConnection, label: LabelData) {
     return printViaWebUsb(connection, { op: "label", label });
   }
   return callWithFallback(
-    () => callAgent("/print/label", { connection, label }),
+    () => callLocalAgentPrint("/print/label", connection, { op: "label", label }),
     () => callServer("/api/print/job", { op: "label", connection, label }),
   );
 }
@@ -333,7 +431,7 @@ export function testPrint(connection: PrinterConnection, kind: "receipt" | "kitc
     return printViaWebUsb(connection, { op: "test", kind });
   }
   return callWithFallback(
-    () => callAgent("/print/test", { connection, kind }),
+    () => callLocalAgentPrint("/print/test", connection, { op: "test", kind }),
     () => callServer("/api/print/job", { op: "test", connection, kind }),
   );
 }
@@ -343,7 +441,7 @@ export function kickDrawer(connection: PrinterConnection) {
     return printViaWebUsb(connection, { op: "drawer-kick" });
   }
   return callWithFallback(
-    () => callAgent("/drawer/kick", { connection }),
+    () => callLocalAgentPrint("/drawer/kick", connection, { op: "drawer-kick" }),
     () => callServer("/api/print/job", { op: "drawer-kick", connection }),
   );
 }

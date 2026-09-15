@@ -1028,7 +1028,11 @@ export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   
-  const cspStr = contentSecurityPolicy(nonce, { https: isHttps });
+  const mode = cspMode();
+  const cspStr = contentSecurityPolicy(nonce, {
+    https: isHttps,
+    reportOnly: mode === "report-only",
+  });
   
   // Set CSP on the incoming request so Next.js reads it for script nonces
   // (Next 15 reads it from the incoming request)
@@ -1041,7 +1045,6 @@ export async function middleware(request: NextRequest) {
     response.headers.set(key, val);
   }
 
-  const mode = cspMode();
   if (mode === "enforce") {
     response.headers.set("Content-Security-Policy", cspStr);
   } else if (mode === "report-only") {
