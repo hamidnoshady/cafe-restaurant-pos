@@ -136,8 +136,16 @@ use `windows/usb-printer-bridge.js` instead.
 
 A browser cannot enumerate or silently spool to Windows queues, so each cashier
 PC that owns a Windows-installed printer needs the small local connector. The
-operator installs it directly from «تنظیمات → چاپ و فاکتور → چاپگرها»: click
-**«دانلود و نصب رابط چاپ ویندوز»**, open the downloaded file once, and accept
+operator installs it directly from «تنظیمات → چاپ و فاکتور → چاپگرها», where
+the «رابط چاپ ویندوز» card is **always** the first thing in the tab — it is not
+conditional on the agent being down. That condition was the bug: on a cloud
+deployment the app server answers the health probe, the section reads
+"printing is available", and the download disappeared from the one screen that
+needed it. Now the card states the current state (running here / not installed)
+and always carries the button, which doubles as the reinstall path after an
+update or a change of tenant origin.
+
+Click **«دانلود و نصب رابط چاپ ویندوز»**, open the downloaded file once, and accept
 the Windows confirmation. There is no repository copy, Node.js, npm command,
 PowerShell command, administrator account, or manual configuration. The
 installer places the dependency-free connector in the current user's

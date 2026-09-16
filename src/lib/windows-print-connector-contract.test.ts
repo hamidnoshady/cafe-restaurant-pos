@@ -70,6 +70,22 @@ describe("one-click Windows connector end-to-end contract", () => {
     expect(payload.trimEnd()).toMatch(/exit 1\s*}\s*$/);
   });
 
+  it("offers the connector download unconditionally, not only while the agent is down", () => {
+    // The card used to render behind `{!localAgentOnline ? … : null}`, which
+    // hid the only download link whenever the health probe was answered by the
+    // *app server* on a cloud deployment — precisely the deployment that needs
+    // the connector — and left an already-installed till with no way to
+    // reinstall or re-point it at a new tenant origin.
+    expect(printerSettings).toContain("<WindowsConnectorCard localAgentOnline={localAgentOnline} />");
+    expect(printerSettings).not.toMatch(/!localAgentOnline\s*\?[\s\S]{0,200}windows-agent-installer/);
+
+    const card = printerSettings.slice(printerSettings.indexOf("function WindowsConnectorCard"));
+    expect(card).toContain('href="/api/print/windows-agent-installer"');
+    // The button text changes with the state, but a button is always rendered.
+    expect(card).toContain("نصب دوبارهٔ رابط چاپ");
+    expect(card).not.toMatch(/localAgentOnline\s*\?\s*null\s*:\s*<Button/);
+  });
+
   it("exposes only the nontechnical install flow in printer settings", () => {
     expect(printerSettings).toContain('href="/api/print/windows-agent-installer"');
     expect(printerSettings).toContain("دانلود و نصب رابط چاپ ویندوز");
