@@ -12,6 +12,10 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 delete_option( 'pos_connector_settings' );
 
+// The self-updater's cached check (class-pos-updater.php). Deleted by name
+// rather than read: uninstall runs without the includes ever loading.
+delete_option( 'pos_connector_update' );
+
 global $wpdb;
 // phpcs:disable WordPress.DB.DirectDatabaseQuery -- schema teardown has no API.
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}pos_connector_queue" );

@@ -933,6 +933,14 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   change both or neither. **Every change to the plugin bumps its version** — the `Version:`
   header and `POS_CONNECTOR_VERSION` in `pos-accounting-connector.php`, plus the `Stable
   tag` and a Changelog entry in `readme.txt` — so WordPress sites can tell an update apart.
+  The plugin ships its own self-updater (`includes/class-pos-updater.php`, since 1.4.0):
+  WordPress updates it from `POS_CONNECTOR_UPDATE_URL` (an `update.json` manifest the
+  owner hosts — the intended mode where GitHub is unreachable) or, while that is empty,
+  from this repository's GitHub releases/tags. Shipping a version means the **manual**
+  `build-plugin-zip` workflow (`.github/workflows/build-plugin-zip.yml`, no push trigger):
+  it bumps the version, writes the changelog, builds the clean zip and the manifest,
+  and commits + tags `vX.Y.Z` — the runbook lives in
+  [docs/wordpress-plugin-updates.md](docs/wordpress-plugin-updates.md).
 - `electron/` — the standalone (no-Docker) desktop installer. `main.js` bundles a real
   PostgreSQL 16 (`embedded-postgres`) and runs `server.ts`/`scripts/migrate.ts` unmodified as
   child processes — see `docs/standalone-desktop-app.md`. Separate `package.json` from the
