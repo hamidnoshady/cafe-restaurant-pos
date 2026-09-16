@@ -123,13 +123,18 @@ the next launch re-initialises it.
 
 **4. The `extraResources` node_modules filter must exclude
 `@embedded-postgres/{linux,darwin}-*`.** The root `package.json` depends on
-`@embedded-postgres/linux-x64` (added in #415, for the Linux/Docker
-deployments where the *app* needs an embedded cluster). Nothing on Windows
-ever loads it — `main.js` gets its Postgres from `@embedded-postgres/
-windows-x64` inside `app.asar.unpacked` — but `extraResources` copies the
-whole of `../node_modules`, so without the exclusion those 59 MB of Linux
-binaries go into the payload, and `libpq.so`/`libpq.so.5` are **symlinks**.
-7-Zip stops on them while building the NSIS archive:
+`embedded-postgres` (the meta-package), whose eight
+`@embedded-postgres/<platform>-<arch>` packages are *optional* dependencies —
+npm installs only the one matching the machine doing the install.
+
+On a Windows build machine that is `windows-x64`, so the exclusion is a
+belt-and-braces guard there. It stays because it is load-bearing anywhere the
+installer is packaged from a tree that also contains a Linux build — a shared
+checkout, a `node_modules` restored from a Linux cache, or a future
+cross-build. `extraResources` copies the whole of `../node_modules`, so
+without the exclusion those 59 MB of Linux binaries go into the payload, and
+`libpq.so`/`libpq.so.5` are **symlinks**. 7-Zip stops on them while building
+the NSIS archive:
 
     WARNING: The directory name is invalid.
     .\resources\app\node_modules\@embedded-postgres\linux-x64\native\lib\libpq.so\
@@ -145,18 +150,21 @@ is green *because* of it, and the failure only appears at the very last step.
 
 ## Building the installer
 
-### Option A — CI (recommended, no Windows machine needed)
+### Option A — CI (recommended)
 
-`.github/workflows/desktop-build.yml` builds it on a `windows-latest`
-GitHub Actions runner — so producing the installer never requires owning a
-Windows PC.
+`.github/workflows/build-desktop-installer.yml` builds it on the self-hosted
+**Windows** runner. It is **manual only** (`workflow_dispatch`, from the
+Actions tab): producing an installer is a release decision, and the build is
+slow enough that no pull request should wait on it.
 
-- Pushing a `v*` tag builds it and attaches the `.exe` to the matching
-  GitHub Release — the durable distribution path (release assets don't
-  count against the repo's Actions/Packages storage quota).
-- A manual run from the Actions tab (`workflow_dispatch`) instead uploads it
-  as the `cafe-pos-windows-installer` Actions artifact, kept for 3 days —
-  handy for a one-off build without cutting a release.
+- The `.exe` is uploaded as the `business-suite-desktop-installer` run
+  artifact.
+- The optional `version` input rewrites `electron/package.json`'s version
+  before packaging; leave it empty to build whatever the repo currently says.
+- The job runs `npm ci` and `npm run build` in the **repo root first** — the
+  installer's `extraResources` pulls in `../.next`, `../src` and
+  `../node_modules`, so packaging without a fresh root build ships a stale or
+  missing app that only fails at launch.
 
 ### Option B — locally, on an actual Windows machine
 

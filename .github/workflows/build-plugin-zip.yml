@@ -15,6 +15,21 @@
 # release decision, and the download is hosted on the owner's own server,
 # not attached to a GitHub release. Full runbook:
 # docs/wordpress-plugin-updates.md
+#
+# Runs on the self-hosted **Windows** runner, so every step is PowerShell and
+# uses only what Windows ships with: `Compress-Archive` instead of `zip`, and
+# .NET/PowerShell string handling instead of `python3`. Two details are
+# load-bearing on Windows and must not be "simplified":
+#
+#   * **Files are written UTF-8 *without* a BOM.** readme.txt and the plugin
+#     PHP are full of Persian text, and PowerShell 5.1's `Out-File -Encoding
+#     utf8` prepends a BOM. A BOM in a PHP file is emitted before WordPress
+#     sends its headers ("headers already sent"), and a BOM in readme.txt
+#     breaks the `Stable tag` parse.
+#   * **Zip entry paths must use forward slashes.** `Compress-Archive` writes
+#     backslashes on Windows, which WordPress's unzipper treats as part of the
+#     filename — the plugin then installs as one flat file. The zip is built
+#     explicitly with ZipArchive so the separators are correct.
 name: build-plugin-zip
 
 on:
@@ -39,10 +54,14 @@ concurrency:
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: powershell
+
 jobs:
   build:
     name: bump, zip, tag
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, windows, x64]
     steps:
       - uses: actions/checkout@v4
 
@@ -51,121 +70,169 @@ jobs:
         env:
           BUMP: ${{ inputs.bump }}
         run: |
-          python3 - <<'PY'
-          import os, re
+          $ErrorActionPreference = "Stop"
+          # Windows PowerShell 5.1's `Out-File -Encoding utf8` writes a UTF-8
+          # BOM, and the runner parses these files byte-for-byte: a BOM ends up
+          # inside the first key name, so `steps.<id>.outputs.<key>` silently
+          # resolves to empty. Append BOM-free bytes instead.
+          function Add-GitHubOutput([string]$line) {
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "$line`n", (New-Object System.Text.UTF8Encoding($false)))
+          }
+          $path = "wordpress-plugin/pos-accounting-connector/pos-accounting-connector.php"
+          $src = [IO.File]::ReadAllText((Resolve-Path $path))
+          $m = [regex]::Match($src, "define\( 'POS_CONNECTOR_VERSION', '([^']+)' \)")
+          if (-not $m.Success) { Write-Error "POS_CONNECTOR_VERSION not found"; exit 1 }
+          $current = $m.Groups[1].Value
+          $parts = $current.Split(".")
+          if ($parts.Count -ne 3) { Write-Error "expected a plain X.Y.Z version, found $current"; exit 1 }
 
-          path = "wordpress-plugin/pos-accounting-connector/pos-accounting-connector.php"
-          src = open(path, encoding="utf-8").read()
-          m = re.search(r"define\( 'POS_CONNECTOR_VERSION', '([^']+)' \)", src)
-          assert m, "POS_CONNECTOR_VERSION not found"
-          current = m.group(1)
-          parts = current.split(".")
-          assert len(parts) == 3, f"expected a plain X.Y.Z version, found {current}"
+          switch ($env:BUMP) {
+            "major" { $parts = @([int]$parts[0] + 1, 0, 0) }
+            "minor" { $parts = @($parts[0], [int]$parts[1] + 1, 0) }
+            default { $parts = @($parts[0], $parts[1], [int]$parts[2] + 1) }
+          }
+          $next = $parts -join "."
 
-          bump = os.environ["BUMP"]
-          if bump == "major":
-              parts = [str(int(parts[0]) + 1), "0", "0"]
-          elif bump == "minor":
-              parts = [parts[0], str(int(parts[1]) + 1), "0"]
-          else:
-              parts = [parts[0], parts[1], str(int(parts[2]) + 1)]
-          nxt = ".".join(parts)
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
-              out.write(f"current={current}\n")
-              out.write(f"next={nxt}\n")
-          print(f"{current} -> {nxt} ({bump})")
-          PY
+          Add-GitHubOutput "current=$current"
+          Add-GitHubOutput "next=$next"
+          Write-Host "$current -> $next ($env:BUMP)"
 
       - name: Refuse to shadow a shipped version
         env:
           NEXT: ${{ steps.version.outputs.next }}
         run: |
           git fetch --tags --force
-          if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null; then
-            echo "::error::Tag v$NEXT already exists — a version that was already shipped is never rebuilt. Pick another bump." >&2
+          git rev-parse -q --verify "refs/tags/v$env:NEXT" 2>&1 | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "::error::Tag v$env:NEXT already exists - a version that was already shipped is never rebuilt. Pick another bump."
             exit 1
-          fi
+          }
 
       - name: Bump version, write changelog, generate update.json
         env:
           NEXT: ${{ steps.version.outputs.next }}
           NOTES: ${{ inputs.notes }}
         run: |
-          python3 - <<'PY'
-          import datetime, json, os, re
+          $ErrorActionPreference = "Stop"
+          $root   = "wordpress-plugin/pos-accounting-connector"
+          $main   = "$root/pos-accounting-connector.php"
+          $readme = "$root/readme.txt"
+          $next   = $env:NEXT
 
-          root = "wordpress-plugin/pos-accounting-connector"
-          main = f"{root}/pos-accounting-connector.php"
-          readme = f"{root}/readme.txt"
-          nxt = os.environ["NEXT"]
+          # UTF-8 with no BOM — see this workflow's header comment.
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+          # Replace-once, done with the *instance* Regex.Replace(input,
+          # replacement, count) overload. The static [regex]::Replace's fourth
+          # parameter is RegexOptions, not a count — passing 1 there would mean
+          # IgnoreCase and rewrite every match instead of only the first.
+          function Replace-Once([string]$text, [string]$pattern, [string]$replacement) {
+            return (New-Object System.Text.RegularExpressions.Regex $pattern).Replace($text, $replacement, 1)
+          }
 
           # The three version places the repo rule names, plus the changelog.
-          src = open(main, encoding="utf-8").read()
-          src, n = re.subn(r"(\* Version:)[ \t]+\d+(?:\.\d+)*", rf"\g<1>           {nxt}", src, count=1)
-          assert n == 1, "Version: header not found"
-          src, n = re.subn(r"define\( 'POS_CONNECTOR_VERSION', '[^']+' \)", f"define( 'POS_CONNECTOR_VERSION', '{nxt}' )", src, count=1)
-          assert n == 1, "POS_CONNECTOR_VERSION not found"
-          open(main, "w", encoding="utf-8").write(src)
+          $src = [IO.File]::ReadAllText((Resolve-Path $main))
+          $src2 = Replace-Once $src '(\* Version:)[ \t]+\d+(\.\d+)*' "`${1}           $next"
+          if ($src2 -eq $src) { Write-Error "Version: header not found"; exit 1 }
+          $src3 = Replace-Once $src2 "define\( 'POS_CONNECTOR_VERSION', '[^']+' \)" "define( 'POS_CONNECTOR_VERSION', '$next' )"
+          if ($src3 -eq $src2) { Write-Error "POS_CONNECTOR_VERSION not found"; exit 1 }
+          [IO.File]::WriteAllText((Resolve-Path $main), $src3, $utf8NoBom)
 
-          readme_src = open(readme, encoding="utf-8").read()
-          readme_src, n = re.subn(r"(Stable tag:)[ \t]+\d+(?:\.\d+)*", rf"\g<1> {nxt}", readme_src, count=1)
-          assert n == 1, "Stable tag not found"
+          $readmeSrc = [IO.File]::ReadAllText((Resolve-Path $readme))
+          $readmeSrc2 = Replace-Once $readmeSrc '(Stable tag:)[ \t]+\d+(\.\d+)*' "`${1} $next"
+          if ($readmeSrc2 -eq $readmeSrc) { Write-Error "Stable tag not found"; exit 1 }
 
-          notes = os.environ.get("NOTES", "").strip() or "بهبودها و رفع اشکال."
-          entry = f"= {nxt} =\n" + "\n".join(
-              f"* {line.strip()}" for line in notes.splitlines() if line.strip()
-          ) + "\n"
-          readme_src = readme_src.replace("== Changelog ==\n", f"== Changelog ==\n\n{entry}", 1)
-          open(readme, "w", encoding="utf-8").write(readme_src)
+          $notes = ""
+          if ($env:NOTES) { $notes = $env:NOTES.Trim() }
+          if (-not $notes) { $notes = "بهبودها و رفع اشکال." }
+          $bullets = ($notes -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { "* $($_.Trim())" }) -join "`n"
+          $entry = "= $next =`n$bullets`n"
+
+          $marker = "== Changelog ==`n"
+          $idx = $readmeSrc2.IndexOf($marker)
+          if ($idx -lt 0) { Write-Error "Changelog section not found"; exit 1 }
+          $readmeSrc3 = $readmeSrc2.Substring(0, $idx + $marker.Length) + "`n" + $entry + $readmeSrc2.Substring($idx + $marker.Length)
+          [IO.File]::WriteAllText((Resolve-Path $readme), $readmeSrc3, $utf8NoBom)
 
           # update.json, only when self-hosted updates are configured: the
           # manifest sits next to the zip on the owner's own server.
-          url_m = re.search(r"define\( 'POS_CONNECTOR_UPDATE_URL', '([^']*)' \)", src)
-          manifest_url = url_m.group(1) if url_m else ""
-          if manifest_url:
-              base = manifest_url.rsplit("/", 1)[0]
-              manifest = {
-                  "name": "POS Accounting Connector",
-                  "version": nxt,
-                  "download_url": f"{base}/pos-accounting-connector.zip",
-                  "notes": notes,
-                  "published_at": datetime.datetime.now(datetime.timezone.utc)
-                      .replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-              }
-              with open("update.json", "w", encoding="utf-8") as fh:
-                  json.dump(manifest, fh, ensure_ascii=False, indent=2)
-                  fh.write("\n")
-          print("manifest written" if manifest_url else "self-hosted URL not set — GitHub mode, no update.json")
-          PY
+          $urlMatch = [regex]::Match($src3, "define\( 'POS_CONNECTOR_UPDATE_URL', '([^']*)' \)")
+          $manifestUrl = ""
+          if ($urlMatch.Success) { $manifestUrl = $urlMatch.Groups[1].Value }
+          if ($manifestUrl) {
+            $base = $manifestUrl.Substring(0, $manifestUrl.LastIndexOf("/"))
+            $manifest = [ordered]@{
+              name         = "POS Accounting Connector"
+              version      = $next
+              download_url = "$base/pos-accounting-connector.zip"
+              notes        = $notes
+              published_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            }
+            $json = ($manifest | ConvertTo-Json -Depth 5)
+            # ConvertTo-Json escapes non-ASCII as \uXXXX; decode so the Persian
+            # notes stay readable in the published manifest (ensure_ascii=False).
+            $json = [regex]::Replace($json, '\\u([0-9a-fA-F]{4})', { param($m) [char][Convert]::ToInt32($m.Groups[1].Value, 16) })
+            [IO.File]::WriteAllText((Join-Path (Get-Location) "update.json"), $json + "`n", $utf8NoBom)
+            Write-Host "manifest written"
+          } else {
+            Write-Host "self-hosted URL not set - GitHub mode, no update.json"
+          }
 
       - name: Build the clean zip
         run: |
-          cd wordpress-plugin
-          rm -f pos-accounting-connector.zip
-          zip -q -r pos-accounting-connector.zip pos-accounting-connector -x '*.DS_Store' '__MACOSX*'
-          cd ..
-          python3 - <<'PY'
-          import zipfile
+          $ErrorActionPreference = "Stop"
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-          names = zipfile.ZipFile("wordpress-plugin/pos-accounting-connector.zip").namelist()
-          assert "pos-accounting-connector/pos-accounting-connector.php" in names, names
-          stray = [n for n in names if not n.startswith("pos-accounting-connector/")]
-          assert not stray, f"entries outside the plugin folder: {stray}"
-          print(f"clean zip: {len(names)} entries, all under pos-accounting-connector/")
-          PY
+          $pluginDir = Resolve-Path "wordpress-plugin/pos-accounting-connector"
+          $zipPath   = Join-Path (Resolve-Path "wordpress-plugin") "pos-accounting-connector.zip"
+          if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+
+          # Built entry-by-entry rather than with Compress-Archive so the paths
+          # inside the zip use forward slashes (WordPress's unzipper needs them)
+          # and always sit under the plugin folder.
+          $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+          try {
+            $files = Get-ChildItem -LiteralPath $pluginDir -Recurse -File |
+              Where-Object { $_.Name -ne ".DS_Store" -and $_.FullName -notmatch '__MACOSX' }
+            foreach ($f in $files) {
+              $rel = $f.FullName.Substring($pluginDir.Path.Length).TrimStart("\", "/").Replace("\", "/")
+              $entryName = "pos-accounting-connector/$rel"
+              [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, $entryName) | Out-Null
+            }
+          } finally {
+            $zip.Dispose()
+          }
+
+          # Verify the shape we just wrote, the same way the Linux version did.
+          $check = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          try {
+            $names = $check.Entries | ForEach-Object { $_.FullName }
+            if ($names -notcontains "pos-accounting-connector/pos-accounting-connector.php") {
+              Write-Error "the plugin's main file is missing from the zip"; exit 1
+            }
+            $stray = $names | Where-Object { -not $_.StartsWith("pos-accounting-connector/") }
+            if ($stray) { Write-Error "entries outside the plugin folder: $($stray -join ', ')"; exit 1 }
+            Write-Host "clean zip: $($names.Count) entries, all under pos-accounting-connector/"
+          } finally {
+            $check.Dispose()
+          }
 
       - name: Commit the bump and tag it
         env:
           NEXT: ${{ steps.version.outputs.next }}
         run: |
+          $ErrorActionPreference = "Stop"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add wordpress-plugin/pos-accounting-connector/pos-accounting-connector.php \
+          git add wordpress-plugin/pos-accounting-connector/pos-accounting-connector.php `
                   wordpress-plugin/pos-accounting-connector/readme.txt
-          git commit -m "WordPress plugin v$NEXT (manual build)"
-          git tag "v$NEXT"
-          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME" "refs/tags/v$NEXT"
+          git commit -m "WordPress plugin v$env:NEXT (manual build)"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git tag "v$env:NEXT"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git push origin "HEAD:refs/heads/$env:GITHUB_REF_NAME" "refs/tags/v$env:NEXT"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Upload the package
         uses: actions/upload-artifact@v4
@@ -180,12 +247,20 @@ jobs:
         env:
           NEXT: ${{ steps.version.outputs.next }}
         run: |
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## Plugin v$NEXT built
+          $manifestNote = ""
+          if (Test-Path -LiteralPath "update.json") {
+            $manifestNote = " together with ``update.json`` - the manifest sits next to the zip"
+          }
+          @"
+          ## Plugin v$env:NEXT built
 
-          1. Download **pos-accounting-connector-v$NEXT** from this run's artifacts.
-          2. Upload \`pos-accounting-connector.zip\`$([ -f update.json ] && echo ' together with update.json — the manifest sits next to the zip') to your update folder on your host.
-          3. Done — stores pick it up on their next update check (or immediately via «بررسی به‌روزرسانی»).
+          1. Download **pos-accounting-connector-v$env:NEXT** from this run's artifacts.
+          2. Upload ``pos-accounting-connector.zip``$manifestNote to your update folder on your host.
+          3. Done - stores pick it up on their next update check (or immediately via «بررسی به‌روزرسانی»).
 
-          The version bump was committed and tagged \`v$NEXT\` in this repository.
-          EOF
+          The version bump was committed and tagged ``v$env:NEXT`` in this repository.
+          "@ | ForEach-Object {
+            # BOM-free, like GITHUB_OUTPUT above — the summary is rendered as
+            # markdown and a BOM shows up as a stray glyph before the heading.
+            [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$_`n", (New-Object System.Text.UTF8Encoding($false)))
+          }

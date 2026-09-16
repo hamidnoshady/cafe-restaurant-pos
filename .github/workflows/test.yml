@@ -1,12 +1,22 @@
 # Runs the local checklist CLAUDE.md documents (tsc, unit tests, integration
 # tests, build) for every pull request targeting main and on manual dispatch.
 #
-# Speed: the four checks are independent of each other, so they run as four
-# parallel jobs instead of one long sequential job — wall-clock time is the
-# slowest single check, not the sum of all four. Each job restores npm's
-# download cache (keyed on package-lock.json) via actions/setup-node, so
-# `npm ci` only re-links packages instead of re-downloading them on a cache
-# hit. `required` fans in all four so a single status check names the run.
+# Everything runs on the self-hosted **Windows** runner. Two consequences of
+# that are baked into this file and should not be "tidied" away:
+#
+#   1. **No `services:` block.** GitHub only supports service containers on
+#      Linux runners, so the integration job starts its own PostgreSQL from the
+#      `embedded-postgres` devDependency (`npm run db:dev:start`) instead. That
+#      is a real PostgreSQL binary, not a reimplementation — the same mechanism
+#      the standalone desktop installer ships.
+#   2. **PowerShell, not bash.** A self-hosted Windows runner is not guaranteed
+#      to have bash on PATH, so every `run:` block here is PowerShell.
+#
+# Speed: the four checks are independent of each other, so they are declared as
+# four parallel jobs. A single runner executes one job at a time, so they will
+# queue on one machine — register additional runners with the same labels to
+# actually get the parallelism back. `required` fans in all four so a single
+# status check names the run.
 name: test
 
 on:
@@ -22,6 +32,11 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    # Windows PowerShell 5.1 — always present on Windows, unlike `pwsh`.
+    shell: powershell
+
 env:
   NODE_OPTIONS: --max-old-space-size=3072
   # Session signing is not what's under test here, but the auth/webauthn
@@ -32,7 +47,7 @@ env:
 jobs:
   typecheck:
     name: type check
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, windows, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,7 +59,7 @@ jobs:
 
   unit-tests:
     name: unit tests
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, windows, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,7 +71,7 @@ jobs:
 
   build:
     name: production build
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, windows, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -68,28 +83,13 @@ jobs:
 
   integration-tests:
     name: integration tests (real database)
-    runs-on: [self-hosted, linux, x64]
-
-    services:
-      postgres:
-        # Same major version as production and docker-compose. The integration
-        # tests each create their own scratch database and migrate it, so this
-        # role has to be able to CREATE DATABASE — the image's POSTGRES_USER is.
-        image: postgres:16
-        env:
-          POSTGRES_USER: pos
-          POSTGRES_PASSWORD: pos
-          POSTGRES_DB: pos
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+    runs-on: [self-hosted, windows, x64]
 
     env:
-      DATABASE_URL: postgres://pos:pos@localhost:5432/pos
+      # A high port so the job never collides with a PostgreSQL the developer
+      # has installed on this machine for their own use.
+      PGPORT: "55432"
+      DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
 
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +98,26 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+
+      # A cluster left running by a cancelled run would hold the port and make
+      # every later run fail; clear it before creating a fresh one.
+      - name: Stop a cluster left behind by a previous run
+        continue-on-error: true
+        env:
+          PGDATA: ${{ runner.temp }}\pos-pgdata
+        run: npm run db:dev:stop
+
+      - name: Start PostgreSQL
+        env:
+          PGDATA: ${{ runner.temp }}\pos-pgdata
+        run: |
+          # Always a clean cluster: the integration suites create their own
+          # scratch databases, so there is nothing here worth keeping between
+          # runs, and a fresh initdb cannot inherit a half-broken state.
+          if (Test-Path -LiteralPath $env:PGDATA) {
+            Remove-Item -LiteralPath $env:PGDATA -Recurse -Force
+          }
+          npm run db:dev:start
 
       - name: Apply migrations
         run: npm run db:migrate
@@ -108,17 +128,24 @@ jobs:
       - name: Integration tests
         run: npm run test:db
 
+      - name: Stop PostgreSQL
+        if: always()
+        continue-on-error: true
+        env:
+          PGDATA: ${{ runner.temp }}\pos-pgdata
+        run: npm run db:dev:stop
+
   # Single status check that fails if any of the four jobs failed, was
   # cancelled, or never ran.
   required:
     name: all checks passed
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, windows, x64]
     needs: [typecheck, unit-tests, build, integration-tests]
     if: always()
     steps:
       - name: Check job results
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
-            echo "One or more required checks failed." >&2
+          if ("${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" -eq "true") {
+            Write-Host "::error::One or more required checks failed."
             exit 1
-          fi
+          }

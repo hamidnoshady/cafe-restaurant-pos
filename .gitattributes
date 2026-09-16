@@ -1,0 +1,44 @@
+# Line endings are part of this repository's contract, not a local preference.
+#
+# Everything is stored with LF, and this file makes git check it out with LF on
+# Windows too. Without it, a Windows clone with the default `core.autocrlf=true`
+# rewrites every text file to CRLF on checkout, and three things break — all of
+# them confusingly, and none of them at the point of the change:
+#
+#   1. **Migration checksums.** scripts/migrate.ts hashes each migration's raw
+#      *bytes* (`createHash("sha256").update(contents)`), and forward-only
+#      migrations are immutable once applied. A CRLF checkout changes every
+#      byte count, so an already-migrated database fails the next boot with
+#      `migration_checksum_mismatch` on a file nobody edited.
+#   2. **`.mjs`/`.ts` files whose first line is a shebang.** A trailing CR on
+#      `#!/usr/bin/env node` makes vite's transform fail with
+#      "SyntaxError: Invalid or unexpected token" — which is reported against
+#      the *importing test file*, not the script that actually has the CR.
+#      (scripts/verify-production-deploy.mjs, imported by
+#      src/lib/production-deploy-verification.test.ts.)
+#   3. **Shell scripts.** docker-entrypoint.sh runs in a Linux container; with
+#      CRLF the kernel looks for an interpreter named "/bin/sh\r".
+#
+# `* text=auto eol=lf` normalises on commit and checks out LF everywhere.
+* text=auto eol=lf
+
+# Windows-only files that a person edits in a Windows editor, and that Windows
+# tooling is happiest reading as CRLF. None of them are hashed or executed by
+# the Linux image.
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+*.vbs     text eol=crlf
+
+# Always binary — never touch the bytes.
+*.png     binary
+*.ico     binary
+*.woff2   binary
+*.7z      binary
+*.zip     binary
+*.exe     binary
+
+# Stored with CRLF and marked binary before this file existed (git reports it
+# as `-text`). It asserts on an embedded PEM-ish fixture, so leave its bytes
+# exactly as they are rather than renormalising them.
+src/lib/github-app-token.test.ts -text
