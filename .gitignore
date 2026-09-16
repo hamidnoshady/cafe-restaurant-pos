@@ -24,3 +24,6 @@ ds-bundle/
 
 # Freebuff agent workspace data
 .freebuff/
+
+# Plugin release asset built by wordpress-plugin/package-release.sh
+wordpress-plugin/pos-accounting-connector.zip
