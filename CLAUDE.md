@@ -183,10 +183,11 @@ than recreating the previous local image. When `PRODUCTION_HEALTH_URL` is set, t
 also verifies the live image SHA and canonical routes; without it, the rollout is explicitly
 reported as unverified.
 
-### The two manual release builds
+### The three manual workflows
 
-Both are `workflow_dispatch`-only and never run on a push, because producing one is a
-release decision rather than a check on a commit. Neither gates a PR.
+All `workflow_dispatch`-only and never run on a push: producing a release is a decision
+rather than a check on a commit, and the shared single Windows runner should not be queued
+behind them on every PR. None of them gate a PR.
 
 - **`build-desktop-installer.yml`** — packages the standalone Windows `.exe`
   (electron-builder → NSIS) and uploads it as a run artifact. Order matters: it runs
@@ -201,6 +202,13 @@ release decision rather than a check on a commit. Neither gates a PR.
   "headers already sent"; in `readme.txt` it breaks the `Stable tag` parse) and builds the
   zip through `ZipArchive` so entry paths use forward slashes — `Compress-Archive` writes
   backslashes, which WordPress's unzipper treats as part of the filename.
+- **`verify-shippables.yml`** — the cheap correctness checks for everything that ships to a
+  customer machine but never goes through `tsc`/vitest/`next build`: the Electron sources
+  parse and `electron/`'s lockfile installs; the documented packaging constraints still hold;
+  the plugin's three version fields agree and its changelog documents that version; no
+  UTF-8 BOM anywhere in the plugin; the release zip would be well-formed; and the two
+  customer-facing `.ps1` files parse. Run it **before** either release build — those two
+  commit and tag a version bump, so a failure discovered mid-release is expensive.
 
 ## Tenancy — read before touching the database
 

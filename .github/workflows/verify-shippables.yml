@@ -1,0 +1,266 @@
+# Checks the parts of the platform that ship to a customer's machine but that
+# `test.yml` never touches: the Electron desktop shell, the WordPress plugin,
+# and the PowerShell that runs on a cafe PC.
+#
+# Why this is separate from `test.yml`: none of it is `src/`. `test.yml` runs
+# tsc, vitest and `next build` over the web app, so a syntax error in
+# `electron/main.js`, a BOM in a plugin PHP file, or a version bumped in two of
+# its three required places is invisible there — and the *first* time anyone
+# finds out is when the installer fails to launch on a cafe PC or WordPress
+# refuses the zip. These checks are seconds long and catch exactly that class
+# of breakage.
+#
+# Why it is manual (`workflow_dispatch`), like the two release builds: it is
+# opt-in on purpose, so the shared single Windows runner is not queued behind
+# another automatic job on every PR. Run it before either release build.
+#
+# It deliberately does NOT package anything — producing the `.exe` is
+# `build-desktop-installer.yml`, producing the zip is `build-plugin-zip.yml`.
+# This workflow only answers "would those two builds ship something broken?".
+name: verify-shippables
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-shippables-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # Windows PowerShell 5.1 — always present on Windows, unlike `pwsh`.
+    shell: powershell
+
+jobs:
+  desktop:
+    name: desktop shell
+    runs-on: [self-hosted, windows, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # electron-builder is never invoked here (that is the release build's
+      # job, and it is slow); this only proves the manifest and lockfile the
+      # release build depends on are installable and internally consistent.
+      - name: Electron dependencies resolve on Windows
+        working-directory: electron
+        run: npm ci --ignore-scripts
+
+      - name: Electron sources parse
+        run: |
+          $ErrorActionPreference = "Stop"
+          $files = @(
+            "electron/main.js",
+            "electron/preload.js",
+            "electron/scripts/prepare-wincodesign-cache.js",
+            "windows/usb-printer-bridge.js"
+          )
+          foreach ($f in $files) {
+            node --check $f
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error file=$f::does not parse"; exit 1 }
+            Write-Host "ok  $f"
+          }
+
+      # Both of these are documented in docs/standalone-desktop-app.md as
+      # "packaging constraints that will re-break this if changed". They look
+      # like harmless cleanups in a diff, and each one produced an installer
+      # that failed only at launch or only at the final packaging step.
+      - name: Packaging constraints still hold
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pkg = Get-Content -LiteralPath electron/package.json -Raw | ConvertFrom-Json
+          $nodeModules = $pkg.build.extraResources | Where-Object { $_.from -eq "../node_modules" }
+          if (-not $nodeModules) {
+            Write-Host "::error::electron/package.json no longer copies ../node_modules into the payload; server.ts cannot boot without it."
+            exit 1
+          }
+
+          # The Linux/darwin Postgres builds carry libpq.so symlinks. 7-Zip
+          # aborts the NSIS archive on them *after* win-unpacked/ exists, so
+          # the build looks fine and only the .exe is missing.
+          $filter = @($nodeModules.filter)
+          if (-not ($filter -match '@embedded-postgres/\{linux,darwin\}')) {
+            Write-Host "::error::The @embedded-postgres/{linux,darwin}-* exclusion is missing from electron/package.json extraResources. See docs/standalone-desktop-app.md constraint 4."
+            exit 1
+          }
+          # A `**/`-prefixed exclusion also strips next/dist/lib/typescript,
+          # which Next needs at runtime to read next.config.ts.
+          # An exact prefix test, not a wildcard match: `-like "!**/*"` would
+          # also match every legitimate `!pkg{,/**}` entry (the `**` and `*`
+          # are wildcards), and fail the build on a correct manifest.
+          $bad = $filter | Where-Object { $_.StartsWith('!**/') }
+          if ($bad) {
+            Write-Host "::error::extraResources filter uses a '**/' exclusion ($bad); it also strips nested packages Next.js needs at runtime. See docs/standalone-desktop-app.md constraint 2."
+            exit 1
+          }
+
+          if (-not (Test-Path -LiteralPath "windows/cafe-pos.ico")) {
+            Write-Host "::error::windows/cafe-pos.ico is missing; electron-builder references it for the app and installer icons."
+            exit 1
+          }
+          Write-Host "packaging constraints ok"
+
+  plugin:
+    name: WordPress plugin
+    runs-on: [self-hosted, windows, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      # WordPress reads the version from three places and they must agree:
+      # the `Version:` header (what the plugins screen shows), the
+      # POS_CONNECTOR_VERSION constant (what the update check compares), and
+      # readme.txt's `Stable tag`. build-plugin-zip.yml bumps all three; a
+      # hand-edit that misses one ships a plugin that never offers its update.
+      - name: Plugin version is consistent across all three places
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root   = "wordpress-plugin/pos-accounting-connector"
+          $php    = [IO.File]::ReadAllText((Resolve-Path "$root/pos-accounting-connector.php"))
+          $readme = [IO.File]::ReadAllText((Resolve-Path "$root/readme.txt"))
+
+          $header = [regex]::Match($php,    '\*\s*Version:\s*([0-9.]+)').Groups[1].Value
+          $const  = [regex]::Match($php,    "define\( 'POS_CONNECTOR_VERSION', '([^']+)' \)").Groups[1].Value
+          $stable = [regex]::Match($readme, 'Stable tag:\s*([0-9.]+)').Groups[1].Value
+
+          Write-Host "header=$header const=$const stable=$stable"
+          if (-not $header -or -not $const -or -not $stable) {
+            Write-Host "::error::could not read all three version fields"; exit 1
+          }
+          if ($header -ne $const -or $const -ne $stable) {
+            Write-Host "::error::plugin version mismatch - header=$header, POS_CONNECTOR_VERSION=$const, Stable tag=$stable. All three must agree."
+            exit 1
+          }
+          if ($readme -notmatch [regex]::Escape("= $const =")) {
+            Write-Host "::error::readme.txt has no changelog entry for $const."
+            exit 1
+          }
+          Write-Host "plugin version $const is consistent and documented"
+
+      # A UTF-8 BOM is invisible in an editor and fatal in WordPress: PHP emits
+      # those bytes before WordPress sends its headers, so the site dies with
+      # "headers already sent". The plugin is full of Persian text, so it is
+      # genuinely easy for an editor to add one.
+      - name: No BOM in plugin sources
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bad = @()
+          # `-Include` is only honoured when -Path ends in a wildcard; with a
+          # bare directory it silently matches nothing and this check would
+          # "pass" without reading a single file. The count assertion below is
+          # the backstop for that whole class of mistake.
+          $scanned = 0
+          foreach ($f in Get-ChildItem -Path wordpress-plugin\* -Recurse -File -Include *.php, *.txt) {
+            $scanned++
+            $bytes = [IO.File]::ReadAllBytes($f.FullName)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              $bad += $f.FullName
+            }
+          }
+          if ($bad.Count -gt 0) {
+            Write-Host "::error::UTF-8 BOM found (WordPress will report 'headers already sent'): $($bad -join ', ')"
+            exit 1
+          }
+          if ($scanned -eq 0) {
+            Write-Host "::error::the BOM check matched no files at all - the glob is wrong, so this check was proving nothing."
+            exit 1
+          }
+          Write-Host "no BOM in $scanned files"
+
+      # Only runs where PHP exists. Skipped rather than failed, so the job is
+      # useful on a machine without PHP installed.
+      - name: PHP syntax (skipped when PHP is not installed)
+        run: |
+          $php = Get-Command php -ErrorAction SilentlyContinue
+          if (-not $php) {
+            Write-Host "::notice::PHP is not installed on this runner - skipping the syntax check. Install PHP to enable it."
+            exit 0
+          }
+          $failed = $false
+          foreach ($f in Get-ChildItem -Path wordpress-plugin -Recurse -File -Filter *.php) {
+            php -l $f.FullName
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { Write-Host "::error::PHP syntax errors above"; exit 1 }
+
+      # The zip is assembled the same way build-plugin-zip.yml assembles it, so
+      # a packaging problem surfaces here instead of halfway through a release
+      # that has already committed and tagged a version bump.
+      - name: The release zip would be well-formed
+        run: |
+          $ErrorActionPreference = "Stop"
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+          $pluginDir = Resolve-Path "wordpress-plugin/pos-accounting-connector"
+          $zipPath   = Join-Path $env:RUNNER_TEMP "plugin-shape-check.zip"
+          if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+
+          $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+          try {
+            foreach ($f in Get-ChildItem -LiteralPath $pluginDir -Recurse -File | Where-Object { $_.Name -ne ".DS_Store" }) {
+              $rel = $f.FullName.Substring($pluginDir.Path.Length).TrimStart("\", "/").Replace("\", "/")
+              [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, "pos-accounting-connector/$rel") | Out-Null
+            }
+          } finally { $zip.Dispose() }
+
+          $check = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          try {
+            $names = $check.Entries | ForEach-Object { $_.FullName }
+            if ($names -notcontains "pos-accounting-connector/pos-accounting-connector.php") {
+              Write-Host "::error::the plugin's main file would be missing from the zip"; exit 1
+            }
+            # WordPress's unzipper treats a backslash as part of the filename,
+            # which installs the plugin as one flat file.
+            $backslashed = $names | Where-Object { $_.Contains("\") }
+            if ($backslashed) { Write-Host "::error::zip entries contain backslashes: $($backslashed -join ', ')"; exit 1 }
+            Write-Host "zip shape ok: $($names.Count) entries, all under pos-accounting-connector/"
+          } finally {
+            $check.Dispose()
+            Remove-Item -LiteralPath $zipPath -Force
+          }
+
+  connector:
+    name: Windows print connector
+    runs-on: [self-hosted, windows, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      # These two .ps1 files are downloaded and executed on a cafe PC. Nothing
+      # else in the repo executes them, so a syntax error ships silently and
+      # only shows up when a cashier clicks "install the printer connector".
+      # Parsing is done without running a single line.
+      - name: PowerShell scripts parse
+        run: |
+          $ErrorActionPreference = "Stop"
+          $files = @(
+            "public/windows/cafe-pos-print-agent.ps1",
+            "windows/Install-CafePOS.ps1"
+          )
+          $failed = $false
+          foreach ($f in $files) {
+            if (-not (Test-Path -LiteralPath $f)) {
+              Write-Host "::error::$f is missing - the printer settings screen links to it for download."
+              $failed = $true
+              continue
+            }
+            $tokens = $null; $errors = $null
+            # ParseFile takes a [string]; Resolve-Path returns a PathInfo, so
+            # take its .Path rather than relying on coercion.
+            $full = (Resolve-Path -LiteralPath $f).Path
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $full, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              $failed = $true
+              foreach ($e in $errors) {
+                Write-Host "::error file=$f,line=$($e.Extent.StartLineNumber)::$($e.Message)"
+              }
+            } else {
+              Write-Host "ok  $f"
+            }
+          }
+          if ($failed) { exit 1 }
