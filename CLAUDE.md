@@ -82,15 +82,20 @@ comment happens to use, until you have checked this list.
 
 ## Test and build, locally — before every commit
 
-Run these from the repo root before considering any change done. CI (see below) is
-manual-only — it does not run on push, PR, or merge — so it is not a substitute for
-running the checklist yourself first:
+Run these from the repo root before considering any change done. CI (see below) does run on
+every PR to `main`, but it is a second opinion on a single shared self-hosted runner — not a
+substitute for running the checklist yourself first:
 
 ```bash
 npm install               # first time, or after a dependency change
 docker compose up -d      # start local Postgres (or point DATABASE_URL elsewhere)
 cp .env.example .env      # first time
 npm run db:migrate
+
+# No Docker (and what CI does on Windows): start the bundled PostgreSQL from
+# the `embedded-postgres` devDependency instead of `docker compose up -d`.
+#   npm run db:dev         # foreground, Ctrl-C to stop
+#   npm run db:dev:start   # background; npm run db:dev:stop to stop it
 
 npx tsc --noEmit          # type check
 npm test                  # vitest — unit tests for src/lib/*
@@ -115,6 +120,28 @@ The workflow uses the normal `pull_request` event with read-only repository perm
 does not expose repository secrets to PR code. Because these jobs execute on a self-hosted
 runner, automatic PR runs are appropriate only while contributors are trusted (for example,
 in this private repository). Do not replace this with `pull_request_target`.
+
+### Every workflow runs on the self-hosted **Windows** runner
+
+`runs-on: [self-hosted, windows, x64]` everywhere, and every `run:` block is PowerShell
+(`defaults.run.shell: powershell`) — a self-hosted Windows runner has no guaranteed bash.
+Four things follow, and each one is load-bearing:
+
+- **No `services:` containers.** GitHub only supports them on Linux runners. The integration
+  job starts a real PostgreSQL from the `embedded-postgres` devDependency instead
+  (`npm run db:dev:start`, `scripts/dev-postgres.mjs`) on port 55432, and stops it in an
+  `if: always()` step. Don't reintroduce a `services:` block.
+- **`embedded-postgres`, not `@embedded-postgres/<platform>`.** The per-platform packages are
+  `os`-locked, so depending on one directly makes `npm ci` fail outright on every other
+  platform (`EBADPLATFORM`). The meta-package lists all eight as *optional* dependencies, so
+  one `package-lock.json` installs the right binary on Windows and on the Linux image.
+- **`.gitattributes` pins LF.** With Windows' default `core.autocrlf=true`, a CRLF checkout
+  breaks migration checksums (`scripts/migrate.ts` hashes raw bytes → `migration_checksum_mismatch`
+  on files nobody edited) and any `.mjs` whose first line is a shebang (`SyntaxError: Invalid or
+  unexpected token`, reported against the *importing* test). Don't remove it.
+- **`publish.yml` needs Docker Desktop in Linux-containers mode.** The image is
+  `FROM node:20-alpine`; the workflow checks `docker version --format '{{.Server.Os}}'` and
+  fails fast with that instruction rather than dying mid-build.
 
 What follows from that:
 
@@ -155,6 +182,25 @@ Coolify's restart request uses `latest=true` so it pulls the newly published ima
 than recreating the previous local image. When `PRODUCTION_HEALTH_URL` is set, the workflow
 also verifies the live image SHA and canonical routes; without it, the rollout is explicitly
 reported as unverified.
+
+### The two manual release builds
+
+Both are `workflow_dispatch`-only and never run on a push, because producing one is a
+release decision rather than a check on a commit. Neither gates a PR.
+
+- **`build-desktop-installer.yml`** — packages the standalone Windows `.exe`
+  (electron-builder → NSIS) and uploads it as a run artifact. Order matters: it runs
+  `npm ci` + `npm run build` in the repo root *first*, because `electron/package.json`
+  pulls `../.next`, `../src` and `../node_modules` in through `extraResources`. Optional
+  `version` input rewrites `electron/package.json`. See
+  [docs/standalone-desktop-app.md](docs/standalone-desktop-app.md) for the packaging
+  constraints that silently re-break this.
+- **`build-plugin-zip.yml`** — bumps the WordPress plugin version in the three places the
+  repo rule names, writes the changelog, builds the clean zip, commits and tags `vX.Y.Z`.
+  On Windows it writes every file as **UTF-8 without a BOM** (a BOM in the plugin PHP means
+  "headers already sent"; in `readme.txt` it breaks the `Stable tag` parse) and builds the
+  zip through `ZipArchive` so entry paths use forward slashes — `Compress-Archive` writes
+  backslashes, which WordPress's unzipper treats as part of the filename.
 
 ## Tenancy — read before touching the database
 

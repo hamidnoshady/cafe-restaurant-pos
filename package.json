@@ -13,6 +13,9 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
+    "db:dev": "node scripts/dev-postgres.mjs",
+    "db:dev:start": "node scripts/dev-postgres.mjs --detach",
+    "db:dev:stop": "node scripts/dev-postgres.mjs --stop",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:app-role": "tsx scripts/create-app-role.ts",
     "db:seed": "tsx scripts/seed.ts",
@@ -68,7 +71,6 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@embedded-postgres/linux-x64": "^18.4.0-beta.17",
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.15.0",
     "@types/pdfkit": "^0.17.6",
@@ -78,6 +80,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/ws": "^8.18.1",
+    "embedded-postgres": "16.14.0-beta.17",
     "pdfkit": "^0.20.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.3",

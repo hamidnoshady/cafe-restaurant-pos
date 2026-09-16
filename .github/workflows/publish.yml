@@ -10,6 +10,16 @@
 #
 # The pre-publish gates intentionally test the exact commit being published.
 # They protect direct pushes, tags, and manual runs independently of PR checks.
+#
+# Runs on the self-hosted **Windows** runner. Two requirements follow, and both
+# are verified by the `docker-publish` job before it does anything expensive:
+#
+#   * The image is a Linux image. Docker Desktop must therefore be running and
+#     set to the **Linux containers** backend (WSL2). A Windows-containers
+#     daemon cannot build this Dockerfile at all, so the job fails fast with
+#     that instruction rather than part-way through a build.
+#   * Every `run:` block is PowerShell, because a self-hosted Windows runner is
+#     not guaranteed to have bash on PATH.
 name: publish
 
 on:
@@ -28,6 +38,11 @@ concurrency:
   group: publish-production
   cancel-in-progress: false
 
+defaults:
+  run:
+    # Windows PowerShell 5.1 — always present on Windows, unlike `pwsh`.
+    shell: powershell
+
 env:
   NODE_OPTIONS: --max-old-space-size=3072
   # Session signing is not what's under test here, but the auth/webauthn
@@ -38,7 +53,7 @@ env:
 jobs:
   gates:
     name: pre-publish gates
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, windows, x64]
     permissions:
       contents: read
     steps:
@@ -54,7 +69,7 @@ jobs:
 
   docker-publish:
     name: publish image (GHCR)
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, windows, x64]
     needs: [gates]
     permissions:
       contents: read
@@ -63,9 +78,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Dockerfile is `FROM node:20-alpine` — a Linux image. Building it
+      # needs Docker Desktop up and switched to the Linux/WSL2 backend. Both
+      # failures are silent until the build itself dies with a confusing error,
+      # so they are checked here with an actionable message instead.
+      - name: Check Docker is running with the Linux backend
+        run: |
+          $ErrorActionPreference = "Stop"
+          try {
+            $os = (docker version --format '{{.Server.Os}}' 2>&1 | Out-String).Trim()
+          } catch {
+            Write-Error "Docker is not reachable. Start Docker Desktop on this machine (and enable 'Start Docker Desktop when you log in') before publishing."
+            exit 1
+          }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Docker is not reachable. Start Docker Desktop on this machine before publishing. Output: $os"
+            exit 1
+          }
+          if ($os -ne "linux") {
+            Write-Error "Docker is in '$os' container mode. This Dockerfile builds a Linux image: right-click the Docker Desktop tray icon and choose 'Switch to Linux containers'."
+            exit 1
+          }
+          Write-Host "Docker server OS: $os"
+
       - name: Compute short sha
         id: sha
-        run: echo "short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Windows PowerShell 5.1's `Out-File -Encoding utf8` writes a UTF-8
+          # BOM, and the runner parses these files byte-for-byte: a BOM ends up
+          # inside the first key name, so `steps.<id>.outputs.<key>` silently
+          # resolves to empty. Append BOM-free bytes instead.
+          function Add-GitHubOutput([string]$line) {
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "$line`n", (New-Object System.Text.UTF8Encoding($false)))
+          }
+          $short = "$env:GITHUB_SHA".Substring(0, 7)
+          Add-GitHubOutput "short=$short"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -94,22 +141,28 @@ jobs:
 
       - name: Trigger Coolify redeploy
         if: github.ref_type == 'branch'
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
           # `latest=true` is load-bearing for a Docker-image service: a plain
           # restart would recreate the old local image and report success.
           # Do not automatically retry this POST — Coolify may have queued the
           # restart before a response is lost, and a retry would cause the
           # duplicate restarts visible in the production logs.
-          curl --fail --silent --show-error \
-            --connect-timeout 10 --max-time 30 \
-            -X POST \
-            "https://manage.eshobe.com/api/v1/services/jrfpvt0rctfkmzpw1ao5c1cb/restart?latest=true" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
+          $ErrorActionPreference = "Stop"
+          # TLS 1.2 is not the default in Windows PowerShell 5.1 and the API
+          # refuses anything older.
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-RestMethod `
+            -Method Post `
+            -Uri "https://manage.eshobe.com/api/v1/services/jrfpvt0rctfkmzpw1ao5c1cb/restart?latest=true" `
+            -Headers @{ Authorization = "Bearer $env:COOLIFY_API_TOKEN" } `
+            -TimeoutSec 30 | Out-Null
 
       - name: Report an unverified production rollout
         if: github.ref_type == 'branch' && vars.PRODUCTION_HEALTH_URL == ''
         run: |
-          echo "::warning title=Production rollout unverified::Coolify accepted a redeploy request, but PRODUCTION_HEALTH_URL is unset so this run cannot prove the live image or canonical routes changed. Set it to https://<live-host>/api/health."
+          Write-Host "::warning title=Production rollout unverified::Coolify accepted a redeploy request, but PRODUCTION_HEALTH_URL is unset so this run cannot prove the live image or canonical routes changed. Set it to https://<live-host>/api/health."
 
       - name: Verify the published image and canonical routes are live
         # Production verification is intentionally opt-in until the service's
