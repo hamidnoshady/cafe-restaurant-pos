@@ -332,30 +332,7 @@ export function PrinterHardware({
     <div className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
-      {!localAgentOnline ? (
-        <InfoBox>
-          <div className="space-y-3">
-            <div>
-              <p className="font-medium text-foreground">اتصال خودکار به چاپگرهای ویندوز</p>
-              <p className="mt-1">
-                برای دیدن چاپگر USB نصب‌شده در Windows، رابط چاپ را یک‌بار روی همین کامپیوتر نصب کنید. فایل دانلودشده را
-                باز کنید و تأیید Windows را بزنید؛ نصب و راه‌اندازی کاملاً خودکار است و از ورود‌های بعدی Windows نیز خودکار
-                اجرا می‌شود.
-              </p>
-            </div>
-            <Button asChild>
-              <a href="/api/print/windows-agent-installer">
-                <DownloadIcon aria-hidden="true" />
-                دانلود و نصب رابط چاپ ویندوز
-              </a>
-            </Button>
-            <p className="text-xs">
-              پس از پیام موفقیت، به این صفحه برگردید، «بررسی دوباره» را بزنید و اگر مرورگر اجازهٔ Apps on device یا Local
-              network access خواست، گزینهٔ Allow را انتخاب کنید.
-            </p>
-          </div>
-        </InfoBox>
-      ) : null}
+      <WindowsConnectorCard localAgentOnline={localAgentOnline} />
 
       <SectionCard
         title="پیداکردن چاپگر"
@@ -802,5 +779,57 @@ function PrinterCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The Windows connector, always on screen — not only while the local agent is
+ * silent.
+ *
+ * It used to render only when `localAgentOnline` was false, which made it
+ * invisible in exactly two situations people asked about: a cloud deployment
+ * whose *server* answered the health probe (`via: "server"` still counts as
+ * "online" for the section as a whole, so the download vanished while the
+ * cashier's Windows queues were still unreachable), and a till whose connector
+ * was already installed but needed reinstalling after an update or a new
+ * tenant origin. A download nobody can find is the same as a download that
+ * does not exist, so the card is permanent: the heading states the current
+ * state, and the button is always there.
+ */
+function WindowsConnectorCard({ localAgentOnline }: { localAgentOnline: boolean }) {
+  return (
+    <SectionCard
+      title="رابط چاپ ویندوز"
+      description={
+        localAgentOnline
+          ? "رابط چاپ روی همین کامپیوتر در حال اجراست؛ چاپگرهای نصب‌شدهٔ ویندوز خوانده می‌شوند."
+          : "برای چاپ روی چاپگر USB یا چاپگر نصب‌شده در Windows، رابط چاپ را یک‌بار روی همین کامپیوتر نصب کنید."
+      }
+      actions={
+        <Button asChild variant={localAgentOnline ? "outline" : "default"}>
+          <a href="/api/print/windows-agent-installer" download>
+            <DownloadIcon aria-hidden="true" />
+            {localAgentOnline ? "نصب دوبارهٔ رابط چاپ" : "دانلود و نصب رابط چاپ ویندوز"}
+          </a>
+        </Button>
+      }
+    >
+      <div className="space-y-2 text-sm leading-6 text-muted-foreground">
+        <p>
+          فایل دانلودشده را باز کنید و تأیید Windows را بزنید؛ نصب و راه‌اندازی کاملاً خودکار است، به Node.js یا دستور
+          PowerShell نیازی نیست و از ورود‌های بعدی Windows هم خودکار اجرا می‌شود.
+        </p>
+        <p>
+          پس از پیام موفقیت به همین صفحه برگردید، «بررسی دوباره» را بزنید و اگر مرورگر اجازهٔ Apps on device یا Local
+          network access خواست، Allow را انتخاب کنید.
+        </p>
+        {localAgentOnline ? null : (
+          <p className="text-xs">
+            اگر برنامه روی سرور ابری اجرا می‌شود، «چاپگرهای ویندوز» بدون این رابط فهرست چاپگرهای سرور را نشان می‌دهد، نه
+            چاپگرهای این کامپیوتر.
+          </p>
+        )}
+      </div>
+    </SectionCard>
   );
 }
