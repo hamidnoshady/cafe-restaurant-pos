@@ -24,7 +24,13 @@
  *   every other ledger form.
  */
 
-import { useEffect, useMemo, useState, useDeferredValue, useCallback } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useDeferredValue,
+  useCallback,
+} from "react";
 import {
   SearchIcon,
   PlusIcon,
@@ -47,19 +53,60 @@ import {
   ChevronDownIcon,
 } from "lucide-react";
 
-import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardAction,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableFooter } from "@/components/ui/table";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableFooter,
+} from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Field, FieldLabel, FieldDescription, FieldError } from "@/components/ui/field";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Field,
+  FieldLabel,
+  FieldDescription,
+  FieldError,
+} from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
@@ -68,7 +115,12 @@ import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
-import { availableActions, type ChequeAction, type ChequeDirection, type ChequeStatus } from "@/lib/cheques";
+import {
+  availableActions,
+  type ChequeAction,
+  type ChequeDirection,
+  type ChequeStatus,
+} from "@/lib/cheques";
 import { api } from "@/app/dashboard/ui";
 
 // ---------------------------------------------------------------------------
@@ -119,11 +171,16 @@ const STATUS_LABELS: Record<ChequeStatus, string> = {
 };
 
 const STATUS_TONE: Record<ChequeStatus, string> = {
-  on_hand: "bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/20",
-  in_collection: "bg-sky-100 text-sky-900 border-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:border-sky-500/20",
-  endorsed: "bg-violet-100 text-violet-900 border-violet-200 dark:bg-violet-500/15 dark:text-violet-200 dark:border-violet-500/20",
-  issued: "bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/20",
-  cleared: "bg-emerald-100 text-emerald-900 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:border-emerald-500/20",
+  on_hand:
+    "bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/20",
+  in_collection:
+    "bg-sky-100 text-sky-900 border-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:border-sky-500/20",
+  endorsed:
+    "bg-violet-100 text-violet-900 border-violet-200 dark:bg-violet-500/15 dark:text-violet-200 dark:border-violet-500/20",
+  issued:
+    "bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/20",
+  cleared:
+    "bg-emerald-100 text-emerald-900 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:border-emerald-500/20",
   bounced: "bg-destructive/10 text-destructive border-destructive/20",
   cancelled: "bg-muted text-muted-foreground border-border",
 };
@@ -146,9 +203,22 @@ const ACTION_HINT: Record<ChequeAction, string> = {
   cancel: "بدون اثر بانکی ابطال می‌شود",
 };
 
-const DIRECTION_META: Record<ChequeDirection, { label: string; short: string; hint: string; icon: typeof WalletIcon }> = {
-  receivable: { label: "چک‌های دریافتی", short: "دریافتی", hint: "از مشتریان — نزد صندوق", icon: HandCoinsIcon },
-  payable: { label: "چک‌های صادرشده", short: "صادرشده", hint: "به تأمین‌کنندگان — در جریان", icon: FileTextIcon },
+const DIRECTION_META: Record<
+  ChequeDirection,
+  { label: string; short: string; hint: string; icon: typeof WalletIcon }
+> = {
+  receivable: {
+    label: "چک‌های دریافتی",
+    short: "دریافتی",
+    hint: "از مشتریان — نزد صندوق",
+    icon: HandCoinsIcon,
+  },
+  payable: {
+    label: "چک‌های صادرشده",
+    short: "صادرشده",
+    hint: "به تأمین‌کنندگان — در جریان",
+    icon: FileTextIcon,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -171,7 +241,10 @@ function todayIso(): string {
   return isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
 }
 
-function dueState(dueDate: string, status: ChequeStatus): "overdue" | "due_soon" | "ok" | "terminal" {
+function dueState(
+  dueDate: string,
+  status: ChequeStatus,
+): "overdue" | "due_soon" | "ok" | "terminal" {
   if (["cleared", "bounced", "cancelled"].includes(status)) return "terminal";
   const t = todayIso();
   const diff = daysBetween(t, dueDate); // negative = overdue
@@ -185,9 +258,11 @@ function errorMessage(code: string | undefined): string {
     invalid_amount: "مبلغ معتبر نیست.",
     invalid_direction: "نوع چک معتبر نیست.",
     invalid_action: "این عملیات روی چک تعریف نشده است.",
-    invalid_cheque_transition: "این تغییر وضعیت ممکن نیست؛ چک قبلاً تغییر کرده است.",
+    invalid_cheque_transition:
+      "این تغییر وضعیت ممکن نیست؛ چک قبلاً تغییر کرده است.",
     cheque_not_found: "چک پیدا نشد.",
-    duplicate_cheque: "چکی با همین شماره و بانک (یا همین شناسه صیاد) قبلاً ثبت شده است.",
+    duplicate_cheque:
+      "چکی با همین شماره و بانک (یا همین شناسه صیاد) قبلاً ثبت شده است.",
     invalid_sayad_id: "شناسه صیاد باید ۱۶ رقم باشد.",
     serial_number_required: "شماره چک الزامی است.",
     bank_name_required: "نام بانک الزامی است.",
@@ -198,7 +273,8 @@ function errorMessage(code: string | undefined): string {
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     ledger_account_missing: "یکی از حساب‌های مورد نیاز در سرفصل یافت نشد.",
     fiscal_period_locked: "دوره مالی این تاریخ قفل است.",
-    fiscal_period_soft_closed: "دوره مالی نیمه‌بسته است؛ فقط مالک یا حسابدار می‌تواند ثبت کند.",
+    fiscal_period_soft_closed:
+      "دوره مالی نیمه‌بسته است؛ فقط مالک یا حسابدار می‌تواند ثبت کند.",
     bad_request: "درخواست نامعتبر بود.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
@@ -217,7 +293,9 @@ export function ChequesSection({
   run,
 }: {
   busy: boolean;
-  run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean>;
+  run: (
+    fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
+  ) => Promise<boolean>;
 }) {
   const money = useMoney();
   const [direction, setDirection] = useState<ChequeDirection>("receivable");
@@ -235,7 +313,10 @@ export function ChequesSection({
 
   const [createOpen, setCreateOpen] = useState(false);
   const [detail, setDetail] = useState<Cheque | null>(null);
-  const [action, setAction] = useState<{ cheque: Cheque; act: ChequeAction } | null>(null);
+  const [action, setAction] = useState<{
+    cheque: Cheque;
+    act: ChequeAction;
+  } | null>(null);
 
   const [localError, setLocalError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -244,13 +325,17 @@ export function ChequesSection({
   useEffect(() => {
     setCheques(null);
     setLoadError("");
-    api<{ cheques: Cheque[] }>(`/api/ledger/cheques?direction=${direction}`).then(({ ok, data }) => {
+    api<{ cheques: Cheque[] }>(
+      `/api/ledger/cheques?direction=${direction}`,
+    ).then(({ ok, data }) => {
       // A failed load used to become an empty register — "you have no cheques"
       // is the one answer this screen must never invent.
       if (ok) setCheques(data.cheques);
       else {
         setCheques([]);
-        setLoadError("بارگذاری فهرست چک‌ها ناموفق بود؛ این فهرست ممکن است کامل نباشد.");
+        setLoadError(
+          "بارگذاری فهرست چک‌ها ناموفق بود؛ این فهرست ممکن است کامل نباشد.",
+        );
       }
     });
   }, [direction, refreshKey]);
@@ -264,43 +349,85 @@ export function ChequesSection({
    * uuid — picking it used to fail with an unexplained server error.
    */
   useEffect(() => {
-    api<{ customers: { customerId: string; customerName: string }[] }>("/api/ledger/ar/customers?scope=directory").then(
-      ({ ok, data }) => {
-        if (ok) setCustomers(data.customers.map((c) => ({ id: c.customerId, name: c.customerName })));
-      },
-    );
-    api<{ suppliers: { supplierId: string; supplierName: string }[] }>("/api/ledger/ap/suppliers?scope=directory").then(
-      ({ ok, data }) => {
-        if (ok) setSuppliers(data.suppliers.map((s) => ({ id: s.supplierId, name: s.supplierName })));
-      },
-    );
+    api<{ customers: { customerId: string; customerName: string }[] }>(
+      "/api/ledger/ar/customers?scope=directory",
+    ).then(({ ok, data }) => {
+      if (ok)
+        setCustomers(
+          data.customers.map((c) => ({
+            id: c.customerId,
+            name: c.customerName,
+          })),
+        );
+    });
+    api<{ suppliers: { supplierId: string; supplierName: string }[] }>(
+      "/api/ledger/ap/suppliers?scope=directory",
+    ).then(({ ok, data }) => {
+      if (ok)
+        setSuppliers(
+          data.suppliers.map((s) => ({
+            id: s.supplierId,
+            name: s.supplierName,
+          })),
+        );
+    });
   }, [refreshKey]);
 
   const banks = useMemo(() => {
     if (!cheques) return [];
-    return Array.from(new Set(cheques.map((c) => c.bankName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "fa"));
+    return Array.from(
+      new Set(cheques.map((c) => c.bankName).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b, "fa"));
   }, [cheques]);
 
+  // ⚡ Bolt: Pre-compute lowercased search strings to avoid O(N) recalculations
+  // per keystroke. This index depends only on the base dataset.
+  const searchIndex = useMemo(() => {
+    if (!cheques) return null;
+    return cheques.map((c) => ({
+      cheque: c,
+      normalized: [
+        c.counterpartyName.toLowerCase(),
+        c.bankName.toLowerCase(),
+        c.serialNumber.toLowerCase(),
+        (c.sayadId ?? "").toLowerCase(),
+        (c.memo ?? "").toLowerCase(),
+      ].filter(Boolean),
+    }));
+  }, [cheques]);
+
+  // ⚡ Bolt: We depend on deferredQuery so typing remains snappy while
+  // filtering happens in the background. We match against the pre-normalized index and check
+  // individual fields to avoid false-positive cross-boundary matches.
   const filtered = useMemo(() => {
-    if (!cheques) return [];
+    if (!cheques || !searchIndex) return [];
     let out = [...cheques];
+
     if (deferredQuery.trim()) {
       const q = deferredQuery.trim().toLowerCase();
-      out = out.filter(
-        (c) =>
-          c.counterpartyName.toLowerCase().includes(q) ||
-          c.bankName.toLowerCase().includes(q) ||
-          c.serialNumber.toLowerCase().includes(q) ||
-          (c.sayadId ?? "").toLowerCase().includes(q) ||
-          (c.memo ?? "").toLowerCase().includes(q),
-      );
+      out = searchIndex
+        .filter(({ normalized }) =>
+          normalized.some((field) => field.includes(q)),
+        )
+        .map(({ cheque }) => cheque);
     }
-    if (statusFilter !== "all") out = out.filter((c) => c.status === statusFilter);
-    if (bankFilter !== "all") out = out.filter((c) => c.bankName === bankFilter);
+
+    if (statusFilter !== "all")
+      out = out.filter((c) => c.status === statusFilter);
+    if (bankFilter !== "all")
+      out = out.filter((c) => c.bankName === bankFilter);
 
     out.sort((a, b) => {
-      if (sortBy === "due_asc") return a.dueDate.localeCompare(b.dueDate) || a.serialNumber.localeCompare(b.serialNumber);
-      if (sortBy === "due_desc") return b.dueDate.localeCompare(a.dueDate) || a.serialNumber.localeCompare(b.serialNumber);
+      if (sortBy === "due_asc")
+        return (
+          a.dueDate.localeCompare(b.dueDate) ||
+          a.serialNumber.localeCompare(b.serialNumber)
+        );
+      if (sortBy === "due_desc")
+        return (
+          b.dueDate.localeCompare(a.dueDate) ||
+          a.serialNumber.localeCompare(b.serialNumber)
+        );
       if (sortBy === "amount_desc") return b.amount - a.amount;
       if (sortBy === "amount_asc") return a.amount - b.amount;
       return 0;
@@ -312,7 +439,9 @@ export function ChequesSection({
   const kpis = useMemo(() => {
     if (!cheques) return null;
     const t = todayIso();
-    const active = cheques.filter((c) => !["cleared", "bounced", "cancelled"].includes(c.status));
+    const active = cheques.filter(
+      (c) => !["cleared", "bounced", "cancelled"].includes(c.status),
+    );
     const overdue = active.filter((c) => c.dueDate < t);
     const dueSoon = active.filter((c) => {
       const d = daysBetween(t, c.dueDate);
@@ -324,12 +453,29 @@ export function ChequesSection({
       acc[c.status] = (acc[c.status] ?? 0) + 1;
       return acc;
     }, {});
-    return { totalActive, totalOverdue, overdueCount: overdue.length, dueSoonCount: dueSoon.length, activeCount: active.length, byStatus, totalCount: cheques.length };
+    return {
+      totalActive,
+      totalOverdue,
+      overdueCount: overdue.length,
+      dueSoonCount: dueSoon.length,
+      activeCount: active.length,
+      byStatus,
+      totalCount: cheques.length,
+    };
   }, [cheques]);
 
-  async function doAction(cheque: Cheque, act: ChequeAction, body: Record<string, unknown> = {}) {
+  async function doAction(
+    cheque: Cheque,
+    act: ChequeAction,
+    body: Record<string, unknown> = {},
+  ) {
     setLocalError("");
-    const ok = await run(() => api(`/api/ledger/cheques/${cheque.id}/${act}`, { method: "POST", body: JSON.stringify(body) }));
+    const ok = await run(() =>
+      api(`/api/ledger/cheques/${cheque.id}/${act}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
     if (ok) {
       setAction(null);
       setDetail(null);
@@ -353,7 +499,9 @@ export function ChequesSection({
               </Badge>
             </div>
             <CardDescription className="mt-2 max-w-3xl leading-6">
-              چک‌های دریافتی و صادرشده، سررسید و هر مرحله از وصول یا ظهرنویسی — هر مرحله سند حسابداری خودش را ثبت می‌کند. تغییر وضعیت بر پایه جدول انتقال سرور انجام می‌شود، نه حدس رابط.
+              چک‌های دریافتی و صادرشده، سررسید و هر مرحله از وصول یا ظهرنویسی —
+              هر مرحله سند حسابداری خودش را ثبت می‌کند. تغییر وضعیت بر پایه جدول
+              انتقال سرور انجام می‌شود، نه حدس رابط.
             </CardDescription>
           </div>
           <CardAction className="flex flex-wrap items-center gap-2 self-start">
@@ -370,7 +518,11 @@ export function ChequesSection({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <KpiCard
                 icon={WalletIcon}
-                label={direction === "receivable" ? "مانده فعال دریافتی" : "مانده صادرشده فعال"}
+                label={
+                  direction === "receivable"
+                    ? "مانده فعال دریافتی"
+                    : "مانده صادرشده فعال"
+                }
                 value={money.format(kpis.totalActive)}
                 hint={`${toPersianDigits(kpis.activeCount)} فقره — از ${toPersianDigits(kpis.totalCount)} کل`}
                 tone="primary"
@@ -405,18 +557,44 @@ export function ChequesSection({
             {/* Aging mini bar */}
             <div className="mt-4 rounded-xl border bg-muted/30 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-medium text-muted-foreground">نمای سررسید</p>
-                <span className="text-xs text-muted-foreground">{toPersianDigits(filtered.length)} فقره در فهرست فعلی</span>
+                <p className="text-xs font-medium text-muted-foreground">
+                  نمای سررسید
+                </p>
+                <span className="text-xs text-muted-foreground">
+                  {toPersianDigits(filtered.length)} فقره در فهرست فعلی
+                </span>
               </div>
               <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-muted">
-                {kpis.overdueCount > 0 ? <span className="bg-destructive" style={{ width: `${Math.max(6, (kpis.overdueCount / Math.max(1, kpis.totalCount)) * 100)}%` }} /> : null}
-                {kpis.dueSoonCount > 0 ? <span className="bg-amber-500 dark:bg-amber-400" style={{ width: `${Math.max(6, (kpis.dueSoonCount / Math.max(1, Math.min(kpis.totalCount, 12))) * 35)}%` }} /> : null}
+                {kpis.overdueCount > 0 ? (
+                  <span
+                    className="bg-destructive"
+                    style={{
+                      width: `${Math.max(6, (kpis.overdueCount / Math.max(1, kpis.totalCount)) * 100)}%`,
+                    }}
+                  />
+                ) : null}
+                {kpis.dueSoonCount > 0 ? (
+                  <span
+                    className="bg-amber-500 dark:bg-amber-400"
+                    style={{
+                      width: `${Math.max(6, (kpis.dueSoonCount / Math.max(1, Math.min(kpis.totalCount, 12))) * 35)}%`,
+                    }}
+                  />
+                ) : null}
                 <span className="flex-1 bg-primary/20" />
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-destructive" /> سررسید گذشته</span>
-                <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500 dark:bg-amber-400" /> هفته جاری</span>
-                <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-primary/40" /> آتی</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-destructive" /> سررسید
+                  گذشته
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-amber-500 dark:bg-amber-400" />{" "}
+                  هفته جاری
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-primary/40" /> آتی
+                </span>
               </div>
             </div>
           </CardContent>
@@ -430,7 +608,12 @@ export function ChequesSection({
           <div className="grid gap-3 lg:grid-cols-[1.4fr_0.9fr_0.9fr_0.9fr]">
             <div className="relative">
               <SearchIcon className="pointer-events-none absolute end-auto start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="جستجو: نام، بانک، شماره چک، صیاد، یادداشت…" className="ps-9" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="جستجو: نام، بانک، شماره چک، صیاد، یادداشت…"
+                className="ps-9"
+              />
             </div>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -491,23 +674,34 @@ export function ChequesSection({
               </Button>
             )}
             <span className="text-xs text-muted-foreground">
-              {cheques === null ? "در حال بارگذاری…" : `${toPersianDigits(filtered.length)} از ${toPersianDigits(cheques.length)} چک`}
+              {cheques === null
+                ? "در حال بارگذاری…"
+                : `${toPersianDigits(filtered.length)} از ${toPersianDigits(cheques.length)} چک`}
               {direction === "receivable" ? " دریافتی" : " صادرشده"}
             </span>
             <Separator orientation="vertical" className="mx-1 h-4" />
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <FilterIcon className="size-3.5" /> فیلتر ترکیبی بر اساس جستجو، وضعیت و بانک
+              <FilterIcon className="size-3.5" /> فیلتر ترکیبی بر اساس جستجو،
+              وضعیت و بانک
             </span>
           </div>
 
           {/* Direction tabs */}
-          <Tabs value={direction} onValueChange={(v) => setDirection(v as ChequeDirection)} dir="rtl">
+          <Tabs
+            value={direction}
+            onValueChange={(v) => setDirection(v as ChequeDirection)}
+            dir="rtl"
+          >
             <TabsList className="w-full justify-start">
               {(["receivable", "payable"] as const).map((dir) => {
                 const meta = DIRECTION_META[dir];
                 const Icon = meta.icon;
                 return (
-                  <TabsTrigger key={dir} value={dir} className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <TabsTrigger
+                    key={dir}
+                    value={dir}
+                    className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                  >
                     <Icon className="size-4" />
                     {meta.label}
                   </TabsTrigger>
@@ -527,7 +721,11 @@ export function ChequesSection({
               {cheques === null ? (
                 <ChequesSkeleton />
               ) : filtered.length === 0 ? (
-                <EmptyCheques onCreate={() => setCreateOpen(true)} hasAny={cheques.length > 0} direction={direction} />
+                <EmptyCheques
+                  onCreate={() => setCreateOpen(true)}
+                  hasAny={cheques.length > 0}
+                  direction={direction}
+                />
               ) : (
                 <>
                   {/* Desktop table */}
@@ -547,12 +745,23 @@ export function ChequesSection({
                         {filtered.map((c) => {
                           const ds = dueState(c.dueDate, c.status);
                           return (
-                            <TableRow key={c.id} className={ds === "overdue" ? "bg-destructive/[0.03] hover:bg-destructive/[0.06]" : undefined}>
+                            <TableRow
+                              key={c.id}
+                              className={
+                                ds === "overdue"
+                                  ? "bg-destructive/[0.03] hover:bg-destructive/[0.06]"
+                                  : undefined
+                              }
+                            >
                               <TableCell>
                                 <div className="min-w-0">
-                                  <p className="truncate font-medium">{c.counterpartyName}</p>
+                                  <p className="truncate font-medium">
+                                    {c.counterpartyName}
+                                  </p>
                                   <p className="truncate text-xs text-muted-foreground">
-                                    صدور {toPersianDigits(formatJalali(c.issueDate))} {c.memo ? `· ${c.memo}` : ""}
+                                    صدور{" "}
+                                    {toPersianDigits(formatJalali(c.issueDate))}{" "}
+                                    {c.memo ? `· ${c.memo}` : ""}
                                   </p>
                                 </div>
                               </TableCell>
@@ -560,12 +769,23 @@ export function ChequesSection({
                                 <div className="min-w-0">
                                   <p className="flex items-center gap-1.5 text-sm">
                                     <LandmarkIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                                    <span className="truncate">{c.bankName}</span>
+                                    <span className="truncate">
+                                      {c.bankName}
+                                    </span>
                                   </p>
-                                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground" dir="ltr">
+                                  <p
+                                    className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                                    dir="ltr"
+                                  >
                                     <HashIcon className="size-3 h-3 shrink-0" />
-                                    <span className="truncate">{toPersianDigits(c.serialNumber)}</span>
-                                    {c.sayadId ? <span className="truncate">· {toPersianDigits(c.sayadId)}</span> : null}
+                                    <span className="truncate">
+                                      {toPersianDigits(c.serialNumber)}
+                                    </span>
+                                    {c.sayadId ? (
+                                      <span className="truncate">
+                                        · {toPersianDigits(c.sayadId)}
+                                      </span>
+                                    ) : null}
                                   </p>
                                 </div>
                               </TableCell>
@@ -576,31 +796,66 @@ export function ChequesSection({
                                     {toPersianDigits(formatJalali(c.dueDate))}
                                   </span>
                                   {ds === "overdue" ? (
-                                    <Badge variant="destructive" className="gap-1">
+                                    <Badge
+                                      variant="destructive"
+                                      className="gap-1"
+                                    >
                                       <AlertTriangleIcon className="size-3" />
-                                      {toPersianDigits(String(Math.abs(daysBetween(c.dueDate, todayIso()))))} روز گذشته
+                                      {toPersianDigits(
+                                        String(
+                                          Math.abs(
+                                            daysBetween(c.dueDate, todayIso()),
+                                          ),
+                                        ),
+                                      )}{" "}
+                                      روز گذشته
                                     </Badge>
                                   ) : ds === "due_soon" ? (
-                                    <Badge variant="secondary" className="gap-1 bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
+                                    <Badge
+                                      variant="secondary"
+                                      className="gap-1 bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"
+                                    >
                                       <Clock3Icon className="size-3" />
-                                      {toPersianDigits(String(daysBetween(todayIso(), c.dueDate)))} روز مانده
+                                      {toPersianDigits(
+                                        String(
+                                          daysBetween(todayIso(), c.dueDate),
+                                        ),
+                                      )}{" "}
+                                      روز مانده
                                     </Badge>
                                   ) : null}
                                 </div>
                               </TableCell>
-                              <TableCell className="font-medium tabular-nums">{money.format(c.amount)}</TableCell>
+                              <TableCell className="font-medium tabular-nums">
+                                {money.format(c.amount)}
+                              </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className={`gap-1 border ${STATUS_TONE[c.status]}`}>
+                                <Badge
+                                  variant="outline"
+                                  className={`gap-1 border ${STATUS_TONE[c.status]}`}
+                                >
                                   {STATUS_LABELS[c.status]}
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-end">
                                 <div className="flex justify-end gap-1">
-                                  <Button variant="ghost" size="sm" className="h-8 px-2.5" onClick={() => setDetail(c)}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 px-2.5"
+                                    onClick={() => setDetail(c)}
+                                  >
                                     <EyeIcon className="size-4" />
                                     جزئیات
                                   </Button>
-                                  <ChequeRowActions cheque={c} busy={busy} onAction={(act) => setAction({ cheque: c, act })} onDetail={() => setDetail(c)} />
+                                  <ChequeRowActions
+                                    cheque={c}
+                                    busy={busy}
+                                    onAction={(act) =>
+                                      setAction({ cheque: c, act })
+                                    }
+                                    onDetail={() => setDetail(c)}
+                                  />
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -612,8 +867,15 @@ export function ChequesSection({
                           <TableCell colSpan={3} className="font-medium">
                             جمع فهرست فعلی
                           </TableCell>
-                          <TableCell className="font-bold tabular-nums">{money.format(filtered.reduce((s, c) => s + c.amount, 0))}</TableCell>
-                          <TableCell colSpan={2} className="text-xs text-muted-foreground">
+                          <TableCell className="font-bold tabular-nums">
+                            {money.format(
+                              filtered.reduce((s, c) => s + c.amount, 0),
+                            )}
+                          </TableCell>
+                          <TableCell
+                            colSpan={2}
+                            className="text-xs text-muted-foreground"
+                          >
                             {toPersianDigits(filtered.length)} فقره
                           </TableCell>
                         </TableRow>
@@ -626,17 +888,26 @@ export function ChequesSection({
                     {filtered.map((c) => {
                       const ds = dueState(c.dueDate, c.status);
                       return (
-                        <Card key={c.id} className={`overflow-hidden ${ds === "overdue" ? "border-destructive/30" : ""}`}>
+                        <Card
+                          key={c.id}
+                          className={`overflow-hidden ${ds === "overdue" ? "border-destructive/30" : ""}`}
+                        >
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <CardTitle className="truncate text-sm">{c.counterpartyName}</CardTitle>
+                                <CardTitle className="truncate text-sm">
+                                  {c.counterpartyName}
+                                </CardTitle>
                                 <CardDescription className="flex items-center gap-1.5 truncate">
                                   <Building2Icon className="size-3.5 shrink-0" />
-                                  {c.bankName} · {toPersianDigits(c.serialNumber)}
+                                  {c.bankName} ·{" "}
+                                  {toPersianDigits(c.serialNumber)}
                                 </CardDescription>
                               </div>
-                              <Badge variant="outline" className={`shrink-0 border text-xs ${STATUS_TONE[c.status]}`}>
+                              <Badge
+                                variant="outline"
+                                className={`shrink-0 border text-xs ${STATUS_TONE[c.status]}`}
+                              >
                                 {STATUS_LABELS[c.status]}
                               </Badge>
                             </div>
@@ -644,11 +915,17 @@ export function ChequesSection({
                           <CardContent className="space-y-3 pt-0">
                             <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-3">
                               <div>
-                                <p className="text-xs text-muted-foreground">مبلغ</p>
-                                <p className="mt-1 font-bold tabular-nums">{money.format(c.amount)}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  مبلغ
+                                </p>
+                                <p className="mt-1 font-bold tabular-nums">
+                                  {money.format(c.amount)}
+                                </p>
                               </div>
                               <div>
-                                <p className="text-xs text-muted-foreground">سررسید</p>
+                                <p className="text-xs text-muted-foreground">
+                                  سررسید
+                                </p>
                                 <p className="mt-1 flex items-center gap-1 text-sm font-medium">
                                   <CalendarDaysIcon className="size-3.5 text-muted-foreground" />
                                   {toPersianDigits(formatJalali(c.dueDate))}
@@ -656,8 +933,13 @@ export function ChequesSection({
                               </div>
                               {c.sayadId ? (
                                 <div className="col-span-2">
-                                  <p className="text-xs text-muted-foreground">شناسه صیاد</p>
-                                  <p className="mt-1 font-mono text-xs" dir="ltr">
+                                  <p className="text-xs text-muted-foreground">
+                                    شناسه صیاد
+                                  </p>
+                                  <p
+                                    className="mt-1 font-mono text-xs"
+                                    dir="ltr"
+                                  >
                                     {toPersianDigits(c.sayadId)}
                                   </p>
                                 </div>
@@ -665,46 +947,89 @@ export function ChequesSection({
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                              <span>صدور {toPersianDigits(formatJalali(c.issueDate))}</span>
+                              <span>
+                                صدور{" "}
+                                {toPersianDigits(formatJalali(c.issueDate))}
+                              </span>
                               <span>·</span>
                               {ds === "overdue" ? (
                                 <Badge variant="destructive" className="gap-1">
-                                  <AlertTriangleIcon className="size-3" /> سررسید گذشته
+                                  <AlertTriangleIcon className="size-3" />{" "}
+                                  سررسید گذشته
                                 </Badge>
                               ) : ds === "due_soon" ? (
-                                <Badge variant="secondary" className="bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"
+                                >
                                   به‌زودی
                                 </Badge>
                               ) : (
                                 <Badge variant="outline" className="gap-1">
-                                  <Clock3Icon className="size-3" /> {toPersianDigits(String(Math.max(0, daysBetween(todayIso(), c.dueDate))))} روز مانده
+                                  <Clock3Icon className="size-3" />{" "}
+                                  {toPersianDigits(
+                                    String(
+                                      Math.max(
+                                        0,
+                                        daysBetween(todayIso(), c.dueDate),
+                                      ),
+                                    ),
+                                  )}{" "}
+                                  روز مانده
                                 </Badge>
                               )}
                             </div>
 
-                            {c.memo ? <p className="rounded-lg border bg-card px-3 py-2 text-xs leading-5 text-muted-foreground">{c.memo}</p> : null}
+                            {c.memo ? (
+                              <p className="rounded-lg border bg-card px-3 py-2 text-xs leading-5 text-muted-foreground">
+                                {c.memo}
+                              </p>
+                            ) : null}
 
                             <div className="flex flex-wrap gap-2">
-                              <Button variant="outline" size="sm" className="flex-1" onClick={() => setDetail(c)}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => setDetail(c)}
+                              >
                                 <EyeIcon className="size-4" /> جزئیات و تاریخچه
                               </Button>
-                              <ChequeRowActions cheque={c} busy={busy} onAction={(act) => setAction({ cheque: c, act })} onDetail={() => setDetail(c)} />
+                              <ChequeRowActions
+                                cheque={c}
+                                busy={busy}
+                                onAction={(act) =>
+                                  setAction({ cheque: c, act })
+                                }
+                                onDetail={() => setDetail(c)}
+                              />
                             </div>
 
-                            {availableActions(c.direction, c.status).length > 0 ? (
+                            {availableActions(c.direction, c.status).length >
+                            0 ? (
                               <div className="flex flex-wrap gap-1.5 border-t pt-3">
-                                {availableActions(c.direction, c.status).map((act) => (
-                                  <Button
-                                    key={act}
-                                    size="sm"
-                                    variant={act === "bounce" || act === "cancel" ? "destructive" : act === "clear" || act === "present" ? "default" : "secondary"}
-                                    className="h-8 flex-1 text-xs"
-                                    disabled={busy}
-                                    onClick={() => setAction({ cheque: c, act })}
-                                  >
-                                    {ACTION_LABELS[act]}
-                                  </Button>
-                                ))}
+                                {availableActions(c.direction, c.status).map(
+                                  (act) => (
+                                    <Button
+                                      key={act}
+                                      size="sm"
+                                      variant={
+                                        act === "bounce" || act === "cancel"
+                                          ? "destructive"
+                                          : act === "clear" || act === "present"
+                                            ? "default"
+                                            : "secondary"
+                                      }
+                                      className="h-8 flex-1 text-xs"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        setAction({ cheque: c, act })
+                                      }
+                                    >
+                                      {ACTION_LABELS[act]}
+                                    </Button>
+                                  ),
+                                )}
                               </div>
                             ) : null}
                           </CardContent>
@@ -721,9 +1046,15 @@ export function ChequesSection({
         <CardFooter className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/30 py-3 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
             <TrendingUpIcon className="size-3.5" />
-            هر تغییر وضعیت سند حسابداری خودش را ثبت می‌کند؛ برگشت چک‌های واگذارشده بدهی تأمین‌کننده را برمی‌گرداند.
+            هر تغییر وضعیت سند حسابداری خودش را ثبت می‌کند؛ برگشت چک‌های
+            واگذارشده بدهی تأمین‌کننده را برمی‌گرداند.
           </span>
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setRefreshKey((k) => k + 1)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setRefreshKey((k) => k + 1)}
+          >
             نوسازی فهرست
           </Button>
         </CardFooter>
@@ -746,7 +1077,16 @@ export function ChequesSection({
       />
 
       {/* Detail dialog */}
-      {detail ? <ChequeDetailDialog cheque={detail} onClose={() => setDetail(null)} onAction={(act) => setAction({ cheque: detail, act })} suppliers={suppliers} money={money} busy={busy} /> : null}
+      {detail ? (
+        <ChequeDetailDialog
+          cheque={detail}
+          onClose={() => setDetail(null)}
+          onAction={(act) => setAction({ cheque: detail, act })}
+          suppliers={suppliers}
+          money={money}
+          busy={busy}
+        />
+      ) : null}
 
       {/* Action dialog */}
       {action ? (
@@ -794,8 +1134,12 @@ function KpiCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium opacity-80">{label}</p>
-          <p className="mt-2 truncate text-sm font-bold leading-5 sm:text-base">{value}</p>
-          {hint ? <p className="mt-1 text-xs opacity-70 leading-4">{hint}</p> : null}
+          <p className="mt-2 truncate text-sm font-bold leading-5 sm:text-base">
+            {value}
+          </p>
+          {hint ? (
+            <p className="mt-1 text-xs opacity-70 leading-4">{hint}</p>
+          ) : null}
         </div>
         <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-card/70 text-foreground/70">
           <Icon className="size-4" />
@@ -812,7 +1156,10 @@ function ChequesSkeleton() {
         <div className="overflow-hidden rounded-xl border">
           <div className="space-y-0">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 border-b p-4 last:border-0">
+              <div
+                key={i}
+                className="flex items-center gap-4 border-b p-4 last:border-0"
+              >
                 <Skeleton className="h-10 w-28" />
                 <Skeleton className="h-10 flex-1" />
                 <Skeleton className="h-6 w-20" />
@@ -835,14 +1182,26 @@ function ChequesSkeleton() {
   );
 }
 
-function EmptyCheques({ onCreate, hasAny, direction }: { onCreate: () => void; hasAny: boolean; direction: ChequeDirection }) {
+function EmptyCheques({
+  onCreate,
+  hasAny,
+  direction,
+}: {
+  onCreate: () => void;
+  hasAny: boolean;
+  direction: ChequeDirection;
+}) {
   const meta = DIRECTION_META[direction];
   return (
     <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-10 text-center">
       <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <FileTextIcon className="size-6" />
       </div>
-      <h3 className="mt-4 text-sm font-semibold">{hasAny ? "موردی با این فیلتر یافت نشد" : `هنوز ${meta.label} ثبت نشده است`}</h3>
+      <h3 className="mt-4 text-sm font-semibold">
+        {hasAny
+          ? "موردی با این فیلتر یافت نشد"
+          : `هنوز ${meta.label} ثبت نشده است`}
+      </h3>
       <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-muted-foreground">
         {hasAny
           ? "فیلترها را پاک کنید یا عبارت جستجو را تغییر دهید تا نتایج بیشتری ببینید."
@@ -852,7 +1211,8 @@ function EmptyCheques({ onCreate, hasAny, direction }: { onCreate: () => void; h
       </p>
       {!hasAny ? (
         <Button onClick={onCreate} className="mt-4 gap-1.5">
-          <PlusIcon className="size-4" /> {direction === "receivable" ? "ثبت چک دریافتی" : "ثبت چک صادرشده"}
+          <PlusIcon className="size-4" />{" "}
+          {direction === "receivable" ? "ثبت چک دریافتی" : "ثبت چک صادرشده"}
         </Button>
       ) : null}
     </div>
@@ -876,7 +1236,12 @@ function ChequeRowActions({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1" disabled={busy}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1"
+          disabled={busy}
+        >
           اقدام
           <ChevronDownIcon className="size-3.5 opacity-60" />
         </Button>
@@ -893,7 +1258,9 @@ function ChequeRowActions({
             className={`gap-2 ${act === "bounce" || act === "cancel" ? "text-destructive focus:text-destructive" : ""}`}
           >
             <span className="flex-1 text-sm">{ACTION_LABELS[act]}</span>
-            <span className="text-xs text-muted-foreground">{ACTION_HINT[act]}</span>
+            <span className="text-xs text-muted-foreground">
+              {ACTION_HINT[act]}
+            </span>
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
@@ -906,7 +1273,9 @@ function ChequeRowActions({
 }
 
 function availableStatusesFor(direction: ChequeDirection): ChequeStatus[] {
-  return direction === "receivable" ? ["on_hand", "in_collection", "endorsed", "cleared", "bounced"] : ["issued", "cleared", "bounced", "cancelled"];
+  return direction === "receivable"
+    ? ["on_hand", "in_collection", "endorsed", "cleared", "bounced"]
+    : ["issued", "cleared", "bounced", "cancelled"];
 }
 
 // ---------------------------------------------------------------------------
@@ -932,30 +1301,40 @@ function ChequeDetailDialog({
 
   useEffect(() => {
     // History is optional — if the endpoint is missing we still show the cheque.
-    api<{ events?: ChequeEvent[]; history?: ChequeEvent[] }>(`/api/ledger/cheques/${cheque.id}/history`).then(
-      ({ ok, data }) => {
-        if (ok) setEvents(data.events ?? data.history ?? []);
-        else setEvents([]);
-      },
-    );
+    api<{ events?: ChequeEvent[]; history?: ChequeEvent[] }>(
+      `/api/ledger/cheques/${cheque.id}/history`,
+    ).then(({ ok, data }) => {
+      if (ok) setEvents(data.events ?? data.history ?? []);
+      else setEvents([]);
+    });
   }, [cheque.id]);
 
   const actions = availableActions(cheque.direction, cheque.status);
-  const endorsedSupplier = cheque.supplierId ? suppliers.find((s) => s.id === cheque.supplierId)?.name ?? null : null;
+  const endorsedSupplier = cheque.supplierId
+    ? (suppliers.find((s) => s.id === cheque.supplierId)?.name ?? null)
+    : null;
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl" dir="rtl">
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        dir="rtl"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <LandmarkIcon className="size-5 text-primary" />
             جزئیات چک {toPersianDigits(cheque.serialNumber)}
-            <Badge variant="outline" className={`border ${STATUS_TONE[cheque.status]}`}>
+            <Badge
+              variant="outline"
+              className={`border ${STATUS_TONE[cheque.status]}`}
+            >
               {STATUS_LABELS[cheque.status]}
             </Badge>
           </DialogTitle>
           <DialogDescription className="leading-6">
-            {cheque.bankName} · مبلغ {money.format(cheque.amount)} · سررسید {toPersianDigits(formatJalali(cheque.dueDate))} · طرف {cheque.counterpartyName}
+            {cheque.bankName} · مبلغ {money.format(cheque.amount)} · سررسید{" "}
+            {toPersianDigits(formatJalali(cheque.dueDate))} · طرف{" "}
+            {cheque.counterpartyName}
             {cheque.sayadId ? ` · صیاد ${toPersianDigits(cheque.sayadId)}` : ""}
           </DialogDescription>
         </DialogHeader>
@@ -968,22 +1347,53 @@ function ChequeDetailDialog({
             <CardContent className="grid gap-3 sm:grid-cols-2">
               <DetailItem label="طرف حساب" value={cheque.counterpartyName} />
               <DetailItem label="بانک" value={cheque.bankName} />
-              <DetailItem label="شماره چک" value={toPersianDigits(cheque.serialNumber)} dir="ltr" />
-              <DetailItem label="شناسه صیاد" value={cheque.sayadId ? toPersianDigits(cheque.sayadId) : "—"} dir="ltr" />
+              <DetailItem
+                label="شماره چک"
+                value={toPersianDigits(cheque.serialNumber)}
+                dir="ltr"
+              />
+              <DetailItem
+                label="شناسه صیاد"
+                value={cheque.sayadId ? toPersianDigits(cheque.sayadId) : "—"}
+                dir="ltr"
+              />
               <DetailItem label="مبلغ" value={money.format(cheque.amount)} />
-              <DetailItem label="سررسید" value={toPersianDigits(formatJalali(cheque.dueDate))} />
-              <DetailItem label="تاریخ صدور" value={toPersianDigits(formatJalali(cheque.issueDate))} />
+              <DetailItem
+                label="سررسید"
+                value={toPersianDigits(formatJalali(cheque.dueDate))}
+              />
+              <DetailItem
+                label="تاریخ صدور"
+                value={toPersianDigits(formatJalali(cheque.issueDate))}
+              />
               <DetailItem label="وضعیت" value={STATUS_LABELS[cheque.status]} />
-              {cheque.accountNumber ? <DetailItem label="شماره حساب" value={toPersianDigits(cheque.accountNumber)} dir="ltr" /> : null}
-              {endorsedSupplier ? <DetailItem label="واگذارشده به" value={endorsedSupplier} /> : null}
-              {cheque.memo ? <DetailItem label="یادداشت" value={cheque.memo} className="sm:col-span-2" /> : null}
+              {cheque.accountNumber ? (
+                <DetailItem
+                  label="شماره حساب"
+                  value={toPersianDigits(cheque.accountNumber)}
+                  dir="ltr"
+                />
+              ) : null}
+              {endorsedSupplier ? (
+                <DetailItem label="واگذارشده به" value={endorsedSupplier} />
+              ) : null}
+              {cheque.memo ? (
+                <DetailItem
+                  label="یادداشت"
+                  value={cheque.memo}
+                  className="sm:col-span-2"
+                />
+              ) : null}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">اقدامات قابل انجام</CardTitle>
-              <CardDescription>هر اقدام تاریخ وقوع و یادداشت خود را می‌گیرد و سند حسابداری متناظر را ثبت می‌کند.</CardDescription>
+              <CardDescription>
+                هر اقدام تاریخ وقوع و یادداشت خود را می‌گیرد و سند حسابداری
+                متناظر را ثبت می‌کند.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {actions.length === 0 ? (
@@ -996,7 +1406,13 @@ function ChequeDetailDialog({
                     <Button
                       key={act}
                       size="sm"
-                      variant={act === "bounce" || act === "cancel" ? "destructive" : act === "clear" || act === "present" ? "default" : "secondary"}
+                      variant={
+                        act === "bounce" || act === "cancel"
+                          ? "destructive"
+                          : act === "clear" || act === "present"
+                            ? "default"
+                            : "secondary"
+                      }
                       onClick={() => onAction(act)}
                       disabled={busy}
                     >
@@ -1011,7 +1427,9 @@ function ChequeDetailDialog({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">تاریخچه</CardTitle>
-              <CardDescription>هر رویداد، تاریخ وقوع و سند حسابداری پیوندی‌اش.</CardDescription>
+              <CardDescription>
+                هر رویداد، تاریخ وقوع و سند حسابداری پیوندی‌اش.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {events === null ? (
@@ -1020,7 +1438,9 @@ function ChequeDetailDialog({
                   <Skeleton className="h-12 w-full" />
                 </div>
               ) : events.length === 0 ? (
-                <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-4 text-center text-xs text-muted-foreground">هنوز رویدادی فراتر از ثبت اولیه وجود ندارد.</p>
+                <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-4 text-center text-xs text-muted-foreground">
+                  هنوز رویدادی فراتر از ثبت اولیه وجود ندارد.
+                </p>
               ) : (
                 <ol className="relative space-y-3 border-s ps-4">
                   {events.map((e) => (
@@ -1030,14 +1450,26 @@ function ChequeDetailDialog({
                         <Badge variant="secondary" className="text-xs">
                           {eventLabel(e.event)}
                         </Badge>
-                        <span className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(e.occurredOn))}</span>
-                        {e.entryId ? <span className="text-xs text-muted-foreground">· سند حسابداری ثبت شد</span> : null}
+                        <span className="text-xs text-muted-foreground">
+                          {toPersianDigits(formatJalali(e.occurredOn))}
+                        </span>
+                        {e.entryId ? (
+                          <span className="text-xs text-muted-foreground">
+                            · سند حسابداری ثبت شد
+                          </span>
+                        ) : null}
                       </div>
-                      {e.memo ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{e.memo}</p> : null}
+                      {e.memo ? (
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          {e.memo}
+                        </p>
+                      ) : null}
                       {e.endorsedToSupplierId ? (
                         <p className="mt-1 text-xs text-muted-foreground">
                           واگذاری به{" "}
-                          {suppliers.find((s) => s.id === e.endorsedToSupplierId)?.name ?? "تأمین‌کننده"}
+                          {suppliers.find(
+                            (s) => s.id === e.endorsedToSupplierId,
+                          )?.name ?? "تأمین‌کننده"}
                         </p>
                       ) : null}
                     </li>
@@ -1058,7 +1490,17 @@ function ChequeDetailDialog({
   );
 }
 
-function DetailItem({ label, value, dir, className }: { label: string; value: string; dir?: "ltr" | "rtl"; className?: string }) {
+function DetailItem({
+  label,
+  value,
+  dir,
+  className,
+}: {
+  label: string;
+  value: string;
+  dir?: "ltr" | "rtl";
+  className?: string;
+}) {
   return (
     <div className={className}>
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -1104,7 +1546,9 @@ function CreateChequeDialog({
   suppliers: Counterparty[];
   busy: boolean;
   onCreated: () => void;
-  run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean>;
+  run: (
+    fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
+  ) => Promise<boolean>;
   onError: (m: string) => void;
 }) {
   const money = useMoney();
@@ -1142,7 +1586,12 @@ function CreateChequeDialog({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!serialNumber.trim() || !bankName.trim() || !dueDate || !amount.trim()) {
+    if (
+      !serialNumber.trim() ||
+      !bankName.trim() ||
+      !dueDate ||
+      !amount.trim()
+    ) {
       onError("شماره چک، بانک، مبلغ و سررسید الزامی هستند.");
       return;
     }
@@ -1169,10 +1618,16 @@ function CreateChequeDialog({
       dueDate,
       counterpartyName: name,
       memo: memo.trim() || undefined,
-      [dir === "receivable" ? "customerId" : "supplierId"]: counterpartyId || undefined,
+      [dir === "receivable" ? "customerId" : "supplierId"]:
+        counterpartyId || undefined,
     };
     onError("");
-    const ok = await run(() => api("/api/ledger/cheques", { method: "POST", body: JSON.stringify(body) }));
+    const ok = await run(() =>
+      api("/api/ledger/cheques", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
     if (ok) onCreated();
     else {
       // run already surfaces via the manager's ErrorBox, but also keep local for dialog
@@ -1181,19 +1636,29 @@ function CreateChequeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl" dir="rtl">
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        dir="rtl"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PlusIcon className="size-5 text-primary" />
             ثبت چک جدید
           </DialogTitle>
-          <DialogDescription>چک دریافتی حساب مشتری را تسویه می‌کند؛ چک صادرشده بدهی به تأمین‌کننده را در حساب چک‌های صادره قرار می‌دهد. هر دو فوراً سند می‌خورند.</DialogDescription>
+          <DialogDescription>
+            چک دریافتی حساب مشتری را تسویه می‌کند؛ چک صادرشده بدهی به
+            تأمین‌کننده را در حساب چک‌های صادره قرار می‌دهد. هر دو فوراً سند
+            می‌خورند.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="grid gap-4">
           <div className="grid gap-2">
             <Label>نوع چک</Label>
-            <Tabs value={dir} onValueChange={(v) => setDir(v as ChequeDirection)}>
+            <Tabs
+              value={dir}
+              onValueChange={(v) => setDir(v as ChequeDirection)}
+            >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="receivable" className="gap-1.5">
                   <HandCoinsIcon className="size-4" /> دریافتی از مشتری
@@ -1208,34 +1673,76 @@ function CreateChequeDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="serial">شماره چک *</FieldLabel>
-              <Input id="serial" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} placeholder="مثلاً ۱۲۳۴۵۶۷۸۹۰" required />
+              <Input
+                id="serial"
+                value={serialNumber}
+                onChange={(e) => setSerialNumber(e.target.value)}
+                placeholder="مثلاً ۱۲۳۴۵۶۷۸۹۰"
+                required
+              />
             </Field>
             <Field>
               <FieldLabel htmlFor="bank">بانک *</FieldLabel>
-              <Input id="bank" value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="مثلاً ملت، ملی، سامان" required />
+              <Input
+                id="bank"
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                placeholder="مثلاً ملت، ملی، سامان"
+                required
+              />
             </Field>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="sayad">شناسه صیاد (اختیاری)</FieldLabel>
-              <PersianNumberInput id="sayad" value={sayadId} onChange={(e) => setSayadId(e.target.value)} inputMode="numeric" grouping={false} placeholder="۱۶ رقم" className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm" />
-              <FieldDescription>۱۶ رقم؛ فارسی هم می‌پذیرد و فاصله/خط‌تیره نادیده گرفته می‌شود.</FieldDescription>
+              <PersianNumberInput
+                id="sayad"
+                value={sayadId}
+                onChange={(e) => setSayadId(e.target.value)}
+                inputMode="numeric"
+                grouping={false}
+                placeholder="۱۶ رقم"
+                className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+              />
+              <FieldDescription>
+                ۱۶ رقم؛ فارسی هم می‌پذیرد و فاصله/خط‌تیره نادیده گرفته می‌شود.
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="accno">شماره حساب (اختیاری)</FieldLabel>
-              <Input id="accno" value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} placeholder="اختیاری" dir="ltr" />
+              <Input
+                id="accno"
+                value={accountNumber}
+                onChange={(e) => setAccountNumber(e.target.value)}
+                placeholder="اختیاری"
+                dir="ltr"
+              />
             </Field>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
-              <FieldLabel htmlFor="amount">مبلغ ({money.unitLabel}) *</FieldLabel>
-              <PersianNumberInput id="amount" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" placeholder="مثلاً ۲٬۵۰۰٬۰۰۰" className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm" required />
+              <FieldLabel htmlFor="amount">
+                مبلغ ({money.unitLabel}) *
+              </FieldLabel>
+              <PersianNumberInput
+                id="amount"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                inputMode="numeric"
+                placeholder="مثلاً ۲٬۵۰۰٬۰۰۰"
+                className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+                required
+              />
             </Field>
             <Field>
               <FieldLabel>سررسید *</FieldLabel>
-              <JalaliDatePicker value={dueDate} onChange={setDueDate} placeholder="انتخاب سررسید" />
+              <JalaliDatePicker
+                value={dueDate}
+                onChange={setDueDate}
+                placeholder="انتخاب سررسید"
+              />
             </Field>
           </div>
 
@@ -1243,15 +1750,24 @@ function CreateChequeDialog({
             <Field>
               <FieldLabel>تاریخ صدور</FieldLabel>
               <JalaliDatePicker value={issueDate} onChange={setIssueDate} />
-              <FieldDescription>تاریخ سند حسابداری همین روز است، نه سررسید.</FieldDescription>
+              <FieldDescription>
+                تاریخ سند حسابداری همین روز است، نه سررسید.
+              </FieldDescription>
             </Field>
             <Field>
-              <FieldLabel>{dir === "receivable" ? "مشتری" : "تأمین‌کننده"} (اختیاری)</FieldLabel>
+              <FieldLabel>
+                {dir === "receivable" ? "مشتری" : "تأمین‌کننده"} (اختیاری)
+              </FieldLabel>
               <SearchableSelect
                 value={counterpartyId}
                 onChange={setCounterpartyId}
-                options={counterparties.map((c) => ({ value: c.id, label: c.name }))}
-                placeholder={dir === "receivable" ? "انتخاب مشتری…" : "انتخاب تأمین‌کننده…"}
+                options={counterparties.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                }))}
+                placeholder={
+                  dir === "receivable" ? "انتخاب مشتری…" : "انتخاب تأمین‌کننده…"
+                }
                 ariaLabel={dir === "receivable" ? "مشتری" : "تأمین‌کننده"}
               />
             </Field>
@@ -1259,13 +1775,31 @@ function CreateChequeDialog({
 
           <Field>
             <FieldLabel htmlFor="cname">نام صاحب چک / در وجه *</FieldLabel>
-            <Input id="cname" value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder={selected?.name ?? (dir === "receivable" ? "نام درج‌شده روی چک" : "نام دریافت‌کننده")} />
-            <FieldDescription>اگر چکِ مشتری به نام شخص دیگری است، همان نام را بنویسید؛ حساب تسویه با انتخاب بالا جدا است.</FieldDescription>
+            <Input
+              id="cname"
+              value={counterpartyName}
+              onChange={(e) => setCounterpartyName(e.target.value)}
+              placeholder={
+                selected?.name ??
+                (dir === "receivable"
+                  ? "نام درج‌شده روی چک"
+                  : "نام دریافت‌کننده")
+              }
+            />
+            <FieldDescription>
+              اگر چکِ مشتری به نام شخص دیگری است، همان نام را بنویسید؛ حساب
+              تسویه با انتخاب بالا جدا است.
+            </FieldDescription>
           </Field>
 
           <Field>
             <FieldLabel htmlFor="memo">یادداشت</FieldLabel>
-            <Input id="memo" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="اختیاری — مثلاً بابت فاکتور ۱۲۳" />
+            <Input
+              id="memo"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              placeholder="اختیاری — مثلاً بابت فاکتور ۱۲۳"
+            />
           </Field>
 
           <Alert className="bg-primary/5 border-primary/20">
@@ -1282,7 +1816,12 @@ function CreateChequeDialog({
             <Button type="submit" disabled={busy} className="min-w-28">
               ثبت چک
             </Button>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={busy}
+            >
               انصراف
             </Button>
           </DialogFooter>
@@ -1328,12 +1867,20 @@ function ChequeActionDialog({
       <DialogContent className="sm:max-w-md" dir="rtl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {isDestructive ? <AlertTriangleIcon className="size-5 text-destructive" /> : <ArrowLeftRightIcon className="size-5 text-primary" />}
+            {isDestructive ? (
+              <AlertTriangleIcon className="size-5 text-destructive" />
+            ) : (
+              <ArrowLeftRightIcon className="size-5 text-primary" />
+            )}
             {ACTION_LABELS[action]} — چک {toPersianDigits(cheque.serialNumber)}
           </DialogTitle>
           <DialogDescription className="leading-6">
-            {ACTION_HINT[action]} · مبلغ {money.format(cheque.amount)} · {cheque.bankName} · سررسید {toPersianDigits(formatJalali(cheque.dueDate))}
-            {isEndorse ? " — واگذاری به تأمین‌کننده بدهی او را کم می‌کند؛ برگشت احتمالی بدهی را برمی‌گرداند." : ""}
+            {ACTION_HINT[action]} · مبلغ {money.format(cheque.amount)} ·{" "}
+            {cheque.bankName} · سررسید{" "}
+            {toPersianDigits(formatJalali(cheque.dueDate))}
+            {isEndorse
+              ? " — واگذاری به تأمین‌کننده بدهی او را کم می‌کند؛ برگشت احتمالی بدهی را برمی‌گرداند."
+              : ""}
           </DialogDescription>
         </DialogHeader>
 
@@ -1348,26 +1895,39 @@ function ChequeActionDialog({
                 placeholder="انتخاب تأمین‌کننده…"
                 ariaLabel="تأمین‌کننده"
               />
-              <FieldDescription>کل مبلغ چک از بدهی این تأمین‌کننده کسر می‌شود.</FieldDescription>
+              <FieldDescription>
+                کل مبلغ چک از بدهی این تأمین‌کننده کسر می‌شود.
+              </FieldDescription>
             </Field>
           ) : null}
 
           <Field>
             <FieldLabel>تاریخ وقوع</FieldLabel>
             <JalaliDatePicker value={occurredOn} onChange={setOccurredOn} />
-            <FieldDescription>تاریخ سند حسابداری همین روز ثبت می‌شود؛ خالی بماند امروز در نظر گرفته می‌شود.</FieldDescription>
+            <FieldDescription>
+              تاریخ سند حسابداری همین روز ثبت می‌شود؛ خالی بماند امروز در نظر
+              گرفته می‌شود.
+            </FieldDescription>
           </Field>
 
           <Field>
             <FieldLabel htmlFor="amemo">یادداشت (اختیاری)</FieldLabel>
-            <Input id="amemo" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="مثلاً شماره پیگیری بانکی" />
+            <Input
+              id="amemo"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              placeholder="مثلاً شماره پیگیری بانکی"
+            />
           </Field>
 
           {isDestructive ? (
             <Alert variant="destructive">
               <AlertTriangleIcon className="size-4" />
               <AlertTitle>تأیید اقدام برگشتی/ابطالی</AlertTitle>
-              <AlertDescription>این اقدام وضعیت چک را نهایی می‌کند و در دفتر روزنامه سند برگشتی/ابطالی ثبت خواهد شد.</AlertDescription>
+              <AlertDescription>
+                این اقدام وضعیت چک را نهایی می‌کند و در دفتر روزنامه سند
+                برگشتی/ابطالی ثبت خواهد شد.
+              </AlertDescription>
             </Alert>
           ) : null}
         </div>
