@@ -33,7 +33,7 @@ export const SETTING_KEYS = {
   serverSyncState: "server_sync.state",
   /** BackupConfig (src/lib/backup.ts) — schedule/retention/cloud settings (Phase 10) */
   backupConfig: "backup.config",
-  /** { defaultMarginPercent: number | null } — cost-plus pricing default, overridable per menu item */
+  /** PricingConfig — menu cost-plus margin, overhead policy and cost-drift threshold */
   pricing: "pricing.config",
   /** AppUpdateStatus (src/lib/app-update.ts) — last self-update check result, no credentials in it */
   appUpdateStatus: "app_update.status",
