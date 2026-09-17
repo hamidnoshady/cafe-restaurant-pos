@@ -290,6 +290,7 @@ function errorMessage(code: string | undefined): string {
     invalid_entry_date: "تاریخ سند معتبر نیست.",
     not_balanced: "مجموع بدهکار و بستانکار برابر نیست.",
     unknown_account: "یکی از حساب‌های انتخاب‌شده معتبر نیست.",
+    not_a_leaf_account: "به حساب گروه یا کل نمی‌توان سند زد؛ حساب معین یا تفصیلی را انتخاب کنید.",
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",

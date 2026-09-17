@@ -96,23 +96,39 @@ function validatedNonZeroLines(lines: DraftLineInput[]): DraftLineInput[] {
   return nonZeroLines(lines);
 }
 
-async function assertAccountsOwned(
+/**
+ * Every referenced account must belong to this business, be active, and be a
+ * leaf.
+ *
+ * The leaf rule is deliberately enforced here rather than in
+ * `postJournalEntry`, even though it reads like a universal ledger invariant.
+ * It is not one in this chart of accounts: the shipped templates post to `2300`
+ * (حقوق پرداختنی), `1240` (اسناد دریافتنی) and `2120` (اسناد پرداختنی) while
+ * each of those carries children, so payroll, commissions and every cheque
+ * operation legitimately write to a parent. A blanket check on the shared
+ * posting function would reject them in all eight industry templates.
+ *
+ * A *hand-typed* document is different: nothing chooses the account but the
+ * person, the picker already offers leaves only, and posting to a parent
+ * silently corrupts any report that sums children into it. So the rule belongs
+ * to the manual path, and this is the one query it already makes.
+ */
+async function assertAccountsPostable(
   businessId: string,
   accountIds: string[],
   client?: Pick<PoolClient, "query">,
 ): Promise<void> {
+  const sql = `SELECT a.id,
+                      EXISTS (SELECT 1 FROM accounts k WHERE k.parent_id = a.id) AS has_children
+                 FROM accounts a
+                WHERE a.business_id = $1 AND a.id = ANY($2::uuid[]) AND a.is_active`;
   const args = [businessId, accountIds];
   const { rows } = client
-    ? await client.query<{ id: string }>(
-        `SELECT id FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[]) AND is_active`,
-        args,
-      )
-    : await query<{ id: string }>(
-        `SELECT id FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[]) AND is_active`,
-        args,
-      );
+    ? await client.query<{ id: string; has_children: boolean }>(sql, args)
+    : await query<{ id: string; has_children: boolean }>(sql, args);
   if (rows.length !== new Set(accountIds).size)
     throw new ManualJournalError("unknown_account");
+  if (rows.some((r) => r.has_children)) throw new ManualJournalError("not_a_leaf_account");
 }
 
 export interface DraftLine extends DraftLineInput {
@@ -236,7 +252,7 @@ export async function createDraft(params: {
   if (memoProblem) throw new ManualJournalError(memoProblem);
   const entryDate = normalizeEntryDate(params.entryDate);
   const nonZero = validatedNonZeroLines(params.lines);
-  await assertAccountsOwned(
+  await assertAccountsPostable(
     params.businessId,
     nonZero.map((l) => l.accountId),
   );
@@ -306,7 +322,7 @@ export async function approveDraft(params: {
     // Re-validated at approval time, not just draft creation: an account the
     // draft referenced may have been edited or removed since.
     const nonZero = validatedNonZeroLines(draft.lines);
-    await assertAccountsOwned(
+    await assertAccountsPostable(
       params.businessId,
       nonZero.map((l) => l.accountId),
       client,

@@ -213,6 +213,65 @@ describe("createDraft", () => {
     ).rejects.toThrow("single_account_entry");
   });
 
+  it("refuses to post to a parent account, at draft time and at approval", async () => {
+    // A parent totals its children; a posting made directly to it is invisible
+    // to every report that sums the children, so the two never reconcile.
+    const parent = await db.query<{ id: string }>(
+      `INSERT INTO accounts (business_id, code, name, type) VALUES ($1, '5200', 'Utilities', 'expense') RETURNING id`,
+      [biz.id],
+    );
+    const parentId = parent.rows[0].id;
+    await db.query(
+      `INSERT INTO accounts (business_id, parent_id, code, name, type, level)
+       VALUES ($1, $2, '5210', 'Electricity', 'expense', 'moein')`,
+      [biz.id, parentId],
+    );
+
+    const lines = [
+      { accountId: parentId, debit: 100_000, credit: 0 },
+      { accountId: acct.cash, debit: 0, credit: 100_000 },
+    ];
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        memo: "To a parent",
+        lines,
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("not_a_leaf_account");
+
+    // And again at approval: a draft written while the account was still a leaf
+    // must not post once it has been given children.
+    const leafOnly = await db.query<{ id: string }>(
+      `INSERT INTO accounts (business_id, code, name, type, level) VALUES ($1, '5300', 'Repairs', 'expense', 'moein') RETURNING id`,
+      [biz.id],
+    );
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: null,
+      memo: "Leaf when drafted",
+      lines: [
+        { accountId: leafOnly.rows[0].id, debit: 100_000, credit: 0 },
+        { accountId: acct.cash, debit: 0, credit: 100_000 },
+      ],
+      createdBy: user.id,
+    });
+    await db.query(
+      `INSERT INTO accounts (business_id, parent_id, code, name, type, level)
+       VALUES ($1, $2, '5310', 'Plumbing', 'expense', 'tafsili')`,
+      [biz.id, leafOnly.rows[0].id],
+    );
+    await expect(
+      manualJournal.approveDraft({
+        businessId: biz.id,
+        locationId: null,
+        draftId: draft.id,
+        actorId: user.id,
+      }),
+    ).rejects.toThrow("not_a_leaf_account");
+  });
+
   it("rejects a memo longer than the cap", async () => {
     await expect(
       manualJournal.createDraft({

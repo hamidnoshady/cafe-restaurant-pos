@@ -160,6 +160,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_entry_date: "تاریخ سند معتبر نیست.",
     not_balanced: "مجموع بدهکار و بستانکار برابر نیست.",
     unknown_account: "یکی از حساب‌های انتخاب‌شده معتبر نیست.",
+    not_a_leaf_account: "به حساب گروه یا کل نمی‌توان سند زد؛ حساب معین یا تفصیلی را انتخاب کنید.",
     draft_not_found: "این پیش‌نویس پیدا نشد؛ ممکن است کس دیگری آن را تأیید یا رد کرده باشد.",
     entry_not_found: "سند پیدا نشد.",
     not_reversible: "فقط اسناد دستی قابل برگشت هستند.",
