@@ -301,6 +301,7 @@ function errorMessage(code: string | undefined): string {
     supplier_required: "برای دریافت نسیه، انتخاب تأمین‌کننده الزامی است.",
     no_items: "حداقل یک قلم لازم است.",
     invalid_item: "یکی از اقلام معتبر نیست.",
+    invalid_quantity: "مقدار باید عددی بزرگ‌تر از صفر و حداکثر دارای ۹ رقم اعشار باشد.",
     invalid_waste_reason: "دلیل ضایعات را انتخاب کنید.",
     invalid_purchase_date: "تاریخ خرید معتبر نیست.",
     invalid_transition: "این تغییر وضعیت خرید مجاز نیست.",

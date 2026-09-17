@@ -17,7 +17,7 @@ interface WasteEntry {
   inventory_item_name: string;
   unit: string;
   quantity: string | number;
-  unit_cost: string | number;
+  total_cost: string;
   waste_reason: string;
   note: string | null;
   occurred_at: string;
@@ -34,24 +34,40 @@ const REASON_LABELS: Record<string, string> = {
 export function WasteSection({ items, busy, run }: { items: InventoryItem[]; busy: boolean; run: Runner }) {
   const money = useMoney();
   const [entries, setEntries] = useState<WasteEntry[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [inventoryItemId, setInventoryItemId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("spoilage");
   const [note, setNote] = useState("");
 
   const loadEntries = useCallback(() => {
+    setLoadFailed(false);
     void api<{ entries: WasteEntry[] }>("/api/inventory/waste")
-      .then(({ ok, data }) => setEntries(ok ? data.entries : []))
-      .catch(() => setEntries([]));
+      .then(({ ok, data }) => {
+        if (!ok) throw new Error("waste_history_failed");
+        setEntries(data.entries);
+      })
+      .catch(() => {
+        setEntries([]);
+        setLoadFailed(true);
+      });
   }, []);
   useEffect(loadEntries, [loadEntries]);
 
   const activeItems = items.filter((i) => i.is_active);
+  const selectedItem = activeItems.find((item) => item.id === inventoryItemId);
+  const requestedQuantity = Number(quantity);
+  const validQuantity = /^(?:0|[1-9]\d*)(?:\.\d{1,9})?$/.test(quantity.trim()) && requestedQuantity > 0;
+  const exceedsStock = Boolean(
+    selectedItem && Number.isFinite(requestedQuantity) && requestedQuantity > selectedItem.stock,
+  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const qty = quantity.trim();
-    if (!inventoryItemId || !Number.isFinite(Number(qty)) || Number(qty) <= 0) return;
+    // Keep this in step with the API's exact decimal contract. In particular,
+    // Number() accepts exponent notation which the API correctly rejects.
+    if (!inventoryItemId || !/^(?:0|[1-9]\d*)(?:\.\d{1,9})?$/.test(qty) || Number(qty) <= 0) return;
     const ok = await run(() =>
       api("/api/inventory/waste", {
         method: "POST",
@@ -96,10 +112,24 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
               className={inputClass}
               dir="ltr"
               inputMode="decimal"
+              pattern="(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?"
+              title="عدد بزرگ‌تر از صفر با حداکثر ۹ رقم اعشار"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
+              aria-describedby="waste-stock-help"
               required
             />
+            <span
+              id="waste-stock-help"
+              className={`text-xs ${exceedsStock ? "font-medium text-destructive" : "text-muted-foreground"}`}
+              role={exceedsStock ? "alert" : undefined}
+            >
+              {selectedItem
+                ? exceedsStock
+                  ? `این مقدار از موجودی فعلی (${formatQuantity(selectedItem.stock)} ${selectedItem.unit}) بیشتر است و موجودی را منفی می‌کند.`
+                  : `موجودی فعلی: ${formatQuantity(selectedItem.stock)} ${selectedItem.unit}`
+                : "ابتدا قلم انبار را انتخاب کنید."}
+            </span>
           </Field>
           <Field label="دلیل ضایعات">
             <SearchableSelect
@@ -112,7 +142,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
             <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} placeholder="اختیاری" />
           </Field>
           <div className="flex items-end">
-            <Button type="submit" disabled={busy} size="lg" className="w-full px-5 font-semibold">
+            <Button type="submit" disabled={busy || activeItems.length === 0 || !inventoryItemId || !validQuantity} size="lg" className="w-full px-5 font-semibold">
               ثبت ضایعات
             </Button>
           </div>
@@ -132,6 +162,11 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
           <div className="p-4 sm:p-5">
             <LoadingSkeleton rows={4} label="در حال بارگذاری ضایعات اخیر" />
           </div>
+        ) : loadFailed ? (
+          <div className="flex flex-col items-center gap-3 p-4 text-center sm:p-5" role="alert">
+            <p className="text-sm text-destructive">سوابق ضایعات بارگذاری نشد. اتصال را بررسی و دوباره تلاش کنید.</p>
+            <Button type="button" variant="outline" onClick={loadEntries}>تلاش دوباره</Button>
+          </div>
         ) : entries.length === 0 ? (
           <div className="p-4 sm:p-5">
             <EmptyState>هنوز ضایعاتی ثبت نشده است.</EmptyState>
@@ -145,11 +180,11 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
                   {" — "}
                   {formatQuantity(e.quantity)} {e.unit}
                   <span className="text-muted-foreground"> ({REASON_LABELS[e.waste_reason] ?? e.waste_reason})</span>
+                  {e.note ? <span className="mt-1 block text-xs text-muted-foreground">{e.note}</span> : null}
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">{money.format(Number(e.quantity) * Number(e.unit_cost))}</span>
-                  {" — "}
-                  {formatJalali(e.occurred_at)}
+                <span className="flex shrink-0 items-center justify-between gap-3 text-xs text-muted-foreground sm:block sm:text-end">
+                  <span className="font-medium text-foreground">{money.formatText(e.total_cost)}</span>
+                  <span className="sm:mt-1 sm:block">{formatJalali(e.occurred_at)}</span>
                 </span>
               </li>
             ))}
