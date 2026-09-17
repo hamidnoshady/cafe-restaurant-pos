@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SectionNav } from "@/app/dashboard/section-nav";
 import { api, ErrorBox, SecondaryButton } from "@/app/dashboard/ui";
+import { PERMISSIONS } from "@/lib/permissions";
 import { partyScopeFor } from "@/lib/parties-scopes";
 import {
   partyDirectoryHref,
@@ -59,11 +60,14 @@ export function AccountingManager({
   role,
   section,
   permissions,
+  currentUserId,
 }: {
   role: string;
   section: AccountingSectionKey;
   /** The member's effective permission keys — the directory's buttons follow them. */
   permissions?: readonly string[];
+  /** Who is looking — a drafter may discard their own manual draft without ledger.approve. */
+  currentUserId?: string;
 }) {
   const [accounts, setAccounts] = useState<AccountRow[] | null>(null);
   const [error, setError] = useState("");
@@ -107,6 +111,19 @@ export function AccountingManager({
     [partyParam, router],
   );
   const [refreshKey, setRefreshKey] = useState(0);
+
+  /**
+   * Whether this member may turn a draft into a real posting.
+   *
+   * `ledger.approve` is deliberately *not* the app's door (owner/manager/
+   * accountant may all draft), so «تأیید و ثبت» in the manual-entry review
+   * queue is the one accounting button whose permission is narrower than the
+   * page it sits on — a manager pressed it and got a 403 from a control that
+   * looked live. `undefined` when the page could not read the member's
+   * effective permissions; the section then draws the button and the API stays
+   * the gate, matching how `partiesSectionAbilities` treats the same gap.
+   */
+  const canApproveLedger = permissions ? permissions.includes(PERMISSIONS.ledgerApprove) : undefined;
 
   // Every section is a route now, so the rail navigates rather than switching
   // local state — a section a person lands on is a URL they can keep.
@@ -196,7 +213,16 @@ export function AccountingManager({
       {section === "dashboard" ? <LedgerDashboardSection onGoToTab={goToSection} refreshKey={refreshKey} /> : null}
           {section === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
           {section === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
-          {section === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
+          {section === "manual" ? (
+            <ManualEntrySection
+              accounts={accounts}
+              busy={busy}
+              run={run}
+              refreshKey={refreshKey}
+              canApprove={canApproveLedger}
+              currentUserId={currentUserId}
+            />
+          ) : null}
           {section === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {section === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
           {section === "directory" ? (
@@ -255,7 +281,11 @@ export type Runner = (fn: () => Promise<{ ok: boolean; data: { error?: string } 
 function errorMessage(code: string | undefined): string {
   const map: Record<string, string> = {
     memo_required: "شرح سند الزامی است.",
+    memo_too_long: "شرح سند بیش از حد طولانی است؛ آن را کوتاه‌تر بنویسید.",
     no_lines: "حداقل یک سطر با مبلغ لازم است.",
+    too_few_lines: "سند باید حداقل دو ردیف داشته باشد.",
+    too_many_lines: "تعداد ردیف‌های سند بیش از حد مجاز است.",
+    single_account_entry: "سند باید حداقل به دو حساب متفاوت بخورد.",
     invalid_line: "یکی از سطرها معتبر نیست (حساب، یا فقط بدهکار یا بستانکار).",
     invalid_entry_date: "تاریخ سند معتبر نیست.",
     not_balanced: "مجموع بدهکار و بستانکار برابر نیست.",

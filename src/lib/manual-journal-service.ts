@@ -19,7 +19,16 @@ import type { PoolClient } from "pg";
 import { getPool, query } from "./db";
 import { postExactJournalEntry, postJournalEntry } from "./ledger-service";
 import type { JournalLine } from "./ledger";
+import {
+  MANUAL_LINES_MAX,
+  MANUAL_MEMO_MAX,
+  manualDocumentProblem,
+  manualMemoProblem,
+  nonZeroLines,
+} from "./manual-journal";
 import type { RialText } from "./inventory-exact";
+
+export { MANUAL_LINES_MAX, MANUAL_MEMO_MAX };
 
 export class ManualJournalError extends Error {
   status: number;
@@ -74,25 +83,17 @@ function normalizeEntryDate(
   return value;
 }
 
+/**
+ * The submitted rows, or a `ManualJournalError` naming the first thing wrong
+ * with them. The rules themselves live in the framework-free `manual-journal.ts`
+ * so the browser applies exactly the same ones before enabling «ثبت پیش‌نویس» —
+ * the screen calling a document balanced that this then refuses is the class of
+ * bug that module exists to prevent.
+ */
 function validatedNonZeroLines(lines: DraftLineInput[]): DraftLineInput[] {
-  const nonZero = lines.filter((l) => l.debit !== 0 || l.credit !== 0);
-  if (nonZero.length === 0) throw new ManualJournalError("no_lines");
-  for (const l of nonZero) {
-    if (
-      !l.accountId ||
-      !Number.isSafeInteger(l.debit) ||
-      l.debit < 0 ||
-      !Number.isSafeInteger(l.credit) ||
-      l.credit < 0 ||
-      (l.debit !== 0 && l.credit !== 0)
-    ) {
-      throw new ManualJournalError("invalid_line");
-    }
-  }
-  const totalDebit = nonZero.reduce((sum, l) => sum + BigInt(l.debit), 0n);
-  const totalCredit = nonZero.reduce((sum, l) => sum + BigInt(l.credit), 0n);
-  if (totalDebit !== totalCredit) throw new ManualJournalError("not_balanced");
-  return nonZero;
+  const problem = manualDocumentProblem(lines);
+  if (problem) throw new ManualJournalError(problem);
+  return nonZeroLines(lines);
 }
 
 async function assertAccountsOwned(
@@ -155,25 +156,22 @@ async function attachLines(
 ): Promise<JournalDraft[]> {
   if (drafts.length === 0) return [];
   const args = [businessId, drafts.map((d) => d.id)];
+  /*
+   * `ORDER BY dl.line_no`, never `dl.id`: the draft-line key is a random
+   * `gen_random_uuid()`, so ordering by it handed the review queue a document
+   * whose rows were shuffled out of the order they were typed in (migration
+   * 0151 adds the ordinal this sorts on). journal_lines can order by its own
+   * id because that one is an identity bigint.
+   */
+  const lineSelect = `SELECT dl.draft_id, dl.account_id, a.code AS account_code, a.name AS account_name, dl.debit::text AS debit, dl.credit::text AS credit
+           FROM journal_entry_draft_lines dl
+           JOIN accounts a ON a.id = dl.account_id
+           JOIN journal_entry_drafts d ON d.id = dl.draft_id
+          WHERE d.business_id = $1 AND dl.draft_id = ANY($2::uuid[])
+          ORDER BY dl.draft_id, dl.line_no`;
   const { rows: lines } = client
-    ? await client.query<DraftLineRow>(
-        `SELECT dl.draft_id, dl.account_id, a.code AS account_code, a.name AS account_name, dl.debit::text AS debit, dl.credit::text AS credit
-           FROM journal_entry_draft_lines dl
-           JOIN accounts a ON a.id = dl.account_id
-           JOIN journal_entry_drafts d ON d.id = dl.draft_id
-          WHERE d.business_id = $1 AND dl.draft_id = ANY($2::uuid[])
-          ORDER BY dl.id`,
-        args,
-      )
-    : await query<DraftLineRow>(
-        `SELECT dl.draft_id, dl.account_id, a.code AS account_code, a.name AS account_name, dl.debit::text AS debit, dl.credit::text AS credit
-           FROM journal_entry_draft_lines dl
-           JOIN accounts a ON a.id = dl.account_id
-           JOIN journal_entry_drafts d ON d.id = dl.draft_id
-          WHERE d.business_id = $1 AND dl.draft_id = ANY($2::uuid[])
-          ORDER BY dl.id`,
-        args,
-      );
+    ? await client.query<DraftLineRow>(lineSelect, args)
+    : await query<DraftLineRow>(lineSelect, args);
   const linesByDraft = new Map<string, DraftLine[]>();
   for (const l of lines) {
     const list = linesByDraft.get(l.draft_id) ?? [];
@@ -234,7 +232,8 @@ export async function createDraft(params: {
   createdBy: string;
 }): Promise<{ id: string }> {
   const memo = typeof params.memo === "string" ? params.memo.trim() : "";
-  if (!memo) throw new ManualJournalError("memo_required");
+  const memoProblem = manualMemoProblem(memo);
+  if (memoProblem) throw new ManualJournalError(memoProblem);
   const entryDate = normalizeEntryDate(params.entryDate);
   const nonZero = validatedNonZeroLines(params.lines);
   await assertAccountsOwned(
@@ -251,10 +250,12 @@ export async function createDraft(params: {
       [params.businessId, params.locationId, entryDate, memo, params.createdBy],
     );
     const draftId = rows[0].id;
-    for (const l of nonZero) {
+    // `line_no` is the row's place in the document as it was typed; see
+    // attachLines above for why the read cannot recover it from the key.
+    for (const [index, l] of nonZero.entries()) {
       await client.query(
-        `INSERT INTO journal_entry_draft_lines (draft_id, account_id, debit, credit) VALUES ($1, $2, $3, $4)`,
-        [draftId, l.accountId, l.debit, l.credit],
+        `INSERT INTO journal_entry_draft_lines (draft_id, account_id, debit, credit, line_no) VALUES ($1, $2, $3, $4, $5)`,
+        [draftId, l.accountId, l.debit, l.credit, index],
       );
     }
     await client.query("COMMIT");

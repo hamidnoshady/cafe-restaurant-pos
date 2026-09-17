@@ -144,6 +144,28 @@ const ERROR_MESSAGES: Record<string, string> = {
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
     fiscal_period_locked: "دورهٔ مالی این تاریخ بسته شده و ثبت سند در آن ممکن نیست.",
     fiscal_period_soft_closed: "دورهٔ مالی این تاریخ نیمه‌بسته است؛ فقط مالک یا حسابدار می‌تواند در آن سند ثبت کند.",
+    // Phase 16 — سند دستی (manual journal: draft → review → post, and reversal).
+    // These reach this shared map whenever a screen shows a manual-journal
+    // failure through `errorMessage` rather than the accounting manager's own
+    // copy — «رد کردن» a draft in the review queue is the live example, and
+    // without them a real answer («این پیش‌نویس را کس دیگری تأیید یا رد کرده»)
+    // arrived as the generic «خطای غیرمنتظره».
+    memo_required: "شرح سند الزامی است.",
+    memo_too_long: "شرح سند بیش از حد طولانی است؛ آن را کوتاه‌تر بنویسید.",
+    no_lines: "حداقل یک سطر با مبلغ لازم است.",
+    too_few_lines: "سند باید حداقل دو ردیف داشته باشد.",
+    too_many_lines: "تعداد ردیف‌های سند بیش از حد مجاز است.",
+    single_account_entry: "سند باید حداقل به دو حساب متفاوت بخورد.",
+    invalid_line: "یکی از سطرها معتبر نیست (حساب، یا فقط بدهکار یا بستانکار).",
+    invalid_entry_date: "تاریخ سند معتبر نیست.",
+    not_balanced: "مجموع بدهکار و بستانکار برابر نیست.",
+    unknown_account: "یکی از حساب‌های انتخاب‌شده معتبر نیست.",
+    draft_not_found: "این پیش‌نویس پیدا نشد؛ ممکن است کس دیگری آن را تأیید یا رد کرده باشد.",
+    entry_not_found: "سند پیدا نشد.",
+    not_reversible: "فقط اسناد دستی قابل برگشت هستند.",
+    cannot_reverse_a_reversal: "سند برگشتی را نمی‌توان دوباره برگشت زد.",
+    already_reversed: "این سند قبلاً برگشت خورده است.",
+    entry_has_no_lines: "این سند ردیف حسابداری ندارد و قابل برگشت نیست.",
     negative_ingredient_requirement: "یکی از افزودنی‌ها مقدار مادهٔ اولیه را منفی می‌کند. دستور پخت آن افزودنی را اصلاح کنید.",
     inventory_costing_conflict: "بهای مواد اولیهٔ این سفارش قابل محاسبه نیست. قیمت خرید و موجودی موادی که این سفارش مصرف می‌کند را بررسی کنید.",
     // Phase 11 — delivery
