@@ -161,8 +161,12 @@ export function ReportTable<Row>({
       {/* Phone: the same columns as a labelled card, so nothing is hidden by width alone. */}
       <ul className="divide-y divide-border sm:hidden">
         {rows.map((row, index) => {
+          // The first column is always this card's heading — either an
+          // explicit cardTitle or the column's own cell — so it never also
+          // appears as the first body row; rendering it twice was the old
+          // `title ? cardColumns : …slice(1)` branch's mistake.
           const title = cardTitle?.(row);
-          const bodyColumns = title ? cardColumns : cardColumns.slice(1);
+          const bodyColumns = cardColumns.slice(1);
           return (
             <li key={rowKey?.(row, index) ?? index} className="px-4 py-4">
               <p className="min-w-0 break-words font-semibold text-foreground">

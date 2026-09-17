@@ -2,7 +2,7 @@
 
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api, ErrorBox } from "@/app/dashboard/ui";
@@ -31,13 +31,18 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
   const [dateTo, setDateTo] = useState("");
   const [report, setReport] = useState<VatReport | null>(null);
   const [error, setError] = useState("");
+  // Two date picks in quick succession start overlapping fetches; the guard
+  // keeps a slow earlier response from overwriting the newer period's numbers.
+  const requestSeq = useRef(0);
 
   useEffect(() => {
+    const seq = ++requestSeq.current;
     const params = new URLSearchParams();
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
     setError("");
     api<{ report: VatReport }>("/api/ledger/vat?" + params).then(({ ok, data }) => {
+      if (seq !== requestSeq.current) return;
       if (ok) setReport(data.report);
       // Otherwise the skeleton outlives the request and reads as "still loading".
       else setError("بارگذاری گزارش مالیات بر ارزش افزوده ناموفق بود.");

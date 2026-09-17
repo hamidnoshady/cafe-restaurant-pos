@@ -21,7 +21,7 @@
  * search/group chrome is the only markup it owns.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -150,6 +150,15 @@ const UNDATED_SHAPES = new Set<ReportShape>([
   "dead_stock",
 ]);
 
+/**
+ * Reports that are a snapshot at one instant, not a flow over a period — they
+ * read one as-of date, so an «از تاریخ» field would be a dead control (the
+ * balance sheet's route never reads dateFrom; the warranty register reads
+ * only its as-of date). They get a single date picker, and the balance
+ * sheet's period-compare takes a second, explicitly-chosen snapshot date.
+ */
+const AS_OF_DATE_SHAPES = new Set<ReportShape>(["balance_sheet", "warranty"]);
+
 /** The export API only knows these kinds; everything else has no export path yet. */
 const EXPORT_KIND_BY_SHAPE: Partial<Record<ReportShape, "pnl" | "balance_sheet" | "cash_flow">> = {
   profit_and_loss: "pnl",
@@ -158,6 +167,54 @@ const EXPORT_KIND_BY_SHAPE: Partial<Record<ReportShape, "pnl" | "balance_sheet" 
 };
 
 type ReportPayload = Record<string, unknown>;
+
+/**
+ * Headline figures of a document-shaped report (a statement, not a row dump)
+ * as one readable sentence — what the assistant gets asked to explain. The
+ * comparison payload wraps the current period under `current`, so unwrap it
+ * first. Unknown shapes contribute nothing rather than fabricated numbers.
+ */
+function documentFacts(document: ReportPayload, shape: ReportShape): string {
+  const root =
+    typeof document === "object" && document !== null && "current" in document
+      ? (document.current as ReportPayload)
+      : document;
+  if (typeof root !== "object" || root === null) return "";
+  const parts: string[] = [];
+  const figure = (key: string, label: string) => {
+    const value = root[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      parts.push(`${label}: ${value.toLocaleString("fa-IR")}`);
+    }
+  };
+  switch (shape) {
+    case "profit_and_loss":
+      figure("totalRevenue", "جمع درآمدها");
+      figure("totalExpenses", "جمع هزینه‌ها");
+      figure("costOfSales", "بهای تمام‌شده");
+      figure("netIncome", "سود (زیان) خالص");
+      break;
+    case "balance_sheet":
+      figure("totalAssets", "جمع دارایی‌ها");
+      figure("totalLiabilities", "جمع بدهی‌ها");
+      figure("totalEquity", "جمع حقوق صاحبان سرمایه");
+      if (typeof root.balanced === "boolean") {
+        parts.push(root.balanced ? "وضعیت تراز: متوازن" : "وضعیت تراز: نامتوازن");
+      }
+      break;
+    case "cash_flow":
+      figure("openingCash", "موجودی ابتدای دوره");
+      figure("closingCash", "موجودی پایان دوره");
+      figure("netChange", "تغییر خالص وجه نقد");
+      break;
+    case "food_cost_variance":
+      figure("theoreticalCost", "بهای نظری");
+      figure("actualCogs", "بهای تمام‌شده واقعی");
+      figure("variance", "مابه‌التفاوت");
+      break;
+  }
+  return parts.join("؛ ");
+}
 
 export function StandardReportsSection({ canExplain }: { canExplain: boolean }) {
   const [reports, setReports] = useState<StandardReportDef[] | null>(null);
@@ -169,9 +226,19 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [compare, setCompare] = useState(false);
+  /** The balance sheet's comparison snapshot date — a snapshot has no «دورهٔ قبل» of known length the way a flow does, so the person picks the second as-of date directly. */
+  const [compareAsOf, setCompareAsOf] = useState("");
   const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [document, setDocument] = useState<ReportPayload | null>(null);
   const [loadError, setLoadError] = useState("");
+  /**
+   * Monotonic id for the in-flight report fetch. Every change of report,
+   * date or compare flag starts a new request while the old one may still be
+   * in flight; without this guard a slow earlier response lands *after* the
+   * newer one and the screen shows the previous report's numbers under the
+   * newly selected report's title.
+   */
+  const requestSeq = useRef(0);
 
   useEffect(() => {
     fetch("/api/reports/standard")
@@ -202,25 +269,54 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     ? (isDocument && !UNDATED_SHAPES.has(selected.shape)) || hasDateColumn
     : false;
   const canCompare = selected ? COMPARABLE_SHAPES.has(selected.shape) : false;
+  /** Snapshot-shaped reports take one as-of date, never a period (AS_OF_DATE_SHAPES). */
+  const isAsOfDate = selected ? AS_OF_DATE_SHAPES.has(selected.shape) : false;
 
   const load = useCallback(async () => {
     if (!selected) return;
+    const seq = ++requestSeq.current;
     setLoadError("");
     if (DOCUMENT_SHAPES.has(selected.shape)) {
       const params = new URLSearchParams();
-      if (dateFrom) params.set("dateFrom", dateFrom);
+      // A snapshot-shaped report reads one as-of date, so it gets no «از
+      // تاریخ» (see AS_OF_DATE_SHAPES) and none is sent.
+      if (dateFrom && !AS_OF_DATE_SHAPES.has(selected.shape)) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
-      if (compare && COMPARABLE_SHAPES.has(selected.shape)) params.set("compare", "1");
+      if (compare && COMPARABLE_SHAPES.has(selected.shape)) {
+        // P&L/Cash Flow mirror the range's length server-side; the Balance
+        // Sheet can only compare two explicit as-of dates, so without the
+        // comparison date the checkbox must not silently produce the same
+        // single-snapshot report — it runs plain until a date is chosen.
+        if (selected.shape === "balance_sheet") {
+          if (compareAsOf) {
+            params.set("compare", "1");
+            params.set("previousAsOfDate", compareAsOf);
+          }
+        } else {
+          params.set("compare", "1");
+        }
+      }
       try {
         const response = await fetch(`/api/reports/standard/${selected.key}?${params}`);
         const data = await response.json();
+        if (seq !== requestSeq.current) return;
         if (!response.ok) {
           setLoadError("خواندن این گزارش ممکن نشد.");
           return;
         }
-        setDocument(data.report ?? data.comparison ?? null);
+        const payload = data.report ?? data.comparison ?? null;
+        // A 200 with neither a report nor a comparison (e.g. the route's
+        // row-dump fallback answering a document-shaped request) used to
+        // leave the loading skeleton on screen for ever — there is nothing
+        // to render, so say so instead.
+        if (payload === null) {
+          setLoadError("نتیجه‌ای برای این گزارش یافت نشد.");
+          return;
+        }
+        setDocument(payload);
         setRows(null);
       } catch {
+        if (seq !== requestSeq.current) return;
         setLoadError("خواندن این گزارش ممکن نشد.");
       }
       return;
@@ -236,6 +332,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
         body: JSON.stringify(config),
       });
       const data = await response.json();
+      if (seq !== requestSeq.current) return;
       if (!response.ok) {
         setLoadError("خواندن این گزارش ممکن نشد.");
         return;
@@ -243,9 +340,10 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
       setRows(data.rows ?? []);
       setDocument(null);
     } catch {
+      if (seq !== requestSeq.current) return;
       setLoadError("خواندن این گزارش ممکن نشد.");
     }
-  }, [selected, dateFrom, dateTo, compare]);
+  }, [selected, dateFrom, dateTo, compare, compareAsOf]);
 
   useEffect(() => {
     load();
@@ -282,6 +380,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     setDateFrom("");
     setDateTo("");
     setCompare(false);
+    setCompareAsOf("");
     setRows(null);
     setDocument(null);
     setLoadError("");
@@ -294,7 +393,12 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
           .slice(0, 8)
           .map((row) => `${row.label}: ${row.value.toLocaleString("fa-IR")}`)
           .join("؛ ")
-      : "";
+      : // The ledger statements are documents, not rows — without this the
+        // assistant prompt carried no figures at all for exactly the reports
+        // the button exists for (سود و زیان، ترازنامه، گردش وجوه نقد).
+        document
+        ? documentFacts(document, selected.shape)
+        : "";
     const period =
       dateFrom || dateTo
         ? `بازهٔ انتخاب‌شده: ${dateFrom || "ابتدای داده"} تا ${dateTo || "امروز"}.`
@@ -396,36 +500,71 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                 <div className="grid gap-4">
                   {acceptsDateRange ? (
                     <>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="block">
-                          <span className="mb-1.5 block text-sm font-medium text-foreground">از تاریخ</span>
-                          <JalaliDatePicker
-                            value={dateFrom}
-                            onChange={setDateFrom}
-                            placeholder="از تاریخ"
-                            className={inputClass}
-                          />
-                        </label>
-                        <label className="block">
-                          <span className="mb-1.5 block text-sm font-medium text-foreground">تا تاریخ</span>
-                          <JalaliDatePicker
-                            value={dateTo}
-                            onChange={setDateTo}
-                            placeholder="تا تاریخ"
-                            className={inputClass}
-                          />
-                        </label>
-                      </div>
+                      {isAsOfDate ? (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1.5 block text-sm font-medium text-foreground">تا تاریخ</span>
+                            <JalaliDatePicker
+                              value={dateTo}
+                              onChange={setDateTo}
+                              placeholder="تا تاریخ"
+                              className={inputClass}
+                            />
+                          </label>
+                          {selected.shape === "balance_sheet" && compare ? (
+                            <label className="block">
+                              <span className="mb-1.5 block text-sm font-medium text-foreground">تاریخ مقایسه</span>
+                              <JalaliDatePicker
+                                value={compareAsOf}
+                                onChange={setCompareAsOf}
+                                placeholder="تاریخ مقایسه"
+                                className={inputClass}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1.5 block text-sm font-medium text-foreground">از تاریخ</span>
+                            <JalaliDatePicker
+                              value={dateFrom}
+                              onChange={setDateFrom}
+                              placeholder="از تاریخ"
+                              className={inputClass}
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1.5 block text-sm font-medium text-foreground">تا تاریخ</span>
+                            <JalaliDatePicker
+                              value={dateTo}
+                              onChange={setDateTo}
+                              placeholder="تا تاریخ"
+                              className={inputClass}
+                            />
+                          </label>
+                        </div>
+                      )}
                       <BusinessDayRangePresets
                         onSelect={(range) => {
-                          setDateFrom(range.dateFrom);
-                          setDateTo(range.dateTo);
+                          if (isAsOfDate) {
+                            setDateTo(range.dateTo);
+                          } else {
+                            setDateFrom(range.dateFrom);
+                            setDateTo(range.dateTo);
+                          }
                         }}
                         onClear={() => {
                           setDateFrom("");
                           setDateTo("");
+                          setCompareAsOf("");
                         }}
                       />
+                      {selected.shape === "balance_sheet" && compare && !compareAsOf ? (
+                        <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                          برای مقایسه، «تاریخ مقایسه» را انتخاب کنید؛ ترازنامه تصویر یک تاریخ است و دورهٔ قبلی‌اش به‌خودی‌خود مشخص نمی‌شود.
+                        </p>
+                      ) : null}
                     </>
                   ) : null}
 
