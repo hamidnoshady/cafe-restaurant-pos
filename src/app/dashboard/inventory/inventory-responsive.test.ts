@@ -196,3 +196,103 @@ describe("section spacing", () => {
     }
   });
 });
+
+describe("خرید — resilience and feedback (the silent-failure bugs)", () => {
+  const purchases = read("purchases-section.tsx");
+
+  it("the recent-purchases list never renders a silent blank: skeleton while null, message + retry on failure", () => {
+    // Before: `purchases ?? []` meant a first load (or a failed one) left an
+    // empty <ul> with no explanation and no way back.
+    expect(purchases).toMatch(/purchases === null && !listError/);
+    expect(purchases).toMatch(/LoadingSkeleton[^>]*label="در حال بارگذاری فهرست خریدها"/);
+    expect(purchases).toMatch(/listError/);
+    expect(purchases).toMatch(/تلاش دوباره/);
+  });
+
+  it("a cancelled purchase keeps its «مشاهده جزئیات» button (records stay inspectable)", () => {
+    // Before: the details button was gated `p.status !== "cancelled"`, so a
+    // cancelled purchase's contents were invisible unless deleted.
+    expect(purchases).not.toMatch(/\{p\.status !== "cancelled" \? \(\s*<Button[^>]*onClick=\{\(\) => toggleExpanded/);
+    // And the detail footer must not offer ویرایش/برگشت for a cancelled one —
+    // it splits received (return) from cancelled (view-only).
+    expect(purchases).toMatch(/خرید لغوشده فقط قابل مشاهده است/);
+  });
+
+  it("stale detail fetches are discarded (the cross-row race)", () => {
+    // Expanding row A then quickly row B once let A's response render inside
+    // B's panel. The request token pins the guard.
+    expect(purchases).toMatch(/detailRequestRef/);
+    expect(purchases).toMatch(/request !== detailRequestRef\.current/);
+  });
+
+  it("numeric fields refuse negative entry instead of failing server-side", () => {
+    // Money/quantity PersianNumberInputs once defaulted allowNegative=true;
+    // the server then answered with the generic «یکی از اقلام معتبر نیست».
+    const negatives = purchases.match(/allowNegative=\{false\}/g) ?? [];
+    expect(negatives.length).toBeGreaterThanOrEqual(3); // qty, amount, return qty
+  });
+
+  it("OCR apply asks before replacing hand-entered lines", () => {
+    expect(purchases).toMatch(/draftHasContent/);
+    expect(purchases).toMatch(/window\.confirm\("ردیف‌ها و یادداشت فعلی فرم/);
+  });
+
+  it("return quantities are validated client-side (truthy " + '"0"' + " and over-returns)", () => {
+    expect(purchases).toMatch(/qty\.lte\(0\)/);
+    expect(purchases).toMatch(/qty\.gt\(new Decimal\(String\(it\.quantity\)\)\)/);
+  });
+
+  it("the supplier-return idempotency key is minted once per form-open, not per attempt", () => {
+    // Per-attempt Date.now keys defeat the server's duplicate answer: a
+    // response lost after commit would post the return twice on retry.
+    expect(purchases).not.toMatch(/idempotencyKey: `\$\{expandedId\}-\$\{Date\.now\(\)\}`/);
+    expect(purchases).toMatch(/idempotencyKey: returnKey/);
+  });
+
+  it("action failures surface inside the section, not only above the tab rail", () => {
+    expect(purchases).toMatch(/const \[localError, setLocalError\] = useState/);
+    expect(purchases).toMatch(/<ErrorBox>\{localError\}<\/ErrorBox>/);
+    const forwarded = purchases.match(/,\s*setLocalError,\s*\)/g) ?? [];
+    expect(forwarded.length).toBeGreaterThanOrEqual(3); // submit, saveEdit, transition/return/delete
+  });
+
+  it("a silent no-op submit is impossible (empty/invalid lines explained)", () => {
+    expect(purchases).toMatch(/function validatePayloadLines/);
+    expect(purchases).toMatch(/حداقل یک ردیف با قلم و مقدار معتبر وارد کنید/);
+  });
+
+  it("an inverted date filter orders itself instead of matching nothing", () => {
+    expect(purchases).toMatch(/function setFilterFrom\(value: string\)/);
+    expect(purchases).toMatch(/function setFilterTo\(value: string\)/);
+  });
+});
+
+describe("خرید — the OCR panel guards the picker's contracts", () => {
+  const ocr = read("invoice-ocr-panel.tsx");
+
+  it("an invoice date that is not ISO never reaches the JalaliDatePicker", () => {
+    expect(ocr).toMatch(/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/.test\(invoiceDate\)/);
+  });
+
+  it("review quantity/amount fields refuse negative entry", () => {
+    const negatives = ocr.match(/allowNegative=\{false\}/g) ?? [];
+    expect(negatives.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("خرید — the workspace runner can report to a section-level box", () => {
+  const manager = read("food-service-inventory-manager.tsx");
+
+  it("run() forwards the mapped message to an optional onError", () => {
+    // The purchases section renders its own ErrorBox where the action lives;
+    // without the callback its failures only showed above the rail.
+    expect(manager).toMatch(/onError\?: \(message: string\) => void/);
+    expect(manager).toMatch(/onError\?\.\(message\)/);
+  });
+
+  it("error map covers the codes the purchase flows raise", () => {
+    for (const code of ["invalid_quantity", "fiscal_period_locked", "fiscal_period_soft_closed"]) {
+      expect(manager, `missing ${code}`).toContain(`${code}:`);
+    }
+  });
+});

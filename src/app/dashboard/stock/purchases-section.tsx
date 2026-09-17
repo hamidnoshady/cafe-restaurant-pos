@@ -2,16 +2,17 @@
 
 /**
  * Phase 42b — the «خرید» tab: the purchase-receiving form and the recent
- * purchases list, extracted unchanged from the former retail stock workspace
- * (Phase 27 Wave 8's retail purchasing) into the warehouse module's «اقلام و
- * عملیات» group. The form's fields, line building and POST payload are
- * byte-for-byte the originals; only the data loading moved into the section.
+ * purchases list, extracted from the former retail stock workspace (Phase 27
+ * Wave 8's retail purchasing) into the warehouse module's «اقلام و عملیات»
+ * group. The POST payload is the original's; the form itself now uses the
+ * shared combobox/date pickers and a fully responsive, labelled line builder.
  */
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatPersianNumber } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { SectionCard, SectionCardSkeleton } from "../page-chrome";
@@ -84,7 +85,13 @@ export function PurchasesSection() {
         onError={setError}
       />
 
-      <SectionCard title="خریدهای اخیر" bodyClassName="space-y-3">
+      {/* Feedback sits with the form, not under the list a screenful away. */}
+      <ErrorBox>{error}</ErrorBox>
+      {done ? (
+        <p className="text-xs text-emerald-700 dark:text-emerald-300">{done}</p>
+      ) : null}
+
+      <SectionCard title="خریدهای اخیر" bodyClassName="space-y-3" description="حداکثر ۱۰۰ خرید اخیر نمایش داده می‌شود.">
         {purchases.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
             هنوز خریدی ثبت نشده است.
@@ -94,12 +101,17 @@ export function PurchasesSection() {
             {purchases.map((p) => (
               <li
                 key={p.id}
-                className="flex items-center justify-between gap-3 py-2"
+                className="flex items-start justify-between gap-3 py-2"
               >
-                <span className="font-medium text-foreground">
-                  {p.supplierName ?? "بدون تأمین‌کننده"}
+                <span className="min-w-0">
+                  <span className="block break-words font-medium text-foreground">
+                    {p.supplierName ?? "بدون تأمین‌کننده"}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                    {formatJalali(p.receivedAt)}
+                  </span>
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="shrink-0 text-xs text-muted-foreground">
                   {formatPersianNumber(p.lineCount)} قلم ·{" "}
                   {money.format(p.total)}
                 </span>
@@ -108,11 +120,6 @@ export function PurchasesSection() {
           </ul>
         )}
       </SectionCard>
-
-      <ErrorBox>{error}</ErrorBox>
-      {done ? (
-        <p className="text-xs text-emerald-700 dark:text-emerald-300">{done}</p>
-      ) : null}
     </div>
   );
 }
@@ -145,13 +152,24 @@ function PurchaseForm({
   const [busy, setBusy] = useState(false);
 
   function addLine() {
+    const qty = Number(quantity);
+    const cost = Number(unitCost);
     if (!itemId || !quantity.trim() || !unitCost.trim()) return;
+    if (!Number.isFinite(qty) || qty <= 0) {
+      onError("تعداد باید عددی بزرگ‌تر از صفر باشد.");
+      return;
+    }
+    if (!Number.isFinite(cost) || cost < 0) {
+      onError("بهای هر واحد معتبر نیست.");
+      return;
+    }
+    onError("");
     setLines((prev) => [
       ...prev,
       {
         itemId,
         quantity,
-        unitCost: money.fromInput(Math.max(0, Math.round(Number(unitCost)))),
+        unitCost: money.fromInput(Math.round(cost)),
         expiryDate: expiry || null,
       },
     ]);
@@ -161,8 +179,15 @@ function PurchaseForm({
     setExpiry("");
   }
 
+  function removeLine(index: number) {
+    setLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function submit() {
-    if (lines.length === 0) return;
+    if (lines.length === 0) {
+      onError("حداقل یک ردیف به فهرست خرید اضافه کنید.");
+      return;
+    }
     setBusy(true);
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string }>(
@@ -181,42 +206,53 @@ function PurchaseForm({
     }
   }
 
-  const itemName = (id: string) => items.find((i) => i.id === id)?.name ?? id;
+  const itemById = (id: string) => items.find((i) => i.id === id);
+
+  // Stable across renders so SearchableSelect's internal normalization cache holds.
+  const supplierOptions = useMemo(
+    () => [
+      { value: "", label: "بدون تأمین‌کننده" },
+      ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+    ],
+    [suppliers],
+  );
+  const itemOptions = useMemo(
+    () => [
+      { value: "", label: "کالا را انتخاب کنید…" },
+      ...items.map((i) => ({
+        value: i.id,
+        label: i.name,
+        searchString: [i.name, i.sku].filter(Boolean).join(" "),
+      })),
+    ],
+    [items],
+  );
+
+  const linesTotal = lines.reduce((sum, l) => {
+    const qty = Number(l.quantity);
+    return sum + (Number.isFinite(qty) ? qty * l.unitCost : 0);
+  }, 0);
 
   return (
     <SectionCard title="دریافت خرید" bodyClassName="space-y-3">
-      <div className="grid gap-2">
-        <Field label="تأمین‌کننده">
-          <SearchableSelect
-            value={supplierId}
-            onChange={setSupplierId}
-            options={[
-              { value: "", label: "بدون تأمین‌کننده" },
-              ...suppliers.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-            placeholder="بدون تأمین‌کننده"
-            searchPlaceholder="جستجوی تأمین‌کننده…"
-            ariaLabel="انتخاب تأمین‌کننده"
-          />
-        </Field>
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+      <div className="grid min-w-0 gap-3">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <Field label="تأمین‌کننده">
+            <SearchableSelect
+              value={supplierId}
+              onChange={setSupplierId}
+              options={supplierOptions}
+            />
+          </Field>
           <Field label="کالا">
             <SearchableSelect
               value={itemId}
               onChange={setItemId}
-              options={[
-                { value: "", label: "انتخاب کنید…" },
-                ...items.map((i) => ({
-                  value: i.id,
-                  label: i.name,
-                  searchString: `${i.name} ${i.sku ?? ""}`,
-                })),
-              ]}
-              placeholder="انتخاب کنید…"
-              searchPlaceholder="جستجوی کالا…"
-              ariaLabel="انتخاب کالا"
+              options={itemOptions}
             />
           </Field>
+        </div>
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="تعداد">
             <PersianNumberInput
               inputMode="decimal"
@@ -227,41 +263,69 @@ function PurchaseForm({
               onChange={(e) => setQuantity(e.target.value)}
             />
           </Field>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={addLine}
-            className="min-h-11"
-          >
-            +
-          </Button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
           <Field label={`بهای هر واحد (${money.unitLabel})`}>
             <PersianNumberInput
               className={inputClass}
               dir="ltr"
               inputMode="numeric"
+              allowNegative={false}
               value={unitCost}
               onChange={(e) => setUnitCost(e.target.value)}
             />
           </Field>
           <Field label="انقضا (اختیاری، شمسی)">
-            <JalaliDatePicker
-              className={inputClass}
-              value={expiry}
-              onChange={setExpiry}
-            />
+            <JalaliDatePicker value={expiry} onChange={setExpiry} />
           </Field>
+          <div className="mb-4 flex items-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={addLine}
+              className="w-full"
+            >
+              افزودن ردیف
+            </Button>
+          </div>
         </div>
         {lines.length > 0 ? (
-          <ul className="text-xs text-muted-foreground">
-            {lines.map((l, i) => (
-              <li key={i}>
-                {itemName(l.itemId)} × {formatPersianNumber(Number(l.quantity))}
-              </li>
-            ))}
-          </ul>
+          <div className="rounded-xl border border-border">
+            <ul className="divide-y divide-border/80 text-sm">
+              {lines.map((l, i) => {
+                const item = itemById(l.itemId);
+                return (
+                  <li
+                    key={i}
+                    className="flex items-center justify-between gap-3 px-3 py-2"
+                  >
+                    <span className="min-w-0 break-words">
+                      {item?.name ?? l.itemId}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        × {formatPersianNumber(Number(l.quantity))}
+                        {l.expiryDate ? ` · انقضا ${formatJalali(l.expiryDate)}` : ""}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {money.format(Number(l.quantity) * l.unitCost)}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`حذف ردیف ${item?.name ?? ""}`}
+                        onClick={() => removeLine(i)}
+                      >
+                        حذف
+                      </Button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="border-t border-border bg-muted/60 px-3 py-2 text-xs font-medium text-foreground">
+              جمع فهرست: {money.format(linesTotal)}
+            </p>
+          </div>
         ) : null}
         <Button
           type="button"
@@ -269,7 +333,7 @@ function PurchaseForm({
           onClick={() => void submit()}
           className="min-h-11 w-full"
         >
-          ثبت خرید
+          {busy ? "در حال ثبت…" : "ثبت خرید"}
         </Button>
       </div>
     </SectionCard>
