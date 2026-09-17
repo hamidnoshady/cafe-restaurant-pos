@@ -36,12 +36,22 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 
   const params = request.nextUrl.searchParams;
   const isoDate = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
-  const dateFrom = isoDate(params.get("dateFrom"));
-  const dateTo = isoDate(params.get("dateTo"));
+  const rawDateFrom = params.get("dateFrom");
+  const rawDateTo = params.get("dateTo");
+  const dateFrom = isoDate(rawDateFrom);
+  const dateTo = isoDate(rawDateTo);
+  if ((rawDateFrom && !dateFrom) || (rawDateTo && !dateTo)) {
+    return NextResponse.json({ error: "invalid_date" }, { status: 400 });
+  }
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    return NextResponse.json({ error: "invalid_date_range" }, { status: 400 });
+  }
   const sourceType = params.get("sourceType")?.trim() || null;
   const q = params.get("q")?.trim() || null;
   const requestedLimit = Number(params.get("limit"));
   const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, MAX_LIMIT) : DEFAULT_LIMIT;
+  const requestedOffset = Number(params.get("offset"));
+  const offset = Number.isInteger(requestedOffset) && requestedOffset >= 0 ? Math.min(requestedOffset, 50_000) : 0;
 
   interface EntryRow extends Record<string, unknown> {
     id: string;
@@ -83,9 +93,9 @@ export const GET = withTenantScope(async (request: NextRequest) => {
                AND (a.code ILIKE '%' || $5::text || '%' OR a.name ILIKE '%' || $5::text || '%')
           )
         )
-      ORDER BY je.entry_date DESC, je.posted_at DESC
-      LIMIT $6`,
-    [session.businessId, dateFrom, dateTo, sourceType, q, limit + 1],
+      ORDER BY je.entry_date DESC, je.posted_at DESC, je.id DESC
+      LIMIT $6 OFFSET $7`,
+    [session.businessId, dateFrom, dateTo, sourceType, q, limit + 1, offset],
   );
   const hasMore = entries.length > limit;
   const page = hasMore ? entries.slice(0, limit) : entries;

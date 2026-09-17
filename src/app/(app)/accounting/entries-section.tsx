@@ -2,7 +2,7 @@
 
 import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -49,7 +49,9 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
   const money = useMoney();
   const [entries, setEntries] = useState<JournalEntryRow[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const requestId = useRef(0);
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -63,26 +65,47 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
     });
   }, [refreshKey]);
 
-  const load = useCallback(() => {
-    const params = new URLSearchParams();
-    if (dateFrom) params.set("dateFrom", dateFrom);
-    if (dateTo) params.set("dateTo", dateTo);
-    if (sourceType) params.set("sourceType", sourceType);
-    if (q.trim()) params.set("q", q.trim());
-    setError("");
-    api<{ entries: JournalEntryRow[]; hasMore: boolean }>(`/api/ledger/entries?${params}`).then(({ ok, data }) => {
+  const load = useCallback(
+    async (offset = 0, append = false) => {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      if (sourceType) params.set("sourceType", sourceType);
+      if (q.trim()) params.set("q", q.trim());
+      if (offset) params.set("offset", String(offset));
+      const currentRequest = ++requestId.current;
+      setError("");
+      if (append) setLoadingMore(true);
+      const { ok, data } = await api<{ entries: JournalEntryRow[]; hasMore: boolean; error?: string }>(
+        `/api/ledger/entries?${params}`,
+      );
+      if (currentRequest !== requestId.current) return;
       if (ok) {
-        setEntries(data.entries);
+        setEntries((previous) => (append && previous ? [...previous, ...data.entries] : data.entries));
         setHasMore(!!data.hasMore);
       } else {
-        setError("بارگذاری دفتر روزنامه ناموفق بود. دوباره تلاش کنید.");
+        setError(
+          data.error === "invalid_date_range"
+            ? "بازهٔ تاریخ نامعتبر است؛ تاریخ شروع باید قبل از تاریخ پایان باشد."
+            : data.error === "invalid_date"
+              ? "یکی از تاریخ‌ها معتبر نیست."
+              : "بارگذاری دفتر روزنامه ناموفق بود. دوباره تلاش کنید.",
+        );
       }
-    });
-  }, [dateFrom, dateTo, sourceType, q]);
+      if (append) setLoadingMore(false);
+    },
+    [dateFrom, dateTo, sourceType, q],
+  );
 
   useEffect(() => {
+    // Invalidate an in-flight request immediately when a filter changes; the
+    // search debounce must not let results for the previous query flash into
+    // the new filter's empty state.
+    requestId.current += 1;
     setEntries(null);
-    const timer = setTimeout(load, q ? 250 : 0);
+    setHasMore(false);
+    setLoadingMore(false);
+    const timer = setTimeout(() => void load(), q ? 250 : 0);
     return () => clearTimeout(timer);
   }, [load, q, refreshKey]);
 
@@ -258,10 +281,17 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
               })}
 
               {hasMore ? (
-                <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-xs leading-6 text-muted-foreground">
-                  فقط {toPersianDigits(entries.length)} سند نخست این فهرست نمایش داده شده است؛ برای دیدن اسناد قدیمی‌تر بازهٔ
-                  تاریخ را محدود کنید.
-                </p>
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border px-3 py-4 text-center">
+                  <p className="text-xs leading-6 text-muted-foreground">
+                    {toPersianDigits(entries.length)} سند نمایش داده شده و سند قدیمی‌تری هم وجود دارد.
+                  </p>
+                  <SecondaryButton
+                    onClick={() => void load(entries.length, true)}
+                    disabled={loadingMore || busy}
+                  >
+                    {loadingMore ? "در حال بارگذاری…" : "نمایش اسناد قدیمی‌تر"}
+                  </SecondaryButton>
+                </div>
               ) : null}
             </div>
           )}
