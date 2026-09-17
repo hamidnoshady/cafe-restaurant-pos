@@ -338,6 +338,11 @@ function errorMessage(code: string | undefined): string {
     already_paid: "این تعهد قبلاً پرداخت شده است.",
     already_voided: "این تعهد قبلاً ابطال شده است.",
     run_voided: "این تعهد ابطال شده و قابل پرداخت نیست.",
+    // Phase 22 — fixed assets & depreciation
+    fixed_asset_not_found: "دارایی ثابت پیدا نشد.",
+    fixed_asset_has_depreciation: "برای این دارایی استهلاک ثبت شده و قابل حذف نیست.",
+    period_already_depreciated: "استهلاک این دوره قبلاً ثبت شده است.",
+    fully_depreciated: "این دارایی به‌طور کامل مستهلک شده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
