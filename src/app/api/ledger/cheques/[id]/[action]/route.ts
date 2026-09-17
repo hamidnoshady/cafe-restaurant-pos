@@ -11,6 +11,10 @@ interface ActionBody {
   memo?: string;
 }
 
+function isActionBody(value: unknown): value is ActionBody {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * One step of a cheque's life: deposit, endorse, clear, bounce, present,
  * cancel. Which of those are legal from here is `cheques.ts`'s transition
@@ -29,7 +33,11 @@ export const POST = withTenantScope(
 
     let body: ActionBody = {};
     try {
-      body = await request.json();
+      const parsed: unknown = await request.json();
+      if (!isActionBody(parsed)) {
+        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+      }
+      body = parsed;
     } catch {
       // An action with no payload is ordinary — clearing a cheque needs nothing
       // but the cheque.
@@ -44,7 +52,7 @@ export const POST = withTenantScope(
         chequeId: id,
         action: action as ChequeAction,
         occurredOn: body.occurredOn ?? null,
-        endorsedToSupplierId: body.endorsedToSupplierId?.trim() || null,
+        endorsedToSupplierId: body.endorsedToSupplierId ?? null,
         memo: body.memo ?? null,
         createdBy: session.sub,
       });

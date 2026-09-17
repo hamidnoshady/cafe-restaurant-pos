@@ -292,4 +292,53 @@ describe("the statement the directory can open", () => {
   it("offers the button only where the route would answer", () => {
     expect(SECTION_SOURCE).toMatch(/canOpenStatement/);
   });
+
+  it("addresses the A/P statement by the branch alias, not by the party id", () => {
+    /*
+     * The two ledgers are keyed differently, which is invisible until it is
+     * wrong. `arLines` joins `parties` directly, so an A/R statement takes the
+     * party id the directory already holds. `apLines` selects `suppliers.id` —
+     * the per-branch alias — and carries the party separately as `party_id`.
+     *
+     * Passing a party id to the A/P panel therefore returns *no rows* rather
+     * than an error: a supplier with a full purchase history would have opened
+     * a statement reading «رکوردی نیست», which looks like lost data. The map
+     * built from `?scope=directory` is the translation.
+     */
+    expect(SECTION_SOURCE).toMatch(/supplierId=\{supplierAliases\[statement\.id\] \?\? statement\.id\}/);
+    expect(SECTION_SOURCE).toMatch(/supplierPartyId=\{statement\.id\}/);
+    // The directory scope is the one that lists every supplier, not only those
+    // carrying a nonzero balance — a settled supplier still has a statement.
+    expect(SECTION_SOURCE).toMatch(/ap\/suppliers\?scope=directory/);
+  });
+
+  it("withholds the A/P button when this branch has no supplier row for the party", () => {
+    // No alias means the payables ledger has nothing filed under them; better
+    // no button than one that opens an empty panel.
+    expect(SECTION_SOURCE).toMatch(/if \(kind === "ap" && !supplierAliases\[party\.id\]\) return null;/);
+  });
+
+  it("does not request the supplier map for members who cannot open a statement", () => {
+    // `/api/ledger/ap/suppliers` is role-gated exactly like the statement, so
+    // asking unconditionally would be a guaranteed 403 on a cashier's screen.
+    expect(SECTION_SOURCE).toMatch(/if \(!canOpenStatement \|\| !listedRoles\.includes\("Supplier"\)\)/);
+  });
+});
+
+describe("api() after both fixes for it landed", () => {
+  /*
+   * `main` fixed this function at the same time and in the same spirit — it
+   * stopped rejecting and started returning a `network_error` body. This branch
+   * added the `aborted` flag. The merge has to keep both, and in particular
+   * must not report a deliberately cancelled request as a network failure.
+   */
+  it("gives a dropped connection a Persian-mappable error code", () => {
+    expect(UI_SOURCE).toMatch(/error: "network_error"/);
+  });
+
+  it("does not label a deliberate cancellation as a network failure", () => {
+    // Every superseded search would otherwise raise «ارتباط با سرور برقرار
+    // نشد» — the normal path, reported as an outage.
+    expect(UI_SOURCE).toMatch(/aborted \? \{\} : \{ error: "network_error" \}/);
+  });
 });

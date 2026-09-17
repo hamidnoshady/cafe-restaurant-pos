@@ -27,6 +27,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { Button } from "@/components/ui/button";
 import {
   INVENTORY_TABS,
   INVENTORY_TAB_GROUPS,
@@ -176,10 +177,22 @@ export function FoodServiceInventoryManager({
   // to look at something else.
   useEffect(() => setError(""), [tab]);
 
+  // A deep link can point at a perpetual-only section while the workspace is
+  // periodic. Once the costing setting arrives, move to the first visible
+  // section instead of rendering content that the navigation cannot reach.
+  useEffect(() => {
+    if (data && !visibleTabs(data.inventorySystem).some((item) => item.key === tab)) {
+      setTab("warehouses");
+    }
+  }, [data, tab]);
+
   const load = useCallback(() => {
-    api<InventoryData>("/api/inventory").then(({ ok, data }) => {
-      if (ok) setData(data);
-    });
+    api<InventoryData & { error?: string }>("/api/inventory")
+      .then(({ ok, data }) => {
+        if (ok) setData(data);
+        else setError(errorMessage(data.error));
+      })
+      .catch(() => setError("دریافت اطلاعات انبار ناموفق بود؛ دوباره تلاش کنید."));
   }, []);
   useEffect(load, [load]);
 
@@ -198,7 +211,22 @@ export function FoodServiceInventoryManager({
     return true;
   }
 
-  if (!data) return <LoadingSkeleton rows={3} />;
+  if (!data) {
+    return (
+      <div>
+        {error ? (
+          <div className="space-y-3">
+            <ErrorBox>{error}</ErrorBox>
+            <Button type="button" variant="outline" onClick={load}>
+              تلاش دوباره
+            </Button>
+          </div>
+        ) : (
+          <LoadingSkeleton rows={3} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`${styles.workspace} min-w-0 space-y-4 sm:space-y-5`}>
@@ -275,7 +303,7 @@ export function FoodServiceInventoryManager({
           <WasteSection items={data.items} busy={busy} run={run} />
         ) : null}
         {tab === "transfers" ? (
-          <TransfersSection items={data.items} busy={busy} run={run} />
+          <TransfersSection busy={busy} run={run} />
         ) : null}
         {tab === "barcodes" ? (
           <BarcodesSection items={data.items} busy={busy} run={run} />
@@ -301,6 +329,7 @@ function errorMessage(code: string | undefined): string {
     supplier_required: "برای دریافت نسیه، انتخاب تأمین‌کننده الزامی است.",
     no_items: "حداقل یک قلم لازم است.",
     invalid_item: "یکی از اقلام معتبر نیست.",
+    invalid_quantity: "مقدار باید عددی بزرگ‌تر از صفر و حداکثر دارای ۹ رقم اعشار باشد.",
     invalid_waste_reason: "دلیل ضایعات را انتخاب کنید.",
     invalid_purchase_date: "تاریخ خرید معتبر نیست.",
     invalid_transition: "این تغییر وضعیت خرید مجاز نیست.",
@@ -336,6 +365,17 @@ function errorMessage(code: string | undefined): string {
       "کسری یکی از مواد این تولید با خرید بعدی تسویه شده است و برگشت آن ممکن نیست.",
     production_reversal_inconsistent:
       "برگشت این تولید با ارقام ثبت‌شده هم‌خوان نیست.",
+    // Guards these paths can surface but that had no Persian string, so they
+    // fell through to «خطای غیرمنتظره» instead of naming what actually failed.
+    quantity_precision_exceeded: "مقدار بیش از ۹ رقم اعشار دارد؛ عدد را گرد کنید.",
+    // `invalid_quantity` is deliberately not repeated here: it is already
+    // mapped above, with a message that states the rule («بزرگ‌تر از صفر و
+    // حداکثر ۹ رقم اعشار») rather than only that something is wrong. A second
+    // key in the same object literal is a TS1117 error, and the duplicate — the
+    // vaguer of the two — is what silently won at runtime.
+    invalid_rial: "مبلغ واردشده معتبر نیست.",
+    periodic_system_unsupported:
+      "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
     // Phase 42 — warehouse documents
     invalid_line:
       "یکی از سندها کامل نیست؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",

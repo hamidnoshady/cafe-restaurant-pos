@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
+import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { LoadingSkeleton, SectionCard } from "../page-chrome";
@@ -61,13 +62,20 @@ function newLine(): DocLine {
 const DOC_ERRORS: Record<string, string> = {
   missing_fields: "انبار را انتخاب کنید.",
   no_items: "حداقل یک قلم لازم است.",
-  invalid_line: "یکی از سندها کامل نیست؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",
+  invalid_line: "یکی از قلم‌ها کامل نیست یا یک قلم دو بار آمده است؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",
   invalid_quantity: "مقدار هر قلم باید بزرگ‌تر از صفر باشد.",
+  quantity_precision_exceeded: "مقدار واردشده بیش از حد اعشار دارد.",
   invalid_rial: "قیمت واحد باید یک عدد صحیح معتبر باشد.",
   location_not_found: "انبار انتخاب‌شده پیدا نشد.",
   location_inactive: "این انبار غیرفعال است؛ انبار دیگری را انتخاب کنید.",
   supplier_not_found: "تأمین‌کننده انتخاب‌شده در این انبار نیست.",
   item_not_found: "یکی از اقلام به این انبار تعلق ندارد یا غیرفعال است.",
+  periodic_system_unsupported:
+    "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
+  ledger_account_missing:
+    "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
+  inventory_exact_cutover_required:
+    "موجودی این قلم هنوز به سیستم بهای دقیق منتقل نشده است؛ ابتدا عملیات انتقال (cutover) را اجرا کنید.",
 };
 
 export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
@@ -101,13 +109,19 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
   );
 
   // Item options come from the selected warehouse's own stock levels: items
-  // are per-branch, so switching warehouse re-points the picker.
+  // are per-branch, so switching warehouse re-points the picker AND resets
+  // the lines/supplier — a line or supplier chosen for the previous
+  // warehouse does not exist in the new one and would only be refused
+  // server-side (item_not_found/supplier_not_found).
   useEffect(() => {
+    setLines([newLine()]);
+    setSupplierId("");
     if (!locationId) {
       setItems([]);
       return;
     }
     let cancelled = false;
+    setItems(null);
     api<StockLevelsResponse>(`/api/inventory/stock-levels?locationId=${encodeURIComponent(locationId)}`).then(
       ({ ok, data }) => {
         if (!cancelled) setItems(ok ? data.items : []);
@@ -158,20 +172,48 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (busy || !locationId) return;
-    const payload = {
-      kind,
-      locationId,
-      supplierId: kind === "receipt" && supplierId ? supplierId : null,
-      recipient: kind === "issue" ? recipient : null,
-      documentNumber: documentNumber || null,
-      note: note || null,
-      lines: lines.map((line) => ({
-        inventoryItemId: line.inventoryItemId,
-        quantity: line.quantity,
-        unitCost:
-          kind === "receipt" ? money.parseText(line.unitCost || "0") : "0",
-      })),
-    };
+
+    // Validate on the client first: the server rejects these too, but a
+    // named line number beats a generic «یکی از قلم‌ها…».
+    for (const [index, line] of lines.entries()) {
+      const lineNo = toPersianDigits(String(index + 1));
+      if (!line.inventoryItemId) {
+        setError(`قلم انبار ردیف ${lineNo} را انتخاب کنید.`);
+        return;
+      }
+      const qty = Number(line.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        setError(`مقدار ردیف ${lineNo} باید عددی بزرگ‌تر از صفر باشد.`);
+        return;
+      }
+      if (lines.some((other) => other !== line && other.inventoryItemId === line.inventoryItemId)) {
+        setError("هر قلم فقط یک بار می‌تواند در سند بیاید؛ ردیف‌های تکراری را یکی کنید.");
+        return;
+      }
+    }
+
+    // money.parseText throws on non-integer input; surface it as a form error
+    // instead of an unhandled rejection that leaves the screen silent.
+    let payload;
+    try {
+      payload = {
+        kind,
+        locationId,
+        supplierId: kind === "receipt" && supplierId ? supplierId : null,
+        recipient: kind === "issue" ? recipient : null,
+        documentNumber: documentNumber || null,
+        note: note || null,
+        lines: lines.map((line) => ({
+          inventoryItemId: line.inventoryItemId,
+          quantity: line.quantity,
+          unitCost:
+            kind === "receipt" ? money.parseText(line.unitCost || "0") : "0",
+        })),
+      };
+    } catch {
+      setError(`قیمت واحد باید یک عدد صحیح معتبر (به ${money.unitLabel}) باشد.`);
+      return;
+    }
     setBusy(true);
     setError("");
     const { ok, data } = await api("/api/inventory/warehouse-documents", {

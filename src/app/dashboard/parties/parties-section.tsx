@@ -228,6 +228,15 @@ export function PartiesSection({
    * the statement, and that is all a second app is allowed to do with a balance.
    */
   const [balances, setBalances] = useState<Record<string, number>>({});
+  /**
+   * Party id → the branch's `suppliers.id` for that party.
+   *
+   * The A/P ledger is keyed on the branch alias rather than on the party (see
+   * the panel mount at the foot of this component), so opening a supplier's
+   * statement needs the translation. Absent means this branch has no supplier
+   * row for that party, and therefore no payables statement to show.
+   */
+  const [supplierAliases, setSupplierAliases] = useState<Record<string, string>>({});
   const money = useMoney();
 
   const columns = useMemo(
@@ -320,6 +329,39 @@ export function PartiesSection({
     });
     return () => controller.abort();
   }, [canSeeLedger, columns, refreshKey]);
+
+  /*
+   * The party → supplier-alias map, fetched only where an A/P statement can
+   * actually be opened.
+   *
+   * `?scope=directory` is the variant that lists *every* supplier rather than
+   * only those with a nonzero balance, which is what a lookup table needs: a
+   * supplier who currently owes nothing still has a statement worth reading.
+   * The endpoint is role-gated the same way the statement is, so it is asked
+   * for only when `canOpenStatement` is already true — otherwise it would be a
+   * guaranteed 403 on every load of a cashier's screen.
+   */
+  useEffect(() => {
+    if (!canOpenStatement || !listedRoles.includes("Supplier")) {
+      setSupplierAliases({});
+      return;
+    }
+    const controller = new AbortController();
+    void api<{ suppliers: { supplierId: string; supplierPartyId: string | null }[] }>(
+      "/api/ledger/ap/suppliers?scope=directory",
+      { signal: controller.signal },
+    ).then(({ ok, aborted, data }) => {
+      if (aborted || !ok) return;
+      setSupplierAliases(
+        Object.fromEntries(
+          (data.suppliers ?? [])
+            .filter((row) => row.supplierPartyId)
+            .map((row) => [row.supplierPartyId as string, row.supplierId]),
+        ),
+      );
+    });
+    return () => controller.abort();
+  }, [canOpenStatement, listedRoles, refreshKey]);
 
   const loadCategories = useCallback((signal?: AbortSignal) => {
     void api<{ categories: CategoryRow[] }>("/api/parties/categories?includeInactive=1", { signal }).then(
@@ -456,9 +498,14 @@ export function PartiesSection({
   const statementKindFor = useCallback(
     (party: PartyListRow): "ar" | "ap" | null => {
       if (!canOpenStatement || scope.key === "accounting") return null;
-      return partyStatementKind(partyRoles(party.roles, party.role));
+      const kind = partyStatementKind(partyRoles(party.roles, party.role));
+      // A supplier this branch has never bought from has no `suppliers` row,
+      // so the A/P ledger has nothing filed under them. Better no button than
+      // one that opens an empty statement and reads as lost history.
+      if (kind === "ap" && !supplierAliases[party.id]) return null;
+      return kind;
     },
-    [canOpenStatement, scope.key],
+    [canOpenStatement, scope.key, supplierAliases],
   );
 
   const openStatement = useCallback(
@@ -845,10 +892,22 @@ export function PartiesSection({
           onClose={() => setStatement(null)}
         />
       ) : null}
+      {/*
+        A/P is keyed differently from A/R, and the difference is easy to miss.
+
+        `arLines` joins `parties` directly, so an A/R statement is addressed by
+        the party id this list already holds. `apLines` selects `suppliers.id`
+        — the *branch alias* — and carries the party as a separate `party_id`
+        column, so passing a party id here returns an empty statement rather
+        than an error. `supplierAliases` maps one to the other; a supplier the
+        branch has never transacted with has no alias, and `statementKindFor`
+        withholds the button rather than opening an empty panel.
+      */}
       {statement?.kind === "ap" ? (
         <ApStatementPanel
-          supplierId={statement.id}
+          supplierId={supplierAliases[statement.id] ?? statement.id}
           supplierName={statement.name}
+          supplierPartyId={statement.id}
           onClose={() => setStatement(null)}
         />
       ) : null}

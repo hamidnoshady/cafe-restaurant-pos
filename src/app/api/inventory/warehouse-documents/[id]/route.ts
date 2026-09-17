@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { isUuid } from "@/lib/uuid";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -12,6 +13,9 @@ export const GET = withTenantScope(async (_request: NextRequest, context: Contex
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
+  // A non-uuid id would raise `invalid input syntax for type uuid` (a 500)
+  // instead of "no rows" — it is simply a document that cannot exist.
+  if (!isUuid(id)) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const { rows: docs } = await query<{
     id: string;

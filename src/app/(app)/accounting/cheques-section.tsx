@@ -114,6 +114,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
+import { normalizePosSearchText } from "@/lib/pos-selection";
 import { useMoney } from "@/components/money/money-context";
 import {
   availableActions,
@@ -268,6 +269,13 @@ function errorMessage(code: string | undefined): string {
     bank_name_required: "نام بانک الزامی است.",
     counterparty_name_required: "نام طرف چک الزامی است.",
     due_date_required: "تاریخ سررسید الزامی است.",
+    invalid_issue_date: "تاریخ دریافت/صدور معتبر نیست.",
+    invalid_due_date: "تاریخ سررسید معتبر نیست.",
+    due_date_before_issue: "سررسید نمی‌تواند پیش از تاریخ دریافت/صدور باشد.",
+    invalid_occurred_on: "تاریخ وقوع معتبر نیست.",
+    action_before_issue: "تاریخ این اقدام نمی‌تواند پیش از تاریخ دریافت/صدور باشد.",
+    invalid_counterparty_for_direction: "طرف حساب انتخاب‌شده با نوع چک هم‌خوانی ندارد.",
+    network_error: "ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.",
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
@@ -304,6 +312,7 @@ export function ChequesSection({
 
   const [customers, setCustomers] = useState<Counterparty[]>([]);
   const [suppliers, setSuppliers] = useState<Counterparty[]>([]);
+  const [counterpartyLoadError, setCounterpartyLoadError] = useState("");
 
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
@@ -320,25 +329,39 @@ export function ChequesSection({
 
   const [localError, setLocalError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
 
-  // Fetch
+  // Fetch. A direction switch can race the previous response; only the most
+  // recent request may paint the register, otherwise a payable response can
+  // appear under the receivable tab.
   useEffect(() => {
+    let current = true;
     setCheques(null);
     setLoadError("");
-    api<{ cheques: Cheque[] }>(
+    void api<{ cheques?: Cheque[] }>(
       `/api/ledger/cheques?direction=${direction}`,
     ).then(({ ok, data }) => {
-      // A failed load used to become an empty register — "you have no cheques"
-      // is the one answer this screen must never invent.
-      if (ok) setCheques(data.cheques);
-      else {
-        setCheques([]);
-        setLoadError(
-          "بارگذاری فهرست چک‌ها ناموفق بود؛ این فهرست ممکن است کامل نباشد.",
-        );
+      if (!current) return;
+      if (ok && Array.isArray(data.cheques)) {
+        setCheques(data.cheques);
+      } else {
+        // Do not turn a failed request into the false claim that there are no
+        // cheques. Keeping this null selects an explicit retry state below.
+        setLoadError("بارگذاری فهرست چک‌ها ناموفق بود. دوباره تلاش کنید.");
       }
     });
+    return () => {
+      current = false;
+    };
   }, [direction, refreshKey]);
+
+  // Statuses belong to one direction. Keeping a receivable-only status selected
+  // when moving to payables produced an unexplained blank register.
+  useEffect(() => {
+    setStatusFilter("all");
+    setBankFilter("all");
+    setQuery("");
+  }, [direction]);
 
   /*
    * `?scope=directory` — every customer and every supplier record, not only the
@@ -349,28 +372,47 @@ export function ChequesSection({
    * uuid — picking it used to fail with an unexplained server error.
    */
   useEffect(() => {
-    api<{ customers: { customerId: string; customerName: string }[] }>(
-      "/api/ledger/ar/customers?scope=directory",
-    ).then(({ ok, data }) => {
-      if (ok)
+    let current = true;
+    setCounterpartyLoadError("");
+    void Promise.all([
+      api<{ customers?: { customerId: string; customerName: string }[] }>(
+        "/api/ledger/ar/customers?scope=directory",
+      ),
+      api<{ suppliers?: { supplierId: string; supplierName: string }[] }>(
+        "/api/ledger/ap/suppliers?scope=directory",
+      ),
+    ]).then(([customerResult, supplierResult]) => {
+      if (!current) return;
+      if (customerResult.ok && Array.isArray(customerResult.data.customers)) {
         setCustomers(
-          data.customers.map((c) => ({
+          customerResult.data.customers.map((c) => ({
             id: c.customerId,
             name: c.customerName,
           })),
         );
-    });
-    api<{ suppliers: { supplierId: string; supplierName: string }[] }>(
-      "/api/ledger/ap/suppliers?scope=directory",
-    ).then(({ ok, data }) => {
-      if (ok)
+      }
+      if (supplierResult.ok && Array.isArray(supplierResult.data.suppliers)) {
         setSuppliers(
-          data.suppliers.map((s) => ({
+          supplierResult.data.suppliers.map((s) => ({
             id: s.supplierId,
             name: s.supplierName,
           })),
         );
+      }
+      if (
+        !customerResult.ok ||
+        !supplierResult.ok ||
+        !Array.isArray(customerResult.data.customers) ||
+        !Array.isArray(supplierResult.data.suppliers)
+      ) {
+        setCounterpartyLoadError(
+          "فهرست مشتریان یا تأمین‌کنندگان کامل بارگذاری نشد. برای انتخاب طرف حساب، فهرست را نوسازی کنید.",
+        );
+      }
     });
+    return () => {
+      current = false;
+    };
   }, [refreshKey]);
 
   const banks = useMemo(() => {
@@ -380,31 +422,31 @@ export function ChequesSection({
     ).sort((a, b) => a.localeCompare(b, "fa"));
   }, [cheques]);
 
-  // ⚡ Bolt: Pre-compute lowercased search strings to avoid O(N) recalculations
-  // per keystroke. This index depends only on the base dataset.
+  // Pre-compute the same Persian/Arabic/digit-normalised strings the app's
+  // comboboxes use. A صیاد number is stored with Latin digits, so searching
+  // with the Persian digits printed on a real cheque must find it too.
   const searchIndex = useMemo(() => {
     if (!cheques) return null;
     return cheques.map((c) => ({
       cheque: c,
       normalized: [
-        c.counterpartyName.toLowerCase(),
-        c.bankName.toLowerCase(),
-        c.serialNumber.toLowerCase(),
-        (c.sayadId ?? "").toLowerCase(),
-        (c.memo ?? "").toLowerCase(),
-      ].filter(Boolean),
+        c.counterpartyName,
+        c.bankName,
+        c.serialNumber,
+        c.sayadId ?? "",
+        c.memo ?? "",
+      ].filter(Boolean).map(normalizePosSearchText),
     }));
   }, [cheques]);
 
-  // ⚡ Bolt: We depend on deferredQuery so typing remains snappy while
-  // filtering happens in the background. We match against the pre-normalized index and check
-  // individual fields to avoid false-positive cross-boundary matches.
+  // We depend on deferredQuery so typing remains snappy while filtering happens
+  // in the background. Individual fields avoid false-positive boundary matches.
   const filtered = useMemo(() => {
     if (!cheques || !searchIndex) return [];
     let out = [...cheques];
 
     if (deferredQuery.trim()) {
-      const q = deferredQuery.trim().toLowerCase();
+      const q = normalizePosSearchText(deferredQuery);
       out = searchIndex
         .filter(({ normalized }) =>
           normalized.some((field) => field.includes(q)),
@@ -470,18 +512,37 @@ export function ChequesSection({
     body: Record<string, unknown> = {},
   ) {
     setLocalError("");
-    const ok = await run(() =>
-      api(`/api/ledger/cheques/${cheque.id}/${act}`, {
+    setActionError("");
+    let response: { ok: boolean; data: { error?: string } } | undefined;
+    const ok = await run(async () => {
+      response = await api<{ error?: string }>(`/api/ledger/cheques/${cheque.id}/${act}`, {
         method: "POST",
         body: JSON.stringify(body),
-      }),
-    );
+      });
+      return response;
+    });
     if (ok) {
       setAction(null);
       setDetail(null);
       setRefreshKey((k) => k + 1);
+    } else {
+      setActionError(errorMessage(response?.data.error));
     }
   }
+
+  const openCreate = useCallback(() => {
+    setLocalError("");
+    setCreateOpen(true);
+  }, []);
+
+  const openAction = useCallback((cheque: Cheque, act: ChequeAction) => {
+    setLocalError("");
+    setActionError("");
+    // Never stack a second modal on the detail modal — that traps focus between
+    // two dialogs on keyboard and makes the close affordance ambiguous.
+    setDetail(null);
+    setAction({ cheque, act });
+  }, []);
 
   return (
     <div className="space-y-4" dir="rtl">
@@ -494,7 +555,7 @@ export function ChequesSection({
                 <LandmarkIcon className="size-4" />
               </span>
               <CardTitle className="text-base">مدیریت چک‌ها</CardTitle>
-              <Badge variant="secondary" className="font-normal">
+              <Badge variant="secondary" className="hidden font-normal sm:inline-flex">
                 اسناد دریافتنی و پرداختنی
               </Badge>
             </div>
@@ -505,7 +566,7 @@ export function ChequesSection({
             </CardDescription>
           </div>
           <CardAction className="flex flex-wrap items-center gap-2 self-start">
-            <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
+            <Button onClick={openCreate} className="gap-1.5">
               <PlusIcon className="size-4" />
               ثبت چک جدید
             </Button>
@@ -554,34 +615,41 @@ export function ChequesSection({
               />
             </div>
 
-            {/* Aging mini bar */}
+            {/* Due-date distribution — counts only live cheques, so a cleared
+                item does not masquerade as an upcoming one. */}
             <div className="mt-4 rounded-xl border bg-muted/30 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-medium text-muted-foreground">
-                  نمای سررسید
+                  نمای سررسید چک‌های باز
                 </p>
                 <span className="text-xs text-muted-foreground">
-                  {toPersianDigits(filtered.length)} فقره در فهرست فعلی
+                  {toPersianDigits(kpis.activeCount)} فقره در کل ثبت
                 </span>
               </div>
-              <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-muted">
-                {kpis.overdueCount > 0 ? (
-                  <span
-                    className="bg-destructive"
-                    style={{
-                      width: `${Math.max(6, (kpis.overdueCount / Math.max(1, kpis.totalCount)) * 100)}%`,
-                    }}
-                  />
-                ) : null}
-                {kpis.dueSoonCount > 0 ? (
-                  <span
-                    className="bg-amber-500 dark:bg-amber-400"
-                    style={{
-                      width: `${Math.max(6, (kpis.dueSoonCount / Math.max(1, Math.min(kpis.totalCount, 12))) * 35)}%`,
-                    }}
-                  />
-                ) : null}
-                <span className="flex-1 bg-primary/20" />
+              <div
+                role="img"
+                className="mt-2 flex h-2 overflow-hidden rounded-full bg-muted"
+                aria-label={`سررسید ${toPersianDigits(kpis.overdueCount)} فقره گذشته، ${toPersianDigits(kpis.dueSoonCount)} فقره در هفت روز آینده`}
+              >
+                {kpis.activeCount > 0 ? (
+                  <>
+                    {kpis.overdueCount > 0 ? (
+                      <span
+                        className="bg-destructive"
+                        style={{ width: `${(kpis.overdueCount / kpis.activeCount) * 100}%` }}
+                      />
+                    ) : null}
+                    {kpis.dueSoonCount > 0 ? (
+                      <span
+                        className="bg-amber-500 dark:bg-amber-400"
+                        style={{ width: `${(kpis.dueSoonCount / kpis.activeCount) * 100}%` }}
+                      />
+                    ) : null}
+                    <span className="flex-1 bg-primary/20" />
+                  </>
+                ) : (
+                  <span className="w-full bg-muted" />
+                )}
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <span className="inline-flex items-center gap-1.5">
@@ -612,12 +680,13 @@ export function ChequesSection({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="جستجو: نام، بانک، شماره چک، صیاد، یادداشت…"
+                aria-label="جستجوی چک‌ها"
                 className="ps-9"
               />
             </div>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="فیلتر وضعیت چک">
                 <SelectValue placeholder="وضعیت" />
               </SelectTrigger>
               <SelectContent>
@@ -631,7 +700,7 @@ export function ChequesSection({
             </Select>
 
             <Select value={bankFilter} onValueChange={setBankFilter}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="فیلتر بانک">
                 <SelectValue placeholder="بانک" />
               </SelectTrigger>
               <SelectContent>
@@ -645,7 +714,7 @@ export function ChequesSection({
             </Select>
 
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="مرتب‌سازی چک‌ها">
                 <SelectValue placeholder="مرتب‌سازی" />
               </SelectTrigger>
               <SelectContent>
@@ -710,19 +779,26 @@ export function ChequesSection({
             </TabsList>
 
             <TabsContent value={direction} className="mt-4 space-y-3">
-              {localError || loadError ? (
+              {localError ? (
                 <Alert variant="destructive">
                   <AlertTriangleIcon className="size-4" />
                   <AlertTitle>خطا</AlertTitle>
-                  <AlertDescription>{localError || loadError}</AlertDescription>
+                  <AlertDescription>{localError}</AlertDescription>
                 </Alert>
               ) : null}
 
               {cheques === null ? (
-                <ChequesSkeleton />
+                loadError ? (
+                  <ChequeLoadError
+                    message={loadError}
+                    onRetry={() => setRefreshKey((key) => key + 1)}
+                  />
+                ) : (
+                  <ChequesSkeleton />
+                )
               ) : filtered.length === 0 ? (
                 <EmptyCheques
-                  onCreate={() => setCreateOpen(true)}
+                  onCreate={openCreate}
                   hasAny={cheques.length > 0}
                   direction={direction}
                 />
@@ -759,7 +835,7 @@ export function ChequesSection({
                                     {c.counterpartyName}
                                   </p>
                                   <p className="truncate text-xs text-muted-foreground">
-                                    صدور{" "}
+                                    {c.direction === "receivable" ? "دریافت" : "صدور"}{" "}
                                     {toPersianDigits(formatJalali(c.issueDate))}{" "}
                                     {c.memo ? `· ${c.memo}` : ""}
                                   </p>
@@ -851,9 +927,7 @@ export function ChequesSection({
                                   <ChequeRowActions
                                     cheque={c}
                                     busy={busy}
-                                    onAction={(act) =>
-                                      setAction({ cheque: c, act })
-                                    }
+                                    onAction={(act) => openAction(c, act)}
                                     onDetail={() => setDetail(c)}
                                   />
                                 </div>
@@ -948,7 +1022,7 @@ export function ChequesSection({
 
                             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                               <span>
-                                صدور{" "}
+                                {c.direction === "receivable" ? "دریافت" : "صدور"}{" "}
                                 {toPersianDigits(formatJalali(c.issueDate))}
                               </span>
                               <span>·</span>
@@ -998,9 +1072,7 @@ export function ChequesSection({
                               <ChequeRowActions
                                 cheque={c}
                                 busy={busy}
-                                onAction={(act) =>
-                                  setAction({ cheque: c, act })
-                                }
+                                onAction={(act) => openAction(c, act)}
                                 onDetail={() => setDetail(c)}
                               />
                             </div>
@@ -1022,9 +1094,7 @@ export function ChequesSection({
                                       }
                                       className="h-8 flex-1 text-xs"
                                       disabled={busy}
-                                      onClick={() =>
-                                        setAction({ cheque: c, act })
-                                      }
+                                      onClick={() => openAction(c, act)}
                                     >
                                       {ACTION_LABELS[act]}
                                     </Button>
@@ -1063,10 +1133,14 @@ export function ChequesSection({
       {/* Create dialog */}
       <CreateChequeDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setLocalError("");
+        }}
         direction={direction}
         customers={customers}
         suppliers={suppliers}
+        counterpartyLoadError={counterpartyLoadError}
         busy={busy}
         onCreated={() => {
           setCreateOpen(false);
@@ -1081,7 +1155,7 @@ export function ChequesSection({
         <ChequeDetailDialog
           cheque={detail}
           onClose={() => setDetail(null)}
-          onAction={(act) => setAction({ cheque: detail, act })}
+          onAction={(act) => openAction(detail, act)}
           suppliers={suppliers}
           money={money}
           busy={busy}
@@ -1094,10 +1168,15 @@ export function ChequesSection({
           cheque={action.cheque}
           action={action.act}
           suppliers={suppliers}
+          supplierLoadError={counterpartyLoadError}
           busy={busy}
-          onClose={() => setAction(null)}
+          error={actionError}
+          onClose={() => {
+            setActionError("");
+            setAction(null);
+          }}
           onConfirm={(body) => doAction(action.cheque, action.act, body)}
-          onError={setLocalError}
+          onError={setActionError}
         />
       ) : null}
     </div>
@@ -1179,6 +1258,23 @@ function ChequesSkeleton() {
         ))}
       </div>
     </div>
+  );
+}
+
+function ChequeLoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <Alert variant="destructive" className="items-start">
+      <AlertTriangleIcon className="mt-0.5 size-4" />
+      <div className="min-w-0 flex-1">
+        <AlertTitle>فهرست چک‌ها در دسترس نیست</AlertTitle>
+        <AlertDescription className="mt-1 flex flex-wrap items-center gap-3">
+          <span>{message}</span>
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            تلاش دوباره
+          </Button>
+        </AlertDescription>
+      </div>
+    </Alert>
   );
 }
 
@@ -1298,20 +1394,31 @@ function ChequeDetailDialog({
   busy: boolean;
 }) {
   const [events, setEvents] = useState<ChequeEvent[] | null>(null);
+  const [historyError, setHistoryError] = useState("");
+  const [historyRefresh, setHistoryRefresh] = useState(0);
 
   useEffect(() => {
-    // History is optional — if the endpoint is missing we still show the cheque.
-    api<{ events?: ChequeEvent[]; history?: ChequeEvent[] }>(
+    let current = true;
+    setEvents(null);
+    setHistoryError("");
+    void api<{ events?: ChequeEvent[]; history?: ChequeEvent[] }>(
       `/api/ledger/cheques/${cheque.id}/history`,
     ).then(({ ok, data }) => {
-      if (ok) setEvents(data.events ?? data.history ?? []);
-      else setEvents([]);
+      if (!current) return;
+      const history = data.events ?? data.history;
+      if (ok && Array.isArray(history)) setEvents(history);
+      else setHistoryError("بارگذاری تاریخچه چک ناموفق بود. دوباره تلاش کنید.");
     });
-  }, [cheque.id]);
+    return () => {
+      current = false;
+    };
+  }, [cheque.id, historyRefresh]);
 
   const actions = availableActions(cheque.direction, cheque.status);
-  const endorsedSupplier = cheque.supplierId
-    ? (suppliers.find((s) => s.id === cheque.supplierId)?.name ?? null)
+  const endorsedSupplierId = events?.find((event) => event.event === "endorsed")?.endorsedToSupplierId;
+  const linkedSupplierId = cheque.direction === "payable" ? cheque.supplierId : endorsedSupplierId;
+  const linkedSupplier = linkedSupplierId
+    ? (suppliers.find((supplier) => supplier.id === linkedSupplierId)?.name ?? "تأمین‌کننده")
     : null;
 
   return (
@@ -1363,10 +1470,10 @@ function ChequeDetailDialog({
                 value={toPersianDigits(formatJalali(cheque.dueDate))}
               />
               <DetailItem
-                label="تاریخ صدور"
+                label={cheque.direction === "receivable" ? "تاریخ دریافت" : "تاریخ صدور"}
                 value={toPersianDigits(formatJalali(cheque.issueDate))}
               />
-              <DetailItem label="وضعیت" value={STATUS_LABELS[cheque.status]} />
+              <DetailItem label="وضعیت چک" value={STATUS_LABELS[cheque.status]} />
               {cheque.accountNumber ? (
                 <DetailItem
                   label="شماره حساب"
@@ -1374,8 +1481,11 @@ function ChequeDetailDialog({
                   dir="ltr"
                 />
               ) : null}
-              {endorsedSupplier ? (
-                <DetailItem label="واگذارشده به" value={endorsedSupplier} />
+              {linkedSupplier ? (
+                <DetailItem
+                  label={cheque.direction === "payable" ? "تأمین‌کننده" : "واگذارشده به"}
+                  value={linkedSupplier}
+                />
               ) : null}
               {cheque.memo ? (
                 <DetailItem
@@ -1433,10 +1543,29 @@ function ChequeDetailDialog({
             </CardHeader>
             <CardContent>
               {events === null ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                </div>
+                historyError ? (
+                  <Alert variant="destructive" className="items-start">
+                    <AlertTriangleIcon className="mt-0.5 size-4" />
+                    <div className="min-w-0 flex-1">
+                      <AlertTitle>تاریخچه در دسترس نیست</AlertTitle>
+                      <AlertDescription className="mt-1 flex flex-wrap items-center gap-3">
+                        <span>{historyError}</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setHistoryRefresh((key) => key + 1)}
+                        >
+                          تلاش دوباره
+                        </Button>
+                      </AlertDescription>
+                    </div>
+                  </Alert>
+                ) : (
+                  <div className="space-y-2">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                  </div>
+                )
               ) : events.length === 0 ? (
                 <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-4 text-center text-xs text-muted-foreground">
                   هنوز رویدادی فراتر از ثبت اولیه وجود ندارد.
@@ -1534,6 +1663,7 @@ function CreateChequeDialog({
   direction,
   customers,
   suppliers,
+  counterpartyLoadError,
   busy,
   onCreated,
   run,
@@ -1544,6 +1674,7 @@ function CreateChequeDialog({
   direction: ChequeDirection;
   customers: Counterparty[];
   suppliers: Counterparty[];
+  counterpartyLoadError: string;
   busy: boolean;
   onCreated: () => void;
   run: (
@@ -1565,8 +1696,23 @@ function CreateChequeDialog({
   const [counterpartyId, setCounterpartyId] = useState("");
   const [counterpartyName, setCounterpartyName] = useState("");
   const [memo, setMemo] = useState("");
+  const [formError, setFormError] = useState("");
+
+  const reportError = useCallback(
+    (message: string) => {
+      setFormError(message);
+      onError(message);
+    },
+    [onError],
+  );
 
   useEffect(() => setDir(direction), [direction]);
+  useEffect(() => {
+    // IDs are scoped to the selected direction. Retaining a customer ID after
+    // switching to «صادرشده» submitted it as a supplier and failed on save.
+    setCounterpartyId("");
+    setCounterpartyName("");
+  }, [dir]);
   useEffect(() => {
     if (!open) {
       setSerialNumber("");
@@ -1579,6 +1725,7 @@ function CreateChequeDialog({
       setCounterpartyId("");
       setCounterpartyName("");
       setMemo("");
+      setFormError("");
     }
   }, [open]);
 
@@ -1592,19 +1739,23 @@ function CreateChequeDialog({
       !dueDate ||
       !amount.trim()
     ) {
-      onError("شماره چک، بانک، مبلغ و سررسید الزامی هستند.");
+      reportError("شماره چک، بانک، مبلغ و سررسید الزامی هستند.");
+      return;
+    }
+    if (issueDate && dueDate < issueDate) {
+      reportError(errorMessage("due_date_before_issue"));
       return;
     }
     let rial: number;
     try {
       rial = money.parse(amount);
     } catch {
-      onError(errorMessage("invalid_amount"));
+      reportError(errorMessage("invalid_amount"));
       return;
     }
     const name = counterpartyName.trim() || selected?.name || "";
     if (!name) {
-      onError(errorMessage("counterparty_name_required"));
+      reportError(errorMessage("counterparty_name_required"));
       return;
     }
     const body: Record<string, unknown> = {
@@ -1621,17 +1772,17 @@ function CreateChequeDialog({
       [dir === "receivable" ? "customerId" : "supplierId"]:
         counterpartyId || undefined,
     };
-    onError("");
-    const ok = await run(() =>
-      api("/api/ledger/cheques", {
+    reportError("");
+    let response: { ok: boolean; data: { error?: string } } | undefined;
+    const ok = await run(async () => {
+      response = await api<{ error?: string }>("/api/ledger/cheques", {
         method: "POST",
         body: JSON.stringify(body),
-      }),
-    );
+      });
+      return response;
+    });
     if (ok) onCreated();
-    else {
-      // run already surfaces via the manager's ErrorBox, but also keep local for dialog
-    }
+    else reportError(errorMessage(response?.data.error));
   }
 
   return (
@@ -1646,13 +1797,26 @@ function CreateChequeDialog({
             ثبت چک جدید
           </DialogTitle>
           <DialogDescription>
-            چک دریافتی حساب مشتری را تسویه می‌کند؛ چک صادرشده بدهی به
+            چک دریافتی حساب‌های دریافتنی را کاهش می‌دهد؛ چک صادرشده بدهی به
             تأمین‌کننده را در حساب چک‌های صادره قرار می‌دهد. هر دو فوراً سند
-            می‌خورند.
+            حسابداری می‌خورند.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="grid gap-4">
+        <form onSubmit={submit} className="grid gap-4" noValidate>
+          {formError ? (
+            <Alert variant="destructive" role="alert">
+              <AlertTriangleIcon className="size-4" />
+              <AlertTitle>ثبت چک انجام نشد</AlertTitle>
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          ) : null}
+          {counterpartyLoadError ? (
+            <Alert className="border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+              <AlertTriangleIcon className="size-4 text-amber-700 dark:text-amber-300" />
+              <AlertDescription>{counterpartyLoadError}</AlertDescription>
+            </Alert>
+          ) : null}
           <div className="grid gap-2">
             <Label>نوع چک</Label>
             <Tabs
@@ -1701,6 +1865,7 @@ function CreateChequeDialog({
                 value={sayadId}
                 onChange={(e) => setSayadId(e.target.value)}
                 inputMode="numeric"
+                allowNegative={false}
                 grouping={false}
                 placeholder="۱۶ رقم"
                 className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
@@ -1731,14 +1896,17 @@ function CreateChequeDialog({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 inputMode="numeric"
+                allowNegative={false}
                 placeholder="مثلاً ۲٬۵۰۰٬۰۰۰"
                 className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
                 required
               />
             </Field>
             <Field>
-              <FieldLabel>سررسید *</FieldLabel>
+              <FieldLabel htmlFor="cheque-due-date">سررسید *</FieldLabel>
               <JalaliDatePicker
+                id="cheque-due-date"
+                ariaLabel="سررسید چک"
                 value={dueDate}
                 onChange={setDueDate}
                 placeholder="انتخاب سررسید"
@@ -1748,8 +1916,16 @@ function CreateChequeDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
-              <FieldLabel>تاریخ صدور</FieldLabel>
-              <JalaliDatePicker value={issueDate} onChange={setIssueDate} />
+              <FieldLabel htmlFor="cheque-issue-date">
+                {dir === "receivable" ? "تاریخ دریافت" : "تاریخ صدور"}
+              </FieldLabel>
+              <JalaliDatePicker
+                id="cheque-issue-date"
+                ariaLabel={dir === "receivable" ? "تاریخ دریافت چک" : "تاریخ صدور چک"}
+                value={issueDate}
+                onChange={setIssueDate}
+                clearable={false}
+              />
               <FieldDescription>
                 تاریخ سند حسابداری همین روز است، نه سررسید.
               </FieldDescription>
@@ -1760,7 +1936,12 @@ function CreateChequeDialog({
               </FieldLabel>
               <SearchableSelect
                 value={counterpartyId}
-                onChange={setCounterpartyId}
+                onChange={(id) => {
+                  setCounterpartyId(id);
+                  if (id) {
+                    setCounterpartyName(counterparties.find((counterparty) => counterparty.id === id)?.name ?? "");
+                  }
+                }}
                 options={counterparties.map((c) => ({
                   value: c.id,
                   label: c.name,
@@ -1774,21 +1955,23 @@ function CreateChequeDialog({
           </div>
 
           <Field>
-            <FieldLabel htmlFor="cname">نام صاحب چک / در وجه *</FieldLabel>
+            <FieldLabel htmlFor="cname">
+              {dir === "receivable" ? "نام صادرکننده روی چک" : "در وجه / دریافت‌کننده"} *
+            </FieldLabel>
             <Input
               id="cname"
               value={counterpartyName}
               onChange={(e) => setCounterpartyName(e.target.value)}
               placeholder={
                 selected?.name ??
-                (dir === "receivable"
-                  ? "نام درج‌شده روی چک"
-                  : "نام دریافت‌کننده")
+                (dir === "receivable" ? "نام درج‌شده روی چک" : "نام دریافت‌کننده")
               }
+              required
+              aria-invalid={Boolean(formError) || undefined}
             />
             <FieldDescription>
-              اگر چکِ مشتری به نام شخص دیگری است، همان نام را بنویسید؛ حساب
-              تسویه با انتخاب بالا جدا است.
+              انتخاب طرف حساب، سرفصل تسویه را مشخص می‌کند. اگر نام درج‌شده روی
+              چک متفاوت است، این نام را اصلاح کنید.
             </FieldDescription>
           </Field>
 
@@ -1839,7 +2022,9 @@ function ChequeActionDialog({
   cheque,
   action,
   suppliers,
+  supplierLoadError,
   busy,
+  error,
   onClose,
   onConfirm,
   onError,
@@ -1847,7 +2032,9 @@ function ChequeActionDialog({
   cheque: Cheque;
   action: ChequeAction;
   suppliers: Counterparty[];
+  supplierLoadError: string;
   busy: boolean;
+  error: string;
   onClose: () => void;
   onConfirm: (body: Record<string, unknown>) => void;
   onError: (m: string) => void;
@@ -1885,6 +2072,19 @@ function ChequeActionDialog({
         </DialogHeader>
 
         <div className="grid gap-4">
+          {error ? (
+            <Alert variant="destructive" role="alert">
+              <AlertTriangleIcon className="size-4" />
+              <AlertTitle>تغییر وضعیت انجام نشد</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {isEndorse && supplierLoadError ? (
+            <Alert className="border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+              <AlertTriangleIcon className="size-4 text-amber-700 dark:text-amber-300" />
+              <AlertDescription>{supplierLoadError}</AlertDescription>
+            </Alert>
+          ) : null}
           {isEndorse ? (
             <Field>
               <FieldLabel>تأمین‌کننده *</FieldLabel>
@@ -1902,11 +2102,16 @@ function ChequeActionDialog({
           ) : null}
 
           <Field>
-            <FieldLabel>تاریخ وقوع</FieldLabel>
-            <JalaliDatePicker value={occurredOn} onChange={setOccurredOn} />
+            <FieldLabel htmlFor="cheque-action-date">تاریخ وقوع</FieldLabel>
+            <JalaliDatePicker
+              id="cheque-action-date"
+              ariaLabel="تاریخ وقوع اقدام چک"
+              value={occurredOn}
+              onChange={setOccurredOn}
+              clearable={false}
+            />
             <FieldDescription>
-              تاریخ سند حسابداری همین روز ثبت می‌شود؛ خالی بماند امروز در نظر
-              گرفته می‌شود.
+              تاریخ سند حسابداری همین روز ثبت می‌شود.
             </FieldDescription>
           </Field>
 

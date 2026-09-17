@@ -167,6 +167,13 @@ describe("sanitizeOverrides", () => {
     });
   });
 
+  it("never delegates owner-only permissions", () => {
+    expect(sanitizeOverrides({ granted: [PERMISSIONS.apiManage], revoked: [PERMISSIONS.apiManage] })).toEqual({
+      granted: [],
+      revoked: [],
+    });
+  });
+
   it("de-duplicates", () => {
     expect(sanitizeOverrides({ revoked: [PERMISSIONS.menuEdit, PERMISSIONS.menuEdit] })).toEqual({
       granted: [],

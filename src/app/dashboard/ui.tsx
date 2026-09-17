@@ -12,38 +12,52 @@ import { Button } from "@/components/ui/button";
  * is most of them — would otherwise turn a dropped connection, a closed laptop
  * lid or a component that unmounted mid-request into an unhandled promise
  * rejection, and the caller's `.then` would never run to clear its loading
- * state. So a transport failure comes back as `ok: false` with an empty body,
- * which every caller already handles as "the server said no".
+ * state. So a transport failure comes back as `ok: false` carrying
+ * `error: "network_error"`, which `errorMessage` renders in Persian and every
+ * caller already handles as "the server said no".
  *
  * `aborted` is the one case a caller must *not* treat as an error: it means the
  * request was cancelled deliberately (a newer search replaced it, the section
  * unmounted), so there is nobody left to show a message to and no state worth
- * writing. Callers that pass `init.signal` should check it before touching
- * state; callers that do not can ignore the field.
+ * writing. It carries no `network_error`, because a superseded request is the
+ * normal path rather than a failure. Callers that pass `init.signal` should
+ * check it before touching state; callers that do not can ignore the field.
  */
 export async function api<T = Record<string, unknown>>(
   url: string,
   init?: RequestInit,
 ): Promise<{ ok: boolean; status: number; data: T; aborted: boolean }> {
-  let res: Response;
   try {
-    res = await fetch(url, {
+    const res = await fetch(url, {
       headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
       ...init,
     });
+    let data: T;
+    try {
+      data = (await res.json()) as T;
+    } catch {
+      // A 204, an HTML error page from a proxy, or a body cut off mid-flight.
+      data = {} as T;
+    }
+    return { ok: res.ok, status: res.status, data, aborted: false };
   } catch (err) {
+    // Consumers use the result to release their busy state. Letting a dropped
+    // connection reject instead left forms permanently disabled and effects
+    // with an unhandled rejection, with no Persian explanation for the user.
+    //
+    // A deliberate cancellation is reported separately rather than as an error:
+    // `network_error` would put «ارتباط با سرور برقرار نشد» on screen every time
+    // a newer search superseded an older one, which is the normal path, not a
+    // failure. Callers that pass `init.signal` check `aborted` and return.
     const aborted =
       init?.signal?.aborted === true || (err instanceof DOMException && err.name === "AbortError");
-    return { ok: false, status: 0, data: {} as T, aborted };
+    return {
+      ok: false,
+      status: 0,
+      data: (aborted ? {} : { error: "network_error" }) as T,
+      aborted,
+    };
   }
-  let data: T;
-  try {
-    data = (await res.json()) as T;
-  } catch {
-    // A 204, an HTML error page from a proxy, or a body cut off mid-flight.
-    data = {} as T;
-  }
-  return { ok: res.ok, status: res.status, data, aborted: false };
 }
 
 /** Persian messages for the API's error codes. */
@@ -108,6 +122,20 @@ const ERROR_MESSAGES: Record<string, string> = {
     table_occupied: "این میز سفارش باز دیگری دارد.",
     invalid_order_type: "نوع سفارش نامعتبر است.",
     no_items: "حداقل یک قلم لازم است.",
+    // انتقال بین انبارها — transfer-service.ts / /api/inventory/transfers.
+    invalid_transfer: "اطلاعات انتقال کامل نیست؛ انبار مبدأ و مقصد و حداقل یک ردیف لازم است.",
+    transfer_location_not_found: "انبار مبدأ یا مقصد پیدا نشد.",
+    transfer_inventory_item_not_found:
+      "قلم انتخاب‌شده در انبار مبدأ یا مقصد پیدا نشد؛ فهرست اقلام را دوباره بارگذاری کنید.",
+    transfer_not_found: "این انتقال پیدا نشد.",
+    transfer_already_shipped: "این انتقال قبلاً ارسال شده است.",
+    transfer_already_received: "این انتقال قبلاً دریافت شده است.",
+    transfer_already_cancelled: "این انتقال قبلاً لغو شده است.",
+    invalid_transfer_status: "وضعیت انتقال برای این عملیات معتبر نیست.",
+    insufficient_transfer_stock: "موجودی انبار مبدأ برای این انتقال کافی نیست.",
+    insufficient_transfer_layers: "لایه‌های بهای تمام‌شدهٔ کافی برای این مقدار وجود ندارد.",
+    received_transfer_requires_reverse_transfer:
+      "انتقال دریافت‌شده قابل لغو نیست؛ برای بازگرداندن، انتقال معکوس ثبت کنید.",
     // سیستم ادواری — periodic-closing-service.ts / consumeInventoryExact guard.
     periodic_system_unsupported:
       "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
@@ -204,6 +232,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_owner_phone: "شمارهٔ موبایل مالک معتبر نیست. نمونه: ۰۹۱۲۱۲۳۴۵۶۷",
     already_a_member: "این شخص هم‌اکنون عضو این کسب‌وکار است.",
     role_not_invitable: "این نقش با رمز عددی ساخته می‌شود و قابل دعوت نیست.",
+    owner_only: "فقط مالک کسب‌وکار می‌تواند مالک دیگری اضافه کند یا حساب یک مالک را تغییر دهد.",
     last_owner: "این تنها مالک فعال کسب‌وکار است؛ ابتدا مالک دیگری اضافه کنید.",
     invalid_invitation: "این لینک دعوت معتبر نیست.",
     invitation_accepted: "این دعوت قبلاً پذیرفته شده است.",
@@ -231,6 +260,9 @@ const ERROR_MESSAGES: Record<string, string> = {
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     invalid_amount: "مبلغ معتبر نیست.",
     invalid_method: "روش دریافت معتبر نیست.",
+    // Not a usable YYYY-MM-DD calendar date — what the ledger's aging and
+    // voucher routes answer a malformed date parameter with.
+    invalid_date: "تاریخ واردشده معتبر نیست.",
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
     // Phase 16 — bank & cash reconciliation
@@ -371,6 +403,9 @@ const ERROR_MESSAGES: Record<string, string> = {
     invoice_not_found: "فاکتور انتخاب‌شده پیدا نشد.",
     invoice_has_no_customer: "این فاکتور مشتری ندارد؛ اقساط فاکتوری فقط برای فاکتورهای دارای مشتری است.",
     invoice_not_on_credit: "این فاکتور نسیه نیست و بدهی‌ای برای قسط‌بندی ندارد؛ فقط فاکتورهای نسیه قابل قسط‌بندی‌اند.",
+    invoice_already_scheduled: "برای این فاکتور قبلاً برنامهٔ اقساط ثبت شده است؛ همان برنامه را از فهرست باز کنید.",
+    invalid_direction: "نوع اقساط معتبر نیست.",
+    invalid_source: "منبع اقساط با نوع انتخاب‌شده سازگار نیست.",
     party_required: "شخص را انتخاب کنید.",
     plan_not_found: "برنامه قسطی پیدا نشد.",
     plan_has_no_party: "این برنامه شخص طرف‌حساب ندارد.",

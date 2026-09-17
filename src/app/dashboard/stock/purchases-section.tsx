@@ -10,6 +10,7 @@
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
@@ -186,37 +187,40 @@ function PurchaseForm({
     <SectionCard title="دریافت خرید" bodyClassName="space-y-3">
       <div className="grid gap-2">
         <Field label="تأمین‌کننده">
-          <select
-            className={inputClass}
+          <SearchableSelect
             value={supplierId}
-            onChange={(e) => setSupplierId(e.target.value)}
-          >
-            <option value="">بدون تأمین‌کننده</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            onChange={setSupplierId}
+            options={[
+              { value: "", label: "بدون تأمین‌کننده" },
+              ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+            placeholder="بدون تأمین‌کننده"
+            searchPlaceholder="جستجوی تأمین‌کننده…"
+            ariaLabel="انتخاب تأمین‌کننده"
+          />
         </Field>
-        <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
           <Field label="کالا">
-            <select
-              className={inputClass}
+            <SearchableSelect
               value={itemId}
-              onChange={(e) => setItemId(e.target.value)}
-            >
-              <option value="">انتخاب کنید…</option>
-              {items.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </select>
+              onChange={setItemId}
+              options={[
+                { value: "", label: "انتخاب کنید…" },
+                ...items.map((i) => ({
+                  value: i.id,
+                  label: i.name,
+                  searchString: `${i.name} ${i.sku ?? ""}`,
+                })),
+              ]}
+              placeholder="انتخاب کنید…"
+              searchPlaceholder="جستجوی کالا…"
+              ariaLabel="انتخاب کالا"
+            />
           </Field>
           <Field label="تعداد">
             <PersianNumberInput
               inputMode="decimal"
+              allowNegative={false}
               className={inputClass}
               dir="ltr"
               value={quantity}

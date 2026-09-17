@@ -152,10 +152,10 @@ is green *because* of it, and the failure only appears at the very last step.
 
 ### Option A — CI (recommended)
 
-`.github/workflows/build-desktop-installer.yml` builds it on the self-hosted
-**Windows** runner. It is **manual only** (`workflow_dispatch`, from the
-Actions tab): producing an installer is a release decision, and the build is
-slow enough that no pull request should wait on it.
+`.github/workflows/build-desktop-installer.yml` builds it on a GitHub-hosted
+**Windows** runner (`windows-latest`). It is **manual only** (`workflow_dispatch`,
+from the Actions tab): producing an installer is a release decision, and the
+build is slow enough that no pull request should wait on it.
 
 - The `.exe` is uploaded as the `business-suite-desktop-installer` run
   artifact.
