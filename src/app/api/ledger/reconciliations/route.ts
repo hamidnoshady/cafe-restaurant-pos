@@ -24,7 +24,17 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   if (!accountCode || !ACCOUNT_CODES.includes(accountCode)) {
     return NextResponse.json({ error: "invalid_account" }, { status: 400 });
   }
-  return NextResponse.json({ reconciliations: await listReconciliations(session.businessId, accountCode) });
+
+  // `ledger_account_missing` is a real, reachable state — a chart of accounts
+  // that never got ۱۱۱۰, or an account renamed out from under the code — and
+  // the service raises it as a 409. Without this catch it escaped as a 500 and
+  // the screen said «خطای غیرمنتظره» instead of naming the missing account.
+  try {
+    return NextResponse.json({ reconciliations: await listReconciliations(session.businessId, accountCode) });
+  } catch (err) {
+    if (err instanceof ReconciliationError) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
 });
 
 interface CreateBody {
