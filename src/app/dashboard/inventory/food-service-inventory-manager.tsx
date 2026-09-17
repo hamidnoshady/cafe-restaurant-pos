@@ -27,6 +27,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { Button } from "@/components/ui/button";
 import {
   INVENTORY_TABS,
   INVENTORY_TAB_GROUPS,
@@ -177,9 +178,12 @@ export function FoodServiceInventoryManager({
   useEffect(() => setError(""), [tab]);
 
   const load = useCallback(() => {
-    api<InventoryData>("/api/inventory").then(({ ok, data }) => {
-      if (ok) setData(data);
-    });
+    api<InventoryData & { error?: string }>("/api/inventory")
+      .then(({ ok, data }) => {
+        if (ok) setData(data);
+        else setError(errorMessage(data.error));
+      })
+      .catch(() => setError("دریافت اطلاعات انبار ناموفق بود؛ دوباره تلاش کنید."));
   }, []);
   useEffect(load, [load]);
 
@@ -198,7 +202,22 @@ export function FoodServiceInventoryManager({
     return true;
   }
 
-  if (!data) return <LoadingSkeleton rows={3} />;
+  if (!data) {
+    return (
+      <div>
+        {error ? (
+          <div className="space-y-3">
+            <ErrorBox>{error}</ErrorBox>
+            <Button type="button" variant="outline" onClick={load}>
+              تلاش دوباره
+            </Button>
+          </div>
+        ) : (
+          <LoadingSkeleton rows={3} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`${styles.workspace} min-w-0 space-y-4 sm:space-y-5`}>

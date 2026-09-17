@@ -12,6 +12,7 @@
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { SectionCard, SectionCardSkeleton } from "../page-chrome";
 
@@ -98,23 +99,27 @@ function ReturnForm({
     <SectionCard title="برگشت به تأمین‌کننده" bodyClassName="space-y-3">
       <div className="grid gap-2">
         <Field label="کالا">
-          <select
-            className={inputClass}
+          <SearchableSelect
             value={itemId}
-            onChange={(e) => setItemId(e.target.value)}
-          >
-            <option value="">انتخاب کنید…</option>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
-            ))}
-          </select>
+            onChange={setItemId}
+            options={[
+              { value: "", label: "انتخاب کنید…" },
+              ...items.map((i) => ({
+                value: i.id,
+                label: i.name,
+                searchString: `${i.name} ${i.sku ?? ""}`,
+              })),
+            ]}
+            placeholder="انتخاب کنید…"
+            searchPlaceholder="جستجوی کالا…"
+            ariaLabel="انتخاب کالا برای برگشت"
+          />
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="تعداد">
             <PersianNumberInput
               inputMode="decimal"
+              allowNegative={false}
               className={inputClass}
               dir="ltr"
               value={quantity}
