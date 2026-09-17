@@ -189,6 +189,12 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): Validatio
   if (!isPaymentSettlement(input.settlement) || !CUSTOM_PAYMENT_SETTLEMENTS.includes(input.settlement)) {
     return { ok: false, error: "invalid_settlement" };
   }
+  if (input.opensDrawer !== undefined && typeof input.opensDrawer !== "boolean") {
+    return { ok: false, error: "bad_request" };
+  }
+  if (input.requiresReference !== undefined && typeof input.requiresReference !== "boolean") {
+    return { ok: false, error: "bad_request" };
+  }
   return {
     ok: true,
     value: {
