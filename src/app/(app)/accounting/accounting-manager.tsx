@@ -198,7 +198,7 @@ export function AccountingManager({
           {section === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
           {section === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {section === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
-          {section === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
+          {section === "fiscal-periods" ? <FiscalPeriodsSection /> : null}
           {section === "directory" ? (
             <PartiesSection
               scope={partyScopeFor("accounting")}
@@ -327,6 +327,8 @@ function errorMessage(code: string | undefined): string {
     fiscal_year_closed: "سال مالی این دوره بسته شده و دیگر قابل بازگشایی نیست.",
     fiscal_year_already_closed: "این سال مالی قبلاً بسته شده است.",
     periods_not_ready: "برای بستن سال مالی، ابتدا همه دوره‌های آن را به‌صورت موقت ببندید.",
+    periods_incomplete: "فهرست دوره‌های سال مالی کامل نیست و سال قابل بستن نیست.",
+    fiscal_period_overlap: "بازهٔ این سال با یک دورهٔ مالی موجود هم‌پوشانی دارد؛ دوره‌ها را بررسی کنید.",
     period_locked_for_closing: "دوره پایانی سال قفل است؛ ابتدا آن را بازگشایی و دوباره بسته‌ی موقت کنید.",
     period_not_found: "دوره یافت نشد.",
     invalid_transition: "این تغییر وضعیت مجاز نیست.",

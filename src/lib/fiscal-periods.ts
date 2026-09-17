@@ -25,10 +25,24 @@ export interface FiscalYearSpec {
   periods: FiscalPeriodSpec[];
 }
 
+/**
+ * The financial-years endpoint deliberately has a bounded, human-entered
+ * range. Keeping it here gives the API and its form one rule instead of two
+ * near-identical magic-number checks. `fiscalYearSpec` itself stays useful for
+ * historical/reporting calculations outside that product-input boundary.
+ */
+export const FISCAL_YEAR_MIN = 1300;
+export const FISCAL_YEAR_MAX = 1500;
+export const FISCAL_PERIOD_COUNT = 12;
+
+export function isSupportedFiscalYear(value: number): boolean {
+  return Number.isInteger(value) && value >= FISCAL_YEAR_MIN && value <= FISCAL_YEAR_MAX;
+}
+
 /** The 12 Jalali-month periods making up fiscal year `jy`, as ISO date ranges. */
 export function fiscalYearSpec(jy: number): FiscalYearSpec {
   const periods: FiscalPeriodSpec[] = [];
-  for (let jm = 1; jm <= 12; jm++) {
+  for (let jm = 1; jm <= FISCAL_PERIOD_COUNT; jm++) {
     const monthLength = jalaliMonthLength(jy, jm);
     periods.push({
       label: `${jy}-${String(jm).padStart(2, "0")}`,
