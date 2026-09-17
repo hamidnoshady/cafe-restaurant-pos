@@ -33,6 +33,16 @@ export const PUT = withTenantScope(async (request: NextRequest, context: { param
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await context.params;
+  const { rows } = await query<{ actor_role: string; target_role: string }>(
+    `SELECT actor.role::text AS actor_role, target.role::text AS target_role FROM users actor
+       JOIN users target ON target.id = $3 AND target.business_id = actor.business_id
+      WHERE actor.id = $1 AND actor.business_id = $2 AND actor.is_active = true`,
+    [session.sub, session.businessId, id],
+  );
+  if (!rows[0]) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (rows[0].actor_role !== "owner" && rows[0].target_role === "owner") {
+    return NextResponse.json({ error: "owner_only" }, { status: 403 });
+  }
   const isSelf = id === session.sub;
 
   if (!isSelf) {
