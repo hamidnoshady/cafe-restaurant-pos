@@ -163,8 +163,9 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
             disabled={loading}
             className="min-h-8 px-2.5 text-xs"
           >
-            <RefreshCwIcon aria-hidden="true" className={`me-1.5 size-3.5 ${loading ? "animate-spin" : ""}`} />
-            بروزرسانی
+            {/* اسپینر در رابط کاربری ممنوع است (design-lint)؛ حالت بارگذاری با برچسب busy نمایش داده می‌شود. */}
+            <RefreshCwIcon aria-hidden="true" className="me-1.5 size-3.5" />
+            {loading ? "در حال بروزرسانی…" : "بروزرسانی"}
           </SecondaryButton>
         </div>
       </header>
