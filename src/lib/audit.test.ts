@@ -19,6 +19,11 @@ describe("auditActionLabel", () => {
     expect(auditActionLabel("account.archived")).toBe("بایگانی حساب");
     expect(auditActionLabel("account.reactivated")).toBe("بازگردانی حساب از بایگانی");
   });
+
+  it("labels the settings writers, whose rows the audit tab renders", () => {
+    expect(auditActionLabel("settings.business.update")).toBe("تغییر اطلاعات کسب‌وکار");
+    expect(auditActionLabel("settings.mfa_policy.update")).toBe("تغییر سیاست ورود دومرحله‌ای");
+  });
 });
 
 describe("auditEntityLabel", () => {

@@ -30,6 +30,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     missing_fields: "فیلدهای الزامی را پر کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
+    invalid_range: "بازهٔ تاریخ نامعتبر است؛ «از تاریخ» باید پیش از «تا تاریخ» باشد.",
     invalid_margin: "درصد حاشیه سود باید بین ۰ و ۱۰۰ باشد.",
     invalid_overhead: "درصد سربار برآوردی معتبر نیست.",
     invalid_commission_percent: "درصد کارمزد باید بین ۰ و ۱۰۰ باشد.",
@@ -400,17 +401,28 @@ export function Field({
   label,
   children,
   hint,
+  as = "label",
 }: {
   label: string;
   children: React.ReactNode;
   hint?: string;
+  /**
+   * `label` (the default) is for exactly one control, whose click target the
+   * label text becomes. `div` is for a block of *several* controls — a chip or
+   * radiogroup picker: a `<label>` forwards a click on its text to its first
+   * labelable descendant, so clicking the hint under a picker would press its
+   * first option. The group inside should name itself (`aria-label` on the
+   * radiogroup, or `aria-labelledby` pointing at the visible label).
+   */
+  as?: "label" | "div";
 }) {
+  const Tag = as;
   return (
-    <label className="mb-4 block">
+    <Tag className="mb-4 block">
       <span className="mb-1 block text-sm font-medium text-foreground">{label}</span>
       {children}
       {hint ? <span className="mt-1 block text-xs text-muted-foreground">{hint}</span> : null}
-    </label>
+    </Tag>
   );
 }
 

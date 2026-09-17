@@ -36,6 +36,9 @@ const ENTITY_FILTERS: { value: string; label: string }[] = [
   { value: "shift", label: "شیفت" },
   { value: "location", label: "شعبه" },
   { value: "account", label: "حساب" },
+  // The settings writers (business identity, MFA policy) log under this
+  // entity; without the chip those rows were reachable only via «همه».
+  { value: "settings", label: "تنظیمات" },
 ];
 
 function formatTime(iso: string): string {
