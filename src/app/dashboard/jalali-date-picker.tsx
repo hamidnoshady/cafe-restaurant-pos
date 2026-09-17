@@ -46,6 +46,8 @@ export function JalaliDatePicker({
   clearable = true,
   disabled = false,
   popoverClass,
+  ariaLabel,
+  labelledBy,
 }: {
   value: string;
   onChange: (iso: string) => void;
@@ -56,6 +58,16 @@ export function JalaliDatePicker({
   /** Override the popover's background/text token classes (e.g. the dark
    *  super-admin console, where the shadcn `--popover` tokens are light). */
   popoverClass?: string;
+  /**
+   * An accessible name for the trigger. The control is a button, not an
+   * `<input>`, so wrapping it in a `<label>` names nothing — a reader
+   * announces only whatever date (or placeholder) it happens to show, and two
+   * pickers on one form are then indistinguishable. Pass one of these, the
+   * same contract `SearchableSelect` uses.
+   */
+  ariaLabel?: string;
+  /** id of the visible label element, when the form already renders one. */
+  labelledBy?: string;
 }) {
   const selected = isoDateToJalali(value);
   const [open, setOpen] = useState(false);
@@ -124,19 +136,39 @@ export function JalaliDatePicker({
         className={`${className ?? DEFAULT_INPUT_CLASS} flex items-center justify-between gap-2 text-start`}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabel ? undefined : labelledBy}
       >
         <span className={label ? "" : "text-muted-foreground"}>{label || placeholder}</span>
         <span className="flex items-center gap-1 text-muted-foreground">
+          {/*
+            * «پاک کردن» was an <svg role="button">: not focusable, not
+            * operable from a keyboard, and nested inside the trigger button —
+            * which is invalid, so assistive technology could not reach it at
+            * all. A real <span role="button"> with a tabIndex and key
+            * handling is reachable; it stays a span because a <button> inside
+            * a <button> is what the markup could not have.
+            */}
           {clearable && value ? (
-            <XIcon
-              className="size-4 shrink-0 hover:text-foreground"
+            <span
               role="button"
+              tabIndex={0}
               aria-label="پاک کردن تاریخ"
+              className="inline-flex size-6 shrink-0 items-center justify-center rounded-lg hover:bg-muted hover:text-foreground focus-visible:ring focus-visible:ring-ring/50 focus-visible:outline-none"
               onClick={(e) => {
                 e.stopPropagation();
                 onChange("");
               }}
-            />
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onChange("");
+                }
+              }}
+            >
+              <XIcon className="size-4" />
+            </span>
           ) : null}
           <CalendarIcon className="size-4 shrink-0" />
         </span>
