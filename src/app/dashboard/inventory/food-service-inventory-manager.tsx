@@ -176,6 +176,15 @@ export function FoodServiceInventoryManager({
   // to look at something else.
   useEffect(() => setError(""), [tab]);
 
+  // A deep link can point at a perpetual-only section while the workspace is
+  // periodic. Once the costing setting arrives, move to the first visible
+  // section instead of rendering content that the navigation cannot reach.
+  useEffect(() => {
+    if (data && !visibleTabs(data.inventorySystem).some((item) => item.key === tab)) {
+      setTab("warehouses");
+    }
+  }, [data, tab]);
+
   const load = useCallback(() => {
     api<InventoryData>("/api/inventory").then(({ ok, data }) => {
       if (ok) setData(data);

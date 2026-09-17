@@ -168,6 +168,25 @@ describe("numeric fields", () => {
   });
 });
 
+describe("warehouse list responsive states", () => {
+  it("uses a readable mobile card list instead of forcing a wide table through the phone", () => {
+    const fnb = read("warehouses-section.tsx");
+    expect(fnb).toMatch(/hidden overflow-x-auto md:block/);
+    expect(fnb).toMatch(/divide-y divide-border\/80 md:hidden/);
+    expect(fnb).toMatch(/جستجو در انبارها/);
+    expect(fnb).toMatch(/تلاش دوباره/);
+
+    const retail = readFileSync(
+      join(SRC_DIR, "app/dashboard/stock/warehouses-section.tsx"),
+      "utf8",
+    );
+    expect(retail).toMatch(/hidden overflow-x-auto md:block/);
+    expect(retail).toMatch(/divide-y divide-border\/80 md:hidden/);
+    expect(retail).toMatch(/جستجو در انبارها/);
+    expect(retail).toMatch(/تلاش دوباره/);
+  });
+});
+
 describe("section spacing", () => {
   it("keeps the canonical space-y-4 sm:space-y-5 rhythm (no stray space-y-6 stacks)", () => {
     for (const [name, content] of sectionFiles()) {
