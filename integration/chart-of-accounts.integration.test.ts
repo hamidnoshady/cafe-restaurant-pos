@@ -465,3 +465,111 @@ describe("account audit trail (issue #160 §7.5)", () => {
     expect(archiveEntry.entityName).toBe("5300 — Rent v2");
   });
 });
+
+/**
+ * The bugs a chart-of-accounts screen actually hits: an id that is not a uuid,
+ * a Persian-digit code, a half-applied combined edit, and a repeated archive.
+ */
+describe("chart-of-accounts hardening", () => {
+  it("404s (never 500s) for an id that is not a uuid", async () => {
+    // `WHERE id = $1` against a uuid column raises `invalid input syntax for
+    // type uuid` for anything else, which used to surface as a 500 and the
+    // generic «خطای غیرمنتظره» — see uuid.ts.
+    await expect(accountsService.renameAccount(biz.id, "not-a-uuid", "X")).rejects.toThrow("account_not_found");
+    await expect(accountsService.deleteAccount(biz.id, "not-a-uuid")).rejects.toThrow("account_not_found");
+    await expect(accountsService.setAccountActive(biz.id, "not-a-uuid", false)).rejects.toThrow("account_not_found");
+  });
+
+  it("never touches another business's account", async () => {
+    const otherBiz = await db.query<{ id: string }>(
+      "INSERT INTO businesses (name, slug) VALUES ('Other Co', $1) RETURNING id",
+      [`other-${randomUUID().slice(0, 8)}`],
+    );
+    await expect(accountsService.renameAccount(otherBiz.rows[0].id, acct.expense, "Hijacked")).rejects.toThrow(
+      "account_not_found",
+    );
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === acct.expense)!.name).toBe("Rent");
+  });
+
+  it("stores a Persian-digit code as ASCII, so well-known lookups still find it", async () => {
+    // Auto-posting looks accounts up by code (WELL_KNOWN_CODES). A code saved
+    // as «۶۱۰۰» is a different string from "6100" and nothing would find it.
+    const { id } = await accountsService.createAccount({
+      businessId: biz.id,
+      code: "۶۱۰۰",
+      name: "Persian digits",
+      type: "expense",
+    });
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === id)!.code).toBe("6100");
+  });
+
+  it("treats a Persian-digit duplicate as the duplicate it is", async () => {
+    await expect(
+      accountsService.createAccount({ businessId: biz.id, code: "۵۳۰۰", name: "Dup", type: "expense" }),
+    ).rejects.toThrow("code_in_use");
+  });
+
+  it("applies a rename and a reparent atomically — a rejected move rolls the rename back", async () => {
+    // The bug: the route ran rename, then reparent. A move the hierarchy rules
+    // refuse left the account renamed and the caller holding an error.
+    await expect(
+      accountsService.updateAccount({
+        businessId: biz.id,
+        id: acct.expense,
+        name: "Renamed but not moved",
+        parentId: acct.expense, // its own parent — always rejected
+        reparent: true,
+      }),
+    ).rejects.toThrow("parent_cycle");
+
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === acct.expense)!.name).toBe("Rent");
+  });
+
+  it("applies a combined rename + reparent in one call", async () => {
+    await accountsService.updateAccount({
+      businessId: biz.id,
+      id: acct.expense,
+      actorId: user.id,
+      name: "Rent & moved",
+      parentId: null,
+      reparent: true,
+    });
+    const list = await accountsService.listAccounts(biz.id);
+    const row = list.find((a) => a.id === acct.expense)!;
+    expect(row.name).toBe("Rent & moved");
+    expect(row.parentId).toBeNull();
+
+    const actions = (await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense })).map(
+      (e) => e.action,
+    );
+    expect(actions).toContain("account.renamed");
+    expect(actions).toContain("account.reparented");
+  });
+
+  it("records nothing when an archive is a no-op (already archived)", async () => {
+    // Rename and reparent have always skipped their no-ops; archiving wrote a
+    // fresh row every time, so a double-click invented history.
+    await accountsService.setAccountActive(biz.id, acct.expense, false, user.id);
+    await accountsService.setAccountActive(biz.id, acct.expense, false, user.id);
+
+    const entries = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    expect(entries.filter((e) => e.action === "account.archived")).toHaveLength(1);
+  });
+
+  it("writes the audit row in the same transaction as the change", async () => {
+    await accountsService.renameAccount(biz.id, acct.expense, "Audited rename", user.id);
+    const [entry] = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    const { rows } = await db.query<{ name: string }>("SELECT name FROM accounts WHERE id = $1", [acct.expense]);
+    expect(rows[0].name).toBe("Audited rename");
+    expect(entry.payload).toEqual({ before: "Rent", after: "Audited rename" });
+  });
+
+  it("rejects a blank rename without writing anything", async () => {
+    await expect(accountsService.renameAccount(biz.id, acct.expense, "   ")).rejects.toThrow("name_required");
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === acct.expense)!.name).toBe("Rent");
+  });
+});
