@@ -189,6 +189,12 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): Validatio
   if (!isPaymentSettlement(input.settlement) || !CUSTOM_PAYMENT_SETTLEMENTS.includes(input.settlement)) {
     return { ok: false, error: "invalid_settlement" };
   }
+  if (input.opensDrawer !== undefined && typeof input.opensDrawer !== "boolean") {
+    return { ok: false, error: "bad_request" };
+  }
+  if (input.requiresReference !== undefined && typeof input.requiresReference !== "boolean") {
+    return { ok: false, error: "bad_request" };
+  }
   return {
     ok: true,
     value: {
@@ -196,8 +202,8 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): Validatio
       settlement: input.settlement,
       // A way a business models on cash defaults to behaving like cash at the
       // drawer and the cash-up, which is what it is for.
-      opensDrawer: input.opensDrawer === undefined ? input.settlement === "cash" : Boolean(input.opensDrawer),
-      requiresReference: Boolean(input.requiresReference),
+      opensDrawer: input.opensDrawer === undefined ? input.settlement === "cash" : input.opensDrawer,
+      requiresReference: input.requiresReference === undefined ? false : input.requiresReference,
     },
   };
 }

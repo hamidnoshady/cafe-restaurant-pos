@@ -20,7 +20,11 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
   let body: Record<string, unknown>;
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+    body = parsed as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
@@ -46,9 +50,14 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     }
     patch.settlement = body.settlement;
   }
-  if (body.isActive !== undefined) patch.isActive = Boolean(body.isActive);
-  if (body.opensDrawer !== undefined) patch.opensDrawer = Boolean(body.opensDrawer);
-  if (body.requiresReference !== undefined) patch.requiresReference = Boolean(body.requiresReference);
+  for (const key of ["isActive", "opensDrawer", "requiresReference"] as const) {
+    if (body[key] !== undefined && typeof body[key] !== "boolean") {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+  }
+  if (body.isActive !== undefined) patch.isActive = body.isActive as boolean;
+  if (body.opensDrawer !== undefined) patch.opensDrawer = body.opensDrawer as boolean;
+  if (body.requiresReference !== undefined) patch.requiresReference = body.requiresReference as boolean;
 
   const updated = await updatePaymentMethod(session.businessId, id, patch);
   if (!updated) return NextResponse.json({ error: "payment_method_not_found" }, { status: 404 });

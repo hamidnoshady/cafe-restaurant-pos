@@ -114,6 +114,17 @@ describe("validatePaymentMethodInput", () => {
       value: { name: "تنخواه", settlement: "cash", opensDrawer: false, requiresReference: false },
     });
   });
+
+  it("does not coerce malformed boolean options", () => {
+    expect(validatePaymentMethodInput({ name: "پوز دوم", settlement: "card", requiresReference: "false" })).toEqual({
+      ok: false,
+      error: "bad_request",
+    });
+    expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: 0 })).toEqual({
+      ok: false,
+      error: "bad_request",
+    });
+  });
 });
 
 describe("tenderTotal / remainingAfterTenders", () => {
