@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getOnlinePlatformsConfig, setOnlinePlatformsConfig } from "@/lib/online-platforms-service";
+import { listPaymentMethods } from "@/lib/payment-methods-service";
 import { MAX_ONLINE_PLATFORM_COMMISSION_PERCENT, validCommissionPercent } from "@/lib/online-platforms";
 
 /** SnapFood's current commission %, applied to a SnapFood-marked sale at checkout (issue #160 §4). */
@@ -9,7 +10,21 @@ export const GET = withTenantScope(async () => {
   const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
 
-  return NextResponse.json({ onlinePlatforms: await getOnlinePlatformsConfig(session.businessId) });
+  const [onlinePlatforms, paymentMethods] = await Promise.all([
+    getOnlinePlatformsConfig(session.businessId),
+    listPaymentMethods(session.businessId, { includeInactive: true }),
+  ]);
+  const paymentMethod = paymentMethods.find((method) => method.settlement === "snappfood") ?? null;
+
+  return NextResponse.json({
+    onlinePlatforms,
+    // The rate can be saved while this built-in way is retired, but then it
+    // has no effect at checkout. Return the status so the settings screen can
+    // make that state visible instead of asking the owner to infer it.
+    paymentMethod: paymentMethod
+      ? { name: paymentMethod.name, isActive: paymentMethod.isActive }
+      : null,
+  });
 });
 
 export const PUT = withTenantScope(async (request: NextRequest) => {

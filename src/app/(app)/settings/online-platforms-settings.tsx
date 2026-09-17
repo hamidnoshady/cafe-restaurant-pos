@@ -18,6 +18,7 @@ import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass 
 
 interface OnlinePlatformsResponse {
   onlinePlatforms?: { snappfood?: { commissionPercent?: number } | null };
+  paymentMethod?: { name?: string; isActive?: boolean } | null;
   error?: string;
 }
 
@@ -33,6 +34,7 @@ export function OnlinePlatformsSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<{ name: string; isActive: boolean } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,6 +55,12 @@ export function OnlinePlatformsSettings() {
       }
       const commission = config.snappfood?.commissionPercent;
       setCommissionPercent(validCommissionPercent(commission) ? String(commission) : "");
+      const method = data.paymentMethod;
+      setPaymentMethod(
+        method
+          ? { name: method.name?.trim() || "اسنپ‌فود", isActive: method.isActive === true }
+          : null,
+      );
       setSaved(false);
     } catch {
       // A network failure used to leave this screen with an empty field that
@@ -171,9 +179,24 @@ export function OnlinePlatformsSettings() {
         ) : null}
 
         <div className="mt-2 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 text-xs leading-6 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-          <p className="font-semibold">نحوهٔ استفاده</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-semibold">وضعیت روش پرداخت «{paymentMethod?.name ?? "اسنپ‌فود"}»</p>
+            <span
+              className={
+                paymentMethod?.isActive
+                  ? "rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
+                  : "rounded-full bg-amber-200/80 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-500/20 dark:text-amber-100"
+              }
+            >
+              {paymentMethod ? (paymentMethod.isActive ? "فعال" : "غیرفعال") : "پیدا نشد"}
+            </span>
+          </div>
           <p className="mt-1">
-            برای اعمال این نرخ، روش پرداخت «اسنپ‌فود» باید در تنظیمات روش‌های پرداخت فعال باشد. این سامانه سفارش‌ها را از اسنپ‌فود به‌صورت خودکار دریافت نمی‌کند؛ سفارش را در صندوق ثبت و با همین روش تسویه کنید.
+            {paymentMethod?.isActive
+              ? "این نرخ هنگام تسویهٔ سفارش با همین روش پرداخت اعمال می‌شود. سامانه سفارش‌ها را از اسنپ‌فود به‌صورت خودکار دریافت نمی‌کند؛ سفارش را در صندوق ثبت و با همین روش تسویه کنید."
+              : paymentMethod
+                ? "روش پرداخت غیرفعال است و تا زمان فعال‌سازی، این نرخ در هیچ سفارش جدیدی اعمال نمی‌شود."
+                : "روش پرداخت اسنپ‌فود در این کسب‌وکار پیدا نشد؛ تنظیمات روش‌های پرداخت را بررسی کنید."}
           </p>
           <Link
             href={settingsTabHref("payment-methods")}
