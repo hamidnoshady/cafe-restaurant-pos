@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
+import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { LoadingSkeleton, SectionCard } from "../page-chrome";
@@ -61,9 +62,9 @@ function newLine(): DocLine {
 const DOC_ERRORS: Record<string, string> = {
   missing_fields: "انبار را انتخاب کنید.",
   no_items: "حداقل یک قلم لازم است.",
-  invalid_line: "یکی از سندها کامل نیست؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",
+  invalid_line: "یکی از قلم‌ها کامل نیست یا یک قلم دو بار آمده است؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",
   invalid_quantity: "مقدار هر قلم باید بزرگ‌تر از صفر باشد.",
-  quantity_precision_exceeded: "مقدار حداکثر می‌تواند ۹ رقم اعشار داشته باشد.",
+  quantity_precision_exceeded: "مقدار واردشده بیش از حد اعشار دارد.",
   invalid_rial: "قیمت واحد باید یک عدد صحیح معتبر باشد.",
   rial_out_of_range: "قیمت واحد بسیار بزرگ است؛ عدد را بررسی کنید.",
   receipt_value_required: "رسید بدون ارزش ثبت نمی‌شود؛ برای هر قلم قیمت واحد بزرگ‌تر از صفر وارد کنید.",
@@ -72,10 +73,11 @@ const DOC_ERRORS: Record<string, string> = {
   supplier_not_found: "تأمین‌کننده انتخاب‌شده در این انبار نیست.",
   item_not_found: "یکی از اقلام به این انبار تعلق ندارد یا غیرفعال است.",
   periodic_system_unsupported:
-    "در سیستم انبارداری ادواری، رسید و حواله انبار ثبت نمی‌شود؛ ورود و خروج کالا در سند بستن دوره ثبت می‌شود.",
-  ledger_account_missing: "حساب مورد نیاز در دفتر حساب‌ها موجود نیست؛ ابتدا کدینگ حساب‌ها را کامل کنید.",
+    "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
+  ledger_account_missing:
+    "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
   inventory_exact_cutover_required:
-    "بهای تمام‌شدهٔ این قلم هنوز مقداردهی اولیه نشده است؛ ابتدا انتقال بهای تمام‌شده را انجام دهید.",
+    "موجودی این قلم هنوز به سیستم بهای دقیق منتقل نشده است؛ ابتدا عملیات انتقال (cutover) را اجرا کنید.",
 };
 
 /** The document's own posted summary, shown after a successful ثبت. */
@@ -116,8 +118,13 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
   );
 
   // Item options come from the selected warehouse's own stock levels: items
-  // are per-branch, so switching warehouse re-points the picker.
+  // are per-branch, so switching warehouse re-points the picker AND resets
+  // the lines/supplier — a line or supplier chosen for the previous
+  // warehouse does not exist in the new one and would only be refused
+  // server-side (item_not_found/supplier_not_found).
   useEffect(() => {
+    setLines([newLine()]);
+    setSupplierId("");
     if (!locationId) {
       setItems([]);
       return;
@@ -229,21 +236,32 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
     if (filled.length === 0) return "حداقل یک قلم با مقدار وارد کنید.";
     const seen = new Set<string>();
     for (const line of filled) {
-      if (!line.inventoryItemId) return "برای هر قلم، کالای انبار را انتخاب کنید.";
-      if (seen.has(line.inventoryItemId)) return "هر قلم فقط یک بار می‌تواند در سند بیاید.";
+      // Name the row: «ردیف ۳» beats a generic «یکی از قلم‌ها…» when a long
+      // document has one bad line. Numbering follows the rows on screen, so
+      // it counts `lines`, not the filtered subset.
+      const lineNo = toPersianDigits(String(lines.indexOf(line) + 1));
+      if (!line.inventoryItemId) return `قلم انبار ردیف ${lineNo} را انتخاب کنید.`;
+      if (seen.has(line.inventoryItemId)) {
+        return "هر قلم فقط یک بار می‌تواند در سند بیاید؛ ردیف‌های تکراری را یکی کنید.";
+      }
       seen.add(line.inventoryItemId);
       const qty = Number(line.quantity);
       if (!line.quantity.trim() || !Number.isFinite(qty) || qty <= 0) {
-        return "مقدار هر قلم باید بزرگ‌تر از صفر باشد.";
+        return `مقدار ردیف ${lineNo} باید عددی بزرگ‌تر از صفر باشد.`;
       }
       if (kind === "receipt") {
         const cost = lineUnitCostRial(line);
-        if (cost === null) return "برای هر قلم رسید، قیمت واحد را وارد کنید.";
-        if (BigInt(cost) <= 0n) return "قیمت واحد هر قلم رسید باید بزرگ‌تر از صفر باشد.";
+        // null covers both an empty field and one `money.parseText` refuses,
+        // which is why parsing happens here and not in the submit handler:
+        // an unguarded throw there left the form silent with `busy` stuck on.
+        if (cost === null) {
+          return `قیمت واحد ردیف ${lineNo} را به‌صورت عدد صحیح (${money.unitLabel}) وارد کنید.`;
+        }
+        if (BigInt(cost) <= 0n) return `قیمت واحد ردیف ${lineNo} باید بزرگ‌تر از صفر باشد.`;
       }
     }
     return "";
-  }, [locationId, lines, kind, lineUnitCostRial]);
+  }, [locationId, lines, kind, lineUnitCostRial, money]);
 
   function updateLine(key: string, patch: Partial<DocLine>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
@@ -258,12 +276,16 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     if (busy || blockingReason) {
       // A keyboard submit can still arrive while the button is disabled.
+      // `blockingReason` already names the offending row, so show it.
       if (blockingReason) setError(blockingReason);
       return;
     }
     setPosted(null);
     // Blank trailing lines are scaffolding, not content: drop them rather than
     // letting the server reject the whole document over an empty row.
+    // `blockingReason` has already validated everything that survives here,
+    // including that every unit cost parses — so `lineUnitCostRial` cannot
+    // return null for a receipt line at this point.
     const filled = lines.filter((line) => line.inventoryItemId || line.quantity.trim() || line.unitCost.trim());
     const payload = {
       kind,

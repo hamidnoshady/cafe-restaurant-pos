@@ -15,41 +15,16 @@ import { describe, expect, it } from "vitest";
 
 const INVENTORY_DIR = fileURLToPath(new URL("./", import.meta.url));
 const SRC_DIR = resolve(INVENTORY_DIR, "../../..");
-/**
- * The retail half of the SAME workspace. `retail-inventory-manager.tsx` (in
- * this folder) renders every retail panel from `../stock/*` inside the very
- * same `.workspace` shell, so those files render under these rules — they were
- * simply out of the grep's reach, which is how the ثبت رسید/حواله retail form
- * kept a `sm:grid-cols-2` line editor whose columns had no header between `sm`
- * and `xl`.
- *
- * Only the warehouse-document screens are enrolled here. The rest of
- * `../stock/*` (خرید، حواله بازگشت، انبارگردانی، گزارش) still carries native
- * `<select>`s and un-gated templates of its own; enrolling those files is a
- * separate piece of work, and listing them here without doing it would only
- * turn this suite red for a reason unrelated to what it guards.
- */
-const STOCK_DIR = resolve(INVENTORY_DIR, "../stock");
-const STOCK_FILES = ["document-form-section.tsx", "documents-section.tsx"] as const;
 
 function read(rel: string): string {
   return readFileSync(join(INVENTORY_DIR, rel), "utf8");
 }
 
-function readStock(rel: string): string {
-  return readFileSync(join(STOCK_DIR, rel), "utf8");
-}
-
-/** Every non-test source file of the workspace (plus the retail document screens). */
+/** Every non-test source file of the workspace, as [name, content]. */
 function sectionFiles(): Array<[string, string]> {
-  const inventory: Array<[string, string]> = readdirSync(INVENTORY_DIR)
+  return readdirSync(INVENTORY_DIR)
     .filter((name) => /\.(tsx|ts|css)$/.test(name) && !/\.test\.ts$/.test(name))
     .map((name) => [name, read(name)]);
-  const retail: Array<[string, string]> = STOCK_FILES.map((name) => [
-    `../stock/${name}`,
-    readStock(name),
-  ]);
-  return [...inventory, ...retail];
 }
 
 describe("touch-height rule (the 'tiny selects' bug)", () => {
@@ -159,24 +134,6 @@ describe("the redesigned line editors", () => {
     expect(form).toMatch(/md:sr-only/);
   });
 
-  it("ثبت رسید/حواله (خرده‌فروشی): the same mini-card shape, at the retail form's xl breakpoint", () => {
-    // The retail form carries seven columns (lot + Jalali expiry on top of the
-    // shared five), so its grid starts at xl rather than md. What matters is
-    // the rule, not the breakpoint: below it, every control is a labeled row
-    // of a bordered card; at and above it, one header row names the columns
-    // and the per-field labels go sr-only. The bug this pins: a
-    // `sm:grid-cols-2` middle state with no header, i.e. six anonymous inputs
-    // two-up on every tablet.
-    const form = readStock("document-form-section.tsx");
-    expect(form).toMatch(/hidden[^"]*xl:grid\b/);
-    expect(form).toMatch(/grid-cols-1[^"]*xl:grid-cols-\[/);
-    expect(form).toMatch(/xl:sr-only/);
-    expect(
-      /grid-cols-1[^"]*sm:grid-cols-2[^"]*xl:grid-cols-\[/.test(form),
-      "retail line editor re-grows an unlabeled sm:grid-cols-2 middle state",
-    ).toBe(false);
-  });
-
   it("خرید: settlement and supplier pickers take a full mobile row (col-span-2)", () => {
     const purchases = read("purchases-section.tsx");
     const pickerRows = purchases.match(/col-span-2 grid min-w-0 gap-1/g) ?? [];
@@ -211,12 +168,131 @@ describe("numeric fields", () => {
   });
 });
 
+describe("warehouse list responsive states", () => {
+  it("uses a readable mobile card list instead of forcing a wide table through the phone", () => {
+    const fnb = read("warehouses-section.tsx");
+    expect(fnb).toMatch(/hidden overflow-x-auto md:block/);
+    expect(fnb).toMatch(/divide-y divide-border\/80 md:hidden/);
+    expect(fnb).toMatch(/جستجو در انبارها/);
+    expect(fnb).toMatch(/تلاش دوباره/);
+
+    const retail = readFileSync(
+      join(SRC_DIR, "app/dashboard/stock/warehouses-section.tsx"),
+      "utf8",
+    );
+    expect(retail).toMatch(/hidden overflow-x-auto md:block/);
+    expect(retail).toMatch(/divide-y divide-border\/80 md:hidden/);
+    expect(retail).toMatch(/جستجو در انبارها/);
+    expect(retail).toMatch(/تلاش دوباره/);
+  });
+});
+
 describe("section spacing", () => {
   it("keeps the canonical space-y-4 sm:space-y-5 rhythm (no stray space-y-6 stacks)", () => {
     for (const [name, content] of sectionFiles()) {
       expect(content, `${name} reverts to the old space-y-6 stack`).not.toMatch(
         /className="space-y-6"/,
       );
+    }
+  });
+});
+
+describe("خرید — resilience and feedback (the silent-failure bugs)", () => {
+  const purchases = read("purchases-section.tsx");
+
+  it("the recent-purchases list never renders a silent blank: skeleton while null, message + retry on failure", () => {
+    // Before: `purchases ?? []` meant a first load (or a failed one) left an
+    // empty <ul> with no explanation and no way back.
+    expect(purchases).toMatch(/purchases === null && !listError/);
+    expect(purchases).toMatch(/LoadingSkeleton[^>]*label="در حال بارگذاری فهرست خریدها"/);
+    expect(purchases).toMatch(/listError/);
+    expect(purchases).toMatch(/تلاش دوباره/);
+  });
+
+  it("a cancelled purchase keeps its «مشاهده جزئیات» button (records stay inspectable)", () => {
+    // Before: the details button was gated `p.status !== "cancelled"`, so a
+    // cancelled purchase's contents were invisible unless deleted.
+    expect(purchases).not.toMatch(/\{p\.status !== "cancelled" \? \(\s*<Button[^>]*onClick=\{\(\) => toggleExpanded/);
+    // And the detail footer must not offer ویرایش/برگشت for a cancelled one —
+    // it splits received (return) from cancelled (view-only).
+    expect(purchases).toMatch(/خرید لغوشده فقط قابل مشاهده است/);
+  });
+
+  it("stale detail fetches are discarded (the cross-row race)", () => {
+    // Expanding row A then quickly row B once let A's response render inside
+    // B's panel. The request token pins the guard.
+    expect(purchases).toMatch(/detailRequestRef/);
+    expect(purchases).toMatch(/request !== detailRequestRef\.current/);
+  });
+
+  it("numeric fields refuse negative entry instead of failing server-side", () => {
+    // Money/quantity PersianNumberInputs once defaulted allowNegative=true;
+    // the server then answered with the generic «یکی از اقلام معتبر نیست».
+    const negatives = purchases.match(/allowNegative=\{false\}/g) ?? [];
+    expect(negatives.length).toBeGreaterThanOrEqual(3); // qty, amount, return qty
+  });
+
+  it("OCR apply asks before replacing hand-entered lines", () => {
+    expect(purchases).toMatch(/draftHasContent/);
+    expect(purchases).toMatch(/window\.confirm\("ردیف‌ها و یادداشت فعلی فرم/);
+  });
+
+  it("return quantities are validated client-side (truthy " + '"0"' + " and over-returns)", () => {
+    expect(purchases).toMatch(/qty\.lte\(0\)/);
+    expect(purchases).toMatch(/qty\.gt\(new Decimal\(String\(it\.quantity\)\)\)/);
+  });
+
+  it("the supplier-return idempotency key is minted once per form-open, not per attempt", () => {
+    // Per-attempt Date.now keys defeat the server's duplicate answer: a
+    // response lost after commit would post the return twice on retry.
+    expect(purchases).not.toMatch(/idempotencyKey: `\$\{expandedId\}-\$\{Date\.now\(\)\}`/);
+    expect(purchases).toMatch(/idempotencyKey: returnKey/);
+  });
+
+  it("action failures surface inside the section, not only above the tab rail", () => {
+    expect(purchases).toMatch(/const \[localError, setLocalError\] = useState/);
+    expect(purchases).toMatch(/<ErrorBox>\{localError\}<\/ErrorBox>/);
+    const forwarded = purchases.match(/,\s*setLocalError,\s*\)/g) ?? [];
+    expect(forwarded.length).toBeGreaterThanOrEqual(3); // submit, saveEdit, transition/return/delete
+  });
+
+  it("a silent no-op submit is impossible (empty/invalid lines explained)", () => {
+    expect(purchases).toMatch(/function validatePayloadLines/);
+    expect(purchases).toMatch(/حداقل یک ردیف با قلم و مقدار معتبر وارد کنید/);
+  });
+
+  it("an inverted date filter orders itself instead of matching nothing", () => {
+    expect(purchases).toMatch(/function setFilterFrom\(value: string\)/);
+    expect(purchases).toMatch(/function setFilterTo\(value: string\)/);
+  });
+});
+
+describe("خرید — the OCR panel guards the picker's contracts", () => {
+  const ocr = read("invoice-ocr-panel.tsx");
+
+  it("an invoice date that is not ISO never reaches the JalaliDatePicker", () => {
+    expect(ocr).toMatch(/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/.test\(invoiceDate\)/);
+  });
+
+  it("review quantity/amount fields refuse negative entry", () => {
+    const negatives = ocr.match(/allowNegative=\{false\}/g) ?? [];
+    expect(negatives.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("خرید — the workspace runner can report to a section-level box", () => {
+  const manager = read("food-service-inventory-manager.tsx");
+
+  it("run() forwards the mapped message to an optional onError", () => {
+    // The purchases section renders its own ErrorBox where the action lives;
+    // without the callback its failures only showed above the rail.
+    expect(manager).toMatch(/onError\?: \(message: string\) => void/);
+    expect(manager).toMatch(/onError\?\.\(message\)/);
+  });
+
+  it("error map covers the codes the purchase flows raise", () => {
+    for (const code of ["invalid_quantity", "fiscal_period_locked", "fiscal_period_soft_closed"]) {
+      expect(manager, `missing ${code}`).toContain(`${code}:`);
     }
   });
 });

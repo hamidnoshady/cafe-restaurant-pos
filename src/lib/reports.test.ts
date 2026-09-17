@@ -3,6 +3,7 @@ import { INDUSTRIES } from "./industries";
 import {
   buildFoodCostVariance,
   buildReportQuery,
+  computeBranchOverviewMetrics,
   groupedStandardReportsFor,
   previousPeriodRange,
   REPORT_GROUP_ORDER,
@@ -669,5 +670,52 @@ describe("previousPeriodRange", () => {
       dateFrom: "2024-12-01",
       dateTo: "2024-12-31",
     });
+  });
+});
+
+describe("computeBranchOverviewMetrics", () => {
+  it("computes gross profit, margin %, average ticket, and revenue share correctly", () => {
+    const row = {
+      orderCount: 50,
+      total: 10_000_000,
+      cogs: 4_000_000,
+    };
+    const consolidatedTotal = 25_000_000;
+
+    const metrics = computeBranchOverviewMetrics(row, consolidatedTotal);
+    expect(metrics.grossProfit).toBe(6_000_000);
+    expect(metrics.grossMarginPct).toBe(60);
+    expect(metrics.avgTicket).toBe(200_000);
+    expect(metrics.revenueSharePct).toBe(40);
+  });
+
+  it("safely handles division by zero when orderCount, total, and consolidatedTotal are 0", () => {
+    const row = {
+      orderCount: 0,
+      total: 0,
+      cogs: 0,
+    };
+    const consolidatedTotal = 0;
+
+    const metrics = computeBranchOverviewMetrics(row, consolidatedTotal);
+    expect(metrics.grossProfit).toBe(0);
+    expect(metrics.grossMarginPct).toBe(0);
+    expect(metrics.avgTicket).toBe(0);
+    expect(metrics.revenueSharePct).toBe(0);
+  });
+
+  it("computes negative profit and margin when cogs exceed total sales", () => {
+    const row = {
+      orderCount: 10,
+      total: 1_000_000,
+      cogs: 1_500_000,
+    };
+    const consolidatedTotal = 2_000_000;
+
+    const metrics = computeBranchOverviewMetrics(row, consolidatedTotal);
+    expect(metrics.grossProfit).toBe(-500_000);
+    expect(metrics.grossMarginPct).toBe(-50);
+    expect(metrics.avgTicket).toBe(100_000);
+    expect(metrics.revenueSharePct).toBe(50);
   });
 });

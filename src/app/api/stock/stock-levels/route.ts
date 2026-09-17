@@ -3,6 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { classifyStockLevel } from "@/lib/retail-stock";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Phase 42b — «موجودی انبار»: the per-warehouse stock level on the RETAIL
@@ -28,11 +29,20 @@ export const GET = withTenantScope(async (request: NextRequest) => {
       totals: { count: 0, lowStockCount: 0, totalUnits: "0", totalValueRial: "0" },
     });
   }
+  // Validate and scope an explicitly selected warehouse before it reaches a
+  // UUID comparison. This turns a bad URL into a useful 400 and prevents a
+  // caller from using the stock endpoint as a cross-tenant probe.
+  if (!isUuid(locationId)) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   const search = (url.searchParams.get("search") ?? "").trim();
 
-  const clauses = ["i.location_id = $1", "i.is_active", "i.kind <> 'variant_parent'"];
-  const params: unknown[] = [locationId];
+  const clauses = [
+    "i.location_id = $1",
+    "i.is_active",
+    "i.kind <> 'variant_parent'",
+    "EXISTS (SELECT 1 FROM locations l WHERE l.id = i.location_id AND l.business_id = $2)",
+  ];
+  const params: unknown[] = [locationId, session.businessId];
   if (search) {
     params.push(`%${search}%`);
     clauses.push(`(i.name ILIKE $${params.length} OR i.sku ILIKE $${params.length})`);

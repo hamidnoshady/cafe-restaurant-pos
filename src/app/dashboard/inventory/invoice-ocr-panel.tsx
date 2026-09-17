@@ -199,7 +199,11 @@ export function InvoiceOcrPanel({
 
       setResult(data);
       setSupplierId(data.supplierId ?? "");
-      setPurchaseDate(data.extraction?.invoiceDate ?? "");
+      // Guard the picker's ISO contract: a malformed date read off the
+      // invoice (or a Shamsi one the model passed through verbatim) must
+      // drop to empty rather than poison the date field.
+      const invoiceDate = data.extraction?.invoiceDate ?? "";
+      setPurchaseDate(/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) ? invoiceDate : "");
       setNote(data.extraction?.note ?? "");
 
       const reviewed = (data.lines ?? []).map((line) => {
@@ -459,6 +463,7 @@ export function InvoiceOcrPanel({
                         className={inputClass}
                         dir="ltr"
                         inputMode="decimal"
+                        allowNegative={false}
                         value={line.purchaseQty}
                         onChange={(e) => updateLine(line.key, { purchaseQty: e.target.value })}
                       />
@@ -468,6 +473,7 @@ export function InvoiceOcrPanel({
                         className={inputClass}
                         dir="ltr"
                         inputMode="numeric"
+                        allowNegative={false}
                         value={line.totalCost}
                         onChange={(e) => updateLine(line.key, { totalCost: e.target.value })}
                       />

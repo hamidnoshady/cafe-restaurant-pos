@@ -1,18 +1,15 @@
 "use client";
 
 /**
- * Phase 42b — the retail module's «انبارها» group: «افزودن انبار» and
- * «لیست انبارها».
+ * Phase 42b — the retail «انبارها» group.
  *
- * A warehouse is a branch: the list is the business's locations with what
- * each one holds on the RETAIL model — item count, stock value (Σ
- * item_stock.quantity × unit_cost, the same figure the stock-levels footer
- * totals), low-stock count (the classifyStockLevel rule) and the last stock
- * touch — and the form adds a new one through the same createBranch service
- * the branches screen uses.
+ * The retail catalogue has its own item/stock model, so this component keeps
+ * the retail endpoint and types separate from the F&B warehouse screen. The
+ * list UX is intentionally the same: search, status filtering, summaries,
+ * responsive cards and a direct stock action.
  */
-import { PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { PlusIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { toPersianDigits } from "@/lib/digits";
@@ -38,13 +35,10 @@ interface WarehousesResponse {
   warehouses: Warehouse[];
 }
 
+type WarehouseStatusFilter = "all" | "active" | "inactive";
+
 const WAREHOUSE_ERRORS: Record<string, string> = {
   missing_fields: "نام انبار را وارد کنید.",
-  // A warehouse *is* a branch (both screens write through branch-service's
-  // createBranch), so these are the codes that service actually throws.
-  // `location_name_taken` was the spelling this map guessed at; nothing has
-  // ever thrown it, which is why a duplicate name used to fall through to
-  // «خطای غیرمنتظره».
   branch_name_taken: "انباری با این نام وجود دارد.",
   location_name_taken: "انباری با این نام وجود دارد.",
   name_too_long: "نام انبار بیش از حد طولانی است.",
@@ -56,11 +50,73 @@ const WAREHOUSE_ERRORS: Record<string, string> = {
 export function warehouseErrorMessage(code: string | undefined): string {
   if (!code) return "";
   return WAREHOUSE_ERRORS[code] ??
-    (code === "unauthorized" ? "وارد نشده‌اید." : code === "forbidden" ? "دسترسی مجاز نیست." : code === "bad_request" ? "درخواست نامعتبر بود." : `خطای غیرمنتظره (${code}). دوباره تلاش کنید.`);
+    (code === "unauthorized"
+      ? "وارد نشده‌اید."
+      : code === "forbidden"
+        ? "دسترسی مجاز نیست."
+        : code === "bad_request"
+          ? "درخواست نامعتبر بود."
+          : `خطای غیرمنتظره (${code}). دوباره تلاش کنید.`);
 }
 
-/** «افزودن انبار» — the form tab of the «انبارها» group. */
-export function AddWarehouseSection({ onCreated }: { onCreated?: () => void }) {
+const FILTERS: Array<{ key: WarehouseStatusFilter; label: string }> = [
+  { key: "all", label: "همه" },
+  { key: "active", label: "فعال" },
+  { key: "inactive", label: "غیرفعال" },
+];
+
+const filterButtonClass = (selected: boolean) =>
+  `min-h-10 rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${
+    selected
+      ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
+      : "border-border bg-card text-muted-foreground hover:border-amber-300 hover:bg-amber-50 hover:text-foreground dark:hover:border-amber-500/40 dark:hover:bg-amber-500/10"
+  }`;
+
+function warehouseMatches(warehouse: Warehouse, search: string, status: WarehouseStatusFilter): boolean {
+  if (status !== "all" && (status === "active") !== warehouse.is_active) return false;
+  const term = search.trim().toLocaleLowerCase("fa");
+  if (!term) return true;
+  return [warehouse.name, warehouse.address, warehouse.phone]
+    .filter(Boolean)
+    .some((value) => value!.toLocaleLowerCase("fa").includes(term));
+}
+
+function WarehouseStatus({ warehouse }: { warehouse: Warehouse }) {
+  return warehouse.is_active ? <StatusBadge tone="positive">فعال</StatusBadge> : <StatusBadge tone="neutral">غیرفعال</StatusBadge>;
+}
+
+function WarehouseDetails({ warehouse }: { warehouse: Warehouse }) {
+  return (
+    <p className="mt-1 min-w-0 truncate text-xs text-muted-foreground">
+      {[warehouse.address, warehouse.phone].filter(Boolean).join(" · ") || "بدون آدرس یا تلفن"}
+    </p>
+  );
+}
+
+function WarehouseStats({ warehouse }: { warehouse: Warehouse }) {
+  const money = useMoney();
+  return (
+    <div className="grid grid-cols-3 gap-2 text-xs">
+      <div className="min-w-0 rounded-lg bg-muted/60 px-2 py-2">
+        <p className="text-muted-foreground">اقلام</p>
+        <p className="mt-1 truncate font-semibold tabular-nums text-foreground">{toPersianDigits(warehouse.item_count)}</p>
+      </div>
+      <div className="min-w-0 rounded-lg bg-muted/60 px-2 py-2">
+        <p className="text-muted-foreground">ارزش موجودی</p>
+        <p className="mt-1 truncate font-semibold tabular-nums text-foreground">{money.format(Number(warehouse.stock_value_rial))}</p>
+      </div>
+      <div className="min-w-0 rounded-lg bg-muted/60 px-2 py-2">
+        <p className="text-muted-foreground">کمبود</p>
+        <p className="mt-1 truncate font-semibold tabular-nums text-foreground">
+          {Number(warehouse.low_stock_count) > 0 ? `${toPersianDigits(warehouse.low_stock_count)} قلم` : "—"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** «افزودن انبار» — the form tab of the retail «انبارها» group. */
+export function AddWarehouseSection({ onCreated }: { onCreated?: () => void | Promise<void> }) {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
@@ -68,26 +124,31 @@ export function AddWarehouseSection({ onCreated }: { onCreated?: () => void }) {
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
     if (!name.trim() || busy) return;
     setBusy(true);
     setError("");
     setDone("");
-    const { ok, data } = await api("/api/stock/warehouses", {
-      method: "POST",
-      body: JSON.stringify({ name: name.trim(), address: address.trim() || undefined, phone: phone.trim() || undefined }),
-    });
-    setBusy(false);
-    if (!ok) {
-      setError(warehouseErrorMessage((data as { error?: string }).error));
-      return;
+    try {
+      const result = await api("/api/stock/warehouses", {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim(), address: address.trim() || undefined, phone: phone.trim() || undefined }),
+      });
+      if (!result.ok) {
+        setError(warehouseErrorMessage((result.data as { error?: string }).error));
+        return;
+      }
+      setName("");
+      setAddress("");
+      setPhone("");
+      setDone("انبار با موفقیت افزوده شد.");
+      await onCreated?.();
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
+    } finally {
+      setBusy(false);
     }
-    setName("");
-    setAddress("");
-    setPhone("");
-    setDone("انبار افزوده شد.");
-    onCreated?.();
   }
 
   return (
@@ -98,26 +159,19 @@ export function AddWarehouseSection({ onCreated }: { onCreated?: () => void }) {
           <h2 className="mt-1 font-semibold text-foreground">افزودن انبار</h2>
         </div>
       }
-      description="نام انبار را بنویسید؛ آدرس و تلفن اختیاری است. هر انبار یک شعبه است و اقلام و سندهای انبار به آن تعلق می‌گیرند."
+      description="نام انبار را بنویسید؛ آدرس و تلفن اختیاری است. هر انبار یک شعبه است و کالا و سند به آن تعلق می‌گیرد."
     >
       <ErrorBox>{error}</ErrorBox>
-      {done ? <p className="mb-3 text-xs text-emerald-700 dark:text-emerald-300">{done}</p> : null}
+      {done ? <p className="mb-3 text-xs text-emerald-700 dark:text-emerald-300" role="status">{done}</p> : null}
       <form onSubmit={submit} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Field label="نام انبار">
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: انبار مرکزی" required />
+          <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} placeholder="مثلاً: انبار مرکزی" maxLength={80} autoComplete="organization" required />
         </Field>
         <Field label="آدرس (اختیاری)">
-          <input className={inputClass} value={address} onChange={(e) => setAddress(e.target.value)} />
+          <input className={inputClass} value={address} onChange={(event) => setAddress(event.target.value)} maxLength={500} autoComplete="street-address" />
         </Field>
         <Field label="تلفن (اختیاری)">
-          <PersianNumberInput
-            className={inputClass}
-            dir="ltr"
-            inputMode="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="۰۲۱…"
-          />
+          <PersianNumberInput className={inputClass} dir="ltr" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="۰۲۱…" maxLength={32} autoComplete="tel" />
         </Field>
         <div className="flex items-end sm:col-span-2">
           <Button type="submit" disabled={busy || !name.trim()} size="lg" className="w-full px-5 font-semibold">
@@ -130,19 +184,40 @@ export function AddWarehouseSection({ onCreated }: { onCreated?: () => void }) {
   );
 }
 
-/** «لیست انبارها» — the list tab of the «انبارها» group. */
+/** «لیست انبارها» — the list tab of the retail «انبارها» group. */
 export function WarehouseListSection({ onOpenStock }: { onOpenStock: (locationId: string) => void }) {
   const money = useMoney();
   const [warehouses, setWarehouses] = useState<Warehouse[] | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<WarehouseStatusFilter>("all");
 
-  const load = useCallback(() => {
-    api<WarehousesResponse>("/api/stock/warehouses").then(({ ok, data }) => {
-      if (ok) setWarehouses(data.warehouses);
-      else setError(warehouseErrorMessage((data as { error?: string }).error));
-    });
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await api<WarehousesResponse>("/api/stock/warehouses");
+      if (!result.ok) {
+        setError(warehouseErrorMessage((result.data as { error?: string }).error) || "خواندن فهرست انبارها انجام نشد.");
+        return;
+      }
+      setWarehouses(result.data.warehouses);
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
-  useEffect(load, [load]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const visibleWarehouses = useMemo(
+    () => (warehouses ?? []).filter((warehouse) => warehouseMatches(warehouse, search, status)),
+    [warehouses, search, status],
+  );
 
   return (
     <SectionCard
@@ -152,70 +227,129 @@ export function WarehouseListSection({ onOpenStock }: { onOpenStock: (locationId
           <h2 className="mt-1 font-semibold text-foreground">لیست انبارها</h2>
         </div>
       }
-      description="هر انبار یک شعبه است؛ اقلام، موجودی و سندهای انبار به هر انبار تعلق دارند."
+      description="هر انبار یک شعبه است؛ کالا، موجودی و سندهای انبار به آن تعلق دارند."
+      actions={
+        <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+          <RefreshCwIcon aria-hidden="true" className={loading ? "size-4 opacity-60" : "size-4"} />
+          بروزرسانی
+        </Button>
+      }
       flush
     >
-      <ErrorBox>{error}</ErrorBox>
-      {warehouses === null ? (
+      {warehouses === null && loading ? (
         <div className="p-4 sm:p-5">
           <LoadingSkeleton rows={4} label="در حال بارگذاری انبارها" />
         </div>
-      ) : warehouses.length === 0 ? (
+      ) : warehouses === null ? (
         <div className="p-4 sm:p-5">
-          <EmptyState>هنوز انباری ثبت نشده است. از «افزودن انبار» اولین انبار را بسازید.</EmptyState>
+          <ErrorBox>{error || "خواندن فهرست انبارها انجام نشد."}</ErrorBox>
+          <Button type="button" variant="outline" onClick={() => void load()}>
+            تلاش دوباره
+          </Button>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-border bg-stone-50 dark:bg-stone-900/40">
-                <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">انبار</th>
-                <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">اقلام</th>
-                <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">ارزش موجودی</th>
-                <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">کمبود</th>
-                <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">آخرین تغییر موجودی</th>
-                <th className="py-3 pe-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:pe-5 sm:text-sm">وضعیت</th>
-              </tr>
-            </thead>
-            <tbody>
-              {warehouses.map((w) => (
-                <tr
-                  key={w.id}
-                  className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-900/30"
+        <>
+          <div className="flex flex-col gap-3 border-b border-border/80 p-4 sm:flex-row sm:items-center sm:px-5">
+            <div className="relative min-w-0 flex-1">
+              <SearchIcon aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                className={`${inputClass} ps-9`}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="جستجوی نام، آدرس یا تلفن…"
+                aria-label="جستجو در انبارها"
+              />
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2" role="group" aria-label="فیلتر وضعیت انبار">
+              {FILTERS.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  className={filterButtonClass(status === filter.key)}
+                  aria-pressed={status === filter.key}
+                  onClick={() => setStatus(filter.key)}
                 >
-                  <td className="px-4 py-3 sm:px-5">
-                    <button
-                      type="button"
-                      onClick={() => onOpenStock(w.id)}
-                      className="text-start font-medium text-foreground outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40"
-                      title="مشاهده موجودی این انبار"
-                    >
-                      {w.name}
-                    </button>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {[w.address, w.phone].filter(Boolean).join(" · ") || "—"}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 tabular-nums">{toPersianDigits(w.item_count)}</td>
-                  <td className="px-4 py-3 font-medium tabular-nums">{money.format(Number(w.stock_value_rial))}</td>
-                  <td className="px-4 py-3">
-                    {Number(w.low_stock_count) > 0 ? (
-                      <StatusBadge tone="active">{toPersianDigits(w.low_stock_count)} قلم</StatusBadge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground tabular-nums">
-                    {w.last_movement_at ? formatJalali(w.last_movement_at) : "—"}
-                  </td>
-                  <td className="py-3 pe-4 sm:pe-5">
-                    {w.is_active ? <StatusBadge tone="positive">فعال</StatusBadge> : <StatusBadge tone="neutral">غیرفعال</StatusBadge>}
-                  </td>
-                </tr>
+                  {filter.label}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+            <p className="shrink-0 text-xs text-muted-foreground" aria-live="polite">
+              {toPersianDigits(String(visibleWarehouses.length))} انبار
+            </p>
+          </div>
+          {warehouses.length === 0 ? (
+            <div className="p-4 sm:p-5">
+              <EmptyState>هنوز انباری ثبت نشده است. از «افزودن انبار» اولین انبار را بسازید.</EmptyState>
+            </div>
+          ) : visibleWarehouses.length === 0 ? (
+            <div className="p-4 sm:p-5">
+              <EmptyState>انباری با این جستجو یا فیلتر پیدا نشد.</EmptyState>
+              <div className="mt-3 text-center">
+                <Button type="button" variant="outline" size="sm" onClick={() => { setSearch(""); setStatus("all"); }}>
+                  حذف فیلترها
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-stone-50 dark:bg-stone-900/40">
+                      <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">انبار</th>
+                      <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">اقلام</th>
+                      <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">ارزش موجودی</th>
+                      <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">کمبود</th>
+                      <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">آخرین تغییر</th>
+                      <th className="py-3 pe-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:pe-5 sm:text-sm">وضعیت</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleWarehouses.map((warehouse) => (
+                      <tr key={warehouse.id} className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-900/30">
+                        <td className="px-4 py-3 sm:px-5">
+                          <button type="button" onClick={() => onOpenStock(warehouse.id)} className="max-w-full text-start font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring focus-visible:ring-amber-400/40" title="مشاهده موجودی این انبار">
+                            {warehouse.name}
+                          </button>
+                          <WarehouseDetails warehouse={warehouse} />
+                        </td>
+                        <td className="px-4 py-3 tabular-nums">{toPersianDigits(warehouse.item_count)}</td>
+                        <td className="px-4 py-3 font-medium tabular-nums">{money.format(Number(warehouse.stock_value_rial))}</td>
+                        <td className="px-4 py-3">
+                          {Number(warehouse.low_stock_count) > 0 ? <StatusBadge tone="danger">{toPersianDigits(warehouse.low_stock_count)} قلم</StatusBadge> : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground tabular-nums">{warehouse.last_movement_at ? formatJalali(warehouse.last_movement_at) : "—"}</td>
+                        <td className="py-3 pe-4 sm:pe-5"><WarehouseStatus warehouse={warehouse} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="divide-y divide-border/80 md:hidden">
+                {visibleWarehouses.map((warehouse) => (
+                  <article key={warehouse.id} className="space-y-3 p-4">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <button type="button" onClick={() => onOpenStock(warehouse.id)} className="max-w-full truncate text-start font-semibold text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40">
+                          {warehouse.name}
+                        </button>
+                        <WarehouseDetails warehouse={warehouse} />
+                      </div>
+                      <WarehouseStatus warehouse={warehouse} />
+                    </div>
+                    <WarehouseStats warehouse={warehouse} />
+                    <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                      <span>{warehouse.last_movement_at ? `آخرین تغییر: ${formatJalali(warehouse.last_movement_at)}` : "هنوز تغییری ثبت نشده است"}</span>
+                      <button type="button" onClick={() => onOpenStock(warehouse.id)} className="min-h-10 shrink-0 rounded-lg px-3 font-semibold text-amber-800 underline-offset-4 hover:bg-amber-50 hover:underline dark:text-amber-300 dark:hover:bg-amber-500/10">
+                        مشاهده موجودی
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
     </SectionCard>
   );
