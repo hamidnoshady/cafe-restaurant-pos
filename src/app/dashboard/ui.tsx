@@ -84,6 +84,20 @@ const ERROR_MESSAGES: Record<string, string> = {
     table_occupied: "این میز سفارش باز دیگری دارد.",
     invalid_order_type: "نوع سفارش نامعتبر است.",
     no_items: "حداقل یک قلم لازم است.",
+    // انتقال بین انبارها — transfer-service.ts / /api/inventory/transfers.
+    invalid_transfer: "اطلاعات انتقال کامل نیست؛ انبار مبدأ و مقصد و حداقل یک ردیف لازم است.",
+    transfer_location_not_found: "انبار مبدأ یا مقصد پیدا نشد.",
+    transfer_inventory_item_not_found:
+      "قلم انتخاب‌شده در انبار مبدأ یا مقصد پیدا نشد؛ فهرست اقلام را دوباره بارگذاری کنید.",
+    transfer_not_found: "این انتقال پیدا نشد.",
+    transfer_already_shipped: "این انتقال قبلاً ارسال شده است.",
+    transfer_already_received: "این انتقال قبلاً دریافت شده است.",
+    transfer_already_cancelled: "این انتقال قبلاً لغو شده است.",
+    invalid_transfer_status: "وضعیت انتقال برای این عملیات معتبر نیست.",
+    insufficient_transfer_stock: "موجودی انبار مبدأ برای این انتقال کافی نیست.",
+    insufficient_transfer_layers: "لایه‌های بهای تمام‌شدهٔ کافی برای این مقدار وجود ندارد.",
+    received_transfer_requires_reverse_transfer:
+      "انتقال دریافت‌شده قابل لغو نیست؛ برای بازگرداندن، انتقال معکوس ثبت کنید.",
     // سیستم ادواری — periodic-closing-service.ts / consumeInventoryExact guard.
     periodic_system_unsupported:
       "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
