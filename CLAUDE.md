@@ -82,9 +82,9 @@ comment happens to use, until you have checked this list.
 
 ## Test and build, locally — before every commit
 
-Run these from the repo root before considering any change done. CI (see below) does run on
-every PR to `main`, but it is a second opinion on a single shared self-hosted runner — not a
-substitute for running the checklist yourself first:
+Run these from the repo root before considering any change done. CI (see below) only runs
+when someone starts it by hand, so it is never a substitute for running the checklist
+yourself first:
 
 ```bash
 npm install               # first time, or after a dependency change
@@ -110,25 +110,26 @@ never edit an already-applied migration.
 
 ## CI — `.github/workflows/test.yml`
 
-`.github/workflows/test.yml` runs automatically for every pull request targeting `main`
-and can also be started manually (`workflow_dispatch`). It runs the checklist above — type
-check, unit tests, integration tests, and production build — as four independent jobs in
-parallel, then fans them into one `required` status check. A new commit on the same PR
-cancels its obsolete run.
+Every workflow in `.github/workflows/` is **manual only** (`workflow_dispatch`) — nothing
+runs automatically on a push or a pull request. Start a run from the Actions tab, choosing
+the ref to run it on.
 
-The workflow uses the normal `pull_request` event with read-only repository permissions; it
-does not expose repository secrets to PR code. Because these jobs execute on a self-hosted
-runner, automatic PR runs are appropriate only while contributors are trusted (for example,
-in this private repository). Do not replace this with `pull_request_target`.
+`test.yml` runs the checklist above — type check, unit tests, integration tests, and
+production build — as four independent jobs in parallel (each GitHub-hosted job gets its
+own VM), then fans them into one `required` status check. A newer manual run on the same
+ref cancels one still in flight.
 
-### Every workflow runs on the self-hosted **Windows** runner
+### Every workflow runs on **GitHub-hosted** runners
 
-`runs-on: [self-hosted, windows, x64]` everywhere, and every `run:` block is PowerShell
-(`defaults.run.shell: powershell`) — a self-hosted Windows runner has no guaranteed bash.
-Four things follow, and each one is load-bearing:
+`test.yml`, `verify-shippables.yml`, `build-desktop-installer.yml` and
+`build-plugin-zip.yml` run on `windows-latest`, and every `run:` block in them is Windows
+PowerShell (`defaults.run.shell: powershell`). `publish.yml` runs on `ubuntu-latest` with
+PowerShell Core (`defaults.run.shell: pwsh`), because hosted Windows runners cannot build
+a Linux container image. Four things follow, and each one is load-bearing:
 
-- **No `services:` containers.** GitHub only supports them on Linux runners. The integration
-  job starts a real PostgreSQL from the `embedded-postgres` devDependency instead
+- **No `services:` containers in `test.yml`.** GitHub only supports them on Linux runners
+  and that workflow is on Windows. The integration job starts a real PostgreSQL from the
+  `embedded-postgres` devDependency instead
   (`npm run db:dev:start`, `scripts/dev-postgres.mjs`) on port 55432, and stops it in an
   `if: always()` step. Don't reintroduce a `services:` block.
 - **`embedded-postgres`, not `@embedded-postgres/<platform>`.** The per-platform packages are
@@ -139,9 +140,10 @@ Four things follow, and each one is load-bearing:
   breaks migration checksums (`scripts/migrate.ts` hashes raw bytes → `migration_checksum_mismatch`
   on files nobody edited) and any `.mjs` whose first line is a shebang (`SyntaxError: Invalid or
   unexpected token`, reported against the *importing* test). Don't remove it.
-- **`publish.yml` needs Docker Desktop in Linux-containers mode.** The image is
-  `FROM node:20-alpine`; the workflow checks `docker version --format '{{.Server.Os}}'` and
-  fails fast with that instruction rather than dying mid-build.
+- **`publish.yml` builds a Linux image, so it runs on Ubuntu.** The image is
+  `FROM node:20-alpine`; hosted `ubuntu-latest` runners provide Docker with the Linux
+  backend and buildx out of the box, which `docker/build-push-action` needs. Don't move it
+  back to a Windows runner — hosted Windows runners cannot run a Linux-containers daemon.
 
 What follows from that:
 
@@ -151,18 +153,20 @@ What follows from that:
   `npm run test:db` was never started is not a green checklist; say which steps you actually ran.
 - Keep `.github/workflows/test.yml` in sync with the checklist above — if a step is added, removed
   or renamed here, update the workflow (and vice versa) in the same change.
-- Keep both the `pull_request` trigger for `main` and `workflow_dispatch`.
+- Keep every workflow manual-only (`workflow_dispatch`); do not add `push` or
+  `pull_request` triggers back.
 
 ### Production publishing and deployment: `publish.yml` (GHCR + Coolify)
 
-`.github/workflows/publish.yml` is the only image-publishing workflow. It runs on every
-push to `main` (and on `v*` tags and manual dispatch), publishes the production image to
-GHCR, and asks Coolify to redeploy after a branch publication. Making it manual would mean
-a merge produces no image while production silently keeps running the previous one.
+`.github/workflows/publish.yml` is the only image-publishing workflow. It is manual like
+every other workflow: dispatch it from the `main` branch to publish `sha-<short>` +
+`latest` and trigger the Coolify redeploy, or from a `v*` tag to publish the immutable
+release tag without restarting production. A merge to `main` produces no image — and
+production keeps running the previous one — until someone starts this workflow.
 
 It is not ungated: its `gates` job re-runs type checking, unit tests, and the production
-build on the exact commit before publishing. Keep these gates even though PR testing is
-automatic; they also protect direct pushes, tag publications, and manual runs.
+build on the exact commit before publishing, so a manual run from any ref is gated the
+same way. Keep these gates.
 
 Three details are load-bearing:
 
@@ -171,8 +175,8 @@ Three details are load-bearing:
   `GIT_SHA` is passed as a build arg because the `Dockerfile` bakes it into
   `APP_IMAGE_SHA` — how a running container knows which build it is.
 - **The 3 GB Node heap limit is workflow-wide and passed into the Docker build.** Keep
-  `NODE_OPTIONS=--max-old-space-size=3072` so both runner jobs and the Dockerfile's Next.js
-  build fit the 4 GB self-hosted runner.
+  `NODE_OPTIONS=--max-old-space-size=3072` so both the runner jobs and the Dockerfile's
+  Next.js build share one ceiling.
 - **GHCR is the production registry.** `docker-compose.local.yml` pulls
   `ghcr.io/hamidnoshady/cafe-restaurant-pos`, and `src/lib/app-update.ts` defaults
   `GHCR_IMAGE` to it. Hosts that cannot reach `ghcr.io` directly can pull that same image
@@ -183,11 +187,10 @@ than recreating the previous local image. When `PRODUCTION_HEALTH_URL` is set, t
 also verifies the live image SHA and canonical routes; without it, the rollout is explicitly
 reported as unverified.
 
-### The three manual workflows
+### The release workflows
 
-All `workflow_dispatch`-only and never run on a push: producing a release is a decision
-rather than a check on a commit, and the shared single Windows runner should not be queued
-behind them on every PR. None of them gate a PR.
+All `workflow_dispatch`-only, like everything else in `.github/workflows/` — producing a
+release is a decision rather than a check on a commit. None of them gate a PR.
 
 - **`build-desktop-installer.yml`** — packages the standalone Windows `.exe`
   (electron-builder → NSIS) and uploads it as a run artifact. Order matters: it runs

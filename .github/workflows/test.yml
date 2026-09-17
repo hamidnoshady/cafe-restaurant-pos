@@ -1,32 +1,31 @@
 # Runs the local checklist CLAUDE.md documents (tsc, unit tests, integration
-# tests, build) for every pull request targeting main and on manual dispatch.
+# tests, build). Manual only (`workflow_dispatch`) — nothing runs on a push or
+# a pull request; start it from the Actions tab.
 #
-# Everything runs on the self-hosted **Windows** runner. Two consequences of
-# that are baked into this file and should not be "tidied" away:
+# Everything runs on GitHub-hosted **Windows** runners (`windows-latest`). Two
+# consequences of that are baked into this file and should not be "tidied"
+# away:
 #
 #   1. **No `services:` block.** GitHub only supports service containers on
 #      Linux runners, so the integration job starts its own PostgreSQL from the
 #      `embedded-postgres` devDependency (`npm run db:dev:start`) instead. That
 #      is a real PostgreSQL binary, not a reimplementation — the same mechanism
 #      the standalone desktop installer ships.
-#   2. **PowerShell, not bash.** A self-hosted Windows runner is not guaranteed
-#      to have bash on PATH, so every `run:` block here is PowerShell.
+#   2. **PowerShell, not bash.** Every `run:` block here is Windows PowerShell
+#      5.1 (`shell: powershell`), which `windows-latest` provides.
 #
 # Speed: the four checks are independent of each other, so they are declared as
-# four parallel jobs. A single runner executes one job at a time, so they will
-# queue on one machine — register additional runners with the same labels to
-# actually get the parallelism back. `required` fans in all four so a single
-# status check names the run.
+# four parallel jobs — each GitHub-hosted job gets its own VM, so they really
+# do run in parallel. `required` fans in all four so a single status check
+# names the run.
 name: test
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
-# Superseded commits on the same PR/branch do not need to finish.
+# A newer manual run on the same ref supersedes one still in flight.
 concurrency:
-  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -47,7 +46,7 @@ env:
 jobs:
   typecheck:
     name: type check
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,7 +58,7 @@ jobs:
 
   unit-tests:
     name: unit tests
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -71,7 +70,7 @@ jobs:
 
   build:
     name: production build
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -83,7 +82,7 @@ jobs:
 
   integration-tests:
     name: integration tests (real database)
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
 
     env:
       # A high port so the job never collides with a PostgreSQL the developer
@@ -139,7 +138,7 @@ jobs:
   # cancelled, or never ran.
   required:
     name: all checks passed
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     needs: [typecheck, unit-tests, build, integration-tests]
     if: always()
     steps:
