@@ -48,6 +48,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_accounts: "ساختار سرفصل حساب‌ها معتبر نیست.",
     accounts_in_use: "به‌دلیل وجود اسناد حسابداری، جایگزین‌کردن سرفصل‌ها ممکن نیست.",
     code_required: "کد حساب الزامی است.",
+    invalid_code: "کد حساب باید فقط شامل عدد باشد (مثل ۶۱۰۰).",
     code_in_use: "این کد حساب قبلاً استفاده شده است.",
     parent_not_found: "حساب والد پیدا نشد.",
     parent_cycle: "حساب نمی‌تواند والد خودش یا زیرمجموعه‌اش باشد.",
