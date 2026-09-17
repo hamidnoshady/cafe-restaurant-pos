@@ -42,22 +42,28 @@ export interface PosDevice {
   id: string;
   businessId: string;
   locationId: string | null;
+  /** The live branch name is returned for the business-wide Settings overview. */
+  locationName: string | null;
   label: string;
   pairedBy: string | null;
   pairedAt: string;
   lastSeenAt: string | null;
   revokedAt: string | null;
+  /** Unexpired, non-revoked employee sessions that will end if this device is revoked. */
+  activeSessionCount: number;
 }
 
 interface DeviceRow extends Record<string, unknown> {
   id: string;
   business_id: string;
   location_id: string | null;
+  location_name?: string | null;
   label: string;
   paired_by: string | null;
   paired_at: Date;
   last_seen_at: Date | null;
   revoked_at: Date | null;
+  active_session_count?: number;
 }
 
 function toDevice(row: DeviceRow): PosDevice {
@@ -65,11 +71,13 @@ function toDevice(row: DeviceRow): PosDevice {
     id: row.id,
     businessId: row.business_id,
     locationId: row.location_id,
+    locationName: row.location_name ?? null,
     label: row.label,
     pairedBy: row.paired_by,
     pairedAt: row.paired_at.toISOString(),
     lastSeenAt: row.last_seen_at ? row.last_seen_at.toISOString() : null,
     revokedAt: row.revoked_at ? row.revoked_at.toISOString() : null,
+    activeSessionCount: row.active_session_count ?? 0,
   };
 }
 
@@ -91,9 +99,14 @@ export async function pairDevice(
   }
   const { token, tokenHash } = generateDeviceToken();
   const { rows } = await query<DeviceRow>(
-    `INSERT INTO pos_devices (business_id, location_id, label, token_hash, paired_by)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, business_id, location_id, label, paired_by, paired_at, last_seen_at, revoked_at`,
+    `WITH inserted AS (
+       INSERT INTO pos_devices (business_id, location_id, label, token_hash, paired_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, business_id, location_id, label, paired_by, paired_at, last_seen_at, revoked_at
+     )
+     SELECT i.*, l.name AS location_name, 0::int AS active_session_count
+       FROM inserted i
+       LEFT JOIN locations l ON l.id = i.location_id AND l.business_id = i.business_id`,
     [businessId, locationId, trimmed, tokenHash, actorId],
   );
   const device = toDevice(rows[0]);
@@ -103,13 +116,85 @@ export async function pairDevice(
 
 export async function listDevices(businessId: string): Promise<PosDevice[]> {
   const { rows } = await query<DeviceRow>(
-    `SELECT id, business_id, location_id, label, paired_by, paired_at, last_seen_at, revoked_at
-       FROM pos_devices
-      WHERE business_id = $1
-      ORDER BY paired_at DESC`,
+    `SELECT d.id, d.business_id, d.location_id, l.name AS location_name, d.label, d.paired_by,
+            d.paired_at, d.last_seen_at, d.revoked_at,
+            (
+              SELECT count(*)::int
+                FROM employee_sessions s
+               WHERE s.device_id = d.id
+                 AND s.business_id = d.business_id
+                 AND s.revoked_at IS NULL
+                 AND s.expires_at > now()
+            ) AS active_session_count
+       FROM pos_devices d
+       LEFT JOIN locations l ON l.id = d.location_id AND l.business_id = d.business_id
+      WHERE d.business_id = $1
+      ORDER BY d.revoked_at IS NULL DESC, d.paired_at DESC`,
     [businessId],
   );
   return rows.map(toDevice);
+}
+
+/**
+ * Looks up a currently valid device token without updating its last-seen
+ * timestamp. Settings uses this to mark the browser the manager is actually
+ * looking at; merely opening Settings should not make a terminal look as if a
+ * staff member signed in from it.
+ */
+export async function findActiveDeviceId(
+  token: string | null | undefined,
+  businessId: string,
+): Promise<string | null> {
+  if (!token) return null;
+  const tokenHash = hashDeviceToken(token);
+  const { rows } = await query<{ id: string }>(
+    `SELECT id
+       FROM pos_devices
+      WHERE token_hash = $1 AND business_id = $2 AND revoked_at IS NULL`,
+    [tokenHash, businessId],
+  );
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * Renames a terminal without making an owner revoke and re-pair it just to
+ * correct a typo or move it to a clearer naming convention. The token and all
+ * credential/session bindings remain untouched.
+ */
+export async function renameDevice(
+  deviceId: string,
+  businessId: string,
+  actorId: string | null,
+  label: string,
+): Promise<PosDevice> {
+  const trimmed = label.trim();
+  if (trimmed.length < 1 || trimmed.length > 80) {
+    throw new DeviceError("invalid_label");
+  }
+  const { rows } = await query<DeviceRow>(
+    `WITH updated AS (
+       UPDATE pos_devices
+          SET label = $3
+        WHERE id = $1 AND business_id = $2 AND revoked_at IS NULL
+        RETURNING id, business_id, location_id, label, paired_by, paired_at, last_seen_at, revoked_at
+     )
+     SELECT u.*, l.name AS location_name,
+            (
+              SELECT count(*)::int
+                FROM employee_sessions s
+               WHERE s.device_id = u.id
+                 AND s.business_id = u.business_id
+                 AND s.revoked_at IS NULL
+                 AND s.expires_at > now()
+            ) AS active_session_count
+       FROM updated u
+       LEFT JOIN locations l ON l.id = u.location_id AND l.business_id = u.business_id`,
+    [deviceId, businessId, trimmed],
+  );
+  const device = rows[0] ? toDevice(rows[0]) : null;
+  if (!device) throw new DeviceError("device_not_found", 404);
+  await auditDevice(businessId, actorId, "device.renamed", device.id, { label: trimmed });
+  return device;
 }
 
 /**
