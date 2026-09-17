@@ -337,6 +337,13 @@ function errorMessage(code: string | undefined): string {
       "کسری یکی از مواد این تولید با خرید بعدی تسویه شده است و برگشت آن ممکن نیست.",
     production_reversal_inconsistent:
       "برگشت این تولید با ارقام ثبت‌شده هم‌خوان نیست.",
+    // Guards these paths can surface but that had no Persian string, so they
+    // fell through to «خطای غیرمنتظره» instead of naming what actually failed.
+    quantity_precision_exceeded: "مقدار بیش از ۹ رقم اعشار دارد؛ عدد را گرد کنید.",
+    invalid_quantity: "مقدار واردشده معتبر نیست.",
+    invalid_rial: "مبلغ واردشده معتبر نیست.",
+    periodic_system_unsupported:
+      "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
     // Phase 42 — warehouse documents
     invalid_line:
       "یکی از سندها کامل نیست؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",
