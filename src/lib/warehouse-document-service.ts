@@ -30,6 +30,7 @@ import Decimal from "decimal.js";
 import { getPool, type PoolClient } from "./db";
 import {
   allocateRialByWeight,
+  boundedRialText,
   minQuantity,
   positiveQuantityText,
   proportionalDepletionValue,
@@ -45,6 +46,7 @@ import { isLotBased } from "./inventory-costing";
 import { getCostingMethod, getInventorySystem } from "./inventory-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { emitDomainEvent } from "./posting-engine";
+import { isUuid } from "./uuid";
 // Side-effect import: registers "inventory.operational_posting" with the engine.
 import "./fnb-posting-rules";
 
@@ -99,15 +101,27 @@ export function parseWarehouseDocumentLines(
     const quantity = positiveQuantityText(String(raw.quantity ?? ""));
     let unitCost: RialText = rialText("0");
     if (kind === "receipt") {
-      unitCost = rialText(String(raw.unitCost ?? "0"));
+      unitCost = boundedRialText(String(raw.unitCost ?? "0"));
     }
     const value = kind === "receipt" ? lineValue(quantity, unitCost) : rialText("0");
+    // A receipt line must carry value. Exact costing (0015's
+    // `inventory_lot_exact_value_bounds`) forbids a lot holding quantity at
+    // zero value, so a costless receipt cannot be represented: under FIFO it
+    // aborted the transaction with a CHECK violation, and under weighted
+    // average it quietly added stock with no cost basis, which then poisons
+    // every later consumption. Refuse it here so both costing methods answer
+    // the same way, before anything is written.
+    if (kind === "receipt" && rialBigInt(value) === 0n) {
+      throw new Error("receipt_value_required");
+    }
     lines.push({ inventoryItemId: itemId, quantity, unitCost, value });
   }
   if (lines.length === 0) throw new Error("no_items");
   let totalValue = 0n;
   for (const line of lines) totalValue += rialBigInt(line.value);
-  return { kind, lines, totalValue: rialText(totalValue.toString()) };
+  // The document's own total lands in a bigint column too, so a stack of
+  // individually-valid lines must not add up past the ceiling either.
+  return { kind, lines, totalValue: boundedRialText(totalValue.toString()) };
 }
 
 /** qty × unitCost, rounded to whole Rial. */
@@ -136,9 +150,34 @@ interface NegativeLayer {
   remaining_provisional_value_rial: string | null;
 }
 
+/**
+ * Rial per unit implied by an extended value — full 9-dp precision, for the
+ * `numeric(24,9)` columns (`stock_movements.unit_cost`, `inventory_lots
+ * .unit_cost`) that record the exact cost basis.
+ */
 function derivedUnitCost(value: RialText, quantity: QuantityText): string {
   if (new Decimal(quantity).eq(0)) return "0";
   return new Decimal(value).div(quantity).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
+}
+
+/**
+ * The same ratio rounded to whole Rial, for `warehouse_document_lines
+ * .unit_cost` — a **bigint** column.
+ *
+ * An issue line's unit cost is derived from what the exact-costing path
+ * actually consumed, and that division is almost never whole: issuing 0.7 of a
+ * 333-Rial lot posts 233 Rial, i.e. 332.857142857 per unit. Handing that to a
+ * bigint column made Postgres reject the INSERT (`invalid input syntax for
+ * type bigint`), which aborted the transaction and surfaced as a 500 — an
+ * ordinary fractional issue could not be posted at all.
+ *
+ * `value_rial` stays the authoritative number (it is what the ledger posts);
+ * the displayed per-unit cost is a rounded read-out of it, exactly as the
+ * detail dialog presents it.
+ */
+function documentLineUnitCost(value: RialText, quantity: QuantityText): string {
+  if (new Decimal(quantity).eq(0)) return "0";
+  return new Decimal(value).div(quantity).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed(0);
 }
 
 export interface CreateWarehouseDocumentParams {
@@ -162,6 +201,15 @@ export async function createWarehouseDocumentInTransaction(
   params: CreateWarehouseDocumentParams,
 ): Promise<CreatedWarehouseDocument> {
   if (params.lines.length === 0) throw new Error("no_items");
+
+  // `WHERE id = $1` against a uuid column raises a syntax error rather than
+  // returning no rows for a non-uuid, which surfaces as a 500 instead of an
+  // honest 404 — see `isUuid`. Screen every id the body supplies.
+  if (!isUuid(params.locationId)) throw new Error("location_not_found");
+  for (const line of params.lines) {
+    if (!isUuid(line.inventoryItemId)) throw new Error("item_not_found");
+  }
+  if (params.supplierId && !isUuid(params.supplierId)) throw new Error("supplier_not_found");
 
   const { rows: locationRows } = await client.query<{ id: string; is_active: boolean }>(
     "SELECT id, is_active FROM locations WHERE id = $1 AND business_id = $2",
@@ -266,7 +314,7 @@ export async function createWarehouseDocumentInTransaction(
           documentId,
           line.inventoryItemId,
           line.quantity,
-          derivedUnitCost(result.postedCost, line.quantity),
+          documentLineUnitCost(result.postedCost, line.quantity),
           result.postedCost,
         ],
       );
@@ -419,6 +467,17 @@ async function applyWarehouseReceiptCosting(
           ],
         );
       } else if (isLotBased(method)) {
+        // A FIFO/LIFO lot may not hold quantity at zero value: the exact cost
+        // basis (0015's `inventory_lot_exact_value_bounds`) requires
+        // `(remaining_qty = 0) = (remaining_value_rial = 0)`, because stock
+        // with no cost basis silently poisons every later consumption. A
+        // zero-cost receipt line — or one whose qty × cost rounds below half a
+        // Rial — used to reach the INSERT and abort the whole transaction with
+        // a CHECK violation (a 500). Refuse it as the caller error it is, with
+        // a code the form can explain.
+        if (rialBigInt(actualValue) === 0n) {
+          throw new Error("receipt_value_required");
+        }
         await client.query(
           `INSERT INTO inventory_lots
              (location_id,inventory_item_id,remaining_qty,unit_cost,source_type,source_id,inventory_event_id,

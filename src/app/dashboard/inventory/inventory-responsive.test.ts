@@ -15,16 +15,41 @@ import { describe, expect, it } from "vitest";
 
 const INVENTORY_DIR = fileURLToPath(new URL("./", import.meta.url));
 const SRC_DIR = resolve(INVENTORY_DIR, "../../..");
+/**
+ * The retail half of the SAME workspace. `retail-inventory-manager.tsx` (in
+ * this folder) renders every retail panel from `../stock/*` inside the very
+ * same `.workspace` shell, so those files render under these rules — they were
+ * simply out of the grep's reach, which is how the ثبت رسید/حواله retail form
+ * kept a `sm:grid-cols-2` line editor whose columns had no header between `sm`
+ * and `xl`.
+ *
+ * Only the warehouse-document screens are enrolled here. The rest of
+ * `../stock/*` (خرید، حواله بازگشت، انبارگردانی، گزارش) still carries native
+ * `<select>`s and un-gated templates of its own; enrolling those files is a
+ * separate piece of work, and listing them here without doing it would only
+ * turn this suite red for a reason unrelated to what it guards.
+ */
+const STOCK_DIR = resolve(INVENTORY_DIR, "../stock");
+const STOCK_FILES = ["document-form-section.tsx", "documents-section.tsx"] as const;
 
 function read(rel: string): string {
   return readFileSync(join(INVENTORY_DIR, rel), "utf8");
 }
 
-/** Every non-test source file of the workspace, as [name, content]. */
+function readStock(rel: string): string {
+  return readFileSync(join(STOCK_DIR, rel), "utf8");
+}
+
+/** Every non-test source file of the workspace (plus the retail document screens). */
 function sectionFiles(): Array<[string, string]> {
-  return readdirSync(INVENTORY_DIR)
+  const inventory: Array<[string, string]> = readdirSync(INVENTORY_DIR)
     .filter((name) => /\.(tsx|ts|css)$/.test(name) && !/\.test\.ts$/.test(name))
     .map((name) => [name, read(name)]);
+  const retail: Array<[string, string]> = STOCK_FILES.map((name) => [
+    `../stock/${name}`,
+    readStock(name),
+  ]);
+  return [...inventory, ...retail];
 }
 
 describe("touch-height rule (the 'tiny selects' bug)", () => {
@@ -132,6 +157,24 @@ describe("the redesigned line editors", () => {
     // fixed template up at md; the per-field labels flip to sr-only there.
     expect(form).toMatch(/grid-cols-1[^"]*md:grid-cols-\[/);
     expect(form).toMatch(/md:sr-only/);
+  });
+
+  it("ثبت رسید/حواله (خرده‌فروشی): the same mini-card shape, at the retail form's xl breakpoint", () => {
+    // The retail form carries seven columns (lot + Jalali expiry on top of the
+    // shared five), so its grid starts at xl rather than md. What matters is
+    // the rule, not the breakpoint: below it, every control is a labeled row
+    // of a bordered card; at and above it, one header row names the columns
+    // and the per-field labels go sr-only. The bug this pins: a
+    // `sm:grid-cols-2` middle state with no header, i.e. six anonymous inputs
+    // two-up on every tablet.
+    const form = readStock("document-form-section.tsx");
+    expect(form).toMatch(/hidden[^"]*xl:grid\b/);
+    expect(form).toMatch(/grid-cols-1[^"]*xl:grid-cols-\[/);
+    expect(form).toMatch(/xl:sr-only/);
+    expect(
+      /grid-cols-1[^"]*sm:grid-cols-2[^"]*xl:grid-cols-\[/.test(form),
+      "retail line editor re-grows an unlabeled sm:grid-cols-2 middle state",
+    ).toBe(false);
   });
 
   it("خرید: settlement and supplier pickers take a full mobile row (col-span-2)", () => {

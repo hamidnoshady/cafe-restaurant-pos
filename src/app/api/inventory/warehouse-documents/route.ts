@@ -86,6 +86,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!body.locationId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  // A non-array `lines` would make the parser's for-of throw a TypeError
+  // ("rawLines is not iterable") rather than a validation error, i.e. a 500.
+  if (body.lines !== undefined && !Array.isArray(body.lines)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
 
   let parsed;
   try {
@@ -122,10 +127,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         item_not_found: 404,
         no_items: 400,
         invalid_line: 400,
+        invalid_quantity: 400,
+        invalid_rial: 400,
+        rial_out_of_range: 400,
+        receipt_value_required: 400,
         periodic_system_unsupported: 409,
       };
       const status = known[err.message];
       if (status) return NextResponse.json({ error: err.message }, { status });
+      // An item whose cost basis predates the exact-costing cutover cannot be
+      // received until that item is initialised. It is a documented 409 on the
+      // amend route; without this it fell through as an unhandled 500.
+      if (err.message.startsWith("inventory_exact_cutover_required")) {
+        return NextResponse.json({ error: "inventory_exact_cutover_required" }, { status: 409 });
+      }
     }
     throw err;
   }

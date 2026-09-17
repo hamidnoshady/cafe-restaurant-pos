@@ -46,6 +46,24 @@ export function rialBigInt(input: RialText): bigint {
   return BigInt(input);
 }
 
+/** The largest value a Postgres `bigint` Rial column can hold. */
+export const MAX_RIAL = 9223372036854775807n;
+
+/**
+ * `rialText` that also refuses what the storage cannot hold.
+ *
+ * Rial amounts land in `bigint` columns, so a value above 2^63-1 is not a
+ * large number — it is an INSERT that aborts the transaction with `value
+ * "…" is out of range for type bigint`, i.e. a 500 for what is really a
+ * caller error (a mistyped unit cost with a dozen extra zeroes). Validate it
+ * where the value is parsed, so the answer is a clean 400 instead.
+ */
+export function boundedRialText(input: string): RialText {
+  const value = rialText(input);
+  if (BigInt(value) > MAX_RIAL) throw new Error("rial_out_of_range");
+  return value;
+}
+
 export function addQuantity(left: QuantityText, right: QuantityText): QuantityText {
   return quantityText(new Decimal(left).plus(new Decimal(right)).toFixed());
 }

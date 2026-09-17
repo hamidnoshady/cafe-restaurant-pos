@@ -103,6 +103,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!locationId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  // A non-array `lines` would make the parser's for-of throw a TypeError
+  // ("rawLines is not iterable") rather than a validation error, i.e. a 500.
+  if (body.lines !== undefined && !Array.isArray(body.lines)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
 
   let parsed;
   try {
@@ -155,6 +160,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       invalid_quantity: 400,
       missing_cost: 400,
       invalid_cost: 400,
+      cost_out_of_range: 400,
+      quantity_precision_exceeded: 400,
     };
     if (err instanceof Error && known[err.message]) {
       return NextResponse.json({ error: err.message }, { status: known[err.message] });

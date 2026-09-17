@@ -84,7 +84,9 @@ const DOC_ERRORS: Record<string, string> = {
   invalid_quantity: "تعداد هر قلم باید عددی بزرگ‌تر از صفر باشد.",
   missing_cost: "بهای تمام‌شده هر قلم رسید را وارد کنید.",
   invalid_cost: "بهای تمام‌شده باید یک عدد صحیح معتبر باشد.",
-  ledger_account_missing: "حساب مورد نیاز در دفتر حساب‌ها موجود نیست.",
+  ledger_account_missing: "حساب مورد نیاز در دفتر حساب‌ها موجود نیست؛ ابتدا کدینگ حساب‌ها را کامل کنید.",
+  cost_out_of_range: "بهای تمام‌شده بسیار بزرگ است؛ عدد را بررسی کنید.",
+  quantity_precision_exceeded: "تعداد حداکثر می‌تواند ۹ رقم اعشار داشته باشد.",
 };
 
 interface PostedSummary {
@@ -160,20 +162,26 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
 
   const itemById = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
 
-  // The issue form's lot select: fetch the item's lots at this branch once
-  // per item, when an issue line names it.
+  // The issue form's lot select: fetch the item's lots at this branch on
+  // demand. The cache is keyed by `branch:item`, not by item alone — lots are
+  // per-branch, so an item-only key served the PREVIOUS warehouse's lots after
+  // a switch, and the document then named a lot that does not exist here.
+  const lotKey = useCallback((itemId: string) => `${locationId}:${itemId}`, [locationId]);
+
   useEffect(() => {
     if (kind !== "issue" || !locationId) return;
     const missing = lines
       .map((l) => l.itemId)
-      .filter((id) => id && itemById.get(id)?.tracking === "batch" && !lotOptions[id]);
+      .filter((id) => id && itemById.get(id)?.tracking === "batch" && !lotOptions[`${locationId}:${id}`]);
     if (missing.length === 0) return;
     let cancelled = false;
     for (const itemId of missing) {
       api<{ batches: BatchOption[] }>(
         `/api/stock/batches?item=${encodeURIComponent(itemId)}&branch=${encodeURIComponent(locationId)}`,
       ).then(({ ok, data }) => {
-        if (!cancelled && ok) setLotOptions((current) => ({ ...current, [itemId]: data.batches }));
+        if (!cancelled && ok) {
+          setLotOptions((current) => ({ ...current, [`${locationId}:${itemId}`]: data.batches }));
+        }
       });
     }
     return () => {
@@ -181,72 +189,167 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
     };
   }, [kind, lines, locationId, itemById, lotOptions]);
 
-  /** The cost an issue line will relieve at: the named lot's own, or the item's running cost. */
-  function issueUnitCost(line: DocLine): number | null {
-    const item = itemById.get(line.itemId);
-    if (!item) return null;
-    if (item.tracking === "batch") {
-      const lot = (lotOptions[line.itemId] ?? []).find((b) => b.batchNumber === line.lot);
-      return lot?.unitCost ?? null;
-    }
-    return item.unitCost;
-  }
+  /** The lot an issue line names, matched by id — lot numbers repeat across items. */
+  const issueLot = useCallback(
+    (line: DocLine): BatchOption | null =>
+      (lotOptions[lotKey(line.itemId)] ?? []).find((b) => b.id === line.lot) ?? null,
+    [lotOptions, lotKey],
+  );
 
-  /** A line's «≈» value: qty × unit cost (receipt: typed; issue: the relieved cost). */
-  function lineValueRial(line: DocLine): number | null {
-    const qty = Number(line.quantity);
-    if (!Number.isFinite(qty) || qty <= 0) return null;
-    if (kind === "receipt") {
-      const cost = Number(line.unitCost);
-      if (!Number.isFinite(cost) || cost < 0) return null;
-      return qty * money.fromInput(Math.max(0, Math.round(cost)));
-    }
-    const cost = issueUnitCost(line);
-    return cost == null ? null : qty * cost;
-  }
+  /** The cost an issue line will relieve at: the named lot's own, or the item's running cost. */
+  const issueUnitCost = useCallback(
+    (line: DocLine): number | null => {
+      const item = itemById.get(line.itemId);
+      if (!item) return null;
+      if (item.tracking === "batch") return issueLot(line)?.unitCost ?? null;
+      return item.unitCost;
+    },
+    [itemById, issueLot],
+  );
+
+  /**
+   * A receipt line's typed cost as integer Rial text, or null when it is
+   * empty/unusable. `money.parseText` is the single conversion from the
+   * business's display unit to the stored Rial; the previous
+   * `Math.round(Number(...))` silently turned a mistyped «۱۲٫۵» into 13 and a
+   * non-number into 0, then sent that to a bigint column.
+   */
+  const lineUnitCostRial = useCallback(
+    (line: DocLine): string | null => {
+      if (!line.unitCost.trim()) return null;
+      try {
+        return money.parseText(line.unitCost);
+      } catch {
+        return null;
+      }
+    },
+    [money],
+  );
+
+  /** A line's «≈» value in Rial (string): qty × unit cost (receipt: typed; issue: the relieved cost). */
+  const lineValueRial = useCallback(
+    (line: DocLine): string | null => {
+      const qty = Number(line.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) return null;
+      const cost = kind === "receipt" ? lineUnitCostRial(line) : issueUnitCost(line)?.toString() ?? null;
+      if (cost === null) return null;
+      return Math.round(Number(cost) * qty).toString();
+    },
+    [kind, lineUnitCostRial, issueUnitCost],
+  );
 
   const totalRial = useMemo(() => {
-    let total = 0;
+    let total = 0n;
     for (const line of lines) {
       const value = lineValueRial(line);
-      if (value != null) total += value;
+      if (value !== null) total += BigInt(value);
     }
-    return total;
-    // lineValueRial closes over the fetched lots; lotOptions covers it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, kind, money, lotOptions, itemById]);
+    return total.toString();
+  }, [lines, lineValueRial]);
+
+  /**
+   * Why the submit button is disabled, or "" when the document is postable.
+   * The server validates all of this too; saying it here means a person is
+   * told what is missing instead of watching a request fail.
+   */
+  const blockingReason = useMemo(() => {
+    if (!locationId) return "انبار را انتخاب کنید.";
+    const filled = lines.filter((line) => line.itemId || line.quantity.trim() || line.unitCost.trim());
+    if (filled.length === 0) return "حداقل یک قلم با تعداد وارد کنید.";
+    const seen = new Set<string>();
+    for (const line of filled) {
+      if (!line.itemId) return "برای هر قلم، کالا را انتخاب کنید.";
+      if (seen.has(line.itemId)) return "هر کالا فقط یک بار می‌تواند در سند بیاید.";
+      seen.add(line.itemId);
+      const qty = Number(line.quantity);
+      if (!line.quantity.trim() || !Number.isFinite(qty) || qty <= 0) {
+        return "تعداد هر قلم باید بزرگ‌تر از صفر باشد.";
+      }
+      const item = itemById.get(line.itemId);
+      if (kind === "receipt") {
+        const cost = lineUnitCostRial(line);
+        if (cost === null) return "بهای تمام‌شده هر قلم رسید را وارد کنید.";
+        if (BigInt(cost) < 0n) return "بهای تمام‌شده نمی‌تواند منفی باشد.";
+      } else {
+        // حواله: the batch line must name a lot that covers it, and any line
+        // must have a cost basis — both are server refusals worth pre-empting.
+        if (item?.tracking === "batch") {
+          if (!line.lot) return "برای حواله کالای بچ‌محور، بچ را انتخاب کنید.";
+          const lot = issueLot(line);
+          if (lot && Number(lot.quantity) < qty) return "موجودی بچ انتخاب‌شده کافی نیست.";
+          if (lot && lot.unitCost == null) return "بهای تمام‌شده بچ انتخاب‌شده ثبت نشده است.";
+        } else if (item) {
+          if (item.unitCost == null) return "بهای تمام‌شده این کالا ثبت نشده است.";
+          if (Number(item.quantity) < qty) return "موجودی این کالا کافی نیست.";
+        }
+      }
+    }
+    return "";
+  }, [locationId, lines, kind, itemById, lineUnitCostRial, issueLot]);
 
   function updateLine(key: string, patch: Partial<DocLine>) {
-    setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+    setLines((current) =>
+      current.map((line) => {
+        if (line.key !== key) return line;
+        const next = { ...line, ...patch };
+        // Changing the item invalidates the lot chosen for the old one.
+        if (patch.itemId !== undefined && patch.itemId !== line.itemId) next.lot = "";
+        return next;
+      }),
+    );
+    setPosted(null);
   }
   function removeLine(key: string) {
     setLines((current) => (current.length > 1 ? current.filter((line) => line.key !== key) : current));
+    setPosted(null);
   }
 
   function switchKind(next: DocKind) {
     if (next === kind) return;
     setKind(next);
     setLines([newLine()]);
+    setRecipient("");
     setPosted(null);
     setError("");
   }
 
+  /**
+   * Switching warehouse invalidates every line: retail items and their lots
+   * are per-branch. Clear the picked items and lots (keeping typed
+   * quantities/costs, which are still meaningful).
+   */
+  function switchWarehouse(next: string) {
+    if (next === locationId) return;
+    setLocationId(next);
+    setPosted(null);
+    setError("");
+    setLines((current) => current.map((line) => ({ ...line, itemId: "", lot: "" })));
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy || !locationId) return;
+    if (busy || blockingReason) {
+      // A keyboard submit can still arrive while the button is disabled.
+      if (blockingReason) setError(blockingReason);
+      return;
+    }
     setPosted(null);
+    // Blank trailing lines are scaffolding, not content: drop them rather than
+    // letting the server reject the whole document over an empty row.
+    const filled = lines.filter((line) => line.itemId || line.quantity.trim() || line.unitCost.trim());
     const payload = {
       kind,
       locationId,
-      recipient: kind === "issue" ? recipient : null,
-      documentNumber: documentNumber || null,
-      note: note || null,
-      lines: lines.map((line) => ({
+      recipient: kind === "issue" ? recipient.trim() || null : null,
+      documentNumber: documentNumber.trim() || null,
+      note: note.trim() || null,
+      lines: filled.map((line) => ({
         itemId: line.itemId,
         quantity: line.quantity,
-        unitCost:
-          kind === "receipt" ? money.fromInput(Math.max(0, Math.round(Number(line.unitCost || "0")))) : undefined,
-        lot: line.lot || null,
+        unitCost: kind === "receipt" ? Number(lineUnitCostRial(line) ?? "0") : undefined,
+        // The API names the lot by its NUMBER; the select carries lot ids so
+        // it can tell apart same-numbered lots of different items.
+        lot: (kind === "issue" ? issueLot(line)?.batchNumber : line.lot.trim()) || null,
         expiryDate: kind === "receipt" && line.expiryDate ? line.expiryDate : null,
       })),
     };
@@ -288,14 +391,27 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
     onCreated?.();
   }
 
+  /*
+    The line editor. One shared grid from `xl` up (with a header row naming the
+    columns); below that each line is its own bordered mini-card with per-field
+    labels — the same shape the F&B form uses.
+
+    The previous `sm:grid-cols-2` middle state was the bug: the header row only
+    existed at `xl`, so between `sm` and `xl` six unlabeled controls sat in a
+    two-column grid and nothing said which was تعداد, which was بها and which
+    was the lot. On a phone the لات/انقضا fields were simply anonymous boxes.
+  */
   const lineGridClass =
     kind === "receipt"
-      ? "grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_40px] xl:items-center"
-      : "grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_40px] xl:items-center";
+      ? "grid min-w-0 grid-cols-1 gap-2 rounded-xl border border-border/80 p-3 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_40px] xl:items-center xl:rounded-none xl:border-0 xl:p-0"
+      : "grid min-w-0 grid-cols-1 gap-2 rounded-xl border border-border/80 p-3 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_40px] xl:items-center xl:rounded-none xl:border-0 xl:p-0";
   const headerGridClass =
     kind === "receipt"
       ? "hidden text-xs font-medium text-stone-500 dark:text-stone-400 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_40px] xl:gap-2"
       : "hidden text-xs font-medium text-stone-500 dark:text-stone-400 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_40px] xl:gap-2";
+  /** Per-field label: visible on the mini-card, sr-only once the header row exists. */
+  const fieldLabelClass = "grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400";
+  const labelTextClass = "xl:sr-only";
 
   return (
     <SectionCard
@@ -377,78 +493,116 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
               const value = lineValueRial(line);
               return (
                 <div key={line.key} className={lineGridClass}>
-                  <SearchableSelect value={line.itemId} onChange={(v) => updateLine(line.key, { itemId: v })} options={itemOptions} />
-                  <PersianNumberInput
-                    className={inputClass}
-                    dir="ltr"
-                    inputMode="decimal"
-                    value={line.quantity}
-                    onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                    placeholder="۰"
-                    aria-label="تعداد"
-                  />
-                  {kind === "receipt" ? (
+                  <label className={fieldLabelClass}>
+                    <span className={labelTextClass}>کالا</span>
+                    <SearchableSelect
+                      value={line.itemId}
+                      onChange={(v) => updateLine(line.key, { itemId: v })}
+                      options={itemOptions}
+                      ariaLabel="کالا"
+                    />
+                  </label>
+                  <label className={fieldLabelClass}>
+                    <span className={labelTextClass}>تعداد</span>
                     <PersianNumberInput
                       className={inputClass}
                       dir="ltr"
-                      inputMode="numeric"
-                      value={line.unitCost}
-                      onChange={(e) => updateLine(line.key, { unitCost: e.target.value })}
+                      inputMode="decimal"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
                       placeholder="۰"
-                      aria-label="بهای هر واحد"
+                      aria-label="تعداد"
                     />
+                  </label>
+                  {kind === "receipt" ? (
+                    <label className={fieldLabelClass}>
+                      <span className={labelTextClass}>بهای هر واحد ({money.unitLabel})</span>
+                      <PersianNumberInput
+                        className={inputClass}
+                        dir="ltr"
+                        inputMode="numeric"
+                        value={line.unitCost}
+                        onChange={(e) => updateLine(line.key, { unitCost: e.target.value })}
+                        placeholder="۰"
+                        aria-label={`بهای هر واحد به ${money.unitLabel}`}
+                      />
+                    </label>
                   ) : (
-                    <span className="truncate text-xs tabular-nums text-muted-foreground" title="بهای relieved از خود بچ/موجودی">
-                      {resolvedCost == null ? "در لحظه ثبت" : money.format(resolvedCost)}
-                    </span>
+                    <div className={fieldLabelClass}>
+                      <span className={labelTextClass}>بهای هر واحد</span>
+                      <span
+                        className="truncate text-xs tabular-nums text-muted-foreground"
+                        title="بهای خروج از خودِ بچ یا موجودی کالا برداشته می‌شود."
+                      >
+                        {resolvedCost == null ? "در لحظه ثبت" : money.format(resolvedCost)}
+                      </span>
+                    </div>
                   )}
                   {kind === "receipt" ? (
-                    <input
-                      className={inputClass}
-                      value={line.lot}
-                      onChange={(e) => updateLine(line.key, { lot: e.target.value })}
-                      placeholder={isBatch ? "شماره بچ (اختیاری)" : "—"}
-                      disabled={!isBatch}
-                      aria-label="شماره بچ"
-                    />
+                    <label className={fieldLabelClass}>
+                      <span className={labelTextClass}>بچ/لات</span>
+                      <input
+                        className={inputClass}
+                        value={line.lot}
+                        onChange={(e) => updateLine(line.key, { lot: e.target.value })}
+                        placeholder={isBatch ? "شماره بچ (اختیاری)" : "—"}
+                        disabled={!isBatch}
+                        aria-label="شماره بچ"
+                      />
+                    </label>
                   ) : isBatch ? (
-                    <SearchableSelect
-                      value={line.lot}
-                      onChange={(v) => updateLine(line.key, { lot: v })}
-                      options={[
-                        { value: "", label: "بچ را انتخاب کنید…" },
-                        ...(lotOptions[line.itemId] ?? []).map((b) => ({
-                          value: b.batchNumber,
-                          label: `${b.batchNumber} · ${formatQuantity(b.quantity)}`,
-                          searchString: b.batchNumber,
-                        })),
-                      ]}
-                    />
+                    <label className={fieldLabelClass}>
+                      <span className={labelTextClass}>بچ/لات</span>
+                      <SearchableSelect
+                        value={line.lot}
+                        onChange={(v) => updateLine(line.key, { lot: v })}
+                        ariaLabel="بچ/لات"
+                        options={[
+                          { value: "", label: "بچ را انتخاب کنید…" },
+                          ...(lotOptions[lotKey(line.itemId)] ?? []).map((b) => ({
+                            // Keyed by id: two items can carry the same lot number.
+                            value: b.id,
+                            label: `${b.batchNumber} · ${formatQuantity(b.quantity)}`,
+                            searchString: b.batchNumber,
+                          })),
+                        ]}
+                      />
+                    </label>
                   ) : (
-                    <span className="truncate text-xs text-muted-foreground">—</span>
+                    <div className={fieldLabelClass}>
+                      <span className={labelTextClass}>بچ/لات</span>
+                      <span className="truncate text-xs text-muted-foreground">—</span>
+                    </div>
                   )}
                   {kind === "receipt" ? (
-                    <JalaliDatePicker
-                      className={inputClass}
-                      value={line.expiryDate}
-                      onChange={(iso) => updateLine(line.key, { expiryDate: iso })}
-                      disabled={!isBatch}
-                    />
+                    <label className={fieldLabelClass}>
+                      <span className={labelTextClass}>انقضا (شمسی)</span>
+                      <JalaliDatePicker
+                        className={inputClass}
+                        value={line.expiryDate}
+                        onChange={(iso) => updateLine(line.key, { expiryDate: iso })}
+                        disabled={!isBatch}
+                      />
+                    </label>
                   ) : null}
-                  <span className="truncate text-xs font-medium tabular-nums text-foreground">
-                    {value == null ? "≈ —" : `≈ ${money.format(value)}`}
-                  </span>
+                  <div className={fieldLabelClass}>
+                    <span className={labelTextClass}>≈ ارزش</span>
+                    <span className="truncate text-xs font-medium tabular-nums text-foreground">
+                      {value == null ? "≈ —" : `≈ ${money.formatText(value)}`}
+                    </span>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    className="w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive xl:w-auto"
                     onClick={() => removeLine(line.key)}
                     disabled={lines.length === 1}
                     aria-label="حذف این قلم"
                     title="حذف این قلم"
                   >
                     <Trash2Icon aria-hidden="true" className="size-4" />
+                    <span className="xl:sr-only">حذف این قلم</span>
                   </Button>
                 </div>
               );
@@ -460,13 +614,24 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
               افزودن قلم
             </Button>
             <span className="text-sm font-semibold tabular-nums text-foreground">
-              ≈ جمع: {money.format(totalRial)}
+              ≈ جمع: {money.formatText(totalRial)}
             </span>
           </div>
         </div>
 
-        <div className="border-t border-border/80 pt-4">
-          <Button type="submit" disabled={busy || !locationId} size="lg" className="w-full px-5 font-semibold">
+        <div className="space-y-2 border-t border-border/80 pt-4">
+          {blockingReason ? (
+            <p id="retail-warehouse-document-blocked" className="text-xs text-muted-foreground">
+              {blockingReason}
+            </p>
+          ) : null}
+          <Button
+            type="submit"
+            disabled={busy || blockingReason !== ""}
+            aria-describedby={blockingReason ? "retail-warehouse-document-blocked" : undefined}
+            size="lg"
+            className="w-full px-5 font-semibold"
+          >
             {busy ? "در حال ثبت…" : kind === "receipt" ? "ثبت رسید انبار" : "ثبت حواله انبار"}
           </Button>
         </div>

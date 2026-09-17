@@ -41,11 +41,19 @@
 import Decimal from "decimal.js";
 import type { PoolClient } from "pg";
 import { getPool } from "./db";
-import { receiveStock, getStock } from "./accessories-service";
+import { receiveStock } from "./accessories-service";
 import { receiveBatch, rollItemStockToBatches } from "./cosmetics-service";
-import { quantityText, rialText, roundRial, type QuantityText, type RialText } from "./inventory-exact";
+import {
+  MAX_RIAL,
+  quantityText,
+  rialText,
+  roundRial,
+  type QuantityText,
+  type RialText,
+} from "./inventory-exact";
 import { emitDomainEvent } from "./posting-engine";
 import { validateItemQuantity, validateItemUnitCost } from "./retail-stock";
+import { isUuid } from "./uuid";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { inventoryCodeForBusiness as retailInventoryCodeForBusiness } from "./retail-stock-posting-rules";
 // Side-effect import: registers the retail.* posting rules the documents post
@@ -133,6 +141,10 @@ export function parseRetailWarehouseDocumentLines(
       }
       const costError = validateItemUnitCost(cost);
       if (costError) throw new Error("invalid_cost");
+      // `unit_cost` is a bigint column: a value past 2^63-1 aborts the INSERT
+      // with «out of range for type bigint» — a 500 for what is really a
+      // mistyped cost. Answer it as the caller error it is.
+      if (!Number.isSafeInteger(cost)) throw new Error("cost_out_of_range");
       unitCost = cost;
     }
 
@@ -153,6 +165,9 @@ export function parseRetailWarehouseDocumentLines(
 
   let totalValue = 0n;
   for (const line of lines) totalValue += BigInt(line.value);
+  // The document total lands in a bigint column too, so a stack of
+  // individually-valid lines must not add up past the ceiling either.
+  if (totalValue > MAX_RIAL) throw new Error("cost_out_of_range");
   return { kind, lines, totalValue: rialText(totalValue.toString()) };
 }
 
@@ -250,6 +265,12 @@ async function eligibleItemOrThrow(
   itemId: string,
   locationId: string,
 ): Promise<ItemEligibilityRow> {
+  // `WHERE id = $1` against a uuid column raises a syntax error rather than
+  // returning no rows for a non-uuid, which surfaces as a 500 instead of the
+  // honest «کالا در این انبار یافت نشد» — see `isUuid`.
+  if (!isUuid(itemId)) {
+    throw new RetailWarehouseDocumentError("کالا در این انبار یافت نشد.");
+  }
   const { rows } = await client.query<ItemEligibilityRow>(
     `SELECT id, location_id, kind::text, tracking::text, is_active
        FROM items WHERE id = $1`,
@@ -288,6 +309,9 @@ export async function createRetailWarehouseDocumentInTransaction(
   client: PoolClient,
   params: CreateRetailWarehouseDocumentParams,
 ): Promise<CreatedRetailWarehouseDocument> {
+  if (params.lines.length === 0) throw new Error("no_items");
+  if (!isUuid(params.locationId)) throw new RetailWarehouseDocumentError("انبار یافت نشد.");
+
   const { rows: locationRows } = await client.query<{ id: string; is_active: boolean }>(
     "SELECT id, is_active FROM locations WHERE id = $1 AND business_id = $2",
     [params.locationId, params.businessId],
@@ -403,8 +427,14 @@ export async function createRetailWarehouseDocumentInTransaction(
         if (!lotCoversQuantity(batch.quantity, line.quantity)) {
           throw new RetailWarehouseDocumentError("موجودی بچ کافی نیست.");
         }
+        // A lot with no cost basis cannot be valued, and issuing it at zero
+        // would write stock out of the books for free — the same refusal the
+        // tracking='none' branch below already makes on `item_stock`.
+        if (batch.unit_cost == null) {
+          throw new RetailWarehouseDocumentError("بهای تمام‌شده این بچ ثبت نشده است.");
+        }
         // Relieve the lot at the lot's OWN cost.
-        unitCost = Number(batch.unit_cost ?? 0);
+        unitCost = Number(batch.unit_cost);
         value = retailLineValue(line.quantity, unitCost);
         await client.query(
           `UPDATE item_batches SET quantity = quantity - $3 WHERE id = $1 AND item_id = $2`,
@@ -413,15 +443,25 @@ export async function createRetailWarehouseDocumentInTransaction(
         batchId = batch.id;
         await rollItemStockToBatches(client, line.itemId);
       } else {
-        const stock = await getStock(line.itemId, client);
+        // FOR UPDATE, not the plain `getStock` read: between an unlocked read
+        // and the UPDATE below, a concurrent sale or issue can take the stock
+        // this check just approved. The row-level CHECK (quantity >= 0) would
+        // then abort the transaction with a Postgres error (a 500) instead of
+        // the honest «موجودی کافی نیست». Serialise on the row — the batch
+        // branch above already does, via `SELECT … FOR UPDATE` on the lot.
+        const { rows: stockRows } = await client.query<{ quantity: string; unit_cost: string | null }>(
+          `SELECT quantity::text, unit_cost::text FROM item_stock WHERE item_id = $1 FOR UPDATE`,
+          [line.itemId],
+        );
+        const stock = stockRows[0];
         if (!stock) throw new RetailWarehouseDocumentError("موجودی این کالا ثبت نشده است.");
-        if (stock.unitCost == null) {
+        if (stock.unit_cost == null) {
           throw new RetailWarehouseDocumentError("بهای تمام‌شده کالا ثبت نشده است.");
         }
         if (!lotCoversQuantity(stock.quantity, line.quantity)) {
           throw new RetailWarehouseDocumentError("موجودی کافی نیست.");
         }
-        unitCost = stock.unitCost;
+        unitCost = Number(stock.unit_cost);
         value = retailLineValue(line.quantity, unitCost);
         await client.query(
           `UPDATE item_stock SET quantity = quantity - $2, updated_at = now() WHERE item_id = $1`,
