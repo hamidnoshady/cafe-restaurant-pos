@@ -278,7 +278,7 @@ export function FoodServiceInventoryManager({
           <TransfersSection items={data.items} busy={busy} run={run} />
         ) : null}
         {tab === "barcodes" ? (
-          <BarcodesSection items={data.items} busy={busy} run={run} />
+          <BarcodesSection items={data.items} busy={busy} />
         ) : null}
       </SectionNav>
     </div>
