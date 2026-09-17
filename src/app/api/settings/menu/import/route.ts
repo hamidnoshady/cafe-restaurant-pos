@@ -6,6 +6,7 @@ import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import {
   parseMenuCsv,
   rowsToImport,
+  type ImportMoneyUnit,
   type ImportResult,
 } from "@/lib/menu-import";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -17,23 +18,72 @@ interface TaxSetting {
   defaultRate: number;
 }
 
+interface BusinessPrefs {
+  currencyDisplay?: "toman" | "rial";
+}
+
 function preview(result: ImportResult) {
   const modifierGroups = new Set(
     result.items
       .map((item) => item.modifierGroup)
       .filter((name): name is string => Boolean(name)),
   ).size;
-  const modifiers = result.items.reduce(
-    (total, item) => total + (item.modifiers?.length ?? 0),
-    0,
-  );
+  // The same «نوع شیر» group is usually listed on every drink that offers it;
+  // counting one entry per item made a 10-drink menu claim 10× the modifiers
+  // the import actually writes. Count what apply() would create: one row per
+  // distinct (group, name) pair.
+  const modifierKeys = new Set<string>();
+  for (const item of result.items)
+    for (const modifier of item.modifiers ?? [])
+      modifierKeys.add(`${item.modifierGroup}\u0000${modifier.name}`);
   return {
     items: result.items.length,
     categories: result.categories.length,
     modifierGroups,
-    modifiers,
+    modifiers: modifierKeys.size,
     errors: result.errors,
   };
+}
+
+/**
+ * How the parsed rows collide with what is already on this branch's menu.
+ * Import is an *upsert*: a row whose (category, name) already exists has its
+ * price/description/sku overwritten. That is the operation's most surprising
+ * side, so the preview says how many rows merge versus create — the counts are
+ * advisory (another import in between can shift them), which is why they are
+ * not part of the apply-side validation.
+ */
+async function existingMatches(locationId: string, result: ImportResult) {
+  if (result.items.length === 0) return null;
+  const client = await getPool().connect();
+  try {
+    const { rows: categories } = await client.query<{ count: string; inactive: string }>(
+      `SELECT COUNT(*)::text AS count,
+              COUNT(*) FILTER (WHERE NOT is_active)::text AS inactive
+         FROM menu_categories
+        WHERE location_id = $1 AND name = ANY($2::text[])`,
+      [locationId, result.categories],
+    );
+    const { rows: items } = await client.query<{ count: string }>(
+      `SELECT COUNT(DISTINCT mi.id)::text AS count
+         FROM menu_items mi
+         JOIN menu_categories mc ON mc.id = mi.category_id AND mc.location_id = $1
+         JOIN unnest($2::text[], $3::text[]) AS u(category, name)
+           ON mc.name = u.category AND mi.name = u.name`,
+      [
+        locationId,
+        result.items.map((item) => item.category),
+        result.items.map((item) => item.name),
+      ],
+    );
+    return {
+      categories: Number(categories[0]?.count ?? 0),
+      inactiveCategories: Number(categories[0]?.inactive ?? 0),
+      items: Number(items[0]?.count ?? 0),
+    };
+  } finally {
+    client.release();
+  }
 }
 
 /** Reject ambiguous per-category tax and per-group selection definitions before any rows are written. */
@@ -41,6 +91,7 @@ function consistencyErrors(result: ImportResult): string[] {
   const errors: string[] = [];
   const categoryRates = new Map<string, number>();
   const groupRules = new Map<string, string>();
+  const modifierPrices = new Map<string, number>();
   for (const item of result.items) {
     if (item.taxRate !== undefined) {
       const current = categoryRates.get(item.category);
@@ -56,6 +107,18 @@ function consistencyErrors(result: ImportResult): string[] {
           `گروه افزودنی «${item.modifierGroup}» بیش از یک محدودهٔ انتخاب دارد.`,
         );
       groupRules.set(item.modifierGroup, rule);
+      // Without this, two rows listing «شیر بادام:25000» and «شیر بادام:30000»
+      // in the same group would silently resolve to whichever row apply()
+      // happened to reach last.
+      for (const modifier of item.modifiers ?? []) {
+        const key = `${item.modifierGroup}\u0000${modifier.name}`;
+        const currentPrice = modifierPrices.get(key);
+        if (currentPrice !== undefined && currentPrice !== modifier.priceDelta)
+          errors.push(
+            `افزودنی «${modifier.name}» در گروه «${item.modifierGroup}» بیش از یک قیمت دارد.`,
+          );
+        modifierPrices.set(key, modifier.priceDelta);
+      }
     }
   }
   return [...new Set(errors)];
@@ -88,15 +151,24 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   let result: ImportResult;
   try {
+    // Prices in the file are read in the business's own display unit, the same
+    // unit every money input in the app uses. Reading a Rial business's file
+    // as Toman would store every price 10× too high.
+    const prefs = await getSetting<BusinessPrefs>(
+      session.businessId,
+      SETTING_KEYS.businessPrefs,
+    );
+    const unit: ImportMoneyUnit =
+      prefs?.currencyDisplay === "rial" ? "rial" : "toman";
     const name = file.name.toLowerCase();
     if (name.endsWith(".xlsx"))
-      result = rowsToImport(await xlsxToRows(await file.arrayBuffer()));
+      result = rowsToImport(await xlsxToRows(await file.arrayBuffer()), unit);
     else if (
       name.endsWith(".csv") ||
       name.endsWith(".txt") ||
       name.endsWith(".tsv")
     )
-      result = parseMenuCsv(await file.text());
+      result = parseMenuCsv(await file.text(), unit);
     else
       return NextResponse.json(
         { error: "unsupported_format" },
@@ -117,8 +189,17 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       { status: 400 },
     );
   }
-  if (mode === "preview")
-    return NextResponse.json({ preview: preview(result) });
+  if (mode === "preview") {
+    // Advisory only: a failed lookup degrades the preview to counts alone
+    // rather than failing the whole request.
+    let matches: Awaited<ReturnType<typeof existingMatches>> = null;
+    try {
+      matches = await existingMatches(location.id, result);
+    } catch {
+      matches = null;
+    }
+    return NextResponse.json({ preview: { ...preview(result), matches } });
+  }
   if (result.errors.length > 0)
     return NextResponse.json(
       { error: "invalid_import", errors: result.errors },
@@ -140,27 +221,35 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   let updatedItems = 0;
   let createdGroups = 0;
   let createdModifiers = 0;
+  let reactivatedCategories = 0;
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const categoryIdByName = new Map<string, string>();
     const { rows: existingCategories } = await client.query(
-      "SELECT id, name FROM menu_categories WHERE location_id = $1",
+      "SELECT id, name, is_active FROM menu_categories WHERE location_id = $1",
       [location.id],
     );
     for (const category of existingCategories)
       categoryIdByName.set(category.name, category.id);
 
-    const categoriesToUpdate: { id: string; taxRate: number }[] = [];
+    const categoriesToUpdate: { id: string; taxRate: number | null; wasInactive: boolean }[] = [];
     const categoriesToInsert: { name: string; taxRate: number }[] = [];
 
     for (const categoryName of result.categories) {
       const taxRate = categoryTaxRate.get(categoryName) ?? defaultTaxRate;
       const existingId = categoryIdByName.get(categoryName);
       if (existingId) {
-        if (categoryTaxRate.has(categoryName)) {
-          categoriesToUpdate.push({ id: existingId, taxRate });
-        }
+        // Every category the file writes into is re-activated, the same
+        // deliberate upsert the modifiers below get: a category deactivated by
+        // an earlier delete (it had ordered items) would otherwise swallow the
+        // imported rows into a part of the menu the POS never shows, with no
+        // hint of where they went.
+        categoriesToUpdate.push({
+          id: existingId,
+          taxRate: categoryTaxRate.has(categoryName) ? taxRate : null,
+          wasInactive: !existingCategories.find((c) => c.id === existingId)?.is_active,
+        });
       } else {
         categoriesToInsert.push({ name: categoryName, taxRate });
       }
@@ -169,9 +258,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     if (categoriesToUpdate.length > 0) {
       const ids = categoriesToUpdate.map((c) => c.id);
       const rates = categoriesToUpdate.map((c) => c.taxRate);
+      reactivatedCategories = categoriesToUpdate.filter((c) => c.wasInactive).length;
       await client.query(
         `UPDATE menu_categories AS c
-         SET tax_rate = u.rate
+         SET tax_rate = COALESCE(u.rate, c.tax_rate),
+             is_active = true
          FROM unnest($1::uuid[], $2::numeric[]) AS u(id, rate)
          WHERE c.id = u.id`,
         [ids, rates],
@@ -301,5 +392,6 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     updatedItems,
     createdGroups,
     createdModifiers,
+    reactivatedCategories,
   });
 });
