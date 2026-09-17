@@ -56,6 +56,24 @@ describe("parseStartTime", () => {
     expect(parseStartTime("evening")).toBeNull();
     expect(parseStartTime("")).toBeNull();
   });
+
+  it("accepts the HH:MM:SS an <input type=time> can submit", () => {
+    // Firefox renders the seconds field once a control has seen a
+    // seconds-bearing value, and some Android WebViews render it always; both
+    // then submit "18:00:00", which the HH:MM-only rule rejected — a branch
+    // got «ساعت شروع روز کاری معتبر نیست» for a time the browser's own widget
+    // had produced.
+    expect(parseStartTime("18:00:00")).toBe(1080);
+    expect(parseStartTime("06:30:00")).toBe(390);
+  });
+
+  it("refuses a non-zero seconds part rather than truncating it", () => {
+    // Whole minutes are the stored resolution, so 18:00:30 is a value this
+    // cannot honour — and silently dropping the :30 would re-bucket the
+    // branch's history against a time it did not choose.
+    expect(parseStartTime("18:00:30")).toBeNull();
+    expect(parseStartTime("18:00:60")).toBeNull();
+  });
 });
 
 describe("formatStartTime", () => {
