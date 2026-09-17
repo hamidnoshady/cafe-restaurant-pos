@@ -328,10 +328,17 @@ function errorMessage(code: string | undefined): string {
     // Phase 16 — bank & cash reconciliation
     invalid_account: "حساب انتخاب‌شده معتبر نیست.",
     statement_date_required: "تاریخ صورتحساب الزامی است.",
-    reconciliation_in_progress: "یک تطبیق ناتمام برای این حساب وجود دارد؛ ابتدا آن را تکمیل کنید.",
+    invalid_statement_date: "تاریخ صورتحساب معتبر نیست؛ تاریخ را از تقویم انتخاب کنید.",
+    statement_date_already_reconciled:
+      "برای این حساب، تطبیقی با تاریخ مساوی یا جدیدتر قبلاً قفل شده است؛ تاریخ صورتحساب باید بعد از آخرین تطبیق قفل‌شده باشد.",
+    reconciliation_in_progress:
+      "یک تطبیق ناتمام برای این حساب وجود دارد؛ ابتدا آن را تکمیل یا حذف کنید.",
     reconciliation_not_found: "تطبیق پیدا نشد.",
     reconciliation_completed: "این تطبیق قبلاً قفل شده و قابل تغییر نیست.",
+    negative_statement_balance:
+      "مانده صورتحساب صندوق یا کارت‌خوان نمی‌تواند منفی باشد؛ مانده پایانی را وارد کنید، نه گردش دوره.",
     journal_line_not_found: "سند انتخاب‌شده معتبر نیست.",
+    journal_line_already_reconciled: "این سند در یک تطبیق قفل‌شدهٔ دیگر ثبت شده و دوباره قابل تطبیق نیست.",
     balance_mismatch: "مانده محاسبه‌شده با مانده صورتحساب برابر نیست.",
     fiscal_period_locked: "دوره مالی این تاریخ قفل است و امکان ثبت سند وجود ندارد.",
     fiscal_period_soft_closed: "دوره مالی این تاریخ بسته‌ی موقت است؛ فقط مالک یا حسابدار می‌تواند سند ثبت کند.",
