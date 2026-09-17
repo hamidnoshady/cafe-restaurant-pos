@@ -36,13 +36,19 @@
 import type { PoolClient } from "pg";
 import { businessDateOf, type ValidatedBackdatedOrder } from "./backdated-orders";
 import { deductForOrder } from "./inventory-service";
-import { rialText, type RialText } from "./inventory-exact";
+import { rialBigInt, rialText, type RialText } from "./inventory-exact";
 import { postExactCogsEntry, postExactOrderPaymentEntry } from "./ledger-service";
 import { getOnlinePlatformsConfig } from "./online-platforms-service";
+import { commissionAmountFor } from "./online-platforms-calculation";
 import { captureInventorySnapshot } from "./order-mutations";
 import { resolveCartItems } from "./order-cart";
 import { computeOrderTotals } from "./orders";
-import { tendersWithTip, validateTenders, type ResolvedTender } from "./payment-methods";
+import {
+  platformCommissionBase,
+  tendersWithTip,
+  validateTenders,
+  type ResolvedTender,
+} from "./payment-methods";
 import { listPaymentMethods } from "./payment-methods-service";
 import { businessIdForLocation, monthlyOrderCount, planLimitsFor } from "./plan-limits";
 
@@ -283,15 +289,13 @@ export async function recordBackdatedOrder(
   );
 
   let platformCommission = "0" as RialText;
-  const platformAmount = tenders
-    .filter((tender) => tender.settlement === "snappfood")
-    .reduce((sum, tender) => sum + tender.amount, 0);
-  if (platformAmount > 0) {
+  // As with live checkout, `tenders` contains the food bill on the SnapFood
+  // slice. The tip is stored separately and is never in the commission base.
+  const platformAmount = rialText(String(platformCommissionBase(tenders)));
+  if (rialBigInt(platformAmount) > 0n) {
     const { snappfood } = await getOnlinePlatformsConfig(businessId);
     if (snappfood) {
-      platformCommission = rialText(
-        BigInt(Math.round(platformAmount * (snappfood.commissionPercent / 100))).toString(),
-      );
+      platformCommission = commissionAmountFor(platformAmount, snappfood.commissionPercent);
     }
   }
 

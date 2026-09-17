@@ -122,7 +122,16 @@ export function SectionCard({
       {title ? (
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
           <div className="min-w-0">
-            <h2 className="font-semibold text-foreground">{title}</h2>
+            {typeof title === "string" || typeof title === "number" ? (
+              <h2 className="font-semibold text-foreground">{title}</h2>
+            ) : (
+              // Several cards need an eyebrow plus a larger heading. Do not
+              // wrap that ReactNode in another <h2>: doing so creates invalid
+              // nested headings and causes the browser to repair the markup
+              // differently across desktop and mobile. The caller owns the
+              // heading in this branch.
+              <div className="font-semibold text-foreground">{title}</div>
+            )}
             {description ? (
               <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
             ) : null}
