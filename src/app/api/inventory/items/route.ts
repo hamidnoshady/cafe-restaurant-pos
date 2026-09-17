@@ -10,7 +10,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   let body: {
     name?: string;
     unit?: string;
-    sku?: string;
+    sku?: string | null;
     reorderLevel?: number | null;
     purchaseUnit?: string | null;
     purchaseUnitFactor?: number;
@@ -21,9 +21,18 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const name = body.name?.trim();
-  const unit = body.unit?.trim();
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const unit = typeof body.unit === "string" ? body.unit.trim() : "";
   if (!name || !unit) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  if (
+    (body.sku !== undefined && body.sku !== null && typeof body.sku !== "string") ||
+    (body.purchaseUnit !== undefined && body.purchaseUnit !== null && typeof body.purchaseUnit !== "string")
+  ) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
 
   const reorderLevel =
     body.reorderLevel === undefined || body.reorderLevel === null ? null : Number(body.reorderLevel);
