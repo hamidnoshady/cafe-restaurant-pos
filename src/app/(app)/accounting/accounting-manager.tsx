@@ -209,7 +209,7 @@ export function AccountingManager({
               permissions={permissions}
             />
           ) : null}
-          {section === "receivables" ? <ArSection busy={busy} run={run} /> : null}
+          {section === "receivables" ? <ArSection /> : null}
           {section === "payables" ? <ApSection busy={busy} run={run} /> : null}
           {section === "receipts" ? <ReceiptsPaymentsSection /> : null}
           {section === "installments" ? <InstallmentsSection /> : null}
@@ -269,6 +269,7 @@ function errorMessage(code: string | undefined): string {
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     invalid_amount: "مبلغ معتبر نیست.",
     invalid_method: "روش دریافت/پرداخت معتبر نیست.",
+    invalid_date: "تاریخ معتبر نیست.",
     // Phase 16 — AP subledger
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",

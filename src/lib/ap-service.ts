@@ -24,7 +24,7 @@ import { businessToday } from "./business-day-service";
 import { isUuid } from "./uuid";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
-import { ageOpenItems, summarizeAging, type AgingSummary } from "./aging";
+import { ageOpenItems, summarizeAging, unappliedCredit, type AgingSummary } from "./aging";
 import { enqueueHolooReceiptForApPayment } from "./integrations/holoo/outbox-producer";
 
 export { MissingLedgerAccountError };
@@ -38,6 +38,11 @@ export class ApError extends Error {
     super(code);
     this.status = status;
   }
+}
+
+/** An actual calendar date in ISO form — see `ar-service.ts` for why the regex alone is not enough. */
+function isIsoDateOnly(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 }
 
 async function apAccountId(businessId: string): Promise<string | null> {
@@ -205,6 +210,7 @@ export interface AgingReport {
  * late shift's documents in the wrong bucket).
  */
 export async function getApAging(businessId: string, asOfDate?: string): Promise<AgingReport> {
+  if (asOfDate !== undefined && !isIsoDateOnly(asOfDate)) throw new ApError("invalid_date");
   const effectiveAsOf = asOfDate ?? (await businessToday(businessId));
   const accountId = await apAccountId(businessId);
   if (!accountId) return { asOfDate: effectiveAsOf, rows: [], totals: { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 } };
@@ -228,6 +234,12 @@ export async function getApAging(businessId: string, asOfDate?: string): Promise
   for (const [supplierId, { name, bills, payments }] of bySupplier) {
     const aged = ageOpenItems(bills, payments, effectiveAsOf);
     const summary = summarizeAging(aged);
+    // Advance payments to a supplier have no open bill to age; carry them as
+    // negative «current» so the report still agrees with the control account
+    // (the mirror of the same rule in `getArAging`).
+    const credit = unappliedCredit(bills, payments);
+    summary.current -= credit;
+    summary.total -= credit;
     if (summary.total === 0) continue;
     rows.push({ supplierId, supplierName: name, ...summary });
     totals.current += summary.current;
@@ -273,6 +285,11 @@ export async function payBill(params: {
   // A non-uuid supplier id cannot match a row, and asking Postgres anyway
   // raises a syntax error rather than returning none — see `isUuid`.
   if (!isUuid(params.supplierId)) throw new ApError("supplier_not_found", 404);
+  if (params.paymentDate != null && !isIsoDateOnly(params.paymentDate)) throw new ApError("invalid_date");
+
+  // The business's «امروز», not the DB server's UTC date — the same argument
+  // `receivePayment` in ar-service.ts makes for receipts.
+  const paymentDate = params.paymentDate ?? (await businessToday(params.businessId));
 
   const client = await getPool().connect();
   try {
@@ -309,7 +326,7 @@ export async function payBill(params: {
         params.businessId,
         params.locationId,
         params.supplierId,
-        params.paymentDate ?? null,
+        paymentDate,
         params.method,
         params.amount,
         params.memo?.trim() || null,

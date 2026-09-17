@@ -207,6 +207,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     invalid_amount: "مبلغ معتبر نیست.",
     invalid_method: "روش دریافت معتبر نیست.",
+    invalid_date: "تاریخ معتبر نیست.",
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
     // Phase 16 — bank & cash reconciliation

@@ -19,7 +19,8 @@ import { isUuid } from "./uuid";
 import { PARTY_ROLE_STORAGE } from "./parties";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
-import { ageOpenItems, summarizeAging, UNKNOWN_CUSTOMER_KEY, type AgingSummary } from "./aging";
+import { ageOpenItems, summarizeAging, unappliedCredit, UNKNOWN_CUSTOMER_KEY, type AgingSummary } from "./aging";
+import { toPersianDigits } from "./digits";
 import { enqueueHolooReceiptForArReceipt } from "./integrations/holoo/outbox-producer";
 
 export { MissingLedgerAccountError };
@@ -33,6 +34,15 @@ export class ArError extends Error {
     super(code);
     this.status = status;
   }
+}
+
+/**
+ * An actual calendar date in ISO form. The regex alone passes «2025-13-45»,
+ * which `Date.parse` then reads as NaN — and every age bucket computed from a
+ * NaN «today» falls through to «بیش از ۹۰ روز» without failing the request.
+ */
+function isIsoDateOnly(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 }
 
 async function arAccountId(businessId: string): Promise<string | null> {
@@ -198,7 +208,10 @@ export async function getCustomerStatement(businessId: string, customerId: strin
           : "other";
     const description =
       type === "invoice" && l.order_number != null
-        ? `سفارش #${l.order_number}`
+        ? // The UI is Persian-first; a Latin «#1002» in the middle of an RTL
+          // statement reads as a data glitch next to every Persian-digit
+          // amount and date around it.
+          `سفارش #${toPersianDigits(String(l.order_number))}`
         : (l.memo ?? (type === "receipt" ? "دریافت وجه" : "سند دستی"));
     return { date: l.entry_date, type, description, debit, credit, balance };
   });
@@ -227,6 +240,7 @@ export interface AgingReport {
  * question the branch's own calendar does.
  */
 export async function getArAging(businessId: string, asOfDate?: string): Promise<AgingReport> {
+  if (asOfDate !== undefined && !isIsoDateOnly(asOfDate)) throw new ArError("invalid_date");
   const effectiveAsOf = asOfDate ?? (await businessToday(businessId));
   const accountId = await arAccountId(businessId);
   if (!accountId) return { asOfDate: effectiveAsOf, rows: [], totals: { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 } };
@@ -249,6 +263,18 @@ export async function getArAging(businessId: string, asOfDate?: string): Promise
   for (const [customerId, { name, invoices, receipts }] of byCustomer) {
     const aged = ageOpenItems(invoices, receipts, effectiveAsOf);
     const summary = summarizeAging(aged);
+    /*
+     * An advance or overpayment has no open invoice to age, so `summarizeAging`
+     * alone drops it — and then the column of the screen's own «مانده حساب‌ها»
+     * tab (and the A/R control account) says one number while this report's
+     * «جمع» says another. Carry the unapplied credit as a *negative* current
+     * amount, the way a running-balance subledger does, so each row's «جمع»
+     * is exactly the customer's net balance and the report's «جمع کل» is
+     * exactly the control account.
+     */
+    const credit = unappliedCredit(invoices, receipts);
+    summary.current -= credit;
+    summary.total -= credit;
     if (summary.total === 0) continue;
     rows.push({ customerId, customerName: name, ...summary });
     totals.current += summary.current;
@@ -294,6 +320,22 @@ export async function receivePayment(params: {
   // A non-uuid customer id cannot match a row, and asking Postgres anyway
   // raises a syntax error rather than returning none — see `isUuid`.
   if (!isUuid(params.customerId)) throw new ArError("customer_not_found", 404);
+  // Same story for a date off the wire: reject it here, in the error
+  // vocabulary the API answers with, rather than as Postgres's parse error.
+  if (params.receiptDate != null && !isIsoDateOnly(params.receiptDate)) throw new ArError("invalid_date");
+
+  /*
+   * «امروز» here is the business's own date, not the database server's.
+   * `CURRENT_DATE` (what the insert used to fall back to) is the date in the
+   * server's timezone — UTC in the Docker image — so a receipt taken during
+   * the first 3½ hours of a Tehran day, or anywhere in a café's post-midnight
+   * late shift, was filed under the wrong day: the aging report (which counts
+   * in `businessToday`) aged it a day early, and a late-shift receipt could
+   * land inside a fiscal period the business had already closed. The same
+   * discipline `installments-service` documents: today is `businessToday`,
+   * never a UTC date slice.
+   */
+  const receiptDate = params.receiptDate ?? (await businessToday(params.businessId));
 
   const client = await getPool().connect();
   try {
@@ -327,7 +369,7 @@ export async function receivePayment(params: {
         params.businessId,
         params.locationId,
         params.customerId,
-        params.receiptDate ?? null,
+        receiptDate,
         params.method,
         params.amount,
         params.memo?.trim() || null,

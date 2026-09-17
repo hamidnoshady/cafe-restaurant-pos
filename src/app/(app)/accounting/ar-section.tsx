@@ -47,15 +47,33 @@ const AGING_COLUMNS: { key: keyof Omit<AgingRow, "customerId" | "customerName">;
   { key: "total", label: "جمع" },
 ];
 
-export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean> }) {
+/** The mid-list action button (row level), sized to the workspace's other controls — a bare text span was the old look, and too small a target to tap. */
+const ROW_ACTION_CLASS =
+  "inline-flex min-h-9 items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20";
+
+/** Same action on the mobile card: full-width, finger-sized. */
+const CARD_ACTION_CLASS =
+  "mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:hover:bg-amber-500/30";
+
+/** The minus next to a «مانده» is easy to miss; a صفرِ نزدیک reading as بدهکار is the costly mistake. */
+function CreditBadge() {
+  return (
+    <span className="ms-2 inline-block rounded-full bg-muted px-2.5 py-1 align-middle text-xs font-medium text-muted-foreground">
+      بستانکار
+    </span>
+  );
+}
+
+export function ArSection() {
   const money = useMoney();
   const [customers, setCustomers] = useState<CustomerBalance[] | null>(null);
+  const [balancesFailed, setBalancesFailed] = useState(false);
   const [view, setView] = useState<"balances" | "aging">("balances");
   const [aging, setAging] = useState<AgingReport | null>(null);
+  const [agingFailed, setAgingFailed] = useState(false);
   const [statementTarget, setStatementTarget] = useState<{ id: string; name: string } | null>(null);
   const [receiveTarget, setReceiveTarget] = useState<CustomerBalance | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [error, setError] = useState("");
   /*
    * «تا تاریخ» — the aging report's as-of date.
    *
@@ -67,27 +85,54 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
   const [asOfDate, setAsOfDate] = useState("");
 
   useEffect(() => {
-    api<{ customers: CustomerBalance[] }>("/api/ledger/ar/customers").then(({ ok, data }) => {
-      if (ok) setCustomers(data.customers);
-      // Not `null` for ever: an unending skeleton claims the request is still
-      // running. An empty list plus the reason is the honest answer.
-      else {
+    /*
+     * `cancelled` keeps a slow response from overwriting a newer retry/tab
+     * switch — the last request the screen asked for is the only one allowed
+     * to write. The `catch` matters too: `api()` rejects on a dead network,
+     * which used to mean an unhandled rejection and a skeleton for ever.
+     */
+    let cancelled = false;
+    setBalancesFailed(false);
+    api<{ customers: CustomerBalance[] }>("/api/ledger/ar/customers")
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (ok) setCustomers(data.customers);
+        // Not `null` for ever: an unending skeleton claims the request is
+        // still running. A failure state plus «تلاش دوباره» is the honest
+        // answer — and it is not the empty state: a failed load must never
+        // read «هیچ حساب دریافتنی بازی وجود ندارد», it just means we don't know.
+        else {
+          setCustomers([]);
+          setBalancesFailed(true);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
         setCustomers([]);
-        setError("بارگذاری مانده‌های دریافتنی ناموفق بود.");
-      }
-    });
+        setBalancesFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [refreshKey]);
 
   useEffect(() => {
     if (view !== "aging") return;
+    let cancelled = false;
     setAging(null);
-    api<AgingReport>(`/api/ledger/ar/aging${asOfDate ? `?asOfDate=${asOfDate}` : ""}`).then(({ ok, data }) => {
-      if (ok) setAging(data);
-      else {
-        setAging({ asOfDate: "", rows: [], totals: { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 } });
-        setError("بارگذاری نمای سنی بدهی‌ها ناموفق بود.");
-      }
-    });
+    setAgingFailed(false);
+    api<AgingReport>(`/api/ledger/ar/aging${asOfDate ? `?asOfDate=${asOfDate}` : ""}`)
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (ok) setAging(data);
+        else setAgingFailed(true);
+      })
+      .catch(() => {
+        if (!cancelled) setAgingFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [view, asOfDate, refreshKey]);
 
   if (!customers) {
@@ -96,8 +141,6 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
 
   return (
     <section className="space-y-4">
-      <ErrorBox>{error}</ErrorBox>
-
       <div className={cardClass}>
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
           <div>
@@ -114,7 +157,7 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
             >
               مشتریان در حسابداری
             </Link>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="نمای حساب‌های دریافتنی">
               <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
               <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
             </div>
@@ -124,7 +167,14 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
         <div className="p-4 sm:p-5">
         {view === "balances" ? (
           <div>
-            {customers.length === 0 ? (
+            {balancesFailed ? (
+              <div className="space-y-3">
+                <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">بارگذاری مانده‌های دریافتنی ناموفق بود.</p>
+                <div className="mx-auto max-w-xs">
+                  <SecondaryButton onClick={() => setRefreshKey((k) => k + 1)} className="w-full">تلاش دوباره</SecondaryButton>
+                </div>
+              </div>
+            ) : customers.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هیچ حساب دریافتنی بازی وجود ندارد.</p>
             ) : (
               <>
@@ -137,8 +187,8 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
                           <tr key={c.customerId} className="border-b border-border last:border-b-0">
                             <td className="px-4 py-3"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="font-semibold text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{c.customerName}</button></td>
                             <td className="px-4 py-3 text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "—"}</td>
-                            <td className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(c.balance)}</td>
-                            <td className="px-4 py-3">{c.customerId !== "unknown" ? <button type="button" onClick={() => setReceiveTarget(c)} className="rounded-lg px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20">دریافت وجه</button> : null}</td>
+                            <td className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(c.balance)}{c.balance < 0 ? <CreditBadge /> : null}</td>
+                            <td className="px-4 py-3">{c.customerId !== "unknown" ? <button type="button" onClick={() => setReceiveTarget(c)} className={ROW_ACTION_CLASS}>دریافت وجه</button> : null}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -150,9 +200,10 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
                     <article key={c.customerId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="truncate text-right font-bold text-foreground hover:text-amber-700 dark:hover:text-amber-300">{c.customerName}</button><p className="mt-1 text-xs text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "شماره‌ای ثبت نشده"}</p></div>
-                        <span className="whitespace-nowrap font-bold text-foreground">{money.format(c.balance)}</span>
+                        <span className="shrink-0 whitespace-nowrap font-bold text-foreground">{money.format(c.balance)}</span>
                       </div>
-                      {c.customerId !== "unknown" ? <button type="button" onClick={() => setReceiveTarget(c)} className="mt-3 rounded-lg bg-amber-100 px-4 text-sm font-semibold text-amber-950 dark:bg-amber-500/20 dark:text-amber-200">دریافت وجه</button> : null}
+                      {c.balance < 0 ? <div className="mt-2"><CreditBadge /></div> : null}
+                      {c.customerId !== "unknown" ? <button type="button" onClick={() => setReceiveTarget(c)} className={CARD_ACTION_CLASS}>دریافت وجه</button> : null}
                     </article>
                   ))}
                 </div>
@@ -172,7 +223,14 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
                 </p>
               ) : null}
             </div>
-            {!aging ? (
+            {agingFailed ? (
+              <div className="space-y-3">
+                <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">بارگذاری نمای سنی بدهی‌ها ناموفق بود.</p>
+                <div className="mx-auto max-w-xs">
+                  <SecondaryButton onClick={() => setRefreshKey((k) => k + 1)} className="w-full">تلاش دوباره</SecondaryButton>
+                </div>
+              </div>
+            ) : !aging ? (
               <LoadingSkeleton rows={3} />
             ) : aging.rows.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هیچ حساب دریافتنی بازی وجود ندارد.</p>
@@ -182,7 +240,10 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مشتری</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="px-4 py-3 text-start text-xs font-medium sm:text-sm">{col.label}</th>)}</tr></thead>
-                      <tbody>{aging.rows.map((r) => <tr key={r.customerId} className="border-b border-border last:border-b-0"><td className="px-4 py-3 font-medium text-foreground">{r.customerName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap px-4 py-3 ${col.key === "total" ? "font-bold text-foreground" : "text-foreground"}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
+                      {/* The customer name opens the same صورتحساب the balances
+                          tab offers — an overdue number with no way to see what
+                          it is made of was a dead end. */}
+                      <tbody>{aging.rows.map((r) => <tr key={r.customerId} className="border-b border-border last:border-b-0"><td className="px-4 py-3"><button type="button" onClick={() => setStatementTarget({ id: r.customerId, name: r.customerName })} className="font-medium text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{r.customerName}</button></td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap px-4 py-3 ${col.key === "total" ? "font-bold text-foreground" : "text-foreground"}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
                       <tfoot><tr className="border-t border-border bg-stone-50/60 font-semibold dark:bg-stone-800/30"><td className="px-4 py-3 text-foreground">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
                     </table>
                   </div>
@@ -190,7 +251,7 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
                 <div className="space-y-3 lg:hidden">
                   {aging.rows.map((r) => (
                     <article key={r.customerId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
-                      <div className="flex justify-between gap-3"><h3 className="text-sm font-semibold text-foreground">{r.customerName}</h3><span className="whitespace-nowrap font-bold text-foreground">{money.format(r.total)}</span></div>
+                      <div className="flex items-start justify-between gap-3"><button type="button" onClick={() => setStatementTarget({ id: r.customerId, name: r.customerName })} className="min-w-0 truncate text-sm font-semibold text-foreground hover:text-amber-700 dark:hover:text-amber-300">{r.customerName}</button><span className="shrink-0 whitespace-nowrap font-bold text-foreground">{money.format(r.total)}</span></div>
                       <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
                         {AGING_COLUMNS.filter((col) => col.key !== "total").map((col) => <div key={col.key}><dt className="text-xs text-muted-foreground">{col.label}</dt><dd className="mt-1 font-semibold text-foreground">{r[col.key] ? money.format(r[col.key]) : "—"}</dd></div>)}
                       </dl>
@@ -210,16 +271,10 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
       {receiveTarget ? (
         <ReceivePaymentDialog
           customer={receiveTarget}
-          busy={busy}
           onClose={() => setReceiveTarget(null)}
-          onSubmit={async (body) => {
-            setError("");
-            const ok = await run(() => api("/api/ledger/ar/receipts", { method: "POST", body: JSON.stringify(body) }));
-            if (ok) {
-              setReceiveTarget(null);
-              setRefreshKey((k) => k + 1);
-            }
-            return ok;
+          onCreated={() => {
+            setReceiveTarget(null);
+            setRefreshKey((k) => k + 1);
           }}
         />
       ) : null}
@@ -229,20 +284,26 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
 
 function ReceivePaymentDialog({
   customer,
-  busy,
   onClose,
-  onSubmit,
+  onCreated,
 }: {
   customer: CustomerBalance;
-  busy: boolean;
   onClose: () => void;
-  onSubmit: (body: { customerId: string; amount: number; method: "cash" | "bank"; memo?: string }) => Promise<boolean>;
+  onCreated: () => void;
 }) {
   const money = useMoney();
   const [amount, setAmount] = useState(String(money.toInput(Math.max(customer.balance, 0)) || ""));
   const [method, setMethod] = useState<"cash" | "bank">("cash");
+  const [receiptDate, setReceiptDate] = useState("");
   const [memo, setMemo] = useState("");
-  const [localError, setLocalError] = useState("");
+  /*
+   * Busy and error live *inside* the dialog, the way the installments dialog
+   * in this same workspace does it: the workspace-level ErrorBox renders
+   * behind this overlay, so a server refusal (a locked fiscal period is the
+   * ordinary case!) routed there was invisible — the dialog just sat open.
+   */
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   useOverlayEscape(onClose);
 
   async function submit() {
@@ -250,15 +311,33 @@ function ReceivePaymentDialog({
     try {
       rial = money.parse(amount);
     } catch {
-      setLocalError(errorMessage("invalid_amount"));
+      setError(errorMessage("invalid_amount"));
       return;
     }
     if (rial <= 0) {
-      setLocalError(errorMessage("invalid_amount"));
+      setError(errorMessage("invalid_amount"));
       return;
     }
-    setLocalError("");
-    await onSubmit({ customerId: customer.customerId, amount: rial, method, memo: memo.trim() || undefined });
+    setBusy(true);
+    setError("");
+    try {
+      const { ok, data } = await api<{ error?: string }>("/api/ledger/ar/receipts", {
+        method: "POST",
+        body: JSON.stringify({
+          customerId: customer.customerId,
+          amount: rial,
+          method,
+          receiptDate: receiptDate || undefined,
+          memo: memo.trim() || undefined,
+        }),
+      });
+      if (ok) onCreated();
+      else setError(errorMessage(data.error));
+    } catch {
+      setError(errorMessage(undefined));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -267,38 +346,56 @@ function ReceivePaymentDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="receive-payment-heading"
-        className={`${overlayPanelClass} w-full max-w-md p-4 sm:p-5`}
+        className={`${overlayPanelClass} max-h-[88vh] w-full max-w-md overflow-y-auto p-4 sm:p-5`}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="mb-4 border-b border-border pb-4">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ثبت دریافت</p>
-          <h3 id="receive-payment-heading" className="mt-1 text-lg font-bold">دریافت وجه از {customer.customerName}</h3>
+          <h3 id="receive-payment-heading" className="mt-1 break-words text-lg font-bold">دریافت وجه از {customer.customerName}</h3>
+          {/* The prefilled amount is editable, so the number it came from must
+              stay visible; after one keypress it otherwise exists nowhere. */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            مانده فعلی: <span className="font-semibold tabular-nums text-foreground">{money.format(customer.balance)}</span>
+          </p>
         </header>
-        <ErrorBox>{localError}</ErrorBox>
-        <Field label={`مبلغ (${money.unitLabel})`}>
-          <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </Field>
-        <Field label="روش دریافت">
-          <SearchableSelect
-            value={method}
-            onChange={(value) => setMethod(value as "cash" | "bank")}
-            options={[
-              { value: "cash", label: "نقدی" },
-              { value: "bank", label: "بانکی" },
-            ]}
-          />
-        </Field>
-        <Field label="شرح (اختیاری)">
-          <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
-        </Field>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <SecondaryButton onClick={onClose} disabled={busy}>
-            انصراف
-          </SecondaryButton>
-          <PrimaryButton onClick={submit} disabled={busy}>
-            ثبت دریافت
-          </PrimaryButton>
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!busy) void submit();
+          }}
+        >
+          <ErrorBox>{error}</ErrorBox>
+          <Field label={`مبلغ (${money.unitLabel})`}>
+            <PersianNumberInput autoFocus className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </Field>
+          <Field label="روش دریافت">
+            <SearchableSelect
+              value={method}
+              onChange={(value) => setMethod(value as "cash" | "bank")}
+              options={[
+                { value: "cash", label: "نقدی" },
+                { value: "bank", label: "بانکی" },
+              ]}
+            />
+          </Field>
+          <Field label="تاریخ دریافت" hint="خالی یعنی امروز؛ برای ثبت دریافتی روزهای قبل تاریخ را انتخاب کنید.">
+            <JalaliDatePicker value={receiptDate} onChange={setReceiptDate} placeholder="امروز" />
+          </Field>
+          <Field label="شرح (اختیاری)">
+            <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
+          </Field>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            {/* Only the submit locks: closing mid-flight is safe (a late
+                success still refreshes the list), and the backdrop and Escape
+                already allowed it. */}
+            <SecondaryButton onClick={onClose}>
+              انصراف
+            </SecondaryButton>
+            <PrimaryButton type="submit" disabled={busy}>
+              {busy ? "در حال ثبت…" : "ثبت دریافت"}
+            </PrimaryButton>
+          </div>
+        </form>
       </section>
     </div>
   );

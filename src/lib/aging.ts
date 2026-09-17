@@ -85,6 +85,23 @@ export function ageOpenItems(items: OpenItem[], payments: Payment[], asOfDate: s
   return result;
 }
 
+/**
+ * The part of `payments` FIFO could never reach — the party's *unapplied
+ * credit*: an advance, an overpayment, or a receipt bigger than everything
+ * owed. `ageOpenItems` drops it because there is no open item left to age,
+ * but the credit is real money on the party's balance, and a report that
+ * forgets it stops agreeing with the control account the moment one
+ * customer pays ahead.
+ *
+ * FIFO applies payments oldest-first, so the applied total is always
+ * `min(paid, owed)` and the leftover is whatever `paid` exceeds `owed` by.
+ */
+export function unappliedCredit(items: OpenItem[], payments: Payment[]): number {
+  const owed = items.reduce((sum, item) => sum + item.amount, 0);
+  const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  return Math.max(0, paid - owed);
+}
+
 export type AgingSummary = Record<AgingBucket, number> & { total: number };
 
 export function summarizeAging(aged: AgedItem[]): AgingSummary {
