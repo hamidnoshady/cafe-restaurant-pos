@@ -212,10 +212,14 @@ const ERROR_MESSAGES: Record<string, string> = {
     // Phase 16 — bank & cash reconciliation
     invalid_account: "حساب انتخاب‌شده معتبر نیست.",
     statement_date_required: "تاریخ صورتحساب الزامی است.",
-    reconciliation_in_progress: "یک تطبیق ناتمام برای این حساب وجود دارد؛ ابتدا آن را تکمیل کنید.",
+    invalid_statement_date: "تاریخ صورتحساب معتبر نیست.",
+    statement_date_before_last: "تاریخ صورتحساب نمی‌تواند پیش از آخرین تطبیق تکمیل‌شدهٔ این حساب باشد.",
+    reconciliation_in_progress: "یک تطبیق ناتمام برای این حساب وجود دارد؛ ابتدا آن را تکمیل یا لغو کنید.",
     reconciliation_not_found: "تطبیق پیدا نشد.",
     reconciliation_completed: "این تطبیق قبلاً قفل شده و قابل تغییر نیست.",
-    journal_line_not_found: "سند انتخاب‌شده معتبر نیست.",
+    journal_line_required: "هیچ سندی برای تطبیق انتخاب نشده است.",
+    journal_line_not_found: "سند انتخاب‌شده معتبر نیست یا تاریخ آن بعد از تاریخ صورتحساب است.",
+    too_many_lines: "تعداد اقلام انتخاب‌شده بیش از حد مجاز است؛ در چند مرحله انجام دهید.",
     balance_mismatch: "مانده محاسبه‌شده با مانده صورتحساب برابر نیست.",
     // Phase 17 — plan limits / feature gating
     feature_disabled: "این امکان برای کسب‌وکار شما فعال نیست.",
