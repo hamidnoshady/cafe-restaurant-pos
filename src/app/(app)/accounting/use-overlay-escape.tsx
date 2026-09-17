@@ -16,12 +16,13 @@ import { useEffect } from "react";
  * dialog primitive, and half-implementing them here would be worse than the
  * plain panel these already are.
  */
-export function useOverlayEscape(onClose: () => void): void {
+export function useOverlayEscape(onClose: () => void, enabled = true): void {
   useEffect(() => {
+    if (!enabled) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [enabled, onClose]);
 }
