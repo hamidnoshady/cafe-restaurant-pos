@@ -10,10 +10,16 @@ import {
   postExactOrderPaymentEntry,
 } from "@/lib/ledger-service";
 import { getOnlinePlatformsConfig } from "@/lib/online-platforms-service";
+import { commissionAmountFor } from "@/lib/online-platforms-calculation";
 import { lockOpenOrder } from "@/lib/order-lock";
 import { paymentFailureFor } from "@/lib/order-payment-errors";
 import { rialBigInt, rialText, type RialText } from "@/lib/inventory-exact";
-import { tendersWithTip, validateTenders, type ResolvedTender } from "@/lib/payment-methods";
+import {
+  platformCommissionBase,
+  tendersWithTip,
+  validateTenders,
+  type ResolvedTender,
+} from "@/lib/payment-methods";
 import { listPaymentMethods } from "@/lib/payment-methods-service";
 import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-producer";
 
@@ -29,8 +35,9 @@ interface PayTenderBody {
 interface PayBody {
   /**
    * A bill split across payment ways (migration 0091): ۲۰۰٬۰۰۰ نقدی plus
-   * ۳۰۰٬۰۰۰ کارت‌خوان. The slices must add up to the order total plus the tip
-   * — see validateTenders for why that is exact rather than "at least".
+   * ۳۰۰٬۰۰۰ کارت‌خوان. The slices add up to the order total; a separately
+   * entered tip is added to the ledger tender later and is not duplicated in
+   * the payment rows.
    */
   payments?: PayTenderBody[];
   /** The single-way form, still sent by the amendment screen and by older clients. */
@@ -52,8 +59,8 @@ interface PayBody {
  * نقدی plus ۳۰۰٬۰۰۰ کارت‌خوان is one checkout, one `payments` row per slice,
  * and one journal entry with a debit line per slice. What has not changed is
  * that a checkout settles the bill *in full*: the slices must add up to the
- * total plus the tip, so there is still no partial payment and no balance left
- * open. (A dine-in table session's "split the bill" flow (Phase 3,
+ * order total, while a separately entered tip is added to the ledger and
+ * receipt, so there is still no partial payment and no balance left open. (A dine-in table session's "split the bill" flow (Phase 3,
  * /api/table-sessions/[id]/split) is a different thing again: it cuts one
  * table's bill into several orders, each of which is then paid here.)
  *
@@ -189,14 +196,14 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     }
     const { totalCost } = await deductForOrder(client, session.businessId, location.id, id, session.sub, inventoryEventId);
     let platformCommission = "0" as RialText;
-    const platformAmount = tenders
-      .filter((tender) => tender.settlement === "snappfood")
-      .reduce((sum, tender) => sum + tender.amount, 0);
-    if (platformAmount > 0) {
+    // Commission applies to the food bill on the platform slice, not to a
+    // tip. `tenders` contains the bill only; the tip is added separately
+    // for the ledger and therefore never enters this base.
+    const platformAmount = rialText(String(platformCommissionBase(tenders)));
+    if (rialBigInt(platformAmount) > 0n) {
       const { snappfood } = await getOnlinePlatformsConfig(session.businessId);
       if (snappfood) {
-        const commissionRial = BigInt(Math.round(platformAmount * (snappfood.commissionPercent / 100)));
-        platformCommission = rialText(commissionRial.toString());
+        platformCommission = commissionAmountFor(platformAmount, snappfood.commissionPercent);
       }
     }
     await postExactOrderPaymentEntry(client, {

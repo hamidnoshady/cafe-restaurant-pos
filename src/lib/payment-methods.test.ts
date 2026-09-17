@@ -6,6 +6,7 @@ import {
   changeDue,
   ledgerSettlementFor,
   paymentMethodCodeFor,
+  platformCommissionBase,
   remainingAfterTenders,
   sortPaymentMethods,
   tenderTotal,
@@ -327,6 +328,30 @@ describe("tipTenderIndex / tendersWithTip", () => {
     expect(tenders[0].amount).toBe(2_000_000);
     expect(tipTenderIndex([])).toBe(-1);
     expect(tendersWithTip([], 500_000)).toEqual([]);
+  });
+});
+
+describe("platformCommissionBase", () => {
+  it("uses the bill-only SnapFood slice, excluding the separately stored tip", () => {
+    expect(
+      platformCommissionBase([
+        { settlement: "snappfood", amount: 800_000 },
+        { settlement: "cash", amount: 200_000 },
+      ]),
+    ).toBe(800_000);
+  });
+
+  it("keeps the bill slice correct regardless of tender order", () => {
+    expect(
+      platformCommissionBase([
+        { settlement: "cash", amount: 100_000 },
+        { settlement: "snappfood", amount: 800_000 },
+      ]),
+    ).toBe(800_000);
+  });
+
+  it("works for an all-SnapFood bill too", () => {
+    expect(platformCommissionBase([{ settlement: "snappfood", amount: 800_000 }])).toBe(800_000);
   });
 });
 

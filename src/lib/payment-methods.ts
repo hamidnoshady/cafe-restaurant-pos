@@ -256,7 +256,7 @@ export function changeDue(tenders: readonly { settlement: PaymentSettlement; amo
 export const MAX_TENDERS = 10;
 
 export interface TenderValidationOptions {
-  /** The bill plus any tip: what the tenders must add up to. */
+  /** The bill amount; tips are stored separately and folded into the ledger later. */
   due: Rial;
   /** Whether a customer was named — a `credit` tender is a debt, so it needs one. */
   hasCustomer: boolean;
@@ -318,6 +318,25 @@ export function tipTenderIndex(tenders: readonly { settlement: PaymentSettlement
   if (tenders.length === 0) return -1;
   const collected = tenders.findIndex((tender) => tender.settlement !== "credit");
   return collected >= 0 ? collected : 0;
+}
+
+/**
+ * The part of a split bill an ordering platform charges commission on.
+ *
+ * The `tenders` passed to checkout and backdated-order posting contain the
+ * bill only. Tips are stored separately on the order and are added later by
+ * `tendersWithTip` for the ledger, so summing the SnapFood tender here keeps
+ * the tip out of the commission base by construction. Keeping this rule in a
+ * named helper prevents one posting path from accidentally using the
+ * bill-plus-tip ledger tenders in the future.
+ */
+export function platformCommissionBase(
+  tenders: readonly { settlement: PaymentSettlement; amount: Rial }[],
+): Rial {
+  return tenders.reduce(
+    (total, tender) => (tender.settlement === "snappfood" ? total + tender.amount : total),
+    0,
+  );
 }
 
 /**

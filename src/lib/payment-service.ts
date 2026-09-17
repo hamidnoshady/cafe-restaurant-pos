@@ -6,6 +6,7 @@ import {
   postExactOrderPaymentEntry,
 } from "./ledger-service";
 import { getOnlinePlatformsConfig } from "./online-platforms-service";
+import { commissionAmountFor } from "./online-platforms-calculation";
 import { lockOpenOrder } from "./order-lock";
 import { rialBigInt, rialText, type RialText } from "./inventory-exact";
 
@@ -115,10 +116,7 @@ export async function completeOrderPayment(
   if (method === "snappfood") {
     const { snappfood } = await getOnlinePlatformsConfig(businessId);
     if (snappfood) {
-      const commissionRial = BigInt(
-        Math.round(Number(rialBigInt(amount)) * (snappfood.commissionPercent / 100)),
-      );
-      platformCommission = rialText(commissionRial.toString());
+      platformCommission = commissionAmountFor(amount, snappfood.commissionPercent);
     }
   }
 

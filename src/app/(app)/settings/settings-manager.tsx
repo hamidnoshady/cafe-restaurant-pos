@@ -88,9 +88,11 @@ const TAB_ICONS: Record<SettingsTabKey, LucideIcon> = {
 const SETTINGS_GROUPS: Array<{ label: string; keys: SettingsTabKey[] }> = [
   { label: "کسب‌وکار", keys: ["business", "branch-management"] },
   { label: "مالی و فروش", keys: ["tax", "pricing", "payment-methods", "accounts"] },
+  // Keep the platform contract beside payment settings instead of making
+  // owners scan past management and security sections to find it.
+  { label: "فروش آنلاین", keys: ["online-platforms"] },
   { label: "مدیریت", keys: ["team", "menu", "printers", "devices", "notifications", "shifts"] },
   { label: "امنیت و اتصال", keys: ["audit-log", "security-center", "backup"] },
-  { label: "فروش آنلاین", keys: ["online-platforms"] },
 ];
 
 /**
