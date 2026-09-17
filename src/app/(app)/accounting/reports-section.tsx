@@ -83,8 +83,9 @@ function ReportCard({ link }: { link: ReportLink }) {
       <span className="min-w-0">
         <span className="flex items-center gap-1 font-semibold text-foreground">
           {link.label}
+          {/* ↗ mirrors to ↖ in RTL — an anticlockwise quarter turn. Clockwise gave ↘. */}
           {link.external ? (
-            <ArrowUpRightIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-90" />
+            <ArrowUpRightIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground rtl:-rotate-90" />
           ) : null}
         </span>
         <span className="mt-1 block text-sm leading-6 text-muted-foreground">{link.description}</span>

@@ -17,7 +17,7 @@ import {
 } from "@/components/app-settings/app-settings-panel";
 import { PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
 import { crmSectionHref } from "./crm-routes";
-import { CrmSettingsShortcut } from "./settings-shortcuts";
+import { AppSettingsShortcut } from "@/components/app-settings/app-settings-shortcut";
 
 export function CrmSettingsSection() {
   const groups: AppSettingsGroup[] = [
@@ -27,7 +27,7 @@ export function CrmSettingsSection() {
       description: "بر پایهٔ شمارهٔ تلفن و نام، با ادغام دستی.",
       icon: CopyCheckIcon,
       body: (
-        <CrmSettingsShortcut
+        <AppSettingsShortcut
           href={crmSectionHref("duplicates")}
           label="باز کردن اشخاص تکراری"
           description="پرونده‌های مشکوک به تکرار و ادغام آن‌ها در صفحهٔ خودشان انجام می‌شود."
@@ -40,7 +40,7 @@ export function CrmSettingsSection() {
       description: "سابقهٔ اجازهٔ پیامک و ایمیل هر مشتری — منبع حقیقتِ ارسال در برنامهٔ رشد.",
       icon: ShieldCheckIcon,
       body: (
-        <CrmSettingsShortcut
+        <AppSettingsShortcut
           href={crmSectionHref("consent")}
           label="باز کردن رضایت ارتباط"
           description="ثبت و بازبینی رضایت هر مشتری در صفحهٔ «رضایت ارتباط» انجام می‌شود."

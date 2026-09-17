@@ -20,7 +20,7 @@ import {
 } from "@/components/app-settings/app-settings-panel";
 import { PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
 import { cmsSectionHref } from "./website-routes";
-import { WebsiteSettingsShortcut } from "./settings-shortcuts";
+import { AppSettingsShortcut } from "@/components/app-settings/app-settings-shortcut";
 
 export function WebsiteSettingsSection() {
   const groups: AppSettingsGroup[] = [
@@ -30,7 +30,7 @@ export function WebsiteSettingsSection() {
       description: "اینکه چه چیزی از صندوق به سایت فرستاده شود — قیمت و موجودی، یک‌طرفه.",
       icon: RefreshCwIcon,
       body: (
-        <WebsiteSettingsShortcut
+        <AppSettingsShortcut
           href={cmsSectionHref("settings")}
           label="باز کردن تنظیمات همگام‌سازی"
           description="این تنظیم متعلق به مدیریت سایت‌ساز اشوبه است و صفحهٔ خودش را دارد."
