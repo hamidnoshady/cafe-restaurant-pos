@@ -99,7 +99,7 @@ export function PricingSettings() {
           <Field label="درصد حاشیه سود">
             <div className="relative">
               <PersianNumberInput
-                className={inputClass}
+                className={`${inputClass} ps-9`}
                 dir="ltr"
                 inputMode="decimal"
                 value={defaultMarginPercent}
@@ -140,7 +140,7 @@ export function PricingSettings() {
           <Field label="درصد سربار برآوردی">
             <div className="relative">
               <PersianNumberInput
-                className={inputClass}
+                className={`${inputClass} ps-9`}
                 dir="ltr"
                 inputMode="decimal"
                 value={fallbackOverheadPercent}

@@ -52,6 +52,7 @@ interface RulesResponse {
 
 interface DeviceRow {
   id: string;
+  endpoint: string;
   platform: string;
   label: string;
   createdAt: string;
@@ -214,9 +215,11 @@ export function NotificationSettings() {
       setError(errorMessage(data.error));
       return;
     }
-    // If the row we just dropped was this browser's own, unsubscribe here too —
-    // otherwise the browser keeps a subscription the server has forgotten and
-    // the toggle would lie about the state.
+    // Also unsubscribe this browser when its own row is removed. Deleting only
+    // the server row would leave the browser subscribed and the toggle lying.
+    if (devices.find((device) => device.id === id)?.endpoint === thisEndpoint) {
+      await disablePush();
+    }
     setThisEndpoint(await currentSubscriptionEndpoint());
     await load();
   }
@@ -316,7 +319,7 @@ export function NotificationSettings() {
                   ) : null}
                 </div>
                 <Button type="button" variant="outline" onClick={() => void removeDevice(device.id)}>
-                  حذف
+                  حذف {device.label || "دستگاه"}
                 </Button>
               </li>
             ))}
@@ -401,7 +404,7 @@ export function NotificationSettings() {
                           <PersianNumberInput
                             className={inputClass}
                             inputMode="numeric"
-                            defaultValue={rialToTomanInput(preference.minAmountRial)}
+                            value={rialToTomanInput(preference.minAmountRial)}
                             placeholder="خالی = هر مبلغی"
                             onBlur={(e) => {
                               const parsed = tomanInputToRial(e.target.value);

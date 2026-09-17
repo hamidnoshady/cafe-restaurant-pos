@@ -2,10 +2,11 @@
 
 import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { RefreshCwIcon } from "lucide-react";
 import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber } from "@/lib/digits";
-import { api, ErrorBox } from "@/app/dashboard/ui";
+import { api, ErrorBox, SecondaryButton } from "@/app/dashboard/ui";
 import { cardClass } from "@/app/dashboard/page-chrome";
 
 interface TrialBalanceRow {
@@ -42,24 +43,44 @@ const TYPE_LABELS: Record<TrialBalanceRow["type"], string> = {
 export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
   const money = useMoney();
   const [data, setData] = useState<TrialBalanceData | null>(null);
-  // A failed fetch used to leave the skeleton on screen for ever, which reads
-  // as "still loading" rather than "this did not load".
+  const [loading, setLoading] = useState(true);
+  // Fetch failures and network exceptions must both leave the loading state.
+  // AbortController also prevents a slower, older refresh from overwriting a
+  // newer response when the workspace refreshes several sections together.
   const [error, setError] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
+  const load = useCallback(async (signal: AbortSignal) => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await api<TrialBalanceData>("/api/ledger/trial-balance", { signal });
+      if (signal.aborted) return;
+      if (result.ok) setData(result.data);
+      else setError("بارگذاری تراز آزمایشی ناموفق بود. دوباره تلاش کنید.");
+    } catch {
+      if (!signal.aborted) setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.");
+    } finally {
+      if (!signal.aborted) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    setError("");
-    api<TrialBalanceData>("/api/ledger/trial-balance").then(({ ok, data }) => {
-      if (ok) setData(data);
-      else
-        setError("بارگذاری تراز آزمایشی ناموفق بود. صفحه را دوباره باز کنید.");
-    });
-  }, [refreshKey]);
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load, refreshKey, retryKey]);
 
   if (!data) {
     return (
       <>
         <ErrorBox>{error}</ErrorBox>
-        {error ? null : (
+        {error ? (
+          <div className="mt-3 flex justify-center">
+            <SecondaryButton onClick={() => setRetryKey((key) => key + 1)}>
+              تلاش دوباره
+            </SecondaryButton>
+          </div>
+        ) : (
           <SectionCardSkeleton rows={4} label="در حال بارگذاری تراز آزمایشی" />
         )}
       </>
@@ -103,7 +124,12 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
     : "هنوز سندی ثبت نشده است.";
 
   return (
-    <section aria-labelledby="trial-balance-heading" className={cardClass}>
+    <section
+      aria-labelledby="trial-balance-heading"
+      aria-busy={loading}
+      className={cardClass}
+    >
+      {error ? <ErrorBox>{error}</ErrorBox> : null}
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
@@ -119,27 +145,35 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
             {statusDescription}
           </p>
         </div>
-        <span
-          className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${
-            statusTone === "positive"
-              ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200"
-              : statusTone === "danger"
-                ? "bg-destructive/10 text-destructive"
-                : "bg-muted text-muted-foreground"
-          }`}
-        >
+        <div className="flex shrink-0 items-center gap-2">
           <span
-            aria-hidden="true"
-            className="size-1.5 rounded-full bg-current"
-          />
-          {statusText}
-        </span>
+            className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${
+              statusTone === "positive"
+                ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200"
+                : statusTone === "danger"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-muted text-muted-foreground"
+            }`}
+          >
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+            {statusText}
+          </span>
+          <SecondaryButton
+            onClick={() => setRetryKey((key) => key + 1)}
+            disabled={loading}
+            className="min-h-8 px-2.5 text-xs"
+          >
+            <RefreshCwIcon aria-hidden="true" className={`me-1.5 size-3.5 ${loading ? "animate-spin" : ""}`} />
+            بروزرسانی
+          </SecondaryButton>
+        </div>
       </header>
 
       <div className="p-4 sm:p-5">
         <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
+              <caption className="sr-only">فهرست حساب‌ها و ماندهٔ بدهکار و بستانکار</caption>
               <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
                 <tr className="border-b border-border">
                   <th
@@ -194,10 +228,10 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                     <td className="px-4 py-3.5 text-muted-foreground">
                       {TYPE_LABELS[a.type]}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-foreground">
+                    <td className="whitespace-nowrap px-4 py-3.5 text-end font-semibold text-foreground">
                       {money.format(Number(a.debit))}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-foreground">
+                    <td className="whitespace-nowrap px-4 py-3.5 text-end font-semibold text-foreground">
                       {money.format(Number(a.credit))}
                     </td>
                   </tr>
@@ -222,10 +256,10 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                   >
                     جمع کل
                   </th>
-                  <td className="whitespace-nowrap px-4 py-3.5 font-bold">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-end font-bold">
                     {money.format(data.totalDebit)}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3.5 font-bold">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-end font-bold">
                     {money.format(data.totalCredit)}
                   </td>
                 </tr>
@@ -245,7 +279,7 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                   <p className="text-xs font-medium text-muted-foreground">
                     {a.code}
                   </p>
-                  <h3 className="mt-1 truncate text-sm font-semibold text-foreground">
+                  <h3 className="mt-1 break-words text-sm font-semibold text-foreground">
                     {a.name}
                   </h3>
                   {a.isActive === false ? (
@@ -261,13 +295,13 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
               <dl className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
                 <div className="rounded-lg bg-stone-50 px-3 py-2.5 dark:bg-stone-800/40">
                   <dt className="text-xs text-muted-foreground">بدهکار</dt>
-                  <dd className="mt-1 whitespace-nowrap text-sm font-semibold text-foreground">
+                  <dd className="mt-1 whitespace-nowrap text-end text-sm font-semibold text-foreground">
                     {money.format(Number(a.debit))}
                   </dd>
                 </div>
                 <div className="rounded-lg bg-stone-50 px-3 py-2.5 dark:bg-stone-800/40">
                   <dt className="text-xs text-muted-foreground">بستانکار</dt>
-                  <dd className="mt-1 whitespace-nowrap text-sm font-semibold text-foreground">
+                  <dd className="mt-1 whitespace-nowrap text-end text-sm font-semibold text-foreground">
                     {money.format(Number(a.credit))}
                   </dd>
                 </div>
@@ -284,7 +318,7 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
               <dt className="text-xs font-medium text-muted-foreground">
                 جمع کل بدهکار
               </dt>
-              <dd className="mt-1 whitespace-nowrap text-sm font-bold text-foreground">
+              <dd className="mt-1 whitespace-nowrap text-end text-sm font-bold text-foreground">
                 {money.format(data.totalDebit)}
               </dd>
             </div>
@@ -292,7 +326,7 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
               <dt className="text-xs font-medium text-muted-foreground">
                 جمع کل بستانکار
               </dt>
-              <dd className="mt-1 whitespace-nowrap text-sm font-bold text-foreground">
+              <dd className="mt-1 whitespace-nowrap text-end text-sm font-bold text-foreground">
                 {money.format(data.totalCredit)}
               </dd>
             </div>

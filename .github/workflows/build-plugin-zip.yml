@@ -16,10 +16,10 @@
 # not attached to a GitHub release. Full runbook:
 # docs/wordpress-plugin-updates.md
 #
-# Runs on the self-hosted **Windows** runner, so every step is PowerShell and
-# uses only what Windows ships with: `Compress-Archive` instead of `zip`, and
-# .NET/PowerShell string handling instead of `python3`. Two details are
-# load-bearing on Windows and must not be "simplified":
+# Runs on the GitHub-hosted **Windows** runner (`windows-latest`), so every
+# step is PowerShell and uses only what Windows ships with: `Compress-Archive`
+# instead of `zip`, and .NET/PowerShell string handling instead of `python3`.
+# Two details are load-bearing on Windows and must not be "simplified":
 #
 #   * **Files are written UTF-8 *without* a BOM.** readme.txt and the plugin
 #     PHP are full of Persian text, and PowerShell 5.1's `Out-File -Encoding
@@ -61,7 +61,7 @@ defaults:
 jobs:
   build:
     name: bump, zip, tag
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 

@@ -114,6 +114,46 @@ describe("fiscal year & period creation", () => {
     await fiscalService.createFiscalYear(biz.id, 1404);
     await expect(fiscalService.createFiscalYear(biz.id, 1404)).rejects.toThrow("fiscal_year_exists");
   });
+
+  it("turns simultaneous definitions of one year into one creation and one normal conflict", async () => {
+    const results = await Promise.allSettled([
+      fiscalService.createFiscalYear(biz.id, 1404),
+      fiscalService.createFiscalYear(biz.id, 1404),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status).toBe("rejected");
+    if (rejected?.status === "rejected") expect(rejected.reason).toHaveProperty("message", "fiscal_year_exists");
+
+    const [year] = await fiscalService.listFiscalYears(biz.id);
+    expect(await fiscalService.listPeriods(biz.id, year.id)).toHaveLength(12);
+  });
+
+  it("treats a stale or malformed year id as missing rather than emitting a database cast error", async () => {
+    await expect(fiscalService.listPeriods(biz.id, randomUUID())).rejects.toThrow("fiscal_year_not_found");
+    await expect(fiscalService.listPeriods(biz.id, "not-a-uuid")).rejects.toThrow("fiscal_year_not_found");
+  });
+
+  it("keeps a period inside its parent year and rejects overlapping calendar ranges in the database", async () => {
+    const year = await fiscalService.createFiscalYear(biz.id, 1404);
+
+    await expect(
+      db.query(
+        `INSERT INTO fiscal_periods (business_id, fiscal_year_id, label, starts_on, ends_on)
+         VALUES ($1, $2, 'outside', '2025-03-19', '2025-03-20')`,
+        [biz.id, year.id],
+      ),
+    ).rejects.toThrow("fiscal_period_outside_year");
+
+    await expect(
+      db.query(
+        `INSERT INTO fiscal_periods (business_id, fiscal_year_id, label, starts_on, ends_on)
+         VALUES ($1, $2, 'overlap', '2025-03-22', '2025-03-23')`,
+        [biz.id, year.id],
+      ),
+    ).rejects.toMatchObject({ code: "23P01" });
+  });
 });
 
 describe("an open period", () => {
@@ -136,6 +176,19 @@ describe("a locked period", () => {
     await expect(insertEntry("2025-04-01", users.owner)).rejects.toThrow("fiscal_period_locked");
     await expect(insertEntry("2025-04-01", users.accountant)).rejects.toThrow("fiscal_period_locked");
     await expect(insertEntry("2025-04-01", users.cashier)).rejects.toThrow("fiscal_period_locked");
+  });
+
+  it("also blocks retiming an existing entry into the locked period", async () => {
+    await fiscalService.createFiscalYear(biz.id, 1404);
+    const [year] = await fiscalService.listFiscalYears(biz.id);
+    const [farvardin] = await fiscalService.listPeriods(biz.id, year.id);
+    await fiscalService.setPeriodStatus(biz.id, farvardin.id, "soft_closed", users.owner);
+    await fiscalService.setPeriodStatus(biz.id, farvardin.id, "locked", users.owner);
+
+    const entry = await insertEntry("2026-04-01", users.cashier);
+    await expect(
+      db.query("UPDATE journal_entries SET entry_date = '2025-04-01' WHERE id = $1", [entry.rows[0].id]),
+    ).rejects.toThrow("fiscal_period_locked");
   });
 
   it("does not affect a different, still-open period", async () => {
@@ -179,6 +232,25 @@ describe("a soft-closed period", () => {
 });
 
 describe("period status transitions", () => {
+  it("serializes competing transitions so a double press cannot both succeed", async () => {
+    await fiscalService.createFiscalYear(biz.id, 1404);
+    const [year] = await fiscalService.listFiscalYears(biz.id);
+    const [farvardin] = await fiscalService.listPeriods(biz.id, year.id);
+
+    const results = await Promise.allSettled([
+      fiscalService.setPeriodStatus(biz.id, farvardin.id, "soft_closed", users.owner),
+      fiscalService.setPeriodStatus(biz.id, farvardin.id, "soft_closed", users.accountant),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status).toBe("rejected");
+    if (rejected?.status === "rejected") expect(rejected.reason).toHaveProperty("message", "invalid_transition");
+
+    const [updated] = await fiscalService.listPeriods(biz.id, year.id);
+    expect(updated.status).toBe("soft_closed");
+  });
+
   it("rejects skipping straight from open to locked", async () => {
     await fiscalService.createFiscalYear(biz.id, 1404);
     const [year] = await fiscalService.listFiscalYears(biz.id);

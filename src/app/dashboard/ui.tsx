@@ -9,17 +9,28 @@ export async function api<T = Record<string, unknown>>(
   url: string,
   init?: RequestInit,
 ): Promise<{ ok: boolean; status: number; data: T }> {
-  const res = await fetch(url, {
-    headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
-    ...init,
-  });
-  let data: T;
   try {
-    data = (await res.json()) as T;
+    const res = await fetch(url, {
+      headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+      ...init,
+    });
+    let data: T;
+    try {
+      data = (await res.json()) as T;
+    } catch {
+      data = {} as T;
+    }
+    return { ok: res.ok, status: res.status, data };
   } catch {
-    data = {} as T;
+    // Consumers use the result to release their busy state. Letting a dropped
+    // connection reject instead left forms permanently disabled and effects
+    // with an unhandled rejection, with no Persian explanation for the user.
+    return {
+      ok: false,
+      status: 0,
+      data: { error: "network_error" } as T,
+    };
   }
-  return { ok: res.ok, status: res.status, data };
 }
 
 /** Persian messages for the API's error codes. */
@@ -84,6 +95,20 @@ const ERROR_MESSAGES: Record<string, string> = {
     table_occupied: "این میز سفارش باز دیگری دارد.",
     invalid_order_type: "نوع سفارش نامعتبر است.",
     no_items: "حداقل یک قلم لازم است.",
+    // انتقال بین انبارها — transfer-service.ts / /api/inventory/transfers.
+    invalid_transfer: "اطلاعات انتقال کامل نیست؛ انبار مبدأ و مقصد و حداقل یک ردیف لازم است.",
+    transfer_location_not_found: "انبار مبدأ یا مقصد پیدا نشد.",
+    transfer_inventory_item_not_found:
+      "قلم انتخاب‌شده در انبار مبدأ یا مقصد پیدا نشد؛ فهرست اقلام را دوباره بارگذاری کنید.",
+    transfer_not_found: "این انتقال پیدا نشد.",
+    transfer_already_shipped: "این انتقال قبلاً ارسال شده است.",
+    transfer_already_received: "این انتقال قبلاً دریافت شده است.",
+    transfer_already_cancelled: "این انتقال قبلاً لغو شده است.",
+    invalid_transfer_status: "وضعیت انتقال برای این عملیات معتبر نیست.",
+    insufficient_transfer_stock: "موجودی انبار مبدأ برای این انتقال کافی نیست.",
+    insufficient_transfer_layers: "لایه‌های بهای تمام‌شدهٔ کافی برای این مقدار وجود ندارد.",
+    received_transfer_requires_reverse_transfer:
+      "انتقال دریافت‌شده قابل لغو نیست؛ برای بازگرداندن، انتقال معکوس ثبت کنید.",
     // سیستم ادواری — periodic-closing-service.ts / consumeInventoryExact guard.
     periodic_system_unsupported:
       "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
@@ -167,6 +192,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     cannot_reverse_a_reversal: "سند برگشتی را نمی‌توان دوباره برگشت زد.",
     already_reversed: "این سند قبلاً برگشت خورده است.",
     entry_has_no_lines: "این سند ردیف حسابداری ندارد و قابل برگشت نیست.",
+    fiscal_period_overlap: "بازهٔ سال مالی با یک دورهٔ موجود هم‌پوشانی دارد؛ دوره‌ها را بررسی کنید.",
+    periods_incomplete: "فهرست دوره‌های سال مالی کامل نیست و سال قابل بستن نیست.",
     negative_ingredient_requirement: "یکی از افزودنی‌ها مقدار مادهٔ اولیه را منفی می‌کند. دستور پخت آن افزودنی را اصلاح کنید.",
     inventory_costing_conflict: "بهای مواد اولیهٔ این سفارش قابل محاسبه نیست. قیمت خرید و موجودی موادی که این سفارش مصرف می‌کند را بررسی کنید.",
     // Phase 11 — delivery
@@ -203,6 +230,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_owner_phone: "شمارهٔ موبایل مالک معتبر نیست. نمونه: ۰۹۱۲۱۲۳۴۵۶۷",
     already_a_member: "این شخص هم‌اکنون عضو این کسب‌وکار است.",
     role_not_invitable: "این نقش با رمز عددی ساخته می‌شود و قابل دعوت نیست.",
+    owner_only: "فقط مالک کسب‌وکار می‌تواند مالک دیگری اضافه کند یا حساب یک مالک را تغییر دهد.",
     last_owner: "این تنها مالک فعال کسب‌وکار است؛ ابتدا مالک دیگری اضافه کنید.",
     invalid_invitation: "این لینک دعوت معتبر نیست.",
     invitation_accepted: "این دعوت قبلاً پذیرفته شده است.",
@@ -230,6 +258,9 @@ const ERROR_MESSAGES: Record<string, string> = {
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     invalid_amount: "مبلغ معتبر نیست.",
     invalid_method: "روش دریافت معتبر نیست.",
+    // Not a usable YYYY-MM-DD calendar date — what the ledger's aging and
+    // voucher routes answer a malformed date parameter with.
+    invalid_date: "تاریخ واردشده معتبر نیست.",
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
     // Phase 16 — bank & cash reconciliation
@@ -370,6 +401,9 @@ const ERROR_MESSAGES: Record<string, string> = {
     invoice_not_found: "فاکتور انتخاب‌شده پیدا نشد.",
     invoice_has_no_customer: "این فاکتور مشتری ندارد؛ اقساط فاکتوری فقط برای فاکتورهای دارای مشتری است.",
     invoice_not_on_credit: "این فاکتور نسیه نیست و بدهی‌ای برای قسط‌بندی ندارد؛ فقط فاکتورهای نسیه قابل قسط‌بندی‌اند.",
+    invoice_already_scheduled: "برای این فاکتور قبلاً برنامهٔ اقساط ثبت شده است؛ همان برنامه را از فهرست باز کنید.",
+    invalid_direction: "نوع اقساط معتبر نیست.",
+    invalid_source: "منبع اقساط با نوع انتخاب‌شده سازگار نیست.",
     party_required: "شخص را انتخاب کنید.",
     plan_not_found: "برنامه قسطی پیدا نشد.",
     plan_has_no_party: "این برنامه شخص طرف‌حساب ندارد.",

@@ -224,7 +224,7 @@ export function AccountingManager({
             />
           ) : null}
           {section === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
-          {section === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
+          {section === "fiscal-periods" ? <FiscalPeriodsSection /> : null}
           {section === "directory" ? (
             <PartiesSection
               scope={partyScopeFor("accounting")}
@@ -235,8 +235,8 @@ export function AccountingManager({
               permissions={permissions}
             />
           ) : null}
-          {section === "receivables" ? <ArSection busy={busy} run={run} /> : null}
-          {section === "payables" ? <ApSection busy={busy} run={run} /> : null}
+          {section === "receivables" ? <ArSection /> : null}
+          {section === "payables" ? <ApSection /> : null}
           {section === "receipts" ? <ReceiptsPaymentsSection /> : null}
           {section === "installments" ? <InstallmentsSection /> : null}
           {section === "cheques" ? <ChequesSection busy={busy} run={run} /> : null}
@@ -294,12 +294,17 @@ function errorMessage(code: string | undefined): string {
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
+    network_error: "ارتباط با سرور برقرار نشد. اتصال اینترنت یا شبکه را بررسی و دوباره تلاش کنید.",
     bad_request: "درخواست نامعتبر بود.",
     // Phase 16 — AR subledger
     customer_required: "انتخاب مشتری الزامی است.",
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     invalid_amount: "مبلغ معتبر نیست.",
     invalid_method: "روش دریافت/پرداخت معتبر نیست.",
+    // A date parameter the caller sent could not be used (not YYYY-MM-DD, or
+    // not a real calendar date) — the A/R and A/P routes reject rather than
+    // guessing what was meant.
+    invalid_date: "تاریخ واردشده معتبر نیست.",
     // Phase 16 — AP subledger
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
@@ -314,6 +319,12 @@ function errorMessage(code: string | undefined): string {
     bank_name_required: "نام بانک الزامی است.",
     counterparty_name_required: "نام صاحب چک الزامی است.",
     due_date_required: "تاریخ سررسید الزامی است.",
+    invalid_issue_date: "تاریخ دریافت/صدور معتبر نیست.",
+    invalid_due_date: "تاریخ سررسید معتبر نیست.",
+    due_date_before_issue: "سررسید نمی‌تواند پیش از تاریخ دریافت/صدور باشد.",
+    invalid_occurred_on: "تاریخ وقوع معتبر نیست.",
+    action_before_issue: "تاریخ این اقدام نمی‌تواند پیش از تاریخ دریافت/صدور باشد.",
+    invalid_counterparty_for_direction: "طرف حساب انتخاب‌شده با نوع چک هم‌خوانی ندارد.",
     // Phase 16 — bank & cash reconciliation
     invalid_account: "حساب انتخاب‌شده معتبر نیست.",
     statement_date_required: "تاریخ صورتحساب الزامی است.",
@@ -358,6 +369,8 @@ function errorMessage(code: string | undefined): string {
     fiscal_year_closed: "سال مالی این دوره بسته شده و دیگر قابل بازگشایی نیست.",
     fiscal_year_already_closed: "این سال مالی قبلاً بسته شده است.",
     periods_not_ready: "برای بستن سال مالی، ابتدا همه دوره‌های آن را به‌صورت موقت ببندید.",
+    periods_incomplete: "فهرست دوره‌های سال مالی کامل نیست و سال قابل بستن نیست.",
+    fiscal_period_overlap: "بازهٔ این سال با یک دورهٔ مالی موجود هم‌پوشانی دارد؛ دوره‌ها را بررسی کنید.",
     period_locked_for_closing: "دوره پایانی سال قفل است؛ ابتدا آن را بازگشایی و دوباره بسته‌ی موقت کنید.",
     period_not_found: "دوره یافت نشد.",
     invalid_transition: "این تغییر وضعیت مجاز نیست.",
