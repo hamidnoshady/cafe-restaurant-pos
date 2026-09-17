@@ -23,6 +23,9 @@ function errorFor(err: unknown): NextResponse {
     stock_count_reversal_inconsistent: 409,
     no_items: 400,
     invalid_item: 400,
+    invalid_quantity: 400,
+    quantity_precision_exceeded: 400,
+    duplicate_item: 400,
     item_not_found: 404,
   };
   const status = known[message];
