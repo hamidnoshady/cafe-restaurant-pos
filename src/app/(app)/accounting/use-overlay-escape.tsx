@@ -20,6 +20,11 @@ export function useOverlayEscape(onClose: () => void, enabled = true): void {
   useEffect(() => {
     if (!enabled) return;
     function onKeyDown(event: KeyboardEvent) {
+      // A floating layer above this panel — a Radix popover (SearchableSelect)
+      // — handles its own Escape and marks the event `defaultPrevented`; Radix
+      // never stops propagation, so without this check the panel underneath
+      // closed with it: one press, two layers gone.
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKeyDown);

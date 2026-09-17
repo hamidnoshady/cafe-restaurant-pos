@@ -24,13 +24,19 @@ import { businessToday } from "./business-day-service";
 import { isUuid } from "./uuid";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
-import { ageOpenItems, summarizeAging, type AgingSummary } from "./aging";
+import { ageOpenItems, summarizeAging, UNKNOWN_SUPPLIER_KEY, type AgingSummary } from "./aging";
 import { enqueueHolooReceiptForApPayment } from "./integrations/holoo/outbox-producer";
 
 export { MissingLedgerAccountError };
 
-/** Group key for AP lines that carry no supplier attribution — a manual journal entry against A/P, or a credit purchase predating this feature. */
-export const UNKNOWN_SUPPLIER_KEY = "unknown";
+/**
+ * Group key for AP lines that carry no supplier attribution — a manual journal
+ * entry against A/P, or a credit purchase predating this feature. Defined in
+ * the pure `aging` module (see the note there) so client components can import
+ * it without pulling in `pg`; re-exported here because this is where callers
+ * expect to find it.
+ */
+export { UNKNOWN_SUPPLIER_KEY };
 
 export class ApError extends Error {
   status: number;
@@ -52,6 +58,7 @@ interface ApLineRow extends Record<string, unknown> {
   supplier_id: string | null;
   supplier_name: string | null;
   supplier_phone: string | null;
+  party_id: string | null;
   entry_date: string;
   source_type: string | null;
   note: string | null;
@@ -76,6 +83,7 @@ async function apLines(businessId: string, accountId: string): Promise<ApLineRow
     `SELECT s.id AS supplier_id,
             COALESCE(pa.name, s.name) AS supplier_name,
             COALESCE(pa.phone, s.phone) AS supplier_phone,
+            s.party_id AS party_id,
             je.entry_date::text AS entry_date, je.source_type,
             COALESCE(p.note, p2.note) AS note, je.memo,
             jl.debit, jl.credit
@@ -116,6 +124,13 @@ export interface SupplierBalance {
   supplierId: string; // UNKNOWN_SUPPLIER_KEY for unattributed lines
   supplierName: string;
   supplierPhone: string | null;
+  /**
+   * The party behind this branch alias (`suppliers.party_id`), or null for the
+   * unattributed bucket and a legacy alias no party was ever linked to. This is
+   * what a deep link into «اشخاص» needs: `supplierId` is the *alias* id, and
+   * the directory is keyed by the party record, not by the alias.
+   */
+  supplierPartyId: string | null;
   balance: number;
 }
 
@@ -131,8 +146,8 @@ export interface SupplierBalance {
  * write references; the name is the party's when there is one.
  */
 export async function listSupplierDirectory(businessId: string): Promise<SupplierBalance[]> {
-  const { rows } = await query<{ id: string; name: string; phone: string | null }>(
-    `SELECT s.id, COALESCE(pa.name, s.name) AS name, COALESCE(pa.phone, s.phone) AS phone
+  const { rows } = await query<{ id: string; name: string; phone: string | null; party_id: string | null }>(
+    `SELECT s.id, COALESCE(pa.name, s.name) AS name, COALESCE(pa.phone, s.phone) AS phone, s.party_id
        FROM suppliers s
        JOIN locations l ON l.id = s.location_id
        LEFT JOIN parties pa ON pa.id = s.party_id
@@ -145,6 +160,7 @@ export async function listSupplierDirectory(businessId: string): Promise<Supplie
     supplierId: r.id,
     supplierName: r.name,
     supplierPhone: r.phone,
+    supplierPartyId: r.party_id,
     balance: balances.get(r.id) ?? 0,
   }));
 }
@@ -162,6 +178,7 @@ export async function listSupplierBalances(businessId: string): Promise<Supplier
       supplierId: key,
       supplierName: l.supplier_name ?? "بدون تأمین‌کننده مشخص",
       supplierPhone: l.supplier_phone,
+      supplierPartyId: l.party_id,
       balance: 0,
     };
     // Liability normal balance: credit-debit.
