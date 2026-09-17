@@ -5,21 +5,45 @@ import { CircleAlertIcon, InfoIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
+/**
+ * The dashboard's fetch wrapper.
+ *
+ * Never rejects. A screen that calls this inside `void api(…).then(…)` — which
+ * is most of them — would otherwise turn a dropped connection, a closed laptop
+ * lid or a component that unmounted mid-request into an unhandled promise
+ * rejection, and the caller's `.then` would never run to clear its loading
+ * state. So a transport failure comes back as `ok: false` with an empty body,
+ * which every caller already handles as "the server said no".
+ *
+ * `aborted` is the one case a caller must *not* treat as an error: it means the
+ * request was cancelled deliberately (a newer search replaced it, the section
+ * unmounted), so there is nobody left to show a message to and no state worth
+ * writing. Callers that pass `init.signal` should check it before touching
+ * state; callers that do not can ignore the field.
+ */
 export async function api<T = Record<string, unknown>>(
   url: string,
   init?: RequestInit,
-): Promise<{ ok: boolean; status: number; data: T }> {
-  const res = await fetch(url, {
-    headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
-    ...init,
-  });
+): Promise<{ ok: boolean; status: number; data: T; aborted: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+      ...init,
+    });
+  } catch (err) {
+    const aborted =
+      init?.signal?.aborted === true || (err instanceof DOMException && err.name === "AbortError");
+    return { ok: false, status: 0, data: {} as T, aborted };
+  }
   let data: T;
   try {
     data = (await res.json()) as T;
   } catch {
+    // A 204, an HTML error page from a proxy, or a body cut off mid-flight.
     data = {} as T;
   }
-  return { ok: res.ok, status: res.status, data };
+  return { ok: res.ok, status: res.status, data, aborted: false };
 }
 
 /** Persian messages for the API's error codes. */

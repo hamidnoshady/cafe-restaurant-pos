@@ -260,6 +260,32 @@ export function partyOwnerScopeForRole(role: PartyRole): PartyScopeDef {
 }
 
 /**
+ * Which ledger statement a row can open, if any.
+ *
+ * A statement is per *ledger*, not per party: receivables are kept against
+ * customers and payables against suppliers, and the two panels read two
+ * different endpoints. The directory lists all three roles in the Accounting
+ * scope, so «صورتحساب» on a supplier used to open an A/R statement that is
+ * empty by construction, and on an employee a statement that does not exist at
+ * all.
+ *
+ * One person can hold several roles, and then customer wins — the same
+ * precedence `primaryPartyRole` uses, so the button agrees with the accounting
+ * code beside it.
+ */
+export function partyStatementKind(
+  roles: readonly PartyRole[] | null | undefined,
+): "ar" | "ap" | null {
+  const set = roles ?? [];
+  if (set.includes("Customer")) return "ar";
+  if (set.includes("Supplier")) return "ap";
+  // Personnel settle through payroll and حساب جاری کارکنان, neither of which
+  // is an A/R or A/P statement. Offering one would be a button that answers
+  // with an empty table.
+  return null;
+}
+
+/**
  * Where a row's canonical record is edited, from the point of view of a scope that
  * cannot edit it. The read-only views are only honest if the link is there.
  */
@@ -279,11 +305,36 @@ export const PARTIES_PRESET_MANAGING_ROLES: readonly string[] = ["owner", "manag
 /** Roles whose presets may read the ledger's figures, for the same fallback. */
 export const PARTIES_PRESET_LEDGER_ROLES: readonly string[] = ["owner", "manager", "accountant"];
 
+/**
+ * The roles the ledger's *statement* endpoints accept.
+ *
+ * `/api/ledger/ar/customers/:id` and `/api/ledger/ap/suppliers/:id` both call
+ * `requireRole("owner", "manager", "accountant")` — a role check, not a
+ * permission one — so this is a copy of that list rather than a second policy.
+ * Keep the two in step: `parties-scopes.test.ts` asserts the statement gate is
+ * never wider than the balance gate.
+ */
+export const PARTIES_STATEMENT_ROLES: readonly string[] = ["owner", "manager", "accountant"];
+
 export interface PartiesSectionAbilities {
   /** Whether the «افزودن» button and row actions may be drawn at all. */
   canManage: boolean;
   /** Whether the money-shaped columns (balance, tax) may be filled in. */
   canSeeLedger: boolean;
+  /**
+   * Whether this member may open a party's ledger statement.
+   *
+   * Not the same question as `canSeeLedger`, and that is the whole reason it
+   * exists. The balance column is filled from `/api/ledger/ar/customers`,
+   * which `ledger.view` opens; the *statement* panels read
+   * `/api/ledger/ar/customers/:id` and `/api/ledger/ap/suppliers/:id`, which
+   * are gated by `requireRole("owner","manager","accountant")` instead. A
+   * cashier granted `ledger.view` — a supported override, asserted in
+   * `parties-scopes.test.ts` — therefore passes the first gate and fails the
+   * second, and used to be shown a «صورتحساب» button that opened an empty
+   * panel.
+   */
+  canOpenStatement: boolean;
 }
 
 /**
@@ -301,14 +352,20 @@ export function partiesSectionAbilities(
   role: string,
   permissions?: readonly string[] | null,
 ): PartiesSectionAbilities {
+  const known = permissions !== undefined && permissions !== null;
+  const canSeeLedger = known
+    ? permissions.includes(PERMISSIONS.ledgerView)
+    : PARTIES_PRESET_LEDGER_ROLES.includes(role);
   return {
-    canManage:
-      permissions !== undefined && permissions !== null
-        ? permissions.includes(PERMISSIONS.partiesManage)
-        : PARTIES_PRESET_MANAGING_ROLES.includes(role),
-    canSeeLedger:
-      permissions !== undefined && permissions !== null
-        ? permissions.includes(PERMISSIONS.ledgerView)
-        : PARTIES_PRESET_LEDGER_ROLES.includes(role),
+    canManage: known
+      ? permissions.includes(PERMISSIONS.partiesManage)
+      : PARTIES_PRESET_MANAGING_ROLES.includes(role),
+    canSeeLedger,
+    // The statement endpoints ask for a *role*, so no permission grant can
+    // open them: a cashier with `ledger.view` reads the balance column and
+    // still gets a 403 from the statement. `&& canSeeLedger` keeps the button
+    // from outliving the figure it explains when a back-office member's
+    // `ledger.view` is revoked.
+    canOpenStatement: canSeeLedger && PARTIES_STATEMENT_ROLES.includes(role),
   };
 }

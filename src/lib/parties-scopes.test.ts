@@ -11,6 +11,7 @@ import {
   partyOwnerScopeForRole,
   partyScopeFor,
   partyScopeForApp,
+  partyStatementKind,
   roleLabelInScope,
   showsColumn,
 } from "./parties-scopes";
@@ -176,9 +177,21 @@ describe("what a member may do on a party screen", () => {
   it("answers from the role presets when the page could not read permissions", () => {
     // The preset answer mirrors permissions.ts: a cashier manages parties, a
     // waiter does not, and only the back-office roles read the ledger.
-    expect(partiesSectionAbilities("cashier")).toEqual({ canManage: true, canSeeLedger: false });
-    expect(partiesSectionAbilities("waiter")).toEqual({ canManage: false, canSeeLedger: false });
-    expect(partiesSectionAbilities("accountant")).toEqual({ canManage: true, canSeeLedger: true });
+    expect(partiesSectionAbilities("cashier")).toEqual({
+      canManage: true,
+      canSeeLedger: false,
+      canOpenStatement: false,
+    });
+    expect(partiesSectionAbilities("waiter")).toEqual({
+      canManage: false,
+      canSeeLedger: false,
+      canOpenStatement: false,
+    });
+    expect(partiesSectionAbilities("accountant")).toEqual({
+      canManage: true,
+      canSeeLedger: true,
+      canOpenStatement: true,
+    });
   });
 
   it("answers from the effective permissions when the page supplied them", () => {
@@ -187,23 +200,51 @@ describe("what a member may do on a party screen", () => {
     expect(partiesSectionAbilities("cashier", ["orders.create"])).toEqual({
       canManage: false,
       canSeeLedger: false,
+      canOpenStatement: false,
     });
     // A waiter who was granted it sees a button that works.
     expect(partiesSectionAbilities("waiter", ["menu.view", "parties.manage"])).toEqual({
       canManage: true,
       canSeeLedger: false,
+      canOpenStatement: false,
     });
     // The money gate is ledger.view, not the role.
     expect(partiesSectionAbilities("cashier", ["parties.manage", "ledger.view"])).toEqual({
       canManage: true,
       canSeeLedger: true,
+      canOpenStatement: false,
     });
   });
 
   it("treats an explicitly empty permission set as «no permissions», not «unknown»", () => {
     // A member revoked down to nothing must not silently fall back to their
     // preset — that is exactly the member whose buttons would 403.
-    expect(partiesSectionAbilities("manager", [])).toEqual({ canManage: false, canSeeLedger: false });
+    expect(partiesSectionAbilities("manager", [])).toEqual({
+      canManage: false,
+      canSeeLedger: false,
+      canOpenStatement: false,
+    });
+  });
+
+  it("offers the statement only to the roles its route actually admits", () => {
+    /*
+     * The two statement routes (`/api/ledger/ar/customers/:id`,
+     * `/api/ledger/ap/suppliers/:id`) are gated by
+     * `requireRole("owner", "manager", "accountant")` — a role check, not a
+     * permission one. So `ledger.view` alone is not enough: a cashier granted
+     * that permission could read balances in the list but the statement
+     * overlay would open onto a 403. The button has to know the same rule the
+     * route enforces.
+     */
+    expect(partiesSectionAbilities("cashier", ["parties.manage", "ledger.view"]).canSeeLedger).toBe(true);
+    expect(partiesSectionAbilities("cashier", ["parties.manage", "ledger.view"]).canOpenStatement).toBe(false);
+
+    for (const role of ["owner", "manager", "accountant"] as const) {
+      expect(partiesSectionAbilities(role, ["ledger.view"]).canOpenStatement, role).toBe(true);
+    }
+    // And the permission is still required on top of the role: an accountant
+    // whose ledger.view was revoked sees neither the balance nor the statement.
+    expect(partiesSectionAbilities("accountant", ["parties.view"]).canOpenStatement).toBe(false);
   });
 
   it("agrees with the presets it falls back to", () => {
@@ -215,5 +256,41 @@ describe("what a member may do on a party screen", () => {
         partiesSectionAbilities(role, preset),
       );
     }
+  });
+});
+
+describe("which statement a party has", () => {
+  /*
+   * A party's roles decide which ledger it lives in, and therefore which
+   * statement overlay the row may open. The directory shows every role in one
+   * list, so this had to become a function rather than an assumption baked
+   * into the section that happened to be mounted: the CRM directory can list a
+   * supplier (a customer who also supplies), and opening the AR statement for
+   * somebody who only exists in AP shows an empty ledger rather than an error.
+   */
+  it("routes a customer to the receivable ledger and a supplier to the payable one", () => {
+    expect(partyStatementKind(["Customer"])).toBe("ar");
+    expect(partyStatementKind(["Supplier"])).toBe("ap");
+  });
+
+  it("prefers the receivable statement for somebody who is both", () => {
+    // A party who buys and sells has two ledgers; the row offers one button,
+    // and «Customer» is first in the product's own role order.
+    expect(partyStatementKind(["Customer", "Supplier"])).toBe("ar");
+    expect(partyStatementKind(["Supplier", "Customer"])).toBe("ar");
+  });
+
+  it("offers nothing for a party with no ledger of their own", () => {
+    // Payroll is not the payables ledger: an employee has no AP statement, and
+    // a row with no roles at all (a record mid-migration) must not guess.
+    expect(partyStatementKind(["Employee"])).toBeNull();
+    expect(partyStatementKind([])).toBeNull();
+  });
+
+  it("ignores a role it does not know", () => {
+    // The roles arrive from an API response, so an unrecognised string is a
+    // deployment-skew question, not a crash.
+    expect(partyStatementKind(["Partner" as never])).toBeNull();
+    expect(partyStatementKind(["Partner" as never, "Supplier"])).toBe("ap");
   });
 });
