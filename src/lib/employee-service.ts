@@ -891,7 +891,10 @@ export async function revokeSession(
       RETURNING employee_id`,
     [sessionId, businessId],
   );
-  if (!rows[0]) throw new EmployeeError("session_not_found", 404);
+  // Its own code: `session_not_found` belongs to table (میز) sessions, whose
+  // mapped Persian message reads «نشست میز پیدا نشد.» — nonsense when what the
+  // owner was ending was an employee's login from the security center.
+  if (!rows[0]) throw new EmployeeError("employee_session_not_found", 404);
   await auditEmployee(getPool(), {
     businessId,
     actorId,

@@ -116,6 +116,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_transition: "این تغییر وضعیت میز مجاز نیست.",
     seat_via_session: "برای نشاندن مهمان از «باز کردن میز» استفاده کنید.",
     session_not_found: "نشست میز پیدا نشد.",
+    employee_session_not_found: "نشست پیدا نشد یا قبلاً پایان یافته است.",
     invalid_guests: "تعداد مهمان‌ها برای تقسیم صورتحساب معتبر نیست.",
     invalid_split: "تقسیم صورتحساب معتبر نیست.",
     reservation_conflict: "این میز در این بازهٔ زمانی رزرو دیگری دارد.",
@@ -388,6 +389,10 @@ export function ErrorBox({ children }: { children: React.ReactNode }) {
 }
 
 export function InfoBox({ children }: { children: React.ReactNode }) {
+  // Same empty-children contract as ErrorBox: callers that pass a state string
+  // directly (e.g. `<InfoBox>{notice}</InfoBox>`) must not get a box with an
+  // icon and nothing to say whenever the string is "".
+  if (!children) return null;
   return (
     <Alert className="mb-4 border-primary/30 bg-primary/5">
       <InfoIcon className="text-primary" />
