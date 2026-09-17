@@ -9,6 +9,7 @@ import {
   updateMembership,
 } from "@/lib/team-service";
 import { canonicalMemberPhone } from "@/lib/phone-otp";
+import { query } from "@/lib/db";
 import type { Role } from "@/lib/auth";
 
 const ASSIGNABLE_ROLES: Role[] = ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"];
@@ -47,6 +48,21 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
   if (body.role !== undefined && !ASSIGNABLE_ROLES.includes(body.role)) {
     return NextResponse.json({ error: "invalid_role" }, { status: 400 });
+  }
+
+  // Managing routine team details may be delegated; managing an owner or
+  // granting ownership may not. Enforce this server-side, not merely in UI.
+  const { rows: roleRows } = await query<{ actor_role: Role; target_role: Role }>(
+    `SELECT actor.role AS actor_role, target.role AS target_role
+       FROM users actor
+       JOIN users target ON target.id = $3 AND target.business_id = actor.business_id
+      WHERE actor.id = $1 AND actor.business_id = $2 AND actor.is_active = true`,
+    [session.sub, session.businessId, id],
+  );
+  const roles = roleRows[0];
+  if (!roles) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (roles.actor_role !== "owner" && (roles.target_role === "owner" || body.role === "owner")) {
+    return NextResponse.json({ error: "owner_only" }, { status: 403 });
   }
 
   // A phone change is its own action rather than a field on updateMembership:
@@ -118,6 +134,16 @@ export const DELETE = withTenantScope(async (_request: NextRequest, context: { p
   if (error) return error;
 
   const { id } = await context.params;
+  const { rows } = await query<{ actor_role: Role; target_role: Role }>(
+    `SELECT actor.role AS actor_role, target.role AS target_role FROM users actor
+       JOIN users target ON target.id = $3 AND target.business_id = actor.business_id
+      WHERE actor.id = $1 AND actor.business_id = $2 AND actor.is_active = true`,
+    [session.sub, session.businessId, id],
+  );
+  if (!rows[0]) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (rows[0].actor_role !== "owner" && rows[0].target_role === "owner") {
+    return NextResponse.json({ error: "owner_only" }, { status: 403 });
+  }
   try {
     await removeMembership(session.businessId, id, session.sub);
     return NextResponse.json({ ok: true });
