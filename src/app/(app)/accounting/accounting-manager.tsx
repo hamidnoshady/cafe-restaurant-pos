@@ -209,8 +209,8 @@ export function AccountingManager({
               permissions={permissions}
             />
           ) : null}
-          {section === "receivables" ? <ArSection busy={busy} run={run} /> : null}
-          {section === "payables" ? <ApSection busy={busy} run={run} /> : null}
+          {section === "receivables" ? <ArSection /> : null}
+          {section === "payables" ? <ApSection /> : null}
           {section === "receipts" ? <ReceiptsPaymentsSection /> : null}
           {section === "installments" ? <InstallmentsSection /> : null}
           {section === "cheques" ? <ChequesSection busy={busy} run={run} /> : null}
@@ -269,6 +269,10 @@ function errorMessage(code: string | undefined): string {
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     invalid_amount: "مبلغ معتبر نیست.",
     invalid_method: "روش دریافت/پرداخت معتبر نیست.",
+    // A date parameter the caller sent could not be used (not YYYY-MM-DD, or
+    // not a real calendar date) — the A/R and A/P routes reject rather than
+    // guessing what was meant.
+    invalid_date: "تاریخ واردشده معتبر نیست.",
     // Phase 16 — AP subledger
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",

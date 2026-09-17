@@ -81,7 +81,16 @@ export function JalaliDatePicker({
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      // Something above us (a Radix layer) already handled this Escape.
+      if (e.defaultPrevented) return;
+      // The popover is the topmost layer: consume the key so the press closes
+      // the calendar alone — not the calendar *and* whatever hand-rolled panel
+      // it floats above (useOverlayEscape listens on window, after this
+      // document-level handler). One press of Escape, one layer.
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
