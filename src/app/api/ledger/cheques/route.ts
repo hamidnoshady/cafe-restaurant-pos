@@ -34,6 +34,10 @@ interface ChequeBody {
   memo?: string;
 }
 
+function isChequeBody(value: unknown): value is ChequeBody {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * Records a cheque taken from a customer or written to a supplier, and posts
  * the entry that puts it on the books.
@@ -42,10 +46,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
-  let body: ChequeBody;
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  if (!isChequeBody(body)) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
@@ -73,8 +80,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       issueDate: body.issueDate ?? null,
       dueDate: body.dueDate ?? "",
       counterpartyName: body.counterpartyName ?? "",
-      customerId: body.customerId?.trim() || null,
-      supplierId: body.supplierId?.trim() || null,
+      customerId: body.customerId ?? null,
+      supplierId: body.supplierId ?? null,
       memo: body.memo ?? null,
       createdBy: session.sub,
     });

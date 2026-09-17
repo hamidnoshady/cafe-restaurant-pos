@@ -41,6 +41,8 @@ function pad2(n: number): string {
 export function JalaliDatePicker({
   value,
   onChange,
+  id,
+  ariaLabel,
   className,
   placeholder = "انتخاب تاریخ",
   clearable = true,
@@ -49,6 +51,10 @@ export function JalaliDatePicker({
 }: {
   value: string;
   onChange: (iso: string) => void;
+  /** Connect a visible FieldLabel to the calendar trigger. */
+  id?: string;
+  /** Accessible name when a visible label is not available. */
+  ariaLabel?: string;
   className?: string;
   placeholder?: string;
   clearable?: boolean;
@@ -118,29 +124,32 @@ export function JalaliDatePicker({
   return (
     <div ref={rootRef} className="relative inline-block w-full" dir="rtl">
       <button
+        id={id}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={`${className ?? DEFAULT_INPUT_CLASS} flex items-center justify-between gap-2 text-start`}
+        className={`${className ?? DEFAULT_INPUT_CLASS} ${clearable && value ? "pe-16" : "pe-3"} flex items-center justify-between gap-2 text-start`}
+        aria-label={ariaLabel}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <span className={label ? "" : "text-muted-foreground"}>{label || placeholder}</span>
-        <span className="flex items-center gap-1 text-muted-foreground">
-          {clearable && value ? (
-            <XIcon
-              className="size-4 shrink-0 hover:text-foreground"
-              role="button"
-              aria-label="پاک کردن تاریخ"
-              onClick={(e) => {
-                e.stopPropagation();
-                onChange("");
-              }}
-            />
-          ) : null}
-          <CalendarIcon className="size-4 shrink-0" />
-        </span>
+        <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
       </button>
+      {clearable && value ? (
+        <button
+          type="button"
+          disabled={disabled}
+          className="absolute end-8 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none"
+          aria-label="پاک کردن تاریخ"
+          onClick={() => {
+            onChange("");
+            setOpen(false);
+          }}
+        >
+          <XIcon className="size-4" />
+        </button>
+      ) : null}
 
       {open ? (
         <div
@@ -160,7 +169,7 @@ export function JalaliDatePicker({
             >
               <ChevronRightIcon className="size-4" />
             </button>
-            <span className="text-sm font-semibold">
+            <span id={gridId} className="text-sm font-semibold">
               {JALALI_MONTHS[view.jm - 1]} {toPersianDigits(view.jy)}
             </span>
             <button
@@ -193,6 +202,8 @@ export function JalaliDatePicker({
                   key={d}
                   type="button"
                   onClick={() => pick(d)}
+                  aria-label={`${toPersianDigits(d)} ${JALALI_MONTHS[view.jm - 1]} ${toPersianDigits(view.jy)}`}
+                  aria-current={isToday ? "date" : undefined}
                   aria-selected={isSelected || undefined}
                   className={`flex h-8 items-center justify-center rounded-lg text-sm transition-colors ${
                     isSelected

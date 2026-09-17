@@ -9,17 +9,28 @@ export async function api<T = Record<string, unknown>>(
   url: string,
   init?: RequestInit,
 ): Promise<{ ok: boolean; status: number; data: T }> {
-  const res = await fetch(url, {
-    headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
-    ...init,
-  });
-  let data: T;
   try {
-    data = (await res.json()) as T;
+    const res = await fetch(url, {
+      headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+      ...init,
+    });
+    let data: T;
+    try {
+      data = (await res.json()) as T;
+    } catch {
+      data = {} as T;
+    }
+    return { ok: res.ok, status: res.status, data };
   } catch {
-    data = {} as T;
+    // Consumers use the result to release their busy state. Letting a dropped
+    // connection reject instead left forms permanently disabled and effects
+    // with an unhandled rejection, with no Persian explanation for the user.
+    return {
+      ok: false,
+      status: 0,
+      data: { error: "network_error" } as T,
+    };
   }
-  return { ok: res.ok, status: res.status, data };
 }
 
 /** Persian messages for the API's error codes. */

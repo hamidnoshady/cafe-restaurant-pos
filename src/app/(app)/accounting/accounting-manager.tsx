@@ -263,6 +263,7 @@ function errorMessage(code: string | undefined): string {
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
+    network_error: "ارتباط با سرور برقرار نشد. اتصال اینترنت یا شبکه را بررسی و دوباره تلاش کنید.",
     bad_request: "درخواست نامعتبر بود.",
     // Phase 16 — AR subledger
     customer_required: "انتخاب مشتری الزامی است.",
@@ -283,6 +284,12 @@ function errorMessage(code: string | undefined): string {
     bank_name_required: "نام بانک الزامی است.",
     counterparty_name_required: "نام صاحب چک الزامی است.",
     due_date_required: "تاریخ سررسید الزامی است.",
+    invalid_issue_date: "تاریخ دریافت/صدور معتبر نیست.",
+    invalid_due_date: "تاریخ سررسید معتبر نیست.",
+    due_date_before_issue: "سررسید نمی‌تواند پیش از تاریخ دریافت/صدور باشد.",
+    invalid_occurred_on: "تاریخ وقوع معتبر نیست.",
+    action_before_issue: "تاریخ این اقدام نمی‌تواند پیش از تاریخ دریافت/صدور باشد.",
+    invalid_counterparty_for_direction: "طرف حساب انتخاب‌شده با نوع چک هم‌خوانی ندارد.",
     // Phase 16 — bank & cash reconciliation
     invalid_account: "حساب انتخاب‌شده معتبر نیست.",
     statement_date_required: "تاریخ صورتحساب الزامی است.",
