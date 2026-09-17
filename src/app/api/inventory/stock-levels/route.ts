@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Phase 42 — «موجودی انبار»: the per-warehouse stock level.
@@ -22,11 +23,15 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const url = new URL(request.url);
   const locationId = url.searchParams.get("locationId") || defaultLocation?.id || "";
   if (!locationId) return NextResponse.json({ items: [], totals: { count: 0, lowStockCount: 0, totalValueRial: "0" } });
+  // Do not let malformed or foreign location ids turn into a database error
+  // (or, worse, a cross-tenant read). The explicit business predicate also
+  // keeps this contract true if the view ever changes its RLS definition.
+  if (!isUuid(locationId)) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   const search = (url.searchParams.get("search") ?? "").trim();
 
-  const clauses = ["v.location_id = $1"];
-  const params: unknown[] = [locationId];
+  const clauses = ["v.location_id = $1", "v.business_id = $2"];
+  const params: unknown[] = [locationId, session.businessId];
   if (search) {
     params.push(`%${search}%`);
     clauses.push(`(v.item_name ILIKE $${params.length} OR ii.sku ILIKE $${params.length})`);
@@ -65,8 +70,8 @@ export const GET = withTenantScope(async (request: NextRequest) => {
             COALESCE(sum(v.valuation),0)::text AS value
        FROM v_inventory_valuation v
        JOIN inventory_items ii ON ii.id = v.inventory_item_id
-      WHERE v.location_id = $1`,
-    [locationId],
+      WHERE v.location_id = $1 AND v.business_id = $2`,
+    [locationId, session.businessId],
   );
 
   return NextResponse.json({
