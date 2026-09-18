@@ -3,11 +3,11 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
-import { api, SecondaryButton } from "@/app/dashboard/ui";
+import { api } from "@/app/dashboard/ui";
 import { accountingCustomerHref } from "./accounting-routes";
 import { UNKNOWN_CUSTOMER_KEY } from "@/lib/aging";
 import { overlayPanelClass } from "@/app/dashboard/page-chrome";
@@ -40,26 +40,29 @@ export function ArStatementPanel({
 }) {
   const money = useMoney();
   const [lines, setLines] = useState<ArStatementLine[] | null>(null);
-  /*
-   * A failed or dropped fetch used to leave `lines` at null for ever — a
-   * skeleton claiming the request is still running, with no way out but
-   * closing the panel. Track the failure and offer «تلاش دوباره», the same
-   * answer the workspace shell gives when the chart of accounts fails.
-   */
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   useOverlayEscape(onClose);
 
-  const load = useCallback(() => {
+  useEffect(() => {
+    let cancelled = false;
     setLines(null);
-    setLoadFailed(false);
+    setFailed(false);
     api<{ lines: ArStatementLine[] }>("/api/ledger/ar/customers/" + customerId)
       .then(({ ok, data }) => {
+        if (cancelled) return;
         if (ok) setLines(data.lines);
-        else setLoadFailed(true);
+        // Without this the panel sat on its skeleton for ever — a failed load
+        // and a slow one were indistinguishable, with «بستن» the only way out.
+        else setFailed(true);
       })
-      .catch(() => setLoadFailed(true));
-  }, [customerId]);
-  useEffect(load, [load]);
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, reloadKey]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
@@ -96,13 +99,17 @@ export function ArStatementPanel({
           </button>
         </header>
 
-        {loadFailed ? (
-          <div className="space-y-3">
-            <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-              بارگذاری صورتحساب ناموفق بود.
-            </p>
-            <div className="mx-auto max-w-xs">
-              <SecondaryButton onClick={load} className="w-full">تلاش دوباره</SecondaryButton>
+        {failed ? (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-6 text-center">
+            <p role="alert" className="text-sm text-destructive">بارگذاری صورتحساب این مشتری ناموفق بود.</p>
+            <div className="mt-3 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="min-h-10 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
+              >
+                تلاش دوباره
+              </button>
             </div>
           </div>
         ) : lines === null ? (

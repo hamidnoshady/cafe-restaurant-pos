@@ -14,6 +14,7 @@ import { getBusinessDayStatus, type BusinessDayStatus } from "./business-day-ser
 import { getPool, query } from "./db";
 import { postgresDateToIso } from "./jalali";
 import { reconcileCash } from "./shift";
+import { isUuid } from "./uuid";
 // Phase 32 — the coworker's event queue. Enqueued, never acted on here: a
 // cashier clocking in or out is a foreground request and must not wait on (or
 // fail because of) a background job. `recordCoworkerEvent` swallows its own
@@ -93,19 +94,53 @@ function toCashSummary(row: CashSummaryRow | undefined): ShiftCashSummary {
 }
 
 /**
- * The aggregate columns behind a shift's cash summary, factored out so
- * `shiftCashSummary` (a single shift's own `[from, to]` window) and
- * `listShifts`'s per-row LATERAL join (Wave 7 — every shift's window at
- * once) compute the exact same rule instead of two copies drifting apart.
+ * A shift's cash summary, as one SELECT over the orders matching `predicate`.
+ *
+ * `predicate` is the window — it may reference the outer row (`s.employee_id`,
+ * `s.started_at`) when this is embedded in a LATERAL join, or bind parameters
+ * when it stands alone — and both callers share it so `shiftCashSummary` (one
+ * shift's own `[from, to]`) and `listShifts`'s per-row join (Wave 7 — every
+ * shift's window at once) cannot drift apart.
+ *
+ * The orders and the payments are counted **separately**, never across one
+ * `orders LEFT JOIN payments`. That join produces one row per payment, so an
+ * order settled in two tenders — a split cash/card bill, or the re-settlement a
+ * closed-order amendment writes — was counted once by `count(DISTINCT o.id)`
+ * but summed twice by `sum(o.total)`: every such shift reported a gross total
+ * larger than it had sold, and the more the branch split bills the further out
+ * it was. `branchShiftSales` below already avoided this deliberately (see its
+ * comment); the two per-shift readings did not, which is why they are built
+ * from this one fragment now.
+ *
+ * The per-method totals stay `sum(p.amount) FILTER (…)` because a payment row
+ * *is* the unit there — two tenders on one bill are two real amounts.
  */
-const CASH_SUMMARY_COLUMNS = `
-  count(DISTINCT o.id)                                                  AS order_count,
-  coalesce(sum(o.total), 0)                                             AS gross_total,
-  coalesce(sum(p.amount) FILTER (WHERE p.method = 'cash'), 0)           AS cash_total,
-  coalesce(sum(p.amount) FILTER (WHERE p.method IN ('card', 'card_to_card')), 0) AS card_total,
-  coalesce(sum(p.amount) FILTER (WHERE p.method = 'online'), 0)         AS online_total,
-  coalesce(sum(p.amount) FILTER (WHERE p.method = 'credit'), 0)         AS credit_total
-`;
+function cashSummarySelect(predicate: string): string {
+  const windowOrders = `SELECT o.id, o.total FROM orders o WHERE ${predicate}`;
+  return `
+    SELECT
+      (SELECT count(*) FROM (${windowOrders}) wo)                                  AS order_count,
+      (SELECT coalesce(sum(wo.total), 0) FROM (${windowOrders}) wo)                AS gross_total,
+      coalesce(sum(p.amount) FILTER (WHERE p.method = 'cash'), 0)                  AS cash_total,
+      coalesce(sum(p.amount) FILTER (WHERE p.method IN ('card', 'card_to_card')), 0) AS card_total,
+      coalesce(sum(p.amount) FILTER (WHERE p.method = 'online'), 0)                AS online_total,
+      coalesce(sum(p.amount) FILTER (WHERE p.method = 'credit'), 0)                AS credit_total
+      FROM payments p
+     WHERE p.order_id IN (SELECT wo.id FROM (${windowOrders}) wo)
+  `;
+}
+
+/**
+ * The window a shift's *cash* is judged by: what this employee closed while
+ * they were clocked in. Deliberately `closed_by`/`closed_at` rather than the
+ * `opened_at` rule the shift's *order list* uses (see CLAUDE.md) — the drawer
+ * count has to reconcile against money this person actually took.
+ */
+const SHIFT_CASH_WINDOW = (from: string, to: string, employee: string) =>
+  `o.closed_by = ${employee} AND o.status = 'completed' AND o.closed_at BETWEEN ${from} AND ${to}`;
+
+/** Exported for `shift-service-sql.test.ts`: the shape above is the thing worth pinning, not the rows. */
+export const SHIFT_CASH_SUMMARY_SQL = cashSummarySelect(SHIFT_CASH_WINDOW("$2", "$3", "$1"));
 
 /**
  * Every completed order this employee closed between `from` and `to`,
@@ -118,13 +153,7 @@ export async function shiftCashSummary(
   from: Date | string,
   to: Date | string,
 ): Promise<ShiftCashSummary> {
-  const { rows } = await query<CashSummaryRow>(
-    `SELECT ${CASH_SUMMARY_COLUMNS}
-       FROM orders o
-       LEFT JOIN payments p ON p.order_id = o.id
-      WHERE o.closed_by = $1 AND o.status = 'completed' AND o.closed_at BETWEEN $2 AND $3`,
-    [employeeId, from, to],
-  );
+  const { rows } = await query<CashSummaryRow>(SHIFT_CASH_SUMMARY_SQL, [employeeId, from, to]);
   return toCashSummary(rows[0]);
 }
 
@@ -499,18 +528,29 @@ export async function closeOwnShift(
   return closeShiftRow({ employeeId }, businessId, employeeId, closingFloat);
 }
 
-/** Admin force-close — an owner/manager ending a shift the employee left open (e.g. forgot to clock out). */
+/**
+ * Admin force-close — an owner/manager ending a shift the employee left open
+ * (e.g. forgot to clock out).
+ *
+ * The id is uuid-guarded before it reaches the UPDATE: `WHERE id = $1` against
+ * a `uuid` column raises `invalid input syntax for type uuid` for anything
+ * else, which surfaces as a 500 and the generic «خطای غیرمنتظره» instead of
+ * the honest «شیفت بازی برای پایان دادن پیدا نشد» (see uuid.ts).
+ */
 export async function closeShiftById(
   shiftId: string,
   businessId: string,
   actorId: string | null,
   closingFloat: number | null = null,
 ): Promise<CloseShiftResult> {
+  if (!isUuid(shiftId)) throw new ShiftError("no_active_shift", 404);
   return closeShiftRow({ id: shiftId }, businessId, actorId, closingFloat);
 }
 
 export interface ShiftListEntry extends EmployeeShift {
   employeeName: string;
+  /** The branch the shift was worked at, when it recorded one — a business with several needs to tell them apart. */
+  locationName: string | null;
   cashSummary: ShiftCashSummary;
   /** Only set when the shift tracked a float on both ends — see shift.ts's reconcileCash. */
   reconciliation: { expectedCash: number; variance: number } | null;
@@ -518,6 +558,27 @@ export interface ShiftListEntry extends EmployeeShift {
 
 interface ShiftListRow extends ShiftRow, CashSummaryRow {
   employee_name: string;
+  location_name: string | null;
+}
+
+/** What the admin review tab may narrow its history by. */
+export interface ShiftListFilters {
+  employeeId?: string;
+  locationId?: string;
+  /** "open" = still clocked in, "closed" = cashed up. Omitted means both. */
+  status?: "open" | "closed";
+  /** Page size; clamped to `SHIFT_PAGE_MAX` so a hand-written query cannot ask for the whole table. */
+  limit?: number;
+  offset?: number;
+}
+
+export const SHIFT_PAGE_SIZE = 25;
+export const SHIFT_PAGE_MAX = 100;
+
+export interface ShiftListPage {
+  shifts: ShiftListEntry[];
+  /** True when another page exists — read by fetching one row past the page and dropping it. */
+  hasMore: boolean;
 }
 
 /**
@@ -525,25 +586,57 @@ interface ShiftListRow extends ShiftRow, CashSummaryRow {
  * cash summary/variance is computed in the same query via a LATERAL join
  * (Wave 7 — resolves this doc's Wave 5/6 open question 1), instead of the
  * settings tab making one `shiftCashSummary` round trip per shift.
+ *
+ * Paged rather than the flat `LIMIT 200` it shipped with. Two hundred rows is
+ * roughly a fortnight for a branch with four staff, so the tab both stopped
+ * showing older shifts — silently, with nothing on screen saying so — and sent
+ * two hundred rows plus two hundred correlated aggregates down the wire to a
+ * phone on every visit. The page carries `hasMore` so the UI can say which of
+ * those two things is happening.
+ *
+ * A branch filter matches rows with no branch of their own as well, the same
+ * rule `branchClosedOrdersWindow` and `getBusinessDayStatus` already apply: a
+ * shift only records a branch when the session that opened it had one, and
+ * dropping those rows would hide the very shifts a single-branch business
+ * records. Both ids are uuid-guarded — `WHERE id = $1` against a `uuid` column
+ * raises `invalid input syntax` for a non-uuid, which surfaces as a 500 rather
+ * than an empty list (see uuid.ts).
  */
 export async function listShifts(
   businessId: string,
-  filters: { employeeId?: string; locationId?: string } = {},
-): Promise<ShiftListEntry[]> {
+  filters: ShiftListFilters = {},
+): Promise<ShiftListPage> {
   const params: unknown[] = [businessId];
   const conditions: string[] = ["s.business_id = $1"];
   if (filters.employeeId) {
+    if (!isUuid(filters.employeeId)) return { shifts: [], hasMore: false };
     params.push(filters.employeeId);
     conditions.push(`s.employee_id = $${params.length}`);
   }
   if (filters.locationId) {
+    if (!isUuid(filters.locationId)) return { shifts: [], hasMore: false };
     params.push(filters.locationId);
-    conditions.push(`s.location_id = $${params.length}`);
+    conditions.push(`(s.location_id = $${params.length} OR s.location_id IS NULL)`);
   }
+  if (filters.status === "open") conditions.push("s.ended_at IS NULL");
+  if (filters.status === "closed") conditions.push("s.ended_at IS NOT NULL");
+
+  const limit = Math.min(
+    Math.max(Math.trunc(filters.limit ?? SHIFT_PAGE_SIZE), 1),
+    SHIFT_PAGE_MAX,
+  );
+  const offset = Math.max(Math.trunc(filters.offset ?? 0), 0);
+  // One row past the page: its presence is `hasMore`, and it costs one row
+  // rather than the second COUNT(*) query over the same correlated aggregates.
+  params.push(limit + 1, offset);
+  const limitParam = `$${params.length - 1}`;
+  const offsetParam = `$${params.length}`;
+
   const { rows } = await query<ShiftListRow>(
     `SELECT s.id, s.employee_id, s.business_id, s.location_id, s.session_id, s.device_id,
             s.opening_float, s.closing_float, s.business_date, s.started_at, s.ended_at, s.closed_by,
             u.full_name AS employee_name,
+            l.name AS location_name,
             coalesce(cs.order_count, 0) AS order_count,
             coalesce(cs.gross_total, 0) AS gross_total,
             coalesce(cs.cash_total, 0) AS cash_total,
@@ -552,25 +645,35 @@ export async function listShifts(
             coalesce(cs.credit_total, 0) AS credit_total
        FROM employee_shifts s
        JOIN users u ON u.id = s.employee_id
+       LEFT JOIN locations l ON l.id = s.location_id
        LEFT JOIN LATERAL (
-         SELECT ${CASH_SUMMARY_COLUMNS}
-           FROM orders o
-           LEFT JOIN payments p ON p.order_id = o.id
-          WHERE o.closed_by = s.employee_id AND o.status = 'completed'
-            AND o.closed_at BETWEEN s.started_at AND coalesce(s.ended_at, now())
+         ${cashSummarySelect(
+           SHIFT_CASH_WINDOW("s.started_at", "coalesce(s.ended_at, now())", "s.employee_id"),
+         )}
        ) cs ON true
       WHERE ${conditions.join(" AND ")}
       ORDER BY s.started_at DESC
-      LIMIT 200`,
+      LIMIT ${limitParam} OFFSET ${offsetParam}`,
     params,
   );
-  return rows.map((row) => {
-    const shift = toShift(row);
-    const cashSummary = toCashSummary(row);
-    const reconciliation =
-      shift.openingFloat !== null && shift.closingFloat !== null
-        ? reconcileCash(shift.openingFloat, shift.closingFloat, cashSummary.cashTotal)
-        : null;
-    return { ...shift, employeeName: row.employee_name, cashSummary, reconciliation };
-  });
+
+  const hasMore = rows.length > limit;
+  return {
+    shifts: rows.slice(0, limit).map((row) => {
+      const shift = toShift(row);
+      const cashSummary = toCashSummary(row);
+      const reconciliation =
+        shift.openingFloat !== null && shift.closingFloat !== null
+          ? reconcileCash(shift.openingFloat, shift.closingFloat, cashSummary.cashTotal)
+          : null;
+      return {
+        ...shift,
+        employeeName: row.employee_name,
+        locationName: row.location_name,
+        cashSummary,
+        reconciliation,
+      };
+    }),
+    hasMore,
+  };
 }

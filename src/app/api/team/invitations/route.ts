@@ -4,6 +4,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { isPasswordRole, sanitizeOverrides } from "@/lib/team";
 import { TeamError, createInvitation, listInvitations } from "@/lib/team-service";
 import type { Role } from "@/lib/auth";
+import { query } from "@/lib/db";
 
 export const GET = withTenantScope(async () => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
@@ -46,6 +47,15 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   // directly on /api/team instead.
   if (!body.role || !isPasswordRole(body.role)) {
     return NextResponse.json({ error: "role_not_invitable" }, { status: 400 });
+  }
+  if (body.role === "owner") {
+    const { rows } = await query<{ role: Role }>(
+      "SELECT role FROM users WHERE id = $1 AND business_id = $2 AND is_active = true",
+      [session.sub, session.businessId],
+    );
+    if (rows[0]?.role !== "owner") {
+      return NextResponse.json({ error: "owner_only" }, { status: 403 });
+    }
   }
 
   try {

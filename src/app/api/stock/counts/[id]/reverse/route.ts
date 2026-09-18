@@ -44,10 +44,14 @@ export const POST = withTenantScope(
         return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
       }
       if (err instanceof Error) {
-        const known = ["count_not_found", "count_not_reversible", "already_reversed", "count_stock_consumed"];
-        if (known.includes(err.message)) {
-          return NextResponse.json({ error: err.message }, { status: 400 });
-        }
+        const statusByError: Record<string, number> = {
+          count_not_found: 404,
+          count_not_reversible: 409,
+          already_reversed: 409,
+          count_stock_consumed: 409,
+        };
+        const status = statusByError[err.message];
+        if (status) return NextResponse.json({ error: err.message }, { status });
       }
       throw err;
     } finally {

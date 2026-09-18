@@ -146,7 +146,7 @@ describe("assignBarcode", () => {
     // digit, which is exactly what a hand-typed code gets wrong.
     await expect(
       barcodes.assignBarcode(itemId, { code: "6260100000004", symbology: "EAN13" }),
-    ).rejects.toThrow(/هم‌خوانی ندارد/);
+    ).rejects.toThrow(/رقم کنترل این بارکد/);
   });
 });
 

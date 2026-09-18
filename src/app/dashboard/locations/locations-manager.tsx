@@ -12,12 +12,13 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  *     "location"), with status and a manual "sync now".
  */
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { BarChart } from "../charts";
-import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, inputClass } from "../ui";
+import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessageOrRaw, inputClass } from "../ui";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 
 interface StaffRow {
@@ -118,7 +119,9 @@ function ComparisonCard() {
     if (dateTo) params.set("to", dateTo);
     const res = await api<{ overview?: Overview; error?: string }>(`/api/rollup/overview?${params}`);
     if (!res.ok) {
-      setError("خطا در بارگذاری مقایسهٔ شعبه‌ها.");
+      // The reason the server refused (an inverted date range, a permissions
+      // change…) rather than a blanket "failed to load" that hides it.
+      setError(errorMessageOrRaw(res.data.error) || "خطا در بارگذاری مقایسهٔ شعبه‌ها.");
       return;
     }
     setError(null);
@@ -156,7 +159,7 @@ function ComparisonCard() {
         <div className="space-y-6">
           <p className="text-xs text-muted-foreground">
             بازهٔ {toPersianDigits(formatJalali(overview.from))} تا {toPersianDigits(formatJalali(overview.to))}
-            {" — "}ارقام به تومان.
+            {" — "}ارقام به {money.unitLabel}.
           </p>
 
           <div className="overflow-x-auto">
@@ -195,7 +198,14 @@ function ComparisonCard() {
           <div>
             <h3 className="mb-2 text-sm font-medium text-muted-foreground">فروش دوره به تفکیک شعبه ({money.unitLabel})</h3>
             <BarChart
-              data={overview.locations.map((l) => ({ label: l.name, value: Math.trunc(l.total / 10) }))}
+              data={overview.locations.map((l) => ({
+                label: l.name,
+                // Rial (the storage unit) → the business's display unit, the
+                // same conversion the table's money.format cells make — never
+                // a hand-rolled `/ 10`, which paints a Rial business's bars a
+                // tenth of their true height.
+                value: money.toInput(l.total),
+              }))}
             />
           </div>
 
@@ -260,7 +270,7 @@ function RegistryCard() {
     });
     setBusy(false);
     if (!res.ok || !res.data.token) {
-      setError("ثبت شعبه ناموفق بود.");
+      setError(errorMessageOrRaw(res.data.error) || "ثبت شعبه ناموفق بود.");
       return;
     }
     setNewToken({ name: name.trim(), token: res.data.token });
@@ -269,7 +279,17 @@ function RegistryCard() {
   }
 
   async function setActive(id: string, isActive: boolean) {
-    await api(`/api/rollup/locations/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) });
+    const res = await api<{ error?: string }>(`/api/rollup/locations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive }),
+    });
+    // A failed toggle used to pass in silence: the list reloaded unchanged
+    // and the row simply looked stubborn, with nothing saying why.
+    if (!res.ok) {
+      setError(errorMessageOrRaw(res.data.error) || "تغییر وضعیت شعبه ناموفق بود.");
+      return;
+    }
+    setError(null);
     load();
   }
 
@@ -286,11 +306,23 @@ function RegistryCard() {
           <p className="mb-2 text-sm">
             توکن شعبهٔ «{newToken.name}» — همین حالا کپی کنید؛ دیگر نمایش داده نمی‌شود:
           </p>
-          <div className="flex items-center gap-2">
-            <code dir="ltr" className="flex-1 overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <code dir="ltr" className="min-w-0 flex-1 overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs">
               {newToken.token}
             </code>
-            <SecondaryButton onClick={() => navigator.clipboard?.writeText(newToken.token)}>
+            <SecondaryButton
+              onClick={() => {
+                // `navigator.clipboard` is missing on non-secure origins, and
+                // writeText can be denied outright — either way the click must
+                // not become an unhandled rejection with no feedback.
+                const written = navigator.clipboard?.writeText(newToken.token);
+                if (!written) return;
+                void written.then(
+                  () => toast.success("توکن کپی شد."),
+                  () => toast.error("کپی انجام نشد؛ توکن را دستی انتخاب و کپی کنید."),
+                );
+              }}
+            >
               کپی
             </SecondaryButton>
             <SecondaryButton onClick={() => setNewToken(null)}>بستن</SecondaryButton>
@@ -325,18 +357,24 @@ function RegistryCard() {
         </ul>
       )}
 
-      <form onSubmit={register} className="flex items-end gap-2">
-        <div className="flex-1">
+      {/* Stacked on a phone — the old single row squeezed the input to a
+          sliver beside a button that cannot wrap — and side by side from `sm`
+          up, where there is room for both. */}
+      <form onSubmit={register} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1">
           <Field label="ثبت شعبهٔ جدید">
             <input
               className={inputClass}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="مثلاً: شعبهٔ ونک"
+              // The same ceiling the API enforces (field_too_long beyond it);
+              // without it a pasted paragraph became the row's label forever.
+              maxLength={120}
             />
           </Field>
         </div>
-        <div className="mb-4">
+        <div className="sm:mb-4">
           <PrimaryButton disabled={busy || !name.trim()}>ثبت و صدور توکن</PrimaryButton>
         </div>
       </form>
@@ -378,10 +416,15 @@ function LocalSyncCard() {
     });
     setBusy(false);
     if (!res.ok) {
+      // The two failures this form can actually cause get their specific
+      // wording; anything else (a permissions change, a rate limit) deserves
+      // its real reason rather than one of these two guesses.
       setError(
         res.data.error === "invalid_url"
           ? "نشانی سرور مرکزی باید با http یا https شروع شود."
-          : "برای فعال‌سازی، نشانی سرور مرکزی و توکن هر دو لازم‌اند.",
+          : res.data.error === "missing_fields"
+            ? "برای فعال‌سازی، نشانی سرور مرکزی و توکن هر دو لازم‌اند."
+            : errorMessageOrRaw(res.data.error) || "ذخیرهٔ تنظیمات همگام‌سازی ناموفق بود.",
       );
       return;
     }

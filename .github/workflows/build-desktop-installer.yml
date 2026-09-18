@@ -9,7 +9,7 @@
 #
 # It can only run on Windows: electron-builder produces the NSIS installer with
 # Windows-only tooling (`rcedit` stamps the icon and version onto the exe), so
-# this job and the self-hosted Windows runner are a natural fit.
+# the job runs on the GitHub-hosted `windows-latest` runner.
 #
 # The build order matters and is not obvious: `electron/package.json` lists the
 # repository's `../.next`, `../src`, `../node_modules` and friends under
@@ -29,8 +29,8 @@ on:
         type: string
         required: false
 
-# One installer at a time: two concurrent electron-builder runs share the same
-# %LOCALAPPDATA% cache and the same output directory.
+# One installer at a time: an installer is a release artifact, so a queued run
+# is cheaper than sorting out which of two concurrent ones to ship.
 concurrency:
   group: build-desktop-installer
   cancel-in-progress: false
@@ -52,7 +52,7 @@ env:
 jobs:
   build:
     name: package the Windows installer
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4

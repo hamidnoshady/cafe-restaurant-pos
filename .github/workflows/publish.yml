@@ -1,6 +1,8 @@
-# Builds and publishes the production GHCR image on every push to main, then
-# asks Coolify to pull the new image and verifies the production rollout. A v*
-# tag also publishes an immutable release tag without restarting production.
+# Builds and publishes the production GHCR image — manually, never on a push.
+# Dispatch it from the main branch to publish `sha-<short>` + `latest` and have
+# Coolify pull the new image (the production rollout is then verified); dispatch
+# it from a v* tag to publish that immutable release tag without restarting
+# production.
 #
 # Tag shape is load-bearing: main publishes `sha-<short>` plus `latest`,
 # matching imageRefFor() in src/lib/app-update-status.ts; a v* ref additionally
@@ -8,40 +10,33 @@
 # arg because the Dockerfile bakes it into APP_IMAGE_SHA, which is how a running
 # container knows which build it is.
 #
-# The pre-publish gates intentionally test the exact commit being published.
-# They protect direct pushes, tags, and manual runs independently of PR checks.
+# The pre-publish gates intentionally test the exact commit being published, so
+# a manual run from any ref is gated the same way.
 #
-# Runs on the self-hosted **Windows** runner. Two requirements follow, and both
-# are verified by the `docker-publish` job before it does anything expensive:
-#
-#   * The image is a Linux image. Docker Desktop must therefore be running and
-#     set to the **Linux containers** backend (WSL2). A Windows-containers
-#     daemon cannot build this Dockerfile at all, so the job fails fast with
-#     that instruction rather than part-way through a build.
-#   * Every `run:` block is PowerShell, because a self-hosted Windows runner is
-#     not guaranteed to have bash on PATH.
+# Runs on GitHub-hosted **Ubuntu** runners (`ubuntu-latest`): the image is a
+# Linux image (`FROM node:20-alpine`), and hosted Ubuntu runners ship Docker
+# with the Linux backend plus buildx, which docker/build-push-action needs.
+# Every `run:` block is PowerShell Core (`pwsh`), preinstalled on the hosted
+# runners.
 name: publish
 
+# Manual only: dispatch from main to publish and redeploy production, from a v*
+# tag to publish the release tag without a redeploy.
 on:
-  push:
-    branches: [main]
-    tags:
-      - 'v*'
-  # Republish without a new commit (a rebuild after a base-image CVE, say).
   workflow_dispatch:
 
-# Never cancel: a half-published image is worse than a slow queue, and two
-# merges in a row must each produce their own tag.
+# Never cancel: a half-published image is worse than a slow queue, and two runs
+# in a row must each produce their own tag.
 concurrency:
-  # Main and release-tag events write to the same package. Keep one global
-  # queue so two refs cannot race a tag update or a production restart.
+  # Branch and release-tag dispatches write to the same package. Keep one
+  # global queue so two refs cannot race a tag update or a production restart.
   group: publish-production
   cancel-in-progress: false
 
 defaults:
   run:
-    # Windows PowerShell 5.1 — always present on Windows, unlike `pwsh`.
-    shell: powershell
+    # PowerShell Core — preinstalled on GitHub-hosted Ubuntu runners.
+    shell: pwsh
 
 env:
   NODE_OPTIONS: --max-old-space-size=3072
@@ -53,7 +48,7 @@ env:
 jobs:
   gates:
     name: pre-publish gates
-    runs-on: [self-hosted, windows, x64]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -69,7 +64,7 @@ jobs:
 
   docker-publish:
     name: publish image (GHCR)
-    runs-on: [self-hosted, windows, x64]
+    runs-on: ubuntu-latest
     needs: [gates]
     permissions:
       contents: read
@@ -78,41 +73,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The Dockerfile is `FROM node:20-alpine` — a Linux image. Building it
-      # needs Docker Desktop up and switched to the Linux/WSL2 backend. Both
-      # failures are silent until the build itself dies with a confusing error,
-      # so they are checked here with an actionable message instead.
-      - name: Check Docker is running with the Linux backend
-        run: |
-          $ErrorActionPreference = "Stop"
-          try {
-            $os = (docker version --format '{{.Server.Os}}' 2>&1 | Out-String).Trim()
-          } catch {
-            Write-Error "Docker is not reachable. Start Docker Desktop on this machine (and enable 'Start Docker Desktop when you log in') before publishing."
-            exit 1
-          }
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Docker is not reachable. Start Docker Desktop on this machine before publishing. Output: $os"
-            exit 1
-          }
-          if ($os -ne "linux") {
-            Write-Error "Docker is in '$os' container mode. This Dockerfile builds a Linux image: right-click the Docker Desktop tray icon and choose 'Switch to Linux containers'."
-            exit 1
-          }
-          Write-Host "Docker server OS: $os"
+      # The deploy verification at the end of this job is a Node script.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
+      # The Dockerfile is `FROM node:20-alpine` — a Linux image. Hosted Ubuntu
+      # runners always have Docker running with the Linux backend, which is why
+      # this job is not on `windows-latest` with the others.
       - name: Compute short sha
         id: sha
         run: |
-          # Windows PowerShell 5.1's `Out-File -Encoding utf8` writes a UTF-8
-          # BOM, and the runner parses these files byte-for-byte: a BOM ends up
-          # inside the first key name, so `steps.<id>.outputs.<key>` silently
-          # resolves to empty. Append BOM-free bytes instead.
-          function Add-GitHubOutput([string]$line) {
-            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "$line`n", (New-Object System.Text.UTF8Encoding($false)))
-          }
           $short = "$env:GITHUB_SHA".Substring(0, 7)
-          Add-GitHubOutput "short=$short"
+          # PowerShell Core writes UTF-8 without a BOM, so plain appends are
+          # safe for $GITHUB_OUTPUT here.
+          "short=$short" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - uses: docker/setup-buildx-action@v3
 
@@ -150,9 +125,6 @@ jobs:
           # restart before a response is lost, and a retry would cause the
           # duplicate restarts visible in the production logs.
           $ErrorActionPreference = "Stop"
-          # TLS 1.2 is not the default in Windows PowerShell 5.1 and the API
-          # refuses anything older.
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
           Invoke-RestMethod `
             -Method Post `
             -Uri "https://manage.eshobe.com/api/v1/services/jrfpvt0rctfkmzpw1ao5c1cb/restart?latest=true" `

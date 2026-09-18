@@ -477,6 +477,10 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // «به‌زودی» would badge the pages while every figure kept loading.
   ["/api/ledger", "ledger"],
   ["/api/reports", "reports"],
+  // The pricing settings route configures recipe-backed menu suggestions. It
+  // must follow the tab's menu gate rather than the broader settings module;
+  // longer prefixes stay before the catch-all because first match wins.
+  ["/api/settings/pricing", "menu"],
   ["/api/settings", "settings"],
   // The per-industry data routes. See the note above: the stricter
   // `requireIndustryForApi` check at each handler stays; this row is what lets

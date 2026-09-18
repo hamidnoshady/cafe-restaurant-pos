@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getBusinessIndustry } from "@/lib/industry-guard";
-import { REPORT_GROUP_LABELS, reportShape, standardReportsFor } from "@/lib/reports";
+import { REPORT_GROUP_LABELS, reportConfigIsMoney, reportShape, standardReportsFor } from "@/lib/reports";
 
 /**
  * The pre-built report library, as this business's trade actually sees it.
@@ -25,6 +25,9 @@ export const GET = withTenantScope(async () => {
     shape: reportShape(report),
     chartType: report.defaultChart?.chartType ?? null,
     config: report.defaultChart?.config ?? null,
+    // Display hint: whether this report's measure is Rial, so the chart and
+    // table render it in the business's money unit instead of as a raw number.
+    money: reportConfigIsMoney(report.defaultChart?.config),
   }));
   return NextResponse.json({ reports });
 });

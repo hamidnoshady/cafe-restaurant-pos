@@ -24,7 +24,8 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { SectionNav } from "../section-nav";
-import { api, ErrorBox } from "../ui";
+import { Button } from "@/components/ui/button";
+import { api, errorMessage, ErrorBox } from "../ui";
 import { LoadingSkeleton } from "../page-chrome";
 import {
   StockCountSection,
@@ -94,15 +95,29 @@ export function RetailInventoryManager() {
   }, [tab]);
 
   const loadItems = useCallback(() => {
-    api<{ items: CountableItem[] }>("/api/stock/items").then(({ ok, data }) => {
-      if (ok) setCountItems(data.items);
-    });
+    api<{ items: CountableItem[]; error?: string }>("/api/stock/items")
+      .then(({ ok, data }) => {
+        if (ok) setCountItems(data.items);
+        else {
+          setCountItems([]);
+          setError(errorMessage(data.error));
+        }
+      })
+      .catch(() => {
+        setCountItems([]);
+        setError("دریافت اقلام انبار ناموفق بود؛ دوباره تلاش کنید.");
+      });
   }, []);
   useEffect(loadItems, [loadItems]);
 
   return (
     <div className="min-w-0 space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
+      {tab === "counts" && error ? (
+        <Button type="button" variant="outline" onClick={loadItems}>
+          تلاش دوباره برای دریافت اقلام
+        </Button>
+      ) : null}
       {countDone ? (
         <p className="text-xs text-emerald-700 dark:text-emerald-300">
           {countDone}
@@ -127,7 +142,16 @@ export function RetailInventoryManager() {
             }}
           />
         ) : null}
-        {tab === "document-new" ? <DocumentFormSection /> : null}
+        {tab === "document-new" ? (
+          <DocumentFormSection
+            onCreated={() => {
+              // Same follow-through as the F&B shell: a posted سند lands the
+              // user on the list that now holds it, with fresh item stock.
+              loadItems();
+              setTab("documents");
+            }}
+          />
+        ) : null}
         {tab === "documents" ? <DocumentsSection /> : null}
         {tab === "stock-levels" ? (
           <StockLevelsSection locationId={stockLocationId} />

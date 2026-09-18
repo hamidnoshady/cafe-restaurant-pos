@@ -30,6 +30,22 @@ export interface MetricDef {
    * per purchase *line*) still counts parents rather than lines.
    */
   column: string | null;
+  /**
+   * The metric is an amount of money, stored in integer Rial like every other
+   * amount in the product.
+   *
+   * It exists because a report's value column is the one number in the app
+   * that reaches a screen without passing a money formatter: the chart and the
+   * table render whatever `value` the view returned, so a business displaying
+   * «تومان» read its sales report in Rial — a figure ten times too large, with
+   * no unit beside it to reveal the mistake. `useMoney().format` converts and
+   * labels it now, and this flag is what says which metrics that applies to
+   * (a count of orders or a duration in minutes must not be divided by ten).
+   *
+   * Storage and the wire stay Rial; this is display only. See
+   * docs/design-system.md and AGENTS.md on the business-selected money unit.
+   */
+  money?: boolean;
   aggregations: Aggregation[];
 }
 
@@ -118,10 +134,10 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "month", label: "ماه", dateTrunc: "month" },
     ],
     metrics: [
-      { key: "total", label: "جمع فروش", column: "total", aggregations: ["sum", "avg"] },
-      { key: "subtotal", label: "جمع جزء", column: "subtotal", aggregations: ["sum", "avg"] },
-      { key: "discount", label: "تخفیف", column: "discount", aggregations: ["sum", "avg"] },
-      { key: "tax", label: "مالیات", column: "tax", aggregations: ["sum", "avg"] },
+      { key: "total", label: "جمع فروش", column: "total", money: true, aggregations: ["sum", "avg"] },
+      { key: "subtotal", label: "جمع جزء", column: "subtotal", money: true, aggregations: ["sum", "avg"] },
+      { key: "discount", label: "تخفیف", column: "discount", money: true, aggregations: ["sum", "avg"] },
+      { key: "tax", label: "مالیات", column: "tax", money: true, aggregations: ["sum", "avg"] },
       { key: "order_count", label: "تعداد سفارش", column: "order_count", aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد روز", column: null, aggregations: ["count"] },
     ],
@@ -139,7 +155,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
     metrics: [
       { key: "quantity", label: "تعداد فروش", column: "quantity", aggregations: ["sum", "avg"] },
-      { key: "revenue", label: "درآمد", column: "revenue", aggregations: ["sum", "avg"] },
+      { key: "revenue", label: "درآمد", column: "revenue", money: true, aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
     ],
     filters: [{ key: "category", label: "دسته", column: "category_id" }],
@@ -161,7 +177,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
     metrics: [
       { key: "quantity", label: "تعداد فروش", column: "quantity", aggregations: ["sum", "avg"] },
-      { key: "revenue", label: "درآمد افزودنی", column: "revenue", aggregations: ["sum", "avg"] },
+      { key: "revenue", label: "درآمد افزودنی", column: "revenue", money: true, aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
     ],
     filters: [{ key: "group", label: "گروه افزودنی", column: "modifier_group_id" }],
@@ -173,7 +189,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     dimensions: [{ key: "item", label: "کالا", columns: ["inventory_item_id", "item_name"] }],
     metrics: [
       { key: "stock_qty", label: "موجودی", column: "stock_qty", aggregations: ["sum", "avg"] },
-      { key: "valuation", label: "ارزش موجودی", column: "valuation", aggregations: ["sum", "avg"] },
+      { key: "valuation", label: "ارزش موجودی", column: "valuation", money: true, aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد کالا", column: null, aggregations: ["count"] },
     ],
   },
@@ -184,9 +200,9 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     dimensions: [{ key: "item", label: "کالا", columns: ["inventory_item_id", "item_name"] }],
     metrics: [
       { key: "stock_qty", label: "موجودی", column: "stock_qty", aggregations: ["sum", "avg"] },
-      { key: "gross_value", label: "ارزش ناخالص", column: "gross_carrying_value", aggregations: ["sum"] },
-      { key: "nrv_allowance", label: "ذخیره کاهش ارزش", column: "nrv_allowance_rial", aggregations: ["sum"] },
-      { key: "valuation", label: "ارزش نهایی", column: "valuation", aggregations: ["sum", "avg"] },
+      { key: "gross_value", label: "ارزش ناخالص", column: "gross_carrying_value", money: true, aggregations: ["sum"] },
+      { key: "nrv_allowance", label: "ذخیره کاهش ارزش", column: "nrv_allowance_rial", money: true, aggregations: ["sum"] },
+      { key: "valuation", label: "ارزش نهایی", column: "valuation", money: true, aggregations: ["sum", "avg"] },
     ],
   },
   v_inventory_history_coverage: {
@@ -218,8 +234,8 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "account_type", label: "نوع حساب", columns: ["account_type"] },
     ],
     metrics: [
-      { key: "debit", label: "بدهکار", column: "debit", aggregations: ["sum", "avg"] },
-      { key: "credit", label: "بستانکار", column: "credit", aggregations: ["sum", "avg"] },
+      { key: "debit", label: "بدهکار", column: "debit", money: true, aggregations: ["sum", "avg"] },
+      { key: "credit", label: "بستانکار", column: "credit", money: true, aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد سطر", column: null, aggregations: ["count"] },
     ],
     filters: [
@@ -237,11 +253,11 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "staff", label: "صندوق‌دار", columns: ["closed_by", "cashier_name"] },
     ],
     metrics: [
-      { key: "gross_total", label: "جمع فروش", column: "gross_total", aggregations: ["sum", "avg"] },
-      { key: "cash_total", label: "نقدی", column: "cash_total", aggregations: ["sum", "avg"] },
-      { key: "card_total", label: "کارت‌خوان", column: "card_total", aggregations: ["sum", "avg"] },
-      { key: "online_total", label: "آنلاین", column: "online_total", aggregations: ["sum", "avg"] },
-      { key: "credit_total", label: "نسیه", column: "credit_total", aggregations: ["sum", "avg"] },
+      { key: "gross_total", label: "جمع فروش", column: "gross_total", money: true, aggregations: ["sum", "avg"] },
+      { key: "cash_total", label: "نقدی", column: "cash_total", money: true, aggregations: ["sum", "avg"] },
+      { key: "card_total", label: "کارت‌خوان", column: "card_total", money: true, aggregations: ["sum", "avg"] },
+      { key: "online_total", label: "آنلاین", column: "online_total", money: true, aggregations: ["sum", "avg"] },
+      { key: "credit_total", label: "نسیه", column: "credit_total", money: true, aggregations: ["sum", "avg"] },
       { key: "order_count", label: "تعداد سفارش", column: "order_count", aggregations: ["sum", "avg"] },
     ],
   },
@@ -259,15 +275,15 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "staff", label: "کارمند", columns: ["employee_id", "employee_name"] },
     ],
     metrics: [
-      { key: "gross_total", label: "جمع فروش", column: "gross_total", aggregations: ["sum", "avg"] },
-      { key: "cash_total", label: "نقدی", column: "cash_total", aggregations: ["sum", "avg"] },
-      { key: "card_total", label: "کارت‌خوان", column: "card_total", aggregations: ["sum", "avg"] },
-      { key: "online_total", label: "آنلاین", column: "online_total", aggregations: ["sum", "avg"] },
-      { key: "credit_total", label: "نسیه", column: "credit_total", aggregations: ["sum", "avg"] },
+      { key: "gross_total", label: "جمع فروش", column: "gross_total", money: true, aggregations: ["sum", "avg"] },
+      { key: "cash_total", label: "نقدی", column: "cash_total", money: true, aggregations: ["sum", "avg"] },
+      { key: "card_total", label: "کارت‌خوان", column: "card_total", money: true, aggregations: ["sum", "avg"] },
+      { key: "online_total", label: "آنلاین", column: "online_total", money: true, aggregations: ["sum", "avg"] },
+      { key: "credit_total", label: "نسیه", column: "credit_total", money: true, aggregations: ["sum", "avg"] },
       { key: "order_count", label: "تعداد سفارش", column: "order_count", aggregations: ["sum", "avg"] },
-      { key: "opening_float", label: "موجودی اولیهٔ صندوق", column: "opening_float", aggregations: ["sum", "avg"] },
-      { key: "closing_float", label: "موجودی پایانی صندوق", column: "closing_float", aggregations: ["sum", "avg"] },
-      { key: "cash_variance", label: "اختلاف صندوق", column: "cash_variance", aggregations: ["sum", "avg"] },
+      { key: "opening_float", label: "موجودی اولیهٔ صندوق", column: "opening_float", money: true, aggregations: ["sum", "avg"] },
+      { key: "closing_float", label: "موجودی پایانی صندوق", column: "closing_float", money: true, aggregations: ["sum", "avg"] },
+      { key: "cash_variance", label: "اختلاف صندوق", column: "cash_variance", money: true, aggregations: ["sum", "avg"] },
       { key: "duration_minutes", label: "مدت شیفت (دقیقه)", column: "duration_minutes", aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد شیفت", column: null, aggregations: ["count"] },
     ],
@@ -284,7 +300,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
     metrics: [
       { key: "duration_minutes", label: "مدت اشغال (دقیقه)", column: "duration_minutes", aggregations: ["sum", "avg"] },
-      { key: "revenue", label: "درآمد", column: "revenue", aggregations: ["sum", "avg"] },
+      { key: "revenue", label: "درآمد", column: "revenue", money: true, aggregations: ["sum", "avg"] },
       { key: "party_size", label: "تعداد مهمان", column: "party_size", aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد نشست", column: null, aggregations: ["count"] },
     ],
@@ -300,8 +316,8 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
     metrics: [
       { key: "order_count", label: "تعداد سفارش", column: "order_count", aggregations: ["sum", "avg"] },
-      { key: "revenue", label: "درآمد", column: "revenue", aggregations: ["sum", "avg"] },
-      { key: "avg_ticket", label: "میانگین صورتحساب", column: "avg_ticket", aggregations: ["avg"] },
+      { key: "revenue", label: "درآمد", column: "revenue", money: true, aggregations: ["sum", "avg"] },
+      { key: "avg_ticket", label: "میانگین صورتحساب", column: "avg_ticket", money: true, aggregations: ["avg"] },
     ],
   },
   v_delivery_performance: {
@@ -317,8 +333,8 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
     metrics: [
       { key: "delivery_minutes", label: "زمان تحویل (دقیقه)", column: "delivery_minutes", aggregations: ["avg", "sum"] },
-      { key: "revenue", label: "درآمد", column: "revenue", aggregations: ["sum", "avg"] },
-      { key: "fee", label: "هزینهٔ ارسال", column: "fee", aggregations: ["sum", "avg"] },
+      { key: "revenue", label: "درآمد", column: "revenue", money: true, aggregations: ["sum", "avg"] },
+      { key: "fee", label: "هزینهٔ ارسال", column: "fee", money: true, aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد ارسال", column: null, aggregations: ["count"] },
     ],
     filters: [{ key: "status", label: "وضعیت", column: "delivery_status" }],
@@ -336,8 +352,8 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     metrics: [
       { key: "delivery_count", label: "تعداد تحویل", column: "delivery_count", aggregations: ["sum", "avg"] },
       { key: "avg_delivery_minutes", label: "میانگین زمان تحویل (دقیقه)", column: "avg_delivery_minutes", aggregations: ["avg"] },
-      { key: "revenue", label: "درآمد", column: "revenue", aggregations: ["sum", "avg"] },
-      { key: "fees", label: "هزینهٔ ارسال", column: "fees", aggregations: ["sum", "avg"] },
+      { key: "revenue", label: "درآمد", column: "revenue", money: true, aggregations: ["sum", "avg"] },
+      { key: "fees", label: "هزینهٔ ارسال", column: "fees", money: true, aggregations: ["sum", "avg"] },
     ],
   },
   v_waste_summary: {
@@ -353,7 +369,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
     metrics: [
       { key: "quantity", label: "مقدار", column: "quantity", aggregations: ["sum", "avg"] },
-      { key: "cost", label: "بهای ضایعات", column: "cost", aggregations: ["sum", "avg"] },
+      { key: "cost", label: "بهای ضایعات", column: "cost", money: true, aggregations: ["sum", "avg"] },
     ],
   },
   // Phase 29 — in-house production. One row per run. Every additive column is
@@ -373,10 +389,10 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
     ],
     metrics: [
       { key: "quantity", label: "مقدار تولید", column: "quantity", aggregations: ["sum", "avg"] },
-      { key: "material_cost", label: "بهای مواد", column: "material_cost", aggregations: ["sum", "avg"] },
-      { key: "conversion_cost", label: "هزینهٔ تبدیل", column: "conversion_cost", aggregations: ["sum", "avg"] },
-      { key: "total_cost", label: "بهای تمام‌شده", column: "total_cost", aggregations: ["sum", "avg"] },
-      { key: "unit_cost", label: "بهای هر واحد", column: "unit_cost", aggregations: ["avg"] },
+      { key: "material_cost", label: "بهای مواد", column: "material_cost", money: true, aggregations: ["sum", "avg"] },
+      { key: "conversion_cost", label: "هزینهٔ تبدیل", column: "conversion_cost", money: true, aggregations: ["sum", "avg"] },
+      { key: "total_cost", label: "بهای تمام‌شده", column: "total_cost", money: true, aggregations: ["sum", "avg"] },
+      { key: "unit_cost", label: "بهای هر واحد", column: "unit_cost", money: true, aggregations: ["avg"] },
       // Positive means the batches came out short of what their formulas
       // promised — the direction that costs money.
       { key: "yield_variance", label: "انحراف مقدار", column: "yield_variance", aggregations: ["sum", "avg"] },
@@ -400,9 +416,9 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "status", label: "وضعیت", columns: ["status"] },
     ],
     metrics: [
-      { key: "cost", label: "مبلغ خرید", column: "cost", aggregations: ["sum", "avg"] },
+      { key: "cost", label: "مبلغ خرید", column: "cost", money: true, aggregations: ["sum", "avg"] },
       { key: "quantity", label: "مقدار", column: "quantity", aggregations: ["sum", "avg"] },
-      { key: "unit_cost", label: "بهای واحد", column: "unit_cost", aggregations: ["avg"] },
+      { key: "unit_cost", label: "بهای واحد", column: "unit_cost", money: true, aggregations: ["avg"] },
       { key: "purchase_count", label: "تعداد خرید", column: "purchase_id", aggregations: ["count_distinct"] },
       { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
     ],
@@ -425,7 +441,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "vendor", label: "طرف حساب", columns: ["vendor"] },
     ],
     metrics: [
-      { key: "amount", label: "مبلغ هزینه", column: "amount", aggregations: ["sum", "avg"] },
+      { key: "amount", label: "مبلغ هزینه", column: "amount", money: true, aggregations: ["sum", "avg"] },
       { key: "rows", label: "تعداد هزینه", column: null, aggregations: ["count"] },
     ],
     filters: [
@@ -455,6 +471,7 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
         key: "first_order_total",
         label: "مبلغ نخستین خرید",
         column: "first_order_total",
+        money: true,
         aggregations: ["sum", "avg"],
       },
       { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
@@ -474,9 +491,9 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "customer", label: "مشتری", columns: ["customer_id", "customer_name"] },
     ],
     metrics: [
-      { key: "total_spent", label: "ارزش کل مشتری", column: "total_spent", aggregations: ["sum", "avg"] },
+      { key: "total_spent", label: "ارزش کل مشتری", column: "total_spent", money: true, aggregations: ["sum", "avg"] },
       { key: "order_count", label: "تعداد خرید", column: "order_count", aggregations: ["sum", "avg"] },
-      { key: "average_order", label: "میانگین هر خرید", column: "average_order", aggregations: ["avg"] },
+      { key: "average_order", label: "میانگین هر خرید", column: "average_order", money: true, aggregations: ["avg"] },
       {
         key: "days_since_last_purchase",
         label: "روز از آخرین خرید",
@@ -768,6 +785,27 @@ export interface StandardReportDef {
 /** A report's shape, defaulting to the ordinary view dump. */
 export function reportShape(report: StandardReportDef): ReportShape {
   return report.shape ?? "rows";
+}
+
+/**
+ * Whether a config's measure is an amount of money — i.e. whether the `value`
+ * column it produces must be rendered through the business's money formatter
+ * rather than printed as a bare number.
+ *
+ * `count`/`count_distinct` are never money whatever they count: «تعداد خرید»
+ * counts purchases over the `purchase_id` column, and a count of rows is not
+ * Rial just because the column it counted holds them. An unknown view or
+ * metric answers false rather than throwing — this is a display hint, and a
+ * caller that is about to render is the wrong place to raise a config error.
+ */
+export function reportConfigIsMoney(config: {
+  view?: string;
+  metric?: string;
+  aggregation?: Aggregation;
+} | null | undefined): boolean {
+  if (!config?.view || !config.metric) return false;
+  if (config.aggregation === "count" || config.aggregation === "count_distinct") return false;
+  return Boolean(REPORT_VIEWS[config.view]?.metrics.find((m) => m.key === config.metric)?.money);
 }
 
 /**
@@ -1384,6 +1422,33 @@ export interface FoodCostVariance {
   variancePct: number | null;
   /** variance with recorded waste backed out — the portion price drift/portioning/theft would explain. */
   unexplainedVariance: number;
+}
+
+export interface BranchOverviewMetrics {
+  grossProfit: number;
+  grossMarginPct: number;
+  avgTicket: number;
+  revenueSharePct: number;
+}
+
+/**
+ * Computes derived metrics (Gross Profit, Gross Margin %, Average Ticket, and Revenue Share %)
+ * for a branch comparison row. Guaranteed not to divide by zero.
+ */
+export function computeBranchOverviewMetrics(
+  row: { orderCount: number; total: number; cogs: number },
+  consolidatedTotal: number,
+): BranchOverviewMetrics {
+  const grossProfit = row.total - row.cogs;
+  const grossMarginPct = row.total > 0 ? (grossProfit / row.total) * 100 : 0;
+  const avgTicket = row.orderCount > 0 ? Math.round(row.total / row.orderCount) : 0;
+  const revenueSharePct = consolidatedTotal > 0 ? (row.total / consolidatedTotal) * 100 : 0;
+  return {
+    grossProfit,
+    grossMarginPct,
+    avgTicket,
+    revenueSharePct,
+  };
 }
 
 export function buildFoodCostVariance(

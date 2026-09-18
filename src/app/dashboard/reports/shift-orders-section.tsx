@@ -52,7 +52,11 @@ function timeLabel(value: string): string {
 /** A picker option spans days, so unlike timeLabel it carries the Jalali date — same wording the shift history tab uses for an open shift. */
 function shiftLabel(shift: ShiftOption): string {
   const start = toPersianDigits(formatJalali(shift.startedAt, { withMonthName: true, withTime: true }));
-  const end = shift.endedAt ? toPersianDigits(timeLabel(shift.endedAt)) : "در حال انجام";
+  // Include the date when a shift crosses midnight; showing only the end time
+  // made a 23:00–01:00 shift look like it ended before it started.
+  const end = shift.endedAt
+    ? toPersianDigits(formatJalali(shift.endedAt, { withMonthName: true, withTime: true }))
+    : "در حال انجام";
   return `${shift.employeeName} · ${start} تا ${end}`;
 }
 
@@ -133,20 +137,22 @@ function LineRow({ line }: { line: ShiftOrderLine }) {
 function LineTable({ lines }: { lines: ShiftOrderLine[] }) {
   if (lines.length === 0) return null;
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="text-xs text-muted-foreground">
-          <th className="pb-2 pe-3 text-start font-medium">قلم</th>
-          <th className="pb-2 pe-3 text-start font-medium">تعداد</th>
-          <th className="pb-2 text-start font-medium">مبلغ</th>
-        </tr>
-      </thead>
-      <tbody>
-        {lines.map((line) => (
-          <LineRow key={line.itemId} line={line} />
-        ))}
-      </tbody>
-    </table>
+    <div className="-mx-1 overflow-x-auto px-1">
+      <table className="min-w-[28rem] w-full text-sm">
+        <thead>
+          <tr className="text-xs text-muted-foreground">
+            <th className="pb-2 pe-3 text-start font-medium">قلم</th>
+            <th className="pb-2 pe-3 text-start font-medium">تعداد</th>
+            <th className="pb-2 text-start font-medium">مبلغ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line) => (
+            <LineRow key={line.itemId} line={line} />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -178,7 +184,7 @@ function MoneySummary({ order }: { order: ShiftOrder }) {
       {order.discount > 0 ? (
         <Row label={discountLabel(order)} value={`- ${money.format(order.discount)}`} />
       ) : null}
-      {order.serviceCharge > 0 ? <Row label="هزینهٔ ارسال" value={money.format(order.serviceCharge)} /> : null}
+      {order.serviceCharge > 0 ? <Row label="هزینهٔ خدمات" value={money.format(order.serviceCharge)} /> : null}
       {order.tax > 0 ? <Row label="مالیات" value={money.format(order.tax)} /> : null}
       {order.tipAmount > 0 ? <Row label="انعام" value={money.format(order.tipAmount)} /> : null}
       <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-2.5 py-2">
