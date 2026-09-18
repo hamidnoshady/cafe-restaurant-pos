@@ -73,10 +73,12 @@ export async function SettingsPageBody({ section }: { section?: SettingsTabKey |
   return (
     <PageShell className="max-w-[1500px]">
       <PageHeader
-        title={activeTab ? `تنظیمات — ${activeTab.label}` : "تنظیمات"}
+        title="تنظیمات"
         description={
           activeTab ? (
-            activeTab.description
+            <>
+              بخش «{activeTab.label}»: {activeTab.description}
+            </>
           ) : (
             <>
               مدیریت اطلاعات کسب‌وکار، امور مالی، دسترسی‌ها، {labelFor(industry, "catalogue")} و تجهیزات.

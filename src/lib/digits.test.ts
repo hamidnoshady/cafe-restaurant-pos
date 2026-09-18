@@ -42,6 +42,7 @@ describe("digits", () => {
     expect(normalizeNumericText("۰۰۰۱۲")).toBe("12");
     expect(normalizeNumericText("−۱۲٫۵")).toBe("-12.5");
     expect(normalizeNumericText("۱۲٫۵", { allowDecimal: false })).toBe("12");
+    expect(normalizeNumericText("22,5", { allowDecimal: true, grouping: false })).toBe("22.5");
     expect(normalizeNumericText("-۱۲", { allowNegative: false })).toBe("12");
   });
 

@@ -272,8 +272,25 @@ export function changeDue(tenders: readonly { settlement: PaymentSettlement; amo
 /** At most this many slices on one bill — a guard against a runaway client, not a business rule. */
 export const MAX_TENDERS = 10;
 
+/**
+ * The part of a split bill an ordering platform charges commission on.
+ *
+ * Checkout and backdated-order tender lists contain the bill only. Tips are
+ * stored separately on the order and added later by `tendersWithTip` for the
+ * ledger, so summing the SnapFood tender here keeps the tip out of the
+ * commission base by construction.
+ */
+export function platformCommissionBase(
+  tenders: readonly { settlement: PaymentSettlement; amount: Rial }[],
+): Rial {
+  return tenders.reduce(
+    (total, tender) => (tender.settlement === "snappfood" ? total + tender.amount : total),
+    0,
+  );
+}
+
 export interface TenderValidationOptions {
-  /** The bill plus any tip: what the tenders must add up to. */
+  /** The bill amount; tips are stored separately and folded into the ledger later. */
   due: Rial;
   /** Whether a customer was named — a `credit` tender is a debt, so it needs one. */
   hasCustomer: boolean;

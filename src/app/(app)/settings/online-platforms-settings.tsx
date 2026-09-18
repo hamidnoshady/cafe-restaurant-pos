@@ -1,51 +1,76 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
-
+import Link from "next/link";
+import { LoadingSkeleton, SectionCard } from "@/app/dashboard/page-chrome";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
-import { toLatinDigits } from "@/lib/digits";
+import { formatPersianNumericText, formatPersianNumber } from "@/lib/digits";
+import {
+  MAX_ONLINE_PLATFORM_COMMISSION_PERCENT,
+  parseCommissionPercentInput,
+  validCommissionPercent,
+} from "@/lib/online-platforms";
+import { commissionAmountFor } from "@/lib/online-platforms-calculation";
+import type { RialText } from "@/lib/inventory-exact";
+import { settingsTabHref } from "@/lib/settings-routes";
+import { Button } from "@/components/ui/button";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "@/app/dashboard/ui";
-import { SectionCard } from "@/app/dashboard/page-chrome";
 
 interface OnlinePlatformsResponse {
-  onlinePlatforms: { snappfood: { commissionPercent: number } | null };
+  onlinePlatforms?: { snappfood?: { commissionPercent?: number } | null };
+  paymentMethod?: { name?: string; isActive?: boolean } | null;
   error?: string;
 }
 
-function parsePercentInput(raw: string): { ok: true; value: number | null } | { ok: false } {
-  const trimmed = toLatinDigits(raw).trim();
-  if (trimmed === "") return { ok: true, value: null };
-  const n = Number(trimmed);
-  if (!Number.isFinite(n) || n < 0 || n >= 100) return { ok: false };
-  return { ok: true, value: n };
-}
-
 /**
- * SnapFood's commission % (issue #160 §4) — varies by contract, so it's kept
- * here rather than hardcoded. Applied automatically to every order marked
- * "اسنپ‌فود" at checkout: /api/orders/[id]/pay resolves it to a Rial amount
- * and posts it to the platform-commission expense account, net of the
- * receivable from SnapFood.
+ * SnapFood's contract commission. It is intentionally configured separately
+ * from payment methods: the rate describes the platform contract, while the
+ * payment-method settings decide which ways a cashier may offer at checkout.
  */
 export function OnlinePlatformsSettings() {
   const [commissionPercent, setCommissionPercent] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<{ name: string; isActive: boolean } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { ok, data } = await api<OnlinePlatformsResponse>("/api/settings/online-platforms");
-    if (ok) {
-      const commission = data.onlinePlatforms.snappfood?.commissionPercent;
-      setCommissionPercent(commission != null ? String(commission) : "");
-      setError("");
-    } else {
-      setError(errorMessage(data.error));
+    setLoadFailed(false);
+    setError("");
+    try {
+      const { ok, data } = await api<OnlinePlatformsResponse>("/api/settings/online-platforms");
+      if (!ok) {
+        setLoadFailed(true);
+        setError(errorMessage(data.error));
+        return;
+      }
+      const config = data.onlinePlatforms;
+      if (!config || !Object.prototype.hasOwnProperty.call(config, "snappfood")) {
+        setLoadFailed(true);
+        setError("پاسخ تنظیمات پلتفرم آنلاین ناقص است. دوباره تلاش کنید.");
+        return;
+      }
+      const commission = config.snappfood?.commissionPercent;
+      setCommissionPercent(validCommissionPercent(commission) ? String(commission) : "");
+      const method = data.paymentMethod;
+      setPaymentMethod(
+        method
+          ? { name: method.name?.trim() || "اسنپ‌فود", isActive: method.isActive === true }
+          : null,
+      );
+      setSaved(false);
+    } catch {
+      // A network failure used to leave this screen with an empty field that
+      // could overwrite the saved contract rate. Keep the form locked until a
+      // complete read succeeds.
+      setLoadFailed(true);
+      setError("خواندن تنظیمات پلتفرم آنلاین انجام نشد. اتصال را بررسی و دوباره تلاش کنید.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -54,7 +79,7 @@ export function OnlinePlatformsSettings() {
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    const commission = parsePercentInput(commissionPercent);
+    const commission = parseCommissionPercentInput(commissionPercent);
     if (!commission.ok) {
       setError("درصد کارمزد باید عددی بین ۰ تا ۱۰۰ باشد.");
       return;
@@ -62,55 +87,127 @@ export function OnlinePlatformsSettings() {
     setSaving(true);
     setError("");
     setSaved(false);
-    const { ok, data } = await api<{ error?: string }>("/api/settings/online-platforms", {
-      method: "PUT",
-      body: JSON.stringify({ snappfoodCommissionPercent: commission.value }),
-    });
-    setSaving(false);
-    if (!ok) {
-      setError(errorMessage(data.error));
-      return;
+    try {
+      const { ok, data } = await api<{ ok?: boolean; error?: string }>("/api/settings/online-platforms", {
+        method: "PUT",
+        body: JSON.stringify({ snappfoodCommissionPercent: commission.value }),
+      });
+      if (!ok) {
+        setError(errorMessage(data.error));
+        return;
+      }
+      if (data.ok !== true) {
+        setError("پاسخ ذخیره‌سازی تنظیمات ناقص بود. دوباره تلاش کنید.");
+        return;
+      }
+      setSaved(true);
+    } catch {
+      setError("ذخیرهٔ تنظیمات انجام نشد. اتصال را بررسی و دوباره تلاش کنید.");
+    } finally {
+      setSaving(false);
     }
-    setSaved(true);
   }
 
-  if (loading) return <LoadingSkeleton rows={3} />;
+  if (loading) return <LoadingSkeleton rows={4} />;
+
+  if (loadFailed) {
+    return (
+      <div className="space-y-4">
+        <ErrorBox>{error}</ErrorBox>
+        <Button type="button" variant="outline" onClick={() => void load()}>
+          تلاش دوباره
+        </Button>
+      </div>
+    );
+  }
+
+  const parsedCommission = parseCommissionPercentInput(commissionPercent);
+  const previewCommission =
+    parsedCommission.ok && parsedCommission.value !== null
+      ? commissionAmountFor("1000000" as RialText, parsedCommission.value)
+      : null;
+  const previewRate =
+    parsedCommission.ok && parsedCommission.value !== null
+      ? formatPersianNumericText(String(parsedCommission.value), { allowDecimal: true, grouping: false })
+      : null;
 
   return (
-    <form onSubmit={save} className="space-y-6">
+    <form onSubmit={save} className="space-y-6" aria-busy={saving}>
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>تنظیمات پلتفرم آنلاین ذخیره شد.</InfoBox> : null}
 
       <SectionCard
-        title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پلتفرم‌های آنلاین</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">کارمزد اسنپ‌فود</h2>
-          </div>
-        }
-        description="این درصد از مبلغ هر سفارشی که هنگام تسویه با روش «اسنپ‌فود» ثبت می‌شود کسر و به‌عنوان هزینهٔ کارمزد پلتفرم ثبت می‌شود؛ باقیمانده به‌عنوان مطالبات از اسنپ‌فود ثبت می‌شود تا زمانی که تسویه واقعی دریافت شود. چون این نرخ بر اساس قرارداد هر کسب‌وکار متفاوت است، اینجا تنظیم می‌شود، نه در کد. خالی بگذارید تا بدون کسر کارمزدی، کل مبلغ به‌عنوان مطالبات ثبت شود."
+        title="کارمزد اسنپ‌فود"
+        description="این نرخ فقط برای سفارش‌هایی استفاده می‌شود که هنگام تسویه با روش پرداخت «اسنپ‌فود» ثبت می‌شوند. کارمزد از مبلغ فروش کسر می‌شود و مانده به‌عنوان مطالبات از اسنپ‌فود ثبت می‌شود؛ انعام، اگر وجود داشته باشد، مشمول کارمزد نیست."
       >
-        <div className="max-w-xs">
-          <Field label="درصد کارمزد">
+        <div className="max-w-sm">
+          <Field
+            label="درصد کارمزد قرارداد"
+            hint="خالی بگذارید تا کارمزد صفر در نظر گرفته شود. مقدار ۱۰۰٪ هم برای قراردادهایی که کل مبلغ را کسر می‌کنند مجاز است."
+          >
             <div className="relative">
               <PersianNumberInput
-                className={`${inputClass} ps-9`}
+                className={`${inputClass} pe-9`}
                 dir="ltr"
                 inputMode="decimal"
+                allowDecimal
+                grouping={false}
+                min={0}
+                max={MAX_ONLINE_PLATFORM_COMMISSION_PERCENT}
+                step="0.01"
                 value={commissionPercent}
-                onChange={(e) => {
+                disabled={saving}
+                onChange={(event) => {
                   setSaved(false);
-                  setCommissionPercent(e.target.value);
+                  setError("");
+                  setCommissionPercent(event.target.value);
                 }}
-                placeholder="مثلاً ۲۲.۵"
+                placeholder="مثلاً ۲۲٫۵"
+                aria-label="درصد کارمزد قرارداد اسنپ‌فود"
               />
-              <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-sm text-muted-foreground">٪</span>
+              <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-sm text-muted-foreground" aria-hidden="true">
+                ٪
+              </span>
             </div>
           </Field>
         </div>
+
+        {previewCommission !== null && previewRate !== null ? (
+          <div className="mt-2 rounded-xl border border-border/80 bg-muted/35 p-3 text-xs leading-6 text-muted-foreground" role="status" aria-live="polite">
+            نمونهٔ محاسبه: از هر ۱٬۰۰۰٬۰۰۰ ریال فروش اسنپ‌فود با نرخ {previewRate}٪، مبلغ {formatPersianNumber(BigInt(previewCommission))} ریال به‌عنوان کارمزد کسر می‌شود.
+          </div>
+        ) : null}
+
+        <div className="mt-2 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 text-xs leading-6 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-semibold">وضعیت روش پرداخت «{paymentMethod?.name ?? "اسنپ‌فود"}»</p>
+            <span
+              className={
+                paymentMethod?.isActive
+                  ? "rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
+                  : "rounded-full bg-amber-200/80 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-500/20 dark:text-amber-100"
+              }
+            >
+              {paymentMethod ? (paymentMethod.isActive ? "فعال" : "غیرفعال") : "پیدا نشد"}
+            </span>
+          </div>
+          <p className="mt-1">
+            {paymentMethod?.isActive
+              ? "این نرخ هنگام تسویهٔ سفارش با همین روش پرداخت اعمال می‌شود. سامانه سفارش‌ها را از اسنپ‌فود به‌صورت خودکار دریافت نمی‌کند؛ سفارش را در صندوق ثبت و با همین روش تسویه کنید."
+              : paymentMethod
+                ? "روش پرداخت غیرفعال است و تا زمان فعال‌سازی، این نرخ در هیچ سفارش جدیدی اعمال نمی‌شود."
+                : "روش پرداخت اسنپ‌فود در این کسب‌وکار پیدا نشد؛ تنظیمات روش‌های پرداخت را بررسی کنید."}
+          </p>
+          <Link
+            href={settingsTabHref("payment-methods")}
+            className="mt-2 inline-flex min-h-11 items-center rounded-lg font-semibold text-amber-800 underline decoration-amber-700/50 underline-offset-4 hover:text-amber-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600/50 dark:text-amber-200 dark:decoration-amber-300/50 dark:hover:text-amber-100"
+          >
+            مدیریت روش‌های پرداخت
+          </Link>
+        </div>
       </SectionCard>
 
-      <div className="max-w-xs">
+      <div className="max-w-sm">
         <PrimaryButton disabled={saving}>{saving ? "در حال ذخیره…" : "ذخیرهٔ تنظیمات"}</PrimaryButton>
       </div>
     </form>

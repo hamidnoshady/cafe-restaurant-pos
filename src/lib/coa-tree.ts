@@ -178,4 +178,3 @@ export function canEditChartOfAccounts(
   if (permissions !== undefined && permissions !== null) return permissions.includes(PERMISSIONS.accountsEdit);
   return COA_PRESET_EDITING_ROLES.includes(role ?? "");
 }
-

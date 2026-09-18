@@ -33,13 +33,15 @@ export function toLatinDigits(value: string): string {
  * by state and APIs: ASCII digits, an optional leading `-`, and an optional
  * ASCII decimal point. It intentionally accepts both Persian and Arabic-Indic
  * digits, Arabic decimal/group marks, conventional commas, and pasted spaces.
+ * When grouping is disabled and decimals are allowed, a conventional comma is
+ * treated as a decimal separator too, which matches many mobile keyboards.
  *
  * This is display/input plumbing rather than a numeric parser: it preserves a
  * trailing decimal point while a person is still typing and never goes through
  * `Number`, so a long value is not rounded here.
  */
 export function normalizeNumericText(value: string, options: NumericTextOptions = {}): string {
-  const { allowDecimal = true, allowNegative = true } = options;
+  const { allowDecimal = true, allowNegative = true, grouping = true } = options;
   const source = toLatinDigits(String(value))
     .replace(/[−–—]/g, "-")
     .replace(/٫/g, ".");
@@ -57,7 +59,7 @@ export function normalizeNumericText(value: string, options: NumericTextOptions 
       result = "-";
       continue;
     }
-    if (char === ".") {
+    if (char === "." || (char === "," && allowDecimal && !grouping)) {
       if (allowDecimal && !hasDecimal) {
         hasDecimal = true;
         result += ".";
@@ -69,7 +71,7 @@ export function normalizeNumericText(value: string, options: NumericTextOptions 
       }
     }
     // Every other character is display punctuation or an accidental paste
-    // character: commas, «٬», whitespace, currency text, and so on.
+    // character: grouping commas, «٬», whitespace, currency text, and so on.
   }
 
   const sign = result.startsWith("-") ? "-" : "";
