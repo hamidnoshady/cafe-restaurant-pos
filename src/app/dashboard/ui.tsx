@@ -112,6 +112,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     device_already_paired: "این مرورگر هم‌اکنون به‌عنوان یک دستگاه ثبت‌شده شناخته می‌شود.",
     device_not_found: "دستگاه پیدا نشد یا ثبت آن قبلاً لغو شده است.",
     employee_not_found: "کارمند پیدا نشد.",
+    // کارت هدیه (gift cards) — Growth › Gift Cards
+    gift_card_not_found: "کارت هدیه‌ای با این کد پیدا نشد.",
+    gift_card_failed: "صدور کارت هدیه ناموفق بود.",
+    redeem_failed: "مصرف کارت هدیه ناموفق بود.",
     session_required: "برای شروع شیفت باید دوباره وارد شوید.",
     shift_already_open: "شیفتی از قبل باز است.",
     no_active_shift: "شیفت بازی برای پایان دادن پیدا نشد.",
