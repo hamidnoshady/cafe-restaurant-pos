@@ -11,6 +11,7 @@ import Link from "next/link";
 import { ContactIcon, RefreshCwIcon, ExternalLinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/app/dashboard/ui";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -34,15 +35,22 @@ export function WpCustomersSection() {
   const [customers, setCustomers] = useState<StoreCustomer[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState("");
+  const locked = useFeatureLocked();
 
   useEffect(() => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only light the console with 403s behind the grayed-out preview.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok) {
         setConnections(res.data.connections);
         setSelectedId(res.data.connections[0]?.id ?? "");
       } else setConnections([]);
     });
-  }, []);
+  }, [locked]);
 
   const load = useCallback((connectionId: string) => {
     setCustomers(null);

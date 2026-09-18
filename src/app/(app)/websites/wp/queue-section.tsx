@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCwIcon, ArrowUpRightIcon, ArrowDownLeftIcon } from "lucide-react";
 import { api } from "@/app/dashboard/ui";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
@@ -60,15 +61,22 @@ export function WpQueueSection() {
   const [connections, setConnections] = useState<ConnectionLite[] | null>(null);
   const [selectedId, setSelectedId] = useState("");
   const [rows, setRows] = useState<QueueRow[] | null>(null);
+  const locked = useFeatureLocked();
 
   useEffect(() => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only light the console with 403s behind the grayed-out preview.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok) {
         setConnections(res.data.connections);
         setSelectedId(res.data.connections[0]?.id ?? "");
       } else setConnections([]);
     });
-  }, []);
+  }, [locked]);
 
   const load = useCallback((connectionId: string) => {
     setRows(null);

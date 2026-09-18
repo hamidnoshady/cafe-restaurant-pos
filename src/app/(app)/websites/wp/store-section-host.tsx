@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/app/dashboard/ui";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { CatalogueSection, StoreOrdersSection, TaxonomiesSection } from "./woo-store-sections";
 import { PluginWaitNote } from "./plugin-wait-note";
@@ -21,8 +22,17 @@ function useConnectionHost() {
   const [busy, setBusy] = useState(false);
   const [callResult, setCallResult] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const locked = useFeatureLocked();
 
   useEffect(() => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only light the console with 403s and replace the (accurate) "no
+    // store connected yet" empty state with a load error. The manager's layout
+    // has already grayed the whole surface out.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     api<{ connections: Connection[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok) {
         setConnections(res.data.connections);
@@ -31,7 +41,7 @@ function useConnectionHost() {
         setConnections([]);
       }
     });
-  }, []);
+  }, [locked]);
 
   const call = useCallback(
     async <T extends Record<string, unknown>>(path: string, method = "POST", body?: unknown): Promise<T | null> => {
