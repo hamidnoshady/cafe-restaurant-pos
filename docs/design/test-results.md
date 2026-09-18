@@ -94,6 +94,51 @@ the repo had passed over:
    human noticed. It now ends the loading state and renders an `EmptyState`
    with the reason and a retry button.
 
+## The first real CI run — and an honest unknown
+
+Adding the `pull_request` trigger did something this repository had never done:
+it ran these jobs automatically. The workflow was **`workflow_dispatch`-only**
+before this change ("Manual only — nothing runs on a push or a pull request"),
+so the four pre-existing Windows jobs had only ever run when somebody started
+them by hand.
+
+First run on PR #672:
+
+| Job | Result |
+| --- | --- |
+| design checks | **pass** (31s) |
+| type check | **pass** (2m14s) |
+| unit tests (windows-latest) | **fail** (3m4s) |
+| visual regression (ubuntu-latest) | **fail** (6m1s) |
+| production build | did not finish before the token expired |
+| integration tests | did not finish before the token expired |
+
+**I could not read either failure log.** The GitHub token expired partway
+through watching the run (`HTTP 401: Bad credentials`), and it has not been
+possible to fetch the job output since. So the following is stated as an
+open question, not a diagnosis:
+
+- **`npm test` passes locally**, 324 files / 4760 tests, on this exact commit
+  with a clean tree — including under `TZ=UTC`, `TZ=America/Los_Angeles` and
+  `TZ=Europe/London`, and the two suites that touch the changed `formatJalali`
+  (`jalali.test.ts`, `parties-directory-regressions.test.ts`) pass in all of
+  them. The CI job is `windows-latest` with no `TZ` set, which is the most
+  obvious difference, but that hypothesis was tested and did not reproduce.
+- Because the trigger is new, **the Windows unit-test failure may well predate
+  this branch** — there is no previous automatic run to compare against. That is
+  a real possibility, not an excuse, and it is why this section exists instead
+  of a claim that everything is green.
+- The visual job's most likely cause is environmental (browser install, the
+  production server failing to boot, or the new app-role step), so that job now
+  redirects the server's output to `server.log` and prints it on failure, and
+  the health poll prints the log when it times out. The next run will say what
+  happened instead of just failing.
+
+**What a reviewer should do:** open the two failing jobs on PR #672 and read
+them. If the Windows unit-test failure reproduces on `main` with a manual run,
+it is pre-existing and should be fixed separately; if it does not, it is from
+this branch and I have not found it.
+
 ## Manual verification that *was* done
 
 The dev server was run against the seeded database and each migrated route

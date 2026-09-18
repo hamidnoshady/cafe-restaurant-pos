@@ -23,7 +23,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join, relative, sep } from "node:path";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const DASHBOARD_DIR = fileURLToPath(new URL("./", import.meta.url));

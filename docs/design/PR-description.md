@@ -45,6 +45,24 @@ visual-regression procedure and test results. `AGENTS.md`, `CLAUDE.md` and
 `docs/ui-conventions.md` updated to match, so there is one definition of the
 approved design rather than two.
 
+## CI: two jobs are red and I could not read the logs
+
+This PR adds a `pull_request` trigger. The workflow was **manual-only** before,
+so this is the first time these jobs have ever run automatically. First run:
+design checks and type check **pass**; **unit tests (windows-latest) and visual
+regression fail**.
+
+The GitHub token expired mid-run, so I could not fetch either log and I am not
+going to guess in the PR body. `npm test` passes locally on this commit (324
+files / 4760 tests) including under three different timezones, and the visual
+suite passes 8/8 locally. Because the trigger is new there is no previous
+automatic run to compare against, so the Windows failure may predate this
+branch. The visual job now captures and prints the server log on failure so the
+next run is diagnosable. Full detail, including what was ruled out, is in
+`docs/design/test-results.md` § "The first real CI run".
+
+Please read those two jobs before approving.
+
 ## Two things to read before approving
 
 **No visual verification against the six approved screenshots was performed.**
