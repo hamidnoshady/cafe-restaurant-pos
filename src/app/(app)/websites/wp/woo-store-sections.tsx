@@ -24,7 +24,7 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 import { useCallback, useEffect, useState } from "react";
 import { api, InfoBox, inputClass } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
-import { formatDateTime } from "./format";
+import { formatDateTime, formatStoreAmount, parseAmountInput } from "./format";
 
 export { formatDateTime } from "./format";
 /** Money in Toman, the way every other screen in the dashboard shows it. */
@@ -108,6 +108,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   const [typeFilter, setTypeFilter] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState({ price: "", stock: "" });
+  const [draftError, setDraftError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -142,15 +143,27 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   async function push(remoteId: string) {
     const fields: Record<string, unknown> = {};
     if (draft.price.trim()) {
-      // Typed in Toman, sent as Rial — the app's own money rule.
-      const toman = Number(draft.price.replace(/[^\d.]/g, ""));
-      if (Number.isFinite(toman)) fields.priceRial = String(Math.round(toman * 10));
+      // Typed in Toman, sent as Rial — the app's own money rule. Parsing goes
+      // through `parseAmountInput` because a Persian keyboard produces Persian
+      // digits; the old strip-everything parse turned «۱۲۰٬۰۰۰» into a price
+      // of zero and pushed it to the live store.
+      const toman = parseAmountInput(draft.price);
+      if (toman === null) {
+        setDraftError("قیمت را به عدد وارد کنید (مثلاً ۱۲۰٬۰۰۰).");
+        return;
+      }
+      fields.priceRial = String(Math.round(toman * 10));
     }
     if (draft.stock.trim()) {
-      const stock = Number(draft.stock.replace(/[^\d]/g, ""));
-      if (Number.isFinite(stock)) fields.stock_quantity = stock;
+      const stock = parseAmountInput(draft.stock, { allowDecimal: false });
+      if (stock === null) {
+        setDraftError("موجودی را به عدد صحیح وارد کنید.");
+        return;
+      }
+      fields.stock_quantity = stock;
     }
     if (Object.keys(fields).length === 0) return;
+    setDraftError("");
     const result = await call<Record<string, unknown>>(
       `/api/integrations/connections/${connectionId}/store/products`,
       "POST",
@@ -246,33 +259,50 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
 
             {product.sellable ? (
               editing === product.remoteId ? (
-                <div className="mt-2 flex flex-wrap items-end gap-2">
-                  <input
-                    className={inputClass}
-                    placeholder="قیمت جدید (تومان)"
-                    value={draft.price}
-                    onChange={(e) => setDraft({ ...draft, price: e.target.value })}
-                  />
-                  <input
-                    className={inputClass}
-                    placeholder="موجودی جدید"
-                    value={draft.stock}
-                    onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
-                  />
-                  <Button type="button" size="xs" disabled={busy} onClick={() => void push(product.remoteId)}>
-                    ارسال به فروشگاه
-                  </Button>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => {
-                      setEditing(null);
-                      setDraft({ price: "", stock: "" });
-                    }}
-                  >
-                    انصراف
-                  </Button>
+                <div className="mt-2 space-y-2">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <input
+                      className={`${inputClass} w-36`}
+                      placeholder={
+                        product.priceRial === null
+                          ? "قیمت جدید (تومان)"
+                          : `قیمت جدید — الان ${rialToTomanText(product.priceRial)}`
+                      }
+                      value={draft.price}
+                      inputMode="decimal"
+                      onChange={(e) => setDraft({ ...draft, price: e.target.value })}
+                    />
+                    <input
+                      className={`${inputClass} w-28`}
+                      placeholder={
+                        product.quantity === null
+                          ? "موجودی جدید"
+                          : `موجودی جدید — الان ${product.quantity.toLocaleString("fa-IR")}`
+                      }
+                      value={draft.stock}
+                      inputMode="numeric"
+                      onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
+                    />
+                    <Button type="button" size="xs" disabled={busy} onClick={() => void push(product.remoteId)}>
+                      ارسال به فروشگاه
+                    </Button>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditing(null);
+                        setDraft({ price: "", stock: "" });
+                        setDraftError("");
+                      }}
+                    >
+                      انصراف
+                    </Button>
+                  </div>
+                  {draftError ? <p className="text-[11px] text-red-600 dark:text-red-400">{draftError}</p> : null}
+                  <p className="text-[11px] text-muted-foreground">
+                    خالی بماند یعنی بدون تغییر؛ فقط فیلدهایی که پر کنید ارسال می‌شوند.
+                  </p>
                 </div>
               ) : (
                 <Button
@@ -283,6 +313,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
                   onClick={() => {
                     setEditing(product.remoteId);
                     setDraft({ price: "", stock: "" });
+                    setDraftError("");
                   }}
                 >
                   تغییر قیمت / موجودی
@@ -313,6 +344,26 @@ interface TermGroup {
   isAttribute: boolean;
   termCount: number;
   terms: { remoteId: string; parentRemoteId: string | null; name: string; remoteCount: number; mappedCount: number }[];
+}
+
+/**
+ * How deep a term sits under its ancestors, walking the parent chain the
+ * group carries. A cycle or a missing parent bottoms out at the parent's own
+ * depth rather than looping — a store's taxonomy is its own data, not ours to
+ * trust. The old UI printed the same `└` for every term that had a parent at
+ * all, so a grandchild sat at the same level as a child.
+ */
+function termDepth(term: { remoteId: string; parentRemoteId: string | null }, byId: Map<string, { remoteId: string; parentRemoteId: string | null }>): number {
+  let depth = 0;
+  let current: { remoteId: string; parentRemoteId: string | null } | undefined = term;
+  const seen = new Set<string>([term.remoteId]);
+  while (current?.parentRemoteId) {
+    if (seen.has(current.parentRemoteId)) break;
+    seen.add(current.parentRemoteId);
+    depth += 1;
+    current = byId.get(current.parentRemoteId);
+  }
+  return depth;
 }
 
 export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
@@ -372,18 +423,24 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
           </button>
           {open === group.taxonomy ? (
             <ul className="space-y-1 border-t border-border p-2">
-              {group.terms.map((term) => (
-                <li key={term.remoteId} className="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    {term.parentRemoteId ? <span className="text-muted-foreground">└ </span> : null}
-                    {term.name}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">
-                    در فروشگاه: {term.remoteCount.toLocaleString("fa-IR")} • همگام‌شده:{" "}
-                    {term.mappedCount.toLocaleString("fa-IR")}
-                  </span>
-                </li>
-              ))}
+              {group.terms.map((term) => {
+                const depth = termDepth(
+                  term,
+                  new Map(group.terms.map((t) => [t.remoteId, t])),
+                );
+                return (
+                  <li key={term.remoteId} className="flex flex-wrap items-center justify-between gap-2">
+                    <span style={{ marginInlineStart: `${depth * 1.25}rem` }}>
+                      {depth > 0 ? <span className="text-muted-foreground">└ </span> : null}
+                      {term.name}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      در فروشگاه: {term.remoteCount.toLocaleString("fa-IR")} • همگام‌شده:{" "}
+                      {term.mappedCount.toLocaleString("fa-IR")}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
         </div>
@@ -403,6 +460,7 @@ interface StoreOrder {
   number: string;
   status: string;
   total: string;
+  currency: string;
   dateCreated: string | null;
   customer: string;
   ingestStatus: string;
@@ -453,7 +511,8 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
           <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
             <span>{order.customer || "بدون نام"}</span>
             <span>
-              {order.lineCount.toLocaleString("fa-IR")} قلم • {order.total}
+              {order.lineCount.toLocaleString("fa-IR")} قلم •{" "}
+              <span dir="auto">{formatStoreAmount(order.total, order.currency)}</span>
             </span>
             <span>{formatDateTime(order.dateCreated)}</span>
             <span>

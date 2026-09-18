@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCwIcon, ImageIcon, ExternalLinkIcon } from "lucide-react";
-import { api } from "@/app/dashboard/ui";
+import { api, errorMessageOrRaw } from "@/app/dashboard/ui";
 import { cardClass, EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -32,6 +32,7 @@ export function WpMediaSection() {
   const [rows, setRows] = useState<MediaRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
@@ -60,14 +61,15 @@ export function WpMediaSection() {
     if (!selectedId) return;
     setBusy(true);
     setInfo("");
+    setError("");
     const res = await api("/api/integrations/wp-manager/content", {
       method: "POST",
       body: JSON.stringify({ connectionId: selectedId }),
     });
     setBusy(false);
-    if (!res.ok) setInfo(String(res.data?.error ?? "خطا در همگام‌سازی"));
+    if (!res.ok) setError(errorMessageOrRaw(String(res.data?.error ?? "")) || "خطا در همگام‌سازی");
     else {
-      setInfo(res.data?.queued ? "درخواست همگام‌سازی در صف قرار گرفت." : `همگام‌سازی انجام شد (${toPersianDigits(Number(res.data?.total ?? 0))} مورد).`);
+      setInfo(res.data?.queued ? "درخواست همگام‌سازی رسانه‌ها در صف قرار گرفت." : `همگام‌سازی انجام شد (${toPersianDigits(Number(res.data?.total ?? 0))} مورد).`);
       setTimeout(() => load(selectedId), 2500);
     }
   }
@@ -78,14 +80,15 @@ export function WpMediaSection() {
   return (
     <div className="space-y-4">
       <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-        <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
-        <Button variant="outline" size="sm" disabled={busy} onClick={syncContent} className="ms-auto">
+        <ConnectionPicker bare connections={connections} value={selectedId} onChange={setSelectedId} />
+        <Button variant="outline" size="sm" disabled={busy} onClick={syncContent}>
           <RefreshCwIcon className="size-4" />
-          همگام‌سازی رسانه‌ها
+          {busy ? "در حال همگام‌سازی…" : "همگام‌سازی رسانه‌ها"}
         </Button>
       </div>
       <PluginWaitNote connections={connections} selectedId={selectedId} />
       {info ? <p className="text-xs text-teal-700 dark:text-teal-300">{info}</p> : null}
+      {error ? <p className="text-xs text-red-600 dark:text-red-400">{error}</p> : null}
 
       {rows === null ? (
         <SectionCardSkeleton rows={4} />
@@ -97,13 +100,24 @@ export function WpMediaSection() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {rows.map((row) => (
             <div key={row.remoteId} className={`${cardClass} overflow-hidden`}>
-              <div className="flex aspect-square items-center justify-center overflow-hidden bg-stone-100 dark:bg-stone-800">
+              <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-stone-100 dark:bg-stone-800">
+                <ImageIcon aria-hidden="true" className="size-8 text-muted-foreground" />
                 {row.mediaUrl && row.mimeType?.startsWith("image/") ? (
+                  // The placeholder icon stays behind the image, so a file the
+                  // store has moved or now refuses simply falls back to it
+                  // instead of the browser's broken-image glyph.
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={row.mediaUrl} alt={row.title} className="size-full object-cover" loading="lazy" />
-                ) : (
-                  <ImageIcon className="size-8 text-muted-foreground" />
-                )}
+                  <img
+                    src={row.mediaUrl}
+                    alt={row.title}
+                    className="absolute inset-0 size-full object-cover"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      e.currentTarget.style.visibility = "hidden";
+                    }}
+                  />
+                ) : null}
               </div>
               <div className="p-3">
                 <p className="truncate text-xs font-medium text-foreground">{row.title || `#${row.remoteId}`}</p>

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ContactIcon, RefreshCwIcon, ExternalLinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api } from "@/app/dashboard/ui";
+import { api, errorMessageOrRaw } from "@/app/dashboard/ui";
 import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -34,6 +34,7 @@ export function WpCustomersSection() {
   const [customers, setCustomers] = useState<StoreCustomer[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
@@ -62,10 +63,13 @@ export function WpCustomersSection() {
     if (!selectedId) return;
     setBusy(true);
     setInfo("");
+    setError("");
     const res = await api(`/api/integrations/connections/${selectedId}/sync/customers`, { method: "POST" });
     setBusy(false);
     if (!res.ok) {
-      setInfo(String(res.data?.error ?? "همگام‌سازی با خطا مواجه شد"));
+      // Red, not teal: a failure rendered in the success colour reads as
+      // "everything worked" to a member skimming the screen.
+      setError(errorMessageOrRaw(String(res.data?.error ?? "")) || "همگام‌سازی با خطا مواجه شد");
     } else {
       setInfo(res.data?.queued ? "درخواست همگام‌سازی در صف قرار گرفت؛ با اجرای بعدی افزونه مشتریان می‌رسند." : "همگام‌سازی انجام شد.");
       setTimeout(() => load(selectedId), 3000);
@@ -80,14 +84,15 @@ export function WpCustomersSection() {
   return (
     <div className="space-y-4">
       <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-        <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
-        <Button variant="outline" size="sm" disabled={busy} onClick={syncCustomers} className="ms-auto">
+        <ConnectionPicker bare connections={connections} value={selectedId} onChange={setSelectedId} />
+        <Button variant="outline" size="sm" disabled={busy} onClick={syncCustomers}>
           <RefreshCwIcon className="size-4" />
-          همگام‌سازی مشتریان
+          {busy ? "در حال همگام‌سازی…" : "همگام‌سازی مشتریان"}
         </Button>
       </div>
       <PluginWaitNote connections={connections} selectedId={selectedId} />
       {info ? <p className="text-xs text-teal-700 dark:text-teal-300">{info}</p> : null}
+      {error ? <p className="text-xs text-red-600 dark:text-red-400">{error}</p> : null}
 
       <section className={`${cardClass} overflow-hidden`}>
         <div className="border-b border-border/80 px-4 py-4 sm:px-5">

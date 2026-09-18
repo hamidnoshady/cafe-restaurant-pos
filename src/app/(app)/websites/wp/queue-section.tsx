@@ -60,6 +60,7 @@ export function WpQueueSection() {
   const [connections, setConnections] = useState<ConnectionLite[] | null>(null);
   const [selectedId, setSelectedId] = useState("");
   const [rows, setRows] = useState<QueueRow[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
@@ -70,12 +71,17 @@ export function WpQueueSection() {
     });
   }, []);
 
-  const load = useCallback((connectionId: string) => {
-    setRows(null);
+  const load = useCallback((connectionId: string, keepRows = false) => {
+    // A manual «تازه‌سازی» keeps the rows it already has: collapsing the
+    // list to a skeleton on every refresh made the queue look empty for a
+    // beat, which is exactly the wrong signal on a screen about failures.
+    if (!keepRows) setRows(null);
+    setRefreshing(true);
     api<{ rows: QueueRow[] }>(`/api/integrations/wp-manager/queue?connectionId=${connectionId}`).then(
       (res) => {
         if (res.ok) setRows(res.data.rows);
         else setRows([]);
+        setRefreshing(false);
       },
     );
   }, []);
@@ -91,9 +97,15 @@ export function WpQueueSection() {
     <div className="space-y-4">
       <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
         <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
-        <Button variant="outline" size="sm" onClick={() => load(selectedId)} className="ms-auto">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => load(selectedId, true)}
+          className="ms-auto"
+          disabled={refreshing}
+        >
           <RefreshCwIcon className="size-4" />
-          تازه‌سازی
+          {refreshing ? "در حال تازه‌سازی…" : "تازه‌سازی"}
         </Button>
       </div>
 

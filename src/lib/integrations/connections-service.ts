@@ -62,6 +62,7 @@ export interface ConnectionRow extends Record<string, unknown> {
   /** Phase 38 — split from last_sync_at: the two jobs fail independently. */
   last_catalogue_sync_at: string | null;
   last_order_sync_at: string | null;
+  last_customer_sync_at: string | null;
   last_error: string | null;
   created_at: string;
   updated_at: string;
@@ -89,6 +90,13 @@ export interface Connection {
   lastSyncAt: string | null;
   lastCatalogueSyncAt: string | null;
   lastOrderSyncAt: string | null;
+  /**
+   * The customers watermark migration 0128 added ("which part of the mirror
+   * is stale") — the WP Manager's میز کار shows it beside the catalogue and
+   * order ones, so a shop whose customers never arrive is diagnosable from
+   * the overview instead of only from the audit log.
+   */
+  lastCustomerSyncAt: string | null;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
@@ -129,6 +137,7 @@ function mapConnection(row: ConnectionRow): Connection {
     lastSyncAt: row.last_sync_at,
     lastCatalogueSyncAt: row.last_catalogue_sync_at,
     lastOrderSyncAt: row.last_order_sync_at,
+    lastCustomerSyncAt: row.last_customer_sync_at,
     lastError: row.last_error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -147,7 +156,8 @@ export const CONNECTION_COLUMNS = `id, business_id, location_id, name, provider,
   plugin_version, plugin_site_url, last_plugin_seen_at,
   currency_unit, sync_orders, sync_products, sync_customers, push_stock, push_prices,
   sync_categories, auto_pull_orders, order_lookback_days,
-  status, last_sync_at, last_catalogue_sync_at, last_order_sync_at, last_error, created_at, updated_at`;
+  status, last_sync_at, last_catalogue_sync_at, last_order_sync_at, last_customer_sync_at,
+  last_error, created_at, updated_at`;
 
 export async function listConnections(businessId: string): Promise<Connection[]> {
   const { rows } = await query<ConnectionRow>(

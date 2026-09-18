@@ -235,12 +235,18 @@ export function TabPanel<K extends string>({
   );
 }
 
-/** What a page shows where a list would be, before anything has been created. */
+/**
+ * What a page shows where a list would be, before anything has been created.
+ *
+ * A `<div>`, not a `<p>`: callers routinely centre a small stack inside it
+ * (icon, line, button), and a `<div>` inside a `<p>` is invalid HTML that
+ * browsers re-flow unpredictably.
+ */
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+    <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
       {children}
-    </p>
+    </div>
   );
 }
 
