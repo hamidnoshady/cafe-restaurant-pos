@@ -53,7 +53,7 @@ import {
 import { isAssistantSurface } from "@/lib/assistant-route";
 import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
-import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
+import { appForModule, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { ACCOUNTING_SECTION_ICONS } from "@/app/(app)/accounting/accounting-icons";
@@ -429,9 +429,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
   // wears its own app's badge, exactly what the flat sidebar shows for the
   // same app, rather than re-deriving it. Looking the state up by the
   // launcher's resolved href instead is what once badged «حسابداری» with the
-  // *sales* app's «به‌زودی»: the launcher opened the sales overview, which is
-  // a sales page, not an accounting one. The hub entry has no app and so is
-  // never badged.
+  // old Sales state: now POS and the overview belong to Accounting.
   const stateByApp = new Map<AppKey, NonNullable<NavItem["appState"]>>();
   for (const item of navItems) {
     if (!item.appState) continue;
