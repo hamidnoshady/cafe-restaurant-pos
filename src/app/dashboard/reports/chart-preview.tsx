@@ -11,27 +11,37 @@ import { toPersianDigits } from "@/lib/digits";
 import { ReportTable } from "./report-table";
 import type { ChartType } from "./report-ui";
 
+/**
+ * How a measure is written out.
+ *
+ * A report's value column was always printed as a bare grouped number, which
+ * is wrong for the 43 metrics that are Rial: a business displaying «تومان» read
+ * its sales ten times too high, with no unit anywhere on the card to reveal it.
+ * Callers that know the measure is money pass their `useMoney().format`; the
+ * default keeps counts, minutes and quantities as plain numbers.
+ */
+export type ValueFormatter = (value: number) => string;
+
+const formatPlain: ValueFormatter = (value) => toPersianDigits(Math.round(value).toLocaleString("en-US"));
+
 export function ChartPreview({
   chartType,
   data,
   label,
+  formatValue = formatPlain,
 }: {
   chartType: ChartType;
   data: ChartDatum[];
   label: string;
+  formatValue?: ValueFormatter;
 }) {
   if (chartType === "number") {
     const total = data.reduce((sum, datum) => sum + datum.value, 0);
-    return (
-      <NumberCard
-        label={label}
-        value={toPersianDigits(Math.round(total).toLocaleString("en-US"))}
-      />
-    );
+    return <NumberCard label={label} value={formatValue(total)} />;
   }
-  if (chartType === "line") return <LineChart data={data} height={260} />;
-  if (chartType === "pie") return <PieChart data={data} height={260} />;
-  return <BarChart data={data} height={260} />;
+  if (chartType === "line") return <LineChart data={data} height={260} formatValue={formatValue} />;
+  if (chartType === "pie") return <PieChart data={data} height={260} formatValue={formatValue} />;
+  return <BarChart data={data} height={260} formatValue={formatValue} />;
 }
 
 /**
@@ -45,9 +55,11 @@ export function ChartPreview({
 export function DataTable({
   columns,
   data,
+  formatValue = formatPlain,
 }: {
   columns: [string, string];
   data: ChartDatum[];
+  formatValue?: ValueFormatter;
 }) {
   return (
     <ReportTable
@@ -62,7 +74,7 @@ export function DataTable({
           header: columns[1],
           align: "end",
           numeric: true,
-          cell: (datum) => toPersianDigits(Math.round(datum.value).toLocaleString("en-US")),
+          cell: (datum) => formatValue(datum.value),
         },
       ]}
     />

@@ -11,15 +11,29 @@ export const PATCH = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
   if (error) return error;
 
   const { id } = await ctx.params;
-  let body: { monthlyWage?: number | null };
+  let body: { monthlyWage?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
+  /*
+   * `Number(…)` used to coerce the body, which quietly accepted values that
+   * are not amounts: `true` became 1 rial, `[]` and `""` became 0, and a
+   * missing key became `null` — so a malformed request silently *cleared* or
+   * mangled somebody's wage instead of being refused. Only a real number (or
+   * an explicit null, meaning «no wage set») is a wage; the service still
+   * range-checks it.
+   */
+  const raw = body.monthlyWage;
+  let monthlyWage: number | null;
+  if (raw === null || raw === undefined) monthlyWage = null;
+  else if (typeof raw === "number") monthlyWage = raw;
+  else return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
+
   try {
-    await setWage(session.businessId, id, body.monthlyWage === null || body.monthlyWage === undefined ? null : Number(body.monthlyWage));
+    await setWage(session.businessId, id, monthlyWage);
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof PayrollError) return NextResponse.json({ error: err.message }, { status: err.status });

@@ -355,6 +355,22 @@ describe("payment ways", () => {
     expect(after.map((method) => method.id)).toEqual(reversed);
   });
 
+  it("rejects an incomplete or duplicated order without changing the grid", async () => {
+    const before = await dbLib.withTenant(biz.id, () => paymentMethodsService.listPaymentMethods(biz.id));
+    const incomplete = before.slice(1).map((method) => method.id);
+    const duplicated = before.map((method, index) => (index === 0 ? before[1].id : method.id));
+
+    expect(
+      await dbLib.withTenant(biz.id, () => paymentMethodsService.reorderPaymentMethods(biz.id, incomplete)),
+    ).toBe(false);
+    expect(
+      await dbLib.withTenant(biz.id, () => paymentMethodsService.reorderPaymentMethods(biz.id, duplicated)),
+    ).toBe(false);
+
+    const after = await dbLib.withTenant(biz.id, () => paymentMethodsService.listPaymentMethods(biz.id));
+    expect(after.map((method) => method.id)).toEqual(before.map((method) => method.id));
+  });
+
   it("keeps a deactivated way off the till but on its old payments", async () => {
     const methods = await dbLib.withTenant(biz.id, () => paymentMethodsService.listPaymentMethods(biz.id));
     const credit = methods.find((method) => method.code === "credit")!;

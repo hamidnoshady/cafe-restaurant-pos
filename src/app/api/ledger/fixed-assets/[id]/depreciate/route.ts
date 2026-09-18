@@ -3,6 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { FixedAssetError, postDepreciation } from "@/lib/fixed-assets-service";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
+import { MissingLedgerAccountError } from "@/lib/ledger-service";
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -35,6 +36,7 @@ export const POST = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof FixedAssetError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof MissingLedgerAccountError) return NextResponse.json({ error: "ledger_account_missing" }, { status: 400 });
     const lockCode = fiscalPeriodLockErrorCode(err);
     if (lockCode) return NextResponse.json({ error: lockCode }, { status: 409 });
     throw err;

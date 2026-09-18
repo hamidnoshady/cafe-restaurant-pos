@@ -4,6 +4,7 @@ import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from ".
 import { isoDateToJalali, jalaliMonthLength, jalaliToIsoDate } from "./jalali";
 import { isUuid } from "./uuid";
 import { businessToday } from "./business-day-service";
+import { normalizePosSearchText } from "./pos-selection";
 
 /**
  * Installment schedules (اقساط) — see migrations/0140_installments.sql for the
@@ -108,6 +109,9 @@ function planStatus(
 }
 
 export async function createInstallmentPlan(input: InstallmentPlanInput): Promise<{ id: string }> {
+  if (input.direction !== "receivable" && input.direction !== "payable") throw new InstallmentError("invalid_direction");
+  if (input.source !== "party" && input.source !== "invoice") throw new InstallmentError("invalid_source");
+  if (input.source === "invoice" && input.direction !== "receivable") throw new InstallmentError("invalid_source");
   if (!Number.isSafeInteger(input.principal) || input.principal <= 0) throw new InstallmentError("invalid_amount");
   const downPayment = input.downPayment ?? 0;
   if (!Number.isSafeInteger(downPayment) || downPayment < 0) throw new InstallmentError("invalid_down_payment");
@@ -117,7 +121,19 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
   if (!Number.isInteger(input.intervalMonths) || input.intervalMonths < 1 || input.intervalMonths > 36) {
     throw new InstallmentError("invalid_interval");
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.firstDueDate)) throw new InstallmentError("invalid_due_date");
+  // A shape-only regex accepts impossible dates such as 2026-02-31. PostgreSQL
+  // then throws a date parser error which used to escape as a 500 response.
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.firstDueDate);
+  if (!dateMatch) throw new InstallmentError("invalid_due_date");
+  const [year, month, day] = dateMatch.slice(1).map(Number);
+  const parsedDueDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsedDueDate.getUTCFullYear() !== year ||
+    parsedDueDate.getUTCMonth() !== month - 1 ||
+    parsedDueDate.getUTCDate() !== day
+  ) {
+    throw new InstallmentError("invalid_due_date");
+  }
   const interestPercent = input.interestPercent ?? 0;
   const lateFeePercent = input.lateFeePercent ?? 0;
   // `Number.isFinite` first: every comparison against NaN is false, so a NaN
@@ -142,9 +158,18 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
   if (input.source === "invoice") {
     if (!input.invoiceOrderId) throw new InstallmentError("invoice_required");
     if (!isUuid(input.invoiceOrderId)) throw new InstallmentError("invoice_not_found", 404);
-    const { rows } = await query<{ id: string; total: string; customer_id: string | null; on_credit: boolean }>(
+    const { rows } = await query<{
+      id: string;
+      total: string;
+      customer_id: string | null;
+      credit_total: string;
+      already_scheduled: boolean;
+    }>(
       `SELECT o.id, o.total, o.customer_id,
-              EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.method = 'credit') AS on_credit
+              COALESCE((SELECT sum(p.amount) FROM payments p
+                         WHERE p.order_id = o.id AND p.method = 'credit'), 0)::text AS credit_total,
+              EXISTS (SELECT 1 FROM installments ip
+                       WHERE ip.business_id = $2 AND ip.invoice_order_id = o.id) AS already_scheduled
          FROM orders o
          JOIN locations l ON l.id = o.location_id
         WHERE o.id = $1 AND l.business_id = $2 AND o.type = 'retail'`,
@@ -161,10 +186,14 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
      * shows money coming in against an invoice they never owed. Only a
      * credit-settled invoice has a balance to schedule.
      */
-    if (!rows[0].on_credit) throw new InstallmentError("invoice_not_on_credit");
+    const creditTotal = Number(rows[0].credit_total);
+    if (!Number.isSafeInteger(creditTotal) || creditTotal <= 0) throw new InstallmentError("invoice_not_on_credit");
+    if (rows[0].already_scheduled) throw new InstallmentError("invoice_already_scheduled", 409);
     invoiceOrderId = rows[0].id;
     partyId = rows[0].customer_id;
-    principal = Number(rows[0].total);
+    // Split-payment and amended invoices may have a credit portion different
+    // from the invoice total. Only that portion ever debited A/R.
+    principal = creditTotal;
   } else if (!partyId) {
     throw new InstallmentError("party_required");
   }
@@ -183,8 +212,10 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
       // rather than at the first slice.
       const { rows: supplierRows } = await query<{ id: string }>(
         `SELECT s.id FROM suppliers s JOIN locations l ON l.id = s.location_id
-          WHERE s.party_id = $1 AND l.business_id = $2 LIMIT 1`,
-        [partyId, input.businessId],
+          WHERE s.party_id = $1 AND l.business_id = $2
+            AND ($3::uuid IS NULL OR s.location_id = $3)
+          ORDER BY s.id LIMIT 1`,
+        [partyId, input.businessId, input.locationId],
       );
       if (!supplierRows[0]) throw new InstallmentError("supplier_record_missing", 409);
     }
@@ -223,6 +254,49 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
       ],
     );
     const planId = rows[0].id;
+
+    // Interest increases the counterparty balance beyond the principal that was
+    // already posted by the invoice/subledger. Accrue that increase now;
+    // otherwise settling every slice would over-credit A/R (or over-debit A/P)
+    // and leave the ledger negative by exactly the interest amount.
+    const interestAmount = withInterest - financed;
+    if (interestAmount > 0) {
+      const balanceCode = input.direction === "receivable"
+        ? WELL_KNOWN_CODES.accountsReceivable
+        : WELL_KNOWN_CODES.accountsPayable;
+      const interestCode = input.direction === "receivable"
+        ? WELL_KNOWN_CODES.otherIncome
+        : WELL_KNOWN_CODES.otherExpense;
+      const accounts = await accountIdsByCode(client, input.businessId, [balanceCode, interestCode]);
+      const { rows: dateRows } = await client.query<{ business_date: string }>(
+        `SELECT app_business_date(now(), COALESCE(l.timezone, 'Asia/Tehran'), l.business_day_start_minutes)::text AS business_date
+           FROM (SELECT 1) one
+           LEFT JOIN locations l ON l.id = $1 AND l.business_id = $2`,
+        [input.locationId, input.businessId],
+      );
+      const balanceAccount = accounts.get(balanceCode)!;
+      const interestAccount = accounts.get(interestCode)!;
+      await postJournalEntry(client, {
+        businessId: input.businessId,
+        locationId: input.locationId,
+        entryDate: dateRows[0].business_date,
+        memo: `سود برنامه اقساط${partyId ? " طرف‌حساب" : ""}`,
+        sourceType: "installment_interest",
+        sourceId: planId,
+        createdBy: input.createdBy,
+        postingKind: "installment_interest",
+        lines: input.direction === "receivable"
+          ? [
+              { accountId: balanceAccount, debit: interestAmount, credit: 0 },
+              { accountId: interestAccount, debit: 0, credit: interestAmount },
+            ]
+          : [
+              { accountId: interestAccount, debit: interestAmount, credit: 0 },
+              { accountId: balanceAccount, debit: 0, credit: interestAmount },
+            ],
+      });
+    }
+
     for (let seq = 1; seq <= input.installmentCount; seq += 1) {
       const amount = seq === input.installmentCount ? withInterest - perItem * (input.installmentCount - 1) : perItem;
       const dueDate = addJalaliMonths(input.firstDueDate, (seq - 1) * input.intervalMonths);
@@ -235,6 +309,13 @@ export async function createInstallmentPlan(input: InstallmentPlanInput): Promis
     return { id: planId };
   } catch (err) {
     await client.query("ROLLBACK");
+    // The partial unique index is the final guard against two concurrent
+    // requests scheduling the same invoice after both passed the friendly
+    // pre-check above.
+    if ((err as { code?: string; constraint?: string }).code === "23505" &&
+        (err as { constraint?: string }).constraint === "idx_installments_invoice_plan") {
+      throw new InstallmentError("invoice_already_scheduled", 409);
+    }
     throw err;
   } finally {
     client.release();
@@ -245,6 +326,7 @@ interface PlanDbRow {
   [key: string]: unknown;
   id: string;
   direction: InstallmentDirection;
+  plan_today: string | null;
   source: "party" | "invoice";
   party_id: string | null;
   party_name: string | null;
@@ -306,13 +388,16 @@ function mapPlanRow(r: PlanDbRow, today: string, items?: InstallmentItemRow[]): 
     remaining,
     paidCount,
     nextDueDate,
-    status: planStatus(paidCount, count, nextDueDate, today),
+    status: planStatus(paidCount, count, nextDueDate, r.plan_today ?? today),
     items,
   };
 }
 
 const PLAN_SELECT = `
   SELECT p.id, p.direction, p.source, p.party_id, pa.name AS party_name,
+         CASE WHEN p.location_id IS NULL THEN NULL
+              ELSE app_business_date(now(), COALESCE(pl.timezone, 'Asia/Tehran'), pl.business_day_start_minutes)::text
+          END AS plan_today,
          p.invoice_order_id, o.order_number, p.principal, p.down_payment,
          p.interest_percent, p.late_fee_percent, p.installment_count,
          p.interval_months, p.first_due_date, p.note, p.created_at,
@@ -328,7 +413,8 @@ const PLAN_SELECT = `
            WHERE i.installment_id = p.id AND i.paid_at IS NULL) AS next_due_date
     FROM installments p
     LEFT JOIN parties pa ON pa.id = p.party_id
-    LEFT JOIN orders o ON o.id = p.invoice_order_id`;
+    LEFT JOIN orders o ON o.id = p.invoice_order_id
+    LEFT JOIN locations pl ON pl.id = p.location_id`;
 
 export async function listInstallmentPlans(
   businessId: string,
@@ -356,6 +442,7 @@ export async function listInstallmentPlans(
 }
 
 export async function getInstallmentPlan(businessId: string, planId: string): Promise<InstallmentPlanRow | null> {
+  if (!isUuid(planId)) return null;
   const { rows } = await query<PlanDbRow>(`${PLAN_SELECT} WHERE p.business_id = $1 AND p.id = $2`, [businessId, planId]);
   if (!rows[0]) return null;
   const { rows: itemRows } = await query<{
@@ -398,6 +485,11 @@ export async function payInstallmentItem(params: {
   memo?: string | null;
   createdBy: string | null;
 }): Promise<void> {
+  // UUID route parameters are untrusted. Passing malformed values to a uuid
+  // comparison produces a PostgreSQL parser error instead of a useful 404.
+  if (!isUuid(params.planId)) throw new InstallmentError("plan_not_found", 404);
+  if (!isUuid(params.itemId)) throw new InstallmentError("item_not_found", 404);
+
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -407,8 +499,9 @@ export async function payInstallmentItem(params: {
       direction: InstallmentDirection;
       party_id: string | null;
       party_name: string | null;
+      location_id: string | null;
     }>(
-      `SELECT p.id, p.direction, p.party_id, pa.name AS party_name
+      `SELECT p.id, p.direction, p.party_id, p.location_id, pa.name AS party_name
          FROM installments p LEFT JOIN parties pa ON pa.id = p.party_id
         WHERE p.business_id = $1 AND p.id = $2`,
       [params.businessId, params.planId],
@@ -419,7 +512,7 @@ export async function payInstallmentItem(params: {
 
     const { rows: itemRows } = await client.query<{ id: string; amount: string; paid_at: string | null; seq: string }>(
       `SELECT id, amount::text AS amount, paid_at::text AS paid_at, seq::text AS seq
-         FROM installment_items WHERE id = $1 AND installment_id = $2`,
+         FROM installment_items WHERE id = $1 AND installment_id = $2 FOR UPDATE`,
       [params.itemId, params.planId],
     );
     const item = itemRows[0];
@@ -427,12 +520,22 @@ export async function payInstallmentItem(params: {
     if (item.paid_at) throw new InstallmentError("already_paid");
     const amount = Number(item.amount);
 
-    const accounts = await accountIdsByCode(client, params.businessId, [
-      WELL_KNOWN_CODES.accountsReceivable,
-      WELL_KNOWN_CODES.accountsPayable,
-      params.method === "cash" ? WELL_KNOWN_CODES.cash : WELL_KNOWN_CODES.bankClearing,
-    ]);
-    const cashAccount = accounts.get(params.method === "cash" ? WELL_KNOWN_CODES.cash : WELL_KNOWN_CODES.bankClearing)!;
+    const balanceAccountCode = plan.direction === "receivable"
+      ? WELL_KNOWN_CODES.accountsReceivable
+      : WELL_KNOWN_CODES.accountsPayable;
+    const cashAccountCode = params.method === "cash" ? WELL_KNOWN_CODES.cash : WELL_KNOWN_CODES.bankClearing;
+    // Do not require the opposite subledger account: a receivable settlement
+    // must not fail merely because this business has no active A/P account.
+    const accounts = await accountIdsByCode(client, params.businessId, [balanceAccountCode, cashAccountCode]);
+    const cashAccount = accounts.get(cashAccountCode)!;
+    const effectiveLocationId = plan.location_id ?? params.locationId;
+    const { rows: dateRows } = await client.query<{ business_date: string }>(
+      `SELECT app_business_date(now(), COALESCE(l.timezone, 'Asia/Tehran'), l.business_day_start_minutes)::text AS business_date
+         FROM (SELECT 1) one
+         LEFT JOIN locations l ON l.id = $1 AND l.business_id = $2`,
+      [effectiveLocationId, params.businessId],
+    );
+    const paymentDate = dateRows[0].business_date;
 
     const memo = params.memo?.trim() || `قسط ${item.seq} — ${plan.party_name ?? ""}`;
 
@@ -440,12 +543,12 @@ export async function payInstallmentItem(params: {
       const arAccount = accounts.get(WELL_KNOWN_CODES.accountsReceivable)!;
       const { rows } = await client.query<{ id: string; receipt_date: string }>(
         `INSERT INTO ar_receipts (business_id, location_id, customer_id, receipt_date, method, amount, memo, created_by)
-         VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6, $7) RETURNING id, receipt_date::text AS receipt_date`,
-        [params.businessId, params.locationId, plan.party_id, params.method, amount, memo, params.createdBy],
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, receipt_date::text AS receipt_date`,
+        [params.businessId, effectiveLocationId, plan.party_id, paymentDate, params.method, amount, memo, params.createdBy],
       );
       await postJournalEntry(client, {
         businessId: params.businessId,
-        locationId: params.locationId,
+        locationId: effectiveLocationId,
         entryDate: rows[0].receipt_date,
         memo,
         sourceType: "ar_receipt",
@@ -465,19 +568,21 @@ export async function payInstallmentItem(params: {
       // ap_payments points at the per-location supplier row, not the party.
       const { rows: supplierRows } = await client.query<{ id: string }>(
         `SELECT s.id FROM suppliers s JOIN locations l ON l.id = s.location_id
-          WHERE s.party_id = $1 AND l.business_id = $2 LIMIT 1`,
-        [plan.party_id, params.businessId],
+          WHERE s.party_id = $1 AND l.business_id = $2
+            AND ($3::uuid IS NULL OR s.location_id = $3)
+          ORDER BY s.id LIMIT 1`,
+        [plan.party_id, params.businessId, effectiveLocationId],
       );
       if (!supplierRows[0]) throw new InstallmentError("supplier_record_missing", 409);
       const apAccount = accounts.get(WELL_KNOWN_CODES.accountsPayable)!;
       const { rows } = await client.query<{ id: string; payment_date: string }>(
         `INSERT INTO ap_payments (business_id, location_id, supplier_id, payment_date, method, amount, memo, created_by)
-         VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6, $7) RETURNING id, payment_date::text AS payment_date`,
-        [params.businessId, params.locationId, supplierRows[0].id, params.method, amount, memo, params.createdBy],
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, payment_date::text AS payment_date`,
+        [params.businessId, effectiveLocationId, supplierRows[0].id, paymentDate, params.method, amount, memo, params.createdBy],
       );
       await postJournalEntry(client, {
         businessId: params.businessId,
-        locationId: params.locationId,
+        locationId: effectiveLocationId,
         entryDate: rows[0].payment_date,
         memo,
         sourceType: "ap_payment",
@@ -504,8 +609,34 @@ export async function payInstallmentItem(params: {
   }
 }
 
+/**
+ * Folds a column into the alphabet `normalizePosSearchText` folds the typed
+ * needle into — Arabic ي/ك to Persian ی/ک and both digit sets to ASCII — so a
+ * search behaves like the pickers everywhere else in the app («علي» is found
+ * by typing «علی», «۱۲» finds «12»). Kept as inline `translate` rather than a
+ * stored function: one expression, no migration needed.
+ */
+const SEARCH_FOLD = "translate(%s, 'يك٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', 'یک01234567890123456789')";
+
+/**
+ * The `q` argument as a LIKE pattern, or null when there is nothing to search
+ * for. The needle is normalized exactly the way the client-side pickers
+ * normalize it (same `normalizePosSearchText`), then the LIKE wildcards it may
+ * contain are escaped — «%» must find a literal «%», not swallow the table.
+ */
+function searchPattern(q: string | undefined): string | null {
+  const needle = normalizePosSearchText(q ?? "");
+  if (!needle) return null;
+  return `%${needle.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
 /** Lists receipt vouchers — the «دریافت‌ها» ledger slice. */
 export async function listReceipts(businessId: string, q?: string) {
+  // The filter runs in SQL, not after the fact: filtering in JS meant every
+  // keystroke first shipped the business's *entire* receipt history to the
+  // server process. The unseen-party fallback name stays searchable exactly as
+  // it displays.
+  const pattern = searchPattern(q);
   const { rows } = await query<{
     id: string;
     receipt_date: string;
@@ -517,24 +648,29 @@ export async function listReceipts(businessId: string, q?: string) {
     `SELECT r.id, r.receipt_date::text AS receipt_date, r.method, r.amount::text AS amount, r.memo, p.name AS party_name
        FROM ar_receipts r LEFT JOIN parties p ON p.id = r.customer_id
       WHERE r.business_id = $1
-      ORDER BY r.receipt_date DESC, r.created_at DESC`,
-    [businessId],
+        AND ($2::text IS NULL
+             OR ${SEARCH_FOLD.replace("%s", "COALESCE(p.name, 'بدون مشتری مشخص')")} ILIKE $2 ESCAPE '\\'
+             OR ${SEARCH_FOLD.replace("%s", "COALESCE(r.memo, '')")} ILIKE $2 ESCAPE '\\')
+      ORDER BY r.receipt_date DESC, r.created_at DESC, r.id DESC`,
+    [businessId, pattern],
   );
-  const needle = q?.trim();
-  return rows
-    .map((r) => ({
-      id: r.id,
-      date: r.receipt_date,
-      method: r.method,
-      amount: Number(r.amount),
-      memo: r.memo,
-      partyName: r.party_name ?? "بدون مشتری مشخص",
-    }))
-    .filter((r) => !needle || r.partyName.includes(needle) || (r.memo ?? "").includes(needle));
+  return rows.map((r) => ({
+    id: r.id,
+    date: r.receipt_date,
+    method: r.method,
+    amount: Number(r.amount),
+    memo: r.memo,
+    partyName: r.party_name ?? "بدون مشتری مشخص",
+  }));
 }
 
 /** Lists payment vouchers — the «پرداخت‌ها» ledger slice. */
 export async function listPayments(businessId: string, q?: string) {
+  // The party's name when the branch alias is linked to one, else the alias's
+  // own — the same COALESCE A/P and the store use. Reading only `parties.name`
+  // showed the placeholder «تأمین‌کننده» for every supplier row predating the
+  // party link, which is most of them in an upgraded business.
+  const pattern = searchPattern(q);
   const { rows } = await query<{
     id: string;
     payment_date: string;
@@ -543,30 +679,26 @@ export async function listPayments(businessId: string, q?: string) {
     memo: string | null;
     party_name: string | null;
   }>(
-    // The party's name when the branch alias is linked to one, else the alias's
-    // own — the same COALESCE A/P and the store use. Reading only `parties.name`
-    // showed the placeholder «تأمین‌کننده» for every supplier row predating the
-    // party link, which is most of them in an upgraded business.
     `SELECT p.id, p.payment_date::text AS payment_date, p.method, p.amount::text AS amount, p.memo,
             COALESCE(pa.name, s.name) AS party_name
        FROM ap_payments p
        LEFT JOIN suppliers s ON s.id = p.supplier_id
        LEFT JOIN parties pa ON pa.id = s.party_id
       WHERE p.business_id = $1
-      ORDER BY p.payment_date DESC, p.created_at DESC`,
-    [businessId],
+        AND ($2::text IS NULL
+             OR ${SEARCH_FOLD.replace("%s", "COALESCE(pa.name, s.name, 'بدون تأمین‌کننده مشخص')")} ILIKE $2 ESCAPE '\\'
+             OR ${SEARCH_FOLD.replace("%s", "COALESCE(p.memo, '')")} ILIKE $2 ESCAPE '\\')
+      ORDER BY p.payment_date DESC, p.created_at DESC, p.id DESC`,
+    [businessId, pattern],
   );
-  const needle = q?.trim();
-  return rows
-    .map((r) => ({
-      id: r.id,
-      date: r.payment_date,
-      method: r.method,
-      amount: Number(r.amount),
-      memo: r.memo,
-      partyName: r.party_name ?? "بدون تأمین‌کننده مشخص",
-    }))
-    .filter((r) => !needle || r.partyName.includes(needle) || (r.memo ?? "").includes(needle));
+  return rows.map((r) => ({
+    id: r.id,
+    date: r.payment_date,
+    method: r.method,
+    amount: Number(r.amount),
+    memo: r.memo,
+    partyName: r.party_name ?? "بدون تأمین‌کننده مشخص",
+  }));
 }
 
 export { MissingLedgerAccountError };

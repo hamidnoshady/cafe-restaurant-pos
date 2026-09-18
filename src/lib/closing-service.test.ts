@@ -30,7 +30,11 @@ describe("closing-service", () => {
       });
 
       await expect(
-        closeFiscalYear("biz_id", "year_id", "actor_id"),
+        closeFiscalYear(
+          "00000000-0000-4000-8000-000000000001",
+          "00000000-0000-4000-8000-000000000002",
+          "00000000-0000-4000-8000-000000000003",
+        ),
       ).rejects.toThrow("DB error");
 
       expect(mockClient.query).toHaveBeenCalledWith("ROLLBACK");

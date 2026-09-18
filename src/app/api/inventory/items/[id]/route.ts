@@ -38,6 +38,10 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
   const fields: string[] = [];
   const values: unknown[] = [];
   let i = 1;
@@ -47,16 +51,21 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   };
 
   if (body.name !== undefined) {
+    if (typeof body.name !== "string") return NextResponse.json({ error: "bad_request" }, { status: 400 });
     const name = body.name.trim();
     if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
     set("name", name);
   }
   if (body.unit !== undefined) {
+    if (typeof body.unit !== "string") return NextResponse.json({ error: "bad_request" }, { status: 400 });
     const unit = body.unit.trim();
     if (!unit) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
     set("unit", unit);
   }
-  if (body.sku !== undefined) set("sku", body.sku?.trim() || null);
+  if (body.sku !== undefined) {
+    if (body.sku !== null && typeof body.sku !== "string") return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    set("sku", body.sku?.trim() || null);
+  }
   if (body.reorderLevel !== undefined) {
     const reorderLevel = body.reorderLevel === null ? null : Number(body.reorderLevel);
     if (reorderLevel !== null && (!Number.isFinite(reorderLevel) || reorderLevel < 0)) {
@@ -64,7 +73,10 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     }
     set("reorder_level", reorderLevel);
   }
-  if (body.purchaseUnit !== undefined) set("purchase_unit", body.purchaseUnit?.trim() || null);
+  if (body.purchaseUnit !== undefined) {
+    if (body.purchaseUnit !== null && typeof body.purchaseUnit !== "string") return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    set("purchase_unit", body.purchaseUnit?.trim() || null);
+  }
   if (body.purchaseUnitFactor !== undefined) {
     const factor = Number(body.purchaseUnitFactor);
     if (!Number.isFinite(factor) || factor <= 0) {
@@ -72,7 +84,10 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     }
     set("purchase_unit_factor", factor);
   }
-  if (body.isActive !== undefined) set("is_active", Boolean(body.isActive));
+  if (body.isActive !== undefined) {
+    if (typeof body.isActive !== "boolean") return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    set("is_active", body.isActive);
+  }
   if (body.imageMediaId !== undefined) {
     if (body.imageMediaId !== null && typeof body.imageMediaId !== "string") {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });

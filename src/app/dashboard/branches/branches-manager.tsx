@@ -26,7 +26,7 @@
 
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PencilIcon, PowerIcon, PowerOffIcon } from "lucide-react";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/dialog";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { radioMoveForKey, radioTargetIndex } from "@/lib/radio-keys";
 
 interface Branch {
   id: string;
@@ -470,8 +471,6 @@ function BranchFields({
   disabled?: boolean;
   allowAutoColor?: boolean;
 }) {
-  // Unique per instance: the add form and the edit dialog can both be mounted.
-  const colorLabelId = useId();
   return (
     <>
       <Field label="نام شعبه">
@@ -494,12 +493,12 @@ function BranchFields({
         />
       </Field>
       <Field label="تلفن (اختیاری)">
-        {/* A plain text control, NOT PersianNumberInput: that component
-            normalises its value as a *number*, which strips the leading zero
-            a phone number cannot lose (۰۲۱۱۲۳۴۵۶۷۸ became ۲۱۱۲۳۴۵۶۷۸). Persian
-            digits are translated to ASCII on input per the storage convention;
-            everything else a person types into a phone field (+, spaces,
-            dashes) is kept for formatPhoneDisplay to normalise on render. */}
+        {/* A plain tel input, not PersianNumberInput: a phone number is an
+            identifier, not a numeric value — the numeric control strips every
+            character that is not a digit, so a branch's `+98…` line lost its
+            plus sign (and any spaces or dashes) on the way into the field,
+            silently. The API accepts free text up to MAX_BRANCH_PHONE and
+            formatPhoneDisplay renders whatever shape arrives. */}
         <input
           className={inputClass}
           dir="ltr"
@@ -509,6 +508,9 @@ function BranchFields({
           maxLength={MAX_BRANCH_PHONE}
           value={draft.phone}
           disabled={disabled}
+          // Persian digits become ASCII on the way into state (the storage
+          // convention — digits are display-only Persian); +, spaces and
+          // dashes survive for formatPhoneDisplay to normalise on render.
           onChange={(e) => onChange({ ...draft, phone: toLatinDigits(e.target.value) })}
           placeholder="021…"
         />
@@ -525,25 +527,24 @@ function BranchFields({
           options={timezoneOptions(draft.timezone)}
         />
       </Field>
-      {/* Not the shared <Field>: that renders a <label>, and clicking a label
-          activates its first labelable descendant — so a click on the caption
-          or the hint text silently "chose" the first swatch. A radiogroup is
-          not one labelable control; it gets a plain caption instead. */}
-      <div className="mb-4 sm:col-span-2">
-        <span id={colorLabelId} className="mb-1 block text-sm font-medium text-foreground">
-          رنگ شعبه
-        </span>
-        <BranchColorPicker
-          value={draft.color}
-          onChange={(color) => onChange({ ...draft, color })}
-          disabled={disabled}
-          allowAuto={allowAutoColor}
-          labelledBy={colorLabelId}
-        />
-        <span className="mt-1 block text-xs text-muted-foreground">
-          این رنگ در کلید تعویض شعبه دیده می‌شود تا در یک نگاه بدانید در کدام شعبه کار می‌کنید. رنگ
-          اصلی برنامه تغییر نمی‌کند.
-        </span>
+      <div className="sm:col-span-2">
+        {/* `as="div"`, not a label: a <label> forwards a click on its text to
+            its first labelable descendant, so a tap on the two-line hint under
+            the swatches (an easy thing to hit on a phone) pressed the first
+            colour and silently repainted the branch. The radiogroup names
+            itself below. */}
+        <Field
+          label="رنگ شعبه"
+          hint="این رنگ در کلید تعویض شعبه دیده می‌شود تا در یک نگاه بدانید در کدام شعبه کار می‌کنید. رنگ اصلی برنامه تغییر نمی‌کند."
+          as="div"
+        >
+          <BranchColorPicker
+            value={draft.color}
+            onChange={(color) => onChange({ ...draft, color })}
+            disabled={disabled}
+            allowAuto={allowAutoColor}
+          />
+        </Field>
       </div>
     </>
   );
@@ -561,112 +562,83 @@ function BranchFields({
  *    strictly better than naming them in a list.
  *
  * A radiogroup, not buttons: it is a single choice among a small set, and
- * arrow keys move through it — a roving tabindex keeps the whole group one
- * tab stop, the way a native radio group behaves, instead of nine. Each
- * swatch keeps its Persian colour name as its accessible name, so the control
- * is usable without seeing the colours.
+ * arrow keys should move through it. Each swatch keeps its Persian colour name
+ * as its accessible name, so the control is usable without seeing the colours.
  */
 function BranchColorPicker({
   value,
   onChange,
   disabled,
   allowAuto,
-  labelledBy,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
   /** Offers «خودکار» — only meaningful when adding, where "" means let the server choose. */
   allowAuto?: boolean;
-  /** Id of the caption naming this group (the radiogroup is not inside a <label>). */
-  labelledBy?: string;
 }) {
-  const groupRef = useRef<HTMLDivElement>(null);
-  // "" is the «خودکار» option; without allowAuto the options are the palette only.
-  const options: string[] = allowAuto ? ["", ...BRANCH_COLORS] : [...BRANCH_COLORS];
-  // The roving tab stop: the checked option, or the first when nothing matches
-  // (an edit dialog always has a checked colour; the add form starts on خودکار).
-  const tabStop = options.includes(value) ? value : options[0];
-
-  /**
-   * Arrow keys select the previous/next option, wrapping — the WAI-ARIA radio
-   * pattern, where moving *is* choosing. The DOM order is the visual order and
-   * the container is RTL, so «right» walks backwards through the array.
-   */
-  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (disabled) return;
-    let delta = 0;
-    if (event.key === "ArrowLeft" || event.key === "ArrowDown") delta = 1;
-    else if (event.key === "ArrowRight" || event.key === "ArrowUp") delta = -1;
-    else return;
-    event.preventDefault();
-    const from = options.indexOf(tabStop);
-    const next = options[(from + delta + options.length) % options.length];
-    onChange(next);
-    // Move focus with the selection so the next arrow press continues from it.
-    requestAnimationFrame(() => {
-      groupRef.current
-        ?.querySelector<HTMLButtonElement>(`[data-color-option="${next || "auto"}"]`)
-        ?.focus();
-    });
-  }
+  // «خودکار» occupies slot 0 when it is offered, so the swatches' indices
+  // shift by one — the value at an index is what the arrows move over.
+  const values = useMemo(
+    () => (allowAuto ? ["", ...BRANCH_COLORS] : [...BRANCH_COLORS]),
+    [allowAuto],
+  );
+  // Roving focus: the checked option is the one Tab stop; arrows move and
+  // check (radio-keys.ts). Every swatch keeps its Persian colour name as its
+  // accessible name, so the control is usable without seeing the colours.
+  const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
+  // When nothing matches (a value the palette no longer knows), the first
+  // option stands in as the Tab stop so the group is never unreachable by
+  // keyboard.
+  const anySelected = values.includes(value);
 
   return (
-    <div
-      ref={groupRef}
-      role="radiogroup"
-      aria-labelledby={labelledBy}
-      aria-label={labelledBy ? undefined : "رنگ شعبه"}
-      className="flex flex-wrap items-center gap-2"
-      onKeyDown={onKeyDown}
-    >
-      {allowAuto ? (
-        <button
-          type="button"
-          role="radio"
-          data-color-option="auto"
-          aria-checked={value === ""}
-          aria-label="خودکار — انتخاب رنگی که شعبهٔ دیگری ندارد"
-          disabled={disabled}
-          tabIndex={tabStop === "" ? 0 : -1}
-          onClick={() => onChange("")}
-          className={cn(
-            "min-h-11 rounded-xl border px-3 text-xs font-medium transition-colors",
-            "border-border bg-muted text-muted-foreground hover:bg-muted/70",
-            "focus-visible:outline-none focus-visible:ring focus-visible:ring-ring/50",
-            value === "" && "ring-2 ring-offset-1 ring-primary",
-            disabled && "pointer-events-none opacity-50",
-          )}
-        >
-          خودکار
-        </button>
-      ) : null}
-      {BRANCH_COLORS.map((color) => {
+    <div role="radiogroup" aria-label="رنگ شعبه" className="flex flex-wrap items-center gap-2">
+      {values.map((color, index) => {
+        const isAuto = color === "";
         const style = branchColorStyle(color);
         const selected = value === color;
         return (
           <button
             key={color}
+            ref={(node) => {
+              buttonsRef.current[index] = node;
+            }}
             type="button"
             role="radio"
-            data-color-option={color}
             aria-checked={selected}
-            aria-label={style.label}
-            title={style.label}
+            aria-label={
+              isAuto ? "خودکار — انتخاب رنگی که شعبهٔ دیگری ندارد" : style.label
+            }
+            title={isAuto ? undefined : style.label}
             disabled={disabled}
-            tabIndex={tabStop === color ? 0 : -1}
+            tabIndex={selected || (!anySelected && index === 0) ? 0 : -1}
             onClick={() => onChange(color)}
+            onKeyDown={(event) => {
+              const move = radioMoveForKey(event.key, true);
+              const target = move && radioTargetIndex(move, index, values.length);
+              if (target === null) return;
+              event.preventDefault();
+              onChange(values[target]);
+              buttonsRef.current[target]?.focus();
+            }}
             className={cn(
-              "flex size-11 items-center justify-center rounded-xl border transition-transform",
-              "focus-visible:outline-none focus-visible:ring focus-visible:ring-ring/50 focus-visible:ring-offset-1",
-              style.surface,
+              isAuto
+                ? "min-h-11 rounded-xl border px-3 text-xs font-medium transition-colors"
+                : "flex size-11 items-center justify-center rounded-xl border transition-transform",
+              isAuto && "border-border bg-muted text-muted-foreground hover:bg-muted/70",
+              !isAuto && style.surface,
+              !isAuto && !disabled && "hover:scale-105",
               selected && "ring-2 ring-offset-1",
-              selected && style.ring,
-              !disabled && "hover:scale-105",
+              selected && (isAuto ? "ring-primary" : style.ring),
               disabled && "pointer-events-none opacity-50",
             )}
           >
-            <span className={cn("size-4 rounded-full", style.dot)} aria-hidden="true" />
+            {isAuto ? (
+              "خودکار"
+            ) : (
+              <span className={cn("size-4 rounded-full", style.dot)} aria-hidden="true" />
+            )}
           </button>
         );
       })}

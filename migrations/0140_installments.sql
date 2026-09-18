@@ -7,10 +7,12 @@
 -- (an ar_receipts row + Debit Cash/Bank / Credit Accounts Receivable) and a
 -- payable slice exactly what payBill posts (an ap_payments row + the mirror
 -- entry), both inside the same transaction that marks the slice paid — so the
--- plan can never drift from the ledger. Creating a plan posts nothing: the
--- receivable side of an invoice-based plan was already posted by the credit
--- sale, and a party-based plan is a schedule against balances that already
--- exist in the subledgers.
+-- plan can never drift from the ledger. Creating a zero-interest plan posts
+-- nothing: the receivable side of an invoice-based plan was already posted by
+-- the credit sale, and a party-based plan is a schedule against balances that
+-- already exist in the subledgers. If a plan adds interest, the service accrues
+-- only that added amount to A/R or A/P so later settlements cannot over-clear
+-- the original balance.
 
 CREATE TABLE installments (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),

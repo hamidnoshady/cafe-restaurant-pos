@@ -3,9 +3,9 @@
  *
  * A customer's balance, statement, and aging are all reconstructed from the
  * same source: every journal line ever posted to the Accounts Receivable
- * account, attributed to a customer via the order (source_type='order') or
- * receipt (source_type='ar_receipt') that caused it. This is the same
- * "compute from the ledger, never a shadow copy" discipline the financial
+ * account, attributed to a customer via the order (source_type='order'),
+ * receipt (source_type='ar_receipt'), or received cheque (source_type='cheque')
+ * that caused it. This is the same "compute from the ledger, never a shadow copy" discipline the financial
  * statements use (reports-service.ts), so a customer's balance always agrees
  * with the control account to the Rial by construction rather than by care.
  *
@@ -66,7 +66,8 @@ async function arLines(businessId: string, accountId: string): Promise<ArLineRow
        LEFT JOIN order_amendments am ON je.source_type = 'order_amendment' AND am.id = je.source_id
        LEFT JOIN orders o ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
        LEFT JOIN ar_receipts r ON je.source_type = 'ar_receipt' AND r.id = je.source_id
-       LEFT JOIN parties c ON c.id = COALESCE(o.customer_id, r.customer_id)
+       LEFT JOIN cheques ch ON je.source_type = 'cheque' AND ch.id = je.source_id
+       LEFT JOIN parties c ON c.id = COALESCE(o.customer_id, r.customer_id, ch.customer_id)
       WHERE je.business_id = $1 AND jl.account_id = $2
       ORDER BY je.entry_date, je.posted_at`,
     [businessId, accountId],
@@ -100,7 +101,7 @@ export async function listCustomerDirectory(businessId: string): Promise<Custome
     // not be offered as a fresh counterparty (crm merge, migration 0118).
     `SELECT id, name, phone
        FROM parties
-      WHERE business_id = $1 AND role = $2 AND is_active AND merged_into_id IS NULL
+      WHERE business_id = $1 AND roles @> ARRAY[$2]::text[] AND is_active AND merged_into_id IS NULL
       ORDER BY name`,
     [businessId, PARTY_ROLE_STORAGE.Customer],
   );
@@ -160,7 +161,8 @@ export async function getCustomerArBalance(businessId: string, customerId: strin
        LEFT JOIN order_amendments am ON je.source_type = 'order_amendment' AND am.id = je.source_id
        LEFT JOIN orders o ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
        LEFT JOIN ar_receipts r ON je.source_type = 'ar_receipt' AND r.id = je.source_id
-      WHERE je.business_id = $1 AND jl.account_id = $2 AND COALESCE(o.customer_id, r.customer_id) = $3`,
+       LEFT JOIN cheques ch ON je.source_type = 'cheque' AND ch.id = je.source_id
+      WHERE je.business_id = $1 AND jl.account_id = $2 AND COALESCE(o.customer_id, r.customer_id, ch.customer_id) = $3`,
     [businessId, accountId, customerId],
   );
   return { balance: Number(rows[0]?.debit ?? 0) - Number(rows[0]?.credit ?? 0), hasLedger: true };

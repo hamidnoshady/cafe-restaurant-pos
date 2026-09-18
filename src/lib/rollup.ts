@@ -11,8 +11,11 @@
  * Pushes are idempotent by construction — a day is upserted wholesale keyed
  * on (location, business day) — so "catch up after being offline" is just
  * "push the window again"; there is no per-event queue between servers.
+ *
+ * This module stays client-safe: dashboard report bundles reach it through
+ * `reports.ts` (for `addDays`), so anything needing `node:crypto` — the
+ * token pair — lives in `rollup-tokens.ts`, imported only by server code.
  */
-import { createHash, randomBytes } from "node:crypto";
 
 /** How often a location tries to push to central while online (ms). */
 export const ROLLUP_SYNC_INTERVAL_MS = 5 * 60 * 1000;
@@ -63,15 +66,6 @@ export interface RollupPushPayload {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** New per-location bearer token. Shown once at registration; only its hash is stored. */
-export function generateRollupToken(): string {
-  return `rlk_${randomBytes(24).toString("hex")}`;
-}
-
-export function hashRollupToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
 
 export function isValidBusinessDay(day: unknown): day is string {
   if (typeof day !== "string" || !DAY_RE.test(day)) return false;

@@ -18,7 +18,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { BarChart } from "../charts";
-import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, inputClass } from "../ui";
+import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessageOrRaw, inputClass } from "../ui";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 
 interface StaffRow {
@@ -112,7 +112,6 @@ function ComparisonCard() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [error, setError] = useState<string | null>(null);
-
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -125,7 +124,9 @@ function ComparisonCard() {
     try {
       const res = await api<{ overview?: Overview; error?: string }>(`/api/rollup/overview?${params}`);
       if (!res.ok) {
-        setError("خطا در بارگذاری مقایسهٔ شعبه‌ها.");
+        // The reason the server refused (an inverted date range, a permissions
+        // change…) rather than a blanket "failed to load" that hides it.
+        setError(errorMessageOrRaw(res.data.error) || "خطا در بارگذاری مقایسهٔ شعبه‌ها.");
         return;
       }
       setError(null);
@@ -210,10 +211,11 @@ function ComparisonCard() {
             <h3 className="mb-2 text-sm font-medium text-muted-foreground">فروش دوره به تفکیک شعبه ({money.unitLabel})</h3>
             <BarChart
               data={overview.locations.map((l) => ({
-                // Through the money context, not `/ 10`: the hardcoded division
-                // assumed Toman display, so a business showing Rial got a chart
-                // labelled «ریال» over Toman numbers.
                 label: l.name,
+                // Rial (the storage unit) → the business's display unit, the
+                // same conversion the table's money.format cells make — never
+                // a hand-rolled `/ 10`, which paints a Rial business's bars a
+                // tenth of their true height.
                 value: money.toInput(l.total),
               }))}
             />
@@ -292,7 +294,7 @@ function RegistryCard() {
         body: JSON.stringify({ name: name.trim() }),
       });
       if (!res.ok || !res.data.token) {
-        setError("ثبت شعبه ناموفق بود.");
+        setError(errorMessageOrRaw(res.data.error) || "ثبت شعبه ناموفق بود.");
         return;
       }
       setNewToken({ name: name.trim(), token: res.data.token });
@@ -306,33 +308,23 @@ function RegistryCard() {
   }
 
   async function setActive(id: string, isActive: boolean) {
-    // The old call ignored the result entirely: a 4xx/5xx just re-read the
-    // list, so the row snapped back with no explanation of why.
-    setError(null);
     try {
       const res = await api<{ error?: string }>(`/api/rollup/locations/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ isActive }),
       });
+      // A failed toggle used to pass in silence: the list reloaded unchanged
+      // and the row simply looked stubborn, with nothing saying why.
       if (!res.ok) {
-        setError(isActive ? "فعال‌سازی شعبه ناموفق بود." : "غیرفعال‌سازی شعبه ناموفق بود.");
+        setError(errorMessageOrRaw(res.data.error) || "تغییر وضعیت شعبه ناموفق بود.");
+        return;
       }
+      setError(null);
     } catch {
       setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.");
+      return;
     }
-    await load();
-  }
-
-  async function copyToken(token: string) {
-    // «کپی» that silently did nothing (clipboard denied, or the API missing
-    // over plain HTTP on a LAN install) is indistinguishable from working —
-    // and this token is shown exactly once, so the person must know.
-    try {
-      await navigator.clipboard.writeText(token);
-      toast.success("توکن کپی شد.");
-    } catch {
-      toast.error("کپی خودکار ممکن نشد؛ توکن را دستی انتخاب و کپی کنید.");
-    }
+    load();
   }
 
   return (
@@ -348,13 +340,25 @@ function RegistryCard() {
           <p className="mb-2 text-sm">
             توکن شعبهٔ «{newToken.name}» — همین حالا کپی کنید؛ دیگر نمایش داده نمی‌شود:
           </p>
-          {/* Wraps on a phone: the token is long, and three inline flex
-              children forced it into a few-character-wide scroller. */}
           <div className="flex flex-wrap items-center gap-2">
-            <code dir="ltr" className="w-full min-w-0 overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs sm:w-auto sm:flex-1">
+            <code dir="ltr" className="min-w-0 flex-1 overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs">
               {newToken.token}
             </code>
-            <SecondaryButton onClick={() => void copyToken(newToken.token)}>کپی</SecondaryButton>
+            <SecondaryButton
+              onClick={() => {
+                // `navigator.clipboard` is missing on non-secure origins, and
+                // writeText can be denied outright — either way the click must
+                // not become an unhandled rejection with no feedback.
+                const written = navigator.clipboard?.writeText(newToken.token);
+                if (!written) return;
+                void written.then(
+                  () => toast.success("توکن کپی شد."),
+                  () => toast.error("کپی انجام نشد؛ توکن را دستی انتخاب و کپی کنید."),
+                );
+              }}
+            >
+              کپی
+            </SecondaryButton>
             <SecondaryButton onClick={() => setNewToken(null)}>بستن</SecondaryButton>
           </div>
         </div>
@@ -387,8 +391,9 @@ function RegistryCard() {
         </ul>
       )}
 
-      {/* Stacks on a phone: side by side, the input shrank to a sliver and
-          the wide PrimaryButton (w-full by design) fought it for the row. */}
+      {/* Stacked on a phone — the old single row squeezed the input to a
+          sliver beside a button that cannot wrap — and side by side from `sm`
+          up, where there is room for both. */}
       <form onSubmit={register} className="flex flex-col gap-2 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1">
           <Field label="ثبت شعبهٔ جدید">
@@ -397,13 +402,14 @@ function RegistryCard() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="مثلاً: شعبهٔ ونک"
+              // The same ceiling the API enforces (field_too_long beyond it);
+              // without it a pasted paragraph became the row's label forever.
+              maxLength={120}
             />
           </Field>
         </div>
-        <div className="sm:mb-4 sm:w-auto">
-          <PrimaryButton disabled={busy || !name.trim()}>
-            {busy ? "در حال ثبت…" : "ثبت و صدور توکن"}
-          </PrimaryButton>
+        <div className="sm:mb-4">
+          <PrimaryButton disabled={busy || !name.trim()}>ثبت و صدور توکن</PrimaryButton>
         </div>
       </form>
     </SectionCard>
@@ -449,10 +455,15 @@ function LocalSyncCard() {
         body: JSON.stringify(config),
       });
       if (!res.ok) {
+        // The two failures this form can actually cause get their specific
+        // wording; anything else (a permissions change, a rate limit) deserves
+        // its real reason rather than one of these two guesses.
         setError(
           res.data.error === "invalid_url"
             ? "نشانی سرور مرکزی باید با http یا https شروع شود."
-            : "برای فعال‌سازی، نشانی سرور مرکزی و توکن هر دو لازم‌اند.",
+            : res.data.error === "missing_fields"
+              ? "برای فعال‌سازی، نشانی سرور مرکزی و توکن هر دو لازم‌اند."
+              : errorMessageOrRaw(res.data.error) || "ذخیرهٔ تنظیمات همگام‌سازی ناموفق بود.",
         );
         return;
       }

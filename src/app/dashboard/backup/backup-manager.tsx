@@ -103,6 +103,8 @@ const ALERT_LABELS: Record<string, string> = {
 };
 
 const CONFIG_ERRORS: Record<string, string> = {
+  not_an_object: "داده‌های تنظیمات نامعتبر است.",
+  invalid_cloud: "تنظیمات فضای ابری نامعتبر است.",
   invalid_interval: "بازهٔ پشتیبان‌گیری نامعتبر است.",
   invalid_anchor_time: "ساعت پشتیبان‌گیری نامعتبر است.",
   invalid_local_retention: "تعداد نگهداری نسخه‌های محلی باید بین ۱ تا ۳۶۵ باشد.",
@@ -114,6 +116,7 @@ const CONFIG_ERRORS: Record<string, string> = {
   weak_passphrase: "عبارت عبور رمزنگاری باید دست‌کم ۸ نویسه باشد.",
   invalid_directory: "مسیر پوشهٔ پشتیبان‌گیری نامعتبر است.",
   cloud_backup_unavailable_local: "در نصب محلی، پشتیبان‌گیری ابری در دسترس نیست.",
+  passphrase_required: "برای پشتیبان ابری، یک عبارت عبور رمزنگاری حداقل ۸ نویسه‌ای ذخیره کنید.",
 };
 
 const RESTORE_ERRORS: Record<string, string> = {
@@ -122,7 +125,7 @@ const RESTORE_ERRORS: Record<string, string> = {
     "بازگردانی کل پایگاه‌داده روی این نصب در دسترس نیست، زیرا دادهٔ بیش از یک کسب‌وکار را نگه می‌دارد.",
   artifact_not_found: "این فایل دیگر روی دیسک نیست (احتمالاً توسط نگهداری نسخه‌ها حذف شده است).",
   cloud_not_configured: "اطلاعات فضای ابری برای دانلود پیکربندی نشده است.",
-  passphrase_required: "عبارت عبور رمزنگاری ذخیره نشده است و نمی‌توان نسخهٔ ابری را باز کرد.",
+  passphrase_required: "برای پشتیبان ابری، یک عبارت عبور رمزنگاری حداقل ۸ نویسه‌ای ذخیره کنید.",
   missing_artifact: "نسخهٔ پشتیبان انتخاب نشده است.",
   download_failed: "دریافت نسخهٔ پشتیبان از فضای ابری ناموفق بود:",
   decrypt_failed: "رمزگشایی نسخهٔ پشتیبان ناموفق بود — عبارت عبور را بررسی کنید:",
@@ -572,7 +575,7 @@ function StatusCard({
               health.alert.level === "ok"
                 ? "border-primary/30 bg-primary/5 text-primary"
                 : health.alert.level === "warning"
-                  ? "border-amber-500/40 dark:border-amber-500/60 bg-amber-500/10 dark:bg-amber-400 text-amber-700 dark:text-amber-300"
+                  ? "border-amber-500/40 dark:border-amber-500/60 bg-amber-500/10 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300"
                   : "border-destructive/40 bg-destructive/10 text-destructive"
             }`}
           >
@@ -694,7 +697,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
   return (
     <SectionCard title="تنظیمات پشتیبان‌گیری">
       {config.warnings && config.warnings.length > 0 ? (
-        <div className="mb-6 rounded-lg border border-amber-500/40 dark:border-amber-500/60 bg-amber-500/10 dark:bg-amber-400 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+        <div className="mb-6 rounded-lg border border-amber-500/40 dark:border-amber-500/60 bg-amber-500/10 dark:bg-amber-500/15 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
           <ul className="list-inside list-disc">
             {config.warnings.map((w, i) => (
               <li key={i}>{w}</li>

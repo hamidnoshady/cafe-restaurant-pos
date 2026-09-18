@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Phase 42 — «موجودی انبار»: the per-warehouse stock level.
@@ -21,12 +22,22 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const defaultLocation = await resolveActiveLocation(session);
   const url = new URL(request.url);
   const locationId = url.searchParams.get("locationId") || defaultLocation?.id || "";
-  if (!locationId) return NextResponse.json({ items: [], totals: { count: 0, lowStockCount: 0, totalValueRial: "0" } });
+  if (!locationId) {
+    return NextResponse.json({
+      locationId: "",
+      items: [],
+      totals: { count: 0, lowStockCount: 0, outOfStockCount: 0, totalValueRial: "0" },
+    });
+  }
+  // Do not let malformed or foreign location ids turn into a database error
+  // (or, worse, a cross-tenant read). The explicit business predicate also
+  // keeps this contract true if the view ever changes its RLS definition.
+  if (!isUuid(locationId)) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   const search = (url.searchParams.get("search") ?? "").trim();
 
-  const clauses = ["v.location_id = $1"];
-  const params: unknown[] = [locationId];
+  const clauses = ["v.location_id = $1", "v.business_id = $2"];
+  const params: unknown[] = [locationId, session.businessId];
   if (search) {
     params.push(`%${search}%`);
     clauses.push(`(v.item_name ILIKE $${params.length} OR ii.sku ILIKE $${params.length})`);
@@ -50,8 +61,8 @@ export const GET = withTenantScope(async (request: NextRequest) => {
             ii.reorder_level::text AS reorder_level,
             v.valuation::text AS value_rial,
             CASE WHEN v.stock_qty > 0
-                 THEN (v.valuation::numeric / v.stock_qty)::text
-                 ELSE v.weighted_average_cost::text END AS unit_cost
+                 THEN ROUND(v.valuation::numeric / v.stock_qty)::text
+                 ELSE ROUND(COALESCE(v.weighted_average_cost, 0))::text END AS unit_cost
        FROM v_inventory_valuation v
        JOIN inventory_items ii ON ii.id = v.inventory_item_id
       WHERE ${clauses.join(" AND ")}
@@ -59,14 +70,15 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     params,
   );
 
-  const { rows: totals } = await query<{ count: string; low: string; value: string }>(
+  const { rows: totals } = await query<{ count: string; low: string; out: string; value: string }>(
     `SELECT count(*)::text AS count,
-            count(*) FILTER (WHERE ii.reorder_level IS NOT NULL AND v.stock_qty <= ii.reorder_level)::text AS low,
+            count(*) FILTER (WHERE ii.reorder_level IS NOT NULL AND v.stock_qty > 0 AND v.stock_qty <= ii.reorder_level)::text AS low,
+            count(*) FILTER (WHERE v.stock_qty <= 0)::text AS out,
             COALESCE(sum(v.valuation),0)::text AS value
        FROM v_inventory_valuation v
        JOIN inventory_items ii ON ii.id = v.inventory_item_id
-      WHERE v.location_id = $1`,
-    [locationId],
+      WHERE v.location_id = $1 AND v.business_id = $2`,
+    [locationId, session.businessId],
   );
 
   return NextResponse.json({
@@ -75,6 +87,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     totals: {
       count: Number(totals[0]?.count ?? 0),
       lowStockCount: Number(totals[0]?.low ?? 0),
+      outOfStockCount: Number(totals[0]?.out ?? 0),
       totalValueRial: totals[0]?.value ?? "0",
     },
   });

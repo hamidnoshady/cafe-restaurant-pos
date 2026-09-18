@@ -94,7 +94,7 @@ export function OnlinePlatformsSettings() {
           <Field label="درصد کارمزد">
             <div className="relative">
               <PersianNumberInput
-                className={inputClass}
+                className={`${inputClass} ps-9`}
                 dir="ltr"
                 inputMode="decimal"
                 value={commissionPercent}
