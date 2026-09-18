@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getConnection } from "@/lib/integrations/connections-service";
-import { enqueueOperation, storeOrdersFor } from "@/lib/integrations/woo-ops-service";
+import { enqueueOperation, storeOrderKnownFor, storeOrdersFor } from "@/lib/integrations/woo-ops-service";
 
 /**
  * The store's orders, and the two operations an owner asks for against one:
@@ -18,7 +18,7 @@ export const GET = withTenantScope(async (_request: Request, context: { params: 
   const { id } = await context.params;
 
   const connection = await getConnection(session.businessId, id);
-  if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const orders = await storeOrdersFor(session.businessId, id, 100);
   return NextResponse.json({ orders });
@@ -39,7 +39,7 @@ export const POST = withTenantScope(async (request: Request, context: { params: 
   const { id } = await context.params;
 
   const connection = await getConnection(session.businessId, id);
-  if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   let body: { action?: string; remoteId?: string; status?: string; amount?: string; reason?: string };
   try {
@@ -50,6 +50,9 @@ export const POST = withTenantScope(async (request: Request, context: { params: 
 
   const remoteId = String(body.remoteId ?? "").trim();
   if (!remoteId) return NextResponse.json({ error: "missing_remote_id" }, { status: 400 });
+  if (!(await storeOrderKnownFor(session.businessId, id, remoteId))) {
+    return NextResponse.json({ error: "order_not_found" }, { status: 404 });
+  }
 
   try {
     if (body.action === "status") {

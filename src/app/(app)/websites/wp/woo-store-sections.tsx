@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge, cardClass } from "@/app/dashboard/page-chrome";
 
 /**
  * Phase 38 — the four surfaces that turn «فروشگاه ووکامرس» from a connection
@@ -21,9 +21,11 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  * simply fail there; through the outbox the same button works in both modes
  * and inherits retry, backoff and a visible trail.
  */
-import { useCallback, useEffect, useState } from "react";
-import { api, InfoBox, inputClass } from "@/app/dashboard/ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, ErrorBox, InfoBox, errorMessageOrRaw, inputClass } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
+import { formatPersianNumber, formatPersianNumericText, normalizeNumericText, toLatinDigits } from "@/lib/digits";
 import { formatDateTime } from "./format";
 
 export { formatDateTime } from "./format";
@@ -396,6 +398,15 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
 // Store orders
 // ---------------------------------------------------------------------------
 
+interface StoreOrderOperation {
+  type: "order_status" | "refund_create";
+  status: string;
+  targetStatus: string | null;
+  amount: string | null;
+  reason: string | null;
+  error: string | null;
+}
+
 interface StoreOrder {
   remoteId: string;
   localOrderId: string | null;
@@ -403,171 +414,540 @@ interface StoreOrder {
   number: string;
   status: string;
   total: string;
+  currency: string;
   dateCreated: string | null;
   customer: string;
+  paymentMethod: string;
   ingestStatus: string;
   ingestError: string | null;
   lineCount: number;
+  operations: StoreOrderOperation[];
+}
+
+const ORDER_STATUS_OPTIONS = Object.keys(ORDER_STATUS_LABELS);
+const ATTENTION_OPERATION_STATES = new Set(["failed", "dead"]);
+const ACTIVE_OPERATION_STATES = new Set(["pending", "processing"]);
+
+type BadgeTone = "active" | "positive" | "neutral" | "danger";
+
+function statusRank(status: string): number {
+  const index = ORDER_STATUS_OPTIONS.indexOf(status);
+  return index === -1 ? ORDER_STATUS_OPTIONS.length : index;
+}
+
+function orderStatusTone(status: string): BadgeTone {
+  if (status === "completed") return "positive";
+  if (status === "pending" || status === "processing" || status === "on-hold") return "active";
+  if (status === "cancelled" || status === "refunded" || status === "failed") return "danger";
+  return "neutral";
+}
+
+function ingestTone(status: string): BadgeTone {
+  if (status === "processed") return "positive";
+  if (status === "pending") return "active";
+  if (status === "failed") return "danger";
+  return "neutral";
+}
+
+function operationTone(status: string): BadgeTone {
+  if (status === "pending" || status === "processing") return "active";
+  if (status === "failed" || status === "dead") return "danger";
+  return "neutral";
+}
+
+function cleanStoreAmount(amount: string | null | undefined): string {
+  const normalized = normalizeNumericText(String(amount ?? ""), {
+    allowDecimal: true,
+    allowNegative: true,
+    grouping: true,
+  });
+  if (!normalized) return "";
+  return normalized.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "").replace(/\.$/, "");
+}
+
+function isPositiveStoreAmount(amount: string): boolean {
+  const normalized = cleanStoreAmount(amount);
+  return /^\d+(?:\.\d+)?$/.test(normalized) && Number(normalized) > 0;
+}
+
+function storeCurrencyLabel(currency: string | null | undefined): string {
+  const code = String(currency ?? "").trim().toUpperCase();
+  if (!code) return "";
+  if (code === "IRT" || code === "TOMAN") return "تومان";
+  if (code === "IRR" || code === "RIAL") return "ریال";
+  return code;
+}
+
+function formatStoreMoney(amount: string | null | undefined, currency: string | null | undefined): string {
+  const normalized = cleanStoreAmount(amount);
+  if (!normalized) return "—";
+  const text = formatPersianNumericText(normalized, { allowDecimal: true, allowNegative: true, grouping: true });
+  const label = storeCurrencyLabel(currency);
+  return label ? `${text} ${label}` : text;
+}
+
+function operationSummary(operation: StoreOrderOperation, currency: string): string {
+  if (operation.type === "order_status") {
+    const status = operation.targetStatus ?? "";
+    return `تغییر وضعیت به ${ORDER_STATUS_LABELS[status] ?? (status || "—")}`;
+  }
+  return `برگشت وجه ${formatStoreMoney(operation.amount, currency)}`;
+}
+
+function operationStatusLabel(status: string): string {
+  return (
+    {
+      pending: "در صف",
+      processing: "در حال ارسال",
+      failed: "ناموفق",
+      dead: "متوقف",
+      sent: "ارسال‌شده",
+    }[status] ?? status
+  );
+}
+
+function orderNeedsAttention(order: StoreOrder): boolean {
+  return order.ingestStatus === "failed" || order.operations.some((operation) => ATTENTION_OPERATION_STATES.has(operation.status));
+}
+
+function orderHasQueuedWork(order: StoreOrder): boolean {
+  return order.operations.some((operation) => ACTIVE_OPERATION_STATES.has(operation.status));
+}
+
+function orderSearchHaystack(order: StoreOrder): string {
+  return toLatinDigits(
+    [
+      order.number,
+      order.remoteId,
+      order.customer,
+      order.status,
+      ORDER_STATUS_LABELS[order.status],
+      order.localOrderNumber ?? "",
+      order.paymentMethod,
+      order.ingestError ?? "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
+}
+
+function syncResultText(result: { queued?: boolean; imported?: number; duplicates?: number; failed?: number; total?: number }): string {
+  if (result.queued) {
+    return "درخواست بازخوانی سفارش‌ها در صف افزونه قرار گرفت؛ پس از اجرای افزونه، سفارش‌ها همین‌جا به‌روز می‌شوند.";
+  }
+  return [
+    `همگام‌سازی سفارش‌ها تمام شد: ${formatPersianNumber(Number(result.total ?? 0))} سفارش خوانده شد`,
+    `${formatPersianNumber(Number(result.imported ?? 0))} مورد ثبت/به‌روز شد`,
+    `${formatPersianNumber(Number(result.duplicates ?? 0))} تکراری بود`,
+    `${formatPersianNumber(Number(result.failed ?? 0))} خطا داشت`,
+  ].join("، ");
 }
 
 export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [orders, setOrders] = useState<StoreOrder[]>([]);
   const [statusFor, setStatusFor] = useState<string | null>(null);
   const [refundFor, setRefundFor] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [ingestFilter, setIngestFilter] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [localError, setLocalError] = useState("");
+  const [notice, setNotice] = useState("");
+  const loadRequestRef = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++loadRequestRef.current;
     setLoading(true);
-    const { ok, data } = await api<{ orders?: StoreOrder[] }>(
+    setLoadError("");
+    const { ok, data, aborted } = await api<{ orders?: StoreOrder[]; error?: string }>(
       `/api/integrations/connections/${connectionId}/store/orders`,
     );
-    if (ok) setOrders(data.orders ?? []);
+    if (request !== loadRequestRef.current || aborted) return;
+    if (ok) {
+      setOrders(data.orders ?? []);
+    } else {
+      setLoadError(errorMessageOrRaw(data.error) || "بارگذاری سفارش‌های فروشگاه ممکن نشد.");
+    }
     setLoading(false);
   }, [connectionId]);
 
   useEffect(() => {
+    setOrders([]);
+    setStatusFor(null);
+    setRefundFor(null);
+    setAmount("");
+    setReason("");
+    setQuery("");
+    setStatusFilter("");
+    setIngestFilter("");
+    setLocalError("");
+    setNotice("");
     void load();
   }, [load]);
 
+  const statusOptions = useMemo(() => {
+    return [...new Set(orders.map((order) => order.status).filter(Boolean))].sort(
+      (a, b) => statusRank(a) - statusRank(b) || a.localeCompare(b, "fa"),
+    );
+  }, [orders]);
+
+  const summary = useMemo(
+    () => ({
+      total: orders.length,
+      imported: orders.filter((order) => order.localOrderId).length,
+      unrecorded: orders.filter((order) => !order.localOrderId).length,
+      queued: orders.filter(orderHasQueuedWork).length,
+      attention: orders.filter(orderNeedsAttention).length,
+    }),
+    [orders],
+  );
+
+  const visibleOrders = useMemo(() => {
+    const needle = toLatinDigits(query.trim()).toLowerCase();
+    return orders.filter((order) => {
+      if (statusFilter && order.status !== statusFilter) return false;
+      if (ingestFilter === "imported" && !order.localOrderId) return false;
+      if (ingestFilter === "unrecorded" && order.localOrderId) return false;
+      if (ingestFilter === "attention" && !orderNeedsAttention(order)) return false;
+      if (ingestFilter === "queued" && !orderHasQueuedWork(order)) return false;
+      if (!needle) return true;
+      return orderSearchHaystack(order).includes(needle);
+    });
+  }, [ingestFilter, orders, query, statusFilter]);
+
+  async function runSync() {
+    setSyncing(true);
+    setLocalError("");
+    setNotice("");
+    try {
+      const result = await call<{ queued?: boolean; imported?: number; duplicates?: number; failed?: number; total?: number }>(
+        `/api/integrations/connections/${connectionId}/sync/orders`,
+        "POST",
+      );
+      if (result) {
+        setNotice(syncResultText(result));
+        await load();
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function changeStatus(order: StoreOrder, status: string) {
+    if (status === order.status) return;
+    setLocalError("");
+    setNotice("");
+    const result = await call<Record<string, unknown>>(
+      `/api/integrations/connections/${connectionId}/store/orders`,
+      "POST",
+      { action: "status", remoteId: order.remoteId, status },
+    );
+    if (result) {
+      setStatusFor(null);
+      setNotice(`درخواست تغییر وضعیت سفارش #${order.number} به «${ORDER_STATUS_LABELS[status] ?? status}» در صف قرار گرفت.`);
+      await load();
+    }
+  }
+
+  function openRefund(order: StoreOrder) {
+    const open = refundFor !== order.remoteId;
+    setRefundFor(open ? order.remoteId : null);
+    setStatusFor(null);
+    setLocalError("");
+    setNotice("");
+    setAmount(open ? cleanStoreAmount(order.total) : "");
+    setReason("");
+  }
+
+  async function submitRefund(order: StoreOrder) {
+    const normalizedAmount = cleanStoreAmount(amount);
+    if (!isPositiveStoreAmount(normalizedAmount)) {
+      setLocalError("مبلغ برگشت وجه باید عددی مثبت در واحد فروشگاه باشد.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `برگشت وجه ${formatStoreMoney(normalizedAmount, order.currency)} برای سفارش #${order.number} در صف فروشگاه ثبت شود؟`,
+    );
+    if (!confirmed) return;
+    setLocalError("");
+    setNotice("");
+    const result = await call<Record<string, unknown>>(
+      `/api/integrations/connections/${connectionId}/store/orders`,
+      "POST",
+      { action: "refund", remoteId: order.remoteId, amount: normalizedAmount, reason },
+    );
+    if (result) {
+      setRefundFor(null);
+      setAmount("");
+      setReason("");
+      setNotice(`درخواست برگشت وجه سفارش #${order.number} در صف قرار گرفت.`);
+      await load();
+    }
+  }
+
   return (
-    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-xl bg-muted p-2 text-xs">
-      {loading ? <LoadingSkeleton rows={3} compact /> : null}
-      {!loading && orders.length === 0 ? (
-        <p className="text-muted-foreground">
-          سفارشی از فروشگاه دریافت نشده است. «همگام‌سازی سفارش‌ها» را بزنید یا از برقراری وب‌هوک مطمئن شوید.
-        </p>
-      ) : null}
-
-      {orders.map((order) => (
-        <div key={order.remoteId} className="rounded-lg border border-border/70 bg-card p-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-medium" dir="ltr">
-              #{order.number}
-            </span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80">
-              {ORDER_STATUS_LABELS[order.status] ?? order.status}
-            </span>
-          </div>
-          <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
-            <span>{order.customer || "بدون نام"}</span>
-            <span>
-              {order.lineCount.toLocaleString("fa-IR")} قلم • {order.total}
-            </span>
-            <span>{formatDateTime(order.dateCreated)}</span>
-            <span>
-              {order.localOrderNumber !== null
-                ? `فاکتور داخلی: ${order.localOrderNumber.toLocaleString("fa-IR")}`
-                : "در حسابداری ثبت نشده"}
-            </span>
-            <span className={order.ingestStatus === "failed" ? "text-red-600 dark:text-red-400" : ""}>
-              {INGEST_STATUS_LABELS[order.ingestStatus] ?? order.ingestStatus}
-            </span>
-          </div>
-          {order.ingestError ? <p className="mt-1 text-red-600 dark:text-red-400" dir="ltr">{order.ingestError}</p> : null}
-
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setStatusFor(statusFor === order.remoteId ? null : order.remoteId);
-                setRefundFor(null);
-              }}
-            >
-              تغییر وضعیت
-            </Button>
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setRefundFor(refundFor === order.remoteId ? null : order.remoteId);
-                setStatusFor(null);
-                setAmount(order.total);
-              }}
-            >
-              ثبت برگشت وجه
-            </Button>
-          </div>
-
-          {statusFor === order.remoteId ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {Object.keys(ORDER_STATUS_LABELS).map((status) => (
-                <Button
-                  key={status}
-                  type="button"
-                  size="xs"
-                  variant={status === order.status ? "default" : "ghost"}
-                  disabled={busy}
-                  onClick={async () => {
-                    const result = await call<Record<string, unknown>>(
-                      `/api/integrations/connections/${connectionId}/store/orders`,
-                      "POST",
-                      { action: "status", remoteId: order.remoteId, status },
-                    );
-                    if (result) {
-                      setStatusFor(null);
-                      await load();
-                    }
-                  }}
-                >
-                  {ORDER_STATUS_LABELS[status]}
-                </Button>
-              ))}
-            </div>
-          ) : null}
-
-          {refundFor === order.remoteId ? (
-            <div className="mt-2 space-y-2">
-              <div className="flex flex-wrap gap-2">
-                <input
-                  className={inputClass}
-                  placeholder="مبلغ برگشتی (واحد فروشگاه)"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  dir="ltr"
-                />
-                <input
-                  className={inputClass}
-                  placeholder="دلیل (اختیاری)"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-                <Button
-                  type="button"
-                  size="xs"
-                  disabled={busy}
-                  onClick={async () => {
-                    const result = await call<Record<string, unknown>>(
-                      `/api/integrations/connections/${connectionId}/store/orders`,
-                      "POST",
-                      { action: "refund", remoteId: order.remoteId, amount, reason },
-                    );
-                    if (result) {
-                      setRefundFor(null);
-                      setAmount("");
-                      setReason("");
-                      await load();
-                    }
-                  }}
-                >
-                  ثبت در صف
-                </Button>
-              </div>
-              <InfoBox>
-                این عملیات فقط برگشت وجه را در فروشگاه ثبت می‌کند؛ بازگرداندن وجه به کارت مشتری از طریق درگاه پرداخت
-                انجام نمی‌شود و باید در ووکامرس انجام گیرد.
-              </InfoBox>
-            </div>
-          ) : null}
+    <SectionCard
+      title="سفارش‌ها"
+      description="آخرین سفارش‌های رسیده از ووکامرس، حتی سفارش‌های پرداخت‌نشده یا خطادار؛ تغییر وضعیت و برگشت وجه از مسیر صف امن افزونه/REST انجام می‌شود."
+      actions={
+        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:flex-wrap">
+          <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" disabled={loading || busy} onClick={() => void load()}>
+            تازه‌سازی
+          </Button>
+          <Button type="button" size="sm" className="w-full sm:w-auto" disabled={busy || syncing} onClick={() => void runSync()}>
+            {syncing ? "در حال درخواست…" : "همگام‌سازی سفارش‌ها"}
+          </Button>
         </div>
-      ))}
-    </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {[
+            { label: "دریافت‌شده", value: summary.total },
+            { label: "ثبت‌شده داخلی", value: summary.imported },
+            { label: "ثبت‌نشده", value: summary.unrecorded },
+            { label: "عملیات در صف", value: summary.queued },
+            { label: "نیازمند بررسی", value: summary.attention },
+          ].map((item) => (
+            <div key={item.label} className="rounded-xl border border-border/70 bg-muted/40 p-3">
+              <p className="text-[11px] text-muted-foreground">{item.label}</p>
+              <p className="mt-1 text-lg font-bold text-foreground">{formatPersianNumber(item.value)}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(10rem,14rem)_minmax(10rem,14rem)]">
+          <input
+            className={inputClass}
+            aria-label="جست‌وجو در سفارش‌های ووکامرس"
+            placeholder="جست‌وجو با شماره سفارش، مشتری، روش پرداخت یا خطا…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <select
+            className={inputClass}
+            aria-label="فیلتر وضعیت سفارش ووکامرس"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="">همهٔ وضعیت‌ها</option>
+            {statusOptions.map((status) => (
+              <option key={status} value={status}>
+                {ORDER_STATUS_LABELS[status] ?? status}
+              </option>
+            ))}
+          </select>
+          <select
+            className={inputClass}
+            aria-label="فیلتر ثبت و صف سفارش"
+            value={ingestFilter}
+            onChange={(event) => setIngestFilter(event.target.value)}
+          >
+            <option value="">همهٔ ثبت‌ها</option>
+            <option value="imported">ثبت‌شده در حسابداری</option>
+            <option value="unrecorded">ثبت‌نشده در حسابداری</option>
+            <option value="queued">دارای عملیات در صف</option>
+            <option value="attention">نیازمند بررسی</option>
+          </select>
+        </div>
+
+        <ErrorBox>{loadError || localError}</ErrorBox>
+        {notice ? (
+          <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-6 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+            {notice}
+          </p>
+        ) : null}
+
+        {loading ? <LoadingSkeleton rows={4} label="در حال بارگذاری سفارش‌های ووکامرس" /> : null}
+
+        {!loading && orders.length === 0 ? (
+          <EmptyState>
+            هنوز سفارشی از فروشگاه دریافت نشده است. «همگام‌سازی سفارش‌ها» را بزنید یا وب‌هوک/افزونهٔ وردپرس را بررسی کنید.
+          </EmptyState>
+        ) : null}
+
+        {!loading && orders.length > 0 && visibleOrders.length === 0 ? (
+          <EmptyState>سفارشی با این جست‌وجو یا فیلتر پیدا نشد.</EmptyState>
+        ) : null}
+
+        {!loading && visibleOrders.length > 0 ? (
+          <ul className="space-y-3" aria-label="فهرست سفارش‌های ووکامرس">
+            {visibleOrders.map((order) => (
+              <li key={order.remoteId} className={`${cardClass} p-3 sm:p-4`}>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-base font-bold text-foreground" dir="ltr">
+                        #{order.number}
+                      </span>
+                      <StatusBadge tone={orderStatusTone(order.status)}>
+                        {ORDER_STATUS_LABELS[order.status] ?? (order.status || "وضعیت نامشخص")}
+                      </StatusBadge>
+                      {orderHasQueuedWork(order) ? <StatusBadge tone="active">عملیات در صف</StatusBadge> : null}
+                      {orderNeedsAttention(order) ? <StatusBadge tone="danger">نیازمند بررسی</StatusBadge> : null}
+                    </div>
+
+                    <dl className="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-3">
+                      <div className="min-w-0 rounded-xl bg-muted/50 px-3 py-2">
+                        <dt className="text-[11px] text-muted-foreground">مشتری</dt>
+                        <dd className="mt-0.5 truncate font-medium text-foreground">{order.customer || "بدون نام"}</dd>
+                      </div>
+                      <div className="rounded-xl bg-muted/50 px-3 py-2">
+                        <dt className="text-[11px] text-muted-foreground">مبلغ / اقلام</dt>
+                        <dd className="mt-0.5 font-medium text-foreground">
+                          {formatStoreMoney(order.total, order.currency)} • {formatPersianNumber(order.lineCount)} قلم
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-muted/50 px-3 py-2">
+                        <dt className="text-[11px] text-muted-foreground">زمان سفارش</dt>
+                        <dd className="mt-0.5 font-medium text-foreground">{formatDateTime(order.dateCreated)}</dd>
+                      </div>
+                      <div className="rounded-xl bg-muted/50 px-3 py-2">
+                        <dt className="text-[11px] text-muted-foreground">ثبت داخلی</dt>
+                        <dd className="mt-0.5 font-medium text-foreground">
+                          {order.localOrderNumber !== null ? `فاکتور ${formatPersianNumber(order.localOrderNumber)}` : "ثبت نشده"}
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-muted/50 px-3 py-2">
+                        <dt className="text-[11px] text-muted-foreground">ورود به سیستم</dt>
+                        <dd className="mt-0.5">
+                          <StatusBadge tone={ingestTone(order.ingestStatus)}>
+                            {INGEST_STATUS_LABELS[order.ingestStatus] ?? order.ingestStatus}
+                          </StatusBadge>
+                        </dd>
+                      </div>
+                      <div className="min-w-0 rounded-xl bg-muted/50 px-3 py-2">
+                        <dt className="text-[11px] text-muted-foreground">شناسه / پرداخت</dt>
+                        <dd className="mt-0.5 truncate font-medium text-foreground" dir="ltr">
+                          {order.remoteId}{order.paymentMethod ? ` • ${order.paymentMethod}` : ""}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full sm:w-auto lg:w-36"
+                      aria-expanded={statusFor === order.remoteId}
+                      disabled={busy}
+                      onClick={() => {
+                        setStatusFor(statusFor === order.remoteId ? null : order.remoteId);
+                        setRefundFor(null);
+                        setLocalError("");
+                        setNotice("");
+                      }}
+                    >
+                      تغییر وضعیت
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full sm:w-auto lg:w-36"
+                      aria-expanded={refundFor === order.remoteId}
+                      disabled={busy}
+                      onClick={() => openRefund(order)}
+                    >
+                      ثبت برگشت وجه
+                    </Button>
+                  </div>
+                </div>
+
+                {order.ingestError ? (
+                  <p className="mt-3 break-words rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs leading-5 text-destructive" dir="ltr">
+                    {order.ingestError}
+                  </p>
+                ) : null}
+
+                {order.operations.length > 0 ? (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs leading-5 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                    <p className="font-semibold">عملیات فروشگاه</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {order.operations.map((operation, index) => (
+                        <span key={`${operation.type}-${index}`} className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg bg-card/70 px-2 py-1">
+                          <StatusBadge tone={operationTone(operation.status)}>{operationStatusLabel(operation.status)}</StatusBadge>
+                          <span>{operationSummary(operation, order.currency)}</span>
+                          {operation.error ? <span className="break-all text-destructive" dir="ltr">{operation.error}</span> : null}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {statusFor === order.remoteId ? (
+                  <div className="mt-3 rounded-xl border border-border/70 bg-muted/50 p-3">
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      وضعیت جدید را انتخاب کنید. درخواست در صف قرار می‌گیرد و بعد از اجرای افزونه یا REST روی فروشگاه اعمال می‌شود.
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" role="group" aria-label={`تغییر وضعیت سفارش ${order.number}`}>
+                      {ORDER_STATUS_OPTIONS.map((status) => (
+                        <Button
+                          key={status}
+                          type="button"
+                          size="xs"
+                          variant={status === order.status ? "secondary" : "ghost"}
+                          className="min-h-8 whitespace-normal sm:whitespace-nowrap"
+                          disabled={busy || status === order.status}
+                          aria-current={status === order.status ? "true" : undefined}
+                          onClick={() => void changeStatus(order, status)}
+                        >
+                          {ORDER_STATUS_LABELS[status]}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {refundFor === order.remoteId ? (
+                  <div className="mt-3 space-y-3 rounded-xl border border-border/70 bg-muted/50 p-3">
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_auto] md:items-end">
+                      <label className="grid gap-1 text-xs font-medium text-foreground">
+                        مبلغ برگشتی ({storeCurrencyLabel(order.currency) || "واحد فروشگاه"})
+                        <PersianNumberInput
+                          className={inputClass}
+                          value={amount}
+                          allowDecimal
+                          allowNegative={false}
+                          placeholder="مثلاً ۲۵٬۰۰۰"
+                          onChange={(event) => setAmount(event.target.value)}
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-medium text-foreground">
+                        دلیل (اختیاری)
+                        <input
+                          className={inputClass}
+                          placeholder="مثلاً مرجوعی مشتری"
+                          value={reason}
+                          maxLength={500}
+                          onChange={(event) => setReason(event.target.value)}
+                        />
+                      </label>
+                      <Button type="button" size="sm" variant="destructive" className="w-full md:w-auto" disabled={busy} onClick={() => void submitRefund(order)}>
+                        ثبت در صف
+                      </Button>
+                    </div>
+                    <InfoBox>
+                      این عملیات فقط برگشت وجه را در فروشگاه ثبت می‌کند و درخواست درگاه پرداخت نمی‌فرستد؛ اگر باید پول به کارت مشتری برگردد، تأیید نهایی در ووکامرس/درگاه انجام می‌شود.
+                    </InfoBox>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <InfoBox>
+          این صفحه آخرین ۱۰۰ سفارش یا رویداد سفارشِ شناخته‌شده برای اتصال انتخاب‌شده را نشان می‌دهد. سفارش پرداخت‌نشده ممکن است «ثبت نشده» باشد، اما برای پیگیری وب‌هوک و تغییر وضعیت همچنان نمایش داده می‌شود.
+        </InfoBox>
+      </div>
+    </SectionCard>
   );
 }
 
