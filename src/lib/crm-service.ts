@@ -246,35 +246,70 @@ export async function listCustomerNotes(
   return rows;
 }
 
+/**
+ * Add a note.
+ *
+ * Refuses to write on a customer whose `merged_into_id` is set. A merged
+ * customer is archived, not deleted, "kept only for history" (Phase 36c) —
+ * but the file page's own merge banner links away to the surviving winner,
+ * so writing here is a mistake nobody meant to make, and one the merge never
+ * propagates: the note would sit on a record the app steers everyone away
+ * from, invisible on the winner's file that the rest of the business now
+ * uses. Returns `null` for "no such open customer" so callers can 404/409
+ * without a second query.
+ */
 export async function addCustomerNote(
   businessId: string,
   customerId: string,
   input: { body: string; isPinned?: boolean; createdBy?: string },
-): Promise<CustomerNote> {
+): Promise<CustomerNote | null> {
   const { rows } = await query<CustomerNote>(
     `INSERT INTO customer_notes (business_id, customer_id, body, is_pinned, created_by)
-     VALUES ($1, $2, $3, $4, $5) RETURNING ${NOTE_COLUMNS}`,
+     SELECT $1, $2, $3, $4, $5
+      WHERE EXISTS (
+        SELECT 1 FROM parties WHERE business_id = $1 AND id = $2 AND merged_into_id IS NULL
+      )
+     RETURNING ${NOTE_COLUMNS}`,
     [businessId, customerId, input.body.trim(), input.isPinned ?? false, input.createdBy ?? ""],
   );
-  return rows[0];
+  return rows[0] ?? null;
 }
 
-export async function deleteCustomerNote(businessId: string, noteId: string): Promise<boolean> {
-  const { rowCount } = await query(`DELETE FROM customer_notes WHERE business_id = $1 AND id = $2`, [
-    businessId,
-    noteId,
-  ]);
+/**
+ * Delete one note.
+ *
+ * `customerId`, when passed, is enforced in the WHERE clause — not merely
+ * checked afterwards — so a request addressed to customer A's URL can never
+ * remove a note that actually belongs to customer B, even though every note
+ * id is already tenant-scoped by `businessId`. The customer file page always
+ * passes it; the autopilot reverter (which deletes only the row it just
+ * created, by an id nobody else can guess) is the one caller that may omit
+ * it.
+ */
+export async function deleteCustomerNote(
+  businessId: string,
+  noteId: string,
+  customerId?: string,
+): Promise<boolean> {
+  const { rowCount } = await query(
+    `DELETE FROM customer_notes WHERE business_id = $1 AND id = $2
+       AND ($3::uuid IS NULL OR customer_id = $3)`,
+    [businessId, noteId, customerId ?? null],
+  );
   return (rowCount ?? 0) > 0;
 }
 
+/** Same cross-customer guard as {@link deleteCustomerNote}, for the same reason. */
 export async function toggleNotePin(
   businessId: string,
   noteId: string,
   pinned: boolean,
+  customerId?: string,
 ): Promise<boolean> {
   const { rowCount } = await query(
-    `UPDATE customer_notes SET is_pinned = $3 WHERE business_id = $1 AND id = $2`,
-    [businessId, noteId, pinned],
+    `UPDATE customer_notes SET is_pinned = $3 WHERE business_id = $1 AND id = $2
+       AND ($4::uuid IS NULL OR customer_id = $4)`,
+    [businessId, noteId, pinned, customerId ?? null],
   );
   return (rowCount ?? 0) > 0;
 }
@@ -313,11 +348,20 @@ export async function setConsent(
   const column = update.channel === "sms" ? "sms_consent" : "marketing_consent";
 
   return withTenant(businessId, async () => {
-    const { rows: current } = await query<{ sms_consent: boolean; marketing_consent: boolean }>(
-      `SELECT sms_consent, marketing_consent FROM parties WHERE business_id = $1 AND id = $2`,
+    const { rows: current } = await query<{
+      sms_consent: boolean;
+      marketing_consent: boolean;
+      merged_into_id: string | null;
+    }>(
+      `SELECT sms_consent, marketing_consent, merged_into_id FROM parties
+        WHERE business_id = $1 AND id = $2`,
       [businessId, customerId],
     );
-    if (!current[0]) return null;
+    // Same rule as `addCustomerNote`: a merged customer is archived, not the
+    // live record it once was, and this write would never reach the winner
+    // the merge banner points everyone at — it would just sit unseen on a
+    // row the rest of the app treats as history.
+    if (!current[0] || current[0].merged_into_id) return null;
 
     const before = update.channel === "sms" ? current[0].sms_consent : current[0].marketing_consent;
     const changed = before !== update.granted;
@@ -964,6 +1008,14 @@ export async function syncCustomerPhone(
  * instant therefore both keep their tag; a read-modify-write in application
  * code would silently drop one of them.
  */
+/**
+ * Add or remove one tag.
+ *
+ * `AND merged_into_id IS NULL`, same reasoning as {@link addCustomerNote}:
+ * this is also the assistant's only other write tool (`crm.customer.tag`),
+ * and a merged customer is an archived row nobody reads from again — tagging
+ * it would silently do nothing anyone downstream would ever see.
+ */
 export async function setCustomerTag(
   businessId: string,
   customerId: string,
@@ -978,11 +1030,11 @@ export async function setCustomerTag(
       ? `UPDATE parties
             SET tags = CASE WHEN $3 = ANY(COALESCE(tags, '{}')) THEN tags
                             ELSE array_append(COALESCE(tags, '{}'), $3) END
-          WHERE business_id = $1 AND id = $2
+          WHERE business_id = $1 AND id = $2 AND merged_into_id IS NULL
         RETURNING COALESCE(tags, '{}') AS tags`
       : `UPDATE parties
             SET tags = array_remove(COALESCE(tags, '{}'), $3)
-          WHERE business_id = $1 AND id = $2
+          WHERE business_id = $1 AND id = $2 AND merged_into_id IS NULL
         RETURNING COALESCE(tags, '{}') AS tags`,
     [businessId, customerId, clean],
   );
