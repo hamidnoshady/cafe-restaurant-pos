@@ -50,7 +50,7 @@ export const APPS: AppDef[] = [
     label: "رشد و بازاریابی",
     description:
       "برنامهٔ نگه‌داشتن و رشد مشتریان: میز کار رشد، وفاداری، کمپین‌ها و کارت هدیه، و پورسانت فروشندگان.",
-    // Since Phase 36b this app has a home of its own (/dashboard/growth) with
+    // Since Phase 36b this app has a home of its own (/growth) with
     // a management dashboard and one section per engine — the same shape the
     // accounting suite has — over the same services and posting rules the
     // three old flat pages used.
@@ -135,7 +135,8 @@ export const APPS: AppDef[] = [
  * Module → owning app, built once at load. A module claimed by two apps is a
  * real authoring mistake, not a runtime condition, so it throws on import —
  * the same "fail fast on invalid config" posture `industry-profile.ts` uses
- * for its prefix maps. The assistant (`ai`), workspace (`workspace`), shared settings (`settings`)\n * and technical-connections hub (`connections`) are
+ * for its prefix maps. The assistant (`ai`), workspace (`workspace`), shared settings (`settings`)
+ * and technical-connections hub (`connections`) are
  * intentionally absent: the assistant is the chat *home*, not an app in the
  * rail, the workspace is the shell around the apps, and shared utilities are shell
  * infrastructure — see the NOTE above.
@@ -157,7 +158,8 @@ const MODULE_APP_MAP: Partial<Record<ModuleKey, AppKey>> = (() => {
 })();
 
 /**
- * Which app owns a module, or null if it is a shared utility, a future\n * placeholder, or the technical-connections hub (`connections` — see the note
+ * Which app owns a module, or null if it is a shared utility, a future
+ * placeholder, or the technical-connections hub (`connections` — see the note
  * above: the hub is shell infrastructure, not an app, so it has no availability
  * state and no guard ever blocks it).
  */
