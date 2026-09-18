@@ -125,7 +125,7 @@ function PercentField({
       <div className="relative max-w-sm">
         <PersianNumberInput
           id={id}
-          className={`${inputClass} pe-9`}
+          className={`${inputClass} ps-9`}
           dir="ltr"
           inputMode="decimal"
           allowNegative={false}

@@ -4,6 +4,8 @@ import { query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getSetting, setSetting, SETTING_KEYS } from "@/lib/settings";
+import { BranchError, updateBranch } from "@/lib/branch-service";
+import { normalizeBranchName } from "@/lib/branch-input";
 
 interface BusinessPrefs {
   currencyDisplay: "toman" | "rial";
@@ -75,7 +77,6 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
   const receiptFooter = text(body.receiptFooter);
   if (
     businessName.length > MAX_NAME ||
-    locationName.length > MAX_NAME ||
     address.length > MAX_ADDRESS ||
     phone.length > MAX_PHONE ||
     legalName.length > MAX_NAME ||
@@ -106,17 +107,81 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
     receiptFooter: receiptFooter || undefined,
   };
 
+  // The branch's own name/address/phone go through the same audited,
+  // duplicate-checked, length-ruled `updateBranch` the branch screen uses.
+  // This form used to write `locations.name` directly, so it could rename the
+  // active branch to a name another branch already answers to (the exact
+  // confusion branchNameTaken exists to prevent) and could store a name the
+  // branch editor would then refuse to save — the two screens editing one
+  // column disagreed about its rules.
+  const normalizedLocationName = normalizeBranchName(locationName);
+  const branchInput: {
+    name?: string;
+    address?: string | null;
+    phone?: string | null;
+  } = {};
+  if (normalizedLocationName !== location.name) branchInput.name = normalizedLocationName;
+  if ((address || null) !== location.address) branchInput.address = address || null;
+  if ((phone || null) !== location.phone) branchInput.phone = phone || null;
+  if (Object.keys(branchInput).length > 0) {
+    try {
+      await updateBranch({
+        businessId: session.businessId,
+        locationId: location.id,
+        actorId: session.sub,
+        ...branchInput,
+      });
+    } catch (err) {
+      if (err instanceof BranchError) {
+        return NextResponse.json({ error: err.message }, { status: err.status });
+      }
+      throw err;
+    }
+  }
+
+  // Read the previous business identity before overwriting it, so the audit
+  // row below can record what actually changed rather than a restatement.
+  const { rows: beforeRows } = await query<{ name: string }>(
+    "SELECT name FROM businesses WHERE id = $1",
+    [session.businessId],
+  );
+  const beforeProfile = await getSetting<BusinessProfile>(
+    session.businessId,
+    SETTING_KEYS.businessProfile,
+  );
+  const beforePrefs = await getSetting<BusinessPrefs>(session.businessId, SETTING_KEYS.businessPrefs);
+  const beforeName = beforeRows[0]?.name;
+
   await query("UPDATE businesses SET name = $1 WHERE id = $2", [businessName, session.businessId]);
-  await query("UPDATE locations SET name = $1, address = $2, phone = $3 WHERE id = $4", [
-    locationName,
-    address || null,
-    phone || null,
-    location.id,
-  ]);
   await Promise.all([
     setSetting(session.businessId, SETTING_KEYS.businessPrefs, prefs),
     setSetting(session.businessId, SETTING_KEYS.businessProfile, profile),
   ]);
+
+  // The business's name, its tax identity and the unit every amount is shown
+  // in are material enough to be reviewable: the branch screens audit their
+  // equivalent edits, and this form was the one writer in the area with no
+  // trail at all. Only the business-level fields are recorded here — the
+  // branch fields above carry their own `branch.updated` row.
+  const changed: Record<string, unknown> = {};
+  if (businessName !== beforeName) changed.businessName = businessName;
+  if (prefs.currencyDisplay !== beforePrefs?.currencyDisplay) {
+    changed.currencyDisplay = prefs.currencyDisplay;
+  }
+  // Over the fixed key list rather than Object.entries(profile): a cleared
+  // field is *absent* from the new profile, and entries() would skip it —
+  // recording every change except the one that removed a value.
+  for (const key of ["legalName", "taxId", "email", "website", "receiptFooter"] as const) {
+    const value = profile[key];
+    if (value !== beforeProfile?.[key]) changed[key] = value ?? null;
+  }
+  if (Object.keys(changed).length > 0) {
+    await query(
+      `INSERT INTO audit_log (business_id, location_id, user_id, action, entity, entity_id, payload)
+       VALUES ($1, $2, $3, 'settings.business.update', 'settings', 'business', $4)`,
+      [session.businessId, location.id, session.sub, JSON.stringify(changed)],
+    );
+  }
 
   return NextResponse.json({ ok: true });
 });

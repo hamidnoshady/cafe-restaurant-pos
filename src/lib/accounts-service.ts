@@ -14,9 +14,11 @@
  * picker already did).
  */
 import { query, getPool } from "./db";
+import { toLatinDigits } from "./digits";
 import {
   ACCOUNT_TYPES,
   WELL_KNOWN_CODES,
+  isValidAccountCode,
   nextAccountLevel,
   type AccountLevel,
   type AccountType,
@@ -172,9 +174,16 @@ export async function createAccount(params: {
   parentId?: string | null;
   isContra?: boolean;
 }): Promise<{ id: string }> {
-  const code = params.code.trim();
+  /* The convention is «Latin digits in storage, Persian digits in display»
+     (digits.ts), and the add form's own placeholder invites «۶۱۰۰». Storing a
+     Persian-digit code verbatim would make «۶۱۰۰» and «6100» two different
+     accounts to UNIQUE(business_id, code), to ORDER BY code, and to the
+     well-known-code lookups the auto-posting engine keys on — so the code is
+     canonicalised here at the boundary, not trusted to every caller. */
+  const code = toLatinDigits(params.code.trim());
   const name = params.name.trim();
   if (!code) throw new AccountsError("code_required");
+  if (!isValidAccountCode(code)) throw new AccountsError("invalid_code");
   if (!name) throw new AccountsError("name_required");
   if (!ACCOUNT_TYPES.includes(params.type as AccountType)) throw new AccountsError("invalid_type");
 
@@ -193,12 +202,21 @@ export async function createAccount(params: {
   ]);
   if (existing.length > 0) throw new AccountsError("code_in_use", 409);
 
-  const { rows } = await query<{ id: string }>(
-    `INSERT INTO accounts (business_id, parent_id, code, name, type, level, is_contra)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [params.businessId, params.parentId ?? null, code, name, params.type, level, params.isContra ?? false],
-  );
-  return { id: rows[0].id };
+  try {
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO accounts (business_id, parent_id, code, name, type, level, is_contra)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [params.businessId, params.parentId ?? null, code, name, params.type, level, params.isContra ?? false],
+    );
+    return { id: rows[0].id };
+  } catch (err) {
+    // The SELECT above is a pre-flight, not a lock: two simultaneous creates
+    // of the same code race the table's UNIQUE(business_id, code), and before
+    // this the loser of that race got a raw 500 instead of the same 409 the
+    // pre-flight would have produced.
+    if ((err as { code?: string }).code === "23505") throw new AccountsError("code_in_use", 409);
+    throw err;
+  }
 }
 
 export async function renameAccount(

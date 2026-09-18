@@ -13,6 +13,7 @@ export interface AuditEntry {
   id: number;
   businessId: string;
   locationId: string | null;
+  locationName: string | null;
   actorId: string | null;
   actorName: string | null;
   action: string;
@@ -35,6 +36,7 @@ interface AuditRow extends Record<string, unknown> {
   id: string;
   business_id: string;
   location_id: string | null;
+  location_name: string | null;
   user_id: string | null;
   actor_name: string | null;
   action: string;
@@ -54,6 +56,7 @@ function toEntry(row: AuditRow): AuditEntry {
     id: Number(row.id),
     businessId: row.business_id,
     locationId: row.location_id,
+    locationName: row.location_name,
     actorId: row.user_id,
     actorName: row.actor_name,
     action: row.action,
@@ -83,6 +86,23 @@ export interface AuditLogFilters {
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
+
+/**
+ * A text column cast to uuid for a join, answering NULL when the text is not
+ * a uuid instead of raising `invalid input syntax for type uuid`.
+ *
+ * `audit_log.entity_id` is a **text** column, and not every writer puts a uuid
+ * in it: `settings.mfa_policy.update` logs `'mfa.policy'` and
+ * `settings.business.update` logs `'business'`. The joins below used to cast
+ * it bare (`nullif(a.entity_id, '')::uuid`), and one such row — from a single
+ * toggle of the manager-MFA switch — made `listAuditLog` throw, so the whole
+ * audit tab 500'd on businesses that had one. The entity guard on the other
+ * side of the `AND` does not save it: Postgres guarantees evaluation order
+ * only inside a `CASE`, never across `AND` operands.
+ */
+function uuidOrNull(expression: string): string {
+  return `CASE WHEN ${expression} ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN ${expression}::uuid END`;
+}
 
 /**
  * The business's audit trail, most recent first — every action any wave of
@@ -130,7 +150,8 @@ export async function listAuditLog(
   params.push(limit);
 
   const { rows } = await query<AuditRow>(
-    `SELECT a.id, a.business_id, a.location_id, a.user_id, u.full_name AS actor_name,
+    `SELECT a.id, a.business_id, a.location_id, l.name AS location_name,
+            a.user_id, u.full_name AS actor_name,
             a.action, a.entity, a.entity_id, a.payload, a.created_at,
             ec.credential_type::text AS credential_type,
             d.label AS device_label,
@@ -138,28 +159,29 @@ export async function listAuditLog(
             ebp.code || ' — ' || ebp.name AS account_before_parent_label,
             eap.code || ' — ' || eap.name AS account_after_parent_label
        FROM audit_log a
-       LEFT JOIN users u ON u.id = a.user_id
+       LEFT JOIN locations l ON l.id = a.location_id AND l.business_id = a.business_id
+       LEFT JOIN users u ON u.id = a.user_id AND u.business_id = a.business_id
        LEFT JOIN employee_credentials ec
               ON ec.business_id = a.business_id
-             AND ec.id = nullif(a.payload->>'credentialId', '')::uuid
+             AND ec.id = ${uuidOrNull("nullif(a.payload->>'credentialId', '')")}
        LEFT JOIN pos_devices d
               ON d.business_id = a.business_id
-             AND d.id = nullif(a.payload->>'deviceId', '')::uuid
+             AND d.id = ${uuidOrNull("nullif(a.payload->>'deviceId', '')")}
        LEFT JOIN users eu
               ON a.entity = 'employee'
-             AND eu.id = nullif(a.entity_id, '')::uuid
+             AND eu.id = ${uuidOrNull("nullif(a.entity_id, '')")}
        LEFT JOIN accounts ea
               ON a.entity = 'account'
              AND ea.business_id = a.business_id
-             AND ea.id = nullif(a.entity_id, '')::uuid
+             AND ea.id = ${uuidOrNull("nullif(a.entity_id, '')")}
        LEFT JOIN accounts ebp
               ON a.entity = 'account'
              AND ebp.business_id = a.business_id
-             AND ebp.id = nullif(a.payload->>'beforeParentId', '')::uuid
+             AND ebp.id = ${uuidOrNull("nullif(a.payload->>'beforeParentId', '')")}
        LEFT JOIN accounts eap
               ON a.entity = 'account'
              AND eap.business_id = a.business_id
-             AND eap.id = nullif(a.payload->>'afterParentId', '')::uuid
+             AND eap.id = ${uuidOrNull("nullif(a.payload->>'afterParentId', '')")}
       WHERE ${conditions.join(" AND ")}
       ORDER BY a.id DESC
       LIMIT $${params.length}`,

@@ -65,13 +65,15 @@ interface LedgerIntegritySummary {
 async function accountTotals(businessId: string): Promise<AccountTotalRow[]> {
   const { rows } = await query<AccountTotalRow>(
     `SELECT a.id, a.code, a.name, a.type, a.is_active,
-            COALESCE(SUM(jl.debit), 0)::text AS debit,
-            COALESCE(SUM(jl.credit), 0)::text AS credit
+            COALESCE(SUM(CASE WHEN je.id IS NOT NULL THEN jl.debit ELSE 0 END), 0)::text AS debit,
+            COALESCE(SUM(CASE WHEN je.id IS NOT NULL THEN jl.credit ELSE 0 END), 0)::text AS credit
        FROM accounts a
        LEFT JOIN journal_lines jl ON jl.account_id = a.id
+       LEFT JOIN journal_entries je
+         ON je.id = jl.entry_id AND je.business_id = $1
       WHERE a.business_id = $1
       GROUP BY a.id
-     HAVING a.is_active OR COUNT(jl.id) > 0
+     HAVING a.is_active OR COUNT(je.id) > 0
       ORDER BY a.code`,
     [businessId],
   );

@@ -57,8 +57,17 @@ export function AccountStatementPanel({
   const [error, setError] = useState("");
   useOverlayEscape(onClose);
 
+  // Both pickers hand back ISO YYYY-MM-DD, so this comparison is chronological.
+  const rangeInvalid = dateFrom !== "" && dateTo !== "" && dateFrom > dateTo;
+
   useEffect(() => {
     setStatement(null);
+    // A reversed range used to round-trip to the server and come back as a
+    // confusingly «empty» statement; name the mistake instead of fetching it.
+    if (rangeInvalid) {
+      setError("");
+      return;
+    }
     const params = new URLSearchParams();
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
@@ -69,7 +78,7 @@ export function AccountStatementPanel({
         else setError("بارگذاری گردش این حساب ناموفق بود.");
       })
       .catch(() => setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید."));
-  }, [accountId, dateFrom, dateTo]);
+  }, [accountId, dateFrom, dateTo, rangeInvalid]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
@@ -104,7 +113,11 @@ export function AccountStatementPanel({
           </label>
         </div>
 
-        {error ? (
+        {rangeInvalid ? (
+          <p role="alert" className="mt-4 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            «از تاریخ» باید قبل از «تا تاریخ» باشد؛ بازه را اصلاح کنید.
+          </p>
+        ) : error ? (
           <p role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
             {error}
           </p>

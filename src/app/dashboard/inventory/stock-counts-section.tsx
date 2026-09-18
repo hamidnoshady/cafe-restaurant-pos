@@ -30,6 +30,10 @@ interface StockCount {
   counted_at: string;
   counted_by_name: string | null;
   line_count: string | number;
+  shortage_value: string;
+  surplus_value: string;
+  /** A reversal remains in the audit trail but cannot be edited again. */
+  reversed: boolean;
 }
 
 interface CountLine {
@@ -49,11 +53,20 @@ interface CountDetail {
   note: string | null;
   countedAt: string;
   countedByName: string | null;
+  reversed: boolean;
   lines: CountLine[];
 }
 
 function countError(code: string | undefined): string {
   const map: Record<string, string> = {
+    no_items: "حداقل یک قلم را برای شمارش وارد کنید.",
+    invalid_item: "یکی از اقلام انتخاب‌شده معتبر نیست.",
+    invalid_quantity: "مقدار شمارش‌شده باید صفر یا یک عدد مثبت باشد.",
+    quantity_precision_exceeded: "مقدار شمارش‌شده بیش از ۹ رقم اعشار دارد.",
+    duplicate_item: "یک قلم دوبار در فهرست شمارش آمده است.",
+    item_not_found: "یکی از اقلام در این شعبه پیدا نشد.",
+    ledger_account_missing: "حساب مورد نیاز در دفتر حساب‌ها موجود نیست.",
+    periodic_system_unsupported: "در سیستم ادواری، شمارش باید از «بستن دوره» انجام شود.",
     count_not_found: "این شمارش پیدا نشد.",
     count_not_reversible: "این شمارش قابل اصلاح نیست.",
     already_reversed: "این شمارش قبلاً اصلاح یا حذف شده است.",
@@ -76,7 +89,9 @@ export function StockCountsSection({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [counts, setCounts] = useState<StockCount[] | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [note, setNote] = useState("");
   const [countedQty, setCountedQty] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
@@ -91,17 +106,23 @@ export function StockCountsSection({
   const countedQtyRef = useRef<Record<string, string>>({});
 
   const loadCounts = useCallback(() => {
-    api<{ counts: StockCount[] }>("/api/inventory/stock-counts").then(
-      ({ ok, data }) => {
+    setLoadError("");
+    api<{ counts: StockCount[]; error?: string }>("/api/inventory/stock-counts")
+      .then(({ ok, data }) => {
         if (ok) setCounts(data.counts);
-      },
-    );
+        else setLoadError(errorMessage(data.error));
+      })
+      .catch(() => setLoadError("دریافت سوابق شمارش ناموفق بود؛ دوباره تلاش کنید."));
   }, []);
   useEffect(loadCounts, [loadCounts]);
 
   const activeItems = useMemo(() => items.filter((i) => i.is_active), [items]);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const visibleItems = useInventorySearch(activeItems, deferredSearchQuery);
+  // Avoid mounting thousands of editable inputs on a phone. Search narrows the
+  // catalogue first; the cap is only a rendering guard, never a submission
+  // limit (scanned and already-entered lines remain in the tally).
+  const renderedItems = visibleItems.slice(0, 200);
 
   const activeIds = useMemo(() => new Set(activeItems.map((i) => i.id)), [activeItems]);
   const isCountable = useCallback((id: string) => activeIds.has(id), [activeIds]);
@@ -243,7 +264,7 @@ export function StockCountsSection({
                         (موجودی سیستم: {formatQuantity(i.stock)} {i.unit})
                       </span>
                     </span>
-                    <div className="flex items-end gap-1.5">
+                    <div className="flex min-w-0 items-end gap-1.5">
                       <button
                         type="button"
                         className="flex min-h-[3.25rem] min-w-11 items-center justify-center rounded-lg border border-border px-3 text-base font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
@@ -254,19 +275,20 @@ export function StockCountsSection({
                               current && Number.isFinite(Number(current))
                                 ? new Decimal(current)
                                 : new Decimal(0);
-                            return { ...prev, [i.id]: base.minus(1).toFixed() };
+                            return { ...prev, [i.id]: Decimal.max(base.minus(1), 0).toFixed() };
                           })
                         }
                         aria-label={`کم کردن یک واحد از شمارش ${i.name}`}
                       >
                         −
                       </button>
-                      <label className="grid w-full gap-1 text-xs font-medium sm:w-36">
+                      <label className="grid min-w-0 flex-1 gap-1 text-xs font-medium sm:w-36 sm:flex-none">
                         <span>مقدار شمارش‌شده</span>
                         <PersianNumberInput
                           className={inputClass}
                           dir="ltr"
                           inputMode="decimal"
+                          allowNegative={false}
                           value={countedQty[i.id] ?? ""}
                           onChange={(e) =>
                             setCountedQty((prev) => ({ ...prev, [i.id]: e.target.value }))
@@ -319,7 +341,7 @@ export function StockCountsSection({
             </div>
           </Field>
           <ul className="divide-y divide-border rounded-lg border border-border">
-            {visibleItems.map((i) => (
+            {renderedItems.map((i) => (
               <li
                 key={i.id}
                 className="flex min-w-0 flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
@@ -341,6 +363,7 @@ export function StockCountsSection({
                     className={inputClass}
                     dir="ltr"
                     inputMode="decimal"
+                    allowNegative={false}
                     value={countedQty[i.id] ?? ""}
                     onChange={(e) =>
                       setCountedQty((prev) => ({
@@ -353,6 +376,11 @@ export function StockCountsSection({
               </li>
             ))}
           </ul>
+          {visibleItems.length > renderedItems.length ? (
+            <p className="px-3 py-3 text-xs text-muted-foreground">
+              {toPersianDigits(String(visibleItems.length - renderedItems.length))} قلم دیگر پیدا شد؛ جستجو را دقیق‌تر کنید تا ویرایش آن‌ها سریع بماند.
+            </p>
+          ) : null}
           {visibleItems.length === 0 ? (
             <p className="px-3 py-4 text-sm text-muted-foreground">
               {searchQuery.trim()
@@ -380,6 +408,16 @@ export function StockCountsSection({
 
       <VisionCountPanel items={activeItems} run={run} onApply={handleVisionApply} />
 
+      {loadError ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <p role="alert" className="text-sm text-destructive">
+            {loadError}
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={loadCounts}>
+            تلاش دوباره
+          </Button>
+        </div>
+      ) : null}
       <SectionCard
         title={
           <div>
@@ -387,28 +425,40 @@ export function StockCountsSection({
             <h2 className="mt-1 font-semibold text-foreground">شمارش‌های اخیر</h2>
           </div>
         }
-        description="برای دیدن اقلام هر شمارش و ویرایش یا حذف آن، روی شمارش بزنید."
+        description="برای دیدن اقلام هر شمارش روی آن بزنید؛ شمارش برگشت‌نخورده را می‌توانید اصلاح یا حذف کنید."
         flush
       >
         <ul className="divide-y divide-border/80">
-          {(counts ?? []).map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => setEditingId(c.id)}
-                className="flex min-w-0 w-full flex-col gap-2 px-4 py-3 text-start text-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <span className="min-w-0 break-words font-medium">
-                  {toPersianDigits(c.line_count)} قلم{" "}
-                  {c.note ? `— ${c.note}` : ""}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {c.counted_by_name ?? ""} — {formatJalali(c.counted_at)}
-                </span>
-              </button>
+          {counts === null ? (
+            <li className="p-3">
+              <LoadingSkeleton rows={3} />
             </li>
-          ))}
-          {counts && counts.length === 0 ? (
+          ) : (
+            counts.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  onClick={() => setEditingId(c.id)}
+                  className="flex min-w-0 w-full flex-col gap-2 px-4 py-3 text-start text-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <span className="min-w-0 break-words font-medium">
+                    {toPersianDigits(c.line_count)} قلم{" "}
+                    {c.note ? `— ${c.note}` : ""}
+                    {c.reversed ? <StatusBadge tone="neutral">برگشت‌خورده</StatusBadge> : null}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    <span className="block sm:inline">
+                      {c.counted_by_name ?? ""} — {formatJalali(c.counted_at)}
+                    </span>
+                    <span className="mt-1 block sm:ms-2 sm:mt-0 sm:inline">
+                      کسری {money.formatText(c.shortage_value)} · اضافه {money.formatText(c.surplus_value)}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+          {counts?.length === 0 ? (
             <li className="p-3">
               <EmptyState>هنوز شمارشی ثبت نشده است؛ با اسکنر، دوربین یا ورود دستی شروع کنید.</EmptyState>
             </li>
@@ -419,6 +469,7 @@ export function StockCountsSection({
       {editingId ? (
         <StockCountModal
           countId={editingId}
+          reversed={counts?.find((count) => count.id === editingId)?.reversed ?? false}
           activeItems={activeItems}
           onClose={() => setEditingId(null)}
           onChanged={loadCounts}
@@ -430,11 +481,13 @@ export function StockCountsSection({
 
 function StockCountModal({
   countId,
+  reversed,
   activeItems,
   onClose,
   onChanged,
 }: {
   countId: string;
+  reversed: boolean;
   activeItems: InventoryItem[];
   onClose: () => void;
   onChanged: () => void;
@@ -450,8 +503,8 @@ function StockCountModal({
   useEffect(() => {
     setDetail(null);
     setError("");
-    api<{ count: CountDetail }>(`/api/inventory/stock-counts/${countId}`).then(
-      ({ ok, status, data }) => {
+    api<{ count: CountDetail }>(`/api/inventory/stock-counts/${countId}`)
+      .then(({ ok, status, data }) => {
         if (ok) {
           setDetail(data.count);
           setNote(data.count.note ?? "");
@@ -465,9 +518,17 @@ function StockCountModal({
             status === 404 ? "این شمارش پیدا نشد." : "خطا در دریافت شمارش.",
           );
         }
-      },
-    );
+      })
+      .catch(() => setError("دریافت جزئیات شمارش ناموفق بود؛ دوباره تلاش کنید."));
   }, [countId]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   const deferredAddQuery = useDeferredValue(addQuery);
   const searchResults = useInventorySearch(activeItems, deferredAddQuery);
@@ -491,6 +552,7 @@ function StockCountModal({
     () => new Map(activeItems.map((i) => [i.id, i])),
     [activeItems],
   );
+  const isReadOnly = reversed || Boolean(detail?.reversed);
 
   async function save() {
     setBusy(true);
@@ -578,14 +640,23 @@ function StockCountModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground"
+            className="min-h-11 rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground"
           >
             بستن
           </button>
         </header>
 
         {detail === null ? (
-          <LoadingSkeleton rows={4} />
+          error ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              {error}
+            </p>
+          ) : (
+            <LoadingSkeleton rows={4} />
+          )
         ) : (
           <div className="space-y-4">
             {error ? (
@@ -596,6 +667,11 @@ function StockCountModal({
                 {error}
               </p>
             ) : null}
+            {isReadOnly ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                این شمارش قبلاً برگشت خورده است و فقط برای مشاهده نمایش داده می‌شود.
+              </p>
+            ) : null}
 
             <Field label="یادداشت">
               <input
@@ -603,6 +679,7 @@ function StockCountModal({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="اختیاری"
+                disabled={isReadOnly || busy}
               />
             </Field>
 
@@ -630,7 +707,8 @@ function StockCountModal({
                         <button
                           type="button"
                           onClick={() => dropLine(l.inventoryItemId)}
-                          className="rounded-lg border border-border p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          disabled={isReadOnly || busy}
+                          className="rounded-lg border border-border p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                           aria-label={`حذف ${l.itemName} از شمارش`}
                         >
                           <XIcon className="size-4" aria-hidden="true" />
@@ -647,6 +725,8 @@ function StockCountModal({
                             onChange={(e) =>
                               setQty(l.inventoryItemId, e.target.value)
                             }
+                            allowNegative={false}
+                            disabled={isReadOnly || busy}
                           />
                         </label>
                         <span>
@@ -685,7 +765,8 @@ function StockCountModal({
                           <button
                             type="button"
                             onClick={() => dropLine(id)}
-                            className="rounded-lg border border-border p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            disabled={isReadOnly || busy}
+                            className="rounded-lg border border-border p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                             aria-label={`حذف ${item.name} از شمارش`}
                           >
                             <XIcon className="size-4" aria-hidden="true" />
@@ -699,6 +780,8 @@ function StockCountModal({
                             inputMode="decimal"
                             value={draft[id] ?? ""}
                             onChange={(e) => setQty(id, e.target.value)}
+                            allowNegative={false}
+                            disabled={isReadOnly || busy}
                           />
                         </label>
                       </li>
@@ -720,6 +803,7 @@ function StockCountModal({
                   value={addQuery}
                   onChange={(e) => setAddQuery(e.target.value)}
                   placeholder="نام یا کد قلم…"
+                  disabled={isReadOnly || busy}
                 />
               </div>
               {addableItems.length > 0 ? (
@@ -729,7 +813,8 @@ function StockCountModal({
                       <button
                         type="button"
                         onClick={() => setQty(i.id, "")}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-muted/40"
+                        disabled={isReadOnly || busy}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-muted/40 disabled:opacity-50"
                       >
                         <PlusIcon
                           className="size-4 shrink-0 text-muted-foreground"
@@ -749,13 +834,13 @@ function StockCountModal({
             </div>
 
             <div className="flex flex-col gap-2 pt-1 sm:flex-row">
-              <Button type="button" size="lg" className="w-full px-5 font-semibold" onClick={save} disabled={busy}>
+              <Button type="button" size="lg" className="w-full px-5 font-semibold" onClick={save} disabled={busy || isReadOnly}>
                 {busy ? "در حال ذخیره…" : "ذخیره تغییرات"}
               </Button>
               <button
                 type="button"
                 onClick={remove}
-                disabled={busy}
+                disabled={busy || isReadOnly}
                 className="rounded-xl border border-destructive/40 px-5 py-2.5 font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
               >
                 حذف شمارش
