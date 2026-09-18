@@ -166,14 +166,6 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     hrefs: ["/accounting/overview", "/accounting/financial-reports", "/accounting/reports", "/overview"],
   },
   {
-    key: "crm",
-    label: "ارتباط با مشتری",
-    icon: ContactIcon,
-    // `/crm/directory` redirects into the app's directory, so a business
-    // that has customers but has never opened the CRM still gets the launcher.
-    hrefs: ["/crm/overview", "/crm/directory"],
-  },
-  {
     key: "growth",
     label: "رشد و بازاریابی",
     icon: TrendingUpIcon,
@@ -183,6 +175,14 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
       "/growth/campaigns",
       "/growth/commission",
     ],
+  },
+  {
+    key: "crm",
+    label: "ارتباط با مشتری",
+    icon: ContactIcon,
+    // `/crm/directory` redirects into the app's directory, so a business
+    // that has customers but has never opened the CRM still gets the launcher.
+    hrefs: ["/crm/overview", "/crm/directory"],
   },
   {
     key: "website",
