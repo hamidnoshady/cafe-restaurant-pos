@@ -84,20 +84,48 @@ the operational Accounting workspaces use `/accounting/{section}` — not
 
 ## Design system
 
-**The visual canon is [`docs/design-system.md`](docs/design-system.md), backed by the
-reference screenshots in [`docs/design/reference/`](design/reference/).** Read it before
-building or restyling any screen. The short form:
+**The visual canon is [`docs/design-system.md`](docs/design-system.md).** Read its
+**Decision guide** before building or restyling any screen: it maps each UI need to the one
+approved component, says when an operational variation is allowed, and lists the checks to
+run before calling a screen complete. The page-by-page audit and the ordered remaining work
+are in [`docs/design/coverage-matrix.md`](docs/design/coverage-matrix.md).
 
-- Dashboard pages/panels compose the primitives in `src/app/dashboard/page-chrome.tsx`
-  (`PageShell`, `PageHeader`, `SectionCard`/`cardClass`, `TabBar`/`TabPanel`, `EmptyState`,
-  `StatusBadge`) plus `<Button>` and `ui.tsx`'s `inputClass`/`Field`/`ErrorBox`/`InfoBox` —
-  never re-derive their classes by hand.
-- Warm `stone-*` neutrals on a canvas slightly darker than white cards; 1px warm hairlines;
-  the one warm card shadow (`0 1px 2px rgb(41 37 36/0.035)`); `rounded-2xl` cards,
-  `rounded-xl` pills, `rounded-lg` controls.
+The short form:
+
+- **Compose, never re-derive.** Dashboard pages/panels compose the primitives in
+  `src/app/dashboard/page-chrome.tsx` (`PageShell`, `PageHeader`, `SectionCard`/`cardClass`,
+  `CardEyebrow`, `TabBar`/`TabPanel`, `EmptyState`, `KpiCard`/`KpiRow`, `StatusBadge`),
+  `src/app/dashboard/data-table.tsx` (`DataTable`, `Th`, `Td`),
+  `src/app/dashboard/filters.tsx` (`FilterChip`, `SearchField`),
+  `src/app/dashboard/section-nav.tsx`, plus `<Button>` and `ui.tsx`'s
+  `inputClass`/`Field`/`ErrorBox`/`InfoBox`. A long Tailwind string copied into a page is the
+  bug the primitives exist to prevent — **two lints fail it**, one on spellings
+  (`design-lint.test.ts`) and one on shapes (`primitive-lint.test.ts`).
+- Warm neutrals come from the **theme tokens** (`bg-card`, `text-foreground`, `bg-muted/60`,
+  `border-border`) because they flip in dark mode; a hardcoded `stone-*` with no `dark:`
+  pair is a regression. 1px warm hairlines; the one warm card shadow
+  (`0 1px 2px rgb(41 37 36/0.035)`); `rounded-2xl` cards, `rounded-xl` pills, `rounded-lg`
+  controls.
 - **Amber = selection** (active nav/tabs/chips, warnings); **teal = brand** (filled buttons,
-  links) and the **form focus ring**; emerald/red only for success/danger. Numbers: Persian
-  digits are display-only; money uses the business-selected display unit via `formatMoneyText`/`useMoney` (Toman or Rial). Never hard-code a user-facing currency label or divide by 10 directly. Storage, calculations, journal lines, and internal API contracts remain integer Rial; every user input must be converted from the selected unit at the UI/API boundary and every displayed amount must be formatted with the selected unit. If the user selects Rial, inputs, labels, totals, exports, and display text must say Rial; if Toman, they must say Toman.
-- Hovers are quiet washes (`hover:bg-stone-50`); motion is 150–650 ms ease-out, skeletons
+  links) and the **form focus ring**; emerald/red only for success/danger.
+- **The POS is an approved dense variation, not a template.** Taller targets, denser cards,
+  amber CTA — on full-screen operational surfaces only (`FilterChip dense` carries the
+  density as a prop). Never push that density onto ordinary CRM, Growth or Website
+  Management pages, and never copy one app's nav items or business fields into another to
+  make them look alike. Share the language; keep each workflow.
+- Numbers: Persian digits are display-only; money uses the business-selected display unit via
+  `formatMoneyText`/`useMoney` (Toman or Rial). Never hard-code a user-facing currency label
+  or divide by 10 directly. Storage, calculations, journal lines and internal API contracts
+  remain integer Rial; every user input must be converted from the selected unit at the
+  UI/API boundary and every displayed amount must be formatted with the selected unit.
+- Hovers are quiet washes (`hover:bg-muted`); motion is 150–650 ms ease-out, skeletons
   instead of spinners, and `prefers-reduced-motion` is respected.
-- When prose and a screenshot disagree, the screenshot wins.
+- **Before calling a screen done:** `npm run test:design` (design + primitive lint + loading
+  coverage), plus the usual `npx tsc --noEmit`, `npm test`, `npm run build`. Then look at the
+  screen in both themes, both widths, and in its hover / focus / selected / disabled /
+  loading / empty / error states. `npm run test:visual` diffs representative screens of all
+  four apps against committed baselines — **never re-record a baseline to clear a failure**
+  (see [`docs/design/visual-regression.md`](docs/design/visual-regression.md)).
+- The approved reference is the 2026-09-18 screenshot set; the pre-2026-09 images are
+  archived under `docs/design/reference/archive-2026-09/` and are **historical, not
+  normative**. When prose and an approved screenshot disagree, the screenshot wins.

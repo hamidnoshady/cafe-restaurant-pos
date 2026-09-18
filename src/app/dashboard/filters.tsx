@@ -146,13 +146,3 @@ export function SearchField({
     </div>
   );
 }
-
-/**
- * The filter panel itself — the bordered block holding a search field and its
- * chips, as the Orders and Inventory screens show. A plain layout wrapper on
- * purpose: it owns the spacing between the rows, nothing else, so a screen can
- * put whatever controls its workflow needs inside without fighting the shell.
- */
-export function FilterBar({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("flex flex-col gap-3", className)}>{children}</div>;
-}

@@ -9,7 +9,7 @@
  * named lists themselves.
  */
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
-import { FileSpreadsheetIcon, PencilIcon, PlusIcon, RefreshCwIcon, SaveIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { FileSpreadsheetIcon, PencilIcon, PlusIcon, RefreshCwIcon, SaveIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +25,7 @@ import type { VariantSummary } from "@/lib/accessories-service";
 import type { PriceEntry, PriceList } from "@/lib/price-lists-service";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { EmptyState, SectionCard, SectionCardSkeleton } from "../page-chrome";
+import { SearchField } from "@/app/dashboard/filters";
 
 type ColumnKey = string; // "sale" | "purchase" | <price list id>
 
@@ -213,16 +214,12 @@ export function PriceListsSection({ apiBase }: { apiBase: string }) {
         title="نمایش لیست قیمت‌های کالا"
         description={filtered ? `${toPersianDigits(filtered.length)} کالا` : "در حال خواندن…"}
         actions={
-          <div className="relative">
-            <SearchIcon aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              className={`${inputClass} ps-9`}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="فیلتر و جستجو"
-              aria-label="جستجوی کالا"
-            />
-          </div>
+          <SearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="فیلتر و جستجو"
+            label="جستجوی کالا"
+          />
         }
         flush
       >

@@ -1,6 +1,6 @@
 "use client";
 
-import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { KpiRow, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
  * The CRM app's management dashboard (Phase 36) — its «میز کار».
@@ -170,7 +170,7 @@ export function CrmOverviewSection({
         </SectionCard>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <KpiRow className="xl:grid-cols-3">
         <KpiCard
           label="مشتریان فعال"
           value={formatPersianNumber(customers.total)}
@@ -216,7 +216,7 @@ export function CrmOverviewSection({
           value={formatPersianNumber(segments.total)}
           hint={segments.total > 0 ? segments.names.slice(0, 2).join(" · ") : "برای هدف‌گیری مشتریان یک بخش بسازید"}
         />
-      </div>
+      </KpiRow>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard

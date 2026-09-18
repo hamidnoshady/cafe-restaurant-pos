@@ -1,6 +1,6 @@
 "use client";
 
-import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { KpiRow, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
  * The Growth app's management dashboard (Phase 36b) — its «داشبورد».
@@ -89,7 +89,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
         </SectionCard>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <KpiRow className="xl:grid-cols-3">
         <KpiCard
           label="تخفیف کمپین‌ها · ۳۰ روز گذشته"
           value={money.format(overview.campaigns.discountRial)}
@@ -120,7 +120,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           value={formatPersianNumber(overview.repurchase.due)}
           hint="مشتریانی که موعد خرید دوباره‌شان گذشته است"
         />
-      </div>
+      </KpiRow>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard

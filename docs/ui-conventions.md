@@ -2,9 +2,11 @@
 
 > **Pixel-level canon:** [docs/design-system.md](design-system.md) is the normative visual
 > spec — exact colours, the control/table/chip recipes, hover/focus/active states, motion
-> vocabulary, and the banned old look — backed by the reference screenshots in
-> [`docs/design/reference/`](design/reference/). Read it alongside this file; this file is
-> the composition rules, that file is what things look like.
+> vocabulary, the banned old look, and a **decision guide** mapping each UI need to the one
+> approved component. Its authority is the approved reference screenshots (the pre-2026-09
+> set is archived under [`docs/design/reference/archive-2026-09/`](design/reference/archive-2026-09/)
+> and is historical, not normative). Read it alongside this file; this file is the
+> composition rules, that file is what things look like.
 
 **Every new page and panel under `src/app/dashboard/**` is built from
 [`src/app/dashboard/page-chrome.tsx`](../src/app/dashboard/page-chrome.tsx). Do not
@@ -38,12 +40,24 @@ moving between two screens of the same product looked like moving between two pr
 | `<SectionNav>` | a page's own in-page menu wired to its own panel |
 | `<EmptyState>` | `<p className="rounded-xl border border-dashed …">` |
 | `<StatusBadge tone>` | a `rounded-full` span with hand-picked tone classes |
+| `<CardEyebrow>` | a hand-spelled amber `text-[11px]` category line |
+| `<KpiCard>` + `<KpiRow>` | a local `StatCard`/`MetricCard` (there were three) |
+| `<DataTable>` + `<Th>`/`<Td numeric>` | `<table>` with its own header wash and cell padding |
+| `<FilterChip>` / `<FilterChipRow>` | an `aria-pressed` button styling its own amber fill |
+| `<SearchField>` | an input with a hand-positioned search icon |
 
 Notes that are easy to get wrong:
 
 - **A titled card always draws a divider under its header.** One rule, both card shapes.
   Pass `flush` when the body is an edge-to-edge list or table so its dividers reach the card's
   edges; otherwise the body gets the standard `p-4 sm:p-5`.
+- **A table is `DataTable`, including its mobile half.** `Th`/`Td` own the header wash, the
+  cell padding and the hairlines; `<Td numeric>` end-aligns with `tabular-nums` for money and
+  counts, `<Td muted>` dims a secondary column. Keep the `lg:hidden` card list beside it for
+  phones, and set the minimum width on `tableClassName`, never on a wrapper you invent.
+- **Density is a prop, not a fork.** `FilterChip dense` gives operational surfaces their
+  taller touch target without a second chip. If you find yourself writing `bg-amber-100
+  … aria-pressed`, you are re-deriving `FilterChip`.
 - **`cardClass` is for bespoke *layout*, not bespoke *skin*.** A chat panel that fills a fixed
   height or a canvas that scrolls composes `cn("flex h-… flex-col", cardClass)`. If all you
   need is padding and a title, that's `SectionCard`.
@@ -59,6 +73,9 @@ Notes that are easy to get wrong:
   `strip` (the default: pills above the panel from `md` up) and `rail` (a sticky menu card
   beside the panel from `lg` up, for a menu too long to read as pills — تنظیمات, حسابداری, رشد و بازاریابی).
   Reach for `TabBar` on its own only where there is no menu to drill into.
+  - CRM, Growth and Website Management deliberately do **not** use `SectionNav`: they render
+    their header in an app shell and their menu in the dashboard sidebar. That is their IA,
+    not drift — do not convert them to a rail.
   - Rendering both halves and switching them with `hidden`/`md:block` is deliberate: the
     drill-down state means nothing above the breakpoint, so there is no `matchMedia` read and
     therefore no desktop layout flashing on a phone before hydration.
@@ -116,9 +133,14 @@ own bottom padding gets added to it and the bar drifts.
 ## What is deliberately *not* covered
 
 - **Full-screen operational surfaces keep their own compact chrome**: POS
-  (`pos/pos-screen.tsx`), the orders queue, the floor plan, the kitchen display, reservations.
-  Their headers are icon-led and dense on purpose because they are read at arm's length at a
-  counter — they use the same palette but not `PageHeader`.
+  (`pos/pos-screen.tsx`), the orders queue, the floor plan, the kitchen display, the waiter
+  and delivery boards, reservations. Their headers are icon-led and dense on purpose because
+  they are read at arm's length at a counter — they use the same palette, tokens, radii and
+  states, but not `PageHeader`. This is an **approved variation** (see the design system's
+  "When an operational variation is allowed"), bounded to those paths and to four dimensions:
+  taller targets, denser cards, a smaller/absent page header, and an amber filled CTA. It is
+  not a licence to hand-roll a table or a chip, and it must never leak onto an ordinary CRM,
+  Growth or Website Management page.
 - **`src/app/platform/**` is a separate realm** with its own `ui.tsx`, internally consistent.
   Leave it alone; it is the super-admin console, not a tenant screen.
 - **`src/components/ui/*` is shadcn's** generated layer. Change a token or a variant there,
@@ -147,11 +169,21 @@ two tests that keep no baseline**:
   other tenant-facing surface (login, welcome, setup, invite, consent, business directory,
   `src/components` minus the shadcn layer), so no business type's screens drift from
   حسابداری's look.
+- [`src/app/dashboard/primitive-lint.test.ts`](../src/app/dashboard/primitive-lint.test.ts) —
+  the **structural** half, which walks the JSX instead of grepping text: a hand-built table,
+  filter chip, KPI tile or rich empty state fails, wherever it is in the tenant app.
+  Operational paths are exempt by path with the reason written down, and the tables that are
+  still unmigrated are an explicit ordered list (`TABLE_MIGRATION_BACKLOG`) that a *new*
+  violation cannot join — the list only shrinks.
 - [`src/app/loading-coverage.test.ts`](../src/app/loading-coverage.test.ts) — every layout
   realm sits under a skeleton boundary, and every client component that fetches on mount
   renders a `*Skeleton`.
 
-They run with `npm test`. The same checks by hand:
+They run with `npm test`, as `npm run test:design`, and as the `design-checks` job on every
+pull request. The pixel half is separate: `npm run test:visual` (the `visual-regression` job)
+diffs representative screens of all four apps against the committed baselines in
+`docs/design/visual/`. **Never re-record a baseline to make a red run green** — see
+[`docs/design/visual-regression.md`](design/visual-regression.md). The same checks by hand:
 
 These greps should each return nothing new under `src/app/dashboard/`:
 

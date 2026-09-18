@@ -1,6 +1,11 @@
 # Runs the local checklist CLAUDE.md documents (tsc, unit tests, integration
-# tests, build). Manual only (`workflow_dispatch`) — nothing runs on a push or
-# a pull request; start it from the Actions tab.
+# tests, build), plus the design checks.
+#
+# Triggers: `workflow_dispatch` (start it from the Actions tab, as before) and
+# `pull_request`. The PR trigger exists so the *design* checks cannot be
+# skipped — a restyle that drifts the visual language is exactly the kind of
+# change a human reviewer waves through, so `design-checks` runs on every PR
+# and is one of the jobs `required` fans in.
 #
 # Everything runs on GitHub-hosted **Windows** runners (`windows-latest`). Two
 # consequences of that are baked into this file and should not be "tidied"
@@ -22,6 +27,7 @@ name: test
 
 on:
   workflow_dispatch:
+  pull_request:
 
 # A newer manual run on the same ref supersedes one still in flight.
 concurrency:
@@ -134,12 +140,90 @@ jobs:
           PGDATA: ${{ runner.temp }}\pos-pgdata
         run: npm run db:dev:stop
 
-  # Single status check that fails if any of the four jobs failed, was
-  # cancelled, or never ran.
+  # The design system's executable half: the banned-pattern lint, the
+  # structural primitive lint, and the loading-state coverage test. Split out
+  # of `unit-tests` so a PR that only drifts the visuals names the reason in
+  # its status check instead of failing an anonymous "unit tests" run.
+  #
+  # Linux, not Windows: these three read files and match regexes, so they are
+  # platform-independent and a Linux runner starts in a fraction of the time.
+  design-checks:
+    name: design checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Design lint, primitive lint and loading coverage
+        run: |
+          npx vitest run \
+            src/app/dashboard/design-lint.test.ts \
+            src/app/design-lint.test.ts \
+            src/app/dashboard/primitive-lint.test.ts \
+            src/app/loading-coverage.test.ts
+
+  # Renders representative screens of all four apps in a pinned Chromium and
+  # compares them with the committed baselines. Read
+  # docs/design/visual-regression.md before touching a baseline: a changed
+  # snapshot is reviewed as a visual diff and re-recorded deliberately, never
+  # auto-accepted to make a red run go green.
+  visual-regression:
+    name: visual regression
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      PGPORT: "55432"
+      DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
+      JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
+      # Deterministic rendering: one timezone, one locale, one seed, so a
+      # snapshot only changes when the design does.
+      TZ: Asia/Tehran
+      SEED_OWNER_PASSWORD: owner1234
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium (pinned by the playwright dependency)
+        run: npx playwright install --with-deps chromium
+      - name: Start PostgreSQL
+        run: npm run db:dev:start
+      - name: Apply migrations and seed deterministic data
+        run: |
+          npm run db:migrate
+          npm run db:seed
+      - name: Build
+        run: npm run build
+      - name: Visual regression
+        run: npm run test:visual
+      - name: Upload diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: docs/design/visual/__diff__/
+          if-no-files-found: ignore
+      - name: Stop PostgreSQL
+        if: always()
+        continue-on-error: true
+        run: npm run db:dev:stop
+
+  # Single status check that fails if any job failed, was cancelled, or
+  # never ran.
   required:
     name: all checks passed
     runs-on: windows-latest
-    needs: [typecheck, unit-tests, build, integration-tests]
+    needs: [typecheck, unit-tests, build, integration-tests, design-checks, visual-regression]
     if: always()
     steps:
       - name: Check job results

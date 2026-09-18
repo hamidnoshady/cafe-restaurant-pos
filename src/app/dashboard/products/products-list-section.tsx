@@ -7,7 +7,7 @@
  * money primitives instead of the reference's blue chrome.
  */
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, SearchIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useMoney } from "@/components/money/money-context";
@@ -15,6 +15,7 @@ import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { api, Field, inputClass } from "../ui";
 import { EmptyState, SectionCard, SectionCardSkeleton } from "../page-chrome";
 import type { VariantSummary } from "@/lib/accessories-service";
+import { SearchField } from "@/app/dashboard/filters";
 
 const PAGE_SIZES = [10, 20, 50] as const;
 
@@ -107,16 +108,12 @@ export function ProductsListSection({ apiBase }: { apiBase: string }) {
         }
         actions={
           <>
-            <div className="relative">
-              <SearchIcon aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                className={`${inputClass} ps-9`}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="فیلتر و جستجو: نام، کد یا بارکد"
-                aria-label="جستجوی محصول"
-              />
-            </div>
+            <SearchField
+              value={search}
+              onChange={setSearch}
+              placeholder="فیلتر و جستجو: نام، کد یا بارکد"
+              label="جستجوی محصول"
+            />
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               ردیف
               <select

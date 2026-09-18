@@ -7,14 +7,7 @@ import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
-import {
-  cardClass,
-  EmptyState,
-  KpiCard,
-  SectionCard,
-  SectionCardSkeleton,
-  StatusBadge,
-} from "@/app/dashboard/page-chrome";
+import { EmptyState, KpiCard, KpiRow, SectionCard, SectionCardSkeleton, StatusBadge, cardClass } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import type { AccountingSectionKey } from "./accounting-routes";
 
@@ -306,7 +299,7 @@ export function LedgerDashboardSection({
 
       <LedgerHealthNotice overview={overview} />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <KpiRow className="xl:grid-cols-3">
         <KpiCard
           label="نقدینگی (صندوق و بانک)"
           value={money.format(overview.cashAndBank)}
@@ -328,7 +321,7 @@ export function LedgerDashboardSection({
           label="سود (زیان) خالص"
           value={money.format(overview.netIncome)}
         />
-      </div>
+      </KpiRow>
 
       <SectionCard
         title={
