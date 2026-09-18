@@ -34,14 +34,21 @@ export const GET = withTenantScope(async () => {
           WHERE ii.location_id = l.id AND ii.is_active)::text AS item_count,
         (SELECT COALESCE(sum(v.valuation),0)::text
            FROM v_inventory_valuation v WHERE v.location_id = l.id)::text AS stock_value_rial,
+        /*
+         * Keep this as a correlated scalar aggregate instead of an inner
+         * join. An item with no movement row is still out of stock and must
+         * count as low stock; the old inner join silently dropped exactly
+         * those items. It also referenced the outer location from a derived
+         * table without LATERAL, which made the query fail on PostgreSQL.
+         */
         (SELECT count(*)
            FROM inventory_items ii
-           LEFT JOIN (SELECT inventory_item_id, sum(quantity) AS qty
-                   FROM stock_movements WHERE location_id = l.id
-                  GROUP BY inventory_item_id) s
-             ON s.inventory_item_id = ii.id
           WHERE ii.location_id = l.id AND ii.is_active
-            AND ii.reorder_level IS NOT NULL AND COALESCE(s.qty, 0) <= ii.reorder_level
+            AND ii.reorder_level IS NOT NULL
+            AND COALESCE((SELECT sum(sm.quantity)
+                            FROM stock_movements sm
+                           WHERE sm.location_id = l.id
+                             AND sm.inventory_item_id = ii.id), 0) <= ii.reorder_level
         )::text AS low_stock_count,
         (SELECT max(sm.occurred_at) FROM stock_movements sm WHERE sm.location_id = l.id) AS last_movement_at
        FROM locations l
@@ -86,23 +93,36 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { name?: string; address?: string; phone?: string };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (!body.name?.trim()) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const input = body as Record<string, unknown>;
+  if (typeof input.name !== "string") {
+    return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  }
+  if (
+    (input.address !== undefined && input.address !== null && typeof input.address !== "string") ||
+    (input.phone !== undefined && input.phone !== null && typeof input.phone !== "string")
+  ) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  if (!input.name.trim()) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
 
   try {
     const { locationId } = await createBranch({
       businessId: session.businessId,
-      name: body.name,
-      address: body.address,
-      phone: body.phone,
+      name: input.name,
+      address: input.address as string | null | undefined,
+      phone: input.phone as string | null | undefined,
       timezone: "Asia/Tehran",
       copyMenuFromLocationId: null,
       actorId: session.sub,

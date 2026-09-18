@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { isUuid } from "@/lib/uuid";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import {
   createWarehouseDocument,
@@ -36,6 +37,11 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     clauses.push(`d.kind = $${params.length}`);
   }
   if (locationId !== null && locationId !== "") {
+    // A non-uuid locationId would raise `invalid input syntax for type uuid`
+    // (a 500), not "no rows" — refuse it as the caller error it is.
+    if (!isUuid(locationId)) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
     params.push(locationId);
     clauses.push(`d.location_id = $${params.length}`);
   }
@@ -86,6 +92,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!body.locationId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  // Malformed ids would surface as Postgres uuid-syntax 500s inside the
+  // posting transaction; answer 400/404 up front instead.
+  if (!isUuid(body.locationId)) {
+    return NextResponse.json({ error: "location_not_found" }, { status: 404 });
+  }
+  if (body.supplierId != null && body.supplierId !== "" && !isUuid(body.supplierId)) {
+    return NextResponse.json({ error: "supplier_not_found" }, { status: 404 });
+  }
+  if (
+    (body.lines ?? []).some(
+      (line) => line?.inventoryItemId != null && line.inventoryItemId !== "" && !isUuid(line.inventoryItemId),
+    )
+  ) {
+    return NextResponse.json({ error: "item_not_found" }, { status: 404 });
+  }
 
   let parsed;
   try {
@@ -115,6 +136,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
     if (err instanceof Error) {
+      // The exact-costing guard throws `inventory_exact_cutover_required: …`
+      // with the offending row appended — a 409 the UI knows, not a 500.
+      if (err.message.startsWith("inventory_exact_cutover_required")) {
+        return NextResponse.json({ error: "inventory_exact_cutover_required" }, { status: 409 });
+      }
       const known: Record<string, number> = {
         location_not_found: 404,
         location_inactive: 409,
@@ -122,6 +148,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         item_not_found: 404,
         no_items: 400,
         invalid_line: 400,
+        invalid_quantity: 400,
+        quantity_precision_exceeded: 400,
+        invalid_rial: 400,
         periodic_system_unsupported: 409,
       };
       const status = known[err.message];

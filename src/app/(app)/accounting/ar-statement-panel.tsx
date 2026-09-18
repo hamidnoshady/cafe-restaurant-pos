@@ -39,14 +39,29 @@ export function ArStatementPanel({
 }) {
   const money = useMoney();
   const [lines, setLines] = useState<ArStatementLine[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   useOverlayEscape(onClose);
 
   useEffect(() => {
+    let cancelled = false;
     setLines(null);
-    api<{ lines: ArStatementLine[] }>("/api/ledger/ar/customers/" + customerId).then(({ ok, data }) => {
-      if (ok) setLines(data.lines);
-    });
-  }, [customerId]);
+    setFailed(false);
+    api<{ lines: ArStatementLine[] }>("/api/ledger/ar/customers/" + customerId)
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (ok) setLines(data.lines);
+        // Without this the panel sat on its skeleton for ever — a failed load
+        // and a slow one were indistinguishable, with «بستن» the only way out.
+        else setFailed(true);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, reloadKey]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
@@ -83,7 +98,20 @@ export function ArStatementPanel({
           </button>
         </header>
 
-        {lines === null ? (
+        {failed ? (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-6 text-center">
+            <p role="alert" className="text-sm text-destructive">بارگذاری صورتحساب این مشتری ناموفق بود.</p>
+            <div className="mt-3 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="min-h-10 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
+              >
+                تلاش دوباره
+              </button>
+            </div>
+          </div>
+        ) : lines === null ? (
           <LoadingSkeleton rows={3} />
         ) : lines.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">

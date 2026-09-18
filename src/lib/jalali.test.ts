@@ -4,6 +4,7 @@ import {
   formatShiftWindow,
   isLeapJalaliYear,
   isoDateToJalali,
+  isValidIsoDate,
   isValidJalaliDate,
   jalaliMonthLength,
   jalaliToIsoDate,
@@ -84,12 +85,22 @@ describe("jalali conversion", () => {
     expect(() => jalaliToIsoDate(1404, 12, 30)).toThrow();
   });
 
-  it("parses ISO date strings to Jalali parts", () => {
+  it("parses only real ISO calendar dates to Jalali parts", () => {
     expect(isoDateToJalali("2024-03-20")).toEqual({ jy: 1403, jm: 1, jd: 1 });
     expect(isoDateToJalali("2026-07-22")).toEqual({ jy: 1405, jm: 4, jd: 31 });
     expect(isoDateToJalali("")).toBeNull();
     expect(isoDateToJalali("not-a-date")).toBeNull();
     expect(isoDateToJalali("2024-13-01")).toBeNull();
+    expect(isoDateToJalali("2026-02-29")).toBeNull();
+  });
+
+  it("recognises a valid ISO date before it reaches a date column", () => {
+    expect(isValidIsoDate("2024-02-29")).toBe(true);
+    expect(isValidIsoDate("2026-02-29")).toBe(false);
+    expect(isValidIsoDate("2026-04-31")).toBe(false);
+    expect(isValidIsoDate("2026-4-01")).toBe(false);
+    expect(isValidIsoDate("0000-01-01")).toBe(false);
+    expect(isValidIsoDate(null)).toBe(false);
   });
 
   it("round-trips ISO ⇄ Jalali via the picker helpers", () => {

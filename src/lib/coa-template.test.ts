@@ -379,3 +379,31 @@ describe("costOfSalesCodesForIndustry", () => {
     }
   });
 });
+
+describe("auto-posting targets vs. the leaf rule", () => {
+  it("documents that some well-known posting targets are parents, so the leaf rule stays manual-only", () => {
+    // manual-journal-service.assertAccountsPostable refuses to post a
+    // hand-typed document to an account that has children. That rule must NOT
+    // be promoted into postJournalEntry: the shipped charts deliberately post
+    // to these three while each carries children, so a blanket check would
+    // break payroll, commissions and every cheque operation in every trade.
+    const expectedParentTargets = [
+      WELL_KNOWN_CODES.salariesPayable,
+      WELL_KNOWN_CODES.chequesReceivable,
+      WELL_KNOWN_CODES.chequesPayable,
+    ];
+
+    for (const industry of INDUSTRIES) {
+      const template = coaTemplateForIndustry(industry);
+      const parents = new Set(
+        template.map((a) => a.parentCode).filter((c): c is string => Boolean(c)),
+      );
+      for (const code of expectedParentTargets) {
+        expect(
+          parents.has(code),
+          `${code} should still be a parent in ${industry}; if this changed, re-check the leaf rule's scope`,
+        ).toBe(true);
+      }
+    }
+  });
+});

@@ -6,7 +6,8 @@ import { getPrimaryLocation } from "@/lib/setup-state";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { reportConfigLabels, validateReportConfig, type ReportConfig } from "@/lib/reports";
-import { getBalanceSheet, getCashFlow, getProfitAndLoss, runCustomReportQuery } from "@/lib/reports-service";
+import { getBalanceSheet, getCashFlow, getProfitAndLoss, getBusinessOverview, runCustomReportQuery } from "@/lib/reports-service";
+import { formatMoney } from "@/lib/money";
 import { rowsToCsv, rowsToXlsxBuffer, type ReportTable } from "@/lib/report-export";
 import { renderReportLedgerHtml, renderReportTableHtml, type ReportPdfBusinessInfo } from "@/lib/report-pdf-template";
 import { renderHtmlToPdf } from "@/lib/pdf-render";
@@ -16,7 +17,7 @@ type ExportFormat = "csv" | "excel" | "pdf";
 interface ExportBody {
   format?: ExportFormat;
   title?: string;
-  kind?: "chart" | "pnl" | "balance_sheet" | "cash_flow";
+  kind?: "chart" | "pnl" | "balance_sheet" | "cash_flow" | "business_overview";
   config?: ReportConfig;
   dateFrom?: string;
   dateTo?: string;
@@ -173,6 +174,94 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       ],
     );
     return respondWithTable(table, title, format, session.businessId);
+  }
+
+  if (kind === "business_overview") {
+    const overview = await getBusinessOverview(session.businessId, {
+      dateFrom: body.dateFrom,
+      dateTo: body.dateTo,
+    });
+    const title = body.title?.trim() || "مقایسهٔ عملکرد شعب";
+
+    const tableColumns = [
+      { key: "branch", label: "شعبه" },
+      { key: "status", label: "وضعیت" },
+      { key: "orderCount", label: "تعداد سفارش" },
+      { key: "subtotal", label: "فروش ناخالص" },
+      { key: "discount", label: "تخفیف" },
+      { key: "tax", label: "مالیات" },
+      { key: "total", label: "فروش خالص" },
+      { key: "cogs", label: "بهای تمام‌شده" },
+      { key: "wasteCost", label: "ضایعات" },
+      { key: "grossProfit", label: "سود ناخالص" },
+      { key: "margin", label: "حاشیه سود (%)" },
+      { key: "avgTicket", label: "میانگین فاکتور" },
+      { key: "share", label: "سهم از کل (%)" },
+    ];
+
+    const formatMoneyVal = (n: number) => formatMoney(n, unit);
+
+    const rows: Record<string, unknown>[] = overview.branches.map((b) => {
+      const grossProfit = b.total - b.cogs;
+      const margin = b.total > 0 ? ((grossProfit / b.total) * 100).toFixed(1) : "0";
+      const avgTicket = b.orderCount > 0 ? Math.round(b.total / b.orderCount) : 0;
+      const share =
+        overview.consolidated.total > 0
+          ? ((b.total / overview.consolidated.total) * 100).toFixed(1)
+          : "0";
+
+      return {
+        branch: b.locationName,
+        status: b.isActive ? "فعال" : "غیرفعال",
+        orderCount: b.orderCount,
+        subtotal: format === "pdf" ? formatMoneyVal(b.subtotal) : b.subtotal,
+        discount: format === "pdf" ? formatMoneyVal(b.discount) : b.discount,
+        tax: format === "pdf" ? formatMoneyVal(b.tax) : b.tax,
+        total: format === "pdf" ? formatMoneyVal(b.total) : b.total,
+        cogs: format === "pdf" ? formatMoneyVal(b.cogs) : b.cogs,
+        wasteCost: format === "pdf" ? formatMoneyVal(b.wasteCost) : b.wasteCost,
+        grossProfit: format === "pdf" ? formatMoneyVal(grossProfit) : grossProfit,
+        margin: `${margin}%`,
+        avgTicket: format === "pdf" ? formatMoneyVal(avgTicket) : avgTicket,
+        share: `${share}%`,
+      };
+    });
+
+    const cGrossProfit = overview.consolidated.total - overview.consolidated.cogs;
+    const cMargin =
+      overview.consolidated.total > 0
+        ? ((cGrossProfit / overview.consolidated.total) * 100).toFixed(1)
+        : "0";
+    const cAvgTicket =
+      overview.consolidated.orderCount > 0
+        ? Math.round(overview.consolidated.total / overview.consolidated.orderCount)
+        : 0;
+
+    rows.push({
+      branch: "مجموع کسب‌وکار",
+      status: "—",
+      orderCount: overview.consolidated.orderCount,
+      subtotal: format === "pdf" ? formatMoneyVal(overview.consolidated.subtotal) : overview.consolidated.subtotal,
+      discount: format === "pdf" ? formatMoneyVal(overview.consolidated.discount) : overview.consolidated.discount,
+      tax: format === "pdf" ? formatMoneyVal(overview.consolidated.tax) : overview.consolidated.tax,
+      total: format === "pdf" ? formatMoneyVal(overview.consolidated.total) : overview.consolidated.total,
+      cogs: format === "pdf" ? formatMoneyVal(overview.consolidated.cogs) : overview.consolidated.cogs,
+      wasteCost: format === "pdf" ? formatMoneyVal(overview.consolidated.wasteCost) : overview.consolidated.wasteCost,
+      grossProfit: format === "pdf" ? formatMoneyVal(cGrossProfit) : cGrossProfit,
+      margin: `${cMargin}%`,
+      avgTicket: format === "pdf" ? formatMoneyVal(cAvgTicket) : cAvgTicket,
+      share: "۱۰۰٪",
+    });
+
+    const table: ReportTable = {
+      columns: tableColumns,
+      rows,
+    };
+
+    return respondWithTable(table, title, format, session.businessId, {
+      dateFrom: body.dateFrom,
+      dateTo: body.dateTo,
+    });
   }
 
   return NextResponse.json({ error: "invalid_kind" }, { status: 400 });

@@ -6,8 +6,8 @@
  * over number/recipient/note; each row opens the document's lines (with lot,
  * expiry, cost and totals) in a detail dialog.
  */
-import { ArrowUpCircleIcon, ArrowDownCircleIcon, EyeIcon, SearchIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowUpCircleIcon, ArrowDownCircleIcon, EyeIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -72,12 +72,21 @@ const chipClass = (active: boolean) =>
 export function DocumentsSection() {
   const money = useMoney();
   const [documents, setDocuments] = useState<WarehouseDocument[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [locationId, setLocationId] = useState("");
   const [search, setSearch] = useState("");
+  // The debounced copy the fetch effect follows — typing must not fire a
+  // request per keystroke.
+  const [searchQuery, setSearchQuery] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailResponse | null>(null);
+  const [detailFailed, setDetailFailed] = useState(false);
+  // The id of the detail request in flight — a slow response for a previously
+  // opened document must not overwrite the one the user is looking at now.
+  const detailRequestRef = useRef<string | null>(null);
 
   useEffect(() => {
     api<{ warehouses: Warehouse[] }>("/api/stock/warehouses").then(({ ok, data }) => {
@@ -85,29 +94,47 @@ export function DocumentsSection() {
     });
   }, []);
 
-  const load = useCallback(() => {
+  useEffect(() => {
+    const handle = window.setTimeout(() => setSearchQuery(search.trim()), 350);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  // Cancellation-guarded: switching filters quickly must not let a stale
+  // response land on top of the newer one.
+  useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams();
     if (kindFilter !== "all") params.set("kind", kindFilter);
     if (locationId) params.set("locationId", locationId);
-    if (search.trim()) params.set("search", search.trim());
+    if (searchQuery) params.set("search", searchQuery);
     api<{ documents: WarehouseDocument[] }>(`/api/stock/warehouse-documents?${params.toString()}`).then(
-      ({ ok, data }) => setDocuments(ok ? data.documents : []),
+      ({ ok, data }) => {
+        if (cancelled) return;
+        setLoadFailed(!ok);
+        setDocuments(ok ? data.documents : []);
+      },
     );
-  }, [kindFilter, locationId, search]);
-  useEffect(load, [load]);
+    return () => {
+      cancelled = true;
+    };
+  }, [kindFilter, locationId, searchQuery, reloadKey]);
 
   const openDetail = useCallback((id: string) => {
     setDetailId(id);
     setDetail(null);
+    setDetailFailed(false);
+    detailRequestRef.current = id;
     api<DetailResponse>(`/api/stock/warehouse-documents/${id}`).then(({ ok, data }) => {
+      if (detailRequestRef.current !== id) return;
       if (ok) setDetail(data);
+      else setDetailFailed(true);
     });
   }, []);
 
-  const locationName = useMemo(() => {
-    if (!locationId) return null;
-    return warehouses.find((w) => w.id === locationId)?.name ?? null;
-  }, [locationId, warehouses]);
+  const warehouseOptions = useMemo(
+    () => [{ value: "", label: "همهٔ انبارها" }, ...warehouses.map((w) => ({ value: w.id, label: w.name }))],
+    [warehouses],
+  );
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -138,10 +165,8 @@ export function DocumentsSection() {
             <SearchableSelect
               value={locationId}
               onChange={setLocationId}
-              options={[
-                { value: "", label: "همهٔ انبارها" },
-                ...warehouses.map((w) => ({ value: w.id, label: w.name })),
-              ]}
+              options={warehouseOptions}
+              ariaLabel="فیلتر بر اساس انبار"
             />
           </div>
           <div className="relative w-full sm:w-64">
@@ -161,6 +186,22 @@ export function DocumentsSection() {
         {documents === null ? (
           <div className="p-4 sm:p-5">
             <LoadingSkeleton rows={5} label="در حال بارگذاری سندهای انبار" />
+          </div>
+        ) : loadFailed ? (
+          <div className="p-4 sm:p-5">
+            <EmptyState>
+              <span className="block">دریافت سندهای انبار ناموفق بود.</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => setReloadKey((k) => k + 1)}
+              >
+                <RefreshCwIcon aria-hidden="true" className="size-4" />
+                تلاش دوباره
+              </Button>
+            </EmptyState>
           </div>
         ) : documents.length === 0 ? (
           <div className="p-4 sm:p-5">
@@ -192,7 +233,12 @@ export function DocumentsSection() {
                     onClick={() => openDetail(doc.id)}
                     tabIndex={0}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") openDetail(doc.id);
+                      // Space activates a button-role element too; prevent the
+                      // page from scrolling instead of opening the dialog.
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openDetail(doc.id);
+                      }
                     }}
                   >
                     <td className="whitespace-nowrap px-4 py-3 tabular-nums sm:px-5">{formatJalali(doc.created_at)}</td>
@@ -243,8 +289,18 @@ export function DocumentsSection() {
         )}
       </SectionCard>
 
-      <Dialog open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>
-        <DialogContent className="max-w-2xl">
+      <Dialog
+        open={detailId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailId(null);
+            detailRequestRef.current = null;
+          }
+        }}
+      >
+        {/* sm:max-w-2xl (not max-w-2xl): the base class must keep the mobile
+            max-w-[calc(100%-2rem)] margin and only widen from sm up. */}
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               {detail?.document.kind === "issue" ? "حواله انبار" : "رسید انبار"}
@@ -259,14 +315,31 @@ export function DocumentsSection() {
             </DialogDescription>
           </DialogHeader>
 
-          {detail === null ? (
+          {detailFailed ? (
+            <EmptyState>
+              <span className="block">دریافت جزئیات سند ناموفق بود.</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => detailId && openDetail(detailId)}
+              >
+                <RefreshCwIcon aria-hidden="true" className="size-4" />
+                تلاش دوباره
+              </Button>
+            </EmptyState>
+          ) : detail === null ? (
             <LoadingSkeleton rows={4} label="در حال بارگذاری جزئیات سند" />
           ) : (
             <div className="space-y-4">
               <div className="grid gap-2 text-sm sm:grid-cols-2">
-                <p className="text-muted-foreground">
-                  گیرنده/مقصد: <span className="text-foreground">{detail.document.recipient ?? "—"}</span>
-                </p>
+                {/* A receipt has no recipient by definition — only show the row where it means something. */}
+                {detail.document.kind === "issue" ? (
+                  <p className="text-muted-foreground">
+                    گیرنده/مقصد: <span className="text-foreground">{detail.document.recipient ?? "—"}</span>
+                  </p>
+                ) : null}
                 {detail.document.note ? (
                   <p className="text-muted-foreground">
                     یادداشت: <span className="text-foreground">{detail.document.note}</span>

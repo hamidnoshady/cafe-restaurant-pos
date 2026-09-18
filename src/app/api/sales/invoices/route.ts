@@ -120,6 +120,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const params = request.nextUrl.searchParams;
   const q = params.get("q")?.trim() ?? "";
   const method = params.get("method") ?? ""; // cash | bank | credit | "" = all
+  const installmentEligible = params.get("installmentEligible") === "true";
   const page = Math.max(Number(params.get("page") ?? 1) || 1, 1);
   const pageSize = Math.min(Math.max(Number(params.get("pageSize") ?? 20) || 20, 5), 100);
 
@@ -131,15 +132,19 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     customer_name: string | null;
     line_count: string;
     pay_method: string | null;
+    credit_total: string;
+    has_installment_plan: boolean;
   }>(
     `SELECT o.id, o.order_number, o.total, o.closed_at, c.name AS customer_name,
             (SELECT count(*) FROM order_items oi WHERE oi.order_id = o.id) AS line_count,
-            (SELECT p.method::text FROM payments p WHERE p.order_id = o.id ORDER BY p.received_at LIMIT 1) AS pay_method
+            (SELECT p.method::text FROM payments p WHERE p.order_id = o.id ORDER BY p.received_at LIMIT 1) AS pay_method,
+            COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.order_id = o.id AND p.method = 'credit'), 0)::text AS credit_total,
+            EXISTS (SELECT 1 FROM installments ip WHERE ip.business_id = $2 AND ip.invoice_order_id = o.id) AS has_installment_plan
        FROM orders o
        LEFT JOIN parties c ON c.id = o.customer_id
       WHERE o.location_id = $1 AND o.type = 'retail'
       ORDER BY o.order_number DESC`,
-    [location.id],
+    [location.id, session.businessId],
   );
 
   let invoices = rows.map((r) => ({
@@ -150,13 +155,22 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     customerName: r.customer_name,
     lineCount: Number(r.line_count),
     paymentMethod: r.pay_method,
+    creditTotal: Number(r.credit_total),
+    hasInstallmentPlan: r.has_installment_plan,
   }));
+  if (installmentEligible) {
+    invoices = invoices.filter((inv) => inv.creditTotal > 0 && !inv.hasInstallmentPlan);
+  }
   if (q) {
     invoices = invoices.filter(
       (inv) => (inv.customerName ?? "").includes(q) || String(inv.orderNumber).includes(q),
     );
   }
-  if (method) invoices = invoices.filter((inv) => inv.paymentMethod === method);
+  if (method) {
+    invoices = invoices.filter((inv) =>
+      method === "credit" && installmentEligible ? inv.creditTotal > 0 : inv.paymentMethod === method,
+    );
+  }
 
   const count = invoices.length;
   const start = (page - 1) * pageSize;

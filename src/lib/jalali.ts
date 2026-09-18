@@ -220,17 +220,30 @@ export function formatShiftWindow(value: string): string | null {
 }
 
 /**
+ * Whether a value is a real ISO calendar date (YYYY-MM-DD), not merely a
+ * string that resembles one. A date column accepts calendar days, so
+ * `2026-02-31` must not silently roll into March in the client or turn into a
+ * low-level Postgres cast error at the API boundary.
+ */
+export function isValidIsoDate(iso: unknown): iso is string {
+  if (typeof iso !== "string") return false;
+  const trimmed = iso.trim();
+  // PostgreSQL's date type starts at 0001 AD. Year zero is accepted by
+  // JavaScript's proleptic ISO parser but would fail at the database boundary.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed) || trimmed.startsWith("0000-")) return false;
+  const parsed = new Date(`${trimmed}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === trimmed;
+}
+
+/**
  * Parse an ISO calendar date string (YYYY-MM-DD) into its Jalali parts, or
  * null if the input isn't a well-formed ISO date. The mirror of
  * jalaliToIsoDate — used by date-picker UIs that store ISO but display Jalali.
  */
 export function isoDateToJalali(iso: string): JalaliDate | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
-  if (!m) return null;
-  const gy = Number(m[1]);
-  const gm = Number(m[2]);
-  const gd = Number(m[3]);
-  if (gm < 1 || gm > 12 || gd < 1 || gd > 31) return null;
+  const trimmed = iso.trim();
+  if (!isValidIsoDate(trimmed)) return null;
+  const [gy, gm, gd] = trimmed.split("-").map(Number);
   return toJalali(gy, gm, gd);
 }
 

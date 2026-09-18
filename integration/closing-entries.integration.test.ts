@@ -258,6 +258,25 @@ describe("closeFiscalYear", () => {
     expect(periods.every((p) => p.status === "locked")).toBe(true);
   });
 
+  it("refuses a partial fiscal year instead of producing a closing entry over incomplete books", async () => {
+    await fiscalService.createFiscalYear(biz.id, 1404);
+    const [year] = await fiscalService.listFiscalYears(biz.id);
+    await db.query(
+      `DELETE FROM fiscal_periods
+        WHERE id = (
+          SELECT id FROM fiscal_periods
+           WHERE business_id = $1 AND fiscal_year_id = $2
+           ORDER BY starts_on DESC LIMIT 1
+        )`,
+      [biz.id, year.id],
+    );
+    await softCloseAllPeriods(year.id);
+
+    await expect(
+      closingService.closeFiscalYear(biz.id, year.id, users.owner),
+    ).rejects.toThrow("periods_incomplete");
+  });
+
   it("rejects closing while any period is still open", async () => {
     await fiscalService.createFiscalYear(biz.id, 1404);
     const [year] = await fiscalService.listFiscalYears(biz.id);
@@ -273,6 +292,32 @@ describe("closeFiscalYear", () => {
     await expect(
       closingService.closeFiscalYear(biz.id, year.id, users.owner),
     ).rejects.toThrow("periods_not_ready");
+  });
+
+  it("serializes final close against an in-flight reopen without deadlocking", async () => {
+    await fiscalService.createFiscalYear(biz.id, 1404);
+    const [year] = await fiscalService.listFiscalYears(biz.id);
+    const periods = await softCloseAllPeriods(year.id);
+
+    const results = await Promise.allSettled([
+      closingService.closeFiscalYear(biz.id, year.id, users.owner),
+      fiscalService.setPeriodStatus(biz.id, periods[0].id, "open", users.owner),
+    ]);
+    const failureCodes = results
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason));
+    // Whichever transaction acquired the year lock first wins. The other sees
+    // a normal business-state conflict, never PostgreSQL's deadlock error.
+    expect(failureCodes.every((code) => ["periods_not_ready", "fiscal_year_closed"].includes(code))).toBe(true);
+
+    const [currentYear] = await fiscalService.listFiscalYears(biz.id);
+    const currentPeriods = await fiscalService.listPeriods(biz.id, year.id);
+    if (currentYear.closedAt) {
+      expect(currentPeriods.every((period) => period.status === "locked")).toBe(true);
+    } else {
+      expect(currentPeriods[0].status).toBe("open");
+      expect(currentPeriods.slice(1).every((period) => period.status === "soft_closed")).toBe(true);
+    }
   });
 
   it("rejects closing an already-closed year", async () => {
@@ -337,6 +382,21 @@ describe("reopening a period after its fiscal year is closed", () => {
     const [farvardin] = await fiscalService.listPeriods(biz.id, year.id);
     await expect(
       fiscalService.setPeriodStatus(biz.id, farvardin.id, "open", users.owner),
+    ).rejects.toThrow("fiscal_year_closed");
+  });
+
+  it("keeps the finalized-year rule in the database for direct writers too", async () => {
+    await fiscalService.createFiscalYear(biz.id, 1404);
+    const [year] = await fiscalService.listFiscalYears(biz.id);
+    await softCloseAllPeriods(year.id);
+    await closingService.closeFiscalYear(biz.id, year.id, users.owner);
+
+    const [farvardin] = await fiscalService.listPeriods(biz.id, year.id);
+    await expect(
+      db.query("UPDATE fiscal_periods SET status = 'open' WHERE id = $1", [farvardin.id]),
+    ).rejects.toThrow("fiscal_year_closed");
+    await expect(
+      db.query("DELETE FROM fiscal_periods WHERE id = $1", [farvardin.id]),
     ).rejects.toThrow("fiscal_year_closed");
   });
 });
