@@ -8,6 +8,9 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+// Pure rules module — safe to import statically, unlike the service below,
+// which must wait until DATABASE_URL points at this test's database.
+import { MANUAL_LINES_MAX, MANUAL_MEMO_MAX } from "../src/lib/manual-journal";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -156,10 +159,28 @@ describe("createDraft", () => {
         businessId: biz.id,
         locationId: null,
         memo: "Bad",
-        lines: [{ accountId: acct.expense, debit: 100_000, credit: 0 }],
+        lines: [
+          { accountId: acct.expense, debit: 100_000, credit: 0 },
+          { accountId: acct.cash, debit: 0, credit: 90_000 },
+        ],
         createdBy: user.id,
       }),
     ).rejects.toThrow("not_balanced");
+  });
+
+  it("rejects a single-row draft as an incomplete entry, not an unbalanced one", async () => {
+    // One row can never be a double entry. It used to be reported as
+    // "not_balanced", which reads as "change the amount" when the fix is
+    // "write the other side".
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        memo: "Half an entry",
+        lines: [{ accountId: acct.expense, debit: 100_000, credit: 0 }],
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("too_few_lines");
   });
 
   it("rejects an empty memo", async () => {
@@ -172,6 +193,155 @@ describe("createDraft", () => {
         createdBy: user.id,
       }),
     ).rejects.toThrow("memo_required");
+  });
+
+  it("rejects a balanced document that only touches one account", async () => {
+    // Debit and credit the same account for the same amount and the totals
+    // agree, so every balance check passes; what gets posted is a permanent
+    // pair of postings that nets to zero and means nothing.
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        memo: "Cash to cash",
+        lines: [
+          { accountId: acct.cash, debit: 100_000, credit: 0 },
+          { accountId: acct.cash, debit: 0, credit: 100_000 },
+        ],
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("single_account_entry");
+  });
+
+  it("refuses to post to a parent account, at draft time and at approval", async () => {
+    // A parent totals its children; a posting made directly to it is invisible
+    // to every report that sums the children, so the two never reconcile.
+    const parent = await db.query<{ id: string }>(
+      `INSERT INTO accounts (business_id, code, name, type) VALUES ($1, '5200', 'Utilities', 'expense') RETURNING id`,
+      [biz.id],
+    );
+    const parentId = parent.rows[0].id;
+    await db.query(
+      `INSERT INTO accounts (business_id, parent_id, code, name, type, level)
+       VALUES ($1, $2, '5210', 'Electricity', 'expense', 'moein')`,
+      [biz.id, parentId],
+    );
+
+    const lines = [
+      { accountId: parentId, debit: 100_000, credit: 0 },
+      { accountId: acct.cash, debit: 0, credit: 100_000 },
+    ];
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        memo: "To a parent",
+        lines,
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("not_a_leaf_account");
+
+    // And again at approval: a draft written while the account was still a leaf
+    // must not post once it has been given children.
+    const leafOnly = await db.query<{ id: string }>(
+      `INSERT INTO accounts (business_id, code, name, type, level) VALUES ($1, '5300', 'Repairs', 'expense', 'moein') RETURNING id`,
+      [biz.id],
+    );
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: null,
+      memo: "Leaf when drafted",
+      lines: [
+        { accountId: leafOnly.rows[0].id, debit: 100_000, credit: 0 },
+        { accountId: acct.cash, debit: 0, credit: 100_000 },
+      ],
+      createdBy: user.id,
+    });
+    await db.query(
+      `INSERT INTO accounts (business_id, parent_id, code, name, type, level)
+       VALUES ($1, $2, '5310', 'Plumbing', 'expense', 'tafsili')`,
+      [biz.id, leafOnly.rows[0].id],
+    );
+    await expect(
+      manualJournal.approveDraft({
+        businessId: biz.id,
+        locationId: null,
+        draftId: draft.id,
+        actorId: user.id,
+      }),
+    ).rejects.toThrow("not_a_leaf_account");
+  });
+
+  it("rejects a memo longer than the cap", async () => {
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        memo: "x".repeat(MANUAL_MEMO_MAX + 1),
+        lines: balancedLines(),
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("memo_too_long");
+  });
+
+  it("rejects a document with more rows than the cap", async () => {
+    const many = [
+      ...Array.from({ length: MANUAL_LINES_MAX }, () => ({
+        accountId: acct.expense,
+        debit: 10,
+        credit: 0,
+      })),
+      { accountId: acct.cash, debit: 0, credit: 10 * MANUAL_LINES_MAX },
+    ];
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        memo: "Too many",
+        lines: many,
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("too_many_lines");
+  });
+
+  it("reads a draft's rows back in the order they were entered", async () => {
+    // Without an explicit ordinal the rows came back in whatever order Postgres
+    // returned them, so a document typed expense-then-cash could be reviewed
+    // cash-then-expense. Four same-account rows with distinct amounts make the
+    // order observable.
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: null,
+      memo: "Ordered",
+      lines: [
+        { accountId: acct.expense, debit: 10_000, credit: 0 },
+        { accountId: acct.expense, debit: 20_000, credit: 0 },
+        { accountId: acct.expense, debit: 30_000, credit: 0 },
+        { accountId: acct.expense, debit: 40_000, credit: 0 },
+        { accountId: acct.cash, debit: 0, credit: 100_000 },
+      ],
+      createdBy: user.id,
+    });
+
+    const expected = [10_000, 20_000, 30_000, 40_000, 0];
+    expect((await manualJournal.getDraft(biz.id, draft.id))?.lines.map((l) => l.debit)).toEqual(
+      expected,
+    );
+    const listed = await manualJournal.listDrafts(biz.id);
+    expect(listed.find((d) => d.id === draft.id)?.lines.map((l) => l.debit)).toEqual(expected);
+
+    // …and the order has to survive the posting, not just the review screen.
+    const { entryId } = await manualJournal.approveDraft({
+      businessId: biz.id,
+      locationId: null,
+      draftId: draft.id,
+      actorId: user.id,
+    });
+    const posted = await db.query<{ debit: string }>(
+      "SELECT debit FROM journal_lines WHERE entry_id = $1 ORDER BY id",
+      [entryId],
+    );
+    expect(posted.rows.map((r) => Number(r.debit))).toEqual(expected);
   });
 
   it("rejects malformed or impossible document dates before Postgres sees them", async () => {

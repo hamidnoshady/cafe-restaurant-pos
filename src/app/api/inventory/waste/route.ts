@@ -13,12 +13,21 @@ export const GET = withTenantScope(async () => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ entries: [] });
 
+  // One waste submission may consume several FIFO/LIFO lots and therefore
+  // create several movements. Return one row per submission, not one apparent
+  // waste entry per cost layer. cost_value_rial is also the exact posted cost;
+  // multiplying the rounded unit cost by quantity can disagree with the ledger.
   const { rows } = await query(
-    `SELECT sm.id, sm.inventory_item_id, ii.name AS inventory_item_name, ii.unit,
-            -sm.quantity AS quantity, sm.unit_cost, sm.waste_reason, sm.note, sm.occurred_at
+    `SELECT COALESCE(sm.inventory_event_id::text, 'movement:' || sm.id::text) AS id,
+            sm.inventory_item_id, ii.name AS inventory_item_name, ii.unit,
+            sum(-sm.quantity)::text AS quantity,
+            sum(COALESCE(sm.cost_value_rial, round((-sm.quantity) * sm.unit_cost), 0))::text AS total_cost,
+            sm.waste_reason, max(sm.note) AS note, max(sm.occurred_at) AS occurred_at
        FROM stock_movements sm JOIN inventory_items ii ON ii.id = sm.inventory_item_id
       WHERE sm.location_id = $1 AND sm.type = 'waste'
-      ORDER BY sm.occurred_at DESC LIMIT 100`,
+      GROUP BY COALESCE(sm.inventory_event_id::text, 'movement:' || sm.id::text),
+               sm.inventory_item_id, ii.name, ii.unit, sm.waste_reason
+      ORDER BY max(sm.occurred_at) DESC LIMIT 100`,
     [location.id],
   );
   return NextResponse.json({ entries: rows });
@@ -47,7 +56,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   try {
     quantity = positiveQuantityText(String(body.quantity ?? ""));
   } catch {
-    return NextResponse.json({ error: "invalid_item" }, { status: 400 });
+    return NextResponse.json({ error: "invalid_quantity" }, { status: 400 });
   }
   if (!body.inventoryItemId) {
     return NextResponse.json({ error: "invalid_item" }, { status: 400 });
@@ -60,7 +69,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const { rows: item } = await query(
-    "SELECT id FROM inventory_items WHERE id = $1 AND location_id = $2",
+    "SELECT id FROM inventory_items WHERE id = $1 AND location_id = $2 AND is_active",
     [body.inventoryItemId, location.id],
   );
   if (item.length === 0) return NextResponse.json({ error: "item_not_found" }, { status: 404 });

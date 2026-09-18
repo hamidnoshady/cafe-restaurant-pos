@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ErrorBox, Field, InfoBox, api, errorMessage, inputClass } from "@/app/dashboard/ui";
 import { SectionCard, cardClass } from "@/app/dashboard/page-chrome";
+import { radioMoveForKey, radioTargetIndex } from "@/lib/radio-keys";
 
 interface BusinessState {
   business: { name: string } | null;
@@ -76,18 +77,34 @@ function CurrencyChoice({
     { key: "toman", label: "تومان", hint: "۲۵,۰۰۰" },
     { key: "rial", label: "ریال", hint: "۲۵۰,۰۰۰" },
   ] as const;
+  // Roving focus: the checked option is the one Tab stop, and the arrows move
+  // (and check) — see radio-keys.ts. Without it `role="radio"` is a lie told
+  // to every screen reader.
+  const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
 
   return (
     <div role="radiogroup" aria-label="واحد نمایش مبلغ" className="grid grid-cols-2 gap-2">
-      {options.map((option) => {
+      {options.map((option, index) => {
         const active = value === option.key;
         return (
           <button
             key={option.key}
+            ref={(node) => {
+              buttonsRef.current[index] = node;
+            }}
             type="button"
             role="radio"
             aria-checked={active}
+            tabIndex={active ? 0 : -1}
             onClick={() => onChange(option.key)}
+            onKeyDown={(event) => {
+              const move = radioMoveForKey(event.key, true);
+              const target = move && radioTargetIndex(move, index, options.length);
+              if (target === null) return;
+              event.preventDefault();
+              onChange(options[target].key);
+              buttonsRef.current[target]?.focus();
+            }}
             className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${
               active
                 ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
@@ -232,7 +249,12 @@ export function BusinessSettings() {
           <Field label="نام شعبه">
             <input
               className={inputClass}
-              maxLength={200}
+              // The same 80-character ceiling /api/branches enforces on a
+              // branch name (MAX_BRANCH_NAME): this field edits the same
+              // locations.name column the branch screen does, so a name only
+              // this form would accept is a name the branch editor then
+              // refuses to save.
+              maxLength={80}
               value={form.locationName}
               onChange={(e) => change("locationName", e.target.value)}
               required

@@ -24,7 +24,14 @@ export const GET = withTenantScope(async () => {
     label: view.label,
     hasDateColumn: view.dateColumn !== null,
     dimensions: view.dimensions.map((d) => ({ key: d.key, label: d.label })),
-    metrics: view.metrics.map((m) => ({ key: m.key, label: m.label, aggregations: m.aggregations })),
+    metrics: view.metrics.map((m) => ({
+      key: m.key,
+      label: m.label,
+      // Display-only: tells the client to render this metric through the
+      // business's money formatter rather than as a bare number.
+      money: m.money ?? false,
+      aggregations: m.aggregations,
+    })),
     filters: view.filters?.map((f) => ({ key: f.key, label: f.label })) ?? [],
   }));
   return NextResponse.json({ views });

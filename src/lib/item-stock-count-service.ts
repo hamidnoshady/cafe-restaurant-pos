@@ -28,7 +28,7 @@
  */
 import Decimal from "decimal.js";
 import type { PoolClient } from "pg";
-import { rialText, type RialText } from "./inventory-exact";
+import { quantityText, rialText, type RialText } from "./inventory-exact";
 import { emitDomainEvent } from "./posting-engine";
 import "./retail-stock-posting-rules";
 
@@ -65,7 +65,11 @@ const QUANTITY_RE = /^-?\d+(\.\d+)?$/;
 function countedQuantityText(raw: number | string): string {
   const text = String(raw).trim();
   if (!QUANTITY_RE.test(text)) throw new Error("invalid_quantity");
-  const value = new Decimal(text);
+  // Keep the same canonical precision and validation as the F&B inventory
+  // model. Rounding a 10-decimal count to nine places would silently change
+  // the operator's physical observation before it reaches the audit line.
+  const canonical = quantityText(text);
+  const value = new Decimal(canonical);
   if (value.isNegative()) throw new Error("invalid_quantity");
   return value.toFixed(9);
 }
@@ -101,7 +105,7 @@ export async function createItemStockCount(
 
   const itemIds = [...countedByItem.keys()];
   const { rows: owned } = await client.query<{ id: string }>(
-    "SELECT id FROM items WHERE id = ANY($1::uuid[]) AND location_id = $2",
+    "SELECT id FROM items WHERE id = ANY($1::uuid[]) AND location_id = $2 AND is_active",
     [itemIds, params.locationId],
   );
   if (owned.length !== itemIds.length) throw new Error("item_not_found");
@@ -367,10 +371,10 @@ export async function getItemStockCountDetail(
             trim_scale(l.variance)::text AS variance,
             l.unit_cost::text, l.variance_value::text
        FROM item_stock_count_lines l
-       JOIN items i ON i.id = l.item_id
+       JOIN items i ON i.id = l.item_id AND i.location_id = $2
       WHERE l.stock_count_id = $1
       ORDER BY i.name, l.id`,
-    [params.countId],
+    [params.countId, params.locationId],
   );
 
   return {

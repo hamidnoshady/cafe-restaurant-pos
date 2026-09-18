@@ -55,7 +55,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
 
   const { rows: items } = await query<{ id: string; name: string; unit: string }>(
-    "SELECT id, name, unit FROM inventory_items WHERE id = $1 AND location_id = $2",
+    "SELECT id, name, unit FROM inventory_items WHERE id = $1 AND location_id = $2 AND is_active",
     [body.inventoryItemId, location.id],
   );
   const item = items[0];

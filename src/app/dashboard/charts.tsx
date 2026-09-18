@@ -26,6 +26,16 @@ function fmt(n: number): string {
   return toPersianDigits(Math.round(n).toLocaleString("en-US"));
 }
 
+/**
+ * How each value is written out — tooltips, end labels, legend figures.
+ *
+ * Defaults to a grouped Persian integer, which is right for counts and
+ * quantities and wrong for the many series that are money: those are stored in
+ * Rial, so a business displaying «تومان» saw a figure ten times too large with
+ * no unit to reveal it. Money callers pass `useMoney().format`.
+ */
+export type ChartValueFormatter = (value: number) => string;
+
 export function NumberCard({ label, value, sublabel }: { label: string; value: string; sublabel?: string }) {
   return (
     <div className="flex h-full flex-col justify-center gap-1 p-2">
@@ -37,7 +47,15 @@ export function NumberCard({ label, value, sublabel }: { label: string; value: s
 }
 
 /** Horizontal bars — reads better than vertical columns for RTL and long entity labels (item/staff names), and needs no axis rotation. Single series: one hue, no legend (title already says what's plotted). */
-export function BarChart({ data, height = 220 }: { data: ChartDatum[]; height?: number }) {
+export function BarChart({
+  data,
+  height = 220,
+  formatValue = fmt,
+}: {
+  data: ChartDatum[];
+  height?: number;
+  formatValue?: ChartValueFormatter;
+}) {
   if (data.length === 0) return <EmptyChart height={height} />;
   const max = Math.max(...data.map((d) => Math.abs(d.value)), 1);
   const rowH = Math.max(22, Math.min(32, height / data.length));
@@ -55,10 +73,10 @@ export function BarChart({ data, height = 220 }: { data: ChartDatum[]; height?: 
               <div
                 className="h-4 rounded-full"
                 style={{ width: `${pct}%`, background: PALETTE[0] }}
-                title={`${d.label}: ${fmt(d.value)}`}
+                title={`${d.label}: ${formatValue(d.value)}`}
               />
             </div>
-            <span className="w-16 shrink-0 text-end text-xs tabular-nums text-foreground">{fmt(d.value)}</span>
+            <span className="w-16 shrink-0 text-end text-xs tabular-nums text-foreground">{formatValue(d.value)}</span>
           </div>
         );
       })}
@@ -67,7 +85,15 @@ export function BarChart({ data, height = 220 }: { data: ChartDatum[]; height?: 
 }
 
 /** 2px line, round joins, end-dot + direct end-label (the value the story is about), hairline gridlines. */
-export function LineChart({ data, height = 220 }: { data: ChartDatum[]; height?: number }) {
+export function LineChart({
+  data,
+  height = 220,
+  formatValue = fmt,
+}: {
+  data: ChartDatum[];
+  height?: number;
+  formatValue?: ChartValueFormatter;
+}) {
   if (data.length === 0) return <EmptyChart height={height} />;
   const width = 480;
   const padding = { top: 16, bottom: 24, left: 8, right: 48 };
@@ -93,18 +119,26 @@ export function LineChart({ data, height = 220 }: { data: ChartDatum[]; height?:
       <path d={path} fill="none" stroke={PALETTE[0]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
       {points.map((p, i) => (
         <circle key={i} cx={p.x} cy={p.y} r={4} fill={PALETTE[0]} stroke="var(--color-card)" strokeWidth={2}>
-          <title>{`${p.label}: ${fmt(p.value)}`}</title>
+          <title>{`${p.label}: ${formatValue(p.value)}`}</title>
         </circle>
       ))}
       <text x={last.x} y={last.y - 10} textAnchor="middle" fontSize={11} fill="var(--color-foreground)" className="tabular-nums">
-        {fmt(last.value)}
+        {formatValue(last.value)}
       </text>
     </svg>
   );
 }
 
 /** Donut — legend always present (≥2 series need the dependable identity channel, never color-matching alone). */
-export function PieChart({ data, height = 220 }: { data: ChartDatum[]; height?: number }) {
+export function PieChart({
+  data,
+  height = 220,
+  formatValue = fmt,
+}: {
+  data: ChartDatum[];
+  height?: number;
+  formatValue?: ChartValueFormatter;
+}) {
   if (data.length === 0) return <EmptyChart height={height} />;
   const total = data.reduce((s, d) => s + Math.abs(d.value), 0) || 1;
   const size = 160;
@@ -139,7 +173,7 @@ export function PieChart({ data, height = 220 }: { data: ChartDatum[]; height?: 
         <circle cx={cx} cy={cy} r={r} fill="var(--color-muted)" />
         {arcs.map((a, i) => (
           <path key={i} d={a.path} fill={a.color} stroke="var(--color-card)" strokeWidth={2}>
-            <title>{`${a.label}: ${fmt(a.value)} (${a.pct.toFixed(0)}%)`}</title>
+            <title>{`${a.label}: ${formatValue(a.value)} (${toPersianDigits(a.pct.toFixed(0))}٪)`}</title>
           </path>
         ))}
         <circle cx={cx} cy={cy} r={r * 0.55} fill="var(--color-card)" />
@@ -149,7 +183,7 @@ export function PieChart({ data, height = 220 }: { data: ChartDatum[]; height?: 
           <li key={i} className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
             <span className="truncate text-muted-foreground">{a.label}</span>
-            <span className="ms-auto shrink-0 tabular-nums text-foreground">{fmt(a.value)}</span>
+            <span className="ms-auto shrink-0 tabular-nums text-foreground">{formatValue(a.value)}</span>
           </li>
         ))}
       </ul>

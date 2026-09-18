@@ -26,6 +26,18 @@
  */
 export const UNKNOWN_CUSTOMER_KEY = "unknown";
 
+/**
+ * Group key for A/P lines carrying no supplier attribution — a manual journal
+ * entry against A/P, or a credit purchase predating supplier attribution.
+ *
+ * The A/P mirror of {@link UNKNOWN_CUSTOMER_KEY}, in this pure module for the
+ * same reason: client components (the payables screen, the supplier statement)
+ * need the sentinel to hide their «پرداخت» action and directory link for the
+ * unattributed bucket, and importing `ap-service` into a client component would
+ * drag the Postgres driver into the browser bundle. `ap-service` re-exports it
+ * for its own callers, exactly as `ar-service` re-exports the customer key.
+ */
+export const UNKNOWN_SUPPLIER_KEY = "unknown";
 
 export interface OpenItem {
   id: string;

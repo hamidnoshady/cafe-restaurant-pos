@@ -7,7 +7,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import type { Role } from "./auth-edge";
-import { ALL_PERMISSIONS, type PermissionOverrides } from "./permissions";
+import { ALL_PERMISSIONS, isOwnerOnlyPermission, type PermissionOverrides } from "./permissions";
 
 // ---------------------------------------------------------------------------
 // Invitation tokens
@@ -207,7 +207,7 @@ export function resolveMemberLocationAssignment(
  * deterministically (revoke wins), so there is no ambiguity to reject.
  */
 export function sanitizeOverrides(input: unknown): PermissionOverrides {
-  const known = new Set<string>(ALL_PERMISSIONS);
+  const known = new Set<string>(ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)));
   const clean = (value: unknown): string[] =>
     Array.isArray(value)
       ? [...new Set(value.filter((v): v is string => typeof v === "string" && known.has(v)))].sort()

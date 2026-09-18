@@ -96,10 +96,18 @@ function MenuItemRecipeCard({
     ];
   }, [menuItems]);
 
+  function selectMenuItem(id: string) {
+    setMenuItemId(id);
+    // A previously selected ingredient is very easy to miss on a narrow screen.
+    // Never carry it across menu items and accidentally add a line to the wrong recipe.
+    setInventoryItemId("");
+    setQuantity("");
+  }
+
   async function add(e: React.FormEvent) {
     e.preventDefault();
     const qty = Number(quantity);
-    if (!menuItemId || !inventoryItemId || !Number.isFinite(qty) || qty <= 0)
+    if (!menuItemId || !inventoryItemId || !quantity.trim() || !Number.isFinite(qty) || qty <= 0)
       return;
     const ok = await run(() =>
       api("/api/inventory/recipes", {
@@ -123,7 +131,7 @@ function MenuItemRecipeCard({
       <Field label="آیتم منو">
         <SearchableSelect
           value={menuItemId}
-          onChange={setMenuItemId}
+          onChange={selectMenuItem}
           options={menuItemOptions}
         />
       </Field>
@@ -239,10 +247,17 @@ function ModifierRecipeCard({
     ];
   }, [modifiers]);
 
+  function selectModifier(id: string) {
+    setModifierId(id);
+    // Do not retain an ingredient selected for another modifier.
+    setInventoryItemId("");
+    setDelta("");
+  }
+
   async function add(e: React.FormEvent) {
     e.preventDefault();
     const qty = Number(delta);
-    if (!modifierId || !inventoryItemId || !Number.isFinite(qty) || qty === 0)
+    if (!modifierId || !inventoryItemId || !delta.trim() || !Number.isFinite(qty) || qty === 0)
       return;
     const ok = await run(() =>
       api("/api/inventory/modifier-recipes", {
@@ -270,7 +285,7 @@ function ModifierRecipeCard({
       <Field label="افزودنی">
         <SearchableSelect
           value={modifierId}
-          onChange={setModifierId}
+          onChange={selectModifier}
           options={modifierOptions}
         />
       </Field>

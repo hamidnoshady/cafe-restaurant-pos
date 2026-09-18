@@ -17,11 +17,22 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "accountant");
   if (error) return error;
 
-  let body: { periodLabel?: string; accrualDate?: string };
+  let body: { periodLabel?: unknown; accrualDate?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  // `String(body.periodLabel ?? "")` accepted anything — a number posted a run
+  // labelled «12345», an object one labelled «[object Object]». A period is a
+  // heading somebody types, so it must arrive as a string (or be absent, which
+  // the service rejects with `period_label_required`).
+  if (body.periodLabel !== undefined && typeof body.periodLabel !== "string") {
+    return NextResponse.json({ error: "period_label_required" }, { status: 400 });
+  }
+  if (body.accrualDate !== undefined && body.accrualDate !== null && typeof body.accrualDate !== "string") {
+    return NextResponse.json({ error: "invalid_accrual_date" }, { status: 400 });
   }
 
   const location = await resolveActiveLocation(session);
@@ -30,7 +41,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     const run = await accruePayroll({
       businessId: session.businessId,
       locationId: location?.id ?? null,
-      periodLabel: String(body.periodLabel ?? ""),
+      periodLabel: body.periodLabel ?? "",
       accrualDate: body.accrualDate,
       createdBy: session.sub,
     });

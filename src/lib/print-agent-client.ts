@@ -27,7 +27,7 @@
 import type { PrinterConnection } from "./printer-connection";
 import { resolvedTransport } from "./printer-connection";
 import type { KitchenTicketData } from "./kitchen-ticket-template";
-import type { LabelData } from "./label-template";
+import { renderLabelHtml, type LabelData } from "./label-template";
 import type { PaperKey } from "./print-template";
 import type { ReceiptData } from "./receipt-template";
 import { probeWebUsbPrinter, sendBytesViaWebUsb } from "./webusb-print";
@@ -416,7 +416,16 @@ export function printKitchenTicket(connection: PrinterConnection, ticket: Kitche
   );
 }
 
-export function printLabel(connection: PrinterConnection, label: LabelData) {
+/**
+ * Print one shelf label. Routes itself the same way `printDocument` does:
+ * a `browser` printer — or no printer at all — opens the browser's own print
+ * dialog on the rendered label (the day-one/no-hardware path), everything
+ * else goes to the agent, the app server, or WebUSB.
+ */
+export function printLabel(connection: PrinterConnection | null, label: LabelData) {
+  if (!connection || resolvedTransport(connection) === "browser") {
+    return printViaBrowser(renderLabelHtml(label));
+  }
   if (resolvedTransport(connection) === "webusb") {
     return printViaWebUsb(connection, { op: "label", label });
   }

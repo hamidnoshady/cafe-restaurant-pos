@@ -42,6 +42,8 @@ import { WELL_KNOWN_CODES } from "./coa-template";
 import { isUuid } from "./uuid";
 import { accountIdsByCode, postJournalEntry } from "./ledger-service";
 import {
+  CHEQUE_ACTIONS,
+  CHEQUE_DIRECTIONS,
   initialStatus,
   nextStatus,
   normalizeSayadId,
@@ -49,6 +51,8 @@ import {
   type ChequeDirection,
   type ChequeStatus,
 } from "./cheques";
+import { isValidIsoDate, isoDateInTimeZone } from "./jalali";
+import { PARTY_ROLE_STORAGE } from "./parties";
 
 export class ChequeError extends Error {
   status: number;
@@ -56,6 +60,35 @@ export class ChequeError extends Error {
     super(code);
     this.status = status;
   }
+}
+
+/** Tehran's calendar day, matching the Jalali date picker rather than UTC. */
+function todayIso(): string {
+  return isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
+}
+
+function requiredText(value: unknown, code: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new ChequeError(code);
+  return value.trim();
+}
+
+function optionalText(value: unknown, code = "bad_request"): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new ChequeError(code);
+  return value.trim() || null;
+}
+
+function optionalIsoDate(value: unknown, code: string): string | null {
+  const date = optionalText(value);
+  if (!date) return null;
+  if (!isValidIsoDate(date)) throw new ChequeError(code);
+  return date;
+}
+
+function requiredIsoDate(value: unknown, missingCode: string, invalidCode: string): string {
+  const date = requiredText(value, missingCode);
+  if (!isValidIsoDate(date)) throw new ChequeError(invalidCode);
+  return date;
 }
 
 export interface Cheque {
@@ -120,6 +153,9 @@ const CHEQUE_COLUMNS = `id, direction, status, serial_number, sayad_id, bank_nam
 
 /** Every cheque of one direction, the ones still alive first and then by due date. */
 export async function listCheques(businessId: string, direction?: ChequeDirection): Promise<Cheque[]> {
+  if (direction && !CHEQUE_DIRECTIONS.includes(direction)) {
+    throw new ChequeError("invalid_direction");
+  }
   const params: unknown[] = [businessId];
   let where = "business_id = $1";
   if (direction) {
@@ -147,6 +183,13 @@ export interface ChequeEvent {
 
 /** One cheque's history — what happened to it, when, and which entry each step posted. */
 export async function getChequeHistory(businessId: string, chequeId: string): Promise<ChequeEvent[]> {
+  if (!isUuid(chequeId)) throw new ChequeError("cheque_not_found", 404);
+  const { rows: chequeRows } = await query<{ id: string }>(
+    "SELECT id FROM cheques WHERE business_id = $1 AND id = $2",
+    [businessId, chequeId],
+  );
+  if (!chequeRows[0]) throw new ChequeError("cheque_not_found", 404);
+
   const { rows } = await query<{
     id: string;
     event: string;
@@ -188,10 +231,11 @@ async function assertSupplier(client: PoolClient, businessId: string, supplierId
 
 async function assertCustomer(client: PoolClient, businessId: string, customerId: string): Promise<void> {
   if (!isUuid(customerId)) throw new ChequeError("customer_not_found", 404);
-  const { rows } = await client.query(`SELECT 1 FROM parties WHERE id = $1 AND business_id = $2`, [
-    customerId,
-    businessId,
-  ]);
+  const { rows } = await client.query(
+    `SELECT 1 FROM parties
+      WHERE id = $1 AND business_id = $2 AND roles @> ARRAY[$3]::text[] AND is_active AND merged_into_id IS NULL`,
+    [customerId, businessId, PARTY_ROLE_STORAGE.Customer],
+  );
   if (!rows[0]) throw new ChequeError("customer_not_found", 404);
 }
 
@@ -222,17 +266,30 @@ export interface RecordChequeParams {
  * subledger's question, answered when the cheque clears and their balance moves.
  */
 export async function recordCheque(params: RecordChequeParams): Promise<Cheque> {
+  if (!CHEQUE_DIRECTIONS.includes(params.direction)) throw new ChequeError("invalid_direction");
   if (!Number.isSafeInteger(params.amount) || params.amount <= 0) throw new ChequeError("invalid_amount");
-  if (!params.serialNumber.trim()) throw new ChequeError("serial_number_required");
-  if (!params.bankName.trim()) throw new ChequeError("bank_name_required");
-  if (!params.counterpartyName.trim()) throw new ChequeError("counterparty_name_required");
-  if (!params.dueDate?.trim()) throw new ChequeError("due_date_required");
 
-  let sayadId: string | null = null;
-  if (params.sayadId?.trim()) {
-    sayadId = normalizeSayadId(params.sayadId);
-    if (!sayadId) throw new ChequeError("invalid_sayad_id");
+  const serialNumber = requiredText(params.serialNumber, "serial_number_required");
+  const bankName = requiredText(params.bankName, "bank_name_required");
+  const counterpartyName = requiredText(params.counterpartyName, "counterparty_name_required");
+  const issueDate = optionalIsoDate(params.issueDate, "invalid_issue_date") ?? todayIso();
+  const dueDate = requiredIsoDate(params.dueDate, "due_date_required", "invalid_due_date");
+  if (dueDate < issueDate) throw new ChequeError("due_date_before_issue");
+
+  const sayadInput = optionalText(params.sayadId, "invalid_sayad_id");
+  const sayadId = sayadInput ? normalizeSayadId(sayadInput) : null;
+  if (sayadInput && !sayadId) throw new ChequeError("invalid_sayad_id");
+
+  const customerId = optionalText(params.customerId, "customer_not_found");
+  const supplierId = optionalText(params.supplierId, "supplier_not_found");
+  if (params.direction === "receivable" && supplierId) {
+    throw new ChequeError("invalid_counterparty_for_direction");
   }
+  if (params.direction === "payable" && customerId) {
+    throw new ChequeError("invalid_counterparty_for_direction");
+  }
+  const accountNumber = optionalText(params.accountNumber);
+  const memo = optionalText(params.memo);
 
   const status = initialStatus(params.direction);
 
@@ -240,8 +297,8 @@ export async function recordCheque(params: RecordChequeParams): Promise<Cheque> 
   try {
     await client.query("BEGIN");
 
-    if (params.customerId) await assertCustomer(client, params.businessId, params.customerId);
-    if (params.supplierId) await assertSupplier(client, params.businessId, params.supplierId);
+    if (customerId) await assertCustomer(client, params.businessId, customerId);
+    if (supplierId) await assertSupplier(client, params.businessId, supplierId);
 
     // A receivable lands in چک‌های نزد صندوق against the customer's account; a
     // payable clears down what we owe the supplier into چک‌های صادرشده.
@@ -262,17 +319,17 @@ export async function recordCheque(params: RecordChequeParams): Promise<Cheque> 
         params.locationId,
         params.direction,
         status,
-        params.serialNumber.trim(),
+        serialNumber,
         sayadId,
-        params.bankName.trim(),
-        params.accountNumber?.trim() || null,
+        bankName,
+        accountNumber,
         params.amount,
-        params.issueDate?.trim() || null,
-        params.dueDate.trim(),
-        params.counterpartyName.trim(),
-        params.customerId ?? null,
-        params.supplierId ?? null,
-        params.memo?.trim() || null,
+        issueDate,
+        dueDate,
+        counterpartyName,
+        customerId,
+        supplierId,
+        memo,
         params.createdBy,
       ],
     );
@@ -305,7 +362,7 @@ export async function recordCheque(params: RecordChequeParams): Promise<Cheque> 
       event: params.direction === "receivable" ? "received" : "issued",
       occurredOn: cheque.issue_date,
       entryId,
-      memo: params.memo?.trim() || null,
+      memo,
       createdBy: params.createdBy,
     });
 
@@ -435,6 +492,9 @@ export interface TransitionChequeParams {
  * rather than double-crediting چک‌های در جریان وصول.
  */
 export async function transitionCheque(params: TransitionChequeParams): Promise<Cheque> {
+  if (!isUuid(params.chequeId)) throw new ChequeError("cheque_not_found", 404);
+  if (!CHEQUE_ACTIONS.includes(params.action)) throw new ChequeError("invalid_action");
+
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -449,12 +509,15 @@ export async function transitionCheque(params: TransitionChequeParams): Promise<
     const target = nextStatus(cheque.direction, cheque.status, params.action);
     if (!target) throw new ChequeError("invalid_cheque_transition", 409);
 
+    const endorsedToSupplierId = optionalText(params.endorsedToSupplierId, "supplier_not_found");
     if (params.action === "endorse") {
-      if (!params.endorsedToSupplierId) throw new ChequeError("supplier_required");
-      await assertSupplier(client, params.businessId, params.endorsedToSupplierId);
+      if (!endorsedToSupplierId) throw new ChequeError("supplier_required");
+      await assertSupplier(client, params.businessId, endorsedToSupplierId);
     }
 
-    const occurredOn = params.occurredOn?.trim() || null;
+    const occurredOn = optionalIsoDate(params.occurredOn, "invalid_occurred_on") ?? todayIso();
+    if (occurredOn < cheque.issue_date) throw new ChequeError("action_before_issue");
+    const memo = optionalText(params.memo);
     const codes = linesFor(cheque.direction, cheque.status, params.action);
 
     let entryId: string | null = null;
@@ -487,12 +550,12 @@ export async function transitionCheque(params: TransitionChequeParams): Promise<
       businessId: params.businessId,
       chequeId: cheque.id,
       event: EVENT_FOR_ACTION[params.action],
-      // A step with no entry still happened on a day; default it to today the
-      // same way postJournalEntry would have.
-      occurredOn: occurredOn ?? new Date().toISOString().slice(0, 10),
+      // A step with no entry still happened on a day. Keep the event and its
+      // possible journal entry on the same Tehran calendar date.
+      occurredOn,
       entryId,
-      endorsedToSupplierId: params.action === "endorse" ? params.endorsedToSupplierId : null,
-      memo: params.memo?.trim() || null,
+      endorsedToSupplierId: params.action === "endorse" ? endorsedToSupplierId : null,
+      memo,
       createdBy: params.createdBy,
     });
 

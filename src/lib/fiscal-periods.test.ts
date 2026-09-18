@@ -1,12 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { canTransitionPeriod, fiscalYearSpec } from "./fiscal-periods";
+import {
+  FISCAL_PERIOD_COUNT,
+  FISCAL_YEAR_MAX,
+  FISCAL_YEAR_MIN,
+  canTransitionPeriod,
+  fiscalYearSpec,
+  isSupportedFiscalYear,
+} from "./fiscal-periods";
 
 describe("fiscalYearSpec", () => {
+  it("keeps the financial-year entry boundary explicit and inclusive", () => {
+    expect(isSupportedFiscalYear(FISCAL_YEAR_MIN)).toBe(true);
+    expect(isSupportedFiscalYear(FISCAL_YEAR_MAX)).toBe(true);
+    expect(isSupportedFiscalYear(FISCAL_YEAR_MIN - 1)).toBe(false);
+    expect(isSupportedFiscalYear(FISCAL_YEAR_MAX + 1)).toBe(false);
+    expect(isSupportedFiscalYear(1404.5)).toBe(false);
+  });
+
   it("starts the year on Nowruz and ends on the last day of Esfand", () => {
     const spec = fiscalYearSpec(1404);
     expect(spec.label).toBe("1404");
     expect(spec.startsOn).toBe("2025-03-21");
-    expect(spec.periods).toHaveLength(12);
+    expect(spec.periods).toHaveLength(FISCAL_PERIOD_COUNT);
     expect(spec.endsOn).toBe(spec.periods[11].endsOn);
   });
 

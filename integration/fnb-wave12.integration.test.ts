@@ -140,6 +140,38 @@ describe("listMenuCostDrift", () => {
     expect(rows[0].oldMarginPercent).toBe(20);
     expect(rows[0].newMarginPercent).toBe(0);
   });
+
+  it("uses the default margin and compares loaded costs when an item has no override", async () => {
+    const beans = await db.query<{ id: string }>(
+      "INSERT INTO inventory_items (location_id, name, unit, avg_cost) VALUES ($1, 'Beans', 'g', 100) RETURNING id",
+      [loc.id],
+    );
+    // At a 20% target margin, a 12,500 price implies 10,000 of loaded
+    // reference cost. Today's 10,000 material cost plus 25% fixed overhead is
+    // 12,500 — a 25% rise that must be flagged.
+    const menuItemId = await makeMenuItem(12_500, null);
+    await db.query(
+      "INSERT INTO menu_item_ingredients (menu_item_id, inventory_item_id, quantity) VALUES ($1, $2, 100)",
+      [menuItemId, beans.rows[0].id],
+    );
+    await pricingService.setPricingConfig(biz.id, {
+      defaultMarginPercent: 20,
+      fallbackOverheadPercent: 25,
+      overheadMode: "manual",
+      costDriftThresholdPercent: 20,
+    });
+
+    const rows = await pricingService.listMenuCostDrift(biz.id, loc.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      menuItemId,
+      currentCost: 12_500,
+      referenceCost: 10_000,
+      costChangePercent: 25,
+      oldMarginPercent: 20,
+      newMarginPercent: 0,
+    });
+  });
 });
 
 describe("wasteReport", () => {

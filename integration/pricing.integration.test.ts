@@ -141,6 +141,29 @@ function today(): string {
 }
 
 describe("getSuggestedPrice", () => {
+  it("normalizes malformed legacy pricing settings before they reach the calculator", async () => {
+    await db.query(
+      `INSERT INTO settings (business_id, location_id, key, value)
+       VALUES ($1, NULL, 'pricing.config', $2::jsonb)`,
+      [
+        biz.id,
+        JSON.stringify({
+          defaultMarginPercent: 100,
+          fallbackOverheadPercent: -5,
+          overheadMode: "sometimes",
+          costDriftThresholdPercent: 0,
+        }),
+      ],
+    );
+
+    await expect(pricingService.getPricingConfig(biz.id)).resolves.toEqual({
+      defaultMarginPercent: null,
+      fallbackOverheadPercent: null,
+      overheadMode: "automatic",
+      costDriftThresholdPercent: 20,
+    });
+  });
+
   it("returns null for a menu item that doesn't exist", async () => {
     expect(await pricingService.getSuggestedPrice(biz.id, randomUUID())).toBeNull();
   });

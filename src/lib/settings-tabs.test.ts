@@ -78,7 +78,7 @@ describe("visibleSettingsTabs", () => {
     }
   });
 
-  it("rewrites wording per industry without the callback surviving", () => {
+  it("rewrites shared wording per industry and hides menu-only pricing from retail", () => {
     const foodService = visibleSettingsTabs([PERMISSIONS.settingsManage], { industry: "food_service" });
     const jewelry = visibleSettingsTabs([PERMISSIONS.settingsManage], { industry: "jewelry" });
 
@@ -86,10 +86,11 @@ describe("visibleSettingsTabs", () => {
     expect(foodService.find((tab) => tab.key === "tax")?.description).toBe("نرخ پیش‌فرض و نرخ هر دسته از منو");
     expect(jewelry.find((tab) => tab.key === "tax")?.description).toBe("نرخ پیش‌فرض مالیات بر ارزش افزوده");
 
-    // The tab whose rewrite always returns a description — the "spread" path.
-    expect(foodService.find((tab) => tab.key === "pricing")?.description).not.toBe(
-      jewelry.find((tab) => tab.key === "pricing")?.description,
-    );
+    // Cost-plus pricing reads recipes/menu_items only. Retail's trade-specific
+    // pricing engines do not read this policy, so promising it there is worse
+    // than using a less-specific label.
+    expect(foodService.find((tab) => tab.key === "pricing")?.description).toContain("آیتم‌های منو");
+    expect(jewelry.some((tab) => tab.key === "pricing")).toBe(false);
 
     // A caller with no industry still gets the F&B defaults, and still no callback.
     const noIndustry = visibleSettingsTabs([PERMISSIONS.settingsManage]);

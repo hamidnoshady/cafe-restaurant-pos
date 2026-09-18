@@ -17,8 +17,9 @@ import { getPool } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
 import { FiscalPeriodError } from "./fiscal-periods-service";
-import { fiscalPeriodLockErrorCode } from "./fiscal-periods";
+import { FISCAL_PERIOD_COUNT, fiscalPeriodLockErrorCode } from "./fiscal-periods";
 import type { JournalLine } from "./ledger";
+import { isUuid } from "./uuid";
 
 export { MissingLedgerAccountError };
 
@@ -40,6 +41,11 @@ export async function closeFiscalYear(
   fiscalYearId: string,
   actorId: string,
 ): Promise<CloseFiscalYearResult> {
+  // Route params are untrusted. More importantly, doing this before `$1` is
+  // cast to uuid gives callers a normal accounting 404 rather than Postgres's
+  // syntax error for a stale/malformed URL.
+  if (!isUuid(fiscalYearId)) throw new FiscalPeriodError("fiscal_year_not_found", 404);
+
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -58,11 +64,23 @@ export async function closeFiscalYear(
     if (!year) throw new FiscalPeriodError("fiscal_year_not_found", 404);
     if (year.closed_at) throw new FiscalPeriodError("fiscal_year_already_closed", 409);
 
+    // Lock every child before deciding the year is ready. The per-period
+    // transition service locks this same set through the parent year, so an
+    // individual reopen cannot slip in while the closing entry is calculated.
     const { rows: periods } = await client.query<{ status: string }>(
-      `SELECT status::text AS status FROM fiscal_periods WHERE business_id = $1 AND fiscal_year_id = $2`,
+      `SELECT status::text AS status
+         FROM fiscal_periods
+        WHERE business_id = $1 AND fiscal_year_id = $2
+        FOR UPDATE`,
       [businessId, fiscalYearId],
     );
-    if (periods.length === 0 || periods.some((p) => p.status !== "soft_closed")) {
+    if (periods.length !== FISCAL_PERIOD_COUNT) {
+      // A year is only a year once all twelve Jalali months exist. This should
+      // be impossible through the atomic create flow, but must not let a
+      // damaged/manual data set produce a closing entry over a partial year.
+      throw new FiscalPeriodError("periods_incomplete", 409);
+    }
+    if (periods.some((p) => p.status !== "soft_closed")) {
       throw new FiscalPeriodError("periods_not_ready", 409);
     }
 
