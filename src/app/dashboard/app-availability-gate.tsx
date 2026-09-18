@@ -150,10 +150,10 @@ function AvailabilityNotice({
  * which is also what keeps this screen's "back" link reachable.
  *
  * One route needs its shell to answer: `/dashboard` is the chat home (never
- * gated) in the workspace shell, but the very same sales overview
+ * gated) in the workspace shell, but the operational overview
  * `/overview` renders in the classic shell. Leaving it ungated in
  * both would leave a sales «به‌زودی» bypassable from the home page, so in the
- * classic shell it is gated as the sales app.
+ * classic shell it is gated as part of Accounting.
  */
 export function AppAvailabilityGate({
   availability,
@@ -161,22 +161,22 @@ export function AppAvailabilityGate({
   children,
 }: {
   availability: AppAvailabilityProps;
-  /** False in the classic shell, where `/dashboard` renders the sales overview. */
+  /** False in the classic shell, where `/dashboard` renders the operational overview. */
   workspaceEnabled?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const app: AppKey | null =
-    !workspaceEnabled && pathname === "/dashboard" ? "sales" : appForPagePath(pathname);
+    !workspaceEnabled && pathname === "/dashboard" ? "accounting" : appForPagePath(pathname);
   const state = app ? availability[app] : undefined;
   if (!state || state.usable) return <>{children}</>;
   // The escape hatch must itself be reachable: the chat home (never gated) in
-  // the workspace shell, the sales overview otherwise. In the classic shell
-  // that overview is itself sales-gated, so while sales is down the link
+  // the workspace shell, the overview otherwise. In the classic shell
+  // that overview is Accounting-gated, so while Accounting is down the link
   // would only land on this same screen — it is hidden then, and on either
   // home, where the sidebar is the way out.
   const backHref = workspaceEnabled ? "/dashboard" : "/overview";
-  const backUsable = workspaceEnabled || (availability.sales?.usable ?? true);
+  const backUsable = workspaceEnabled || (availability.accounting?.usable ?? true);
   return (
     <AvailabilityNotice
       availability={state}
