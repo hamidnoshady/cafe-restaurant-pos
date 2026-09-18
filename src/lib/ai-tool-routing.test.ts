@@ -19,9 +19,9 @@ describe("isAlwaysOnTool", () => {
 
 describe("appForTool", () => {
   it("maps app-specific tools to their owning app", () => {
-    expect(appForTool("get_menu_performance")).toBe("sales");
+    expect(appForTool("get_menu_performance")).toBe("accounting");
     expect(appForTool("get_repurchase_candidates")).toBe("growth");
-    expect(appForTool("get_reservation_conflicts")).toBe("operations");
+    expect(appForTool("get_reservation_conflicts")).toBe("accounting");
     expect(appForTool("get_ar_aging")).toBe("accounting");
   });
 
@@ -68,33 +68,30 @@ describe("routeTools", () => {
     expect(result).toContain("run_report");
   });
 
-  it("includes app-specific tools only when their app is in scope", () => {
-    const salesOnly = routeTools(allTools, ["sales"])!;
-    expect(salesOnly).toContain("get_menu_performance");
-    expect(salesOnly).toContain("get_void_pattern");
-    expect(salesOnly).toContain("get_waste_history");
-    expect(salesOnly).not.toContain("get_ar_aging");
-    expect(salesOnly).not.toContain("get_reservation_conflicts");
-    expect(salesOnly).not.toContain("get_repurchase_candidates");
+  it("includes sales, operations and ledger tools for Accounting", () => {
+    const accounting = routeTools(allTools, ["accounting"])!;
+    expect(accounting).toContain("get_menu_performance");
+    expect(accounting).toContain("get_reservation_conflicts");
+    expect(accounting).toContain("get_ar_aging");
+    expect(accounting).not.toContain("get_repurchase_candidates");
   });
 
   it("includes tools from multiple apps when multiple are in scope", () => {
-    const result = routeTools(allTools, ["sales", "accounting"])!;
+    const result = routeTools(allTools, ["accounting", "growth"])!;
     expect(result).toContain("get_menu_performance");
     expect(result).toContain("get_ar_aging");
-    expect(result).not.toContain("get_reservation_conflicts");
-    expect(result).not.toContain("get_repurchase_candidates");
+    expect(result).toContain("get_repurchase_candidates");
   });
 
   it("includes general-purpose tools (not in map) always", () => {
     const toolsWithGeneral = [...allTools, "some_unknown_tool"];
-    const result = routeTools(toolsWithGeneral, ["sales"])!;
+    const result = routeTools(toolsWithGeneral, ["accounting"])!;
     expect(result).toContain("some_unknown_tool");
   });
 
   it("produces fewer tools for a single-app turn than the full set", () => {
-    const full = routeTools(allTools, ["sales", "growth", "operations", "accounting"])!;
-    const single = routeTools(allTools, ["sales"])!;
+    const full = routeTools(allTools, ["accounting", "growth", "crm", "website"])!;
+    const single = routeTools(allTools, ["accounting"])!;
     expect(single.length).toBeLessThan(full.length);
   });
 });
