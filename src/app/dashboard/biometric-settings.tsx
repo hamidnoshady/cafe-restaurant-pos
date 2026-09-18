@@ -7,6 +7,7 @@ import { FingerprintIcon } from "lucide-react";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
+import { readDeviceToken } from "@/lib/device-token";
 import { overlayPanelClass } from "./page-chrome";
 import { SIDEBAR_FOOTER_BUTTON_CLASS } from "./sidebar-nav-styles";
 
@@ -18,16 +19,6 @@ interface Credential {
   lastUsedAt: string | null;
 }
 
-/** Shared with src/app/login/page.tsx and the Settings → دستگاه‌های ثبت‌شده pairing flow — must stay in sync. */
-const DEVICE_TOKEN_KEY = "pos:deviceToken";
-
-function readDeviceToken(): string | null {
-  try {
-    return window.localStorage.getItem(DEVICE_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Phase 20 Wave 3 — self-service "manage biometric login" panel for

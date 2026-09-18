@@ -1,41 +1,63 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
-import { DeviceError, listDevices, pairDevice } from "@/lib/device-service";
+import { DEVICE_TOKEN_HEADER } from "@/lib/device-token";
+import { DeviceError, findActiveDeviceId, listDevices, pairDevice } from "@/lib/device-service";
 import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
- * Phase 20 Wave 4 — device binding. Every paired terminal for the business,
- * across every branch (an owner reviewing "which devices can sign in
- * biometrically" wants the whole picture, not just their own branch's) —
- * gated the same way the rest of /dashboard/settings is.
+ * Device binding — every paired terminal for this business, across branches.
+ * The manager permission is the same gate used for the rest of Settings
+ * hardware configuration.
  */
-export const GET = withTenantScope(async () => {
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
-  const devices = await listDevices(session.businessId);
-  return NextResponse.json({ devices });
+
+  // This header is optional and never authorises the endpoint. It only lets
+  // an already-authorised manager see which list row belongs to this browser.
+  // Do not update last_seen_at merely because Settings was opened.
+  const [devices, currentDeviceId] = await Promise.all([
+    listDevices(session.businessId),
+    findActiveDeviceId(request.headers.get(DEVICE_TOKEN_HEADER), session.businessId),
+  ]);
+  return NextResponse.json({ devices, currentDeviceId });
 });
 
 /**
- * Pairs the caller's *current* browser/terminal — bound to whichever branch
- * the caller is presently scoped to (`resolveActiveLocation`), the same way
- * a printer registered from Settings belongs to that branch. The returned
- * token is shown exactly once; the client is expected to store it locally
- * (see src/app/login/page.tsx) and never send it back to this route again.
+ * Pairs the caller's current browser/terminal with the active branch. The
+ * plaintext token is returned once and saved locally by the browser so the
+ * public login flow can use it to narrow biometric credential choices.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
 
-  let body: { label?: string };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  if (!body.label || typeof body.label !== "string") {
+  if (
+    !body ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    typeof (body as { label?: unknown }).label !== "string"
+  ) {
     return NextResponse.json({ error: "invalid_label" }, { status: 400 });
+  }
+  const label = (body as { label: string }).label;
+
+  // Do not accidentally make multiple records for one browser. The UI hides
+  // the form for a live local token; this check covers direct API callers and
+  // keyboard/request races too. A missing or stale token remains pairable.
+  const currentDeviceId = await findActiveDeviceId(
+    request.headers.get(DEVICE_TOKEN_HEADER),
+    session.businessId,
+  );
+  if (currentDeviceId) {
+    return NextResponse.json({ error: "device_already_paired", currentDeviceId }, { status: 409 });
   }
 
   const location = await resolveActiveLocation(session);
@@ -44,7 +66,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       session.businessId,
       location?.id ?? null,
       session.sub,
-      body.label,
+      label,
     );
     return NextResponse.json({ token, device }, { status: 201 });
   } catch (err) {
