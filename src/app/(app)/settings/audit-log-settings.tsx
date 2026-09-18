@@ -26,6 +26,9 @@ const PAGE_SIZE = 50;
 const ENTITY_FILTERS = [
   ["", "همه"], ["employee", "کارمند"], ["team", "تیم"], ["device", "دستگاه"],
   ["shift", "شیفت"], ["order", "سفارش"], ["location", "شعبه"], ["account", "حساب"],
+  // The settings writers (business identity, MFA policy) log under this
+  // entity; without the chip those rows were reachable only via «همه».
+  ["settings", "تنظیمات"],
 ] as const;
 
 function formatTime(iso: string): string {

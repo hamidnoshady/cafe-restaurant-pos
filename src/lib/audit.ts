@@ -41,6 +41,12 @@ const ACTION_LABELS: Record<string, string> = {
   "branch.updated": "ویرایش شعبه",
   "branch.deactivated": "غیرفعال‌سازی شعبه",
   "branch.reactivated": "فعال‌سازی شعبه",
+  // The settings writers. `settings.business.update` is the business identity
+  // form (name, tax id, receipt footer, currency unit); `settings.mfa_policy.
+  // update` had been writing rows since Phase 24 with no label, so the audit
+  // tab showed the raw dotted key where every other row has Persian.
+  "settings.business.update": "تغییر اطلاعات کسب‌وکار",
+  "settings.mfa_policy.update": "تغییر سیاست ورود دومرحله‌ای",
   "impersonation.request": "درخواست ورود جانشینی",
   "account.renamed": "تغییر نام حساب",
   "account.reparented": "جابه‌جایی حساب در ساختار",
@@ -56,6 +62,7 @@ const ENTITY_LABELS: Record<string, string> = {
   order: "سفارش",
   location: "شعبه",
   account: "حساب",
+  settings: "تنظیمات",
 };
 
 /** A Persian label for a raw `audit_log.action` value, falling back to the raw string when unrecognised. */

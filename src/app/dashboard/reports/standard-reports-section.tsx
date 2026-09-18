@@ -21,11 +21,15 @@
  * search/group chrome is the only markup it owns.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { SearchIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useMoney } from "@/components/money/money-context";
+import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
+import { normalizePosSearchText } from "@/lib/pos-selection";
 import { cn } from "@/lib/utils";
 import { EmptyState, LoadingSkeleton, SectionCard, SectionCardSkeleton, cardClass } from "../page-chrome";
 import { JalaliDatePicker } from "../jalali-date-picker";
@@ -68,24 +72,19 @@ import {
   type WeightReconciliationReport,
 } from "./trade-report-views";
 import { rowsToChartData, type ChartType, type ReportRow } from "./report-ui";
-
-/** Mirrors `ReportShape` in src/lib/reports.ts — the server tells us which view renders the payload. */
-type ReportShape =
-  | "rows"
-  | "profit_and_loss"
-  | "balance_sheet"
-  | "cash_flow"
-  | "food_cost_variance"
-  | "weight_reconciliation"
-  | "consignor_statements"
-  | "layaway_book"
-  | "warranty"
-  | "repairs"
-  | "variant_sales"
-  | "brand_sales"
-  | "near_expiry"
-  | "low_stock"
-  | "dead_stock";
+import {
+  COMPARABLE_SHAPES,
+  DOCUMENT_SHAPES,
+  EXPORT_KIND_BY_SHAPE,
+  SNAPSHOT_SHAPES,
+  UNDATED_SHAPES,
+  comparisonReady as canCompareRange,
+  configWithRange,
+  errorMessage,
+  isInvalidRange,
+  type ReportChartConfig,
+  type ReportShape,
+} from "./standard-report-config";
 
 interface StandardReportDef {
   key: string;
@@ -95,7 +94,9 @@ interface StandardReportDef {
   groupLabel: string;
   shape: ReportShape;
   chartType: ChartType | null;
-  config: Record<string, unknown> | null;
+  config: ReportChartConfig | null;
+  /** The measure is Rial — render it through the business's money unit. */
+  money?: boolean;
 }
 
 interface ViewMeta {
@@ -114,52 +115,27 @@ interface SavedReportRow {
  * `/api/reports/standard/[key]` (which computes them) rather than posted to
  * `/api/reports/query` (which only ever aggregates a view).
  */
-const DOCUMENT_SHAPES = new Set<ReportShape>([
-  "profit_and_loss",
-  "balance_sheet",
-  "cash_flow",
-  "food_cost_variance",
-  "weight_reconciliation",
-  "consignor_statements",
-  "layaway_book",
-  "warranty",
-  "repairs",
-  "variant_sales",
-  "brand_sales",
-  "near_expiry",
-  "low_stock",
-  "dead_stock",
-]);
-
-/**
- * Which reports accept `?compare=1`. Food-cost variance is deliberately absent:
- * it is a period total against the ledger, not a per-account rollup, and its
- * "worst item" ranking has no obvious side-by-side presentation. The trade
- * reports are absent for the same kind of reason — a warranty register is a
- * register, not a period figure.
- */
-const COMPARABLE_SHAPES = new Set<ReportShape>(["profit_and_loss", "balance_sheet", "cash_flow"]);
-
-/** Reports with nothing period-shaped to bound: a stock level or a register is "as of now". */
-const UNDATED_SHAPES = new Set<ReportShape>([
-  "weight_reconciliation",
-  "consignor_statements",
-  "layaway_book",
-  "near_expiry",
-  "low_stock",
-  "dead_stock",
-]);
-
-/** The export API only knows these kinds; everything else has no export path yet. */
-const EXPORT_KIND_BY_SHAPE: Partial<Record<ReportShape, "pnl" | "balance_sheet" | "cash_flow">> = {
-  profit_and_loss: "pnl",
-  balance_sheet: "balance_sheet",
-  cash_flow: "cash_flow",
-};
-
 type ReportPayload = Record<string, unknown>;
 
+/**
+ * Folds the spelling differences Persian typing produces, so the search box
+ * matches what people actually type.
+ *
+ * The filter was `label.toLowerCase().includes(needle)`, and `toLowerCase` does
+ * nothing to Persian: typing «کالای راکد» with the Arabic ك/ي that every Arabic
+ * keyboard layout and half of the pasted text in the wild produce found
+ * nothing, and «۲۱» never matched a label written with ASCII digits. This is
+ * the same normalizer the POS search and every `SearchableSelect` already use,
+ * so the report library now searches the way the rest of the product does.
+ */
+function normalizeSearch(value: string): string {
+  return normalizePosSearchText(value);
+}
+
 export function StandardReportsSection({ canExplain }: { canExplain: boolean }) {
+  const money = useMoney();
+  const searchId = useId();
+  const resultPanelId = `${useId()}-report-result`;
   const [reports, setReports] = useState<StandardReportDef[] | null>(null);
   const [views, setViews] = useState<ViewMeta[]>([]);
   const [savedIds, setSavedIds] = useState<Map<string, string>>(new Map());
@@ -172,19 +148,40 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [document, setDocument] = useState<ReportPayload | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(false);
+  /**
+   * The range the numbers on screen were actually read for.
+   *
+   * The export button and the assistant's "explain this" prompt both used the
+   * *live* `dateFrom`/`dateTo`, which is a different range from the one the
+   * result was computed for during the moment between changing a date and the
+   * refetch landing — so an export could describe itself with a period the
+   * figures in it never covered.
+   */
+  const [loadedRange, setLoadedRange] = useState({ dateFrom: "", dateTo: "" });
 
   useEffect(() => {
+    let cancelled = false;
     fetch("/api/reports/standard")
-      .then((response) => response.json())
-      .then((data) => setReports(data.reports ?? []))
-      .catch(() => setReports([]));
-    fetch("/api/reports/views")
-      .then((response) => response.json())
-      .then((data) => setViews(data.views ?? []))
-      .catch(() => setViews([]));
-    fetch("/api/reports/saved")
-      .then((response) => response.json())
+      .then((response) => (response.ok ? response.json() : { reports: [] }))
       .then((data) => {
+        if (!cancelled) setReports(data.reports ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setReports([]);
+      });
+    fetch("/api/reports/views")
+      .then((response) => (response.ok ? response.json() : { views: [] }))
+      .then((data) => {
+        if (!cancelled) setViews(data.views ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setViews([]);
+      });
+    fetch("/api/reports/saved")
+      .then((response) => (response.ok ? response.json() : { reports: [] }))
+      .then((data) => {
+        if (cancelled) return;
         const map = new Map<string, string>();
         for (const report of (data.reports ?? []) as SavedReportRow[]) {
           if (report.standard_key) map.set(report.standard_key, report.id);
@@ -192,6 +189,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
         setSavedIds(map);
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const isDocument = selected ? DOCUMENT_SHAPES.has(selected.shape) : false;
@@ -202,68 +202,151 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     ? (isDocument && !UNDATED_SHAPES.has(selected.shape)) || hasDateColumn
     : false;
   const canCompare = selected ? COMPARABLE_SHAPES.has(selected.shape) : false;
+  /** A point-in-time statement: only an as-of date means anything to it. */
+  const isSnapshot = selected ? SNAPSHOT_SHAPES.has(selected.shape) : false;
+  const invalidRange = selected ? isInvalidRange(selected.shape, dateFrom, dateTo) : false;
+  const comparisonReady = selected ? canCompareRange(selected.shape, dateFrom, dateTo) : false;
 
-  const load = useCallback(async () => {
-    if (!selected) return;
-    setLoadError("");
-    if (DOCUMENT_SHAPES.has(selected.shape)) {
-      const params = new URLSearchParams();
-      if (dateFrom) params.set("dateFrom", dateFrom);
-      if (dateTo) params.set("dateTo", dateTo);
-      if (compare && COMPARABLE_SHAPES.has(selected.shape)) params.set("compare", "1");
-      try {
-        const response = await fetch(`/api/reports/standard/${selected.key}?${params}`);
-        const data = await response.json();
-        if (!response.ok) {
-          setLoadError("خواندن این گزارش ممکن نشد.");
-          return;
-        }
-        setDocument(data.report ?? data.comparison ?? null);
+  // Keep the checkbox honest if the range that justified it is cleared.
+  useEffect(() => {
+    if (compare && !comparisonReady) setCompare(false);
+  }, [compare, comparisonReady]);
+
+  /**
+   * How this report's measure is written. Money metrics are Rial in the
+   * database and must be shown in the unit the business chose; a count of
+   * orders or a table-turn time must not be.
+   */
+  const formatValue = useCallback(
+    (value: number) =>
+      selected?.money
+        ? money.format(Math.round(value))
+        : formatPersianNumber(Math.round(value)),
+    [selected?.money, money],
+  );
+
+  /**
+   * Reads the selected report.
+   *
+   * Every request carries an `AbortSignal` tied to the effect that started it,
+   * because this refetches on each keystroke-sized change (a new report, a new
+   * date, the compare toggle) and the responses do not have to come back in the
+   * order they were sent. Without it a slow request for the report you just
+   * navigated away from could land last and paint its rows under the *new*
+   * report's title — the report library's worst possible failure, since both
+   * screens look equally plausible.
+   */
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      if (!selected) return;
+      // Don't spend a request on a range the user can see is wrong; the inline
+      // message beside the pickers already says what to fix. Same predicate the
+      // message uses, so the two can't disagree about what "wrong" means.
+      if (isInvalidRange(selected.shape, dateFrom, dateTo)) {
+        setLoading(false);
         setRows(null);
-      } catch {
-        setLoadError("خواندن این گزارش ممکن نشد.");
-      }
-      return;
-    }
-    const config = {
-      ...selected.config,
-      filters: { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },
-    };
-    try {
-      const response = await fetch("/api/reports/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setLoadError("خواندن این گزارش ممکن نشد.");
+        setDocument(null);
+        setLoadError("");
         return;
       }
-      setRows(data.rows ?? []);
-      setDocument(null);
-    } catch {
-      setLoadError("خواندن این گزارش ممکن نشد.");
-    }
-  }, [selected, dateFrom, dateTo, compare]);
+      setLoading(true);
+      setLoadError("");
+      const requestedRange = { dateFrom, dateTo };
+      try {
+        if (DOCUMENT_SHAPES.has(selected.shape)) {
+          const params = new URLSearchParams();
+          if (dateFrom) params.set("dateFrom", dateFrom);
+          if (dateTo) params.set("dateTo", dateTo);
+          if (compare && COMPARABLE_SHAPES.has(selected.shape)) {
+            params.set("compare", "1");
+            // A snapshot has no period length to mirror, so
+            // `getBalanceSheetComparison` needs the earlier as-of date spelled
+            // out and returns `previous: null` without it — the checkbox
+            // appeared to do nothing on the one statement where an owner most
+            // expects a side-by-side. The extra picker beside it collects the
+            // date into `dateFrom`.
+            if (SNAPSHOT_SHAPES.has(selected.shape) && dateFrom) {
+              params.set("previousAsOfDate", dateFrom);
+            }
+          }
+          const query = params.toString();
+          const response = await fetch(
+            `/api/reports/standard/${encodeURIComponent(selected.key)}${query ? `?${query}` : ""}`,
+            { signal },
+          );
+          const data = await response.json().catch(() => ({}));
+          if (signal.aborted) return;
+          if (!response.ok) {
+            setLoadError(errorMessage(response.status));
+            setDocument(null);
+            setRows(null);
+            return;
+          }
+          setDocument(data.report ?? data.comparison ?? null);
+          setRows(null);
+          setLoadedRange(requestedRange);
+          return;
+        }
+        const response = await fetch("/api/reports/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(configWithRange(selected.config, dateFrom, dateTo)),
+          signal,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (signal.aborted) return;
+        if (!response.ok) {
+          setLoadError(errorMessage(response.status));
+          setRows(null);
+          setDocument(null);
+          return;
+        }
+        setRows(data.rows ?? []);
+        setDocument(null);
+        setLoadedRange(requestedRange);
+      } catch (error) {
+        // An abort is this component replacing its own request, not a failure.
+        if (signal.aborted || (error as Error)?.name === "AbortError") return;
+        setLoadError("خواندن این گزارش ممکن نشد. اتصال شبکه را بررسی کنید.");
+        setRows(null);
+        setDocument(null);
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    },
+    [selected, dateFrom, dateTo, compare],
+  );
 
   useEffect(() => {
-    load();
+    const controller = new AbortController();
+    load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   /**
    * Grouped, and filtered by the search box. The search matches the label and
    * the description, because an owner looking for "چه چیزی می‌فروشد" types a
    * word from the sentence, not the report's name.
+   *
+   * Each report's searchable text is normalized once per list rather than once
+   * per keystroke per report — the list is short, but this is the same shape
+   * the rest of the codebase settled on for filtered lists and it keeps typing
+   * smooth on the tablets this runs on.
    */
+  const searchable = useMemo(
+    () =>
+      (reports ?? []).map((report) => ({
+        report,
+        haystack: normalizeSearch(`${report.label} ${report.description ?? ""}`),
+      })),
+    [reports],
+  );
+
   const groups = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    const matching = (reports ?? []).filter(
-      (report) =>
-        !needle ||
-        report.label.toLowerCase().includes(needle) ||
-        (report.description ?? "").toLowerCase().includes(needle),
-    );
+    const needle = normalizeSearch(search);
+    const matching = needle
+      ? searchable.filter((entry) => entry.haystack.includes(needle)).map((entry) => entry.report)
+      : searchable.map((entry) => entry.report);
     const byGroup = new Map<string, { label: string; reports: StandardReportDef[] }>();
     for (const report of matching) {
       const entry = byGroup.get(report.group) ?? { label: report.groupLabel, reports: [] };
@@ -271,7 +354,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
       byGroup.set(report.group, entry);
     }
     return [...byGroup.entries()].map(([key, value]) => ({ key, ...value }));
-  }, [reports, search]);
+  }, [searchable, search]);
 
   const totalCount = reports?.length ?? 0;
   const matchCount = groups.reduce((sum, group) => sum + group.reports.length, 0);
@@ -285,19 +368,44 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     setRows(null);
     setDocument(null);
     setLoadError("");
+    setLoadedRange({ dateFrom: "", dateTo: "" });
+    // Below `lg` the library is a full-width column with the result *under* it,
+    // so tapping a report on a phone changed a screenful of content the person
+    // could not see and looked like it had done nothing at all. Take them to
+    // the result, the same way the page-level section menu does when it opens
+    // a section (see section-nav.tsx).
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+      // After paint, so the panel being scrolled to exists.
+      requestAnimationFrame(() => {
+        window.document.getElementById(resultPanelId)?.scrollIntoView({ block: "start", behavior: "smooth" });
+      });
+    }
   }
 
   function explainSelectedReport() {
     if (!selected) return;
+    // The figures as the screen shows them: money through the business's unit,
+    // everything else as a grouped Persian number. Feeding the assistant a bare
+    // Rial integer for a Toman business invited it to quote a number ten times
+    // what the owner is looking at.
     const facts = rows
       ? rowsToChartData(rows)
           .slice(0, 8)
-          .map((row) => `${row.label}: ${row.value.toLocaleString("fa-IR")}`)
+          .map(
+            (row) =>
+              `${row.label}: ${
+                selected.money ? money.format(Math.round(row.value)) : formatPersianNumber(Math.round(row.value))
+              }`,
+          )
           .join("؛ ")
       : "";
+    // Shamsi, like every other date a user sees (AGENTS.md "Shamsi-only dates").
+    // This used to interpolate the raw ISO string straight into the prompt.
     const period =
-      dateFrom || dateTo
-        ? `بازهٔ انتخاب‌شده: ${dateFrom || "ابتدای داده"} تا ${dateTo || "امروز"}.`
+      loadedRange.dateFrom || loadedRange.dateTo
+        ? `بازهٔ انتخاب‌شده: ${
+            loadedRange.dateFrom ? toPersianDigits(formatJalali(loadedRange.dateFrom)) : "ابتدای داده"
+          } تا ${loadedRange.dateTo ? toPersianDigits(formatJalali(loadedRange.dateTo)) : "امروز"}.`
         : "";
     const prompt = [
       `گزارش «${selected.label}» را با اتکا به داده‌های واقعی بررسی و توضیح بده.`,
@@ -329,17 +437,42 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
               className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted-foreground"
             />
             <input
+              id={searchId}
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="جستجوی گزارش"
               aria-label="جستجوی گزارش"
-              className={cn(inputClass, "ps-9")}
+              aria-describedby={`${searchId}-count`}
+              // A search field's own clear button (WebKit) sits at the input's
+              // physical end, which in RTL is the *start* — right on top of the
+              // magnifier. Padding both sides keeps the text clear of each.
+              className={cn(inputClass, "ps-9 pe-9")}
             />
           </div>
+          {/*
+            Says how many reports the filter left. Without it a search that
+            narrows 30 reports to 1 looks identical to a list that was always
+            short, and there was nothing to announce the change to a screen
+            reader either.
+          */}
+          <p id={`${searchId}-count`} aria-live="polite" className="mt-2 text-xs text-muted-foreground">
+            {search.trim()
+              ? `${formatPersianNumber(matchCount)} از ${formatPersianNumber(totalCount)} گزارش`
+              : `${formatPersianNumber(totalCount)} گزارش`}
+          </p>
         </div>
 
-        <nav aria-label="فهرست گزارش‌های آماده" className="p-2 lg:max-h-[calc(100dvh-19rem)] lg:overflow-y-auto">
+        {/*
+          The list scrolls within the sticky card on a desktop. On a phone it is
+          capped instead of running the full height of the document: an
+          unbounded list of every report in the trade pushed the result — the
+          thing the person came for — several screens down the page.
+        */}
+        <nav
+          aria-label="فهرست گزارش‌های آماده"
+          className="max-h-[22rem] overflow-y-auto p-2 lg:max-h-[calc(100dvh-21rem)]"
+        >
           {groups.map((group) => (
             <div key={group.key} className="mb-3 last:mb-0">
               <p className="px-3 pb-1 pt-2 text-[11px] font-semibold tracking-wide text-muted-foreground">
@@ -353,15 +486,23 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                       key={report.key}
                       type="button"
                       aria-current={isSelected ? "page" : undefined}
+                      // Points at the result region this button fills, so the
+                      // relationship is not purely visual.
+                      aria-controls={resultPanelId}
                       onClick={() => select(report)}
                       className={cn(
                         "flex min-h-11 w-full items-center rounded-xl px-3 py-2 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40",
                         isSelected
                           ? "bg-amber-100 font-semibold text-amber-950 dark:bg-amber-500/20 dark:text-amber-200"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                          // `text-muted-foreground` on a long list of names is
+                          // below AA on the card background; the names are the
+                          // content here, not secondary detail.
+                          : "text-foreground/80 hover:bg-muted hover:text-foreground",
                       )}
                     >
-                      <span className="min-w-0 flex-1">{report.label}</span>
+                      {/* `break-words`: a long report name used to overflow the
+                          17rem rail rather than wrap inside it. */}
+                      <span className="min-w-0 flex-1 break-words">{report.label}</span>
                     </button>
                   );
                 })}
@@ -380,7 +521,13 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
         </nav>
       </aside>
 
-      <div className="min-w-0" aria-live="polite">
+      {/*
+        A region, not a live region. `aria-live="polite"` on a container this
+        large made every re-render — a whole statement, tables and all — queue
+        itself to be read out; the polite announcement that belongs here is the
+        short status line inside `ReportBody`, which owns one now.
+      */}
+      <div id={resultPanelId} role="region" aria-label="نتیجهٔ گزارش" className="min-w-0 scroll-mt-4">
         {!selected ? (
           <SectionCard title="پیش‌نمایش گزارش" description="برای دیدن نتیجه، یک گزارش را از فهرست انتخاب کنید.">
             <EmptyState>یک گزارش را از فهرست انتخاب کنید.</EmptyState>
@@ -396,36 +543,84 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                 <div className="grid gap-4">
                   {acceptsDateRange ? (
                     <>
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      {/*
+                        A balance sheet is a snapshot, not a period: only the
+                        as-of date moves it. Labelling its single meaningful
+                        field «تا تاریخ» next to an «از تاریخ» that changes
+                        nothing invited people to set a range and trust a figure
+                        that ignored half of it — so the snapshot reports show
+                        one clearly-named field, and the second date appears
+                        only where it is really the start of a period.
+                      */}
+                      <div className={cn("grid gap-3", !isSnapshot && "sm:grid-cols-2")}>
+                        {isSnapshot ? null : (
+                          <label className="block">
+                            <span className="mb-1.5 block text-sm font-medium text-foreground">از تاریخ</span>
+                            <JalaliDatePicker
+                              value={dateFrom}
+                              onChange={setDateFrom}
+                              placeholder="از تاریخ"
+                              className={inputClass}
+                            />
+                          </label>
+                        )}
                         <label className="block">
-                          <span className="mb-1.5 block text-sm font-medium text-foreground">از تاریخ</span>
-                          <JalaliDatePicker
-                            value={dateFrom}
-                            onChange={setDateFrom}
-                            placeholder="از تاریخ"
-                            className={inputClass}
-                          />
-                        </label>
-                        <label className="block">
-                          <span className="mb-1.5 block text-sm font-medium text-foreground">تا تاریخ</span>
+                          <span className="mb-1.5 block text-sm font-medium text-foreground">
+                            {isSnapshot ? "تاریخ ترازنامه" : "تا تاریخ"}
+                          </span>
                           <JalaliDatePicker
                             value={dateTo}
                             onChange={setDateTo}
-                            placeholder="تا تاریخ"
+                            placeholder={isSnapshot ? "تاریخ ترازنامه" : "تا تاریخ"}
                             className={inputClass}
                           />
                         </label>
+                        {isSnapshot && compare ? (
+                          <label className="block">
+                            <span className="mb-1.5 block text-sm font-medium text-foreground">
+                              مقایسه با تاریخ
+                            </span>
+                            <JalaliDatePicker
+                              value={dateFrom}
+                              onChange={setDateFrom}
+                              placeholder="تاریخ دورهٔ قبل"
+                              className={inputClass}
+                            />
+                          </label>
+                        ) : null}
                       </div>
-                      <BusinessDayRangePresets
-                        onSelect={(range) => {
-                          setDateFrom(range.dateFrom);
-                          setDateTo(range.dateTo);
-                        }}
-                        onClear={() => {
-                          setDateFrom("");
-                          setDateTo("");
-                        }}
-                      />
+                      {/*
+                        A snapshot has no period to preset — "this month" means
+                        nothing to a balance sheet, and applying a range's start
+                        to it would set the comparison date behind the user's
+                        back.
+                      */}
+                      {isSnapshot ? null : (
+                        <BusinessDayRangePresets
+                          onSelect={(range) => {
+                            setDateFrom(range.dateFrom);
+                            setDateTo(range.dateTo);
+                          }}
+                          onClear={() => {
+                            setDateFrom("");
+                            setDateTo("");
+                          }}
+                        />
+                      )}
+                      {/*
+                        An inverted range is a real mistake people make with two
+                        separate pickers, and it used to fail in two different
+                        silent ways: `/api/reports/query` rejected it with the
+                        generic "could not read" message, while the document
+                        reports accepted it and returned a confidently empty
+                        statement. Neither said what was wrong; this does, and
+                        `load` refuses to send the request at all.
+                      */}
+                      {invalidRange ? (
+                        <p role="alert" className="text-sm font-medium text-destructive">
+                          «از تاریخ» بعد از «تا تاریخ» است؛ ترتیب بازه را اصلاح کنید.
+                        </p>
+                      ) : null}
                     </>
                   ) : null}
 
@@ -447,10 +642,30 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                   ) : null}
 
                   {canCompare ? (
-                    <label className="flex min-h-11 w-fit cursor-pointer items-center gap-3 rounded-xl border border-border/80 bg-muted px-3 text-sm text-foreground">
-                      <Checkbox checked={compare} onCheckedChange={(value) => setCompare(value === true)} />
-                      مقایسه با دورهٔ قبل
-                    </label>
+                    <div>
+                      <label className="flex min-h-11 w-fit cursor-pointer items-center gap-3 rounded-xl border border-border/80 bg-muted px-3 text-sm text-foreground">
+                        <Checkbox
+                          checked={compare}
+                          // Comparison needs a period to mirror (P&L/cash flow)
+                          // or an earlier as-of date (balance sheet), and both
+                          // come from the range. Ticking it with no range
+                          // returned `previous: null` and drew nothing, so the
+                          // control now says so instead of looking broken.
+                          disabled={!comparisonReady}
+                          onCheckedChange={(value) => setCompare(value === true)}
+                        />
+                        مقایسه با دورهٔ قبل
+                      </label>
+                      {!comparisonReady ? (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          برای مقایسه، هر دو سر بازهٔ تاریخ را انتخاب کنید.
+                        </p>
+                      ) : isSnapshot && compare && !dateFrom ? (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          تاریخ مقایسه را انتخاب کنید تا ترازنامهٔ آن تاریخ کنار ترازنامهٔ فعلی نمایش داده شود.
+                        </p>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               ) : (
@@ -465,33 +680,46 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
               rows={rows}
               document={document}
               chartType={chartType}
-              dateFrom={dateFrom}
-              dateTo={dateTo}
+              dateFrom={loadedRange.dateFrom}
+              dateTo={loadedRange.dateTo}
               error={loadError}
+              loading={loading}
+              invalidRange={invalidRange}
+              // Money metrics go through the business's unit; everything else
+              // stays a plain grouped number.
+              formatValue={formatValue}
             />
 
             <SectionCard title="خروجی و اشتراک‌گذاری">
               <div className="flex flex-wrap items-center gap-2">
+                {/*
+                  Exports describe the range the figures on screen were read
+                  for (`loadedRange`), not whatever is currently in the pickers
+                  — otherwise a file could be stamped «از … تا …» with a period
+                  its own numbers never covered. `disabled` while a read is in
+                  flight or failed, since there is nothing truthful to export.
+                */}
                 {selected.shape === "rows" || EXPORT_KIND_BY_SHAPE[selected.shape] ? (
                   <ExportButtons
+                    disabled={loading || Boolean(loadError) || invalidRange || (rows === null && document === null)}
                     request={
                       EXPORT_KIND_BY_SHAPE[selected.shape]
                         ? {
                             title: selected.label,
                             kind: EXPORT_KIND_BY_SHAPE[selected.shape],
-                            dateFrom,
-                            dateTo,
+                            dateFrom: loadedRange.dateFrom,
+                            dateTo: loadedRange.dateTo,
                           }
                         : {
                             title: selected.label,
                             kind: "chart",
-                            config: {
-                              ...selected.config,
-                              filters: {
-                                dateFrom: dateFrom || undefined,
-                                dateTo: dateTo || undefined,
-                              },
-                            },
+                            // Same merge as the on-screen query, so the export
+                            // is the same report — COGS stayed COGS.
+                            config: configWithRange(
+                              selected.config,
+                              loadedRange.dateFrom,
+                              loadedRange.dateTo,
+                            ),
                           }
                     }
                   />
@@ -539,6 +767,9 @@ function ReportBody({
   dateFrom,
   dateTo,
   error,
+  loading,
+  invalidRange,
+  formatValue,
 }: {
   report: StandardReportDef;
   rows: ReportRow[] | null;
@@ -547,11 +778,26 @@ function ReportBody({
   dateFrom: string;
   dateTo: string;
   error: string;
+  loading: boolean;
+  invalidRange: boolean;
+  formatValue: (value: number) => string;
 }) {
+  if (invalidRange) {
+    return (
+      <SectionCard title="نتیجهٔ گزارش">
+        <EmptyState>پس از اصلاح بازهٔ تاریخ، گزارش دوباره خوانده می‌شود.</EmptyState>
+      </SectionCard>
+    );
+  }
+
   if (error) {
     return (
       <SectionCard title="نتیجهٔ گزارش">
-        <EmptyState>{error}</EmptyState>
+        {/* `role="alert"`: a failed read is the one thing here worth
+            interrupting a screen reader for. */}
+        <div role="alert">
+          <EmptyState>{error}</EmptyState>
+        </div>
       </SectionCard>
     );
   }
@@ -619,13 +865,54 @@ function ReportBody({
   }
 
   const data = rowsToChartData(rows);
-  return (
-    <div className="min-w-0 space-y-4 sm:space-y-5">
-      <SectionCard title="نمودار">
-        <ChartPreview chartType={chartType} data={data} label={report.label} />
+  const rowLimit = typeof report.config?.limit === "number" ? report.config.limit : null;
+
+  /*
+    An empty result used to render a chart of nothing above a table of nothing —
+    two blank cards that read like a broken screen rather than an answer. Say it
+    once, and say which lever to pull.
+  */
+  if (data.length === 0) {
+    return (
+      <SectionCard title="نتیجهٔ گزارش">
+        <EmptyState>
+          {dateFrom || dateTo
+            ? "برای این بازهٔ تاریخ داده‌ای ثبت نشده است. بازهٔ دیگری را امتحان کنید."
+            : "هنوز داده‌ای برای این گزارش ثبت نشده است."}
+        </EmptyState>
       </SectionCard>
-      <SectionCard title="داده‌های گزارش" flush>
-        <DataTable columns={["بُعد", "مقدار"]} data={data} />
+    );
+  }
+
+  return (
+    <div className="min-w-0 space-y-4 sm:space-y-5" aria-busy={loading || undefined}>
+      {/*
+        The one polite live region on the result side: a short sentence, so a
+        screen reader hears "۱۲ ردیف" instead of the entire table being
+        re-announced on every refetch.
+      */}
+      <p aria-live="polite" className="sr-only">
+        {loading ? `در حال خواندن ${report.label}` : `${report.label}: ${formatPersianNumber(data.length)} ردیف`}
+      </p>
+      <SectionCard title="نمودار">
+        <ChartPreview chartType={chartType} data={data} label={report.label} formatValue={formatValue} />
+      </SectionCard>
+      <SectionCard
+        title="داده‌های گزارش"
+        flush
+        /*
+          Several standard reports are top-N by definition — «پرفروش‌ترین
+          کالاها» is `limit: 10` — and the table gave no sign of it, so ten rows
+          of a two-hundred-item menu read as the whole menu and any total summed
+          off it was wrong. Only shown when the limit actually bit.
+        */
+        footer={
+          rowLimit && rows.length >= rowLimit
+            ? `این گزارش ${formatPersianNumber(rowLimit)} مورد برتر را نشان می‌دهد، نه همهٔ ردیف‌ها.`
+            : undefined
+        }
+      >
+        <DataTable columns={["بُعد", "مقدار"]} data={data} formatValue={formatValue} />
       </SectionCard>
     </div>
   );

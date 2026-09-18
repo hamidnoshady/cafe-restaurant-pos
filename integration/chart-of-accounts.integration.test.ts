@@ -573,3 +573,40 @@ describe("chart-of-accounts hardening", () => {
     expect(list.find((a) => a.id === acct.expense)!.name).toBe("Rent");
   });
 });
+
+describe("the audit trail survives rows a settings writer logged", () => {
+  // `audit_log.entity_id` is text, and the settings writers do not put a uuid
+  // in it (`settings.mfa_policy.update` logs 'mfa.policy',
+  // `settings.business.update` logs 'business'). The trail's joins used to
+  // cast the column bare, so ONE such row made listAuditLog — and with it the
+  // whole audit tab — throw `invalid input syntax for type uuid` for every
+  // reader of that business, forever.
+  it("lists the trail beside a row whose entity_id is text, not a uuid", async () => {
+    await accountsService.renameAccount(biz.id, acct.expense, "Rent (renamed)", user.id);
+    await db.query(
+      `INSERT INTO audit_log (business_id, user_id, action, entity, entity_id, payload)
+       VALUES ($1, $2, 'settings.business.update', 'settings', 'business', '{"businessName":"Renamed Co"}')`,
+      [biz.id, user.id],
+    );
+
+    const entries = await auditService.listAuditLog(biz.id, {});
+    expect(entries.map((e) => e.action)).toContain("settings.business.update");
+    expect(entries.map((e) => e.action)).toContain("account.renamed");
+    // And the entity filter the audit tab's chip sends still narrows to it.
+    const [settingsEntry] = await auditService.listAuditLog(biz.id, { entity: "settings" });
+    expect(settingsEntry.action).toBe("settings.business.update");
+  });
+
+  it("still resolves an account row's live labels once a non-uuid row exists", async () => {
+    await db.query(
+      `INSERT INTO audit_log (business_id, user_id, action, entity, entity_id, payload)
+       VALUES ($1, $2, 'settings.mfa_policy.update', 'settings', 'mfa.policy', '{"requireForManagers":true}')`,
+      [biz.id, user.id],
+    );
+    await accountsService.reparentAccount(biz.id, acct.expense, acct.cash, user.id);
+
+    const [entry] = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    expect(entry.accountBeforeParentLabel).toBe("5000 — Expenses");
+    expect(entry.accountAfterParentLabel).toBe("1100 — Cash");
+  });
+});
