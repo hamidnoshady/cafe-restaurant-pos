@@ -43,7 +43,7 @@ describe("the scope list", () => {
 
   it("gives every scope an app, a role set and a place to live", () => {
     for (const def of PARTY_SCOPES_DEF) {
-      expect(def.app).toBeTruthy();
+      expect(def.app === null || ["accounting", "growth", "crm", "website"].includes(def.app)).toBe(true);
       expect(def.roles.length).toBeGreaterThan(0);
       expect(def.roles).toContain(def.defaultRole);
       // A real, public place — an app's own prefix (`/accounting/directory`,
@@ -104,13 +104,14 @@ describe("who each app lists", () => {
     expect(accounting.href).toBe("/accounting/directory");
   });
 
-  it("has exactly one accounting scope — the per-role screens are views now", () => {
+  it("keeps one canonical Accounting directory even though work-area scopes share its app — the per-role screens are views now", () => {
     // «مشتریان»، «تأمین‌کنندگان» and «فروشندگان» used to be three scopes of
     // their own, three routes over the same table and three sidebar rows. They
     // are `?view=` filters of the one directory now (`party-directory.ts`), so
     // there is one screen, one add/edit form and one place a deep link lands.
     const accountingScopes = PARTY_SCOPES_DEF.filter((def) => def.app === "accounting");
-    expect(accountingScopes.map((def) => def.key)).toEqual(["accounting"]);
+    expect(accountingScopes.map((def) => def.key)).toEqual(["accounting", "operations", "sales"]);
+    expect(accountingScopes.filter((def) => def.key === "accounting")).toHaveLength(1);
   });
 
   it("filters a shared list to what the scope is about", () => {
