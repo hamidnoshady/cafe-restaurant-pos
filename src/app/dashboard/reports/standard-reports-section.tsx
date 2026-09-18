@@ -118,6 +118,60 @@ interface SavedReportRow {
 type ReportPayload = Record<string, unknown>;
 
 /**
+ * Headline figures of a document-shaped report (a statement, not a row dump)
+ * as one readable sentence — what the assistant gets asked to explain when
+ * there are no rows to summarize. The comparison payload wraps the current
+ * period under `current`, so unwrap it first. Statement amounts are Rial by
+ * contract, so the caller passes the business's money formatter in; unknown
+ * shapes contribute nothing rather than fabricated numbers.
+ */
+function documentFacts(
+  document: ReportPayload | null,
+  shape: ReportShape,
+  formatFigure: (value: number) => string,
+): string {
+  if (typeof document !== "object" || document === null) return "";
+  const root =
+    "current" in document && typeof document.current === "object" && document.current !== null
+      ? (document.current as ReportPayload)
+      : document;
+  const parts: string[] = [];
+  const figure = (key: string, label: string) => {
+    const value = root[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      parts.push(`${label}: ${formatFigure(Math.round(value))}`);
+    }
+  };
+  switch (shape) {
+    case "profit_and_loss":
+      figure("totalRevenue", "جمع درآمدها");
+      figure("totalExpenses", "جمع هزینه‌ها");
+      figure("costOfSales", "بهای تمام‌شده");
+      figure("netIncome", "سود (زیان) خالص");
+      break;
+    case "balance_sheet":
+      figure("totalAssets", "جمع دارایی‌ها");
+      figure("totalLiabilities", "جمع بدهی‌ها");
+      figure("totalEquity", "جمع حقوق صاحبان سرمایه");
+      if (typeof root.balanced === "boolean") {
+        parts.push(root.balanced ? "وضعیت تراز: متوازن" : "وضعیت تراز: نامتوازن");
+      }
+      break;
+    case "cash_flow":
+      figure("openingCash", "موجودی ابتدای دوره");
+      figure("closingCash", "موجودی پایان دوره");
+      figure("netChange", "تغییر خالص وجه نقد");
+      break;
+    case "food_cost_variance":
+      figure("theoreticalCost", "بهای نظری");
+      figure("actualCogs", "بهای تمام‌شده واقعی");
+      figure("variance", "مابه‌التفاوت");
+      break;
+  }
+  return parts.join("؛ ");
+}
+
+/**
  * Folds the spelling differences Persian typing produces, so the search box
  * matches what people actually type.
  *
@@ -148,7 +202,10 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [document, setDocument] = useState<ReportPayload | null>(null);
   const [loadError, setLoadError] = useState("");
-  const [loading, setLoading] = useState(false);
+  // Starts true: the mount effect issues the first read immediately, so before
+  // that finishes the honest state is "loading" — rendering the null-payload
+  // fallback then would flash «نتیجه‌ای یافت نشد» for one frame.
+  const [loading, setLoading] = useState(true);
   /**
    * The range the numbers on screen were actually read for.
    *
@@ -204,6 +261,10 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   const canCompare = selected ? COMPARABLE_SHAPES.has(selected.shape) : false;
   /** A point-in-time statement: only an as-of date means anything to it. */
   const isSnapshot = selected ? SNAPSHOT_SHAPES.has(selected.shape) : false;
+  // Each snapshot names its cutoff the way an owner would: a balance sheet
+  // has a «تاریخ ترازنامه», the warranty register a plain «تا تاریخ».
+  const snapshotDateLabel =
+    selected?.shape === "balance_sheet" ? "تاریخ ترازنامه" : "تا تاریخ";
   const invalidRange = selected ? isInvalidRange(selected.shape, dateFrom, dateTo) : false;
   const comparisonReady = selected ? canCompareRange(selected.shape, dateFrom, dateTo) : false;
 
@@ -388,6 +449,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     // everything else as a grouped Persian number. Feeding the assistant a bare
     // Rial integer for a Toman business invited it to quote a number ten times
     // what the owner is looking at.
+    // Document-shaped reports (the statements) have no rows — pull their
+    // headline figures from the payload instead, so «توضیح این عدد» is never
+    // sent to the assistant empty-handed over a screen full of numbers.
     const facts = rows
       ? rowsToChartData(rows)
           .slice(0, 8)
@@ -398,7 +462,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
               }`,
           )
           .join("؛ ")
-      : "";
+      : documentFacts(document, selected.shape, (value) => money.format(value));
     // Shamsi, like every other date a user sees (AGENTS.md "Shamsi-only dates").
     // This used to interpolate the raw ISO string straight into the prompt.
     const period =
@@ -566,12 +630,12 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                         )}
                         <label className="block">
                           <span className="mb-1.5 block text-sm font-medium text-foreground">
-                            {isSnapshot ? "تاریخ ترازنامه" : "تا تاریخ"}
+                            {isSnapshot ? snapshotDateLabel : "تا تاریخ"}
                           </span>
                           <JalaliDatePicker
                             value={dateTo}
                             onChange={setDateTo}
-                            placeholder={isSnapshot ? "تاریخ ترازنامه" : "تا تاریخ"}
+                            placeholder={isSnapshot ? snapshotDateLabel : "تا تاریخ"}
                             className={inputClass}
                           />
                         </label>
@@ -804,9 +868,15 @@ function ReportBody({
 
   if (DOCUMENT_SHAPES.has(report.shape)) {
     if (document === null) {
+      // A finished request with no payload surely isn't "loading" any more —
+      // say so instead of leaving a skeleton spinning forever.
       return (
         <SectionCard title="نتیجهٔ گزارش">
-          <LoadingSkeleton rows={4} label={`در حال خواندن ${report.label}`} />
+          {loading ? (
+            <LoadingSkeleton rows={4} label={`در حال خواندن ${report.label}`} />
+          ) : (
+            <EmptyState>نتیجه‌ای برای این گزارش یافت نشد.</EmptyState>
+          )}
         </SectionCard>
       );
     }
@@ -859,7 +929,11 @@ function ReportBody({
   if (rows === null) {
     return (
       <SectionCard title="نتیجهٔ گزارش">
-        <LoadingSkeleton rows={4} label={`در حال خواندن ${report.label}`} />
+        {loading ? (
+          <LoadingSkeleton rows={4} label={`در حال خواندن ${report.label}`} />
+        ) : (
+          <EmptyState>نتیجه‌ای برای این گزارش یافت نشد.</EmptyState>
+        )}
       </SectionCard>
     );
   }

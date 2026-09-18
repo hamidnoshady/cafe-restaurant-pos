@@ -146,9 +146,10 @@ export const UNDATED_SHAPES = new Set<ReportShape>([
 /**
  * Point-in-time statements: only an as-of date means anything to them, so they
  * get one clearly-named field instead of a range whose start silently does
- * nothing to the figures.
+ * nothing to the figures. The warranty register belongs here too — its API
+ * lists open+returned items up to a cutoff (`until`), and ignores `dateFrom`.
  */
-export const SNAPSHOT_SHAPES = new Set<ReportShape>(["balance_sheet"]);
+export const SNAPSHOT_SHAPES = new Set<ReportShape>(["balance_sheet", "warranty"]);
 
 /** The export API only knows these kinds; everything else has no export path yet. */
 export const EXPORT_KIND_BY_SHAPE: Partial<Record<ReportShape, "pnl" | "balance_sheet" | "cash_flow">> = {

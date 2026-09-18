@@ -36,17 +36,31 @@ export interface DrillDownTarget {
 export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; onClose: () => void }) {
   const money = useMoney();
   const [lines, setLines] = useState<DrillDownLine[] | null>(null);
+  const [error, setError] = useState("");
   // An overlay that ignores Escape is a keyboard trap; see useOverlayEscape.
   useOverlayEscape(onClose);
 
   useEffect(() => {
     setLines(null);
+    setError("");
+    let cancelled = false;
     const params = new URLSearchParams({ accountCode: target.accountCode });
     if (target.dateFrom) params.set("dateFrom", target.dateFrom);
     if (target.dateTo) params.set("dateTo", target.dateTo);
-    api<{ lines: DrillDownLine[] }>(`/api/reports/drill-down?${params}`).then(({ ok, data }) => {
-      if (ok) setLines(data.lines);
-    });
+    api<{ lines: DrillDownLine[] }>(`/api/reports/drill-down?${params}`)
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (ok) setLines(data.lines);
+        // A failed fetch used to leave the skeleton on screen for ever, which
+        // reads as «still loading» rather than «did not load».
+        else setError("خواندن اسناد این حساب ممکن نشد.");
+      })
+      .catch(() => {
+        if (!cancelled) setError("خواندن اسناد این حساب ممکن نشد.");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [target.accountCode, target.dateFrom, target.dateTo]);
 
   return (
@@ -77,11 +91,16 @@ export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; o
           </button>
         </div>
 
-        {lines === null ? (
+        {error ? (
+          <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+          </p>
+        ) : lines === null ? (
           <LoadingSkeleton rows={3} />
         ) : lines.length === 0 ? (
           <p className="text-sm text-muted-foreground">سندی برای این حساب در این بازه یافت نشد.</p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">اسناد حساب {target.accountName}</caption>
             <thead>
@@ -107,6 +126,7 @@ export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; o
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

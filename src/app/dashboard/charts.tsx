@@ -164,7 +164,11 @@ export function PieChart({
   });
 
   return (
-    <div className="flex h-full items-center gap-4">
+    // h-full so a widget tile's fixed height wins; maxHeight so a report
+    // preview (whose parent has no height) still caps the legend at the
+    // chart's height budget instead of stretching the card without end —
+    // the same budget BarChart already enforces on itself.
+    <div className="flex h-full items-center gap-4" style={{ maxHeight: height }}>
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="shrink-0">
         <circle cx={cx} cy={cy} r={r} fill="var(--color-muted)" />
         {arcs.map((a, i) => (
@@ -174,7 +178,7 @@ export function PieChart({
         ))}
         <circle cx={cx} cy={cy} r={r * 0.55} fill="var(--color-card)" />
       </svg>
-      <ul className="min-w-0 flex-1 space-y-1 overflow-y-auto text-xs">
+      <ul className="min-h-0 min-w-0 flex-1 space-y-1 self-stretch overflow-y-auto pe-1 text-xs">
         {arcs.map((a, i) => (
           <li key={i} className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />

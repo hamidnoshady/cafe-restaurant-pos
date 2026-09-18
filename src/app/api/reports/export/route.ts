@@ -7,7 +7,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { reportConfigLabels, validateReportConfig, type ReportConfig } from "@/lib/reports";
 import { getBalanceSheet, getCashFlow, getProfitAndLoss, getBusinessOverview, runCustomReportQuery } from "@/lib/reports-service";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, moneyToInput, type MoneyUnit } from "@/lib/money";
 import { rowsToCsv, rowsToXlsxBuffer, type ReportTable } from "@/lib/report-export";
 import { renderReportLedgerHtml, renderReportTableHtml, type ReportPdfBusinessInfo } from "@/lib/report-pdf-template";
 import { renderHtmlToPdf } from "@/lib/pdf-render";
@@ -111,6 +111,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         ["هزینه‌ها", report.expenses],
       ],
       [["جمع کل", "", report.netIncome]],
+      unit,
     );
     return respondWithTable(table, title, format, session.businessId);
   }
@@ -142,6 +143,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         ["حقوق صاحبان سرمایه", [...report.equity, { accountCode: "", accountName: "سود انباشته (جاری)", amount: report.retainedEarnings }]],
       ],
       [["جمع دارایی‌ها", "", report.totalAssets], ["جمع بدهی‌ها + حقوق صاحبان سرمایه", "", report.totalLiabilities + report.totalEquity]],
+      unit,
     );
     return respondWithTable(table, title, format, session.businessId);
   }
@@ -172,6 +174,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         ["موجودی پایان دوره", "", report.closingCash],
         ["تغییر خالص", "", report.netChange],
       ],
+      unit,
     );
     return respondWithTable(table, title, format, session.businessId);
   }
@@ -267,21 +270,30 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   return NextResponse.json({ error: "invalid_kind" }, { status: 400 });
 });
 
+/**
+ * The financial statements' shared CSV/Excel shape. Amounts are converted to
+ * the business's display unit (the screen and the PDF already read in that
+ * unit — the file formats used to carry raw Rial, so one report disagreed
+ * with itself by a factor of ten across formats) and the column says which.
+ */
 function ledgerTable(
   sections: [string, { accountCode: string; accountName: string; amount: number }[]][],
   totals: [string, string, number][],
+  unit: MoneyUnit,
 ): ReportTable {
+  const inUnit = (amount: number) => moneyToInput(amount, unit);
+  const unitLabel = unit === "rial" ? "ریال" : "تومان";
   const rows: Record<string, unknown>[] = [];
   for (const [heading, lines] of sections) {
-    for (const l of lines) rows.push({ section: heading, code: l.accountCode, name: l.accountName, amount: l.amount });
+    for (const l of lines) rows.push({ section: heading, code: l.accountCode, name: l.accountName, amount: inUnit(l.amount) });
   }
-  for (const [label, , amount] of totals) rows.push({ section: label, code: "", name: "", amount });
+  for (const [label, , amount] of totals) rows.push({ section: label, code: "", name: "", amount: inUnit(amount) });
   return {
     columns: [
       { key: "section", label: "بخش" },
       { key: "code", label: "کد" },
       { key: "name", label: "حساب" },
-      { key: "amount", label: "مبلغ" },
+      { key: "amount", label: `مبلغ (${unitLabel})` },
     ],
     rows,
   };
