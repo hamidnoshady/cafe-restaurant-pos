@@ -81,8 +81,9 @@ describe("APPS registry integrity", () => {
     }
   });
 
-  it("declares every app key exactly once and resolves each to a def", () => {
-    expect(APPS.map((app) => app.key).sort()).toEqual([...APP_KEYS].sort());
+  it("declares exactly the four standalone apps and resolves each to a def", () => {
+    expect(APP_KEYS).toEqual(["accounting", "growth", "crm", "website"]);
+    expect(APPS.map((app) => app.key)).toEqual([...APP_KEYS]);
     for (const key of APP_KEYS) {
       expect(appForKey(key).key).toBe(key);
     }
