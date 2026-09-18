@@ -5,7 +5,7 @@
  * are sent every turn. For "how much did we sell yesterday?" the gold weight,
  * watch repair and cosmetics batch-expiry tools go along for the ride.
  *
- * This module maps tools to apps, so a turn that only touches "sales" sends
+ * This module maps tools to apps, so a turn that only touches Accounting sends
  * only sales tools + the always-on set. Three guards protect against
  * misrouting:
  *
@@ -38,12 +38,12 @@ const ALWAYS_ON_TOOLS = new Set([
  * in ALWAYS_ON_TOOLS are assumed to be general-purpose and always included.
  */
 const TOOL_APP_MAP: Record<string, AppKey> = {
-  // Sales app
-  "get_menu_performance": "sales",
-  "get_void_pattern": "sales",
-  "get_waste_history": "sales",
-  "get_stock_valuation": "sales",
-  "get_supplier_performance": "sales",
+  // Accounting sales and stock tools
+  "get_menu_performance": "accounting",
+  "get_void_pattern": "accounting",
+  "get_waste_history": "accounting",
+  "get_stock_valuation": "accounting",
+  "get_supplier_performance": "accounting",
 
   // Growth app — the audience *engines*. The customer record itself moved to
   // the CRM in Phase 36; these two stayed because they are about a campaign
@@ -61,11 +61,11 @@ const TOOL_APP_MAP: Record<string, AppKey> = {
   "list_customer_segments": "crm",
   "preview_customer_segment": "crm",
 
-  // Operations app
-  "get_reservation_conflicts": "operations",
-  "get_table_turnover_rate": "operations",
-  "get_courier_performance": "operations",
-  "get_near_expiry_items": "operations",
+  // Accounting operations tools
+  "get_reservation_conflicts": "accounting",
+  "get_table_turnover_rate": "accounting",
+  "get_courier_performance": "accounting",
+  "get_near_expiry_items": "accounting",
 
   // Accounting app
   "get_ar_aging": "accounting",
