@@ -38,6 +38,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
     bad_request: "درخواست نامعتبر بود.",
+    // The synthetic code `api()` answers when fetch itself dies — offline, or
+    // the server unreachable — so screens can say *why* instead of the generic
+    // fallback.
+    network_error: "ارتباط با سرور برقرار نشد. اتصال اینترنت را بررسی کنید و دوباره تلاش کنید.",
     missing_fields: "فیلدهای الزامی را پر کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
