@@ -20,7 +20,7 @@ import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import type { GrowthOverview } from "@/lib/growth-overview";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { EmptyState, KpiCard, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import type { GrowthSectionKey } from "./growth-routes";
 
@@ -37,25 +37,6 @@ const ACTIVITY_KIND_LABELS: Record<string, string> = {
   gift_card: "کارت هدیه",
   commission: "پورسانت",
 };
-
-/** A KPI tile: cardClass composed, not restated (design-lint holds this line). */
-function StatCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
-      <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
-}
 
 export function OverviewSection({ onGoToSection }: { onGoToSection: (key: GrowthSectionKey) => void }) {
   const money = useMoney();
@@ -109,32 +90,32 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard
+        <KpiCard
           label="تخفیف کمپین‌ها · ۳۰ روز گذشته"
           value={money.format(overview.campaigns.discountRial)}
           hint={`${formatPersianNumber(overview.campaigns.applications)} بار اعمال روی فروش · ${formatPersianNumber(overview.campaigns.counts.live)} کمپین در حال اجرا`}
         />
-        <StatCard
+        <KpiCard
           label="بدهی کارت هدیه (۲۴۲۰)"
           value={money.format(overview.giftCards.outstandingRial)}
           hint={`${formatPersianNumber(overview.giftCards.issued30d)} کارت در ۳۰ روز گذشته صادر شد`}
         />
-        <StatCard
+        <KpiCard
           label="اعتبار فروشگاهی مشتریان (۲۴۱۰)"
           value={money.format(storeCredit)}
           hint={`${formatPersianNumber(overview.loyalty.customersWithPoints)} مشتری از ${formatPersianNumber(overview.loyalty.customersTotal)} صاحب امتیاز است`}
         />
-        <StatCard
+        <KpiCard
           label="پورسانت فروشندگان · ۳۰ روز گذشته"
           value={money.format(overview.commission.accrued30d)}
           hint="هزینه ۵۲۱۰، بدهی حقوق ۲۳۰۰"
         />
-        <StatCard
+        <KpiCard
           label="امتیاز در گردش"
           value={formatPersianNumber(overview.loyalty.pointsOutstanding)}
           hint={`ارزش تخمینی بازخرید ${money.format(overview.loyalty.pointsValueEstimate)} · ${formatPersianNumber(overview.loyalty.redeemed30d)} امتیاز در ۳۰ روز خرج شد`}
         />
-        <StatCard
+        <KpiCard
           label="آمادهٔ خرید مجدد (این شعبه)"
           value={formatPersianNumber(overview.repurchase.due)}
           hint="مشتریانی که موعد خرید دوباره‌شان گذشته است"

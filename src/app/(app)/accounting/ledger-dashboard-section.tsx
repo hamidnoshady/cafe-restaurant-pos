@@ -10,6 +10,7 @@ import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 import {
   cardClass,
   EmptyState,
+  KpiCard,
   SectionCard,
   SectionCardSkeleton,
   StatusBadge,
@@ -51,31 +52,6 @@ interface LedgerOverview {
     sourceType: string | null;
     total: number;
   }[];
-}
-
-/** A KPI tile: cardClass composed, not restated (design-lint holds this line). */
-function StatCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
-      <p className="text-xs font-medium leading-5 text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-        {value}
-      </p>
-      {hint ? (
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p>
-      ) : null}
-    </div>
-  );
 }
 
 function LedgerHealthNotice({ overview }: { overview: LedgerOverview }) {
@@ -331,24 +307,24 @@ export function LedgerDashboardSection({
       <LedgerHealthNotice overview={overview} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard
+        <KpiCard
           label="نقدینگی (صندوق و بانک)"
           value={money.format(overview.cashAndBank)}
           hint="حساب‌های ۱۱۰۰ تا ۱۱۳۰"
         />
-        <StatCard
+        <KpiCard
           label="دریافتنی‌ها"
           value={money.format(overview.receivables)}
           hint={`${formatPersianNumber(overview.openReceivableCheques)} چک دریافتی باز`}
         />
-        <StatCard
+        <KpiCard
           label="پرداختنی‌ها"
           value={money.format(overview.payables)}
           hint={`${formatPersianNumber(overview.openPayableCheques)} چک صادرشدهٔ باز`}
         />
-        <StatCard label="درآمد" value={money.format(overview.revenue)} />
-        <StatCard label="هزینه‌ها" value={money.format(overview.expenses)} />
-        <StatCard
+        <KpiCard label="درآمد" value={money.format(overview.revenue)} />
+        <KpiCard label="هزینه‌ها" value={money.format(overview.expenses)} />
+        <KpiCard
           label="سود (زیان) خالص"
           value={money.format(overview.netIncome)}
         />

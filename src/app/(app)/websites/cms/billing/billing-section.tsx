@@ -31,6 +31,14 @@ import {
   type WebsiteSubscription,
 } from "@/lib/website/billing";
 import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
+import {
   EmptyState,
   SectionCard,
   SectionCardSkeleton,
@@ -229,28 +237,26 @@ export function CmsBillingSection() {
         {charges.length === 0 ? (
           <EmptyState>هنوز هزینه‌ای برای این سایت ثبت نشده است.</EmptyState>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[34rem] text-sm">
-              <thead className="text-xs text-muted-foreground">
-                <tr className="border-b border-border">
-                  <th className="px-3 py-2 text-start font-medium">تاریخ</th>
-                  <th className="px-3 py-2 text-start font-medium">بابت</th>
-                  <th className="px-3 py-2 text-start font-medium">شرح</th>
-                  <th className="px-3 py-2 text-start font-medium">مبلغ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {charges.map((charge) => (
-                  <tr key={charge.id} className="border-b border-border/60 last:border-0">
-                    <td className="px-3 py-2 text-muted-foreground">{formatJalali(charge.occurredAt)}</td>
-                    <td className="px-3 py-2">{WEBSITE_CHARGE_LABELS[charge.kind] ?? charge.kind}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{charge.description}</td>
-                    <td className="px-3 py-2 font-medium tabular-nums">{formatToman(charge.amountRial)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable caption="سوابق هزینهٔ سایت" tableClassName="min-w-[34rem]">
+            <DataTableHead>
+              <Th>تاریخ</Th>
+              <Th>بابت</Th>
+              <Th>شرح</Th>
+              <Th numeric>مبلغ</Th>
+            </DataTableHead>
+            <DataTableBody>
+              {charges.map((charge) => (
+                <DataTableRow key={charge.id}>
+                  <Td muted nowrap>
+                    {formatJalali(charge.occurredAt)}
+                  </Td>
+                  <Td>{WEBSITE_CHARGE_LABELS[charge.kind] ?? charge.kind}</Td>
+                  <Td muted>{charge.description}</Td>
+                  <Td numeric>{formatToman(charge.amountRial)}</Td>
+                </DataTableRow>
+              ))}
+            </DataTableBody>
+          </DataTable>
         )}
       </SectionCard>
     </div>

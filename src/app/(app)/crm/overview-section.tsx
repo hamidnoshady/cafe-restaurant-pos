@@ -33,20 +33,9 @@ import { formatJalali } from "@/lib/jalali";
 import { LIFECYCLE_STAGES, type LifecycleStage } from "@/lib/crm-scoring";
 import { DEAL_STAGE_META } from "@/lib/crm-shared";
 import type { CrmOverview } from "@/lib/crm-overview";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { EmptyState, KpiCard, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import { crmCustomerHref, type CrmSectionKey } from "./crm-routes";
-
-/** A KPI tile: `cardClass` composed, not restated (design-lint holds this line). */
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
-      <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
-}
 
 /** A labelled proportion bar — lifecycle mix and consent coverage both read better as a shape. */
 function ShareBar({ parts }: { parts: { key: string; label: string; count: number; tone: string }[] }) {
@@ -182,12 +171,12 @@ export function CrmOverviewSection({
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard
+        <KpiCard
           label="مشتریان فعال"
           value={formatPersianNumber(customers.total)}
           hint={`${formatPersianNumber(customers.neverPurchased)} هنوز خرید نکرده‌اند`}
         />
-        <StatCard
+        <KpiCard
           label="مشتری تازه · ۳۰ روز گذشته"
           value={formatPersianNumber(customers.new30d)}
           hint={
@@ -198,17 +187,17 @@ export function CrmOverviewSection({
                 : `${formatPersianNumber(Math.abs(newTrend))} کمتر از دورهٔ قبل`
           }
         />
-        <StatCard
+        <KpiCard
           label="قابل ارسال پیامک"
           value={formatPersianNumber(consent.smsReachable)}
           hint={`${toPersianDigits(String(consent.smsCoveragePercent))}٪ از مشتریان · ${formatPersianNumber(consent.smsGranted)} رضایت داده‌اند`}
         />
-        <StatCard
+        <KpiCard
           label="ارزش تحقق‌یافتهٔ مشتریان"
           value={money.formatText(value.totalHistoricRial)}
           hint={`میانگین هر مشتری ${money.formatText(value.averageCustomerRial)}`}
         />
-        <StatCard
+        <KpiCard
           label="نگه‌داشت مشتری · دوره به دوره"
           value={retention.priorCount === 0 ? "—" : `${toPersianDigits(String(retention.retentionRate))}٪`}
           hint={
@@ -217,12 +206,12 @@ export function CrmOverviewSection({
               : `${formatPersianNumber(retention.retainedCount)} از ${formatPersianNumber(retention.priorCount)} مشتری دورهٔ قبل برگشتند`
           }
         />
-        <StatCard
+        <KpiCard
           label="کارهای عقب‌افتاده"
           value={formatPersianNumber(tasks.overdue)}
           hint={`${formatPersianNumber(tasks.dueToday)} کار امروز · ${formatPersianNumber(tasks.open)} کار باز`}
         />
-        <StatCard
+        <KpiCard
           label="بخش‌بندی‌های فعال"
           value={formatPersianNumber(segments.total)}
           hint={segments.total > 0 ? segments.names.slice(0, 2).join(" · ") : "برای هدف‌گیری مشتریان یک بخش بسازید"}

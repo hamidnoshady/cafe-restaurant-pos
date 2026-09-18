@@ -23,6 +23,14 @@ import { Button } from "@/components/ui/button";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import { EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { PartyFormDialog } from "@/app/dashboard/parties/party-form";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
 import { api, ErrorBox, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 function stageLabel(stage: string | null): string {
@@ -128,54 +136,52 @@ export function GrowthCustomersSection({
           <EmptyState>مشتری‌ای پیدا نشد.</EmptyState>
         ) : (
           <>
-            <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/80 text-muted-foreground">
-                    <th className="py-2 pe-3 text-start font-medium">مشتری</th>
-                    <th className="py-2 pe-3 text-start font-medium">تلفن</th>
-                    <th className="py-2 pe-3 text-start font-medium">مرحلهٔ چرخهٔ حیات</th>
-                    <th className="py-2 pe-3 text-start font-medium">خریدها</th>
-                    <th className="py-2 pe-3 text-start font-medium">مجموع خرید</th>
-                    <th className="py-2 pe-3 text-start font-medium">امتیاز وفاداری</th>
-                    <th className={`py-2 text-start font-medium ${canManage ? "pe-3" : ""}`}>وضعیت</th>
-                    {canManage ? <th className="py-2 text-start font-medium">عملیات</th> : null}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/80">
-                  {customers.map((customer) => (
-                    <tr key={customer.id} className={customer.id === selectedCustomerId ? "bg-amber-50 dark:bg-amber-500/10" : ""}>
-                      <td className="py-3 pe-3">
-                        <Link
-                          href={crmCustomerHref(customer.id)}
-                          className="inline-flex items-center gap-2 font-medium text-foreground hover:underline"
-                        >
-                          <ContactIcon className="size-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
-                          {customer.displayName}
-                        </Link>
-                      </td>
-                      <td className="py-3 pe-3 text-muted-foreground">{customer.phone ? toPersianDigits(customer.phone) : "—"}</td>
-                      <td className="py-3 pe-3">{stageLabel(customer.lifecycleStage)}</td>
-                      <td className="py-3 pe-3 tabular-nums">{formatPersianNumber(customer.orderCount)}</td>
-                      <td className="py-3 pe-3 tabular-nums font-semibold">{money.format(customer.totalSpentRial)}</td>
-                      <td className="py-3 pe-3 tabular-nums">{formatPersianNumber(customer.points)}</td>
-                      <td className={canManage ? "py-3 pe-3" : "py-3"}>
-                        <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
-                          {customer.isActive ? "فعال" : "آرشیو"}
-                        </StatusBadge>
-                      </td>
-                      {canManage ? (
-                        <td className="py-3">
-                          <Button type="button" variant="ghost" size="xs" onClick={() => setForm({ partyId: customer.id })}>
-                            ویرایش
-                          </Button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable caption="فهرست مشتریان باشگاه" className="hidden lg:block">
+              <DataTableHead>
+                <Th>مشتری</Th>
+                <Th>تلفن</Th>
+                <Th>مرحلهٔ چرخهٔ حیات</Th>
+                <Th numeric>خریدها</Th>
+                <Th numeric>مجموع خرید</Th>
+                <Th numeric>امتیاز وفاداری</Th>
+                <Th>وضعیت</Th>
+                {canManage ? <Th>عملیات</Th> : null}
+              </DataTableHead>
+              <DataTableBody>
+                {customers.map((customer) => (
+                  <DataTableRow key={customer.id} selected={customer.id === selectedCustomerId}>
+                    <Td>
+                      <Link
+                        href={crmCustomerHref(customer.id)}
+                        className="inline-flex items-center gap-2 font-medium text-foreground hover:underline"
+                      >
+                        <ContactIcon className="size-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
+                        {customer.displayName}
+                      </Link>
+                    </Td>
+                    <Td muted>{customer.phone ? toPersianDigits(customer.phone) : "—"}</Td>
+                    <Td>{stageLabel(customer.lifecycleStage)}</Td>
+                    <Td numeric>{formatPersianNumber(customer.orderCount)}</Td>
+                    <Td numeric className="font-semibold">
+                      {money.format(customer.totalSpentRial)}
+                    </Td>
+                    <Td numeric>{formatPersianNumber(customer.points)}</Td>
+                    <Td>
+                      <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
+                        {customer.isActive ? "فعال" : "آرشیو"}
+                      </StatusBadge>
+                    </Td>
+                    {canManage ? (
+                      <Td>
+                        <Button type="button" variant="ghost" size="xs" onClick={() => setForm({ partyId: customer.id })}>
+                          ویرایش
+                        </Button>
+                      </Td>
+                    ) : null}
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
 
             <div className="space-y-3 lg:hidden">
               {customers.map((customer) => (
