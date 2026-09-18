@@ -16,7 +16,7 @@
  *
  * **Operational variations are not violations.** The POS sell screen, the KDS,
  * the floor plan and the waiter board are an approved dense dialect of this
- * same system (docs/design-system.md §Realms 2). They are exempt *by path*,
+ * same system (docs/design-system.md § Realms, realm 2). They are exempt *by path*,
  * listed once in `OPERATIONAL_SURFACES` with the reason — not silently skipped
  * and not exempt from the colour rules, which still apply to them in
  * `design-lint.test.ts`.
@@ -212,7 +212,7 @@ describe("primitive lint — approved components are composed, not re-implemente
         "(src/app/dashboard/data-table.tsx): it states the panel, the warm",
         "header wash and the row hairline once. A screen that spells its own",
         "<thead> forks the header wash, which is how three different table",
-        "headers reached production. docs/design-system.md §Tables.",
+        "headers reached production. docs/design-system.md § Tables.",
         "",
         findings.map((f) => `  ${f.relPath}:${f.line}  ${f.detail}`).join("\n") || "  (none)",
       ].join("\n"),
@@ -276,7 +276,7 @@ describe("primitive lint — approved components are composed, not re-implemente
         "Use <FilterChip> (src/app/dashboard/filters.tsx). Its `dense` prop",
         "carries the POS's 44px touch target, so operational density is an",
         "option of the shared chip rather than a reason to write a new one.",
-        "docs/design-system.md §Filters and chips.",
+        "docs/design-system.md § Chips / filters / segmented toggles.",
         "",
         findings.map((f) => `  ${f.relPath}:${f.line}  ${f.detail}`).join("\n") || "  (none)",
       ].join("\n"),
@@ -307,7 +307,7 @@ describe("primitive lint — approved components are composed, not re-implemente
         `Locally-defined KPI tiles in ${findings.length} place(s).`,
         "Use <KpiCard>/<KpiRow> from @/app/dashboard/page-chrome — they are the",
         "loaded counterpart of KpiRowSkeleton, so the loading and loaded shapes",
-        "cannot drift apart. docs/design-system.md §KPI cards.",
+        "cannot drift apart. docs/design-system.md § Stat / KPI cards.",
         "",
         findings.map((f) => `  ${f.relPath}:${f.line}  ${f.detail}`).join("\n") || "  (none)",
       ].join("\n"),
@@ -347,7 +347,7 @@ describe("primitive lint — approved components are composed, not re-implemente
       [
         `Hand-built empty-state chrome in ${findings.length} place(s).`,
         'Use <EmptyState icon={Icon} title="…">…</EmptyState> from',
-        "@/app/dashboard/page-chrome. docs/design-system.md §Empty states.",
+        "@/app/dashboard/page-chrome. docs/design-system.md § Empty states.",
         "",
         findings.map((f) => `  ${f.relPath}:${f.line}  ${f.detail}`).join("\n") || "  (none)",
       ].join("\n"),
