@@ -41,7 +41,7 @@ describe("the scope list", () => {
     expect(PARTY_SCOPES_DEF.map((def) => def.key)).toEqual([...PARTY_SCOPES]);
   });
 
-  it("gives every scope an app, a role set and a place to live", () => {
+  it("gives every scope an owning app or shared utility, roles and a route", () => {
     for (const def of PARTY_SCOPES_DEF) {
       expect(def.app === null || ["accounting", "growth", "crm", "website"].includes(def.app)).toBe(true);
       expect(def.roles.length).toBeGreaterThan(0);
@@ -104,7 +104,7 @@ describe("who each app lists", () => {
     expect(accounting.href).toBe("/accounting/directory");
   });
 
-  it("keeps one canonical Accounting directory even though work-area scopes share its app — the per-role screens are views now", () => {
+  it("keeps one canonical Accounting directory alongside its work-area views", () => {
     // «مشتریان»، «تأمین‌کنندگان» and «فروشندگان» used to be three scopes of
     // their own, three routes over the same table and three sidebar rows. They
     // are `?view=` filters of the one directory now (`party-directory.ts`), so
