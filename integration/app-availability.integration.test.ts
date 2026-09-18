@@ -117,7 +117,7 @@ describe("effectiveAppAvailability", () => {
     expect(map.crm.availableFrom).toBe("2026-09-20");
     expect(await service.isAppAvailable(biz.id, "crm")).toBe(false);
     // Other apps are untouched.
-    expect(map.sales.usable).toBe(true);
+    expect(map.website.usable).toBe(true);
   });
 
   it("`beta` labels an app without blocking it", async () => {
@@ -130,14 +130,14 @@ describe("effectiveAppAvailability", () => {
   });
 
   it("a per-business override wins over the platform state, in both directions", async () => {
-    await service.setPlatformAppAvailability("operations", { state: "maintenance" }, null);
-    expect(await service.isAppAvailable(biz.id, "operations")).toBe(false);
+    await service.setPlatformAppAvailability("accounting", { state: "maintenance" }, null);
+    expect(await service.isAppAvailable(biz.id, "accounting")).toBe(false);
 
     // Letting one business back in while the platform stays down.
-    await service.setBusinessAppAvailability(biz.id, "operations", { state: "available" }, null);
+    await service.setBusinessAppAvailability(biz.id, "accounting", { state: "available" }, null);
     const back = await service.effectiveAppAvailability(biz.id);
-    expect(back.operations.usable).toBe(true);
-    expect(back.operations.source).toBe("business");
+    expect(back.accounting.usable).toBe(true);
+    expect(back.accounting.source).toBe("business");
 
     // And the other way: down for one business while the platform is up.
     await service.setPlatformAppAvailability("accounting", { state: "available" }, null);
@@ -169,9 +169,9 @@ describe("effectiveAppAvailability", () => {
       "INSERT INTO businesses (name, slug) VALUES ('Other Co', $1) RETURNING id",
       [`other-${randomUUID().slice(0, 8)}`],
     );
-    await service.setBusinessAppAvailability(biz.id, "sales", { state: "disabled" }, null);
-    expect(await service.isAppAvailable(biz.id, "sales")).toBe(false);
-    expect(await service.isAppAvailable(other.rows[0].id, "sales")).toBe(true);
+    await service.setBusinessAppAvailability(biz.id, "website", { state: "disabled" }, null);
+    expect(await service.isAppAvailable(biz.id, "website")).toBe(false);
+    expect(await service.isAppAvailable(other.rows[0].id, "website")).toBe(true);
   });
 });
 
@@ -191,7 +191,7 @@ describe("the console's readouts", () => {
     expect(crm.note).toBeNull();
     expect(crm.notice.length).toBeGreaterThan(0);
     expect(crm.overrideCount).toBe(1);
-    expect(apps.find((a) => a.app === "sales")!.overrideCount).toBe(0);
+    expect(apps.find((a) => a.app === "website")!.overrideCount).toBe(0);
   });
 
   it("businessAppAvailability shows the platform state, the override and what is in force", async () => {
@@ -204,9 +204,9 @@ describe("the console's readouts", () => {
     expect(growth.overridden).toBe(true);
     expect(growth.state).toBe("beta");
 
-    const sales = apps.find((a) => a.app === "sales")!;
-    expect(sales.overridden).toBe(false);
-    expect(sales.platformState).toBe("available");
+    const website = apps.find((a) => a.app === "website")!;
+    expect(website.overridden).toBe(false);
+    expect(website.platformState).toBe("available");
   });
 });
 
