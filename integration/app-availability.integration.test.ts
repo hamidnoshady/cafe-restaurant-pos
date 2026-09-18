@@ -226,7 +226,7 @@ describe("tenant isolation", () => {
 
   it("rejects a state outside the vocabulary at the database level", async () => {
     await expect(
-      db.query(`UPDATE app_availability SET state = 'sort_of_on' WHERE app_key = 'sales'`),
+      db.query(`UPDATE app_availability SET state = 'sort_of_on' WHERE app_key = 'accounting'`),
     ).rejects.toThrow();
   });
 });
