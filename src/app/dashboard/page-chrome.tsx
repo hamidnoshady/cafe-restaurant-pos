@@ -133,7 +133,15 @@ export function SectionCard({
               <div className="font-semibold text-foreground">{title}</div>
             )}
             {description ? (
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+              typeof description === "string" || typeof description === "number" ? (
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+              ) : (
+                // A ReactNode description (a <Skeleton> while loading, a rich
+                // line with links) may contain block elements, and a `<p>`
+                // cannot hold them — the browser repairs the markup and React
+                // hydrates into a different tree. Same branch rule as `title`.
+                <div className="mt-1 text-xs leading-5 text-muted-foreground">{description}</div>
+              )
             ) : null}
           </div>
           {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
@@ -238,9 +246,9 @@ export function TabPanel<K extends string>({
 /** What a page shows where a list would be, before anything has been created. */
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+    <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
       {children}
-    </p>
+    </div>
   );
 }
 

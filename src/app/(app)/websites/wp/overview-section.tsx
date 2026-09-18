@@ -20,7 +20,8 @@ import {
   RefreshCwIcon,
   AlertTriangleIcon,
 } from "lucide-react";
-import { api } from "@/app/dashboard/ui";
+import { api, errorMessageOrRaw } from "@/app/dashboard/ui";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -101,8 +102,16 @@ export function WpOverviewSection() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [busy, setBusy] = useState<string>("");
   const [error, setError] = useState("");
+  const locked = useFeatureLocked();
 
   const load = useCallback(async () => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only replace the (accurate) "no store connected yet" empty state
+    // with a load error — and a failed read must never leave the skeleton up.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     const [connRes, statsRes] = await Promise.all([
       api<{ connections: Connection[] }>("/api/integrations/connections?provider=woocommerce"),
       api<{ stats: WpOverviewStats }>("/api/integrations/wp-manager/overview"),
@@ -110,9 +119,14 @@ export function WpOverviewSection() {
     if (connRes.ok) {
       setConnections(connRes.data.connections);
       setSelectedId((current) => current || connRes.data.connections[0]?.id || "");
+    } else {
+      // The sibling sections resolve a failed read the same way: the empty
+      // state plus the reason, never an eternal skeleton.
+      setConnections([]);
+      setError(errorMessageOrRaw((connRes.data as { error?: string }).error) || "بارگذاری فروشگاه‌ها ممکن نشد.");
     }
     if (statsRes.ok) setStats(statsRes.data.stats);
-  }, []);
+  }, [locked]);
 
   useEffect(() => {
     load();
@@ -146,18 +160,21 @@ export function WpOverviewSection() {
 
   if (connections.length === 0) {
     return (
-      <EmptyState>
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <PlugIcon className="size-10 text-muted-foreground/60" />
-          <p className="font-semibold text-foreground">هنوز فروشگاهی متصل نیست</p>
-          <p className="max-w-md text-sm text-muted-foreground">
-            برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید.
-          </p>
-          <Link href="/settings/connections?tab=woocommerce">
-            <Button>اتصال فروشگاه</Button>
-          </Link>
-        </div>
-      </EmptyState>
+      <div className="space-y-4">
+        {error && !locked ? <EmptyState>{error}</EmptyState> : null}
+        <EmptyState>
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <PlugIcon className="size-10 text-muted-foreground/60" />
+            <p className="font-semibold text-foreground">هنوز فروشگاهی متصل نیست</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید.
+            </p>
+            <Link href="/settings/connections?tab=woocommerce">
+              <Button>اتصال فروشگاه</Button>
+            </Link>
+          </div>
+        </EmptyState>
+      </div>
     );
   }
 

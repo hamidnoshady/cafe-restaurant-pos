@@ -32,7 +32,9 @@ export function AskAssistant({
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-amber-800 dark:hover:text-amber-300"
+      // The padding is not decoration: a bare text link is ~20px tall, well
+      // under any touch-target minimum, and this sits in every page header.
+      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:hover:text-amber-300 dark:focus-visible:ring-amber-400/45"
     >
       <SparklesIcon className="size-4 shrink-0" aria-hidden="true" />
       <span>{label}</span>
