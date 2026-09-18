@@ -5,6 +5,7 @@ import {
   contactFor,
   isCampaignChannel,
   summarizeAudience as summarize,
+  summarizeAudienceCounts,
   unreachableForLackOfContact,
 } from "./campaign-channels";
 import type { SegmentMember } from "./crm-segments-service";
@@ -30,7 +31,11 @@ function member(over: Partial<SegmentMember> = {}): SegmentMember {
 
 describe("campaign audience", () => {
   it("reports how many people consent removed, because a silently shrunken list looks like a bug", () => {
-    const matched = [member({ id: "a" }), member({ id: "b" }), member({ id: "c" })];
+    const matched = [
+      member({ id: "a" }),
+      member({ id: "b" }),
+      member({ id: "c" }),
+    ];
     const reachable = [member({ id: "a" })];
 
     const audience = summarize("sms", matched, reachable, 5000);
@@ -48,7 +53,9 @@ describe("campaign audience", () => {
   });
 
   it("flags truncation so a caller cannot mistake the page for the audience", () => {
-    const reachable = Array.from({ length: 10 }, (_, i) => member({ id: `c${i}` }));
+    const reachable = Array.from({ length: 10 }, (_, i) =>
+      member({ id: `c${i}` }),
+    );
 
     const capped = summarize("sms", reachable, reachable, 4);
     expect(capped.members).toHaveLength(4);
@@ -59,10 +66,24 @@ describe("campaign audience", () => {
     expect(whole.truncated).toBe(false);
   });
 
+  it("keeps full database counts even when the member sample is capped", () => {
+    const members = Array.from({ length: 4 }, (_, i) =>
+      member({ id: `c${i}` }),
+    );
+    const audience = summarizeAudienceCounts("sms", 1350, 1200, members, 4);
+
+    expect(audience.matched).toBe(1350);
+    expect(audience.reachable).toBe(1200);
+    expect(audience.members).toHaveLength(4);
+    expect(audience.truncated).toBe(true);
+  });
+
   it("prefers the normalised phone for SMS and falls back to the raw one", () => {
     expect(contactFor(member(), "sms")).toBe("+989121234567");
     expect(contactFor(member({ phoneE164: null }), "sms")).toBe("09121234567");
-    expect(contactFor(member({ phoneE164: null, phone: null }), "sms")).toBeNull();
+    expect(
+      contactFor(member({ phoneE164: null, phone: null }), "sms"),
+    ).toBeNull();
   });
 
   it("treats a blank email as no email", () => {
