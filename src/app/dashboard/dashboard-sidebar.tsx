@@ -149,7 +149,7 @@ const SIDEBAR_KEYBOARD_STEP = 16;
  * never gated.
  */
 const WORKSPACE_APP_LAUNCHERS: readonly {
-  key: AppKey | "connections";
+  key: AppKey;
   label: string;
   icon: LucideIcon;
   hrefs: readonly string[];
@@ -195,12 +195,6 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     // connection hub: that would put the site managers back behind the
     // Accounting/Connections door.
     hrefs: ["/websites/overview"],
-  },
-  {
-    key: "connections",
-    label: "اتصال‌های فنی",
-    icon: PlugIcon,
-    hrefs: ["/settings/connections"],
   },
 ];
 
@@ -424,7 +418,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
   const router = useRouter();
   const { expandSidebar } = useSidebar();
   const hrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
-  // The apps this rail launches, as data rather than three copies of the same
+  // The four apps this rail launches, as data rather than four copies of the same
   // markup. Each entry lists its candidate routes in preference order: a
   // launcher always opens the app's own home, and falls back to a page the
   // app absorbed so a member whose saved bottom-nav still holds an old flat
@@ -444,6 +438,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
     const owner = appForModule(item.module);
     if (owner && !stateByApp.has(owner)) stateByApp.set(owner, item.appState);
   }
+  const connectionsHref = hrefs.includes("/settings/connections") ? "/settings/connections" : null;
   const launchers = WORKSPACE_APP_LAUNCHERS.flatMap((launcher) => {
     const href = launcher.hrefs.find((candidate) => hrefs.includes(candidate));
     if (!href) return [];
@@ -452,7 +447,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
         ...launcher,
         href,
         active: isActive(pathname, href),
-        appState: isAppKey(launcher.key) ? stateByApp.get(launcher.key) : undefined,
+        appState: stateByApp.get(launcher.key),
       },
     ];
   });
@@ -534,6 +529,24 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
               })}
             </SidebarMenu>
           </div>
+        ) : null}
+
+        {connectionsHref ? (
+          <SidebarMenu className="space-y-1.5">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive(pathname, connectionsHref)}
+                tooltip="اتصال‌های فنی"
+                className={APP_NAV_BUTTON_CLASS}
+              >
+                <Link href={connectionsHref}>
+                  <PlugIcon aria-hidden="true" className="size-5 shrink-0" />
+                  <span className={NAV_LABEL_CLASS}>اتصال‌های فنی</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         ) : null}
 
         <div className="group-data-[state=collapsed]/sidebar:hidden">
