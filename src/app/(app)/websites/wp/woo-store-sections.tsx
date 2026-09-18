@@ -307,90 +307,13 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
 // Taxonomies
 // ---------------------------------------------------------------------------
 
-interface TermGroup {
-  taxonomy: string;
-  label: string;
-  isAttribute: boolean;
-  termCount: number;
-  terms: { remoteId: string; parentRemoteId: string | null; name: string; remoteCount: number; mappedCount: number }[];
-}
-
-export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
-  const [loading, setLoading] = useState(true);
-  const [groups, setGroups] = useState<TermGroup[]>([]);
-  const [open, setOpen] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const { ok, data } = await api<{ groups?: TermGroup[] }>(
-        `/api/integrations/connections/${connectionId}/taxonomies`,
-      );
-      if (ok && !cancelled) setGroups(data.groups ?? []);
-      if (!cancelled) setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [connectionId]);
-
-  if (loading) {
-    return (
-      <LoadingSkeleton rows={3} compact className="mt-2" />
-    );
-  }
-
-  if (groups.length === 0) {
-    return (
-      <div className="mt-2 rounded-xl bg-muted p-2 text-xs text-muted-foreground">
-        هنوز درخت دسته‌بندی دریافت نشده است. پس از «همگام‌سازی محصولات»، دسته‌ها، برچسب‌ها و ویژگی‌های فروشگاه اینجا
-        دیده می‌شوند.
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-xl bg-muted p-2 text-xs">
-      {groups.map((group) => (
-        <div key={group.taxonomy} className="rounded-lg border border-border/70 bg-card">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-2 p-2 text-right"
-            aria-expanded={open === group.taxonomy}
-            onClick={() => setOpen(open === group.taxonomy ? null : group.taxonomy)}
-          >
-            <span className="font-medium">{group.label}</span>
-            <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              {group.isAttribute ? <span className="rounded-full bg-muted px-2 py-0.5">ویژگی</span> : null}
-              <span>
-                {group.termCount.toLocaleString("fa-IR")} مورد
-              </span>
-              <span dir="ltr" className="font-mono text-[10px]">
-                {group.taxonomy}
-              </span>
-            </span>
-          </button>
-          {open === group.taxonomy ? (
-            <ul className="space-y-1 border-t border-border p-2">
-              {group.terms.map((term) => (
-                <li key={term.remoteId} className="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    {term.parentRemoteId ? <span className="text-muted-foreground">└ </span> : null}
-                    {term.name}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">
-                    در فروشگاه: {term.remoteCount.toLocaleString("fa-IR")} • همگام‌شده:{" "}
-                    {term.mappedCount.toLocaleString("fa-IR")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
+/**
+ * «دسته‌بندی و ویژگی‌ها» is its own screen now — see taxonomies-section.tsx.
+ * It is re-exported here so the existing import sites keep working; the
+ * section outgrew the compact panel shape the rest of this file uses.
+ */
+export { TaxonomiesSection } from "./taxonomies-section";
+export type { TermGroup, TermRow } from "./taxonomies-section";
 
 // ---------------------------------------------------------------------------
 // Store orders

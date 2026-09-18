@@ -1,7 +1,17 @@
 "use client";
 
-/** Shared store picker for WP Manager sections. */
-import { cardClass } from "@/app/dashboard/page-chrome";
+/**
+ * Shared store picker for WP Manager sections.
+ *
+ * It renders the label and the select and *nothing else*: every caller
+ * already places it inside its own toolbar card (`${cardClass} flex … p-4`),
+ * so drawing a second card here nested one bordered, padded surface inside
+ * another — a doubled border with 2rem of dead space around the select, on
+ * every WP Manager screen at once. The card belongs to the toolbar that owns
+ * the row, not to a control that is only ever a part of one.
+ */
+import { useId } from "react";
+import { inputClass } from "@/app/dashboard/ui";
 
 export interface ConnectionLite {
   id: string;
@@ -14,20 +24,26 @@ export function ConnectionPicker({
   connections,
   value,
   onChange,
+  disabled,
 }: {
   connections: ConnectionLite[];
   value: string;
   onChange: (id: string) => void;
+  disabled?: boolean;
 }) {
+  // A page can host two pickers (a section plus a dialog); a hardcoded id
+  // would tie both labels to whichever select mounted first.
+  const id = useId();
   return (
-    <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-      <label className="text-sm font-medium text-foreground" htmlFor="wp-connection-picker-shared">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-nowrap">
+      <label className="shrink-0 text-sm font-medium text-foreground" htmlFor={id}>
         فروشگاه:
       </label>
       <select
-        id="wp-connection-picker-shared"
-        className="min-w-[14rem] flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:border-teal-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/30"
+        id={id}
+        className={`${inputClass} w-full sm:w-auto sm:min-w-[16rem] sm:flex-1`}
         value={value}
+        disabled={disabled || connections.length === 0}
         onChange={(e) => onChange(e.target.value)}
       >
         {connections.map((c) => (
