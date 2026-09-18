@@ -51,14 +51,28 @@ approved design rather than two.
 They were visible in the conversation but never present on the filesystem, so
 they could not be committed or diffed. The reference table in
 `docs/design-system.md` is a transcription and says so. Placing the six PNGs at
-the listed filenames makes it checkable.
+the listed filenames makes it checkable — and the 11 committed baselines now
+give something concrete to compare them against.
 
-**The first `visual-regression` CI run will fail** with "no baseline" for all 11
-screens — no baselines are committed, because no browser is installable in the
-authoring environment (`cdn.playwright.dev` unreachable; details in
-`docs/design/test-results.md`). Someone must run `test:visual:update` once, *look
-at* the 11 images, and commit them as an approval. Never `--update` again to
-clear a red run.
+**The visual check runs and its baselines are committed.** All 11 were recorded
+against a production build with a deterministic fixture, opened and reviewed one
+by one. Running it end to end is what found the two bugs below, and forced four
+fixes to the harness itself: a 5-run loop went from two failures (diffs up to
+42%) to 8/8 clean. The check was also proven able to *fail* — after the Jalali
+fix it went red on exactly the one affected screen (0.24%) and stayed green on
+the other ten.
+
+## Two bugs the pixels found
+
+Both had passed every text-based test in the repo:
+
+- **Latin digits in Jalali dates.** `formatJalali` returned ASCII, so 42 of its
+  193 call sites rendered `1404/12/24` beside Persian numerals in the same table
+  row — a direct violation of the Persian-digits requirement. Fixed at the
+  source, with a test asserting the idempotence that made that safe.
+- **An eternal skeleton** on Website Management → WP: a failed load left the
+  state `null`, so a business without that manager saw a shimmer forever with no
+  message and no retry. Now a proper `EmptyState`.
 
 ## Not done, on purpose
 
@@ -66,15 +80,18 @@ The platform is **not** fully migrated. 28 tables, six search fields and ~15
 mobile card fallbacks remain, ordered as Batch A–E in
 `docs/design/coverage-matrix.md`.
 
-The most important follow-up is the unresolved token conflict: `globals.css`
-defines `--primary`/`--ring` as turquoise while the approved screenshots and the
-shipped components use amber for selection. The screenshots win, so `globals.css`
-should change — but repainting a root token touches every surface including the
-out-of-scope platform console, so it should be the first change made *after* the
-baselines exist, precisely so the repaint is reviewable.
+An earlier pass in this work flagged a "token conflict" — `globals.css` defining
+`--primary` as teal while the screenshots use amber — and proposed repainting the
+root token. **Measuring the baselines disproved it.** Teal is *brand* (filled
+buttons, links, focus ring) and amber is *selection* (active nav, tabs, chips);
+sampling `crm-deals.png` shows the CTA at `rgb(0,121,132)` and the active nav row
+at `rgb(254,243,198)`, coexisting correctly on one screen. Had it been "fixed",
+every filled button in the product would have turned amber. The reasoning is
+recorded in `docs/design/test-results.md` rather than dropped.
 
 ## Gate
 
-`tsc --noEmit` clean · `npm test` 4759/4759 · `npm run test:db` 1181 passed, 1
-skipped · `npm run build` clean · `npm run test:design` 34/34 · migrated routes
+`tsc --noEmit` clean · `npm test` 4760/4760 · `npm run test:db` 1181 passed, 1
+skipped · `npm run build` clean · `npm run test:design` 34/34 ·
+`npm run test:visual` 11/11, clean on 8 consecutive runs · migrated routes
 verified 200 with an authenticated session.
