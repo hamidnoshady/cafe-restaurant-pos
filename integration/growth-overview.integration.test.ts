@@ -253,6 +253,10 @@ describe("the growth dashboard", () => {
     expect(overview.loyalty.redeemed30d).toBe(30);
     expect(overview.loyalty.pointsValueEstimate).toBe(70 * 5_000); // at the default program's rate
     expect(overview.loyalty.customersWithPoints).toBe(1);
+    // One customer party, and only that one: `parties` also holds employees and
+    // suppliers since 0137, so a bare COUNT(*) would compare point-holders with
+    // the whole counterparty book.
+    expect(overview.loyalty.customersTotal).toBe(1);
 
     expect(overview.commission.accrued30d).toBe(25_000);
     expect(overview.commission.top[0]).toMatchObject({ employeeName: "Akbar", amount: 25_000 });
@@ -263,6 +267,45 @@ describe("the growth dashboard", () => {
     expect(overview.activity.length).toBeGreaterThan(0);
     const times = overview.activity.map((row) => row.at);
     expect([...times].sort().reverse()).toEqual(times);
+  });
+
+  it("counts point *holders*, not everyone who ever earned a point", async () => {
+    // A customer who has spent every point they earned is not a point-holder,
+    // and a supplier/employee party is not a customer at all. The dashboard
+    // used to count both, so «۳ مشتری از ۴» could sit above zero outstanding
+    // points.
+    const spent = await db.query<{ id: string }>(
+      "INSERT INTO parties (business_id, name, role) VALUES ($1, 'Spent it all', 'customer') RETURNING id",
+      [biz.id],
+    );
+    const holder = await db.query<{ id: string }>(
+      "INSERT INTO parties (business_id, name, role) VALUES ($1, 'Still has some', 'customer') RETURNING id",
+      [biz.id],
+    );
+    await db.query("INSERT INTO parties (business_id, name, role) VALUES ($1, 'A supplier', 'supplier')", [biz.id]);
+    await db.query("INSERT INTO parties (business_id, name, role, is_active) VALUES ($1, 'Archived', 'customer', false)", [
+      biz.id,
+    ]);
+    await db.query(
+      `INSERT INTO customer_points (business_id, customer_id, points, source_type) VALUES
+         ($1, $2, 40, 'retail_invoice'), ($1, $2, -40, 'redeem'),
+         ($1, $3, 40, 'retail_invoice'), ($1, $3, -10, 'redeem')`,
+      [biz.id, spent.rows[0].id, holder.rows[0].id],
+    );
+
+    const overview = await growthOverview(biz.id, { locationId: null, today: isoDate(0) });
+    expect(overview.loyalty.pointsOutstanding).toBe(30);
+    expect(overview.loyalty.customersWithPoints).toBe(1); // only the holder
+    expect(overview.loyalty.customersTotal).toBe(2); // active customers only
+  });
+
+  it("says whether a branch was in context, so a missing prediction is not a confident zero", async () => {
+    const withBranch = await growthOverview(biz.id, { locationId: biz.locationId, today: isoDate(0) });
+    expect(withBranch.hasLocation).toBe(true);
+
+    const withoutBranch = await growthOverview(biz.id, { locationId: null, today: isoDate(0) });
+    expect(withoutBranch.hasLocation).toBe(false);
+    expect(withoutBranch.repurchase.due).toBe(0);
   });
 
   it("answers an empty business with zeros, not errors", async () => {
