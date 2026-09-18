@@ -207,7 +207,7 @@ function RuleForm({
             ))}
           </select>
         </Field>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="نوع">
             <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as "percent" | "fixed")}>
               <option value="percent">درصدی</option>

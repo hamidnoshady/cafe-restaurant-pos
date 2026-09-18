@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { giftCardBalance, issueGiftCard } from "@/lib/promotions-service";
+import { getGiftCardByCode, giftCardBalance, issueGiftCard } from "@/lib/promotions-service";
 
 /** One card's outstanding value by code. */
 export const GET = withTenantScope(async (request: NextRequest) => {
@@ -10,6 +10,10 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   if (error) return error;
   const code = (request.nextUrl.searchParams.get("code") ?? "").trim();
   if (!code) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  const card = await getGiftCardByCode(session.businessId, code);
+  // A missing code is not a zero-value card. Returning 404 keeps the counter
+  // from telling a cashier that an unknown card has a valid zero balance.
+  if (!card) return NextResponse.json({ error: "gift_card_not_found" }, { status: 404 });
   return NextResponse.json({ balance: await giftCardBalance(session.businessId, code) });
 });
 

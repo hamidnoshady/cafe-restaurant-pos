@@ -204,6 +204,17 @@ describe("store credit", () => {
 });
 
 describe("points", () => {
+  it("makes the first active program the default instead of leaving earning to an arbitrary program", async () => {
+    await loyaltyService.upsertProgram(biz.id, {
+      name: "باشگاه نخست",
+      earnPointsPer100000: 2,
+      pointValueRial: 1000,
+    });
+
+    const program = await loyaltyService.getDefaultProgram(biz.id);
+    expect(program).toMatchObject({ name: "باشگاه نخست", isActive: true, isDefault: true });
+  });
+
   it("nets earn and redeem to zero in the points ledger", async () => {
     const customerId = await createCustomer();
     await loyaltyService.upsertProgram(biz.id, {
@@ -258,5 +269,55 @@ describe("points", () => {
         }),
       ),
     ).rejects.toThrow(/امتیاز/);
+  });
+
+  it("does not show or redeem expired points, while points dated today remain usable", async () => {
+    const customerId = await createCustomer();
+    await loyaltyService.upsertProgram(biz.id, {
+      name: "پیش‌فرض",
+      earnPointsPer100000: 1,
+      pointValueRial: 1000,
+      isDefault: true,
+    });
+
+    await db.query(
+      `INSERT INTO customer_points (business_id, customer_id, points, source_type, expires_at)
+       VALUES ($1, $2, 25, 'test', current_date - 1),
+              ($1, $2, 10, 'test', current_date)`,
+      [biz.id, customerId],
+    );
+
+    // The expiry day itself is inclusive, but yesterday's points are no longer
+    // in the balance a customer can convert to store credit.
+    expect(await loyaltyService.pointsBalance(biz.id, customerId)).toBe(10);
+    await expect(
+      withClient((client) =>
+        loyaltyService.redeemPoints(client, {
+          businessId: biz.id,
+          locationId: biz.locationId,
+          customerId,
+          points: 11,
+        }),
+      ),
+    ).rejects.toThrow(/امتیاز/);
+
+    await withClient((client) =>
+      loyaltyService.redeemPoints(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        customerId,
+        points: 10,
+      }),
+    );
+
+    // The debit follows the source lot's expiry. Once that lot expires, the
+    // signed ledger cannot turn a spent point into a negative balance.
+    const { rows } = await db.query<{ points: number; expires_at: string | null }>(
+      `SELECT points, expires_at::text FROM customer_points
+        WHERE business_id = $1 AND customer_id = $2 AND points < 0`,
+      [biz.id, customerId],
+    );
+    expect(rows).toEqual([{ points: -10, expires_at: new Date().toISOString().slice(0, 10) }]);
+    expect(await loyaltyService.pointsBalance(biz.id, customerId)).toBe(0);
   });
 });

@@ -14,7 +14,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
 import { SectionCard } from "@/app/dashboard/page-chrome";
-import { api, ErrorBox, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
+import { api, ErrorBox, errorMessageOrRaw, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 export function GiftCardsSection() {
   const money = useMoney();
@@ -46,8 +46,18 @@ export function GiftCardsSection() {
 
   async function check() {
     if (!redeemCode.trim()) return;
-    const { ok, data } = await api<{ balance: number }>(`/api/promotions/gift-cards?code=${encodeURIComponent(redeemCode)}`);
-    if (ok) setBalance(data.balance);
+    setBusy(true);
+    setError("");
+    const { ok, data } = await api<{ balance?: number; error?: string; message?: string }>(
+      `/api/promotions/gift-cards?code=${encodeURIComponent(redeemCode.trim())}`,
+    );
+    setBusy(false);
+    if (!ok || data.balance === undefined) {
+      setBalance(null);
+      setError((data.message ?? errorMessageOrRaw(data.error)) || "استعلام ماندهٔ کارت هدیه ناموفق بود.");
+      return;
+    }
+    setBalance(data.balance);
   }
 
   async function redeem() {
@@ -82,7 +92,7 @@ export function GiftCardsSection() {
           }
           bodyClassName="space-y-3 p-4 sm:p-5"
         >
-          <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+          <div className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <Field label="کد کارت جدید">
               <input className={inputClass} dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} />
             </Field>
@@ -95,7 +105,7 @@ export function GiftCardsSection() {
                 onChange={(e) => setIssueValue(e.target.value)}
               />
             </Field>
-            <Button type="button" disabled={busy} onClick={() => void issue()} className="min-h-11">
+            <Button type="button" disabled={busy || !code.trim() || !issueValue.trim()} onClick={() => void issue()} className="min-h-11 w-full sm:w-auto">
               صدور
             </Button>
           </div>
@@ -114,7 +124,7 @@ export function GiftCardsSection() {
           }
           bodyClassName="space-y-3 p-4 sm:p-5"
         >
-          <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+          <div className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <Field label="کد کارت">
               <input className={inputClass} dir="ltr" value={redeemCode} onChange={(e) => setRedeemCode(e.target.value)} />
             </Field>
@@ -127,7 +137,7 @@ export function GiftCardsSection() {
                 onChange={(e) => setRedeemValue(e.target.value)}
               />
             </Field>
-            <Button type="button" variant="outline" disabled={busy} onClick={() => void check()} className="min-h-11">
+            <Button type="button" variant="outline" disabled={busy || !redeemCode.trim()} onClick={() => void check()} className="min-h-11 w-full sm:w-auto">
               مانده
             </Button>
           </div>

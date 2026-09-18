@@ -175,13 +175,24 @@ export async function growthOverview(
       outstanding: number;
       customers_with_points: number;
     }>(
-      `SELECT
-              COALESCE(SUM(points) FILTER (WHERE points > 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS earned,
-              COALESCE(-SUM(points) FILTER (WHERE points < 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS redeemed,
-              COALESCE(SUM(points), 0)::int AS outstanding,
-              COUNT(DISTINCT customer_id)::int AS customers_with_points
-         FROM customer_points
-        WHERE business_id = $1`,
+      // Earning/redemption are period events, but «امتیاز در گردش» means
+      // currently spendable points. An expired point is still historical
+      // earning, never a current marketing liability or a customer with an
+      // available balance.
+      `WITH active_balances AS (
+         SELECT customer_id, COALESCE(SUM(points), 0)::int AS balance
+           FROM customer_points
+          WHERE business_id = $1
+            AND (expires_at IS NULL OR expires_at >= current_date)
+          GROUP BY customer_id
+       )
+       SELECT
+         COALESCE(SUM(points) FILTER (WHERE points > 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS earned,
+         COALESCE(-SUM(points) FILTER (WHERE points < 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS redeemed,
+         COALESCE((SELECT SUM(balance) FROM active_balances WHERE balance > 0), 0)::int AS outstanding,
+         COALESCE((SELECT COUNT(*) FROM active_balances WHERE balance > 0), 0)::int AS customers_with_points
+       FROM customer_points
+      WHERE business_id = $1`,
       [businessId, from, to],
     ),
     query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM parties WHERE business_id = $1`, [businessId]),

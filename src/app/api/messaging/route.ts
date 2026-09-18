@@ -122,7 +122,17 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "messaging_error";
-    const known = ["invalid_template", "invalid_campaign", "not_found", "campaign_needs_segment", "campaign_already_launched", "template_not_found", "invalid_amount"];
+    const known = [
+      "invalid_template",
+      "invalid_campaign",
+      "not_found",
+      "campaign_needs_segment",
+      "campaign_already_launched",
+      "campaign_audience_limit_exceeded",
+      "campaign_has_no_recipients",
+      "template_not_found",
+      "invalid_amount",
+    ];
     if (known.some((code) => message.startsWith(code)) || message.startsWith("message_variable_missing") || message.startsWith("unknown_template_variable")) {
       return NextResponse.json({ error: message }, { status: 400 });
     }

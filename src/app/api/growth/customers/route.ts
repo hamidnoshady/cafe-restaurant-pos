@@ -67,9 +67,10 @@ export const GET = withTenantScope(async (request: NextRequest) => {
             os.last_purchase_date::text AS last_purchase_date
        FROM parties c
        LEFT JOIN LATERAL (
-         SELECT COALESCE(SUM(points), 0)::int AS points
+         SELECT GREATEST(COALESCE(SUM(points), 0), 0)::int AS points
            FROM customer_points
           WHERE customer_id = c.id AND business_id = $1
+            AND (expires_at IS NULL OR expires_at >= current_date)
        ) ps ON true
        LEFT JOIN LATERAL (
          SELECT COUNT(*)::int AS order_count,

@@ -67,7 +67,9 @@ export async function getDefaultProgram(businessId: string, client?: PoolClient)
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
   const { rows } = await run<ProgramRow>(
-    `SELECT * FROM loyalty_programs WHERE business_id = $1 AND is_active ORDER BY is_default DESC, created_at LIMIT 1`,
+    `SELECT * FROM loyalty_programs
+      WHERE business_id = $1 AND is_active AND is_default
+      LIMIT 1`,
     [businessId],
   );
   return rows[0] ? mapProgram(rows[0]) : null;
@@ -85,13 +87,19 @@ export async function upsertProgram(
   },
 ): Promise<LoyaltyProgram> {
   const name = input.name?.trim();
+  const earnPointsPer100000 = input.earnPointsPer100000 ?? 1;
+  const pointValueRial = input.pointValueRial ?? 1000;
   if (!name) throw new Error("نام برنامه وفاداری نمی‌تواند خالی باشد.");
-  if ((input.earnPointsPer100000 ?? 1) < 0) throw new Error("نرخ کسب امتیاز نمی‌تواند منفی باشد.");
-  if ((input.pointValueRial ?? 1000) <= 0) throw new Error("ارزش ریالی هر امتیاز باید مثبت باشد.");
+  if (!Number.isSafeInteger(earnPointsPer100000) || earnPointsPer100000 < 0) {
+    throw new Error("نرخ کسب امتیاز باید یک عدد صحیح غیرمنفی باشد.");
+  }
+  if (!Number.isSafeInteger(pointValueRial) || pointValueRial <= 0) {
+    throw new Error("ارزش ریالی هر امتیاز باید یک عدد صحیح مثبت باشد.");
+  }
   if (
     input.pointsExpiryDays !== undefined &&
     input.pointsExpiryDays !== null &&
-    (!Number.isInteger(input.pointsExpiryDays) || input.pointsExpiryDays <= 0)
+    (!Number.isSafeInteger(input.pointsExpiryDays) || input.pointsExpiryDays <= 0)
   ) {
     throw new Error("روزهای انقضای امتیاز باید عدد صحیح مثبت باشد یا خالی بماند.");
   }
@@ -99,8 +107,43 @@ export async function upsertProgram(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    // Only one default program per business; making one default demotes the rest.
-    if (input.isDefault) {
+    // A partial unique index protects "at most one" default. These locked
+    // reads and the business-level advisory lock also protect the missing half
+    // of the rule: a business with an active program should always have one
+    // deterministic program that sales use for earning points.
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`loyalty-program:${businessId}`]);
+    const [{ rows: defaultRows }, { rows: existingRows }] = await Promise.all([
+      client.query<Pick<ProgramRow, "id">>(
+        `SELECT id FROM loyalty_programs WHERE business_id = $1 AND is_default AND is_active FOR UPDATE`,
+        [businessId],
+      ),
+      client.query<Pick<ProgramRow, "id" | "is_active" | "is_default">>(
+        `SELECT id, is_active, is_default
+           FROM loyalty_programs
+          WHERE business_id = $1 AND name = $2 FOR UPDATE`,
+        [businessId, name],
+      ),
+    ]);
+    const existing = existingRows[0];
+    const isActive = input.isActive ?? existing?.is_active ?? true;
+    // An explicit `false` cannot create an active orphan program. When there
+    // is no default yet, the first active program becomes it automatically.
+    const requestedDefault = input.isDefault ?? existing?.is_default ?? false;
+    const isDefault = requestedDefault || (!defaultRows[0] && isActive);
+
+    if (isDefault && !isActive) {
+      throw new Error("برنامهٔ پیش‌فرض باید فعال باشد.");
+    }
+    if (!isDefault && existing?.is_default && defaultRows.length === 1) {
+      throw new Error("حداقل یک برنامهٔ فعال باید پیش‌فرض بماند.");
+    }
+    if (!isActive && existing?.is_default && defaultRows.length === 1) {
+      throw new Error("برای غیرفعال‌کردن برنامهٔ پیش‌فرض، ابتدا یک برنامهٔ فعال دیگر را پیش‌فرض کنید.");
+    }
+
+    // Making one default demotes every other one before the upsert, so the
+    // partial unique index stays true even when this is an existing row.
+    if (isDefault) {
       await client.query(`UPDATE loyalty_programs SET is_default = false WHERE business_id = $1`, [businessId]);
     }
     const { rows } = await client.query<ProgramRow>(
@@ -117,11 +160,11 @@ export async function upsertProgram(
       [
         businessId,
         name,
-        input.earnPointsPer100000 ?? 1,
-        input.pointValueRial ?? 1000,
+        earnPointsPer100000,
+        pointValueRial,
         input.pointsExpiryDays ?? null,
-        input.isActive ?? true,
-        input.isDefault ?? false,
+        isActive,
+        isDefault,
       ],
     );
     await client.query("COMMIT");
@@ -134,27 +177,31 @@ export async function upsertProgram(
   }
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function addDaysIso(days: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
-/** Signed balance = Σ earned − Σ redeemed. Never a stored column. */
+/**
+ * Spendable points = the signed points ledger whose lots have not expired.
+ *
+ * `expires_at` is inclusive: a point dated today remains usable for the whole
+ * business day and expires only after that date. Redemption rows inherit the
+ * lot's expiry (see `redeemPoints`), so when a lot expires its matching debit
+ * leaves this sum at zero rather than making a customer's balance negative.
+ */
 export async function pointsBalance(businessId: string, customerId: string, client?: PoolClient): Promise<number> {
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
   const { rows } = await run<{ balance: string | null }>(
     `SELECT COALESCE(SUM(points), 0)::text AS balance
        FROM customer_points
-      WHERE business_id = $1 AND customer_id = $2`,
+      WHERE business_id = $1 AND customer_id = $2
+        AND (expires_at IS NULL OR expires_at >= current_date)`,
     [businessId, customerId],
   );
-  return Number(rows[0]?.balance ?? 0);
+  return Math.max(0, Number(rows[0]?.balance ?? 0));
 }
 
 export interface EarnPointsResult {
@@ -235,11 +282,39 @@ export async function redeemPoints(
 
   const valueRial = input.points * program.pointValueRial;
 
-  await client.query(
-    `INSERT INTO customer_points (business_id, customer_id, points, source_type, source_id)
-     VALUES ($1, $2, $3, 'redeem', NULL)`,
-    [input.businessId, input.customerId, -input.points],
+  // Debit the oldest-expiring spendable lots first. The debit inherits the
+  // source lot's expiry, which keeps an expired lot and the points already
+  // spent from it out of every future balance calculation together. A single
+  // redemption can span lots, so it may deliberately produce several signed
+  // ledger rows while still producing one store-credit event below.
+  const { rows: lots } = await client.query<{ expires_at: string | null; points: string }>(
+    `SELECT expires_at::text, COALESCE(SUM(points), 0)::text AS points
+       FROM customer_points
+      WHERE business_id = $1 AND customer_id = $2
+        AND (expires_at IS NULL OR expires_at >= current_date)
+      GROUP BY expires_at
+      HAVING COALESCE(SUM(points), 0) > 0
+      ORDER BY expires_at NULLS LAST`,
+    [input.businessId, input.customerId],
   );
+
+  let remaining = input.points;
+  for (const lot of lots) {
+    if (remaining === 0) break;
+    const available = Number(lot.points);
+    const consumed = Math.min(remaining, available);
+    if (consumed <= 0) continue;
+    await client.query(
+      `INSERT INTO customer_points (business_id, customer_id, points, source_type, source_id, expires_at)
+       VALUES ($1, $2, $3, 'redeem', NULL, $4::date)`,
+      [input.businessId, input.customerId, -consumed, lot.expires_at],
+    );
+    remaining -= consumed;
+  }
+  // The advisory lock above protects this invariant. Keeping the guard makes
+  // a malformed historical ledger fail closed rather than issuing unbacked
+  // store credit if the grouped lots disagree with the balance query.
+  if (remaining > 0) throw new Error("امتیاز کافی نیست.");
 
   const { entryId } = await emitDomainEvent(client, {
     businessId: input.businessId,

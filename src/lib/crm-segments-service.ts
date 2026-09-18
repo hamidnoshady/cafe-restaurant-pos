@@ -105,9 +105,14 @@ function segmentSourceSql(): string {
        GROUP BY o.customer_id
     ),
     point_stats AS (
-      SELECT customer_id, coalesce(sum(points), 0)::int AS loyalty_points
+      -- A segment's «امتیاز» rule must see the same spendable balance that
+      -- loyalty redemption and Growth display. Historical expired points are
+      -- useful in the timeline, but must not pull someone into a points-based
+      -- offer after their credit has lapsed.
+      SELECT customer_id, greatest(coalesce(sum(points), 0), 0)::int AS loyalty_points
         FROM customer_points
        WHERE business_id = $1
+         AND (expires_at IS NULL OR expires_at >= current_date)
        GROUP BY customer_id
     ),
     -- The accounting bridge (Phase 36d). Same reconstruction as

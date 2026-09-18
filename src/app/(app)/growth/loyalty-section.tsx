@@ -235,7 +235,7 @@ function ProgramsPanel({
         <Field label="نام برنامه">
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
         </Field>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid gap-2 sm:grid-cols-3">
           <Field label="امتیاز / ۱۰ هزار تومان">
             <PersianNumberInput
               inputMode="numeric"
@@ -352,7 +352,7 @@ function CustomerPanel({
       {customer && !balanceLoaded ? (
         <LoadingSkeleton rows={1} compact label="در حال بارگذاری مانده مشتری" />
       ) : customer && balance ? (
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-border/80 p-3 text-sm">
+        <div className="grid gap-2 rounded-xl border border-border/80 p-3 text-sm sm:grid-cols-2">
           <div>
             <span className="text-muted-foreground">امتیاز:</span> <b>{formatPersianNumber(balance.points)}</b>
           </div>
@@ -362,7 +362,7 @@ function CustomerPanel({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+      <div className="grid items-end gap-2 sm:grid-cols-[1fr_auto]">
         <Field label="تبدیل امتیاز به اعتبار">
           <PersianNumberInput
             inputMode="numeric"
@@ -373,12 +373,12 @@ function CustomerPanel({
             placeholder="تعداد امتیاز"
           />
         </Field>
-        <Button type="button" disabled={busy || !customerId || !points.trim()} onClick={() => void redeem()} className="min-h-11">
+        <Button type="button" disabled={busy || !customerId || !points.trim()} onClick={() => void redeem()} className="min-h-11 w-full sm:w-auto">
           تبدیل
         </Button>
       </div>
 
-      <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+      <div className="grid items-end gap-2 sm:grid-cols-[1fr_auto]">
         <Field label={`اعتبار فروشگاهی (${money.unitLabel})`}>
           <PersianNumberInput
             inputMode="numeric"
@@ -388,12 +388,12 @@ function CustomerPanel({
             onChange={(e) => setCredit(e.target.value)}
           />
         </Field>
-        <div className="flex flex-col gap-1">
+        <div className="flex w-full flex-col gap-1 sm:w-auto">
           <select className={inputClass} value={creditAction} onChange={(e) => setCreditAction(e.target.value as "issue" | "use")}>
             <option value="issue">صدور</option>
             <option value="use">مصرف (نقدی)</option>
           </select>
-          <Button type="button" disabled={busy || !customerId || !credit.trim()} onClick={() => void storeCredit()} className="min-h-11">
+          <Button type="button" disabled={busy || !customerId || !credit.trim()} onClick={() => void storeCredit()} className="min-h-11 w-full sm:w-auto">
             انجام
           </Button>
         </div>

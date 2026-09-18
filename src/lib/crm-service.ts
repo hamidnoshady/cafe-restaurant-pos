@@ -141,8 +141,10 @@ export async function getCustomerFile(
             AND o.status = 'completed' AND o.closed_at IS NOT NULL
        ) os ON true
        LEFT JOIN LATERAL (
-         SELECT coalesce(sum(points), 0)::int AS points
-           FROM customer_points WHERE customer_id = c.id AND business_id = $1
+         SELECT greatest(coalesce(sum(points), 0), 0)::int AS points
+           FROM customer_points
+          WHERE customer_id = c.id AND business_id = $1
+            AND (expires_at IS NULL OR expires_at >= current_date)
        ) ps ON true
        LEFT JOIN LATERAL (
          SELECT count(*)::int AS open_cases FROM crm_cases
