@@ -26,10 +26,10 @@
 
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PencilIcon, PowerIcon, PowerOffIcon } from "lucide-react";
-import { toPersianDigits } from "@/lib/digits";
+import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatPhoneDisplay } from "@/lib/phone";
 import {
@@ -50,9 +50,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { radioMoveForKey, radioTargetIndex } from "@/lib/radio-keys";
 
 interface Branch {
   id: string;
@@ -181,15 +181,21 @@ export function BranchesManager() {
   const [confirmingDeactivation, setConfirmingDeactivation] = useState<Branch | null>(null);
 
   const load = useCallback(async () => {
-    const res = await api<BranchesResponse & { error?: string }>("/api/branches");
-    if (res.ok) {
-      setBranches(res.data.branches);
-      setPlan(res.data.plan ?? null);
-      // A reload that succeeds clears whatever failed last time; leaving a
-      // stale red box above a correct list is its own small lie.
-      setError("");
-    } else {
-      setError(branchErrorMessage(res.data.error));
+    // fetch itself can reject (offline, server restart); without the catch the
+    // screen stayed on «در حال بارگذاری شعب» forever with no way to retry.
+    try {
+      const res = await api<BranchesResponse & { error?: string }>("/api/branches");
+      if (res.ok) {
+        setBranches(res.data.branches);
+        setPlan(res.data.plan ?? null);
+        // A reload that succeeds clears whatever failed last time; leaving a
+        // stale red box above a correct list is its own small lie.
+        setError("");
+      } else {
+        setError(branchErrorMessage(res.data.error));
+      }
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.");
     }
     setLoading(false);
   }, []);
@@ -206,17 +212,24 @@ export function BranchesManager() {
     if (busy || !draft.name.trim()) return;
     setBusy(true);
     setError("");
-    const res = await api<{ error?: string }>("/api/branches", {
-      method: "POST",
-      body: JSON.stringify({
-        name: draft.name,
-        address: draft.address || undefined,
-        phone: draft.phone || undefined,
-        timezone: draft.timezone || undefined,
-        color: draft.color || undefined,
-        copyMenuFromLocationId: copyFrom || undefined,
-      }),
-    });
+    let res: { ok: boolean; data: { error?: string } };
+    try {
+      res = await api<{ error?: string }>("/api/branches", {
+        method: "POST",
+        body: JSON.stringify({
+          name: draft.name,
+          address: draft.address || undefined,
+          phone: draft.phone || undefined,
+          timezone: draft.timezone || undefined,
+          color: draft.color || undefined,
+          copyMenuFromLocationId: copyFrom || undefined,
+        }),
+      });
+    } catch {
+      setBusy(false);
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.");
+      return;
+    }
     setBusy(false);
     if (!res.ok) {
       setError(branchErrorMessage(res.data.error));
@@ -234,10 +247,17 @@ export function BranchesManager() {
     if (rowBusyId) return;
     setRowBusyId(branch.id);
     setError("");
-    const res = await api<{ error?: string }>(`/api/branches/${branch.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ isActive }),
-    });
+    let res: { ok: boolean; data: { error?: string } };
+    try {
+      res = await api<{ error?: string }>(`/api/branches/${branch.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive }),
+      });
+    } catch {
+      setRowBusyId(null);
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.");
+      return;
+    }
     setRowBusyId(null);
     if (!res.ok) {
       setError(branchErrorMessage(res.data.error));
@@ -473,18 +493,26 @@ function BranchFields({
         />
       </Field>
       <Field label="تلفن (اختیاری)">
-        <PersianNumberInput
+        {/* A plain tel input, not PersianNumberInput: a phone number is an
+            identifier, not a numeric value — the numeric control strips every
+            character that is not a digit, so a branch's `+98…` line lost its
+            plus sign (and any spaces or dashes) on the way into the field,
+            silently. The API accepts free text up to MAX_BRANCH_PHONE and
+            formatPhoneDisplay renders whatever shape arrives. */}
+        <input
           className={inputClass}
           dir="ltr"
+          type="tel"
           inputMode="tel"
-          grouping={false}
-          allowDecimal={false}
-          allowNegative={false}
+          autoComplete="tel"
           maxLength={MAX_BRANCH_PHONE}
           value={draft.phone}
           disabled={disabled}
-          onChange={(e) => onChange({ ...draft, phone: e.target.value })}
-          placeholder="۰۲۱…"
+          // Persian digits become ASCII on the way into state (the storage
+          // convention — digits are display-only Persian); +, spaces and
+          // dashes survive for formatPhoneDisplay to normalise on render.
+          onChange={(e) => onChange({ ...draft, phone: toLatinDigits(e.target.value) })}
+          placeholder="021…"
         />
       </Field>
       <Field
@@ -500,9 +528,15 @@ function BranchFields({
         />
       </Field>
       <div className="sm:col-span-2">
+        {/* `as="div"`, not a label: a <label> forwards a click on its text to
+            its first labelable descendant, so a tap on the two-line hint under
+            the swatches (an easy thing to hit on a phone) pressed the first
+            colour and silently repainted the branch. The radiogroup names
+            itself below. */}
         <Field
           label="رنگ شعبه"
           hint="این رنگ در کلید تعویض شعبه دیده می‌شود تا در یک نگاه بدانید در کدام شعبه کار می‌کنید. رنگ اصلی برنامه تغییر نمی‌کند."
+          as="div"
         >
           <BranchColorPicker
             value={draft.color}
@@ -543,49 +577,68 @@ function BranchColorPicker({
   /** Offers «خودکار» — only meaningful when adding, where "" means let the server choose. */
   allowAuto?: boolean;
 }) {
+  // «خودکار» occupies slot 0 when it is offered, so the swatches' indices
+  // shift by one — the value at an index is what the arrows move over.
+  const values = useMemo(
+    () => (allowAuto ? ["", ...BRANCH_COLORS] : [...BRANCH_COLORS]),
+    [allowAuto],
+  );
+  // Roving focus: the checked option is the one Tab stop; arrows move and
+  // check (radio-keys.ts). Every swatch keeps its Persian colour name as its
+  // accessible name, so the control is usable without seeing the colours.
+  const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
+  // When nothing matches (a value the palette no longer knows), the first
+  // option stands in as the Tab stop so the group is never unreachable by
+  // keyboard.
+  const anySelected = values.includes(value);
+
   return (
     <div role="radiogroup" aria-label="رنگ شعبه" className="flex flex-wrap items-center gap-2">
-      {allowAuto ? (
-        <button
-          type="button"
-          role="radio"
-          aria-checked={value === ""}
-          aria-label="خودکار — انتخاب رنگی که شعبهٔ دیگری ندارد"
-          disabled={disabled}
-          onClick={() => onChange("")}
-          className={cn(
-            "min-h-11 rounded-xl border px-3 text-xs font-medium transition-colors",
-            "border-border bg-muted text-muted-foreground hover:bg-muted/70",
-            value === "" && "ring-2 ring-offset-1 ring-primary",
-            disabled && "pointer-events-none opacity-50",
-          )}
-        >
-          خودکار
-        </button>
-      ) : null}
-      {BRANCH_COLORS.map((color) => {
+      {values.map((color, index) => {
+        const isAuto = color === "";
         const style = branchColorStyle(color);
         const selected = value === color;
         return (
           <button
             key={color}
+            ref={(node) => {
+              buttonsRef.current[index] = node;
+            }}
             type="button"
             role="radio"
             aria-checked={selected}
-            aria-label={style.label}
-            title={style.label}
+            aria-label={
+              isAuto ? "خودکار — انتخاب رنگی که شعبهٔ دیگری ندارد" : style.label
+            }
+            title={isAuto ? undefined : style.label}
             disabled={disabled}
+            tabIndex={selected || (!anySelected && index === 0) ? 0 : -1}
             onClick={() => onChange(color)}
+            onKeyDown={(event) => {
+              const move = radioMoveForKey(event.key, true);
+              const target = move && radioTargetIndex(move, index, values.length);
+              if (target === null) return;
+              event.preventDefault();
+              onChange(values[target]);
+              buttonsRef.current[target]?.focus();
+            }}
             className={cn(
-              "flex size-11 items-center justify-center rounded-xl border transition-transform",
-              style.surface,
+              isAuto
+                ? "min-h-11 rounded-xl border px-3 text-xs font-medium transition-colors"
+                : "flex size-11 items-center justify-center rounded-xl border transition-transform",
+              isAuto && "border-border bg-muted text-muted-foreground hover:bg-muted/70",
+              !isAuto && style.surface,
+              !isAuto && !disabled && "hover:scale-105",
               selected && "ring-2 ring-offset-1",
-              selected && style.ring,
-              !disabled && "hover:scale-105",
+              selected && (isAuto ? "ring-primary" : style.ring),
               disabled && "pointer-events-none opacity-50",
             )}
           >
-            <span className={cn("size-4 rounded-full", style.dot)} aria-hidden="true" />
+            {isAuto ? (
+              "خودکار"
+            ) : (
+              <span className={cn("size-4 rounded-full", style.dot)} aria-hidden="true" />
+            )}
           </button>
         );
       })}
@@ -621,7 +674,12 @@ function EditBranchDialog({
 
   const changes = useMemo(() => {
     const body: Record<string, string | null> = {};
-    if (draft.name.trim() !== branch.name) body.name = draft.name;
+    // Compare and send the trimmed name: sending the raw draft made « شعبه »
+    // count as a change against «شعبه» and put the untrimmed string in the
+    // request (the server normalises again, but the audit diff and the
+    // duplicate check should see what will actually be stored).
+    const name = draft.name.trim();
+    if (name && name !== branch.name) body.name = name;
     if ((draft.address.trim() || null) !== branch.address) body.address = draft.address.trim() || null;
     if ((draft.phone.trim() || null) !== branch.phone) body.phone = draft.phone.trim() || null;
     if (draft.timezone !== branch.timezone) body.timezone = draft.timezone;
@@ -635,16 +693,21 @@ function EditBranchDialog({
     if (busy || !dirty) return;
     setBusy(true);
     setError("");
-    const res = await api<{ error?: string }>(`/api/branches/${branch.id}`, {
-      method: "PATCH",
-      body: JSON.stringify(changes),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError(branchErrorMessage(res.data.error));
-      return;
+    try {
+      const res = await api<{ error?: string }>(`/api/branches/${branch.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(changes),
+      });
+      if (!res.ok) {
+        setError(branchErrorMessage(res.data.error));
+        return;
+      }
+      await onSaved();
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.");
+    } finally {
+      setBusy(false);
     }
-    await onSaved();
   }
 
   return (

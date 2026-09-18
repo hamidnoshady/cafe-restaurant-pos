@@ -94,6 +94,7 @@ export async function SettingsPageBody({ section }: { section?: SettingsTabKey |
         features={features}
         currentUserId={session.sub}
         isOwner={member.role === "owner"}
+        industry={industry}
         role={member.role}
         permissions={[...member.permissions]}
       />

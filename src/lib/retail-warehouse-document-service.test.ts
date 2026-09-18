@@ -120,6 +120,24 @@ describe("parseRetailWarehouseDocumentLines", () => {
     const parsed = parseRetailWarehouseDocumentLines("issue", [{ itemId: "a", quantity: "2.50", lot: "L" }]);
     expect(parsed.lines[0].quantity).toBe("2.5");
   });
+
+  it("refuses a unit cost past what a bigint Rial column holds", () => {
+    // Reaching the INSERT with this aborted the transaction with «out of range
+    // for type bigint» — a 500 for a mistyped cost.
+    expect(() =>
+      parseRetailWarehouseDocumentLines("receipt", [{ itemId: "a", quantity: "1", unitCost: 1e20 }]),
+    ).toThrow("cost_out_of_range");
+  });
+
+  it("refuses a total past the ceiling even when every line fits", () => {
+    const nearMax = Number.MAX_SAFE_INTEGER;
+    expect(() =>
+      parseRetailWarehouseDocumentLines("receipt", [
+        { itemId: "a", quantity: "1000", unitCost: nearMax },
+        { itemId: "b", quantity: "1000", unitCost: nearMax },
+      ]),
+    ).toThrow("cost_out_of_range");
+  });
 });
 
 describe("retailLineValue", () => {

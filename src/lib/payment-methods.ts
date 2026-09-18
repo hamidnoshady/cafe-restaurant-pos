@@ -141,6 +141,17 @@ export function sortPaymentMethods<T extends { sortOrder: number; name: string }
   return [...methods].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "fa"));
 }
 
+/**
+ * Reordering is an all-or-nothing operation. Accepting a subset, a duplicate,
+ * or an id from another business leaves tied sort positions and makes the till
+ * order unpredictable, so the API and service both use this exact-set check.
+ */
+export function isExactPaymentMethodOrder(currentIds: readonly string[], orderedIds: readonly string[]): boolean {
+  if (currentIds.length !== orderedIds.length || new Set(orderedIds).size !== orderedIds.length) return false;
+  const current = new Set(currentIds);
+  return orderedIds.every((id) => current.has(id));
+}
+
 export const MAX_PAYMENT_METHOD_NAME = 40;
 
 /**
@@ -203,7 +214,7 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): Validatio
       // A way a business models on cash defaults to behaving like cash at the
       // drawer and the cash-up, which is what it is for.
       opensDrawer: input.opensDrawer === undefined ? input.settlement === "cash" : input.opensDrawer,
-      requiresReference: input.requiresReference === undefined ? false : input.requiresReference,
+      requiresReference: input.requiresReference ?? false,
     },
   };
 }
@@ -260,6 +271,23 @@ export function changeDue(tenders: readonly { settlement: PaymentSettlement; amo
 
 /** At most this many slices on one bill — a guard against a runaway client, not a business rule. */
 export const MAX_TENDERS = 10;
+
+/**
+ * The part of a split bill an ordering platform charges commission on.
+ *
+ * Checkout and backdated-order tender lists contain the bill only. Tips are
+ * stored separately on the order and added later by `tendersWithTip` for the
+ * ledger, so summing the SnapFood tender here keeps the tip out of the
+ * commission base by construction.
+ */
+export function platformCommissionBase(
+  tenders: readonly { settlement: PaymentSettlement; amount: Rial }[],
+): Rial {
+  return tenders.reduce(
+    (total, tender) => (tender.settlement === "snappfood" ? total + tender.amount : total),
+    0,
+  );
+}
 
 export interface TenderValidationOptions {
   /** The bill amount; tips are stored separately and folded into the ledger later. */
@@ -324,25 +352,6 @@ export function tipTenderIndex(tenders: readonly { settlement: PaymentSettlement
   if (tenders.length === 0) return -1;
   const collected = tenders.findIndex((tender) => tender.settlement !== "credit");
   return collected >= 0 ? collected : 0;
-}
-
-/**
- * The part of a split bill an ordering platform charges commission on.
- *
- * The `tenders` passed to checkout and backdated-order posting contain the
- * bill only. Tips are stored separately on the order and are added later by
- * `tendersWithTip` for the ledger, so summing the SnapFood tender here keeps
- * the tip out of the commission base by construction. Keeping this rule in a
- * named helper prevents one posting path from accidentally using the
- * bill-plus-tip ledger tenders in the future.
- */
-export function platformCommissionBase(
-  tenders: readonly { settlement: PaymentSettlement; amount: Rial }[],
-): Rial {
-  return tenders.reduce(
-    (total, tender) => (tender.settlement === "snappfood" ? total + tender.amount : total),
-    0,
-  );
 }
 
 /**

@@ -53,6 +53,7 @@ export interface StockCountDetail {
   note: string | null;
   countedAt: string;
   countedByName: string | null;
+  reversed: boolean;
   lines: StockCountDetailLine[];
 }
 
@@ -260,6 +261,8 @@ export async function createStockCount(
     note?: string | null;
     lines: StockCountLineInput[];
     createdBy: string | null;
+    /** Archived lines from an existing count may be preserved during an edit. */
+    allowInactiveItemIds?: string[];
   },
 ): Promise<{ id: string }> {
   if (params.lines.length === 0) throw new Error("no_items");
@@ -267,17 +270,28 @@ export async function createStockCount(
   const countedByItem = new Map<string, string>();
   for (const line of params.lines) {
     if (!line.inventoryItemId) throw new Error("invalid_item");
+    // A duplicate line is ambiguous: silently replacing the first value would
+    // make a malformed request appear to have counted the item once. The
+    // retail count path rejects the same shape, so keep both models honest.
+    if (countedByItem.has(line.inventoryItemId)) throw new Error("duplicate_item");
     try {
       countedByItem.set(line.inventoryItemId, quantityText(String(line.countedQty ?? "")));
-    } catch {
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code === "quantity_precision_exceeded" || code === "invalid_quantity") {
+        throw new Error(code);
+      }
       throw new Error("invalid_item");
     }
   }
 
   const itemIds = [...countedByItem.keys()];
+  const allowInactiveItemIds = params.allowInactiveItemIds ?? [];
   const { rows: owned } = await client.query(
-    "SELECT id FROM inventory_items WHERE id = ANY($1::uuid[]) AND location_id = $2",
-    [itemIds, params.locationId],
+    `SELECT id FROM inventory_items
+      WHERE id = ANY($1::uuid[]) AND location_id = $2
+        AND (is_active OR id = ANY($3::uuid[]))`,
+    [itemIds, params.locationId, allowInactiveItemIds],
   );
   if (owned.length !== new Set(itemIds).size) throw new Error("item_not_found");
 
@@ -364,8 +378,10 @@ export async function getStockCountDetail(
     note: string | null;
     counted_at: string;
     counted_by_name: string | null;
+    reversed: boolean;
   }>(
-    `SELECT sc.id, sc.note, sc.counted_at::text, u.full_name AS counted_by_name
+    `SELECT sc.id, sc.note, sc.counted_at::text, u.full_name AS counted_by_name,
+            EXISTS (SELECT 1 FROM stock_counts reversal WHERE reversal.reversal_of = sc.id) AS reversed
        FROM stock_counts sc LEFT JOIN users u ON u.id = sc.counted_by
       WHERE sc.id=$1 AND sc.location_id=$2 AND sc.reversal_of IS NULL`,
     [params.countId, params.locationId],
@@ -388,16 +404,18 @@ export async function getStockCountDetail(
             trim_scale(l.variance)::text AS variance,
             trim_scale(l.unit_carrying_cost)::text AS unit_carrying_cost,
             l.variance_value::text AS variance_value
-       FROM stock_count_lines l JOIN inventory_items i ON i.id = l.inventory_item_id
+       FROM stock_count_lines l
+       JOIN inventory_items i ON i.id = l.inventory_item_id AND i.location_id = $2
       WHERE l.stock_count_id=$1
       ORDER BY i.name, l.id`,
-    [params.countId],
+    [params.countId, params.locationId],
   );
   return {
     id: counts[0].id,
     note: counts[0].note,
     countedAt: counts[0].counted_at,
     countedByName: counts[0].counted_by_name,
+    reversed: counts[0].reversed,
     lines: lines.map((l) => ({
       id: l.id,
       inventoryItemId: l.inventory_item_id,
@@ -563,6 +581,19 @@ export async function editStockCount(
     createdBy: string | null;
   },
 ): Promise<{ reversed: boolean; id: string | null }> {
+  // An item may have been archived after the original count. It is still valid
+  // to retain that historical line while editing; newly added archived items
+  // must not bypass the active-item guard in createStockCount.
+  const { rows: originalLines } = await client.query<{ inventory_item_id: string }>(
+    `SELECT l.inventory_item_id
+       FROM stock_count_lines l
+       JOIN inventory_items i ON i.id = l.inventory_item_id AND i.location_id = $2
+      WHERE l.stock_count_id = $1
+      FOR UPDATE`,
+    [params.countId, params.locationId],
+  );
+  if (originalLines.length === 0) throw new Error("count_not_found");
+
   await reverseStockCount(client, {
     businessId: params.businessId,
     locationId: params.locationId,
@@ -577,6 +608,7 @@ export async function editStockCount(
     note: params.note ?? null,
     lines: params.lines,
     createdBy: params.createdBy,
+    allowInactiveItemIds: originalLines.map((line) => line.inventory_item_id),
   });
   return { reversed: true, id: created.id };
 }

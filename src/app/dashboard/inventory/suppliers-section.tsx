@@ -27,7 +27,7 @@ import { api, Field, inputClass } from "../ui";
 import { partyScopeFor } from "@/lib/parties-scopes";
 import { toPersianDigits } from "@/lib/digits";
 import { EmptyState, LoadingSkeleton, SectionCard } from "../page-chrome";
-import { PartiesSection } from "../parties/parties-section";
+import { PartiesSection, SEARCH_DEBOUNCE_MS } from "../parties/parties-section";
 import type { Runner, Supplier } from "./inventory-manager";
 
 export function SuppliersSection({
@@ -69,15 +69,35 @@ function BranchSupplierLinks({
   run: Runner;
 }) {
   const [linkQuery, setLinkQuery] = useState("");
+  /** The query the list on screen actually answers — see the debounce below. */
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [parties, setParties] = useState<PartyOption[] | null>(null);
 
+  /*
+   * Search after the typing stops, not during it.
+   *
+   * This searched on every keystroke: «احمدی» was six requests, of which five
+   * were already stale when they were sent, and nothing ordered the answers —
+   * so the slowest reply won and the list under the box could show results for
+   * a prefix the person had typed past.
+   */
   useEffect(() => {
-    const params = new URLSearchParams({ roles: "Supplier", page: "1", pageSize: "100" });
-    if (linkQuery.trim()) params.set("q", linkQuery.trim());
-    void api<{ parties: PartyOption[] }>(`/api/parties?${params}`).then(({ ok, data }) => {
-      setParties(ok ? data.parties ?? [] : []);
-    });
+    const timer = window.setTimeout(() => setAppliedQuery(linkQuery), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
   }, [linkQuery]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({ roles: "Supplier", page: "1", pageSize: "100" });
+    if (appliedQuery.trim()) params.set("q", appliedQuery.trim());
+    void api<{ parties: PartyOption[] }>(`/api/parties?${params}`, { signal: controller.signal }).then(
+      ({ ok, aborted, data }) => {
+        if (aborted) return;
+        setParties(ok ? data.parties ?? [] : []);
+      },
+    );
+    return () => controller.abort();
+  }, [appliedQuery]);
 
   const linked = useMemo(() => new Set(suppliers.map((s) => s.partyId).filter(Boolean)), [suppliers]);
 

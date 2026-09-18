@@ -2,6 +2,7 @@
 
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -39,14 +40,29 @@ export function ArStatementPanel({
 }) {
   const money = useMoney();
   const [lines, setLines] = useState<ArStatementLine[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   useOverlayEscape(onClose);
 
   useEffect(() => {
+    let cancelled = false;
     setLines(null);
-    api<{ lines: ArStatementLine[] }>("/api/ledger/ar/customers/" + customerId).then(({ ok, data }) => {
-      if (ok) setLines(data.lines);
-    });
-  }, [customerId]);
+    setFailed(false);
+    api<{ lines: ArStatementLine[] }>("/api/ledger/ar/customers/" + customerId)
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (ok) setLines(data.lines);
+        // Without this the panel sat on its skeleton for ever — a failed load
+        // and a slow one were indistinguishable, with «بستن» the only way out.
+        else setFailed(true);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, reloadKey]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
@@ -58,9 +74,9 @@ export function ArStatementPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات حساب</p>
-            <h3 id="ar-statement-heading" className="mt-1 text-lg font-bold">صورتحساب {customerName}</h3>
+            <h3 id="ar-statement-heading" className="mt-1 break-words text-lg font-bold">صورتحساب {customerName}</h3>
             {/*
               Accounting's own customers slice. Someone looking at a debt can open
               the customer in the ledger (with its accounting code, tax and
@@ -70,20 +86,33 @@ export function ArStatementPanel({
               would link nowhere.
             */}
             {customerId !== UNKNOWN_CUSTOMER_KEY ? (
-              <a
+              <Link
                 href={accountingCustomerHref(customerId)}
                 className="mt-1 inline-block text-xs font-semibold text-primary underline-offset-4 hover:underline"
               >
                 مشتریان در حسابداری
-              </a>
+              </Link>
             ) : null}
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground">
+          <button type="button" onClick={onClose} className="shrink-0 rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground">
             بستن
           </button>
         </header>
 
-        {lines === null ? (
+        {failed ? (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-6 text-center">
+            <p role="alert" className="text-sm text-destructive">بارگذاری صورتحساب این مشتری ناموفق بود.</p>
+            <div className="mt-3 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="min-h-10 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
+              >
+                تلاش دوباره
+              </button>
+            </div>
+          </div>
+        ) : lines === null ? (
           <LoadingSkeleton rows={3} />
         ) : lines.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
@@ -122,22 +151,22 @@ export function ArStatementPanel({
               {lines.map((l, i) => (
                 <article key={i} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>
-                      <h4 className="mt-1 font-semibold text-foreground">{l.description}</h4>
+                      <h4 className="mt-1 break-words font-semibold text-foreground">{l.description}</h4>
                     </div>
-                    <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{TYPE_LABELS[l.type]}</span>
+                    <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{TYPE_LABELS[l.type]}</span>
                   </div>
                   <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3 text-sm">
-                    <div>
+                    <div className="min-w-0">
                       <dt className="text-xs text-muted-foreground">بدهکار</dt>
                       <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums text-foreground">{l.debit ? money.format(l.debit) : "—"}</dd>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <dt className="text-xs text-muted-foreground">بستانکار</dt>
                       <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums text-foreground">{l.credit ? money.format(l.credit) : "—"}</dd>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <dt className="text-xs text-muted-foreground">مانده</dt>
                       <dd className="mt-1 whitespace-nowrap font-bold tabular-nums text-foreground">{money.format(l.balance)}</dd>
                     </div>

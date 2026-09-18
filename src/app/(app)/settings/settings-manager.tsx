@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { ResolvedSettingsTab, SettingsTabKey } from "@/lib/settings-tabs";
 import { PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
+import type { Industry } from "@/lib/industries";
 import { settingsTabHref } from "@/lib/settings-routes";
 import { SectionNav, type Section } from "@/app/dashboard/section-nav";
 import { BackupManager } from "@/app/dashboard/backup/backup-manager";
@@ -55,6 +56,8 @@ interface SettingsManagerProps {
   features: Record<string, boolean>;
   currentUserId: string;
   isOwner: boolean;
+  /** The business's trade, so sections whose wording/fields depend on it (tax) can adapt. */
+  industry: Industry;
   /** The signed-in role, for the sections that mount a scoped party directory. */
   role: string;
   /**
@@ -115,6 +118,7 @@ export function SettingsManager({
   features,
   currentUserId,
   isOwner,
+  industry,
   role,
   permissions,
 }: SettingsManagerProps) {
@@ -201,7 +205,7 @@ export function SettingsManager({
       ) : null}
 
       {activeTab === "business" ? <BusinessSettings /> : null}
-      {activeTab === "tax" ? <TaxSettings /> : null}
+      {activeTab === "tax" ? <TaxSettings industry={industry} /> : null}
       {activeTab === "pricing" ? <PricingSettings /> : null}
       {activeTab === "online-platforms" ? <OnlinePlatformsSettings /> : null}
       {activeTab === "payment-methods" ? <PaymentMethodsSettings /> : null}

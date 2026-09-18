@@ -28,6 +28,12 @@ const biz = { id: "", locationId: "" };
 const acct = { cash: "", bankClearing: "", inventory: "", accountsPayable: "" };
 const user = { id: "" };
 const supplier = { id: "" };
+/*
+ * The party the branch alias is linked to (`suppliers.party_id`) — what the
+ * A/P balance rows must carry so the screens can deep-link the supplier's file
+ * in the one directory, which is keyed by the party rather than the alias.
+ */
+const party = { id: "" };
 
 function urlFor(database: string): string {
   const url = new URL(rootDatabaseUrl!);
@@ -109,6 +115,13 @@ beforeEach(async () => {
   );
   supplier.id = supplierRow.rows[0].id;
 
+  const partyRow = await db.query<{ id: string }>(
+    "INSERT INTO parties (business_id, name, role) VALUES ($1, 'Acme', 'supplier') RETURNING id",
+    [biz.id],
+  );
+  party.id = partyRow.rows[0].id;
+  await db.query("UPDATE suppliers SET party_id = $1 WHERE id = $2", [party.id, supplier.id]);
+
   const accounts = await db.query<{ id: string; code: string }>(
     `INSERT INTO accounts (business_id, code, name, type)
      VALUES ($1, '1100', 'Cash', 'asset'), ($1, '1120', 'Card clearing', 'asset'),
@@ -168,13 +181,39 @@ async function postSupplierReturn(entryDate: string, purchaseId: string, amount:
 }
 
 describe("listSupplierBalances", () => {
-  it("attributes a credit purchase's AP credit to its supplier", async () => {
+  it("attributes a credit purchase's AP credit to its supplier, with the party behind the alias", async () => {
     await postCreditPurchase("2025-04-01", supplier.id, 500_000);
 
     const balances = await apService.listSupplierBalances(biz.id);
     expect(balances).toEqual([
-      { supplierId: supplier.id, supplierName: "Acme", supplierPhone: "0912", balance: 500_000 },
+      {
+        supplierId: supplier.id,
+        supplierName: "Acme",
+        supplierPhone: "0912",
+        supplierPartyId: party.id,
+        balance: 500_000,
+      },
     ]);
+  });
+
+  it("lists every supplier record with its balance and party in the directory scope", async () => {
+    await postCreditPurchase("2025-04-01", supplier.id, 500_000);
+    // A supplier we owe nothing to is still a picker option, at zero.
+    const settled = await db.query<{ id: string }>(
+      "INSERT INTO suppliers (location_id, name) VALUES ($1, 'Settled Co') RETURNING id",
+      [biz.locationId],
+    );
+
+    const directory = await apService.listSupplierDirectory(biz.id);
+    expect(directory).toHaveLength(2);
+    expect(directory.find((s) => s.supplierId === supplier.id)).toEqual({
+      supplierId: supplier.id,
+      supplierName: "Acme",
+      supplierPhone: "0912",
+      supplierPartyId: party.id,
+      balance: 500_000,
+    });
+    expect(directory.find((s) => s.supplierId === settled.rows[0].id)?.balance).toBe(0);
   });
 
   it("groups purchases with no supplier_id under the unknown bucket", async () => {

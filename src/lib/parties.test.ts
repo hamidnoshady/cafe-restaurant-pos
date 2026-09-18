@@ -155,13 +155,44 @@ describe("validatePartyForm", () => {
 
   it("keeps the tax percentage a percentage", () => {
     const state = { ...resetPartyForm(), displayName: "x" };
-    expect(validatePartyForm({ ...state, generalInfo: { ...state.generalInfo, taxPercentage: 120 } })["generalInfo.taxPercentage"]).toBe(
-      "invalid_tax_percent",
-    );
-    expect(validatePartyForm({ ...state, generalInfo: { ...state.generalInfo, taxPercentage: 9 } })["generalInfo.taxPercentage"]).toBeUndefined();
+    const taxError = (taxPercentage: unknown) =>
+      validatePartyForm({
+        ...state,
+        generalInfo: { ...state.generalInfo, taxPercentage: taxPercentage as number },
+      })["generalInfo.taxPercentage"];
+
+    expect(taxError(120)).toBe("invalid_tax_percent");
+    expect(taxError(-1)).toBe("invalid_tax_percent");
+    expect(taxError(9)).toBeUndefined();
     // A rate typed in Persian digits is only a string for as long as it is in the
     // input; the coercion below is what lets a stored document hold one.
     expect(taxPercentageOf({ generalInfo: { taxPercentage: "۹" } })).toBe(9);
+  });
+
+  it("accepts a fractional rate rather than reading it as a whole number", () => {
+    /*
+     * The validator read the field through `asciiDigits`, which drops the
+     * decimal mark, so it judged «۱۲٫۵» as `125` and refused a legal rate with
+     * «نرخ مالیات باید عددی بین ۰ تا ۱۰۰ باشد» — while «۹٫۵» judged as `95`,
+     * passed, and was stored ten times too high. The validator and
+     * `taxPercentageOf` must agree on what a string means, so they now share a
+     * parser.
+     */
+    const state = { ...resetPartyForm(), displayName: "x" };
+    const taxError = (taxPercentage: unknown) =>
+      validatePartyForm({
+        ...state,
+        generalInfo: { ...state.generalInfo, taxPercentage: taxPercentage as number },
+      })["generalInfo.taxPercentage"];
+
+    for (const rate of ["۱۲٫۵", "9.5", "۹٫۵", "٩٫٥", 12.5, "0.5"]) {
+      expect(taxError(rate), String(rate)).toBeUndefined();
+    }
+    // The range still applies to the parsed value.
+    expect(taxError("۱۲۰٫۵")).toBe("invalid_tax_percent");
+    // And a cleared field is «use the default», not a reason to block the save.
+    expect(taxError("")).toBeUndefined();
+    expect(taxError("   ")).toBeUndefined();
   });
 
   it("checks the formats it claims to check", () => {
@@ -274,9 +305,42 @@ describe("buildPartyPayload / formStateFromParty", () => {
     expect(taxPercentageOf({ generalInfo: { taxPercentage: "۱۲" } })).toBe(12);
     // A rate that is not a rate (or is out of range) is the default, not a NaN in
     // the ledger's copy of the party.
-    expect(taxPercentageOf({ generalInfo: { taxPercentage: "۱۲٫۵" } })).toBe(DEFAULT_TAX_PERCENTAGE);
     expect(taxPercentageOf({ generalInfo: { taxPercentage: null } })).toBe(DEFAULT_TAX_PERCENTAGE);
     expect(taxPercentageOf({ generalInfo: { taxPercentage: -3 } })).toBe(DEFAULT_TAX_PERCENTAGE);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: 101 } })).toBe(DEFAULT_TAX_PERCENTAGE);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "چیزی" } })).toBe(DEFAULT_TAX_PERCENTAGE);
+  });
+
+  it("keeps a fractional rate instead of multiplying it by ten", () => {
+    /*
+     * This read the text through `asciiDigits`, which strips every non-digit —
+     * the decimal mark included. «۱۲٫۵» became `125`, which failed the range
+     * check and silently reverted to 9%; «۹٫۵» became `95`, which *passed* it,
+     * so a party typed as 9.5% was stored at 95% and every invoice raised
+     * against them used that rate. Both spellings of the separator and both
+     * digit sets have to survive, because the keyboard decides which arrives.
+     */
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "۱۲٫۵" } })).toBe(12.5);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "۹٫۵" } })).toBe(9.5);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "9.5" } })).toBe(9.5);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "٩٫٥" } })).toBe(9.5);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: 9.5 } })).toBe(9.5);
+    // A leading zero is not a thousands group: «۰٫۵» is half a percent.
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "۰٫۵" } })).toBe(0.5);
+  });
+
+  it("separates «cleared» from «zero»", () => {
+    /*
+     * 0% is a rate a real business charges (an exempt counterparty), so it can
+     * never be what an empty field means. A whitespace-only value used to reach
+     * `Number("")` and land on 0, quietly making a party tax-exempt.
+     */
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "" } })).toBe(DEFAULT_TAX_PERCENTAGE);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "   " } })).toBe(DEFAULT_TAX_PERCENTAGE);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: undefined } })).toBe(DEFAULT_TAX_PERCENTAGE);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "0" } })).toBe(0);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: "۰" } })).toBe(0);
+    expect(taxPercentageOf({ generalInfo: { taxPercentage: 0 } })).toBe(0);
   });
 });
 

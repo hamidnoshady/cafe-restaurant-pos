@@ -20,7 +20,19 @@ const FORMATS = [
  * at the next restyle. The variant carries it now, and the three buttons are
  * one map over a table rather than three near-identical blocks.
  */
-export function ExportButtons({ request }: { request: Omit<ExportRequest, "format"> }) {
+export function ExportButtons({
+  request,
+  disabled = false,
+}: {
+  request: Omit<ExportRequest, "format">;
+  /**
+   * There is nothing worth exporting yet — the report is still loading, failed,
+   * or was never run. Without this the buttons stayed live over an empty result
+   * and produced a file with a header row and no data, which reads as a report
+   * saying the business did nothing rather than as a report that never ran.
+   */
+  disabled?: boolean;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -41,7 +53,7 @@ export function ExportButtons({ request }: { request: Omit<ExportRequest, "forma
           variant="outline"
           size="lg"
           onClick={() => run(format)}
-          disabled={busy !== null}
+          disabled={disabled || busy !== null}
         >
           <Icon aria-hidden="true" />
           {busy === format ? "در حال آماده‌سازی…" : label}

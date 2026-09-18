@@ -58,7 +58,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const { rows: items } = await query<{ id: string }>(
-    "SELECT id FROM inventory_items WHERE id = $1 AND location_id = $2",
+    "SELECT id FROM inventory_items WHERE id = $1 AND location_id = $2 AND is_active",
     [payload.inventoryItemId, location.id],
   );
   if (items.length === 0) return NextResponse.json({ error: "item_not_found" }, { status: 404 });

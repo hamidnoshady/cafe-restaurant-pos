@@ -275,6 +275,8 @@ describe("getCustomerStatement", () => {
     expect(lines.map((l) => l.type)).toEqual(["invoice", "receipt"]);
     expect(lines[0].balance).toBe(500_000);
     expect(lines[1].balance).toBe(300_000);
+    // The UI is Persian-first: an invoice line names its order with Persian digits.
+    expect(lines[0].description).toMatch(/^سفارش #[۰-۹]+$/);
   });
 });
 
@@ -288,5 +290,77 @@ describe("getArAging", () => {
     expect(aging.rows[0].over90).toBe(500_000);
     expect(aging.rows[0].total).toBe(500_000);
     expect(aging.totals.over90).toBe(500_000);
+  });
+
+  it("rejects a malformed asOfDate instead of answering with garbage buckets", async () => {
+    // `Date.parse("not-a-date")` is NaN, and every age computed from NaN used
+    // to fall through to «over90» — a wrong report that claimed to be right.
+    await expect(arService.getArAging(biz.id, "not-a-date")).rejects.toThrow("invalid_date");
+    await expect(arService.getArAging(biz.id, "2025-13-45")).rejects.toThrow("invalid_date");
+  });
+
+  it("carries an advance payment as negative current, so the row still equals the customer's net balance", async () => {
+    // A customer who pays ahead has no open invoice to age. Dropping that
+    // credit made this report's «جمع» disagree with the balances list (and
+    // with the control account) by exactly the advance.
+    const customer = await customersService.createCustomer(biz.id, { name: "Mina" });
+    await postCreditOrder("2025-04-01", customer.id, 200_000);
+    await arService.receivePayment({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      customerId: customer.id,
+      method: "cash",
+      amount: 500_000,
+      receiptDate: "2025-04-05",
+      createdBy: user.id,
+    });
+
+    const aging = await arService.getArAging(biz.id, "2025-04-15");
+    expect(aging.rows).toHaveLength(1);
+    expect(aging.rows[0].current).toBe(-300_000);
+    expect(aging.rows[0].total).toBe(-300_000);
+  });
+
+  it("shows a customer whose only AR activity is an advance", async () => {
+    const customer = await customersService.createCustomer(biz.id, { name: "Payam" });
+    await arService.receivePayment({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      customerId: customer.id,
+      method: "bank",
+      amount: 250_000,
+      receiptDate: "2025-03-01",
+      createdBy: user.id,
+    });
+
+    const aging = await arService.getArAging(biz.id, "2025-03-15");
+    expect(aging.rows).toEqual([
+      expect.objectContaining({ customerId: customer.id, current: -250_000, total: -250_000 }),
+    ]);
+  });
+
+  it("keeps the grand total equal to the control account when debts and credits coexist", async () => {
+    const debtor = await customersService.createCustomer(biz.id, { name: "Debtor" });
+    const creditor = await customersService.createCustomer(biz.id, { name: "Creditor" });
+    await postCreditOrder("2025-01-01", debtor.id, 400_000);
+    await arService.receivePayment({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      customerId: creditor.id,
+      method: "cash",
+      amount: 250_000,
+      receiptDate: "2025-02-01",
+      createdBy: user.id,
+    });
+
+    const aging = await arService.getArAging(biz.id, "2025-04-15");
+    expect(aging.totals.total).toBe(150_000);
+
+    // The phase-16 exit criterion, checked directly: «جمع کل» IS the control account.
+    const { rows } = await db.query<{ balance: string }>(
+      `SELECT (COALESCE(SUM(debit),0) - COALESCE(SUM(credit),0))::text AS balance FROM journal_lines WHERE account_id = $1`,
+      [acct.accountsReceivable],
+    );
+    expect(aging.totals.total).toBe(Number(rows[0].balance));
   });
 });

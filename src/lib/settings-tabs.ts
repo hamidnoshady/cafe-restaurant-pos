@@ -1,6 +1,6 @@
 import type { Role } from "./auth";
 import type { Industry } from "./industries";
-import { hasModule, labelFor, type ModuleKey } from "./industry-profile";
+import { hasModule, type ModuleKey } from "./industry-profile";
 import { PERMISSIONS, type Permission } from "./permissions";
 
 export const SETTINGS_TAB_KEYS = [
@@ -93,11 +93,13 @@ export const SETTINGS_TABS: SettingsTab[] = [
   {
     key: "pricing",
     label: "قیمت‌گذاری",
-    description: "هدف حاشیه سود پیش‌فرض برای پیشنهاد قیمت آیتم‌های منو",
+    description: "حاشیه سود، سربار و هشدار تغییر بهای آیتم‌های منو",
     requiredAnyPermission: [PERMISSIONS.settingsManage],
-    industryText: (industry) => ({
-      description: `هدف حاشیه سود پیش‌فرض برای پیشنهاد قیمت ${labelFor(industry, "catalogueItem")}‌ها`,
-    }),
+    // This policy is the recipe-backed `menu_items` cost-plus engine. Retail
+    // trades price their `items` through trade-specific formulas (gold,
+    // serialized watches, variants, etc.); showing this tab there promised a
+    // default margin that none of those engines ever read.
+    module: "menu",
   },
   {
     key: "online-platforms",

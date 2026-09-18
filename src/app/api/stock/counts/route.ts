@@ -65,7 +65,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
     if (err instanceof Error) {
-      const known = ["no_items", "invalid_item", "invalid_quantity", "duplicate_item", "item_not_found"];
+      const known = [
+        "no_items",
+        "invalid_item",
+        "invalid_quantity",
+        "quantity_precision_exceeded",
+        "duplicate_item",
+        "item_not_found",
+      ];
       if (known.includes(err.message)) return NextResponse.json({ error: err.message }, { status: 400 });
     }
     throw err;

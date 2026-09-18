@@ -4,6 +4,7 @@ import {
   CUSTOM_PAYMENT_SETTLEMENTS,
   builtinPaymentMethodsFor,
   changeDue,
+  isExactPaymentMethodOrder,
   ledgerSettlementFor,
   paymentMethodCodeFor,
   platformCommissionBase,
@@ -52,6 +53,20 @@ describe("sortPaymentMethods", () => {
     const input = [{ sortOrder: 2, name: "ب" }, { sortOrder: 1, name: "الف" }];
     sortPaymentMethods(input);
     expect(input.map((m) => m.name)).toEqual(["ب", "الف"]);
+  });
+});
+
+describe("isExactPaymentMethodOrder", () => {
+  const current = ["cash-id", "card-id", "online-id"];
+
+  it("accepts every current id exactly once in any order", () => {
+    expect(isExactPaymentMethodOrder(current, ["online-id", "cash-id", "card-id"])).toBe(true);
+  });
+
+  it("rejects subsets, duplicates, and foreign ids", () => {
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id"])).toBe(false);
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "cash-id", "online-id"])).toBe(false);
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id", "foreign-id"])).toBe(false);
   });
 });
 
@@ -115,12 +130,12 @@ describe("validatePaymentMethodInput", () => {
     });
   });
 
-  it("does not coerce malformed boolean options", () => {
-    expect(validatePaymentMethodInput({ name: "پوز دوم", settlement: "card", requiresReference: "false" })).toEqual({
+  it("rejects truthy strings instead of silently treating them as enabled", () => {
+    expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: "false" })).toEqual({
       ok: false,
       error: "bad_request",
     });
-    expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: 0 })).toEqual({
+    expect(validatePaymentMethodInput({ name: "پوز", settlement: "card", requiresReference: 1 })).toEqual({
       ok: false,
       error: "bad_request",
     });
@@ -343,7 +358,7 @@ describe("tipTenderIndex / tendersWithTip", () => {
 });
 
 describe("platformCommissionBase", () => {
-  it("uses the bill-only SnapFood slice, excluding the separately stored tip", () => {
+  it("uses only the SnapFood bill slice, excluding cash and the separately stored tip", () => {
     expect(
       platformCommissionBase([
         { settlement: "snappfood", amount: 800_000 },
@@ -359,10 +374,6 @@ describe("platformCommissionBase", () => {
         { settlement: "snappfood", amount: 800_000 },
       ]),
     ).toBe(800_000);
-  });
-
-  it("works for an all-SnapFood bill too", () => {
-    expect(platformCommissionBase([{ settlement: "snappfood", amount: 800_000 }])).toBe(800_000);
   });
 });
 

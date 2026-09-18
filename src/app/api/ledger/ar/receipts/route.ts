@@ -4,6 +4,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 import { ArError, MissingLedgerAccountError, receivePayment } from "@/lib/ar-service";
 import { listReceipts } from "@/lib/installments-service";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
+import { isValidIsoDate } from "@/lib/iso-date";
 
 /** The «دریافت‌ها» ledger slice — every receipt voucher, newest first. */
 export const GET = withTenantScope(async (request: NextRequest) => {
@@ -45,6 +46,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!Number.isSafeInteger(amount) || amount <= 0) {
     return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
   }
+  // `receiptDate` goes straight into a `date` column, so a malformed value is
+  // a Postgres `22007` error — an unhandled 500 — rather than the 400 a bad
+  // input is. (Date.parse wouldn't do: it normalises «2024-02-30» to March 1st.)
+  const receiptDate = body.receiptDate?.trim() || null;
+  if (receiptDate && !isValidIsoDate(receiptDate)) {
+    return NextResponse.json({ error: "invalid_date" }, { status: 400 });
+  }
 
   const location = await resolveActiveLocation(session);
 
@@ -55,7 +63,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       customerId,
       method: body.method as "cash" | "bank",
       amount,
-      receiptDate: body.receiptDate?.trim() || null,
+      receiptDate,
       memo: body.memo,
       createdBy: session.sub,
     });

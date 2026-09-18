@@ -274,6 +274,7 @@ describe("moduleForApiPath", () => {
     // pages while the APIs keep answering.
     expect(moduleForApiPath("/api/ledger/entries")).toBe("ledger");
     expect(moduleForApiPath("/api/reports/sales")).toBe("reports");
+    expect(moduleForApiPath("/api/settings/pricing")).toBe("menu");
     expect(moduleForApiPath("/api/settings/business")).toBe("settings");
     expect(moduleForApiPath("/api/dashboard/overview")).toBe("dashboard");
     expect(moduleForApiPath("/api/waiter/board")).toBe("waiter");

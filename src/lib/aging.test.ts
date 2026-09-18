@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageOpenItems, bucketForAge, summarizeAging } from "./aging";
+import { ageOpenItems, bucketForAge, summarizeAging, unappliedCredit, UNKNOWN_CUSTOMER_KEY, UNKNOWN_SUPPLIER_KEY } from "./aging";
 
 describe("bucketForAge", () => {
   it("buckets in 30-day steps, current through 90+", () => {
@@ -77,5 +77,53 @@ describe("summarizeAging", () => {
 
   it("returns all zeros for no aged invoices", () => {
     expect(summarizeAging([])).toEqual({ current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 });
+  });
+});
+
+describe("unappliedCredit", () => {
+  it("is zero when payments exactly cover the open items", () => {
+    expect(
+      unappliedCredit(
+        [{ id: "i1", date: "2025-01-01", amount: 100_000 }],
+        [{ id: "r1", date: "2025-01-05", amount: 100_000 }],
+      ),
+    ).toBe(0);
+  });
+
+  it("is zero when the party still owes more than they paid", () => {
+    expect(
+      unappliedCredit(
+        [{ id: "i1", date: "2025-01-01", amount: 100_000 }],
+        [{ id: "r1", date: "2025-01-05", amount: 60_000 }],
+      ),
+    ).toBe(0);
+  });
+
+  it("returns the overpayment when a receipt exceeds everything owed", () => {
+    expect(
+      unappliedCredit(
+        [{ id: "i1", date: "2025-01-01", amount: 50_000 }],
+        [{ id: "r1", date: "2025-01-05", amount: 200_000 }],
+      ),
+    ).toBe(150_000);
+  });
+
+  it("returns the whole advance when nothing was ever invoiced", () => {
+    expect(unappliedCredit([], [{ id: "r1", date: "2025-01-05", amount: 300_000 }])).toBe(300_000);
+    expect(unappliedCredit([], [])).toBe(0);
+  });
+});
+
+/*
+ * The two sentinel group keys — one per subledger — must stay the shared
+ * spelling "unknown": the services group unattributed lines under it, the
+ * screens hide their action/link for it, and `isUuid` must reject it (a
+ * non-uuid id can never match a party row). Both live here, in the pure
+ * module, precisely so client components can import them without `pg`.
+ */
+describe("unknown-party sentinel keys", () => {
+  it("uses one stable spelling for both subledgers", () => {
+    expect(UNKNOWN_CUSTOMER_KEY).toBe("unknown");
+    expect(UNKNOWN_SUPPLIER_KEY).toBe("unknown");
   });
 });

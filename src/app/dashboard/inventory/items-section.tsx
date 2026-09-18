@@ -1,8 +1,8 @@
 "use client";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useDeferredValue, useMemo, useState } from "react";
-import { SearchIcon } from "lucide-react";
+import { useDeferredValue, useState } from "react";
+import { SearchIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity } from "@/lib/digits";
 import { useInventorySearch } from "@/lib/inventory-search";
@@ -22,7 +22,9 @@ export function ItemsSection({
   run: Runner;
 }) {
   const [name, setName] = useState("");
+  const [sku, setSku] = useState("");
   const [unit, setUnit] = useState("");
+  const [validationError, setValidationError] = useState("");
   const [reorderLevel, setReorderLevel] = useState("");
   const [purchaseUnit, setPurchaseUnit] = useState("");
   const [purchaseFactor, setPurchaseFactor] = useState("1");
@@ -32,23 +34,37 @@ export function ItemsSection({
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !unit.trim()) return;
+    setValidationError("");
+    if (!name.trim() || !unit.trim()) {
+      setValidationError("نام قلم و واحد پایه الزامی است.");
+      return;
+    }
+    const reorder = reorderLevel.trim() ? Number(reorderLevel) : null;
+    const factor = purchaseUnit.trim() ? Number(purchaseFactor) : 1;
+    if (reorder !== null && (!Number.isFinite(reorder) || reorder < 0)) {
+      setValidationError("آستانه سفارش مجدد نمی‌تواند منفی باشد.");
+      return;
+    }
+    if (!Number.isFinite(factor) || factor <= 0) {
+      setValidationError("ضریب تبدیل واحد خرید باید بزرگ‌تر از صفر باشد.");
+      return;
+    }
     const ok = await run(() =>
       api("/api/inventory/items", {
         method: "POST",
         body: JSON.stringify({
-          name,
-          unit,
-          reorderLevel: reorderLevel.trim() ? Number(reorderLevel) : null,
+          name: name.trim(),
+          sku: sku.trim() || null,
+          unit: unit.trim(),
+          reorderLevel: reorder,
           purchaseUnit: purchaseUnit.trim() || null,
-          purchaseUnitFactor: purchaseFactor.trim()
-            ? Number(purchaseFactor)
-            : 1,
+          purchaseUnitFactor: factor,
         }),
       }),
     );
     if (ok) {
       setName("");
+      setSku("");
       setUnit("");
       setReorderLevel("");
       setPurchaseUnit("");
@@ -72,12 +88,22 @@ export function ItemsSection({
         <div className="relative border-b border-border/80 px-4 pb-4 sm:px-5">
           <SearchIcon className="pointer-events-none absolute start-7 top-1/2 size-4 -translate-y-1/2 text-muted-foreground sm:start-8" />
           <input
-            className={`${inputClass} ps-9`}
+            className={`${inputClass} ps-9 ${query ? "pe-10" : ""}`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="جستجوی قلم (نام، کد، واحد)…"
             aria-label="جستجوی قلم انبار"
           />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute end-6 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground sm:end-7"
+              aria-label="پاک کردن جستجو"
+            >
+              <XIcon className="size-4" />
+            </button>
+          ) : null}
         </div>
 
         <ul className="divide-y divide-border/80">
@@ -107,7 +133,7 @@ export function ItemsSection({
           }
           description="اطلاعات پایهٔ قلم را وارد کنید؛ آستانه سفارش مجدد اختیاری است."
         >
-          <form onSubmit={add} className="space-y-1">
+          <form onSubmit={add} className="space-y-3">
             <Field label="نام قلم">
               <input
                 className={inputClass}
@@ -115,6 +141,16 @@ export function ItemsSection({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="مثلاً قهوه"
                 required
+              />
+            </Field>
+            <Field label="کد کالا (SKU)">
+              <input
+                className={inputClass}
+                dir="ltr"
+                value={sku}
+                onChange={(e) => setSku(e.target.value)}
+                placeholder="اختیاری؛ مثلاً COF-001"
+                maxLength={100}
               />
             </Field>
             <Field label="واحد پایه">
@@ -140,7 +176,10 @@ export function ItemsSection({
               <input
                 className={inputClass}
                 value={purchaseUnit}
-                onChange={(e) => setPurchaseUnit(e.target.value)}
+                onChange={(e) => {
+                  setPurchaseUnit(e.target.value);
+                  if (!e.target.value.trim()) setPurchaseFactor("1");
+                }}
                 placeholder="اختیاری؛ مثلاً kg"
               />
             </Field>
@@ -152,8 +191,18 @@ export function ItemsSection({
                 value={purchaseFactor}
                 onChange={(e) => setPurchaseFactor(e.target.value)}
                 placeholder="مثلاً ۱۰۰۰"
+                disabled={!purchaseUnit.trim()}
+                aria-describedby="purchase-factor-help"
               />
+              <span id="purchase-factor-help" className="text-xs text-muted-foreground">
+                تعداد واحد پایه در یک واحد خرید
+              </span>
             </Field>
+            {validationError ? (
+              <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {validationError}
+              </p>
+            ) : null}
             <Button
               type="submit"
               disabled={busy}
@@ -223,7 +272,11 @@ function ItemRow({
               ساخت داخلی
             </span>
           ) : null}
-          {!item.is_active ? <span className="sr-only">غیرفعال</span> : null}
+          {!item.is_active ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.7rem] font-medium text-muted-foreground">
+              غیرفعال
+            </span>
+          ) : null}
         </div>
 
         <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
@@ -334,7 +387,9 @@ function EditItemRow({
   onDone: () => void;
 }) {
   const [name, setName] = useState(item.name);
+  const [sku, setSku] = useState(item.sku ?? "");
   const [unit, setUnit] = useState(item.unit);
+  const [validationError, setValidationError] = useState("");
   const [reorderLevel, setReorderLevel] = useState(
     item.reorder_level === null ? "" : String(Number(item.reorder_level)),
   );
@@ -348,18 +403,31 @@ function EditItemRow({
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !unit.trim()) return;
+    setValidationError("");
+    if (!name.trim() || !unit.trim()) {
+      setValidationError("نام قلم و واحد پایه الزامی است.");
+      return;
+    }
+    const reorder = reorderLevel.trim() ? Number(reorderLevel) : null;
+    const factor = purchaseUnit.trim() ? Number(purchaseFactor) : 1;
+    if (reorder !== null && (!Number.isFinite(reorder) || reorder < 0)) {
+      setValidationError("آستانه سفارش مجدد نمی‌تواند منفی باشد.");
+      return;
+    }
+    if (!Number.isFinite(factor) || factor <= 0) {
+      setValidationError("ضریب تبدیل واحد خرید باید بزرگ‌تر از صفر باشد.");
+      return;
+    }
     const ok = await run(() =>
       api(`/api/inventory/items/${item.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          name,
-          unit,
-          reorderLevel: reorderLevel.trim() ? Number(reorderLevel) : null,
+          name: name.trim(),
+          sku: sku.trim() || null,
+          unit: unit.trim(),
+          reorderLevel: reorder,
           purchaseUnit: purchaseUnit.trim() || null,
-          purchaseUnitFactor: purchaseFactor.trim()
-            ? Number(purchaseFactor)
-            : 1,
+          purchaseUnitFactor: factor,
           imageMediaId,
         }),
       }),
@@ -371,7 +439,7 @@ function EditItemRow({
     <li className="bg-amber-50/50 dark:bg-amber-500/15 px-4 py-4 sm:px-5">
       <form
         onSubmit={save}
-        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5"
+        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6"
       >
         <Field label="نام قلم">
           <input
@@ -379,6 +447,16 @@ function EditItemRow({
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
+          />
+        </Field>
+        <Field label="کد کالا (SKU)">
+          <input
+            className={inputClass}
+            dir="ltr"
+            value={sku}
+            onChange={(e) => setSku(e.target.value)}
+            placeholder="اختیاری"
+            maxLength={100}
           />
         </Field>
         <Field label="واحد پایه">
@@ -403,7 +481,10 @@ function EditItemRow({
           <input
             className={inputClass}
             value={purchaseUnit}
-            onChange={(e) => setPurchaseUnit(e.target.value)}
+            onChange={(e) => {
+              setPurchaseUnit(e.target.value);
+              if (!e.target.value.trim()) setPurchaseFactor("1");
+            }}
             placeholder="اختیاری؛ مثلاً kg"
           />
         </Field>
@@ -414,9 +495,15 @@ function EditItemRow({
             inputMode="decimal"
             value={purchaseFactor}
             onChange={(e) => setPurchaseFactor(e.target.value)}
+            disabled={!purchaseUnit.trim()}
           />
         </Field>
-        <div className="sm:col-span-2 xl:col-span-5">
+        {validationError ? (
+          <p role="alert" className="sm:col-span-2 xl:col-span-6 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {validationError}
+          </p>
+        ) : null}
+        <div className="sm:col-span-2 xl:col-span-6">
           {/* The photo the visual stock counter matches against — pulled from
               the shared media library so one upload serves menu and counting. */}
           <MediaImageField
@@ -426,7 +513,7 @@ function EditItemRow({
             disabled={busy}
           />
         </div>
-        <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row xl:col-span-5">
+        <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row xl:col-span-6">
           <Button
             type="submit"
             disabled={busy}
