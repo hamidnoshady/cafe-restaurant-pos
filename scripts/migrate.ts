@@ -48,6 +48,13 @@ export const MIGRATION_ADVISORY_LOCK_ID = "7310318183545164275";
  * identical — so a database that applied the original wording has the exact
  * schema the reworded file produces. Adopting the checksum is schema-neutral
  * for the same reason as 0103 above.
+ *
+ * 0140_installments.sql had its leading comment block reworded too
+ * (commit ddab7d11, "harden installment workflows": the note about what a
+ * plan's creation posts was expanded to describe interest accrual) after
+ * deployments had already applied the original wording from PR #516. Only
+ * comment lines changed — every statement is byte-for-byte identical — so
+ * adopting the checksum is schema-neutral, exactly like 0127.
  */
 const CHECKSUM_REPAIRS: ReadonlyMap<string, string> = new Map([
   [
@@ -60,6 +67,12 @@ const CHECKSUM_REPAIRS: ReadonlyMap<string, string> = new Map([
     // sha256 of the original revision (comment block described the since-removed
     // floating "report" button instead of the sidebar footer icon).
     "f780470a9aeebc4400ea14c3fee5ade194d4aa598c5bd79840802b2aa372b5ff",
+  ],
+  [
+    "0140_installments.sql",
+    // sha256 of the original revision (comment block predates the
+    // interest-accrual wording; SQL statements identical).
+    "6ce624cd31cda355f2ca902bfa4482996d1ab67ca67ff6c3d80ef4c2ae170c9d",
   ],
 ]);
 
