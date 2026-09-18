@@ -72,7 +72,7 @@ const FILTERS: Array<{ key: WarehouseStatusFilter; label: string }> = [
 ];
 
 const filterButtonClass = (selected: boolean) =>
-  `min-h-10 rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${
+  `min-h-10 rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     selected
       ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
       : "border-border bg-card text-muted-foreground hover:border-amber-300 hover:bg-amber-50 hover:text-foreground dark:hover:border-amber-500/40 dark:hover:bg-amber-500/10"
