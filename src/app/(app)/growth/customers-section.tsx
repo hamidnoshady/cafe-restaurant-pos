@@ -102,7 +102,7 @@ export function GrowthCustomersSection({
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مشتریان وفادار</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان</h2>
           </div>
         }
         description="این فهرست رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ستون‌ها برای کار رشد‌اند — چرخهٔ حیات، امتیاز و خرید. افزودن و ویرایش در همین بخش انجام می‌شود و پروندهٔ کامل (یادداشت‌ها و تاریخچه) در CRM است."

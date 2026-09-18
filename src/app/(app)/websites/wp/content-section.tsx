@@ -151,7 +151,7 @@ export function WpContentSection() {
                     href={row.permalink}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-stone-50 dark:hover:bg-stone-800"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-muted/60 dark:hover:bg-stone-800"
                   >
                     مشاهده
                     <ExternalLinkIcon className="size-3" />

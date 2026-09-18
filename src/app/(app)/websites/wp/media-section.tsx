@@ -97,7 +97,7 @@ export function WpMediaSection() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {rows.map((row) => (
             <div key={row.remoteId} className={`${cardClass} overflow-hidden`}>
-              <div className="flex aspect-square items-center justify-center overflow-hidden bg-stone-100 dark:bg-stone-800">
+              <div className="flex aspect-square items-center justify-center overflow-hidden bg-muted">
                 {row.mediaUrl && row.mimeType?.startsWith("image/") ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={row.mediaUrl} alt={row.title} className="size-full object-cover" loading="lazy" />

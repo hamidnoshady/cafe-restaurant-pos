@@ -126,7 +126,7 @@ export function WpCustomersSection() {
                 </span>
                 <Link
                   href={crmCustomerHref(c.localId)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-stone-50 dark:hover:bg-stone-800"
+                  className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-muted/60 dark:hover:bg-stone-800"
                 >
                   پرونده
                   <ExternalLinkIcon className="size-3" />

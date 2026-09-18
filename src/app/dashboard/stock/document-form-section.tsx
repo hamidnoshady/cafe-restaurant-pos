@@ -59,7 +59,7 @@ const kindChipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     active
       ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
 interface DocLine {
@@ -371,9 +371,9 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
       : "grid min-w-0 grid-cols-1 gap-2 rounded-xl border border-border/80 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_2.75rem] xl:items-center xl:rounded-none xl:border-0 xl:p-0";
   const headerGridClass =
     kind === "receipt"
-      ? "hidden text-xs font-medium text-stone-500 dark:text-stone-400 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_2.75rem] xl:gap-2"
-      : "hidden text-xs font-medium text-stone-500 dark:text-stone-400 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_2.75rem] xl:gap-2";
-  const lineFieldClass = "grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400";
+      ? "hidden text-xs font-medium text-muted-foreground xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_2.75rem] xl:gap-2"
+      : "hidden text-xs font-medium text-muted-foreground xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_2.75rem] xl:gap-2";
+  const lineFieldClass = "grid min-w-0 gap-1 text-xs font-medium text-muted-foreground";
 
   return (
     <SectionCard

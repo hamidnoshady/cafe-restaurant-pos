@@ -92,7 +92,7 @@ export function CasesSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">میز خدمت</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">تیکت‌های خدمات</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">تیکت‌های خدمات</h2>
           </div>
         }
         description="شکایت‌ها و درخواست‌های مشتریان، با زمان هدف رسیدگی بر پایهٔ اولویت."

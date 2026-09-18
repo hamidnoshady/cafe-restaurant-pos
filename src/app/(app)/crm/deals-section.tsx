@@ -104,7 +104,7 @@ export function DealsSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">معامله و فروش</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">قیف فروش</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">قیف فروش</h2>
           </div>
         }
         description="کارت‌ها را بین مرحله‌ها بکشید. رسیدن به «برنده» هیچ سندی ثبت نمی‌کند."

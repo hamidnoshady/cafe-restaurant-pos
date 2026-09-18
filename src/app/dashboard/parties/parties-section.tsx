@@ -584,7 +584,7 @@ export function PartiesSection({
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">{scope.description}</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">{scope.label}</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">{scope.label}</h2>
           </div>
         }
         description={
@@ -722,7 +722,7 @@ export function PartiesSection({
                   {parties.map((party) => (
                     <tr
                       key={party.id}
-                      className="border-b border-border/80 transition-colors hover:bg-stone-50/70 dark:hover:bg-muted/50"
+                      className="border-b border-border/80 transition-colors hover:bg-muted/60 dark:hover:bg-muted/50"
                     >
                       {columns.map((column) => (
                         <td key={column} className="py-3 pe-3 align-top">

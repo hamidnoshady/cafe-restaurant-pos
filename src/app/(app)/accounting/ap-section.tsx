@@ -71,7 +71,7 @@ const chipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     active
       ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
 export function ApSection() {
@@ -157,13 +157,13 @@ export function ApSection() {
                 one directory, filtered to the people this screen is about. */}
             <Link
               href={accountingSuppliersHref()}
-              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-primary transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
+              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-primary transition-colors hover:bg-muted/60 dark:hover:bg-stone-800/40"
             >
               تأمین‌کنندگان در حسابداری
             </Link>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
-              <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
+              <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
+              <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
             </div>
           </div>
         </div>
@@ -180,7 +180,7 @@ export function ApSection() {
                 <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                      <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تأمین‌کننده</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تلفن</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مانده</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">اقدام</th></tr></thead>
+                      <thead className="bg-muted/60 text-muted-foreground"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تأمین‌کننده</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تلفن</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مانده</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">اقدام</th></tr></thead>
                       <tbody>
                         {suppliers.map((s) => (
                           <tr key={s.supplierId} className="border-b border-border last:border-b-0">
@@ -196,7 +196,7 @@ export function ApSection() {
                 </div>
                 <div className="space-y-3 lg:hidden">
                   {suppliers.map((s) => (
-                    <article key={s.supplierId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                    <article key={s.supplierId} className="rounded-xl border border-border/80 bg-muted/60 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0"><button type="button" onClick={() => setStatementTarget({ id: s.supplierId, name: s.supplierName, partyId: s.supplierPartyId })} className="truncate text-right font-bold text-foreground hover:text-amber-700 dark:hover:text-amber-300">{s.supplierName}</button><p className="mt-1 text-xs text-muted-foreground">{s.supplierPhone ? toPersianDigits(s.supplierPhone) : "شماره‌ای ثبت نشده"}</p></div>
                         <span className="whitespace-nowrap font-bold text-foreground">{money.format(s.balance)}</span>
@@ -210,7 +210,7 @@ export function ApSection() {
           </div>
         ) : (
           <div>
-            <div className="mb-4 grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 sm:grid-cols-[minmax(0,14rem)_1fr] sm:items-end dark:bg-stone-800/30">
+            <div className="mb-4 grid gap-3 rounded-xl border border-border/80 bg-muted/60 p-3 sm:grid-cols-[minmax(0,14rem)_1fr] sm:items-end">
               <label className="block">
                 <span className="mb-1.5 block text-xs text-muted-foreground">نمای سنی تا تاریخ</span>
                 <JalaliDatePicker value={asOfDate} onChange={setAsOfDate} placeholder="امروز" />
@@ -232,22 +232,22 @@ export function ApSection() {
                 <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                      <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تأمین‌کننده</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="px-4 py-3 text-start text-xs font-medium sm:text-sm">{col.label}</th>)}</tr></thead>
+                      <thead className="bg-muted/60 text-muted-foreground"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تأمین‌کننده</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="px-4 py-3 text-start text-xs font-medium sm:text-sm">{col.label}</th>)}</tr></thead>
                       <tbody>{aging.rows.map((r) => <tr key={r.supplierId} className="border-b border-border last:border-b-0"><td className="px-4 py-3 font-medium text-foreground">{r.supplierName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap px-4 py-3 ${col.key === "total" ? "font-bold text-foreground" : "text-foreground"}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
-                      <tfoot><tr className="border-t border-border bg-stone-50/60 font-semibold dark:bg-stone-800/30"><td className="px-4 py-3 text-foreground">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
+                      <tfoot><tr className="border-t border-border bg-muted/60 font-semibold"><td className="px-4 py-3 text-foreground">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
                     </table>
                   </div>
                 </div>
                 <div className="space-y-3 lg:hidden">
                   {aging.rows.map((r) => (
-                    <article key={r.supplierId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                    <article key={r.supplierId} className="rounded-xl border border-border/80 bg-muted/60 p-4">
                       <div className="flex justify-between gap-3"><h3 className="text-sm font-semibold text-foreground">{r.supplierName}</h3><span className="whitespace-nowrap font-bold text-foreground">{money.format(r.total)}</span></div>
                       <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
                         {AGING_COLUMNS.filter((col) => col.key !== "total").map((col) => <div key={col.key}><dt className="text-xs text-muted-foreground">{col.label}</dt><dd className="mt-1 font-semibold text-foreground">{r[col.key] ? money.format(r[col.key]) : "—"}</dd></div>)}
                       </dl>
                     </article>
                   ))}
-                  <dl className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30"><dt className="text-sm text-muted-foreground">جمع کل حساب‌های پرداختنی</dt><dd className="mt-1 text-lg font-bold text-foreground">{money.format(aging.totals.total)}</dd></dl>
+                  <dl className="rounded-xl border border-border/80 bg-muted/60 p-4"><dt className="text-sm text-muted-foreground">جمع کل حساب‌های پرداختنی</dt><dd className="mt-1 text-lg font-bold text-foreground">{money.format(aging.totals.total)}</dd></dl>
                 </div>
               </>
             )}

@@ -141,7 +141,7 @@ export function LoyaltySection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">بازگشت مشتری</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان آمادهٔ خرید مجدد</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان آمادهٔ خرید مجدد</h2>
           </div>
         }
         description="پیش‌بینی از تاریخچهٔ خرید خود مشتری؛ موعدِ گذشته یعنی وقت تماس یا پیام"
@@ -212,7 +212,7 @@ function ProgramsPanel({
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">طرح‌های امتیازدهی</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">برنامهٔ وفاداری</h2>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">برنامهٔ وفاداری</h2>
         </div>
       }
       bodyClassName="space-y-3 p-4 sm:p-5"
@@ -335,7 +335,7 @@ function CustomerPanel({
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امور مالی مشتریان</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتری و اعتبار</h2>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتری و اعتبار</h2>
         </div>
       }
       bodyClassName="space-y-3 p-4 sm:p-5"

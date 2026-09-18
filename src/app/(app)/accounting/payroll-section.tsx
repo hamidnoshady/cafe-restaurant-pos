@@ -417,7 +417,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
               return (
               <li
                 key={s.id}
-                className="grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30 md:grid-cols-[minmax(10rem,1fr)_minmax(12rem,15rem)_auto] md:items-end"
+                className="grid gap-3 rounded-xl border border-border/80 bg-muted/60 p-4 md:grid-cols-[minmax(10rem,1fr)_minmax(12rem,15rem)_auto] md:items-end"
               >
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-muted-foreground">کارمند</p>
@@ -540,7 +540,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
             {payableStaff.length === 0 ? (
               <EmptyState>هیچ کارمندی حقوق تعیین‌شده ندارد؛ ابتدا در بخش بالا حقوق ماهانه را وارد کنید.</EmptyState>
             ) : (
-              <div className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+              <div className="rounded-xl border border-border/80 bg-muted/60 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
                   <span className="text-xs font-medium text-muted-foreground">
                     این تعهد ثبت خواهد شد ({toPersianDigits(payableStaff.length)} نفر)
@@ -576,7 +576,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
               const status = STATUS_TONES[r.status] ?? { label: r.status, tone: "neutral" as const };
               const rowWorking = rowBusy === r.id;
               return (
-              <li key={r.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+              <li key={r.id} className="rounded-xl border border-border/80 bg-muted/60 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
                   <div className="min-w-0">
                     <h3 className="break-words font-semibold text-foreground">{r.periodLabel}</h3>
@@ -599,7 +599,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {r.lines.map((l, i) => (
-                    <div key={l.userId ?? `line-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 px-3 py-2.5 text-sm dark:bg-stone-800/40">
+                    <div key={l.userId ?? `line-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2.5 text-sm">
                       {/* A line whose user was deleted keeps its amount; name it
                           rather than showing a bare dash. */}
                       <span className="min-w-0 truncate text-muted-foreground" title={l.fullName ?? undefined}>

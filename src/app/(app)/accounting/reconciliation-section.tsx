@@ -356,9 +356,9 @@ export function ReconciliationSection({
                   title={a.hint}
                   onClick={() => setAccountCode(a.code)}
                   className={`flex min-h-12 shrink-0 snap-start items-center justify-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 sm:shrink dark:focus-visible:ring-amber-400/40 ${
-                    isActive
+            isActive
                       ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                      : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"
+                      : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground dark:hover:bg-stone-800/40"
                   }`}
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
@@ -385,7 +385,7 @@ export function ReconciliationSection({
           ) : !history ? (
             <LoadingSkeleton rows={3} label="در حال بارگذاری تطبیق‌های حساب" />
           ) : !current ? (
-            <div className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+            <div className="rounded-xl border border-border/80 bg-muted/60 p-4">
               <h3 className="text-sm font-semibold text-foreground">شروع تطبیق جدید</h3>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 تاریخ پایان صورتحساب و مانده پایانی آن را وارد کنید. اقلام ثبت‌شده تا همان تاریخ برای تطبیق
@@ -455,18 +455,18 @@ export function ReconciliationSection({
               </div>
 
               <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                <div className="rounded-xl border border-border/80 bg-muted/60 p-3">
                   <dt className="text-xs text-muted-foreground">مانده صورتحساب</dt>
                   <dd className="mt-1 font-bold text-foreground">{money.format(detail.statementBalance)}</dd>
                 </div>
-                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                <div className="rounded-xl border border-border/80 bg-muted/60 p-3">
                   <dt className="text-xs text-muted-foreground">مانده اول دوره</dt>
                   <dd className="mt-1 font-bold text-foreground">{money.format(detail.openingBalance)}</dd>
                   <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
                     از آخرین تطبیق قفل‌شدهٔ این حساب
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                <div className="rounded-xl border border-border/80 bg-muted/60 p-3">
                   <dt className="text-xs text-muted-foreground">جمع اقلام تطبیق‌شده</dt>
                   <dd className="mt-1 font-bold text-foreground">{money.format(totals.clearedTotal)}</dd>
                   <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
@@ -475,7 +475,7 @@ export function ReconciliationSection({
                 </div>
                 <div
                   className={`rounded-xl border p-3 ${
-                    totals.difference === 0
+            totals.difference === 0
                       ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10"
                       : "border-destructive/30 bg-destructive/5"
                   }`}
@@ -484,7 +484,7 @@ export function ReconciliationSection({
                   <dd
                     aria-live="polite"
                     className={`mt-1 font-bold ${
-                      totals.difference === 0
+            totals.difference === 0
                         ? "text-emerald-700 dark:text-emerald-300"
                         : "text-destructive"
                     }`}
@@ -519,7 +519,7 @@ export function ReconciliationSection({
                           اقلام قابل تطبیق {activeAccount.label} تا تاریخ{" "}
                           {toPersianDigits(formatJalali(detail.statementDate))}
                         </caption>
-                        <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                        <thead className="bg-muted/60 text-muted-foreground">
                           <tr className="border-b border-border">
                             <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
                               تطبیق
@@ -546,7 +546,7 @@ export function ReconciliationSection({
                             <tr
                               key={l.journalLineId}
                               className={`border-b border-border transition-colors last:border-b-0 ${
-                                l.cleared ? "bg-amber-50/60 dark:bg-amber-500/10" : ""
+            l.cleared ? "bg-amber-50/60 dark:bg-amber-500/10" : ""
                               }`}
                             >
                               <td className="px-4 py-3">
@@ -586,9 +586,9 @@ export function ReconciliationSection({
                       <label
                         key={l.journalLineId}
                         className={`block rounded-xl border p-4 transition-colors ${
-                          l.cleared
+            l.cleared
                             ? "border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10"
-                            : "border-border/80 bg-stone-50/60 dark:bg-stone-800/30"
+                            : "border-border/80 bg-muted/60"
                         }`}
                       >
                         <div className="flex items-start gap-3">

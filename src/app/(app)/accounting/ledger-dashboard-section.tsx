@@ -205,7 +205,7 @@ function ShiftSalesQuickReport({ refreshKey }: { refreshKey: number }) {
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
             گزارش سریع
           </p>
-          <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+          <h2 className="mt-1 text-base font-semibold text-foreground">
             فروش شیفت جاری
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -295,7 +295,7 @@ export function LedgerDashboardSection({
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
                 شروع سریع
               </p>
-              <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100 sm:text-lg">
+              <h2 className="mt-1 text-base font-semibold text-foreground sm:text-lg">
                 دفتر شما هنوز خالی است
               </h2>
             </div>
@@ -360,7 +360,7 @@ export function LedgerDashboardSection({
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
               دسترسی سریع
             </p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+            <h2 className="mt-1 text-base font-semibold text-foreground">
               کارهای رایج
             </h2>
           </div>
@@ -440,7 +440,7 @@ export function LedgerDashboardSection({
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
               آخرین رویدادها
             </p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+            <h2 className="mt-1 text-base font-semibold text-foreground">
               اسناد اخیر
             </h2>
           </div>

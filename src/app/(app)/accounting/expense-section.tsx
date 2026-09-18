@@ -412,7 +412,7 @@ export function ExpenseSection({
         </header>
 
         <div className="border-b border-border/80 p-4 sm:p-5">
-          <div className="grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
+          <div className="grid gap-3 rounded-xl border border-border/80 bg-muted/60 p-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
             <label className="block">
               <span className="mb-1.5 block text-xs text-muted-foreground">از تاریخ</span>
               <JalaliDatePicker value={filterFrom} onChange={setFilterFrom} placeholder="از ابتدا" />
@@ -473,7 +473,7 @@ export function ExpenseSection({
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[56rem] text-sm">
                     <caption className="sr-only">فهرست هزینه‌های ثبت‌شده</caption>
-                    <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                    <thead className="bg-muted/60 text-muted-foreground">
                       <tr className="border-b border-border">
                         <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
                         <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">دسته</th>
@@ -513,7 +513,7 @@ export function ExpenseSection({
                 {expenses.map((e) => (
                   <article
                     key={e.id}
-                    className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30"
+                    className="rounded-xl border border-border/80 bg-muted/60 p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -549,7 +549,7 @@ export function ExpenseSection({
                 ))}
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/60 px-4 py-3 text-sm">
                 <span className="text-muted-foreground">
                   {filtered ? "جمع هزینه‌های این فیلتر" : "جمع کل هزینه‌های ثبت‌شده"}
                   {" · "}

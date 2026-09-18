@@ -459,7 +459,7 @@ export function ChartOfAccountsSection({
                   aria-pressed={visibility === key}
                   onClick={() => setVisibility(key)}
                   className={`min-h-10 rounded-xl px-3 text-sm font-medium ${
-                    visibility === key
+            visibility === key
                       ? "border-amber-200 bg-amber-100 text-amber-950 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200 dark:hover:bg-amber-500/20"
                       : "border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
@@ -486,7 +486,7 @@ export function ChartOfAccountsSection({
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <caption className="sr-only">سرفصل حساب‌ها، به ترتیب ساختار درختی</caption>
-                    <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                    <thead className="bg-muted/60 text-muted-foreground">
                       <tr className="border-b border-border">
                         <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">کد</th>
                         <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">حساب</th>
@@ -556,7 +556,7 @@ export function ChartOfAccountsSection({
                     // the card rather than explaining it, and the «والد» row
                     // below already names where the account sits.
                     style={{ marginInlineStart: `${Math.min(depth, 2) * 0.75}rem` }}
-                    className={`rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30 ${
+                    className={`rounded-xl border border-border/80 bg-muted/60 p-4 ${
                       contextOnly ? "opacity-60" : ""
                     }`}
                   >

@@ -65,7 +65,7 @@ const chipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     active
       ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200 shadow-[0_1px_2px_rgb(120_53_15/0.08)]"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
 export function StockSection({ locationId: controlledLocationId }: { locationId?: string | null }) {
@@ -306,20 +306,20 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-sm">
               <thead>
-                <tr className="border-b border-border bg-stone-50 dark:bg-stone-900/40">
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">
+                <tr className="border-b border-border bg-muted/60">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
                     قلم انبار
                   </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">
                     موجودی و آستانه
                   </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">
                     وضعیت
                   </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">
                     قیمت واحد
                   </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">
                     ارزش کل
                   </th>
                 </tr>
@@ -332,7 +332,7 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
                   return (
                     <tr
                       key={item.id}
-                      className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-900/30"
+                      className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-900/30"
                     >
                       <td className="px-4 py-3 sm:px-5">
                         <span className="font-medium text-foreground">{item.item_name}</span>

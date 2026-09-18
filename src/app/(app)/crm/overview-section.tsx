@@ -162,7 +162,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شروع سریع</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">شروع کار با پروندهٔ مشتریان</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">شروع کار با پروندهٔ مشتریان</h2>
             </div>
           }
           description="هنوز مشتری‌ای ثبت نشده است. سه قدم اول برنامهٔ ارتباط با مشتری:"
@@ -234,7 +234,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تحلیل رفتار (RFM)</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">چرخهٔ عمر مشتریان</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">چرخهٔ عمر مشتریان</h2>
             </div>
           }
           description="بر پایهٔ تازگی، تکرار و مبلغ خرید (RFM)"
@@ -291,7 +291,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">معامله و فروش</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">قیف فروش</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">قیف فروش</h2>
             </div>
           }
           description="معامله‌های باز و ارزش وزنی آن‌ها"
@@ -342,7 +342,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملکرد فروش</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">بهترین مشتریان</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">بهترین مشتریان</h2>
             </div>
           }
           description="بیشترین خرید تحقق‌یافته"
@@ -377,7 +377,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">میز خدمت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">خدمات و رسیدگی</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">خدمات و رسیدگی</h2>
             </div>
           }
           description="تیکت‌های باز و زمان رسیدگی"
@@ -415,7 +415,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">رضایت ارتباط</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">رضایت ارتباط</h2>
             </div>
           }
           description="چه سهمی از مشتریان واقعاً قابل پیام دادن‌اند"
@@ -450,7 +450,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دفاتر مالی</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">پل حسابداری</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">پل حسابداری</h2>
             </div>
           }
           description="اعدادی که این برنامه با دفتر حساب‌ها مشترک دارد"
@@ -485,7 +485,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یکپارچه‌سازی</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان تکراری</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان تکراری</h2>
             </div>
           }
           description="پرونده‌هایی که احتمالاً یک نفرند"

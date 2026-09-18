@@ -107,7 +107,7 @@ export function DuplicatesSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یکپارچه‌سازی داده‌ها</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان تکراری</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان تکراری</h2>
           </div>
         }
         description="پرونده‌هایی که احتمالاً یک نفرند. هیچ‌کدام خودکار ادغام نمی‌شوند."

@@ -109,7 +109,7 @@ export function AuditLogSettings() {
             {ENTITY_FILTERS.map(([value, label]) => (
               <button key={value} type="button" onClick={() => setEntity(value)} aria-pressed={entity === value}
                 className={`min-h-10 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                  entity === value
+            entity === value
                     ? "border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-200"
                     : "border-border/80 text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}>
@@ -137,7 +137,7 @@ export function AuditLogSettings() {
               // canonical inner-wash (same skin as the ledger's entry lists),
               // not a restated card skin — design-lint bans the latter.
               return (
-                <article key={entry.id} className="rounded-xl border border-border/80 bg-stone-50/60 px-3 py-3 sm:px-4 dark:bg-stone-800/30">
+                <article key={entry.id} className="rounded-xl border border-border/80 bg-muted/60 px-3 py-3 sm:px-4">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <p className="min-w-0 font-medium leading-6">{auditActionLabel(entry.action)}</p>
                     <time dateTime={entry.createdAt} className="shrink-0 text-xs leading-6 text-muted-foreground">

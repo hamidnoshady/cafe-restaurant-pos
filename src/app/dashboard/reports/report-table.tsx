@@ -92,7 +92,7 @@ export function ReportTable<Row>({
       <div className="hidden overflow-x-auto sm:block">
         <table className="min-w-full text-sm">
           <caption className="sr-only">{caption}</caption>
-          <thead className="bg-stone-50 text-muted-foreground dark:bg-muted">
+          <thead className="bg-muted/60 text-muted-foreground dark:bg-muted">
             <tr className="border-b border-border">
               {columns.map((column) => (
                 <th
@@ -112,7 +112,7 @@ export function ReportTable<Row>({
             {rows.map((row, index) => (
               <tr
                 key={rowKey?.(row, index) ?? index}
-                className="border-b border-border transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-muted/60"
+                className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-muted/60"
               >
                 {columns.map((column) => (
                   <td
@@ -138,7 +138,7 @@ export function ReportTable<Row>({
             ) : null}
           </tbody>
           {footer && rows.length > 0 ? (
-            <tfoot className="bg-stone-50 dark:bg-muted">
+            <tfoot className="bg-muted/60 dark:bg-muted">
               <tr className="border-t border-border font-semibold text-foreground">
                 {footer.map((cell) => (
                   <td
@@ -194,7 +194,7 @@ export function ReportTable<Row>({
           <li className="px-4 py-10 text-center text-sm text-muted-foreground">{empty}</li>
         ) : null}
         {footer && rows.length > 0 ? (
-          <li className="bg-stone-50 px-4 py-3 dark:bg-muted">
+          <li className="bg-muted/60 px-4 py-3 dark:bg-muted">
             <p className="font-semibold text-foreground">{footer[0]?.content}</p>
             <dl className="mt-2 grid gap-1.5">
               {footer.slice(1).map((cell) => (

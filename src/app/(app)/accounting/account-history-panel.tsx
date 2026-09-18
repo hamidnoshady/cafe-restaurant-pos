@@ -103,7 +103,7 @@ export function AccountHistoryPanel({
         ) : (
           <ul className="space-y-2">
             {entries.map((entry) => (
-              <li key={entry.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-3 text-sm dark:bg-stone-800/30">
+              <li key={entry.id} className="rounded-xl border border-border/80 bg-muted/60 p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold text-foreground">{auditActionLabel(entry.action)}</p>
                   <p className="text-xs text-muted-foreground">{formatTime(entry.createdAt)}</p>

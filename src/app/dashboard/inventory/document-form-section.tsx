@@ -45,7 +45,7 @@ const kindChipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     active
       ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
 interface DocLine {
@@ -398,7 +398,7 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
           fit a phone — the item combobox was the thing that got crushed.
         */}
         <div className="min-w-0 space-y-2">
-          <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(110px,1fr)_minmax(130px,1fr)_2.75rem] md:items-center md:gap-2 text-xs font-medium text-stone-500 dark:text-stone-400">
+          <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(110px,1fr)_minmax(130px,1fr)_2.75rem] md:items-center md:gap-2 text-xs font-medium text-muted-foreground">
             <span>قلم انبار</span>
             <span>مقدار</span>
             {kind === "receipt" ? <span>قیمت واحد ({money.unitLabel})</span> : <span>ارزش (محاسبه‌شده)</span>}
@@ -414,11 +414,11 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
                 key={line.key}
                 className="grid min-w-0 grid-cols-1 gap-2 rounded-xl border border-border/80 p-3 md:grid-cols-[minmax(0,2fr)_minmax(110px,1fr)_minmax(130px,1fr)_2.75rem] md:items-center md:rounded-none md:border-0 md:p-0"
               >
-                <label className="grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400">
+                <label className="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
                   <span className="md:sr-only">قلم انبار</span>
                   <SearchableSelect value={line.inventoryItemId} onChange={(v) => updateLine(line.key, { inventoryItemId: v })} options={itemOptions} ariaLabel="قلم انبار" />
                 </label>
-                <label className="grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400">
+                <label className="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
                   <span className="md:sr-only">مقدار</span>
                   <PersianNumberInput
                     className={inputClass}
@@ -431,7 +431,7 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
                   />
                 </label>
                 {kind === "receipt" ? (
-                  <label className="grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400">
+                  <label className="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
                     <span className="md:sr-only">قیمت واحد ({money.unitLabel})</span>
                     <PersianNumberInput
                       className={inputClass}

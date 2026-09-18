@@ -127,7 +127,7 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
         </header>
 
         <div className="border-b border-border/80 p-4 sm:p-5">
-          <div className="grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30 lg:grid-cols-4 lg:items-end">
+          <div className="grid gap-3 rounded-xl border border-border/80 bg-muted/60 p-3 lg:grid-cols-4 lg:items-end">
             <label className="block">
               <span className="mb-1.5 block text-xs text-muted-foreground">از تاریخ</span>
               <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از ابتدا" />
@@ -227,7 +227,7 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
                     <div className="p-4 sm:p-5">
                       <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
                         <table className="w-full text-sm">
-                          <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                          <thead className="bg-muted/60 text-muted-foreground">
                             <tr className="border-b border-border">
                               <th className="px-4 py-2.5 text-start text-xs font-medium sm:text-sm">حساب</th>
                               <th className="px-4 py-2.5 text-start text-xs font-medium sm:text-sm">بدهکار</th>
@@ -254,7 +254,7 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
 
                       <div className="space-y-2 lg:hidden">
                         {e.lines.map((l, i) => (
-                          <div key={i} className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                          <div key={i} className="rounded-xl border border-border/80 bg-muted/60 p-3">
                             <p className="text-sm font-medium text-foreground">
                               {l.account_code} {l.account_name}
                             </p>

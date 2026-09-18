@@ -234,18 +234,18 @@ export function WarehousesSection({ onOpenStock }: { onOpenStock: (locationId: s
                 <div className="hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[720px] text-sm">
                     <thead>
-                      <tr className="border-b border-border bg-stone-50 dark:bg-stone-900/40">
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">انبار</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">اقلام</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">ارزش موجودی</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">کمبود</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">آخرین تغییر</th>
-                        <th className="py-3 pe-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:pe-5 sm:text-sm">وضعیت</th>
+                      <tr className="border-b border-border bg-muted/60">
+                        <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">انبار</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">اقلام</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">ارزش موجودی</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">کمبود</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">آخرین تغییر</th>
+                        <th className="py-3 pe-4 text-start text-xs font-medium text-muted-foreground sm:pe-5 sm:text-sm">وضعیت</th>
                       </tr>
                     </thead>
                     <tbody>
                       {visibleWarehouses.map((warehouse) => (
-                        <tr key={warehouse.id} className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-900/30">
+                        <tr key={warehouse.id} className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-900/30">
                           <td className="px-4 py-3 sm:px-5">
                             <button
                               type="button"

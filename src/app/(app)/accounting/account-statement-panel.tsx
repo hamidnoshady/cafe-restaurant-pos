@@ -101,7 +101,7 @@ export function AccountStatementPanel({
           </Button>
         </header>
 
-        <div className="grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4 dark:bg-stone-800/30">
+        <div className="grid gap-3 rounded-xl border border-border/80 bg-muted/60 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4">
           <label className="block text-sm font-medium">
             <span className="mb-1.5 block text-xs text-muted-foreground">از تاریخ</span>
             <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از ابتدا" />
@@ -125,7 +125,7 @@ export function AccountStatementPanel({
           <LoadingSkeleton rows={3} />
         ) : (
           <div className="mt-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/60 px-4 py-3 text-sm">
               <span className="text-muted-foreground">مانده افتتاحیه</span>
               <span className="font-semibold tabular-nums text-foreground">{money.format(statement.openingBalance)}</span>
             </div>
@@ -138,7 +138,7 @@ export function AccountStatementPanel({
               <>
                 <div className="hidden overflow-x-auto rounded-xl border border-border/80 lg:block">
                   <table className="min-w-[700px] w-full text-sm">
-                    <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                    <thead className="bg-muted/60 text-muted-foreground">
                       <tr className="border-b border-border">
                         <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
                         <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">شرح</th>
@@ -170,7 +170,7 @@ export function AccountStatementPanel({
 
                 <div className="space-y-3 lg:hidden">
                   {statement.lines.map((l, i) => (
-                    <article key={`${l.entryId}-${i}`} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                    <article key={`${l.entryId}-${i}`} className="rounded-xl border border-border/80 bg-muted/60 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>
                       </div>
@@ -196,7 +196,7 @@ export function AccountStatementPanel({
               </>
             )}
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/60 px-4 py-3 text-sm">
               <span className="text-muted-foreground">مانده اختتامیه</span>
               <span className="font-bold tabular-nums text-foreground">{money.format(statement.closingBalance)}</span>
             </div>

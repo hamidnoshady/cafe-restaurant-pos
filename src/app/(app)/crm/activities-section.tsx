@@ -108,7 +108,7 @@ export function ActivitiesSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پیگیری‌ها و وظایف</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">کارها و پیگیری‌ها</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">کارها و پیگیری‌ها</h2>
           </div>
         }
         description={
@@ -156,7 +156,7 @@ export function ActivitiesSection() {
                   <div className="min-w-0 flex-1">
                     <p
                       className={`leading-6 ${
-                        activity.completedAt ? "text-muted-foreground line-through" : "text-foreground"
+            activity.completedAt ? "text-muted-foreground line-through" : "text-foreground"
                       }`}
                     >
                       {activity.subject}

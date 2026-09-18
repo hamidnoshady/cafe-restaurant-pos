@@ -309,7 +309,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className={cardClass + " p-4 sm:p-5"}>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-stone-600 dark:text-stone-400">بهای تمام‌شده کل</span>
+            <span className="text-xs font-semibold text-muted-foreground dark:text-muted-foreground">بهای تمام‌شده کل</span>
             <span className="grid size-9 place-items-center rounded-xl bg-amber-100/70 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
               <LayersIcon className="size-4" />
             </span>
@@ -324,7 +324,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
 
         <div className={cardClass + " p-4 sm:p-5"}>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-stone-600 dark:text-stone-400">استهلاک انباشته کل</span>
+            <span className="text-xs font-semibold text-muted-foreground dark:text-muted-foreground">استهلاک انباشته کل</span>
             <span className="grid size-9 place-items-center rounded-xl bg-amber-100/70 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
               <TrendingDownIcon className="size-4" />
             </span>
@@ -339,7 +339,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
 
         <div className={cardClass + " p-4 sm:p-5"}>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-stone-600 dark:text-stone-400">ارزش دفتری خالص کل</span>
+            <span className="text-xs font-semibold text-muted-foreground dark:text-muted-foreground">ارزش دفتری خالص کل</span>
             <span className="grid size-9 place-items-center rounded-xl bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
               <CheckCircle2Icon className="size-4" />
             </span>
@@ -354,7 +354,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
 
         <div className={cardClass + " p-4 sm:p-5"}>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-stone-600 dark:text-stone-400">تعداد دارایی‌ها</span>
+            <span className="text-xs font-semibold text-muted-foreground dark:text-muted-foreground">تعداد دارایی‌ها</span>
             <span className="grid size-9 place-items-center rounded-xl bg-amber-100/70 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
               <CalendarIcon className="size-4" />
             </span>
@@ -534,12 +534,12 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
 
               {/* Status filter chips & Sort */}
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1 rounded-xl border border-border p-1 bg-stone-50/60 dark:bg-stone-800/30">
+                <div className="flex items-center gap-1 rounded-xl border border-border p-1 bg-muted/60">
                   <button
                     type="button"
                     onClick={() => setStatusFilter("all")}
                     className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                      statusFilter === "all"
+            statusFilter === "all"
                         ? "bg-amber-100 text-amber-950 font-semibold dark:bg-amber-500/20 dark:text-amber-200"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
@@ -550,7 +550,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                     type="button"
                     onClick={() => setStatusFilter("active")}
                     className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                      statusFilter === "active"
+            statusFilter === "active"
                         ? "bg-amber-100 text-amber-950 font-semibold dark:bg-amber-500/20 dark:text-amber-200"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
@@ -561,7 +561,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                     type="button"
                     onClick={() => setStatusFilter("depreciated")}
                     className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                      statusFilter === "depreciated"
+            statusFilter === "depreciated"
                         ? "bg-amber-100 text-amber-950 font-semibold dark:bg-amber-500/20 dark:text-amber-200"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
@@ -601,7 +601,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
               <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                    <thead className="bg-muted/60 text-muted-foreground">
                       <tr className="border-b border-border">
                         <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">نام دارایی</th>
                         <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تاریخ خرید</th>
@@ -622,7 +622,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                         const postedPeriods = a.depreciationCount ?? 0;
 
                         return (
-                          <tr key={a.id} className="border-b border-border transition-colors hover:bg-stone-50/70 last:border-b-0 dark:hover:bg-stone-800/40">
+                          <tr key={a.id} className="border-b border-border transition-colors hover:bg-muted/60 last:border-b-0 dark:hover:bg-stone-800/40">
                             <td className="px-4 py-3 font-semibold text-foreground">
                               <div>
                                 <span>{a.name}</span>
@@ -655,7 +655,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700">
                                   <div
                                     className={`h-full rounded-full transition-all ${
-                                      isFullyDepreciated
+            isFullyDepreciated
                                         ? "bg-emerald-500 dark:bg-emerald-400"
                                         : "bg-amber-500 dark:bg-amber-400"
                                     }`}
@@ -693,7 +693,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                                 <button
                                   type="button"
                                   onClick={() => setHistoryTarget(a)}
-                                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-stone-100 hover:text-foreground dark:hover:bg-stone-800/60"
+                                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-stone-800/60"
                                   title="مشاهده تاریخچه استهلاک"
                                 >
                                   <HistoryIcon className="size-3.5" />
@@ -733,7 +733,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                   return (
                     <article
                       key={a.id}
-                      className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30"
+                      className="rounded-xl border border-border/80 bg-muted/60 p-4"
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
                         <div className="min-w-0">
@@ -765,7 +765,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                         <div className="h-2 w-full overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700">
                           <div
                             className={`h-full rounded-full transition-all ${
-                              isFullyDepreciated
+            isFullyDepreciated
                                 ? "bg-emerald-500 dark:bg-emerald-400"
                                 : "bg-amber-500 dark:bg-amber-400"
                             }`}
@@ -797,7 +797,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                         <button
                           type="button"
                           onClick={() => setHistoryTarget(a)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-stone-100 hover:text-foreground dark:hover:bg-stone-800/60"
+                          className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-stone-800/60"
                         >
                           <HistoryIcon className="size-3.5" />
                           <span>تاریخچه استهلاک</span>
@@ -957,7 +957,7 @@ function DepreciateDialog({
         <ErrorBox>{localError}</ErrorBox>
 
         {/* Asset summary details */}
-        <div className="mb-4 rounded-xl border border-border/80 bg-stone-50/60 p-3.5 text-xs text-muted-foreground dark:bg-stone-800/30">
+        <div className="mb-4 rounded-xl border border-border/80 bg-muted/60 p-3.5 text-xs text-muted-foreground">
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div>
               <span className="text-xs text-muted-foreground">بهای تمام‌شده:</span>
@@ -1097,7 +1097,7 @@ function DepreciationHistoryModal({
           <div className="space-y-3">
             <div className="overflow-hidden rounded-xl border border-border/80">
               <table className="w-full text-sm">
-                <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                <thead className="bg-muted/60 text-muted-foreground">
                   <tr className="border-b border-border">
                     <th className="px-3 py-2.5 text-start text-xs font-medium">عنوان دوره</th>
                     <th className="px-3 py-2.5 text-start text-xs font-medium">تاریخ سند</th>
@@ -1124,7 +1124,7 @@ function DepreciationHistoryModal({
               </table>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/60 px-4 py-3 text-sm">
               <span className="text-muted-foreground">
                 جمع استهلاک‌های ثبت‌شده ({toPersianDigits(entries.length)} دوره)
               </span>

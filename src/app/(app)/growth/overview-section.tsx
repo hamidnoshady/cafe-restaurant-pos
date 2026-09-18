@@ -89,7 +89,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شروع سریع</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">شروع برنامهٔ رشد</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">شروع برنامهٔ رشد</h2>
             </div>
           }
           description="سه قدم کوچک برای شروع برنامهٔ رشد و بازاریابی."
@@ -146,7 +146,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">کمپین‌های تخفیف</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">برترین کمپین‌ها</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">برترین کمپین‌ها</h2>
             </div>
           }
           description="بیشترین تخفیف مصرف‌شده در ۳۰ روز گذشته"
@@ -180,7 +180,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پورسانت فروش</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">برترین فروشندگان</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">برترین فروشندگان</h2>
             </div>
           }
           description="پورسانت انباشته در ۳۰ روز گذشته"
@@ -211,7 +211,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">رویدادهای سیستم</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">آخرین رویدادهای رشد</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">آخرین رویدادهای رشد</h2>
             </div>
           }
           description="جریان یکپارچهٔ چهار موتور: کمپین، امتیاز، کارت هدیه و پورسانت"

@@ -52,7 +52,7 @@ const chipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     active
       ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200 shadow-[0_1px_2px_rgb(120_53_15/0.08)]"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
 const STATUS_META: Record<"out" | "low" | "ok", { label: string; tone: "danger" | "active" | "neutral" }> = {
@@ -289,23 +289,23 @@ export function StockLevelsSection({ locationId: controlledLocationId }: { locat
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead>
-                <tr className="border-b border-border bg-stone-50 dark:bg-stone-900/40">
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">
+                <tr className="border-b border-border bg-muted/60">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
                     کالا
                   </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
                     ردیابی
                   </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
                     موجودی و نقطه سفارش
                   </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
                     بهای تمام‌شده
                   </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
                     ارزش کل
                   </th>
-                  <th className="py-3 pe-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:pe-5 sm:text-sm">
+                  <th className="py-3 pe-4 text-start text-xs font-medium text-muted-foreground sm:pe-5 sm:text-sm">
                     وضعیت
                   </th>
                 </tr>
@@ -314,7 +314,7 @@ export function StockLevelsSection({ locationId: controlledLocationId }: { locat
                 {visibleItems.map((item) => (
                   <tr
                     key={item.id}
-                    className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-900/30"
+                    className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-900/30"
                   >
                     <td className="px-4 py-3 sm:px-5">
                       <span className="font-medium text-foreground">{item.name}</span>
@@ -349,8 +349,8 @@ export function StockLevelsSection({ locationId: controlledLocationId }: { locat
               </tbody>
               {data ? (
                 <tfoot>
-                  <tr className="border-t border-border/80 bg-stone-50/60 dark:bg-stone-900/30 text-xs sm:text-sm">
-                    <td className="px-4 py-3 font-semibold text-stone-600 dark:text-stone-300 sm:px-5">
+                  <tr className="border-t border-border/80 bg-muted/60 text-xs sm:text-sm">
+                    <td className="px-4 py-3 font-semibold text-muted-foreground sm:px-5">
                       {visibleItems.length !== data.items.length
                         ? `نمایش ${toPersianDigits(String(visibleItems.length))} از ${toPersianDigits(String(data.totals.count))} کالا`
                         : `${toPersianDigits(String(data.totals.count))} کالا`}

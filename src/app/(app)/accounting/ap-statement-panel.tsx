@@ -109,7 +109,7 @@ export function ApStatementPanel({
               <button
                 type="button"
                 onClick={() => setReloadKey((k) => k + 1)}
-                className="min-h-10 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
+                className="min-h-10 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted/60 dark:hover:bg-stone-800/40"
               >
                 تلاش دوباره
               </button>
@@ -125,7 +125,7 @@ export function ApStatementPanel({
           <>
             <div className="hidden overflow-x-auto rounded-xl border border-border/80 lg:block">
               <table className="min-w-[700px] w-full text-sm">
-                <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                <thead className="bg-muted/60 text-muted-foreground">
                   <tr className="border-b border-border">
                     <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
                     <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">نوع</th>
@@ -152,7 +152,7 @@ export function ApStatementPanel({
 
             <div className="space-y-3 lg:hidden">
               {lines.map((l, i) => (
-                <article key={i} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                <article key={i} className="rounded-xl border border-border/80 bg-muted/60 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
                       <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>

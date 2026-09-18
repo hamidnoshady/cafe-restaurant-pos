@@ -66,7 +66,7 @@ const chipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     active
       ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
 export function DocumentsSection() {
@@ -215,21 +215,21 @@ export function DocumentsSection() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead>
-                <tr className="border-b border-border bg-stone-50 dark:bg-stone-900/40">
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">تاریخ</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">نوع</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">انبار</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">گیرنده / شماره سند</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">اقلام</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">مبلغ</th>
-                  <th className="py-3 pe-4 text-end text-xs font-medium text-stone-500 dark:text-stone-400 sm:pe-5 sm:text-sm">جزئیات</th>
+                <tr className="border-b border-border bg-muted/60">
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">تاریخ</th>
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">نوع</th>
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">انبار</th>
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">گیرنده / شماره سند</th>
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">اقلام</th>
+                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">مبلغ</th>
+                  <th className="py-3 pe-4 text-end text-xs font-medium text-muted-foreground sm:pe-5 sm:text-sm">جزئیات</th>
                 </tr>
               </thead>
               <tbody>
                 {documents.map((doc) => (
                   <tr
                     key={doc.id}
-                    className="cursor-pointer border-b border-border/80 transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.99]"
+                    className="cursor-pointer border-b border-border/80 transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.99]"
                     onClick={() => openDetail(doc.id)}
                     tabIndex={0}
                     onKeyDown={(e) => {
@@ -270,7 +270,7 @@ export function DocumentsSection() {
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        className="text-muted-foreground hover:bg-stone-50 dark:hover:bg-stone-900/40 hover:text-foreground"
+                        className="text-muted-foreground hover:bg-muted/60 dark:hover:bg-stone-900/40 hover:text-foreground"
                         onClick={(e) => {
                           e.stopPropagation();
                           openDetail(doc.id);
@@ -349,13 +349,13 @@ export function DocumentsSection() {
               <div className="overflow-x-auto rounded-xl border border-border/80">
                 <table className="w-full min-w-[560px] text-sm">
                   <thead>
-                    <tr className="border-b border-border bg-stone-50 dark:bg-stone-900/40">
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-stone-500 dark:text-stone-400">کالا</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-stone-500 dark:text-stone-400">بچ/لات</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-stone-500 dark:text-stone-400">انقضا</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-stone-500 dark:text-stone-400">تعداد</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-stone-500 dark:text-stone-400">بهای واحد</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-stone-500 dark:text-stone-400">ارزش</th>
+                    <tr className="border-b border-border bg-muted/60">
+                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">کالا</th>
+                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">بچ/لات</th>
+                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">انقضا</th>
+                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">تعداد</th>
+                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">بهای واحد</th>
+                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">ارزش</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -373,8 +373,8 @@ export function DocumentsSection() {
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-stone-50/60 dark:bg-stone-900/30">
-                      <td colSpan={5} className="px-3 py-2.5 text-xs font-semibold text-stone-600 dark:text-stone-300">
+                    <tr className="bg-muted/60">
+                      <td colSpan={5} className="px-3 py-2.5 text-xs font-semibold text-muted-foreground">
                         جمع کل
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 font-semibold tabular-nums">
