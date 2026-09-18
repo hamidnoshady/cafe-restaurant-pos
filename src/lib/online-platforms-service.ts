@@ -10,9 +10,10 @@
  * actual SnapFood contract, applied to every SnapFood-marked sale at
  * checkout. `null` until an owner sets one — a SnapFood sale still works
  * with no commission configured (see postExactOrderPaymentEntry), it just
- * won't split anything to platformCommissionExpense yet.
+ * won't split anything to platformCommissionExpense.
  */
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
+import { validCommissionPercent } from "./online-platforms";
 
 export interface OnlinePlatformsConfig {
   snappfood: { commissionPercent: number } | null;
@@ -20,7 +21,8 @@ export interface OnlinePlatformsConfig {
 
 export async function getOnlinePlatformsConfig(businessId: string): Promise<OnlinePlatformsConfig> {
   const stored = await getSetting<OnlinePlatformsConfig>(businessId, SETTING_KEYS.onlinePlatforms);
-  return { snappfood: stored?.snappfood ?? null };
+  const commission = stored?.snappfood?.commissionPercent;
+  return { snappfood: validCommissionPercent(commission) ? { commissionPercent: commission } : null };
 }
 
 export async function setOnlinePlatformsConfig(businessId: string, config: OnlinePlatformsConfig): Promise<void> {

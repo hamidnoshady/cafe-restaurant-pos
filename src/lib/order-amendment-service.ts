@@ -45,7 +45,7 @@
  */
 import type { PoolClient } from "pg";
 import { getCostingMethod, deductForOrder } from "./inventory-service";
-import { rialBigInt, rialText, type RialText } from "./inventory-exact";
+import { rialText, type RialText } from "./inventory-exact";
 import { reverseConsumedInventory } from "./inventory-reversal";
 import {
   postExactCogsEntry,
@@ -53,6 +53,7 @@ import {
   postExactOrderPaymentEntry,
 } from "./ledger-service";
 import { getOnlinePlatformsConfig } from "./online-platforms-service";
+import { commissionAmountFor } from "./online-platforms-calculation";
 import { captureInventorySnapshot } from "./order-mutations";
 import { resolveCartItems } from "./order-cart";
 import {
@@ -202,8 +203,7 @@ async function platformCommissionFor(
   if (method !== "snappfood") return rialText("0");
   const { snappfood } = await getOnlinePlatformsConfig(businessId);
   if (!snappfood) return rialText("0");
-  const commission = BigInt(Math.round(Number(rialBigInt(amount)) * (snappfood.commissionPercent / 100)));
-  return rialText(commission.toString());
+  return commissionAmountFor(amount, snappfood.commissionPercent);
 }
 
 export async function amendClosedOrder(
