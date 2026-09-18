@@ -38,6 +38,7 @@ import { InstallmentsSection } from "./installments-section";
 import { ChequesSection } from "./cheques-section";
 import { ReconciliationSection } from "./reconciliation-section";
 import { ChartOfAccountsSection } from "./chart-of-accounts-section";
+import { canEditChartOfAccounts } from "@/lib/coa-tree";
 import { ExpenseSection } from "./expense-section";
 import { PayrollSection } from "./payroll-section";
 import { VatReportSection } from "./vat-report-section";
@@ -150,6 +151,17 @@ export function AccountingManager({
    * `accountingSectionsForRole`, the same gate the pages use.
    */
   const allowed = accountingSectionsForRole(role);
+  /*
+   * Whether this member may restructure the chart of accounts.
+   *
+   * Opening «سرفصل حساب‌ها» needs only the app's own door (owner/manager/
+   * accountant), but every mutating route behind it calls
+   * `requirePermission(accounts.edit)` — which a manager's preset does not
+   * include. The screen used to draw «افزودن»، «ویرایش»، «بایگانی» and «حذف»
+   * for them anyway, so a manager's every action came back 403 under a generic
+   * «خطای غیرمنتظره». One definition, shared with the tests: `coa-tree.ts`.
+   */
+  const canEditAccounts = canEditChartOfAccounts(role, permissions);
   const sections = LEDGER_WORKSPACE_SECTION_KEYS.flatMap((key) => {
     const def = allowed.find((candidate) => candidate.key === key);
     return def ? [{ ...def, icon: SECTION_ICONS[def.key] }] : [];
@@ -251,7 +263,9 @@ export function AccountingManager({
           {section === "installments" ? <InstallmentsSection /> : null}
           {section === "cheques" ? <ChequesSection busy={busy} run={run} /> : null}
           {section === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
-          {section === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
+          {section === "chart-of-accounts" ? (
+            <ChartOfAccountsSection busy={busy} run={run} canEdit={canEditAccounts} />
+          ) : null}
           {section === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {section === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
           {section === "fixed-assets" ? <FixedAssetsSection busy={busy} refreshKey={refreshKey} /> : null}
