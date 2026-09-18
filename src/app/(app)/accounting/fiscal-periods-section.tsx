@@ -33,6 +33,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from "@/app/dashboard/ui";
+import { FilterChip } from "@/app/dashboard/filters";
 
 interface FiscalYear {
   id: string;
@@ -468,20 +469,15 @@ export function FiscalPeriodsSection() {
               {years.map((year) => {
                 const isSelected = selectedYearId === year.id;
                 return (
-                  <button
+                  <FilterChip
                     key={year.id}
-                    type="button"
-                    aria-pressed={isSelected}
+                    selected={isSelected}
                     onClick={() => selectYear(year.id)}
-                    className={`min-h-12 rounded-xl border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${
-                      isSelected
-                        ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                        : "border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground"
-                    }`}
+                    className="min-h-12 px-4"
                   >
                     {toPersianDigits(year.label)}
                     {year.closedAt ? <span className="sr-only">، بسته‌شده</span> : null}
-                  </button>
+                  </FilterChip>
                 );
               })}
             </div>

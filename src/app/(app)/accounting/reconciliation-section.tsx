@@ -55,6 +55,7 @@ import {
   StatusBadge,
 } from "@/app/dashboard/page-chrome";
 import { reconciliationTotals } from "@/lib/bank-reconciliation";
+import { FilterChip } from "@/app/dashboard/filters";
 
 type AccountCode = "cash" | "bank" | "bankClearing";
 
@@ -349,21 +350,16 @@ export function ReconciliationSection({
               const isActive = accountCode === a.code;
               const Icon = a.icon;
               return (
-                <button
+                <FilterChip
                   key={a.code}
-                  type="button"
-                  aria-pressed={isActive}
+                  selected={isActive}
                   title={a.hint}
                   onClick={() => setAccountCode(a.code)}
-                  className={`flex min-h-12 shrink-0 snap-start items-center justify-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 sm:shrink dark:focus-visible:ring-amber-400/40 ${
-            isActive
-                      ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                      : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground dark:hover:bg-stone-800/40"
-                  }`}
+                  className="flex min-h-12 snap-start items-center justify-center gap-2 sm:shrink"
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
                   <span className="whitespace-nowrap">{a.label}</span>
-                </button>
+                </FilterChip>
               );
             })}
           </div>

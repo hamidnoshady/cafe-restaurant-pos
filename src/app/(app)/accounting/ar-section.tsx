@@ -11,6 +11,7 @@ import { UNKNOWN_CUSTOMER_KEY } from "@/lib/aging";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
+import { FilterChip } from "@/app/dashboard/filters";
 import { ArStatementPanel } from "./ar-statement-panel";
 import { useOverlayEscape } from "./use-overlay-escape";
 import { accountingCustomersHref } from "./accounting-routes";
@@ -178,8 +179,8 @@ export function ArSection() {
               مشتریان در حسابداری
             </Link>
             <div className="grid grid-cols-2 gap-2" role="group" aria-label="نمای حساب‌های دریافتنی">
-              <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
-              <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
+              <FilterChip selected={view === "balances"} onClick={() => setView("balances")} className="min-h-12 w-full">مانده حساب‌ها</FilterChip>
+              <FilterChip selected={view === "aging"} onClick={() => setView("aging")} className="min-h-12 w-full">نمای سنی بدهی‌ها</FilterChip>
             </div>
           </div>
         </div>
