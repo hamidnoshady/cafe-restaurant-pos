@@ -35,6 +35,7 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db") | undefined;
 let manager: typeof import("../src/lib/integrations/wp-manager-service");
 let content: typeof import("../src/lib/integrations/wp-content-service");
+let ingest: typeof import("../src/lib/integrations/webhook-ingest-service");
 let taxonomy: typeof import("../src/lib/integrations/woo-taxonomy-service");
 let connections: typeof import("../src/lib/integrations/connections-service");
 
@@ -91,6 +92,7 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   manager = await import("../src/lib/integrations/wp-manager-service");
   content = await import("../src/lib/integrations/wp-content-service");
+  ingest = await import("../src/lib/integrations/webhook-ingest-service");
   taxonomy = await import("../src/lib/integrations/woo-taxonomy-service");
   connections = await import("../src/lib/integrations/connections-service");
 
@@ -165,18 +167,32 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
     expect(matching[0].status).toBe("draft");
   });
 
-  it("keeps a media attachment's source url and mime type", async () => {
+  it("keeps a media attachment's safe source url, mime type and alt text", async () => {
     await content.upsertWpContent(conn(), {
       id: 900,
       type: "attachment",
       title: "Logo",
       source_url: "https://shop.example.com/logo.png",
       mime_type: "image/png",
+      alt_text: "نشان فروشگاه",
     });
     const rows = await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "attachment" });
     const media = rows.find((r) => r.remoteId === "900");
     expect(media?.mediaUrl).toBe("https://shop.example.com/logo.png");
     expect(media?.mimeType).toBe("image/png");
+    expect(media?.altText).toBe("نشان فروشگاه");
+
+    await content.upsertWpContent(conn(), {
+      id: 901,
+      type: "attachment",
+      title: "Unsafe",
+      source_url: "javascript:alert(1)",
+      mime_type: "image/svg+xml",
+    });
+    const unsafe = (await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "attachment" }))
+      .find((row) => row.remoteId === "901");
+    expect(unsafe?.mediaUrl).toBeNull();
+    expect(await content.deleteWpContent(biz.id, biz.pluginConnId, { id: 901, type: "attachment" })).toBe(true);
   });
 
   it("ignores a payload with no usable id instead of writing a junk row", async () => {
@@ -192,6 +208,79 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
     expect(counts.posts).toBeGreaterThanOrEqual(1);
     expect(counts.pages).toBe(1);
     expect(counts.media).toBe(1);
+  });
+
+  it("filters and pages media without hiding attachments after the first result page", async () => {
+    await content.upsertWpContent(conn(), {
+      id: 902,
+      type: "attachment",
+      title: "Launch video",
+      source_url: "https://shop.example.com/launch.mp4",
+      mime_type: "video/mp4",
+    });
+    await content.upsertWpContent(conn(), {
+      id: 903,
+      type: "attachment",
+      title: "Price list",
+      source_url: "https://shop.example.com/prices.pdf",
+      mime_type: "application/pdf",
+    });
+
+    const videos = await content.listWpContent(biz.id, biz.pluginConnId, {
+      wpType: "attachment",
+      mediaKind: "video",
+    });
+    expect(videos.map((row) => row.remoteId)).toEqual(["902"]);
+    expect(await content.countWpContent(biz.id, biz.pluginConnId, {
+      wpType: "attachment",
+      mediaKind: "document",
+    })).toBe(1);
+
+    const first = await content.listWpContent(biz.id, biz.pluginConnId, {
+      wpType: "attachment",
+      limit: 1,
+      offset: 0,
+    });
+    const second = await content.listWpContent(biz.id, biz.pluginConnId, {
+      wpType: "attachment",
+      limit: 1,
+      offset: 1,
+    });
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(second[0].remoteId).not.toBe(first[0].remoteId);
+
+    await content.deleteWpContent(biz.id, biz.pluginConnId, { id: 902, type: "attachment" });
+    await content.deleteWpContent(biz.id, biz.pluginConnId, { id: 903, type: "attachment" });
+  });
+
+  it("applies plugin deletion and full-sync watermark events", async () => {
+    await content.upsertWpContent(conn(), {
+      id: 990,
+      type: "attachment",
+      title: "Delete me",
+      source_url: "https://shop.example.com/delete-me.jpg",
+      mime_type: "image/jpeg",
+    });
+    const connection = await connections.getConnection(biz.id, biz.pluginConnId);
+    expect(connection).toBeTruthy();
+
+    const deleted = await ingest.ingestPluginEvent(connection!, {
+      topic: "content.deleted",
+      deliveryId: randomUUID(),
+      payload: { id: 990, type: "attachment" },
+    });
+    expect(deleted.status).toBe("processed");
+    expect((await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "attachment" }))
+      .some((row) => row.remoteId === "990")).toBe(false);
+
+    const completed = await ingest.ingestPluginEvent(connection!, {
+      topic: "content.sync_completed",
+      deliveryId: randomUUID(),
+      payload: { id: "content:all", type: "content", count: 1 },
+    });
+    expect(completed.status).toBe("processed");
+    expect((await connections.getConnection(biz.id, biz.pluginConnId))?.last_content_sync_at).toBeTruthy();
   });
 
   it("filters the content list by a title search", async () => {
@@ -342,8 +431,15 @@ describe("the taxonomy mirror learns terms from a product payload (plugin mode)"
 });
 
 describe("the content mirror pulls over the WordPress REST API (rest mode)", () => {
-  it("walks every content type and upserts each row from a fake wp/v2 client", async () => {
+  it("walks every content type, upserts each row and prunes deleted remote media", async () => {
     const restConn = { id: biz.restConnId, business_id: biz.id } as never;
+    await content.upsertWpContent(restConn, {
+      id: 3999,
+      type: "attachment",
+      title: "Deleted remotely",
+      source_url: "https://x/deleted.png",
+      mime_type: "image/png",
+    });
     // A fake wp/v2 client: one page each of posts, pages, media.
     const pagesByType: Record<string, Record<string, unknown>[]> = {
       posts: [{ id: 3001, type: "post", title: { rendered: "Ben &amp; Jerry" }, status: "publish" }],
@@ -363,5 +459,38 @@ describe("the content mirror pulls over the WordPress REST API (rest mode)", () 
     expect(rows.find((r) => r.remoteId === "3001")?.title).toBe("Ben & Jerry");
     expect(rows.find((r) => r.remoteId === "3002")?.title).toBe("درباره…");
     expect(rows.find((r) => r.remoteId === "3003")?.mimeType).toBe("image/png");
+    expect(rows.some((r) => r.remoteId === "3999")).toBe(false);
+  });
+
+  it("keeps paging when a WordPress host omits X-WP-TotalPages", async () => {
+    const restConn = { id: biz.restConnId, business_id: biz.id } as never;
+    const calls: string[] = [];
+    const client = {
+      wpListPage: async (type: string, query: { page: number }) => {
+        calls.push(`${type}:${query.page}`);
+        if (type !== "posts") return { items: [], totalPages: 0 };
+        if (query.page === 1) {
+          return {
+            items: Array.from({ length: 100 }, (_, index) => ({
+              id: 4000 + index,
+              title: { rendered: `Post ${index}` },
+              status: "publish",
+            })),
+            totalPages: 0,
+          };
+        }
+        if (query.page === 2) {
+          return { items: [{ id: 4100, title: { rendered: "Last post" }, status: "publish" }], totalPages: 0 };
+        }
+        return { items: [], totalPages: 0 };
+      },
+    };
+
+    const outcome = await content.syncWpContentRest(restConn, client);
+    expect(outcome.total).toBe(101);
+    expect(calls).toContain("posts:2");
+    const rows = await content.listWpContent(biz.id, biz.restConnId, { wpType: "post", limit: 200 });
+    expect(rows).toHaveLength(101);
+    expect(rows.some((row) => row.remoteId === "4100")).toBe(true);
   });
 });

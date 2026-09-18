@@ -72,7 +72,9 @@ function HostFrame({
   if (connections.length === 0) return <EmptyConnections />;
   return (
     <div className="space-y-4">
-      <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
+      <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
+        <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
+      </div>
       {selectedId ? (
         <>
           <PluginWaitNote connections={connections} selectedId={selectedId} />

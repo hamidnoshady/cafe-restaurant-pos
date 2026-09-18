@@ -1,7 +1,8 @@
 "use client";
 
-/** Shared store picker for WP Manager sections. */
-import { cardClass } from "@/app/dashboard/page-chrome";
+/** Shared, responsive store picker for WP Manager sections. */
+import { useId } from "react";
+import { inputClass } from "@/app/dashboard/ui";
 
 export interface ConnectionLite {
   id: string;
@@ -19,20 +20,17 @@ export function ConnectionPicker({
   value: string;
   onChange: (id: string) => void;
 }) {
+  const id = useId();
+
   return (
-    <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-      <label className="text-sm font-medium text-foreground" htmlFor="wp-connection-picker-shared">
-        فروشگاه:
+    <div className="grid w-full min-w-0 gap-1.5 sm:w-auto sm:min-w-[20rem] sm:grid-cols-[auto_minmax(14rem,1fr)] sm:items-center sm:gap-3">
+      <label className="text-sm font-medium text-foreground" htmlFor={id}>
+        فروشگاه
       </label>
-      <select
-        id="wp-connection-picker-shared"
-        className="min-w-[14rem] flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:border-teal-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/30"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {connections.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name} ({c.linkMode === "plugin" ? "افزونه" : "REST"})
+      <select id={id} className={inputClass} value={value} onChange={(event) => onChange(event.target.value)}>
+        {connections.map((connection) => (
+          <option key={connection.id} value={connection.id}>
+            {connection.name} ({connection.linkMode === "plugin" ? "افزونه" : "REST"})
           </option>
         ))}
       </select>
