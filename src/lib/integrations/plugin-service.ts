@@ -273,17 +273,33 @@ export async function pluginPushEvents(
 
   return withTenant(connection.business_id, async () => {
     const results: { deliveryId: string; status: string; error?: string }[] = [];
+    let contentApplied = false;
     for (const event of events) {
-      results.push(await ingestPluginEvent(connection, event));
+      const result = await ingestPluginEvent(connection, event);
+      results.push(result);
+      const isContentEvent =
+        event.topic?.endsWith("content.updated") ||
+        event.topic?.endsWith("content.created") ||
+        event.topic?.endsWith("content.deleted");
+      if (
+        isContentEvent &&
+        (result.status === "processed" || result.status === "duplicate")
+      ) {
+        contentApplied = true;
+      }
     }
     // Real inbound sync: the plugin delivered a batch, so "آخرین همگام‌سازی"
-    // has something true to show. Only the REST-mode paths write last_sync_at
-    // today; without this, plugin-mode connections stay "—" forever even
-    // while orders and products keep arriving.
+    // has something true to show. Content gets its own watermark as well;
+    // previously plugin-mode stores updated `last_sync_at` but left
+    // `last_content_sync_at` null forever, so the content screen could not say
+    // when its own mirror last changed.
     await query(
-      `UPDATE integration_connections SET last_sync_at = now(), updated_at = now()
+      `UPDATE integration_connections
+          SET last_sync_at = now(),
+              last_content_sync_at = CASE WHEN $3::boolean THEN now() ELSE last_content_sync_at END,
+              updated_at = now()
         WHERE id = $1 AND business_id = $2`,
-      [connection.id, connection.business_id],
+      [connection.id, connection.business_id, contentApplied],
     );
     return NextResponse.json({ ok: true, results });
   });

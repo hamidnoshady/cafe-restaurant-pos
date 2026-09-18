@@ -35,6 +35,7 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db") | undefined;
 let manager: typeof import("../src/lib/integrations/wp-manager-service");
 let content: typeof import("../src/lib/integrations/wp-content-service");
+let plugin: typeof import("../src/lib/integrations/plugin-service");
 let taxonomy: typeof import("../src/lib/integrations/woo-taxonomy-service");
 let connections: typeof import("../src/lib/integrations/connections-service");
 
@@ -91,6 +92,7 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   manager = await import("../src/lib/integrations/wp-manager-service");
   content = await import("../src/lib/integrations/wp-content-service");
+  plugin = await import("../src/lib/integrations/plugin-service");
   taxonomy = await import("../src/lib/integrations/woo-taxonomy-service");
   connections = await import("../src/lib/integrations/connections-service");
 
@@ -136,16 +138,22 @@ const conn = () => ({ id: biz.pluginConnId, business_id: biz.id }) as never;
 
 describe("the content mirror upserts and decodes what WordPress sends", () => {
   it("creates a row from a pushed post and decodes the entities in its title", async () => {
-    await content.upsertWpContent(conn(), {
+    const outcome = await content.upsertWpContent(conn(), {
       id: 101,
       type: "post",
       // wptexturize output: apostrophe + curly quotes + ellipsis, plus a tag.
-      title: { rendered: "<b>Caf&#233;</b>&#8217;s &#8220;News&#8221;&#8230;" },
+      title: {
+        rendered: "<b>Caf&#233;</b>&#8217;s &#8220;News&#8221;&#8230;",
+        raw: "Café's News",
+      },
+      content: { rendered: "<p>Rendered</p>", raw: "<!-- wp:paragraph --><p>Raw</p><!-- /wp:paragraph -->" },
+      excerpt: { rendered: "<p>Rendered summary</p>", raw: "Raw summary" },
       status: "publish",
       slug: "cafe-news",
       link: "https://shop.example.com/cafe-news",
       date_modified: "2026-02-01T10:00:00Z",
     });
+    expect(outcome).toBe("created");
 
     const rows = await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "post" });
     const row = rows.find((r) => r.remoteId === "101");
@@ -154,10 +162,16 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
     expect(row!.title).toBe("Café’s “News”…");
     expect(row!.slug).toBe("cafe-news");
     expect(row!.status).toBe("publish");
+
+    const detail = await content.getWpContent(biz.id, biz.pluginConnId, "post", "101");
+    expect(detail?.editorTitle).toBe("Café's News");
+    expect(detail?.content).toBe("<!-- wp:paragraph --><p>Raw</p><!-- /wp:paragraph -->");
+    expect(detail?.excerpt).toBe("Raw summary");
   });
 
   it("updates one row on a re-send rather than duplicating it", async () => {
-    await content.upsertWpContent(conn(), { id: 101, type: "post", title: "Renamed", status: "draft" });
+    const outcome = await content.upsertWpContent(conn(), { id: 101, type: "post", title: "Renamed", status: "draft" });
+    expect(outcome).toBe("updated");
     const rows = await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "post" });
     const matching = rows.filter((r) => r.remoteId === "101");
     expect(matching).toHaveLength(1);
@@ -179,11 +193,21 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
     expect(media?.mimeType).toBe("image/png");
   });
 
-  it("ignores a payload with no usable id instead of writing a junk row", async () => {
+  it("ignores invalid ids, unsafe links and malformed remote dates", async () => {
     await content.upsertWpContent(conn(), { id: 0, type: "post", title: "nope" });
     await content.upsertWpContent(conn(), { id: "", type: "post", title: "nope" });
+    await content.upsertWpContent(conn(), {
+      id: 102,
+      type: "post",
+      title: "Safe row",
+      link: "javascript:alert(1)",
+      date_modified: "not-a-date",
+    });
     const rows = await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "post" });
     expect(rows.some((r) => r.title === "nope")).toBe(false);
+    const safe = rows.find((r) => r.remoteId === "102");
+    expect(safe?.permalink).toBe("");
+    expect(safe?.remoteUpdatedAt).toBeNull();
   });
 
   it("counts posts, pages and media by type", async () => {
@@ -194,10 +218,45 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
     expect(counts.media).toBe(1);
   });
 
-  it("filters the content list by a title search", async () => {
-    const hits = await content.listWpContent(biz.id, biz.pluginConnId, { search: "About" });
-    expect(hits.every((r) => r.title.includes("About"))).toBe(true);
-    expect(hits.length).toBeGreaterThanOrEqual(1);
+  it("filters by title or slug, counts pages and removes permanent deletions", async () => {
+    const titleHits = await content.listWpContent(biz.id, biz.pluginConnId, { search: "About" });
+    expect(titleHits.every((r) => r.title.includes("About"))).toBe(true);
+    expect(titleHits.length).toBeGreaterThanOrEqual(1);
+
+    await content.upsertWpContent(conn(), { id: 103, type: "post", title: "Different", slug: "needle-slug" });
+    const slugHits = await content.listWpContent(biz.id, biz.pluginConnId, {
+      wpType: "post",
+      search: "needle-slug",
+      limit: 1,
+      offset: 0,
+    });
+    expect(slugHits.map((row) => row.remoteId)).toEqual(["103"]);
+    expect(await content.countWpContent(biz.id, biz.pluginConnId, { wpType: "post", search: "needle-slug" })).toBe(1);
+
+    await content.deleteWpContent(biz.id, biz.pluginConnId, "post", "103");
+    expect(await content.getWpContent(biz.id, biz.pluginConnId, "post", "103")).toBeNull();
+  });
+
+  it("applies plugin deletions and advances the content-specific watermark", async () => {
+    await content.upsertWpContent(conn(), { id: 104, type: "page", title: "Delete me" });
+    await db.query(`UPDATE integration_connections SET last_content_sync_at = NULL WHERE id = $1`, [biz.pluginConnId]);
+    const response = await plugin.pluginPushEvents(conn(), {
+      events: [
+        {
+          topic: "content.deleted",
+          deliveryId: randomUUID(),
+          payload: { id: 104, type: "page" },
+        },
+      ],
+    });
+    const answer = (await response.json()) as { results: { status: string }[] };
+    expect(answer.results[0]?.status).toBe("processed");
+    expect(await content.getWpContent(biz.id, biz.pluginConnId, "page", "104")).toBeNull();
+    const watermark = await db.query<{ last_content_sync_at: string | null }>(
+      `SELECT last_content_sync_at::text FROM integration_connections WHERE id = $1`,
+      [biz.pluginConnId],
+    );
+    expect(watermark.rows[0]?.last_content_sync_at).not.toBeNull();
   });
 });
 
@@ -342,26 +401,45 @@ describe("the taxonomy mirror learns terms from a product payload (plugin mode)"
 });
 
 describe("the content mirror pulls over the WordPress REST API (rest mode)", () => {
-  it("walks every content type and upserts each row from a fake wp/v2 client", async () => {
+  it("pulls editable/non-public content and reconciles permanently deleted rows", async () => {
     const restConn = { id: biz.restConnId, business_id: biz.id } as never;
+    await content.upsertWpContent(restConn, { id: 3999, type: "post", title: "Deleted remotely" });
+
     // A fake wp/v2 client: one page each of posts, pages, media.
     const pagesByType: Record<string, Record<string, unknown>[]> = {
-      posts: [{ id: 3001, type: "post", title: { rendered: "Ben &amp; Jerry" }, status: "publish" }],
-      pages: [{ id: 3002, type: "page", title: { rendered: "درباره&#8230;" }, status: "publish" }],
+      posts: [
+        {
+          id: 3001,
+          type: "post",
+          title: { rendered: "Ben &amp; Jerry", raw: "Ben & Jerry" },
+          content: { raw: "<!-- wp:paragraph --><p>body</p><!-- /wp:paragraph -->" },
+          status: "draft",
+        },
+      ],
+      pages: [{ id: 3002, type: "page", title: { rendered: "درباره&#8230;" }, status: "private" }],
       media: [
         { id: 3003, type: "attachment", title: { rendered: "Logo" }, source_url: "https://x/y.png", mime_type: "image/png" },
       ],
     };
+    const calls: { type: string; query: Record<string, unknown> }[] = [];
     const client = {
-      wpListPage: async (type: string) => ({ items: pagesByType[type] ?? [], totalPages: 1 }),
+      wpListPage: async (type: string, query: Record<string, unknown>) => {
+        calls.push({ type, query });
+        return { items: pagesByType[type] ?? [], totalPages: 1 };
+      },
     };
 
     const outcome = await content.syncWpContentRest(restConn, client);
-    expect(outcome.total).toBe(3);
+    expect(outcome).toEqual({ total: 3, removed: 1 });
+    expect(calls.every((call) => call.query.context === "edit")).toBe(true);
+    expect(String(calls.find((call) => call.type === "posts")?.query.status)).toContain("draft");
+    expect(calls.find((call) => call.type === "media")?.query.status).toBe("inherit");
 
     const rows = await content.listWpContent(biz.id, biz.restConnId);
     expect(rows.find((r) => r.remoteId === "3001")?.title).toBe("Ben & Jerry");
     expect(rows.find((r) => r.remoteId === "3002")?.title).toBe("درباره…");
     expect(rows.find((r) => r.remoteId === "3003")?.mimeType).toBe("image/png");
+    expect(rows.some((r) => r.remoteId === "3999")).toBe(false);
+    expect((await content.getWpContent(biz.id, biz.restConnId, "post", "3001"))?.content).toContain("wp:paragraph");
   });
 });

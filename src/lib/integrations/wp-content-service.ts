@@ -26,7 +26,7 @@ export type WpContentType = "post" | "page" | "attachment" | string;
 export interface WpContentPayload {
   id: number | string;
   type?: string;
-  title?: string | { rendered?: string };
+  title?: string | { rendered?: string; raw?: string };
   name?: string;
   slug?: string;
   status?: string;
@@ -35,8 +35,12 @@ export interface WpContentPayload {
   author?: string | number;
   author_name?: string;
   date?: string;
+  date_gmt?: string;
   date_modified?: string;
   modified?: string;
+  modified_gmt?: string;
+  content?: string | { rendered?: string; raw?: string };
+  excerpt?: string | { rendered?: string; raw?: string };
   source_url?: string;
   media_type?: string;
   mime_type?: string;
@@ -56,6 +60,13 @@ export interface WpContentRow {
   mimeType: string | null;
   remoteUpdatedAt: string | null;
   syncedAt: string;
+}
+
+/** The raw editable fields are read only for one row, never every list row. */
+export interface WpContentDetail extends WpContentRow {
+  editorTitle: string;
+  content: string;
+  excerpt: string;
 }
 
 /**
@@ -132,21 +143,82 @@ export function plainTitle(raw: unknown): string {
   return decodeWpEntities(text.replace(/<[^>]*>/g, "")).trim();
 }
 
+/**
+ * Read the editable value from either the plugin's raw string or wp/v2's
+ * `{ raw, rendered }` shape. `raw` is preferred: writing rendered block HTML
+ * back to WordPress can discard shortcodes and Gutenberg block comments.
+ */
+export function editableWpField(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (!raw || typeof raw !== "object") return "";
+  const value = raw as { raw?: unknown; rendered?: unknown };
+  if (typeof value.raw === "string") return value.raw;
+  return typeof value.rendered === "string" ? value.rendered : "";
+}
+
+/** Only http(s) links may become clickable links or browser-loaded media. */
+export function safeWpUrl(raw: unknown): string {
+  if (typeof raw !== "string" || !raw.trim()) return "";
+  try {
+    const parsed = new URL(raw.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? parsed.toString().slice(0, 2000)
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+/** WordPress post ids are positive decimal integers. */
+function remoteContentId(raw: unknown): string {
+  const value = typeof raw === "number" || typeof raw === "string" ? String(raw).trim() : "";
+  return /^[1-9]\d*$/.test(value) ? value : "";
+}
+
+/** Never hand an invalid remote timestamp to PostgreSQL's timestamptz cast. */
+function validRemoteDate(raw: unknown, assumeUtc = false): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const value = assumeUtc && !/(?:Z|[+-]\d\d:\d\d)$/i.test(raw.trim()) ? `${raw.trim()}Z` : raw.trim();
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
 /** Normalise one pushed/REST content object and upsert the mirror row. */
 export async function upsertWpContent(
   connection: ConnectionRow,
   payload: WpContentPayload,
 ): Promise<"created" | "updated"> {
-  const remoteId = String(payload.id ?? "");
-  if (!remoteId || remoteId === "0") return "updated";
-  const wpType = (payload.type ?? "post").trim().slice(0, 100) || "post";
-  const title = plainTitle(payload.title) || payload.name || `${wpType} #${remoteId}`;
-  const mediaUrl = payload.source_url || payload.url || null;
-  const mimeType = payload.mime_type || (wpType === "attachment" ? payload.media_type || null : null);
-  const permalink = payload.link || payload.permalink || "";
-  const remoteUpdated = payload.date_modified || payload.modified || payload.date || null;
+  const remoteId = remoteContentId(payload.id);
+  if (!remoteId) return "updated";
+  const rawType = typeof payload.type === "string" ? payload.type.trim() : "";
+  const wpType = rawType.slice(0, 100) || "post";
+  const fallbackName = typeof payload.name === "string" ? payload.name : "";
+  const title = plainTitle(payload.title) || fallbackName || `${wpType} #${remoteId}`;
+  const mediaUrl = safeWpUrl(payload.source_url) || safeWpUrl(payload.url) || null;
+  const rawMimeType =
+    typeof payload.mime_type === "string"
+      ? payload.mime_type
+      : wpType === "attachment" && typeof payload.media_type === "string"
+        ? payload.media_type
+        : "";
+  const mimeType = rawMimeType.trim().slice(0, 200) || null;
+  const permalink = safeWpUrl(payload.link) || safeWpUrl(payload.permalink);
+  const remoteUpdated =
+    validRemoteDate(payload.date_modified) ||
+    validRemoteDate(payload.modified_gmt, true) ||
+    validRemoteDate(payload.modified) ||
+    validRemoteDate(payload.date_gmt, true) ||
+    validRemoteDate(payload.date);
+  const slug = typeof payload.slug === "string" ? payload.slug : "";
+  const status = typeof payload.status === "string" ? payload.status : "publish";
+  const authorName =
+    typeof payload.author_name === "string"
+      ? payload.author_name
+      : typeof payload.author === "string"
+        ? payload.author
+        : "";
 
-  const { rows } = await query<{ id: string }>(
+  const { rows } = await query<{ inserted: boolean }>(
     `INSERT INTO integration_wp_content
        (business_id, connection_id, wp_type, remote_id, title, slug, status, permalink,
         author_name, media_url, mime_type, payload, remote_updated_at)
@@ -164,36 +236,36 @@ export async function upsertWpContent(
            remote_updated_at = COALESCE(EXCLUDED.remote_updated_at, integration_wp_content.remote_updated_at),
            synced_at = now(),
            updated_at = now()
-     RETURNING id`,
+     RETURNING (xmax = 0) AS inserted`,
     [
       connection.business_id,
       connection.id,
       wpType,
       remoteId,
       title.slice(0, 500),
-      (payload.slug ?? "").slice(0, 200),
-      (payload.status ?? "publish").slice(0, 40),
+      slug.slice(0, 200),
+      status.slice(0, 40),
       permalink.slice(0, 1000),
-      (payload.author_name ?? (typeof payload.author === "string" ? payload.author : "")).slice(0, 200),
+      authorName.slice(0, 200),
       mediaUrl,
       mimeType,
       JSON.stringify(payload),
       remoteUpdated,
     ],
   );
-  // Distinguish created from updated for the audit trail; xmax tells an
-  // INSERT (0) from an UPDATE-taken conflict path on the RETURNING row.
-  void rows;
-  return "created";
+  return rows[0]?.inserted ? "created" : "updated";
 }
 
 /** The mirrored content for a connection, newest first, optionally by type. */
 export async function listWpContent(
   businessId: string,
   connectionId: string,
-  options: { wpType?: string; search?: string; limit?: number } = {},
+  options: { wpType?: string; search?: string; limit?: number; offset?: number } = {},
 ): Promise<WpContentRow[]> {
-  const limit = Math.min(200, Math.max(1, options.limit ?? 100));
+  const requestedLimit = Number.isFinite(options.limit) ? Math.trunc(options.limit!) : 100;
+  const requestedOffset = Number.isFinite(options.offset) ? Math.trunc(options.offset!) : 0;
+  const limit = Math.min(200, Math.max(1, requestedLimit));
+  const offset = Math.min(100_000, Math.max(0, requestedOffset));
   const { rows } = await query<{
     remote_id: string;
     wp_type: string;
@@ -212,10 +284,10 @@ export async function listWpContent(
        FROM integration_wp_content
       WHERE business_id = $1 AND connection_id = $2
         AND ($3::text IS NULL OR wp_type = $3)
-        AND ($4::text IS NULL OR title ILIKE '%' || $4 || '%')
-      ORDER BY remote_updated_at DESC NULLS LAST, synced_at DESC
-      LIMIT $5`,
-    [businessId, connectionId, options.wpType ?? null, options.search?.trim() || null, limit],
+        AND ($4::text IS NULL OR title ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
+      ORDER BY remote_updated_at DESC NULLS LAST, synced_at DESC, remote_id DESC
+      LIMIT $5 OFFSET $6`,
+    [businessId, connectionId, options.wpType ?? null, options.search?.trim() || null, limit, offset],
   );
   return rows.map((r) => ({
     remoteId: r.remote_id,
@@ -223,13 +295,96 @@ export async function listWpContent(
     title: r.title,
     slug: r.slug,
     status: r.status,
-    permalink: r.permalink,
+    permalink: safeWpUrl(r.permalink),
     authorName: r.author_name,
-    mediaUrl: r.media_url,
+    mediaUrl: safeWpUrl(r.media_url) || null,
     mimeType: r.mime_type,
     remoteUpdatedAt: r.remote_updated_at,
     syncedAt: r.synced_at,
   }));
+}
+
+/** Total rows behind a paged content list, with the same filters as the list. */
+export async function countWpContent(
+  businessId: string,
+  connectionId: string,
+  options: { wpType?: string; search?: string } = {},
+): Promise<number> {
+  const { rows } = await query<{ n: string }>(
+    `SELECT count(*)::text AS n
+       FROM integration_wp_content
+      WHERE business_id = $1 AND connection_id = $2
+        AND ($3::text IS NULL OR wp_type = $3)
+        AND ($4::text IS NULL OR title ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')`,
+    [businessId, connectionId, options.wpType ?? null, options.search?.trim() || null],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
+/** One mirrored post/page with the raw fields the editor must round-trip. */
+export async function getWpContent(
+  businessId: string,
+  connectionId: string,
+  wpType: "post" | "page",
+  remoteId: string,
+): Promise<WpContentDetail | null> {
+  const { rows } = await query<{
+    remote_id: string;
+    wp_type: string;
+    title: string;
+    slug: string;
+    status: string;
+    permalink: string;
+    author_name: string;
+    media_url: string | null;
+    mime_type: string | null;
+    remote_updated_at: string | null;
+    synced_at: string;
+    payload: WpContentPayload;
+  }>(
+    `SELECT remote_id, wp_type, title, slug, status, permalink, author_name,
+            media_url, mime_type, remote_updated_at, synced_at, payload
+       FROM integration_wp_content
+      WHERE business_id = $1 AND connection_id = $2 AND wp_type = $3 AND remote_id = $4
+      LIMIT 1`,
+    [businessId, connectionId, wpType, remoteId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const payload = row.payload && typeof row.payload === "object" ? row.payload : ({} as WpContentPayload);
+  return {
+    remoteId: row.remote_id,
+    wpType: row.wp_type,
+    title: row.title,
+    slug: row.slug,
+    status: row.status,
+    permalink: safeWpUrl(row.permalink),
+    authorName: row.author_name,
+    mediaUrl: safeWpUrl(row.media_url) || null,
+    mimeType: row.mime_type,
+    remoteUpdatedAt: row.remote_updated_at,
+    syncedAt: row.synced_at,
+    editorTitle: editableWpField(payload.title) || row.title,
+    content: editableWpField(payload.content),
+    excerpt: editableWpField(payload.excerpt),
+  };
+}
+
+/** Remove a post/page/media row after WordPress permanently deleted it. */
+export async function deleteWpContent(
+  businessId: string,
+  connectionId: string,
+  wpType: string,
+  remoteId: string,
+): Promise<void> {
+  const id = remoteContentId(remoteId);
+  const type = wpType.trim().slice(0, 100);
+  if (!id || !type) return;
+  await query(
+    `DELETE FROM integration_wp_content
+      WHERE business_id = $1 AND connection_id = $2 AND wp_type = $3 AND remote_id = $4`,
+    [businessId, connectionId, type, id],
+  );
 }
 
 export interface WpContentCounts {
@@ -298,21 +453,57 @@ export async function syncWpContentRest(
       query: Record<string, string | number | boolean> & { page: number },
     ) => Promise<{ items: Record<string, unknown>[]; totalPages: number }>;
   },
-): Promise<{ total: number }> {
+): Promise<{ total: number; removed: number }> {
   let total = 0;
-  const types = ["posts", "pages", "media"];
+  let removed = 0;
+  const types = [
+    { endpoint: "posts", wpType: "post", status: "publish,draft,pending,private,future,trash" },
+    { endpoint: "pages", wpType: "page", status: "publish,draft,pending,private,future,trash" },
+    { endpoint: "media", wpType: "attachment", status: "inherit" },
+  ] as const;
+
   for (const type of types) {
-    if (!client.wpListPage) continue;
+    const seenIds: string[] = [];
     let page = 1;
     for (;;) {
-      const { items, totalPages } = await client.wpListPage(type, { per_page: 100, page });
+      // `edit` is essential here. The default `view` context omits raw body
+      // text and non-public rows, so opening an existing draft in the manager
+      // showed an empty editor and saving it erased the actual post body.
+      const { items, totalPages } = await client.wpListPage(type.endpoint, {
+        context: "edit",
+        status: type.status,
+        per_page: 100,
+        page,
+      });
       for (const item of items) {
-        await upsertWpContent(connection, item as unknown as WpContentPayload);
+        const payload = {
+          ...item,
+          type: typeof item.type === "string" ? item.type : type.wpType,
+        } as unknown as WpContentPayload;
+        const id = remoteContentId(payload.id);
+        if (!id) continue;
+        await upsertWpContent(connection, payload);
+        seenIds.push(id);
         total += 1;
       }
       if (!totalPages || page >= totalPages || items.length === 0) break;
+      // A broken proxy/header must not make a sync loop forever. 500 pages is
+      // already 50,000 rows of one content type; stop with an error rather
+      // than prune against an incomplete remote snapshot.
+      if (page >= 500) throw new Error("wordpress_content_page_limit");
       page += 1;
     }
+
+    // This type completed successfully, so the collected ids are an exact
+    // snapshot. Reconcile permanently deleted posts/media instead of leaving
+    // ghost rows in the manager forever.
+    const { rowCount } = await query(
+      `DELETE FROM integration_wp_content
+        WHERE business_id = $1 AND connection_id = $2 AND wp_type = $3
+          AND NOT (remote_id = ANY($4::text[]))`,
+      [connection.business_id, connection.id, type.wpType, seenIds],
+    );
+    removed += rowCount ?? 0;
   }
   await query(
     `UPDATE integration_connections SET last_content_sync_at = now(), updated_at = now()
@@ -323,7 +514,7 @@ export async function syncWpContentRest(
     businessId: connection.business_id,
     connectionId: connection.id,
     action: "content.synced",
-    payload: { total },
+    payload: { total, removed },
   });
-  return { total };
+  return { total, removed };
 }

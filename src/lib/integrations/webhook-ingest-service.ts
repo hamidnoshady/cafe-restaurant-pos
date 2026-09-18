@@ -33,7 +33,7 @@ import { writeIntegrationAudit } from "./audit";
 import { getBusinessIndustry } from "../industry-guard";
 import { connectionLocationId, resolveOrderCustomerId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
 import { wooLineCandidateIds, shouldImportWooOrder } from "./woo-catalogue";
-import { upsertWpContent } from "./wp-content-service";
+import { deleteWpContent, upsertWpContent } from "./wp-content-service";
 import type { WooCustomer, WooOrder, WooOrderLineItem, WooProduct, WooRefund } from "./woocommerce-client";
 import type { Industry } from "../industries";
 
@@ -227,6 +227,13 @@ async function applyIngestEvent(connection: ConnectionRow, event: WebhookEvent):
       // Manager app's own job, and a shop that only syncs orders still has
       // pages it would be harmless to see.
       await upsertWpContent(connection, event.payload as never);
+    } else if (event.topic.endsWith("content.deleted")) {
+      // Trash is an ordinary update carrying status=trash; only a permanent
+      // deletion removes the mirror row. The plugin sends this before core
+      // destroys the post object, so type and id remain unambiguous.
+      const contentType = typeof event.payload.type === "string" ? event.payload.type.trim() : "";
+      if (!contentType || !/^[1-9]\d*$/.test(remoteId)) throw new Error("invalid_content_delete");
+      await deleteWpContent(businessId, connection.id, contentType, remoteId);
     }
     // Any other topic is acknowledged and left alone — we never want a
     // re-delivery storm for an event we don't handle yet.

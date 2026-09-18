@@ -1,7 +1,9 @@
 "use client";
 
 /** Shared store picker for WP Manager sections. */
+import { useId } from "react";
 import { cardClass } from "@/app/dashboard/page-chrome";
+import { cn } from "@/lib/utils";
 
 export interface ConnectionLite {
   id: string;
@@ -14,25 +16,44 @@ export function ConnectionPicker({
   connections,
   value,
   onChange,
+  disabled = false,
+  embedded = false,
+  className,
 }: {
   connections: ConnectionLite[];
   value: string;
   onChange: (id: string) => void;
+  disabled?: boolean;
+  /** Omit the picker card when it already lives inside a toolbar/card. */
+  embedded?: boolean;
+  className?: string;
 }) {
+  const generatedId = useId();
+  const id = `wp-connection-${generatedId.replaceAll(":", "")}`;
+
   return (
-    <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-      <label className="text-sm font-medium text-foreground" htmlFor="wp-connection-picker-shared">
-        فروشگاه:
+    <div
+      className={cn(
+        "flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3",
+        !embedded && cardClass,
+        !embedded && "p-4",
+        embedded && "w-full md:w-auto md:flex-1",
+        className,
+      )}
+    >
+      <label className="shrink-0 text-sm font-medium text-foreground" htmlFor={id}>
+        فروشگاه
       </label>
       <select
-        id="wp-connection-picker-shared"
-        className="min-w-[14rem] flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:border-teal-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/30"
+        id={id}
+        className="h-10 w-full min-w-0 rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none transition-colors focus-visible:border-teal-500 focus-visible:ring-2 focus-visible:ring-teal-400/30 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-[14rem] sm:flex-1"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
       >
-        {connections.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name} ({c.linkMode === "plugin" ? "افزونه" : "REST"})
+        {connections.map((connection) => (
+          <option key={connection.id} value={connection.id}>
+            {connection.name} ({connection.linkMode === "plugin" ? "افزونه" : "REST"})
           </option>
         ))}
       </select>

@@ -43,7 +43,9 @@ const KIND_LABELS: Record<string, string> = {
   "refund.created": "رویداد: برگشت وجه",
   "product.updated": "رویداد: به‌روزرسانی محصول",
   "customer.updated": "رویداد: به‌روزرسانی مشتری",
+  "content.created": "رویداد: محتوای تازه",
   "content.updated": "رویداد: به‌روزرسانی محتوا",
+  "content.deleted": "رویداد: حذف دائمی محتوا",
 };
 
 const STATUS_LABELS: Record<string, string> = {

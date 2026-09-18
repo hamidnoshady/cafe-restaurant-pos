@@ -59,9 +59,11 @@ export interface ConnectionRow extends Record<string, unknown> {
   order_lookback_days: number;
   status: "active" | "paused" | "error";
   last_sync_at: string | null;
-  /** Phase 38 — split from last_sync_at: the two jobs fail independently. */
+  /** Phase 38/40 — split from last_sync_at: these jobs fail independently. */
   last_catalogue_sync_at: string | null;
   last_order_sync_at: string | null;
+  last_customer_sync_at: string | null;
+  last_content_sync_at: string | null;
   last_error: string | null;
   created_at: string;
   updated_at: string;
@@ -89,6 +91,8 @@ export interface Connection {
   lastSyncAt: string | null;
   lastCatalogueSyncAt: string | null;
   lastOrderSyncAt: string | null;
+  lastCustomerSyncAt: string | null;
+  lastContentSyncAt: string | null;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
@@ -129,6 +133,8 @@ function mapConnection(row: ConnectionRow): Connection {
     lastSyncAt: row.last_sync_at,
     lastCatalogueSyncAt: row.last_catalogue_sync_at,
     lastOrderSyncAt: row.last_order_sync_at,
+    lastCustomerSyncAt: row.last_customer_sync_at,
+    lastContentSyncAt: row.last_content_sync_at,
     lastError: row.last_error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -147,7 +153,8 @@ export const CONNECTION_COLUMNS = `id, business_id, location_id, name, provider,
   plugin_version, plugin_site_url, last_plugin_seen_at,
   currency_unit, sync_orders, sync_products, sync_customers, push_stock, push_prices,
   sync_categories, auto_pull_orders, order_lookback_days,
-  status, last_sync_at, last_catalogue_sync_at, last_order_sync_at, last_error, created_at, updated_at`;
+  status, last_sync_at, last_catalogue_sync_at, last_order_sync_at,
+  last_customer_sync_at, last_content_sync_at, last_error, created_at, updated_at`;
 
 export async function listConnections(businessId: string): Promise<Connection[]> {
   const { rows } = await query<ConnectionRow>(
