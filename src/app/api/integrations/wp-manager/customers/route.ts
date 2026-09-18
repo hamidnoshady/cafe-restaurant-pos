@@ -13,6 +13,6 @@ export const GET = withTenantScope(async (request: Request) => {
   const connection = await getConnection(session.businessId, connectionId);
   if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const customers = await wpStoreCustomers(session.businessId, connectionId);
-  return NextResponse.json({ customers });
+  const { customers, total } = await wpStoreCustomers(session.businessId, connectionId);
+  return NextResponse.json({ customers, total });
 });
