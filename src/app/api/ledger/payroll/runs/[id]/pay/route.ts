@@ -16,13 +16,26 @@ export const POST = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
   if (error) return error;
 
   const { id } = await ctx.params;
-  let body: { method?: string; paidDate?: string } = {};
+  let body: { method?: unknown; paidDate?: unknown } = {};
   try {
     body = await request.json();
   } catch {
     // no body is fine; method defaults to cash
   }
-  const method = METHODS.includes(body.method as (typeof METHODS)[number]) ? (body.method as "cash" | "bank") : "cash";
+  /*
+   * An unrecognised method used to fall back to `cash` silently, so a typo or
+   * a stale client posted the wage bill out of the till while the caller
+   * believed it went out of the bank — the two credit different accounts
+   * (۱۱۰۰ vs ۱۱۲۰) and the entry cannot be told apart afterwards. Absent still
+   * means cash (the documented default); a *wrong* value is now refused.
+   */
+  if (body.method !== undefined && !METHODS.includes(body.method as (typeof METHODS)[number])) {
+    return NextResponse.json({ error: "invalid_method" }, { status: 400 });
+  }
+  const method = (body.method as "cash" | "bank" | undefined) ?? "cash";
+  if (body.paidDate !== undefined && body.paidDate !== null && typeof body.paidDate !== "string") {
+    return NextResponse.json({ error: "invalid_paid_date" }, { status: 400 });
+  }
 
   const location = await resolveActiveLocation(session);
 
@@ -32,7 +45,7 @@ export const POST = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
       locationId: location?.id ?? null,
       runId: id,
       method,
-      paidDate: body.paidDate,
+      paidDate: body.paidDate as string | undefined,
       actorId: session.sub,
     });
     return NextResponse.json({ run });

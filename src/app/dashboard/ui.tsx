@@ -421,6 +421,13 @@ const ERROR_MESSAGES: Record<string, string> = {
     run_not_found: "تعهد حقوق پیدا نشد.",
     no_wages_set: "هیچ عضو فعالی حقوق تعیین‌شده ندارد.",
     period_label_required: "عنوان دوره الزامی است.",
+    period_label_too_long: "عنوان دوره بیش از حد طولانی است.",
+    invalid_accrual_date: "تاریخ تعهد معتبر نیست.",
+    invalid_paid_date: "تاریخ پرداخت معتبر نیست.",
+    // «حقوق ماهانه» is saved through ui.tsx's own errorMessage, so the wage
+    // screen's 404 needs a message here too — without it a wage saved against
+    // a member who was just deactivated reported «خطای غیرمنتظره».
+    user_not_found: "عضو موردنظر پیدا نشد.",
     supplier_record_missing: "این شخص در فهرست تأمین‌کنندگان ثبت نشده است؛ ابتدا او را به‌عنوان تأمین‌کننده ثبت کنید.",
     installment_amount_too_small: "مبلغ هر قسط بسیار کم است؛ تعداد اقساط را کاهش دهید.",
     item_required: "قسط را انتخاب کنید.",
