@@ -385,11 +385,19 @@ function errorMessage(code: string | undefined): string {
     invalid_rial: "مبلغ واردشده معتبر نیست.",
     periodic_system_unsupported:
       "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
-    // Phase 42 — warehouse documents
+    // Phase 42 — warehouse documents. `periodic_system_unsupported`,
+    // `quantity_precision_exceeded` and `invalid_quantity` are already mapped
+    // above and cover this path too; only the codes unique to رسید/حواله are
+    // added here (a repeated key is a TS1117 error, not an override).
     invalid_line:
       "یکی از سندها کامل نیست؛ قلم را انتخاب کنید و مقدار معتبر وارد کنید.",
     location_not_found: "انبار انتخاب‌شده پیدا نشد.",
     location_inactive: "این انبار غیرفعال است؛ انبار دیگری را انتخاب کنید.",
+    receipt_value_required:
+      "رسید بدون ارزش ثبت نمی‌شود؛ برای هر قلم قیمت واحد بزرگ‌تر از صفر وارد کنید.",
+    rial_out_of_range: "مبلغ واردشده بسیار بزرگ است؛ عدد را بررسی کنید.",
+    inventory_exact_cutover_required:
+      "موجودی این قلم هنوز به سیستم بهای دقیق منتقل نشده است؛ ابتدا عملیات انتقال (cutover) را اجرا کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateRialByWeight,
+  boundedRialText,
+  MAX_RIAL,
   positiveQuantityText,
   proportionalDepletionValue,
   quantityText,
@@ -40,5 +42,15 @@ describe("exact inventory arithmetic", () => {
   it("assigns the final depletion all residual lot value", () => {
     expect(proportionalDepletionValue(quantityText("3"), rialText("100"), quantityText("1"))).toBe("33");
     expect(proportionalDepletionValue(quantityText("2"), rialText("67"), quantityText("2"))).toBe("67");
+  });
+
+  it("bounds a Rial amount by what a bigint column can hold", () => {
+    // `rialText` itself is unbounded on purpose — allocation sums above 2^63-1
+    // are legitimate intermediates (see the huge-total case above). It is the
+    // values headed for a bigint COLUMN that need the ceiling, or the INSERT
+    // aborts the transaction with «out of range for type bigint» — a 500.
+    expect(boundedRialText(MAX_RIAL.toString())).toBe("9223372036854775807");
+    expect(() => boundedRialText((MAX_RIAL + 1n).toString())).toThrow("rial_out_of_range");
+    expect(() => boundedRialText("10.5")).toThrow("invalid_rial");
   });
 });
