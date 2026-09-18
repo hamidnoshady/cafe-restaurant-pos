@@ -351,13 +351,11 @@ export function labelFor(industry: Industry, key: LabelKey): string {
  * The explanation screen has to be reachable from somewhere.
  */
 export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
-  // The sales overview. `/dashboard` itself stays ungated (see above).
+  // Operational overview belongs to Accounting; the chat home stays ungated.
   ["/overview", "dashboard"],
   ["/accounting/orders", "orders"],
-  // Business work areas render beneath Accounting. The inventory page itself
-  // picks the food-service inventory model or the retail stock model; both
-  // belong to Operations, so the availability gate stays coherent regardless
-  // of trade. Every retired `/dashboard/<area>` address 308s in middleware
+  // Business work areas render beneath Accounting. The inventory page chooses
+  // the food-service or retail stock model; both follow Accounting availability. Every retired `/dashboard/<area>` address 308s in middleware
   // before this table is ever consulted, so only canonical prefixes live here.
   ["/accounting/pos", "pos"],
   ["/accounting/floor", "tables"],
@@ -406,9 +404,8 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // the business work-area rows above deliberately precede it so their owning
   // app availability remains accurate.
   ["/accounting", "ledger"],
-  // Settings and everything anchored on it (billing, support, the knowledge
-  // centre). The nav badges all of these with the settings app's state, so
-  // the gate must block on the same app rather than waving them through.
+  // Shared settings, support and knowledge are trade modules, but they are
+  // unassigned in apps.ts and have no standalone app availability state.
   ["/settings", "settings"],
   ["/support", "settings"],
   ["/knowledge", "settings"],
