@@ -29,7 +29,7 @@ import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/das
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PencilIcon, PowerIcon, PowerOffIcon } from "lucide-react";
-import { toPersianDigits } from "@/lib/digits";
+import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatPhoneDisplay } from "@/lib/phone";
 import {
@@ -181,15 +181,21 @@ export function BranchesManager() {
   const [confirmingDeactivation, setConfirmingDeactivation] = useState<Branch | null>(null);
 
   const load = useCallback(async () => {
-    const res = await api<BranchesResponse & { error?: string }>("/api/branches");
-    if (res.ok) {
-      setBranches(res.data.branches);
-      setPlan(res.data.plan ?? null);
-      // A reload that succeeds clears whatever failed last time; leaving a
-      // stale red box above a correct list is its own small lie.
-      setError("");
-    } else {
-      setError(branchErrorMessage(res.data.error));
+    // fetch itself can reject (offline, server restart); without the catch the
+    // screen stayed on «در حال بارگذاری شعب» forever with no way to retry.
+    try {
+      const res = await api<BranchesResponse & { error?: string }>("/api/branches");
+      if (res.ok) {
+        setBranches(res.data.branches);
+        setPlan(res.data.plan ?? null);
+        // A reload that succeeds clears whatever failed last time; leaving a
+        // stale red box above a correct list is its own small lie.
+        setError("");
+      } else {
+        setError(branchErrorMessage(res.data.error));
+      }
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.");
     }
     setLoading(false);
   }, []);
@@ -206,17 +212,24 @@ export function BranchesManager() {
     if (busy || !draft.name.trim()) return;
     setBusy(true);
     setError("");
-    const res = await api<{ error?: string }>("/api/branches", {
-      method: "POST",
-      body: JSON.stringify({
-        name: draft.name,
-        address: draft.address || undefined,
-        phone: draft.phone || undefined,
-        timezone: draft.timezone || undefined,
-        color: draft.color || undefined,
-        copyMenuFromLocationId: copyFrom || undefined,
-      }),
-    });
+    let res: { ok: boolean; data: { error?: string } };
+    try {
+      res = await api<{ error?: string }>("/api/branches", {
+        method: "POST",
+        body: JSON.stringify({
+          name: draft.name,
+          address: draft.address || undefined,
+          phone: draft.phone || undefined,
+          timezone: draft.timezone || undefined,
+          color: draft.color || undefined,
+          copyMenuFromLocationId: copyFrom || undefined,
+        }),
+      });
+    } catch {
+      setBusy(false);
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.");
+      return;
+    }
     setBusy(false);
     if (!res.ok) {
       setError(branchErrorMessage(res.data.error));
@@ -234,10 +247,17 @@ export function BranchesManager() {
     if (rowBusyId) return;
     setRowBusyId(branch.id);
     setError("");
-    const res = await api<{ error?: string }>(`/api/branches/${branch.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ isActive }),
-    });
+    let res: { ok: boolean; data: { error?: string } };
+    try {
+      res = await api<{ error?: string }>(`/api/branches/${branch.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive }),
+      });
+    } catch {
+      setRowBusyId(null);
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.");
+      return;
+    }
     setRowBusyId(null);
     if (!res.ok) {
       setError(branchErrorMessage(res.data.error));
@@ -482,12 +502,17 @@ function BranchFields({
         <input
           className={inputClass}
           dir="ltr"
+          type="tel"
           inputMode="tel"
+          autoComplete="tel"
           maxLength={MAX_BRANCH_PHONE}
           value={draft.phone}
           disabled={disabled}
-          onChange={(e) => onChange({ ...draft, phone: e.target.value })}
-          placeholder="۰۲۱…"
+          // Persian digits become ASCII on the way into state (the storage
+          // convention — digits are display-only Persian); +, spaces and
+          // dashes survive for formatPhoneDisplay to normalise on render.
+          onChange={(e) => onChange({ ...draft, phone: toLatinDigits(e.target.value) })}
+          placeholder="021…"
         />
       </Field>
       <Field
@@ -649,7 +674,12 @@ function EditBranchDialog({
 
   const changes = useMemo(() => {
     const body: Record<string, string | null> = {};
-    if (draft.name.trim() !== branch.name) body.name = draft.name;
+    // Compare and send the trimmed name: sending the raw draft made « شعبه »
+    // count as a change against «شعبه» and put the untrimmed string in the
+    // request (the server normalises again, but the audit diff and the
+    // duplicate check should see what will actually be stored).
+    const name = draft.name.trim();
+    if (name && name !== branch.name) body.name = name;
     if ((draft.address.trim() || null) !== branch.address) body.address = draft.address.trim() || null;
     if ((draft.phone.trim() || null) !== branch.phone) body.phone = draft.phone.trim() || null;
     if (draft.timezone !== branch.timezone) body.timezone = draft.timezone;
@@ -663,16 +693,21 @@ function EditBranchDialog({
     if (busy || !dirty) return;
     setBusy(true);
     setError("");
-    const res = await api<{ error?: string }>(`/api/branches/${branch.id}`, {
-      method: "PATCH",
-      body: JSON.stringify(changes),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError(branchErrorMessage(res.data.error));
-      return;
+    try {
+      const res = await api<{ error?: string }>(`/api/branches/${branch.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(changes),
+      });
+      if (!res.ok) {
+        setError(branchErrorMessage(res.data.error));
+        return;
+      }
+      await onSaved();
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی و دوباره تلاش کنید.");
+    } finally {
+      setBusy(false);
     }
-    await onSaved();
   }
 
   return (

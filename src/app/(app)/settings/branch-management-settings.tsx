@@ -44,6 +44,16 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
   const [tab, setTab] = useState<BranchManagementTabKey>(() => requestedTab ?? firstTab ?? "branches");
 
   /**
+   * The phone drill-down. A deep link that *names* a tab (`?tab=branch-sync`,
+   * `?branchTab=sync`) starts with the section open: the person followed a
+   * link to «همگام‌سازی شعب», so landing them on a two-item menu they must
+   * tap through again — with the tab already silently selected underneath —
+   * read as the link being broken. Without a named tab the list is the page,
+   * same as every other mobile settings menu.
+   */
+  const [open, setOpen] = useState(() => requestedTab !== null);
+
+  /**
    * The `?branchTab=` the URL arrived with is honoured **once per value**, not
    * on every render.
    *
@@ -63,6 +73,10 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
       if (appliedRequest.current !== requestedTab) {
         appliedRequest.current = requestedTab;
         setTab(requestedTab);
+        // A request arriving after mount (client-side navigation to a deep
+        // link) opens the phone drill-down too, for the same reason the
+        // initial state does.
+        setOpen(true);
       }
       return;
     }
@@ -99,6 +113,19 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
   // up, the drill-down's back bar below it) under the page's one <h1>
   // («تنظیمات») from <PageHeader>. A second hand-rolled header here restated
   // PageHeader's spacing and put a duplicate <h1> in the document outline.
+
+  // One visible tab is not a choice: rendering the SectionNav anyway gave a
+  // phone a menu of exactly one row to tap through, and the desktop a strip
+  // of one pill — both pure friction in front of the only content there is.
+  if (availableTabs.length === 1) {
+    return (
+      <section className="min-w-0 space-y-4 sm:space-y-5">
+        {activeTab === "branches" ? <BranchesManager /> : null}
+        {activeTab === "sync" ? <LocationsManager /> : null}
+      </section>
+    );
+  }
+
   return (
     <section className="min-w-0 space-y-4 sm:space-y-5">
       <SectionNav
@@ -107,6 +134,8 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
         sections={availableTabs}
         active={activeTab}
         onChange={selectTab}
+        open={open}
+        onOpenChange={setOpen}
       >
         {activeTab === "branches" ? <BranchesManager /> : null}
         {activeTab === "sync" ? <LocationsManager /> : null}
