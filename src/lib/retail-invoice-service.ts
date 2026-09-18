@@ -97,6 +97,8 @@ export interface CreateRetailInvoiceInput {
   paymentMethod: SettlementMethod;
   customerId?: string | null;
   note?: string | null;
+  /** Branch business date supplied by the route for loyalty-point expiry. */
+  businessDate?: string;
   createdBy?: string | null;
 }
 
@@ -328,6 +330,7 @@ export async function createRetailInvoice(
       amountRial: total,
       sourceType: "retail_invoice",
       sourceId: orderId,
+      earnedOn: input.businessDate,
       createdBy: input.createdBy ?? null,
     });
   }

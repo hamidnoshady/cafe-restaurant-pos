@@ -4,6 +4,7 @@ import { getPool, query } from "@/lib/db";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { industryProfile } from "@/lib/industry-profile";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import {
   createRetailInvoice,
@@ -39,6 +40,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+  const businessDay = await getBusinessDayStatus(location.id);
 
   let body: {
     lines?: unknown;
@@ -59,6 +61,15 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!PAYMENT_METHODS.includes(paymentMethod)) {
     return NextResponse.json({ error: "invalid_payment_method" }, { status: 400 });
   }
+  const customerId = typeof body.customerId === "string" && body.customerId.trim() ? body.customerId.trim() : null;
+  if (customerId) {
+    const { rows } = await query<{ id: string }>(
+      `SELECT id FROM parties
+        WHERE id = $1 AND business_id = $2 AND roles && ARRAY['customer']::text[]`,
+      [customerId, session.businessId],
+    );
+    if (!rows[0]) return NextResponse.json({ error: "customer_not_found" }, { status: 404 });
+  }
 
   // The service validates each line against the industry; this only checks the
   // shape is a line at all, so a malformed body fails before a transaction opens.
@@ -76,8 +87,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       industry,
       lines,
       paymentMethod,
-      customerId: typeof body.customerId === "string" && body.customerId ? body.customerId : null,
+      customerId,
       note: typeof body.note === "string" ? body.note : null,
+      businessDate: businessDay?.businessDate,
       createdBy: session.sub,
     });
     await enqueueHolooSaleForOrder(client, session.businessId, invoice.orderId);

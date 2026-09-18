@@ -63,6 +63,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
+    setError("");
     api<{ overview: GrowthOverview }>("/api/growth/overview").then(({ ok, data }) => {
       if (ok) setOverview(data.overview);
       else setError("بارگذاری میز کار رشد ناموفق بود.");
@@ -70,6 +71,20 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
   }, []);
   useEffect(load, [load]);
 
+  // A failed first read must say so and offer a retry: the skeleton alone
+  // would spin forever, with the error stranded under the early return below.
+  if (!overview && error) {
+    return (
+      <div className="space-y-4">
+        <ErrorBox>{error}</ErrorBox>
+        <div>
+          <Button variant="outline" className="min-h-11" onClick={load}>
+            تلاش دوباره
+          </Button>
+        </div>
+      </div>
+    );
+  }
   if (!overview) {
     return (
       <SectionCardSkeleton rows={4} />
