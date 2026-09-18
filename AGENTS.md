@@ -28,16 +28,14 @@ damage when missed:
 
 ## Prompt vocabulary
 
-**Product identity rule:** treat this repository as a multi-industry, multi-app business platform for accounting, CRM, growth, websites, sales/POS, operations, and AI. POS is a major app, not the whole product. Never introduce platform-level copy, metadata, defaults, or sample data that presents it as only a café/restaurant POS; hospitality wording belongs only in hospitality-specific features.
+**Product identity rule:** this is a multi-industry platform with exactly four standalone business apps: Accounting, Growth & Marketing, CRM, and Website Management. Sales/POS, operations, inventory, reporting and settings are work areas or shared utilities, not additional apps. The AI assistant is the platform home. Never present the platform as only a café/restaurant POS; hospitality wording belongs in hospitality features. See [docs/app-boundaries.md](docs/app-boundaries.md).
 
 How the user names things in prompts — full version in the "Prompt vocabulary" section of
 CLAUDE.md. Don't assume the everyday English sense:
 
 - **Platform** = this whole repo / product. Not `src/app/platform/**` (that's the
   super-admin console) unless they also say super-admin / platform console.
-- **App** = a dashboard app from `src/lib/apps.ts` (accounting, growth, CRM, sales,
-  operations, website, WP manager, …). Not the Next.js app, not the Electron desktop
-  app, not the WordPress plugin. The AI assistant is not an app.
+- **App** = one of the four registry keys in `src/lib/apps.ts`: `accounting`, `growth`, `crm`, `website`. Sales/POS and operations belong inside Accounting; settings, connections and AI are shared platform surfaces. The Next.js application, Electron desktop client, WordPress plugin and the two website managers are not extra platform apps.
 - **Section** = a menu item / page **inside** an app (loyalty inside Growth; products
   inside the WP manager; deals inside CRM) — never the app itself. When the user says
   "section" they mean those **items in apps**. App availability / enable-and-disable in
@@ -45,7 +43,7 @@ CLAUDE.md. Don't assume the everyday English sense:
   follows its owning app's state. Don't add a per-section enable/disable table.
 - **AI assistant** = the platform's main page: `/dashboard` (workspace on) and
   `/dashboard/ai`. Not MCP, coworker jobs, or autopilot unless those are named.
-- **Website management** = **both** website systems inside the single `website` app: Eshobe CMS (`/dashboard/website/cms`) and WP / Woo management (`/dashboard/website/wp`). They are peer managers behind one app door; never fold one into the other, and don't default “website management” to only the CMS.
+- **Website management** = **both** website systems inside the single `website` app: Eshobe CMS (`/websites/cms`) and WP / Woo management (`/websites/wp`). They are peer managers behind one app door; never fold one into the other, and don't default “website management” to only the CMS.
 
 ## Accounting is the primary workspace
 
