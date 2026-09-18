@@ -108,10 +108,24 @@ export function AppSettingsPanel({
                 <span className="min-w-0">
                   <span className="flex items-center gap-1 font-semibold text-foreground">
                     {link.label}
+                    {/*
+                      «می‌رود به جایی بیرون از این برنامه». Rotated a quarter
+                      turn *anticlockwise* in RTL so ↗ becomes ↖ — the inline
+                      end is the left here. `rtl:rotate-90` turned it into ↘,
+                      an arrow pointing down into the card it labels.
+                    */}
                     <ArrowUpRightIcon
                       aria-hidden="true"
-                      className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-90"
+                      className="size-3.5 shrink-0 text-muted-foreground rtl:-rotate-90"
                     />
+                    {/*
+                      The glyph is the only thing marking these links as
+                      leaving the app, and it is decorative — so the fact was
+                      invisible to a screen reader. The card's description says
+                      «تنظیمات پلتفرم» in prose, but not every one of them
+                      does, and this is the one promise the component makes.
+                    */}
+                    <span className="sr-only">(در تنظیمات پلتفرم باز می‌شود)</span>
                   </span>
                   <span className="mt-1 block text-sm leading-6 text-muted-foreground">
                     {link.description}

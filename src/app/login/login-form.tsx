@@ -12,6 +12,7 @@ import { PinPad } from "@/components/auth/pin-pad";
 import { PhoneOtpStep, type PhoneOtpSendSpec } from "@/components/auth/phone-otp-step";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
+import { readDeviceToken } from "@/lib/device-token";
 import {
   lockoutMessage,
   retryAfterMs,
@@ -113,21 +114,10 @@ const MAX_ROSTER_RETRIES = 2;
 
 /**
  * Phase 20 Wave 4 — this terminal's paired-device token, if an owner/manager
- * ever registered it from Settings → دستگاه‌های ثبت‌شده
- * (src/app/dashboard/settings/device-settings.tsx, same localStorage key).
- * Absent on every terminal that was never paired — those keep exactly Wave
- * 3's unnarrowed behaviour, since every call below treats a missing/invalid
- * token as "no device" rather than an error.
+ * registered it from Settings → دستگاه‌های ثبت‌شده. `readDeviceToken` is
+ * shared with that Settings screen and the self-service biometric panel, so
+ * every browser path reads the same optional local identity.
  */
-const DEVICE_TOKEN_KEY = "pos:deviceToken";
-
-function readDeviceToken(): string | null {
-  try {
-    return window.localStorage.getItem(DEVICE_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
 
 function readRecents(): string[] {
   try {

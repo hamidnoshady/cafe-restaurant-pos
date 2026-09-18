@@ -3,9 +3,9 @@
  *
  * A customer's balance, statement, and aging are all reconstructed from the
  * same source: every journal line ever posted to the Accounts Receivable
- * account, attributed to a customer via the order (source_type='order') or
- * receipt (source_type='ar_receipt') that caused it. This is the same
- * "compute from the ledger, never a shadow copy" discipline the financial
+ * account, attributed to a customer via the order (source_type='order'),
+ * receipt (source_type='ar_receipt'), or received cheque (source_type='cheque')
+ * that caused it. This is the same "compute from the ledger, never a shadow copy" discipline the financial
  * statements use (reports-service.ts), so a customer's balance always agrees
  * with the control account to the Rial by construction rather than by care.
  *
@@ -19,7 +19,8 @@ import { isUuid } from "./uuid";
 import { PARTY_ROLE_STORAGE } from "./parties";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
-import { ageOpenItems, summarizeAging, UNKNOWN_CUSTOMER_KEY, type AgingSummary } from "./aging";
+import { ageOpenItems, summarizeAging, unappliedCredit, UNKNOWN_CUSTOMER_KEY, type AgingSummary } from "./aging";
+import { toPersianDigits } from "./digits";
 import { enqueueHolooReceiptForArReceipt } from "./integrations/holoo/outbox-producer";
 
 export { MissingLedgerAccountError };
@@ -33,6 +34,15 @@ export class ArError extends Error {
     super(code);
     this.status = status;
   }
+}
+
+/**
+ * An actual calendar date in ISO form. The regex alone passes «2025-13-45»,
+ * which `Date.parse` then reads as NaN — and every age bucket computed from a
+ * NaN «today» falls through to «بیش از ۹۰ روز» without failing the request.
+ */
+function isIsoDateOnly(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 }
 
 async function arAccountId(businessId: string): Promise<string | null> {
@@ -66,7 +76,8 @@ async function arLines(businessId: string, accountId: string): Promise<ArLineRow
        LEFT JOIN order_amendments am ON je.source_type = 'order_amendment' AND am.id = je.source_id
        LEFT JOIN orders o ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
        LEFT JOIN ar_receipts r ON je.source_type = 'ar_receipt' AND r.id = je.source_id
-       LEFT JOIN parties c ON c.id = COALESCE(o.customer_id, r.customer_id)
+       LEFT JOIN cheques ch ON je.source_type = 'cheque' AND ch.id = je.source_id
+       LEFT JOIN parties c ON c.id = COALESCE(o.customer_id, r.customer_id, ch.customer_id)
       WHERE je.business_id = $1 AND jl.account_id = $2
       ORDER BY je.entry_date, je.posted_at`,
     [businessId, accountId],
@@ -100,7 +111,7 @@ export async function listCustomerDirectory(businessId: string): Promise<Custome
     // not be offered as a fresh counterparty (crm merge, migration 0118).
     `SELECT id, name, phone
        FROM parties
-      WHERE business_id = $1 AND role = $2 AND is_active AND merged_into_id IS NULL
+      WHERE business_id = $1 AND roles @> ARRAY[$2]::text[] AND is_active AND merged_into_id IS NULL
       ORDER BY name`,
     [businessId, PARTY_ROLE_STORAGE.Customer],
   );
@@ -160,7 +171,8 @@ export async function getCustomerArBalance(businessId: string, customerId: strin
        LEFT JOIN order_amendments am ON je.source_type = 'order_amendment' AND am.id = je.source_id
        LEFT JOIN orders o ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
        LEFT JOIN ar_receipts r ON je.source_type = 'ar_receipt' AND r.id = je.source_id
-      WHERE je.business_id = $1 AND jl.account_id = $2 AND COALESCE(o.customer_id, r.customer_id) = $3`,
+       LEFT JOIN cheques ch ON je.source_type = 'cheque' AND ch.id = je.source_id
+      WHERE je.business_id = $1 AND jl.account_id = $2 AND COALESCE(o.customer_id, r.customer_id, ch.customer_id) = $3`,
     [businessId, accountId, customerId],
   );
   return { balance: Number(rows[0]?.debit ?? 0) - Number(rows[0]?.credit ?? 0), hasLedger: true };
@@ -198,7 +210,10 @@ export async function getCustomerStatement(businessId: string, customerId: strin
           : "other";
     const description =
       type === "invoice" && l.order_number != null
-        ? `سفارش #${l.order_number}`
+        ? // The UI is Persian-first; a Latin «#1002» in the middle of an RTL
+          // statement reads as a data glitch next to every Persian-digit
+          // amount and date around it.
+          `سفارش #${toPersianDigits(String(l.order_number))}`
         : (l.memo ?? (type === "receipt" ? "دریافت وجه" : "سند دستی"));
     return { date: l.entry_date, type, description, debit, credit, balance };
   });
@@ -227,6 +242,7 @@ export interface AgingReport {
  * question the branch's own calendar does.
  */
 export async function getArAging(businessId: string, asOfDate?: string): Promise<AgingReport> {
+  if (asOfDate !== undefined && !isIsoDateOnly(asOfDate)) throw new ArError("invalid_date");
   const effectiveAsOf = asOfDate ?? (await businessToday(businessId));
   const accountId = await arAccountId(businessId);
   if (!accountId) return { asOfDate: effectiveAsOf, rows: [], totals: { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 } };
@@ -249,6 +265,18 @@ export async function getArAging(businessId: string, asOfDate?: string): Promise
   for (const [customerId, { name, invoices, receipts }] of byCustomer) {
     const aged = ageOpenItems(invoices, receipts, effectiveAsOf);
     const summary = summarizeAging(aged);
+    /*
+     * An advance or overpayment has no open invoice to age, so `summarizeAging`
+     * alone drops it — and then the column of the screen's own «مانده حساب‌ها»
+     * tab (and the A/R control account) says one number while this report's
+     * «جمع» says another. Carry the unapplied credit as a *negative* current
+     * amount, the way a running-balance subledger does, so each row's «جمع»
+     * is exactly the customer's net balance and the report's «جمع کل» is
+     * exactly the control account.
+     */
+    const credit = unappliedCredit(invoices, receipts);
+    summary.current -= credit;
+    summary.total -= credit;
     if (summary.total === 0) continue;
     rows.push({ customerId, customerName: name, ...summary });
     totals.current += summary.current;
@@ -294,6 +322,22 @@ export async function receivePayment(params: {
   // A non-uuid customer id cannot match a row, and asking Postgres anyway
   // raises a syntax error rather than returning none — see `isUuid`.
   if (!isUuid(params.customerId)) throw new ArError("customer_not_found", 404);
+  // Same story for a date off the wire: reject it here, in the error
+  // vocabulary the API answers with, rather than as Postgres's parse error.
+  if (params.receiptDate != null && !isIsoDateOnly(params.receiptDate)) throw new ArError("invalid_date");
+
+  /*
+   * «امروز» here is the business's own date, not the database server's.
+   * `CURRENT_DATE` (what the insert used to fall back to) is the date in the
+   * server's timezone — UTC in the Docker image — so a receipt taken during
+   * the first 3½ hours of a Tehran day, or anywhere in a café's post-midnight
+   * late shift, was filed under the wrong day: the aging report (which counts
+   * in `businessToday`) aged it a day early, and a late-shift receipt could
+   * land inside a fiscal period the business had already closed. The same
+   * discipline `installments-service` documents: today is `businessToday`,
+   * never a UTC date slice.
+   */
+  const receiptDate = params.receiptDate ?? (await businessToday(params.businessId));
 
   const client = await getPool().connect();
   try {
@@ -327,7 +371,7 @@ export async function receivePayment(params: {
         params.businessId,
         params.locationId,
         params.customerId,
-        params.receiptDate ?? null,
+        receiptDate,
         params.method,
         params.amount,
         params.memo?.trim() || null,

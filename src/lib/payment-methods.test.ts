@@ -4,8 +4,10 @@ import {
   CUSTOM_PAYMENT_SETTLEMENTS,
   builtinPaymentMethodsFor,
   changeDue,
+  isExactPaymentMethodOrder,
   ledgerSettlementFor,
   paymentMethodCodeFor,
+  platformCommissionBase,
   remainingAfterTenders,
   sortPaymentMethods,
   tenderTotal,
@@ -51,6 +53,20 @@ describe("sortPaymentMethods", () => {
     const input = [{ sortOrder: 2, name: "ب" }, { sortOrder: 1, name: "الف" }];
     sortPaymentMethods(input);
     expect(input.map((m) => m.name)).toEqual(["ب", "الف"]);
+  });
+});
+
+describe("isExactPaymentMethodOrder", () => {
+  const current = ["cash-id", "card-id", "online-id"];
+
+  it("accepts every current id exactly once in any order", () => {
+    expect(isExactPaymentMethodOrder(current, ["online-id", "cash-id", "card-id"])).toBe(true);
+  });
+
+  it("rejects subsets, duplicates, and foreign ids", () => {
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id"])).toBe(false);
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "cash-id", "online-id"])).toBe(false);
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id", "foreign-id"])).toBe(false);
   });
 });
 
@@ -111,6 +127,17 @@ describe("validatePaymentMethodInput", () => {
     expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: false })).toEqual({
       ok: true,
       value: { name: "تنخواه", settlement: "cash", opensDrawer: false, requiresReference: false },
+    });
+  });
+
+  it("rejects truthy strings instead of silently treating them as enabled", () => {
+    expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: "false" })).toEqual({
+      ok: false,
+      error: "bad_request",
+    });
+    expect(validatePaymentMethodInput({ name: "پوز", settlement: "card", requiresReference: 1 })).toEqual({
+      ok: false,
+      error: "bad_request",
     });
   });
 });
@@ -327,6 +354,26 @@ describe("tipTenderIndex / tendersWithTip", () => {
     expect(tenders[0].amount).toBe(2_000_000);
     expect(tipTenderIndex([])).toBe(-1);
     expect(tendersWithTip([], 500_000)).toEqual([]);
+  });
+});
+
+describe("platformCommissionBase", () => {
+  it("uses only the SnapFood bill slice, excluding cash and the separately stored tip", () => {
+    expect(
+      platformCommissionBase([
+        { settlement: "snappfood", amount: 800_000 },
+        { settlement: "cash", amount: 200_000 },
+      ]),
+    ).toBe(800_000);
+  });
+
+  it("keeps the bill slice correct regardless of tender order", () => {
+    expect(
+      platformCommissionBase([
+        { settlement: "cash", amount: 100_000 },
+        { settlement: "snappfood", amount: 800_000 },
+      ]),
+    ).toBe(800_000);
   });
 });
 

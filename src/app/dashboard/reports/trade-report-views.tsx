@@ -489,7 +489,12 @@ export function RepairsView({ report }: { report: RepairsReport }) {
         rows={rows}
         rowKey={(row) => row.ticketId}
         empty={<EmptyState>تیکتی ثبت نشده است.</EmptyState>}
-        cardTitle={(row) => `تیکت ${formatPersianNumber(row.ticketNumber)} — ${row.itemDescription}`}
+        cardTitle={(row) => (
+          <span className="flex flex-wrap items-center gap-2">
+            {`تیکت ${formatPersianNumber(row.ticketNumber)} — ${row.itemDescription}`}
+            {row.underWarranty ? <StatusBadge tone="positive">گارانتی</StatusBadge> : null}
+          </span>
+        )}
         columns={[
           {
             key: "ticket",

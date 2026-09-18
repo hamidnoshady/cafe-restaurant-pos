@@ -56,11 +56,14 @@ export const COMMON_BRANCH_TIMEZONES: readonly string[] = [
   "Asia/Baghdad",
   "Asia/Qatar",
   "Asia/Kuwait",
-  "Asia/Istanbul",
+  // Istanbul appears once: `Europe/Istanbul` is the canonical IANA zone and
+  // `Asia/Istanbul` merely links to it, so listing both put two identical
+  // «استانبول» rows in the picker. A branch already stored with the alias
+  // keeps it — timezoneOptions folds the current zone back into the list.
+  "Europe/Istanbul",
   "Asia/Yerevan",
   "Asia/Baku",
   "Asia/Kabul",
-  "Europe/Istanbul",
   "Europe/Berlin",
   "Europe/London",
   "UTC",

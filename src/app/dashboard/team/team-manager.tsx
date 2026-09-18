@@ -175,7 +175,11 @@ export function TeamManager({
     } else {
       setError(errorMessage((membersRes.data as { error?: string }).error));
     }
-    if (invitesRes.ok) setInvitations(invitesRes.data.invitations);
+    if (invitesRes.ok) {
+      setInvitations(invitesRes.data.invitations);
+    } else if (membersRes.ok) {
+      setError(errorMessage((invitesRes.data as { error?: string }).error));
+    }
     setLoading(false);
   }, []);
 
@@ -200,6 +204,7 @@ export function TeamManager({
   );
 
   if (loading) return <LoadingSkeleton rows={3} />;
+  const isOwner = role === "owner";
 
   return (
     <div className="space-y-6">
@@ -215,8 +220,11 @@ export function TeamManager({
         description="اعضای کسب‌وکار، نقش‌ها و سطوح دسترسی آن‌ها را در سامانه مدیریت کنید."
       >
         <div className="space-y-3">
+          {members.length === 0 ? (
+            <InfoBox>هنوز عضوی برای این کسب‌وکار ثبت نشده است.</InfoBox>
+          ) : null}
           {members.map((member) => (
-            <div key={member.id} className="rounded-xl border border-border/80 p-4 transition-colors hover:bg-stone-50/70 dark:hover:bg-muted/50">
+            <div key={member.id} className="rounded-xl border border-border/80 p-3 sm:p-4 transition-colors hover:bg-stone-50/70 dark:hover:bg-muted/50">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-semibold text-foreground">
@@ -255,25 +263,26 @@ export function TeamManager({
                     )}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <SecondaryButton onClick={() => setEditing(member)}>ویرایش</SecondaryButton>
-                  <SecondaryButton onClick={() => setPhoneEditing(member)}>
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+                  {(isOwner || member.role !== "owner") ? <SecondaryButton onClick={() => setEditing(member)}>ویرایش</SecondaryButton> : null}
+                  {(isOwner || member.role !== "owner") ? <SecondaryButton onClick={() => setPhoneEditing(member)}>
                     شمارهٔ موبایل
-                  </SecondaryButton>
-                  <SecondaryButton onClick={() => setCredentialsEditing(member)}>
+                  </SecondaryButton> : null}
+                  {(isOwner || member.role !== "owner") ? <SecondaryButton onClick={() => setCredentialsEditing(member)}>
                     رمز ورود
-                  </SecondaryButton>
-                  <SecondaryButton
-                    onClick={() =>
-                      mutate(`/api/team/${member.id}`, {
+                  </SecondaryButton> : null}
+                  {(isOwner || member.role !== "owner") ? <SecondaryButton
+                    onClick={() => {
+                      if (member.isActive && !confirm(`حساب «${member.fullName}» تعلیق شود؟ دسترسی او بلافاصله قطع خواهد شد.`)) return;
+                      void mutate(`/api/team/${member.id}`, {
                         method: "PATCH",
                         body: JSON.stringify({ isActive: !member.isActive }),
-                      })
-                    }
+                      });
+                    }}
                   >
                     {member.isActive ? "تعلیق" : "فعال‌سازی"}
-                  </SecondaryButton>
-                  <SecondaryButton
+                  </SecondaryButton> : null}
+                  {(isOwner || member.role !== "owner") ? <SecondaryButton
                     onClick={() => {
                       if (!confirm(`«${member.fullName}» از این کسب‌وکار حذف شود؟`)) return;
                       void mutate(`/api/team/${member.id}`, { method: "DELETE" });
@@ -281,7 +290,7 @@ export function TeamManager({
                     className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     حذف
-                  </SecondaryButton>
+                  </SecondaryButton> : null}
                 </div>
               </div>
             </div>
@@ -293,6 +302,7 @@ export function TeamManager({
         <MemberEditorDialog
           member={editing}
           locations={locations}
+          canManageOwners={isOwner}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -320,7 +330,7 @@ export function TeamManager({
         />
       ) : null}
 
-      <InviteSection invitations={invitations} onChanged={load} onError={setError} />
+      <InviteSection invitations={invitations} canManageOwners={isOwner} onChanged={load} onError={setError} />
       <AddStaffSection onChanged={load} onError={setError} />
 
       {/*
@@ -353,11 +363,13 @@ export function TeamManager({
 function MemberEditorDialog({
   member,
   locations,
+  canManageOwners,
   onClose,
   onSaved,
 }: {
   member: Member;
   locations: TeamLocation[];
+  canManageOwners: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -445,7 +457,7 @@ function MemberEditorDialog({
             <SearchableSelect
               value={role}
               onChange={changeRole}
-              options={ROLE_OPTIONS}
+              options={canManageOwners ? ROLE_OPTIONS : ROLE_OPTIONS.filter((option) => option.value !== "owner")}
             />
           </Field>
         </div>
@@ -454,7 +466,7 @@ function MemberEditorDialog({
           {locations.length === 0 ? (
             <p className="text-xs text-muted-foreground">شعبه‌ای ثبت نشده است.</p>
           ) : (
-            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {locations.map((location) => (
                 <label key={location.id} className="flex items-center gap-2 text-sm">
                   <Checkbox
@@ -490,7 +502,7 @@ function MemberEditorDialog({
           <InfoBox>مالک به همهٔ بخش‌ها دسترسی دارد و دسترسی‌هایش قابل محدود کردن نیست.</InfoBox>
         ) : (
           <Field label="دسترسی‌ها" hint="تیک‌ها نسبت به نقش پایه خوانده می‌شوند: برداشتن تیکِ پیش‌فرض یعنی گرفتن آن دسترسی، و تیکِ اضافه یعنی اعطای آن.">
-            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)).map((permission: Permission) => (
                 <label key={permission} className="flex items-center gap-2 text-sm">
                   <input
@@ -725,10 +737,12 @@ function CredentialsEditorDialog({
 
 function InviteSection({
   invitations,
+  canManageOwners,
   onChanged,
   onError,
 }: {
   invitations: Invitation[];
+  canManageOwners: boolean;
   onChanged: () => Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -776,6 +790,8 @@ function InviteSection({
             className={inputClass}
             dir="ltr"
             value={email}
+            type="email"
+            autoComplete="email"
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
@@ -783,7 +799,7 @@ function InviteSection({
           <SearchableSelect
             value={role}
             onChange={setRole}
-            options={INVITABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
+            options={INVITABLE_ROLES.filter((r) => canManageOwners || r !== "owner").map((r) => ({ value: r, label: roleLabel(r) }))}
           />
         </Field>
       </div>
@@ -797,7 +813,10 @@ function InviteSection({
         <div className="mt-4">
           <InfoBox>
             این لینک فقط همین یک‌بار نمایش داده می‌شود. آن را برای همکارتان بفرستید:
-            <input className={`${inputClass} mt-2`} dir="ltr" readOnly value={link} />
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              <input className={`${inputClass} min-w-0 flex-1`} aria-label="لینک دعوت" dir="ltr" readOnly value={link} onFocus={(event) => event.currentTarget.select()} />
+              <SecondaryButton onClick={() => void navigator.clipboard.writeText(link)}>کپی لینک</SecondaryButton>
+            </div>
           </InfoBox>
         </div>
       )}
@@ -818,7 +837,11 @@ function InviteSection({
               {invitation.status === "pending" && (
                 <SecondaryButton
                   onClick={async () => {
-                    await api(`/api/team/invitations/${invitation.id}`, { method: "DELETE" });
+                    const result = await api<{ error?: string }>(`/api/team/invitations/${invitation.id}`, { method: "DELETE" });
+                    if (!result.ok) {
+                      onError(errorMessage(result.data.error));
+                      return;
+                    }
                     await onChanged();
                   }}
                 >

@@ -31,8 +31,27 @@ export function computeSuggestedPrice({
   overheadRatePercent,
   marginPercent,
 }: SuggestedPriceInput): SuggestedPriceResult {
-  const loadedCost = Math.round(materialCost * (1 + (overheadRatePercent ?? 0) / 100));
-  if (marginPercent == null) return { loadedCost, suggestedPrice: null };
+  // The API and database constrain these values, but this pure function is also
+  // called by reports and may see restored legacy settings. Invalid overhead
+  // must never turn the JSON response into NaN/Infinity or reduce loaded cost
+  // below the recipe's material cost.
+  const overhead =
+    overheadRatePercent != null && Number.isFinite(overheadRatePercent) && overheadRatePercent >= 0
+      ? overheadRatePercent
+      : 0;
+  const loadedCost = Math.round(materialCost * (1 + overhead / 100));
+  if (
+    marginPercent == null ||
+    !Number.isFinite(marginPercent) ||
+    marginPercent < 0 ||
+    marginPercent >= 100
+  ) {
+    return { loadedCost, suggestedPrice: null };
+  }
   const raw = loadedCost / (1 - marginPercent / 100);
-  return { loadedCost, suggestedPrice: Math.round(raw / 10) * 10 };
+  const suggestedPrice = Math.round(raw / 10) * 10;
+  return {
+    loadedCost,
+    suggestedPrice: Number.isFinite(suggestedPrice) ? suggestedPrice : null,
+  };
 }

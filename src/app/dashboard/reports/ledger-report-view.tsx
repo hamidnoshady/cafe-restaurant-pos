@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { useMoney } from "@/components/money/money-context";
-import { formatPersianNumber } from "@/lib/digits";
+import { formatPersianNumber, formatPersianNumericText } from "@/lib/digits";
 import { isNonCurrentCode } from "@/lib/coa-template";
 import { DrillDownPanel, type DrillDownTarget } from "./drill-down-panel";
 
@@ -336,8 +336,11 @@ function SummaryStat({
 
 function formatPct(value: number | null): string {
   if (value === null) return "—";
-  const digits = (value * 100).toFixed(1);
-  return `${digits.replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)])}٪`;
+  // Same Persian presentation the rest of the app uses (digits.ts): Persian
+  // digits, «٫» for the decimal separator, no dangling «٫۰».
+  const fixed = (value * 100).toFixed(1);
+  const trimmed = fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed;
+  return `${formatPersianNumericText(trimmed)}٪`;
 }
 
 /**

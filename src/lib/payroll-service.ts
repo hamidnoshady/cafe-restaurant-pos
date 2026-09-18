@@ -15,6 +15,8 @@
  */
 import { getPool, query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
+import { normalizeOptionalIsoDate } from "./iso-date";
+import { isUuid } from "./uuid";
 import {
   accountIdsByCode,
   MissingLedgerAccountError,
@@ -31,6 +33,9 @@ export class PayrollError extends Error {
     this.status = status;
   }
 }
+
+/** The longest «دوره» heading a run may carry — a label, not a document. */
+export const PERIOD_LABEL_MAX = 120;
 
 export interface StaffWage {
   id: string;
@@ -54,7 +59,11 @@ export async function listStaffWages(businessId: string): Promise<StaffWage[]> {
 }
 
 export async function setWage(businessId: string, userId: string, monthlyWage: number | null): Promise<void> {
-  if (monthlyWage !== null && (!Number.isSafeInteger(monthlyWage) || monthlyWage < 0)) {
+  // `users.id` is a uuid: `WHERE id = $1` against a non-uuid raises
+  // `invalid input syntax for type uuid` rather than matching no row — a 500
+  // and «خطای غیرمنتظره» where an honest 404 belongs. See `isUuid`.
+  if (!isUuid(userId)) throw new PayrollError("user_not_found", 404);
+  if (monthlyWage !== null && (typeof monthlyWage !== "number" || !Number.isSafeInteger(monthlyWage) || monthlyWage < 0)) {
     throw new PayrollError("invalid_amount");
   }
   const { rowCount } = await query(
@@ -172,13 +181,19 @@ export async function accruePayroll(params: {
 }): Promise<PayrollRun> {
   const periodLabel = params.periodLabel.trim();
   if (!periodLabel) throw new PayrollError("period_label_required");
+  // A period label is a heading somebody reads in the run list and in the
+  // journal memo; an unbounded one is a 100 kB row and an unreadable list.
+  if (periodLabel.length > PERIOD_LABEL_MAX) throw new PayrollError("period_label_too_long");
 
   // Normalise the date once, up front: the run row and its journal entry must
   // share the same value. Passing the raw `accrualDate` to the entry while the
   // row got the trimmed one desynced the two, and an empty-string date reached
   // the entry's `COALESCE($3::date, CURRENT_DATE)` as a cast error rather than
-  // "today".
-  const accrualDate = params.accrualDate?.trim() || null;
+  // "today". A malformed one («banana», `2026-02-31`) used to reach that same
+  // cast and surface as a 500 — it is a 400 with its own code now.
+  const normalizedAccrual = normalizeOptionalIsoDate(params.accrualDate);
+  if (!normalizedAccrual.ok) throw new PayrollError("invalid_accrual_date");
+  const accrualDate = normalizedAccrual.value;
 
   const client = await getPool().connect();
   let runId = "";
@@ -247,24 +262,41 @@ export async function payPayroll(params: {
   paidDate?: string | null;
   actorId: string | null;
 }): Promise<PayrollRun> {
-  const { rows } = await query<{ id: string; status: string; total_amount: string; period_label: string }>(
-    `SELECT id, status, total_amount::text AS total_amount, period_label FROM payroll_runs WHERE id = $1 AND business_id = $2`,
-    [params.runId, params.businessId],
-  );
-  const run = rows[0];
-  if (!run) throw new PayrollError("run_not_found", 404);
-  // A voided run reads as "already handled" too, but say so precisely rather
-  // than reporting «قبلاً پرداخت شده» for a run that was actually cancelled.
-  if (run.status === "voided") throw new PayrollError("run_voided", 409);
-  if (run.status !== "accrued") throw new PayrollError("already_paid", 409);
+  if (!isUuid(params.runId)) throw new PayrollError("run_not_found", 404);
 
   // Same date-desync fix as accruePayroll: the payment entry and the run's
-  // paid_date must share one normalised value.
-  const paidDate = params.paidDate?.trim() || null;
+  // paid_date must share one normalised value, and a malformed date is a 400
+  // here rather than a `date` cast error surfacing as a 500.
+  const normalizedPaid = normalizeOptionalIsoDate(params.paidDate);
+  if (!normalizedPaid.ok) throw new PayrollError("invalid_paid_date");
+  const paidDate = normalizedPaid.value;
 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+
+    /*
+     * Read the run *inside* the transaction and lock the row.
+     *
+     * The status check used to run on an unlocked read before the transaction
+     * opened, so two concurrent «ثبت پرداخت حقوق» clicks (a double-click, or
+     * the same run open in two tabs) both saw `accrued` and both posted a
+     * payment entry: the wage bill left Cash twice and salariesPayable went
+     * negative, with nothing in the UI to show it had happened. `FOR UPDATE`
+     * makes the second one wait for the first to commit, then see `paid` and
+     * be refused.
+     */
+    const { rows } = await client.query<{ id: string; status: string; total_amount: string; period_label: string }>(
+      `SELECT id, status, total_amount::text AS total_amount, period_label
+         FROM payroll_runs WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [params.runId, params.businessId],
+    );
+    const run = rows[0];
+    if (!run) throw new PayrollError("run_not_found", 404);
+    // A voided run reads as "already handled" too, but say so precisely rather
+    // than reporting «قبلاً پرداخت شده» for a run that was actually cancelled.
+    if (run.status === "voided") throw new PayrollError("run_voided", 409);
+    if (run.status !== "accrued") throw new PayrollError("already_paid", 409);
 
     const accounts = await accountIdsByCode(client, params.businessId, [
       WELL_KNOWN_CODES.salariesPayable,
@@ -303,7 +335,7 @@ export async function payPayroll(params: {
     client.release();
   }
 
-  return getRun(params.businessId, run.id);
+  return getRun(params.businessId, params.runId);
 }
 
 /**
@@ -328,17 +360,22 @@ export async function voidPayrollRun(params: {
   runId: string;
   actorId: string | null;
 }): Promise<PayrollRun> {
-  const { rows } = await query<{ id: string; status: PayrollRunStatus; period_label: string }>(
-    `SELECT id, status, period_label FROM payroll_runs WHERE id = $1 AND business_id = $2`,
-    [params.runId, params.businessId],
-  );
-  const run = rows[0];
-  if (!run) throw new PayrollError("run_not_found", 404);
-  if (run.status === "voided") throw new PayrollError("already_voided", 409);
+  if (!isUuid(params.runId)) throw new PayrollError("run_not_found", 404);
 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+
+    // Locked inside the transaction, for the same reason `payPayroll` locks:
+    // two concurrent «ابطال» clicks both read `accrued` on an unlocked check
+    // and both mirrored the run's entries, double-reversing it.
+    const { rows } = await client.query<{ id: string; status: PayrollRunStatus; period_label: string }>(
+      `SELECT id, status, period_label FROM payroll_runs WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [params.runId, params.businessId],
+    );
+    const run = rows[0];
+    if (!run) throw new PayrollError("run_not_found", 404);
+    if (run.status === "voided") throw new PayrollError("already_voided", 409);
 
     // Every posting this run made, still standing (not already reversed), newest
     // first — the payment, then the accrual — so the credits are put back before

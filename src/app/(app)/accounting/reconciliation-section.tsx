@@ -1,162 +1,115 @@
 "use client";
 
 /**
- * «تطبیق بانکی و صندوق» — matching an account's book postings against the
- * statement the bank (or the till count) says is true.
+ * «تطبیق بانکی و صندوق» — reconcile one settlement account against a statement.
  *
- * The screen answers one question in one place: *does what we recorded agree
- * with what the account actually holds, and if not, which items are missing?*
- * Everything here follows from that.
+ * The work this screen supports: a person holds a bank statement (or has
+ * counted the till), enters its closing balance, ticks the ledger lines the
+ * statement also shows, and locks the period once the two agree exactly. What
+ * is left unticked carries forward on its own — it is simply still unclaimed
+ * next time (`reconciliation-service.ts`).
  *
- * What the redesign fixed, each of which was a real failure of the old screen:
+ * The arithmetic is *not* restated here: `bank-reconciliation.ts` owns the sign
+ * of a line and the definition of «مغایرت», and both this screen and the
+ * service import it. That is what lets the running total update the instant a
+ * box is ticked while still matching, to the rial, the number the server will
+ * refuse to lock on.
  *
- *  - **The account picker was a three-column grid that never wrapped**
- *    (`grid-cols-3` with `min-w-full` on a phone): three Persian labels in
- *    three ~100px columns, each clipped mid-word. It is a wrapping row of
- *    pills now, each carrying its own ledger code instead of hiding it in a
- *    `title=` that no touch device will ever show.
- *  - **The date and the balance said what they were, never what they meant.**
- *    The form now shows the account's opening balance, its last statement date
- *    and how many items are waiting — so the two fields are filled in with
- *    knowledge rather than guessed at.
- *  - **The line list had no search, no filter and no totals.** A busy صندوق
- *    carries a year of order postings; the only tool for finding the one
- *    ۲٬۴۰۰٬۰۰۰ item on a statement was the scrollbar.
- *  - **Ticking a line re-fetched the entire reconciliation** and rebuilt the
- *    list from scratch, so every click cost a round trip and the checkbox lagged
- *    behind the finger. Toggling is optimistic now and reconciles against the
- *    server's answer; «انتخاب همه» is one request, not three hundred.
- *  - **The mobile card wrapped the whole row in a `<label>`** containing the
- *    checkbox, so tapping anywhere — including the amounts you were reading —
- *    silently toggled the line.
- *  - **«تکمیل و قفل کردن» was disabled with no explanation.** It says what is
- *    still out by how much, and the difference card says which direction.
- *  - **A reconciliation started with a wrong date or balance was permanent.**
- *    It can never balance, a completed one is immutable and only one may be in
- *    progress per account — so the account's screen was stuck for good. There
- *    is a «لغو تطبیق» now, behind a confirmation.
- *  - **The history was two facts in a flat list.** It carries status, item
- *    count and completion date, and it is a real table on a desktop.
+ * What a reconciliation screen owes its reader, and what this one now does:
+ *
+ *  - **Say which way the مغایرت points.** A bare «۱۲٬۰۰۰ تومان» does not say
+ *    whether the bank is ahead or the books are. The read-out names it
+ *    («کسری در دفاتر» / «اضافه در دفاتر») so the next step is obvious.
+ *  - **Never lose a tick to a round-trip.** Every tick used to re-fetch the
+ *    whole reconciliation, so on a slow connection the box stayed unticked and
+ *    the totals lagged. Ticks are applied optimistically and rolled back with
+ *    a message when the server disagrees.
+ *  - **Only ever ask for one thing at a time.** «تکمیل و قفل» is disabled until
+ *    the difference is zero, and says *why* it is disabled rather than sitting
+ *    there greyed and mute.
+ *  - **Be usable on a phone.** The table is a real table on a wide screen and
+ *    real cards on a narrow one; the account switch scrolls instead of
+ *    crushing three labels into a 320px row; every tap target clears 44px.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertTriangleIcon,
-  BanknoteIcon,
-  CheckCircle2Icon,
-  CreditCardIcon,
-  LandmarkIcon,
-  ListChecksIcon,
-  RefreshCwIcon,
-  SearchIcon,
-  TrashIcon,
-  WalletIcon,
-  XIcon,
-} from "lucide-react";
-
-import { cardClass, EmptyState, LoadingSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
-import { api, ErrorBox, errorMessage, inputClass } from "@/app/dashboard/ui";
-import { useMoney } from "@/components/money/money-context";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BanknoteIcon, CreditCardIcon, LandmarkIcon, LockIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
+import { useMoney } from "@/components/money/money-context";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 import {
-  filterReconciliationLines,
-  reconciliationBalances,
-  RECONCILABLE_ACCOUNT_META,
-  RECONCILABLE_ACCOUNTS,
-  type ReconcilableAccount,
-  type ReconciliationLine,
-  type ReconciliationLineFilter,
-} from "@/lib/reconciliation";
+  api,
+  ErrorBox,
+  errorMessage,
+  inputClass,
+  PrimaryButton,
+  SecondaryButton,
+} from "@/app/dashboard/ui";
+import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
+import {
+  cardClass,
+  EmptyState,
+  LoadingSkeleton,
+  StatusBadge,
+} from "@/app/dashboard/page-chrome";
+import { reconciliationTotals } from "@/lib/bank-reconciliation";
 
-// ---------------------------------------------------------------------------
-// Types & constants
-// ---------------------------------------------------------------------------
+type AccountCode = "cash" | "bank" | "bankClearing";
+
+/**
+ * The three settlement accounts, matching `RECONCILABLE_ACCOUNTS` in
+ * reconciliation-service.ts. بانک is here because a cheque clears *into the
+ * bank* (Phase 30) — a business taking cheques had movements on ۱۱۱۰ and no
+ * way to reconcile the account this very screen is named after.
+ */
+const ACCOUNTS: { code: AccountCode; label: string; hint: string; icon: typeof BanknoteIcon }[] = [
+  { code: "cash", label: "صندوق (نقدی)", hint: "حساب ۱۱۰۰", icon: BanknoteIcon },
+  { code: "bank", label: "بانک", hint: "حساب ۱۱۱۰ — وصول چک و انتقال بانکی", icon: LandmarkIcon },
+  { code: "bankClearing", label: "کارت‌خوان (در راه)", hint: "حساب ۱۱۲۰", icon: CreditCardIcon },
+];
 
 interface ReconciliationSummary {
   id: string;
-  accountCode: ReconcilableAccount;
-  accountLabel: string;
+  accountCode: AccountCode;
   statementDate: string;
   statementBalance: number;
   status: "in_progress" | "completed";
   completedAt: string | null;
-  createdAt: string | null;
-  clearedCount: number;
+}
+
+interface ReconciliationLine {
+  journalLineId: string;
+  entryDate: string;
+  memo: string | null;
+  sourceType: string | null;
+  debit: number;
+  credit: number;
+  cleared: boolean;
 }
 
 interface ReconciliationDetail extends ReconciliationSummary {
   openingBalance: number;
   clearedTotal: number;
-  unclearedCount: number;
-  unclearedTotal: number;
-  debitTotal: number;
-  creditTotal: number;
   computedBalance: number;
   difference: number;
   lines: ReconciliationLine[];
 }
 
-interface AccountOverview {
-  accountCode: ReconcilableAccount;
-  accountLabel: string;
-  accountName: string;
-  accountLedgerCode: string;
-  openingBalance: number;
-  lastStatementDate: string | null;
-  ledgerBalance: number;
-  unreconciledCount: number;
-  unreconciledTotal: number;
-}
-
-const ACCOUNT_ICONS: Record<ReconcilableAccount, typeof WalletIcon> = {
-  cash: WalletIcon,
-  bank: LandmarkIcon,
-  bankClearing: CreditCardIcon,
-};
-
-const LINE_FILTERS: { key: ReconciliationLineFilter; label: string }[] = [
-  { key: "all", label: "همه" },
-  { key: "uncleared", label: "تطبیق‌نشده" },
-  { key: "cleared", label: "تطبیق‌شده" },
-];
-
-/** How many rows the list shows before the reader asks for more. */
-const PAGE_SIZE = 50;
-
 /**
- * Today as the reader's own calendar names it. `new Date().toISOString()` is
- * the date in *UTC*, which is still yesterday for the first three and a half
- * hours of every Tehran day — so a statement dated today was rejected as being
- * in the future for anyone opening this before 03:30.
+ * A statement date in the future is almost always a typo; the picker still allows it, this warns.
+ *
+ * "Today" is Tehran's calendar day, not UTC's. `toISOString()` is still the
+ * previous date until 03:30 local, so between midnight and half past three the
+ * warning fired on a statement dated *today* — the single most likely date for
+ * someone reconciling at close of business.
  */
-function todayIso(): string {
-  return isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
+function isFutureDate(iso: string): boolean {
+  if (!iso) return false;
+  const today = isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
+  return iso > today;
 }
-
-function jalali(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return toPersianDigits(formatJalali(iso.slice(0, 10)));
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
 
 export function ReconciliationSection({
   busy,
@@ -166,142 +119,104 @@ export function ReconciliationSection({
   run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean>;
 }) {
   const money = useMoney();
-  const [accountCode, setAccountCode] = useState<ReconcilableAccount>("cash");
+  const [accountCode, setAccountCode] = useState<AccountCode>("cash");
   const [history, setHistory] = useState<ReconciliationSummary[] | null>(null);
-  const [overview, setOverview] = useState<AccountOverview | null>(null);
   const [detail, setDetail] = useState<ReconciliationDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [loadFailed, setLoadFailed] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [statementDate, setStatementDate] = useState("");
   const [statementBalance, setStatementBalance] = useState("");
-  const [formError, setFormError] = useState("");
 
-  const [query, setQuery] = useState("");
-  const [lineFilter, setLineFilter] = useState<ReconciliationLineFilter>("all");
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [detailFailed, setDetailFailed] = useState(false);
+  /** Line ids with a tick in flight — each keeps its own spot disabled, not the whole table. */
   const [pendingLines, setPendingLines] = useState<ReadonlySet<string>>(new Set());
-  const [confirmCancel, setConfirmCancel] = useState(false);
 
-  /*
-   * A request started for account A must never land on account B's state. The
-   * old screen fired one fetch per account click and applied whichever came
-   * back last, so clicking «بانک» then «صندوق» on a slow link could leave the
-   * صندوق button selected with بانک's reconciliation under it — the
-   * accountant ticking off the wrong account's lines.
-   */
-  const requestRef = useRef(0);
+  const activeAccount = ACCOUNTS.find((a) => a.code === accountCode)!;
 
-  const loadHistory = useCallback(() => {
-    const token = ++requestRef.current;
-    setHistory(null);
-    setOverview(null);
+  useEffect(() => {
+    let cancelled = false;
     setDetail(null);
+    setHistory(null);
     setLoadFailed(false);
-    api<{ reconciliations: ReconciliationSummary[]; overview: AccountOverview; error?: string }>(
+    setDetailFailed(false);
+    setError("");
+    api<{ reconciliations: ReconciliationSummary[] }>(
       `/api/ledger/reconciliations?accountCode=${accountCode}`,
     ).then(({ ok, data }) => {
-      if (token !== requestRef.current) return;
+      // A stale response from the account we just switched away from must not
+      // land on top of the new one — switching quickly between the three tabs
+      // used to be able to show one account's history under another's heading.
+      if (cancelled) return;
       // `ledger_account_missing` is the real case here: a chart of accounts
       // without ۱۱۱۰ cannot be reconciled, and an endless skeleton never said so.
-      if (ok) {
-        setHistory(data.reconciliations);
-        setOverview(data.overview ?? null);
-      } else {
-        setHistory([]);
+      if (ok) setHistory(data.reconciliations);
+      else {
         setLoadFailed(true);
-        setError(errorMessage(data.error));
+        setError(errorMessage((data as { error?: string }).error));
       }
     });
-  }, [accountCode]);
+    return () => {
+      cancelled = true;
+    };
+  }, [accountCode, refreshKey]);
 
-  useEffect(loadHistory, [loadHistory, refreshKey]);
-
-  const current = useMemo(
-    () => history?.find((r) => r.status === "in_progress") ?? null,
-    [history],
-  );
-  const completed = useMemo(
-    () => history?.filter((r) => r.status === "completed") ?? [],
-    [history],
-  );
-
+  const current = history?.find((r) => r.status === "in_progress") ?? null;
   const currentId = current?.id ?? null;
-  const loadDetail = useCallback(() => {
+
+  useEffect(() => {
     if (!currentId) {
       setDetail(null);
       return;
     }
-    const token = requestRef.current;
-    setDetailLoading(true);
-    api<ReconciliationDetail & { error?: string }>(`/api/ledger/reconciliations/${currentId}`).then(
-      ({ ok, data }) => {
-        if (token !== requestRef.current) return;
-        setDetailLoading(false);
-        if (ok) setDetail(data);
-        // A failed detail load used to leave the skeleton up for ever, which
-        // reads as "still loading" rather than "this did not load".
-        else setError(errorMessage(data.error));
-      },
-    );
-  }, [currentId]);
-
-  useEffect(loadDetail, [loadDetail]);
-
-  // A new reconciliation, a new list: the reader should not inherit the
-  // previous one's search box or its «تطبیق‌شده» filter.
-  useEffect(() => {
-    setQuery("");
-    setLineFilter("all");
-    setVisibleCount(PAGE_SIZE);
-  }, [currentId]);
-
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [query, lineFilter]);
-
-  const lines = detail?.lines ?? [];
-  const filteredLines = useMemo(
-    () => filterReconciliationLines(lines, { query, filter: lineFilter, sourceLabel: ledgerSourceLabel }),
-    [lines, query, lineFilter],
-  );
-  const visibleLines = filteredLines.slice(0, visibleCount);
+    let cancelled = false;
+    setDetailFailed(false);
+    api<ReconciliationDetail>(`/api/ledger/reconciliations/${currentId}`).then(({ ok, data }) => {
+      if (cancelled) return;
+      // Without this the screen sat on a skeleton for ever when the detail
+      // failed — indistinguishable from a slow network, with no way to retry.
+      if (ok) setDetail(data);
+      else {
+        setDetailFailed(true);
+        setError(errorMessage((data as { error?: string }).error));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentId, refreshKey]);
 
   /**
-   * The balances as *this screen* currently shows them. Recomputed from the
-   * lines with `reconciliationBalances` — the same function the server checks a
-   * `complete` against — so an optimistic tick moves the «مغایرت» card the
-   * instant it is clicked instead of a round trip later.
+   * The header totals, recomputed from whatever is ticked *right now*.
+   *
+   * The server sends its own `clearedTotal`/`difference`, but those describe
+   * the last round-trip; an optimistic tick has to move the numbers with it or
+   * the person is reading a stale «مغایرت» while deciding what to tick next.
+   * Same function the service uses, so the two can never disagree.
    */
-  const balances = useMemo(() => {
-    if (!detail) return null;
-    return reconciliationBalances({
-      openingBalance: detail.openingBalance,
-      statementBalance: detail.statementBalance,
-      lines,
-    });
-  }, [detail, lines]);
+  const totals = useMemo(
+    () =>
+      detail
+        ? reconciliationTotals({
+            openingBalance: detail.openingBalance,
+            statementBalance: detail.statementBalance,
+            lines: detail.lines,
+          })
+        : null,
+    [detail],
+  );
 
-  // -------------------------------------------------------------------------
-  // Actions
-  // -------------------------------------------------------------------------
+  const clearedCount = detail?.lines.filter((l) => l.cleared).length ?? 0;
 
   async function startReconciliation() {
-    setFormError("");
     setError("");
-    if (!statementDate) return setFormError(errorMessage("statement_date_required"));
-    if (statementDate > todayIso()) return setFormError("تاریخ صورتحساب نمی‌تواند در آینده باشد.");
-    if (overview?.lastStatementDate && statementDate < overview.lastStatementDate) {
-      return setFormError(errorMessage("statement_date_before_last"));
-    }
+    if (!statementDate) return setError(errorMessage("statement_date_required"));
     let rial: number;
     try {
-      rial = money.parse(statementBalance.trim() || "0");
+      rial = money.parse(statementBalance || "0");
     } catch {
-      return setFormError(errorMessage("invalid_amount"));
+      return setError(errorMessage("invalid_amount"));
     }
     const ok = await run(() =>
       api("/api/ledger/reconciliations", {
@@ -312,48 +227,58 @@ export function ReconciliationSection({
     if (ok) {
       setStatementDate("");
       setStatementBalance("");
-      setNotice("تطبیق جدید آغاز شد؛ اقلام مطابق با صورتحساب را علامت بزنید.");
       setRefreshKey((k) => k + 1);
     }
   }
 
   /**
-   * Clear or un-clear a set of lines.
+   * Tick or untick one line.
    *
-   * Optimistic: the checkboxes move now and the totals with them, then the
-   * server's answer either confirms them or puts them back with the reason. A
-   * tick that waits for a round trip before it appears is a tick the accountant
-   * clicks twice.
+   * Applied to local state first and reverted if the server refuses, so the
+   * checkbox responds to the click rather than to the network. The previous
+   * version awaited a PATCH *and* a full re-fetch before the box moved, which
+   * on a slow link read as a dead control — and ticking twenty lines meant
+   * twenty full reloads of the table.
    */
-  const toggleLines = useCallback(
-    async (ids: readonly string[], cleared: boolean) => {
-      if (!detail || ids.length === 0) return;
+  const toggleLine = useCallback(
+    async (journalLineId: string, cleared: boolean) => {
       setError("");
-      setNotice("");
-      const idSet = new Set(ids);
-      const before = detail.lines;
-      setPendingLines(idSet);
+      setPendingLines((prev) => new Set(prev).add(journalLineId));
       setDetail((prev) =>
         prev
-          ? { ...prev, lines: prev.lines.map((l) => (idSet.has(l.journalLineId) ? { ...l, cleared } : l)) }
+          ? {
+              ...prev,
+              lines: prev.lines.map((l) => (l.journalLineId === journalLineId ? { ...l, cleared } : l)),
+            }
           : prev,
       );
 
-      const { ok, data } = await api<{ error?: string }>(
-        `/api/ledger/reconciliations/${detail.id}/lines`,
-        { method: "PATCH", body: JSON.stringify({ journalLineIds: ids, cleared }) },
-      );
-      setPendingLines(new Set());
+      const { ok, data } = await api(`/api/ledger/reconciliations/${currentId}/lines`, {
+        method: "PATCH",
+        body: JSON.stringify({ journalLineId, cleared }),
+      });
+
+      setPendingLines((prev) => {
+        const next = new Set(prev);
+        next.delete(journalLineId);
+        return next;
+      });
+
       if (!ok) {
-        setDetail((prev) => (prev ? { ...prev, lines: before } : prev));
-        setError(errorMessage(data.error));
-        return;
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                lines: prev.lines.map((l) =>
+                  l.journalLineId === journalLineId ? { ...l, cleared: !cleared } : l,
+                ),
+              }
+            : prev,
+        );
+        setError(errorMessage((data as { error?: string }).error));
       }
-      // Re-read rather than trust the optimistic state: the opening balance and
-      // the candidate set both belong to the server.
-      loadDetail();
     },
-    [detail, loadDetail],
+    [currentId],
   );
 
   async function complete() {
@@ -362,747 +287,408 @@ export function ReconciliationSection({
     const ok = await run(() =>
       api(`/api/ledger/reconciliations/${detail.id}/complete`, { method: "POST" }),
     );
-    if (ok) {
-      setNotice("تطبیق تکمیل و قفل شد.");
-      setRefreshKey((k) => k + 1);
-    }
+    if (ok) setRefreshKey((k) => k + 1);
   }
 
-  async function cancelReconciliation() {
+  /**
+   * Discard an in-progress reconciliation.
+   *
+   * Confirmed first because it throws away the ticks already made — but it
+   * only ever releases claims, never ledger data, and the lines simply return
+   * to the candidate pool for the next attempt.
+   */
+  async function discard() {
     if (!detail) return;
-    setConfirmCancel(false);
+    if (
+      !window.confirm(
+        "این تطبیق ناتمام حذف شود؟ اقلام تطبیق‌شده آزاد می‌شوند و می‌توانید تطبیق را از نو شروع کنید.",
+      )
+    ) {
+      return;
+    }
     setError("");
     const ok = await run(() =>
       api(`/api/ledger/reconciliations/${detail.id}`, { method: "DELETE" }),
     );
     if (ok) {
-      setNotice("تطبیق ناتمام لغو شد؛ اقلام آن دوباره قابل تطبیق هستند.");
+      setStatementDate("");
+      setStatementBalance("");
       setRefreshKey((k) => k + 1);
     }
   }
 
-  const activeMeta = RECONCILABLE_ACCOUNT_META[accountCode];
-  const unclearedVisible = visibleLines.filter((l) => !l.cleared).map((l) => l.journalLineId);
-  const clearedVisible = visibleLines.filter((l) => l.cleared).map((l) => l.journalLineId);
-
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
+  const completedHistory = history?.filter((r) => r.status === "completed") ?? [];
 
   return (
-    <section className="space-y-4" dir="rtl">
+    <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      {notice ? (
-        <Alert className="border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10">
-          <CheckCircle2Icon className="text-emerald-700 dark:text-emerald-300" />
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2 text-emerald-900 dark:text-emerald-100">
-            <span>{notice}</span>
-            <Button variant="ghost" size="xs" onClick={() => setNotice("")}>
-              <XIcon /> بستن
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      {/* -- Account picker ---------------------------------------------- */}
       <div className={cardClass}>
         <div className="border-b border-border/80 px-4 py-4 sm:px-5">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">کنترل وجوه</p>
-          <h2 className="mt-1 text-base font-semibold text-foreground">تطبیق بانکی و صندوق</h2>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            مانده صورتحساب هر حساب را با اقلام ثبت‌شده در دفاتر مقایسه کنید؛ وقتی مغایرت صفر شد، تطبیق را قفل کنید تا
-            اقلام آن دیگر در تطبیق‌های بعدی نیایند.
-          </p>
-        </div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">کنترل وجوه</p>
+              <h2 className="mt-1 text-base font-semibold text-foreground">تطبیق بانکی و صندوق</h2>
+              <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+                مانده صورتحساب را با اقلام قابل تطبیق همان حساب مقایسه و در صورت برابری قفل کنید.
+              </p>
+            </div>
+          </div>
 
-        <div className="p-4 sm:p-5">
           {/*
-            A wrapping row of pills, not a fixed three-column grid: three Persian
-            labels in three ~100px phone columns were each clipped mid-word. Each
-            pill carries its ledger code, which used to hide in a `title=` no
-            touch device can show.
+            Three labels never fit one 320px row: they used to wrap mid-word and
+            the touch targets collapsed. The strip scrolls horizontally on a
+            phone and lays out as three equal columns from `sm` up.
           */}
-          <div role="group" aria-label="انتخاب حساب" className="flex flex-wrap gap-2">
-            {RECONCILABLE_ACCOUNTS.map((code) => {
-              const meta = RECONCILABLE_ACCOUNT_META[code];
-              const Icon = ACCOUNT_ICONS[code];
-              const isActive = accountCode === code;
+          <div
+            role="group"
+            aria-label="حساب قابل تطبیق"
+            className="-mx-4 mt-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0"
+          >
+            {ACCOUNTS.map((a) => {
+              const isActive = accountCode === a.code;
+              const Icon = a.icon;
               return (
                 <button
-                  key={code}
+                  key={a.code}
                   type="button"
                   aria-pressed={isActive}
-                  onClick={() => setAccountCode(code)}
-                  className={`flex min-h-[52px] flex-1 basis-[10rem] items-center gap-2.5 rounded-xl border px-3 py-2 text-start transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 ${
+                  title={a.hint}
+                  onClick={() => setAccountCode(a.code)}
+                  className={`flex min-h-12 shrink-0 snap-start items-center justify-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 sm:shrink dark:focus-visible:ring-amber-400/40 ${
                     isActive
-                      ? "border-amber-200 bg-amber-100 text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                      : "border-border bg-card text-muted-foreground hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"
+                      ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
+                      : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"
                   }`}
                 >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">{meta.label}</span>
-                    <span className="block truncate text-xs font-normal opacity-80">
-                      حساب {toPersianDigits(meta.code)} — {meta.hint}
-                    </span>
-                  </span>
+                  <Icon aria-hidden="true" className="size-4 shrink-0" />
+                  <span className="whitespace-nowrap">{a.label}</span>
                 </button>
               );
             })}
           </div>
-
-          {/* -- Account overview ------------------------------------------ */}
-          {overview ? (
-            <dl className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard
-                label="مانده دفتری حساب"
-                value={money.format(overview.ledgerBalance)}
-                hint={overview.accountName}
-              />
-              <StatCard
-                label="مانده آخرین تطبیق"
-                value={money.format(overview.openingBalance)}
-                hint={
-                  overview.lastStatementDate
-                    ? `صورتحساب ${jalali(overview.lastStatementDate)}`
-                    : "هنوز تطبیقی تکمیل نشده است"
-                }
-              />
-              <StatCard
-                label="اقلام تطبیق‌نشده"
-                value={`${toPersianDigits(overview.unreconciledCount)} قلم`}
-                hint="اقلامی که هیچ تطبیق تکمیل‌شده‌ای آن‌ها را نگرفته است"
-                tone={overview.unreconciledCount > 0 ? "amber" : "muted"}
-              />
-              <StatCard
-                label="خالص اقلام تطبیق‌نشده"
-                value={money.format(overview.unreconciledTotal)}
-                hint="بدهکار منهای بستانکار"
-              />
-            </dl>
-          ) : null}
+          {/* The account's ledger code, which was only ever in a `title` — invisible on a touch screen. */}
+          <p className="mt-2 text-xs text-muted-foreground">{activeAccount.hint}</p>
         </div>
-      </div>
 
-      {/* -- Body ---------------------------------------------------------- */}
-      {loadFailed ? (
-        <div className={`${cardClass} p-4 sm:p-5`}>
-          <Alert variant="destructive">
-            <AlertTriangleIcon />
-            <AlertTitle>بارگذاری تطبیق‌های این حساب ناموفق بود</AlertTitle>
-            <AlertDescription>
-              اگر حساب «{activeMeta.label}» (کد {toPersianDigits(activeMeta.code)}) در سرفصل حساب‌ها تعریف نشده است،
-              ابتدا آن را در «سرفصل حساب‌ها» بسازید.
-            </AlertDescription>
-          </Alert>
-          <Button variant="outline" className="mt-3" onClick={() => setRefreshKey((k) => k + 1)}>
-            <RefreshCwIcon /> تلاش دوباره
-          </Button>
-        </div>
-      ) : !history ? (
-        <div className={`${cardClass} p-4 sm:p-5`}>
-          <LoadingSkeleton rows={4} label="در حال بارگذاری تطبیق‌های حساب" />
-        </div>
-      ) : !current ? (
-        <StartForm
-          accountLabel={activeMeta.label}
-          overview={overview}
-          statementDate={statementDate}
-          onStatementDate={setStatementDate}
-          statementBalance={statementBalance}
-          onStatementBalance={setStatementBalance}
-          unitLabel={money.unitLabel}
-          error={formError}
-          busy={busy}
-          onSubmit={startReconciliation}
-        />
-      ) : !detail ? (
-        <div className={`${cardClass} p-4 sm:p-5`}>
-          <LoadingSkeleton rows={4} label="در حال بارگذاری اقلام تطبیق" />
-        </div>
-      ) : (
-        <div className={cardClass}>
-          <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-foreground">
-                  تطبیق جاری — {detail.accountLabel}
-                </h3>
-                <StatusBadge tone="active">در حال انجام</StatusBadge>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                صورتحساب {jalali(detail.statementDate)} · مانده {money.format(detail.statementBalance)}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {/* A busy *label*, never a spinner — docs/design-system.md §Charts and loading. */}
-              <Button variant="ghost" size="sm" onClick={loadDetail} disabled={detailLoading}>
-                <RefreshCwIcon /> {detailLoading ? "در حال نوسازی…" : "نوسازی"}
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setConfirmCancel(true)}
-                disabled={busy}
-              >
-                <TrashIcon /> لغو تطبیق
-              </Button>
-            </div>
-          </header>
-
-          <div className="space-y-4 p-4 sm:p-5">
-            {/* -- Balances ------------------------------------------------ */}
-            <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard label="مانده اول دوره" value={money.format(detail.openingBalance)} hint="از آخرین تطبیق تکمیل‌شده" />
-              <StatCard
-                label="جمع اقلام تطبیق‌شده"
-                value={money.format(balances?.clearedTotal ?? 0)}
-                hint={`${toPersianDigits(balances?.clearedCount ?? 0)} قلم از ${toPersianDigits(lines.length)}`}
-              />
-              <StatCard
-                label="مانده محاسبه‌شده"
-                value={money.format(balances?.computedBalance ?? 0)}
-                hint="مانده اول دوره + اقلام تطبیق‌شده"
-              />
-              <StatCard
-                label="مغایرت"
-                value={money.format(Math.abs(balances?.difference ?? 0))}
-                hint={
-                  !balances || balances.difference === 0
-                    ? "صورتحساب و دفاتر برابرند"
-                    : balances.difference > 0
-                      ? "صورتحساب بیشتر از دفاتر است؛ قلمی علامت نخورده است"
-                      : "دفاتر بیشتر از صورتحساب است؛ قلمی اضافه علامت خورده"
-                }
-                tone={!balances || balances.difference === 0 ? "positive" : "danger"}
-              />
-            </dl>
-
-            {/* -- Toolbar ------------------------------------------------- */}
-            {lines.length > 0 ? (
-              <div className="space-y-3">
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                  <div className="relative">
-                    <SearchIcon className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="جستجو در شرح، منبع یا مبلغ سند…"
-                      aria-label="جستجو در اقلام تطبیق"
-                      className="ps-9"
-                    />
-                  </div>
-                  <div role="group" aria-label="فیلتر اقلام" className="flex gap-1 rounded-xl border border-border p-1">
-                    {LINE_FILTERS.map((f) => (
-                      <button
-                        key={f.key}
-                        type="button"
-                        aria-pressed={lineFilter === f.key}
-                        onClick={() => setLineFilter(f.key)}
-                        className={`min-h-9 flex-1 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 sm:flex-none ${
-                          lineFilter === f.key
-                            ? "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200"
-                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>
-                    {toPersianDigits(filteredLines.length)} از {toPersianDigits(lines.length)} قلم
-                  </span>
-                  {query || lineFilter !== "all" ? (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => {
-                        setQuery("");
-                        setLineFilter("all");
-                      }}
-                    >
-                      <XIcon /> پاک کردن فیلترها
-                    </Button>
-                  ) : null}
-                  <span className="grow" />
-                  {/*
-                    «انتخاب همه» is one PATCH carrying every visible id, not one
-                    per line: a month of card settlements is 300 lines, and 300
-                    sequential requests each re-reading the reconciliation was the
-                    screen's slowest and most interruptible act.
-                  */}
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    disabled={busy || pendingLines.size > 0 || unclearedVisible.length === 0}
-                    onClick={() => toggleLines(unclearedVisible, true)}
-                  >
-                    <ListChecksIcon /> علامت‌زدن {toPersianDigits(unclearedVisible.length)} قلم نمایش‌داده‌شده
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    disabled={busy || pendingLines.size > 0 || clearedVisible.length === 0}
-                    onClick={() => toggleLines(clearedVisible, false)}
-                  >
-                    <XIcon /> برداشتن علامت
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {/* -- Lines --------------------------------------------------- */}
-            {lines.length === 0 ? (
+        <div className="p-4 sm:p-5">
+          {loadFailed ? (
+            <div className="space-y-3">
               <EmptyState>
-                سندی برای تطبیق تا تاریخ {jalali(detail.statementDate)} یافت نشد. اگر انتظار قلمی را دارید، تاریخ
-                صورتحساب را بررسی کنید یا تطبیق را لغو و با تاریخ درست آغاز کنید.
+                بارگذاری تطبیق‌های این حساب ناموفق بود؛ اگر حساب موردنظر در سرفصل حساب‌ها نیست، ابتدا آن را
+                بررسی کنید.
               </EmptyState>
-            ) : filteredLines.length === 0 ? (
-              <EmptyState>قلمی با این جستجو یا فیلتر یافت نشد.</EmptyState>
-            ) : (
-              <>
-                <LineTable
-                  lines={visibleLines}
-                  pending={pendingLines}
-                  busy={busy}
-                  money={money}
-                  onToggle={(id, cleared) => toggleLines([id], cleared)}
-                />
-                <LineCards
-                  lines={visibleLines}
-                  pending={pendingLines}
-                  busy={busy}
-                  money={money}
-                  onToggle={(id, cleared) => toggleLines([id], cleared)}
-                />
-                {filteredLines.length > visibleLines.length ? (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-                  >
-                    نمایش {toPersianDigits(Math.min(PAGE_SIZE, filteredLines.length - visibleLines.length))} قلم بیشتر
-                  </Button>
-                ) : null}
-              </>
-            )}
-
-            {/* -- Complete ------------------------------------------------ */}
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
-              <p className="min-w-0 text-xs leading-5 text-muted-foreground">
-                {balances && balances.difference === 0 ? (
-                  <span className="font-medium text-emerald-700 dark:text-emerald-300">
-                    مانده محاسبه‌شده با صورتحساب برابر است؛ می‌توانید تطبیق را قفل کنید.
-                  </span>
-                ) : (
-                  <>
-                    تا قفل‌شدن تطبیق، {money.format(Math.abs(balances?.difference ?? 0))} مغایرت باقی است. با علامت‌زدن یا
-                    برداشتن علامت اقلام، مغایرت را به صفر برسانید.
-                  </>
-                )}
-              </p>
-              <Button
-                onClick={complete}
-                disabled={busy || !balances || balances.difference !== 0 || pendingLines.size > 0}
-              >
-                <CheckCircle2Icon /> تکمیل و قفل کردن تطبیق
-              </Button>
+              <div className="max-w-xs">
+                <SecondaryButton onClick={() => setRefreshKey((k) => k + 1)}>تلاش دوباره</SecondaryButton>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* -- History ------------------------------------------------------- */}
-      {completed.length > 0 ? (
-        <HistoryCard rows={completed} money={money} />
-      ) : null}
-
-      {/* -- Cancel confirmation ------------------------------------------- */}
-      <Dialog open={confirmCancel} onOpenChange={setConfirmCancel}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>لغو تطبیق ناتمام؟</DialogTitle>
-            <DialogDescription>
-              تطبیق جاری حذف می‌شود و علامت‌های آن برداشته می‌شود؛ هیچ سند حسابداری‌ای تغییر نمی‌کند و اقلام دوباره در
-              تطبیق بعدی همین حساب می‌آیند. تطبیق‌های قفل‌شده دست‌نخورده می‌مانند.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmCancel(false)}>
-              انصراف
-            </Button>
-            <Button variant="destructive" onClick={cancelReconciliation} disabled={busy}>
-              <TrashIcon /> لغو تطبیق
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Subcomponents
-// ---------------------------------------------------------------------------
-
-function StatCard({
-  label,
-  value,
-  hint,
-  tone = "muted",
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "muted" | "amber" | "positive" | "danger";
-}) {
-  const toneClass =
-    tone === "positive"
-      ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10"
-      : tone === "danger"
-        ? "border-destructive/30 bg-destructive/5"
-        : tone === "amber"
-          ? "border-amber-200 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-500/10"
-          : "border-border/80 bg-stone-50/60 dark:bg-stone-800/30";
-  const valueClass =
-    tone === "positive"
-      ? "text-emerald-800 dark:text-emerald-200"
-      : tone === "danger"
-        ? "text-destructive"
-        : "text-foreground";
-  return (
-    <div className={`min-w-0 rounded-xl border p-3 ${toneClass}`}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      {/* `break-words`, not `truncate`: a Rial figure is long and an amount
-          silently cut off is worse than one on two lines. */}
-      <dd className={`mt-1 text-sm font-bold break-words tabular-nums sm:text-base ${valueClass}`}>{value}</dd>
-      {hint ? <p className="mt-1 text-xs leading-4 text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
-}
-
-function StartForm({
-  accountLabel,
-  overview,
-  statementDate,
-  onStatementDate,
-  statementBalance,
-  onStatementBalance,
-  unitLabel,
-  error,
-  busy,
-  onSubmit,
-}: {
-  accountLabel: string;
-  overview: AccountOverview | null;
-  statementDate: string;
-  onStatementDate: (value: string) => void;
-  statementBalance: string;
-  onStatementBalance: (value: string) => void;
-  unitLabel: string;
-  error: string;
-  busy: boolean;
-  onSubmit: () => void;
-}) {
-  return (
-    <div className={cardClass}>
-      <header className="border-b border-border/80 px-4 py-4 sm:px-5">
-        <h3 className="text-sm font-semibold text-foreground">شروع تطبیق جدید — {accountLabel}</h3>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          تاریخ پایان صورتحساب و مانده آن را وارد کنید. اقلام ثبت‌شده تا همان تاریخ که هنوز در تطبیق تکمیل‌شده‌ای نیامده‌اند،
-          برای علامت‌زدن نمایش داده می‌شوند.
-        </p>
-      </header>
-      {/*
-        A real <form>: the old screen was two inputs and a button, so Enter in
-        the balance field did nothing at all.
-      */}
-      <form
-        className="space-y-4 p-4 sm:p-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSubmit();
-        }}
-      >
-        {error ? (
-          <Alert variant="destructive">
-            <AlertTriangleIcon />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-foreground">تاریخ صورتحساب</span>
-            <JalaliDatePicker value={statementDate} onChange={onStatementDate} placeholder="انتخاب تاریخ" />
-            <span className="mt-1 block text-xs text-muted-foreground">
-              {overview?.lastStatementDate
-                ? `آخرین تطبیق تکمیل‌شده: ${jalali(overview.lastStatementDate)}`
-                : "اولین تطبیق این حساب"}
-            </span>
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-foreground">
-              مانده پایان صورتحساب ({unitLabel})
-            </span>
-            <PersianNumberInput
-              className={inputClass}
-              dir="ltr"
-              inputMode="numeric"
-              value={statementBalance}
-              onChange={(e) => onStatementBalance(e.target.value)}
-              placeholder="۰"
-            />
-            <span className="mt-1 block text-xs text-muted-foreground">
-              همان مبلغی که در انتهای صورتحساب بانک یا شمارش صندوق آمده است.
-            </span>
-          </label>
-        </div>
-
-        {overview && overview.unreconciledCount > 0 ? (
-          <p className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-            {toPersianDigits(overview.unreconciledCount)} قلم تطبیق‌نشده روی این حساب وجود دارد.
-          </p>
-        ) : null}
-
-        <Button type="submit" size="lg" disabled={busy} className="w-full sm:w-auto">
-          <BanknoteIcon /> شروع تطبیق جدید
-        </Button>
-      </form>
-    </div>
-  );
-}
-
-function LineTable({
-  lines,
-  pending,
-  busy,
-  money,
-  onToggle,
-}: {
-  lines: readonly ReconciliationLine[];
-  pending: ReadonlySet<string>;
-  busy: boolean;
-  money: ReturnType<typeof useMoney>;
-  onToggle: (id: string, cleared: boolean) => void;
-}) {
-  return (
-    <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <caption className="sr-only">اقلام قابل تطبیق این حساب</caption>
-          <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
-            <tr className="border-b border-border">
-              <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                تطبیق
-              </th>
-              <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                تاریخ
-              </th>
-              <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                منبع
-              </th>
-              <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                شرح
-              </th>
-              <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                بدهکار
-              </th>
-              <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                بستانکار
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((l) => (
-              <tr
-                key={l.journalLineId}
-                className={`border-b border-border last:border-b-0 ${
-                  l.cleared ? "bg-emerald-50/50 dark:bg-emerald-500/5" : ""
-                }`}
-              >
-                <td className="px-4 py-3">
-                  <Checkbox
-                    checked={l.cleared}
-                    onCheckedChange={(value) => onToggle(l.journalLineId, value === true)}
-                    disabled={busy || pending.has(l.journalLineId)}
-                    /* A checkbox whose only label is «سند» tells a screen-reader
-                       user nothing about which line they are ticking. */
-                    aria-label={`تطبیق سند ${toPersianDigits(formatJalali(l.entryDate))} — ${
-                      l.memo ?? ledgerSourceLabel(l.sourceType)
-                    } — ${money.format(l.debit || l.credit)}`}
+          ) : !history ? (
+            <LoadingSkeleton rows={3} label="در حال بارگذاری تطبیق‌های حساب" />
+          ) : !current ? (
+            <div className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+              <h3 className="text-sm font-semibold text-foreground">شروع تطبیق جدید</h3>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                تاریخ پایان صورتحساب و مانده پایانی آن را وارد کنید. اقلام ثبت‌شده تا همان تاریخ برای تطبیق
+                نمایش داده می‌شوند.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-foreground">تاریخ صورتحساب</span>
+                  <JalaliDatePicker value={statementDate} onChange={setStatementDate} placeholder="تاریخ" />
+                  {isFutureDate(statementDate) ? (
+                    <span className="mt-1.5 block text-xs text-amber-700 dark:text-amber-300">
+                      تاریخ انتخاب‌شده در آینده است؛ مطمئن شوید تاریخ پایان صورتحساب را وارد کرده‌اید.
+                    </span>
+                  ) : null}
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-foreground">
+                    مانده صورتحساب ({money.unitLabel})
+                  </span>
+                  {/*
+                    A till and a card-reader float cannot hold less than
+                    nothing, so the minus key is simply not offered there; a
+                    bank account can be overdrawn, so ۱۱۱۰ keeps it.
+                  */}
+                  <PersianNumberInput
+                    className={inputClass}
+                    dir="ltr"
+                    inputMode="numeric"
+                    allowNegative={accountCode === "bank"}
+                    value={statementBalance}
+                    onChange={(e) => setStatementBalance(e.target.value)}
+                    placeholder="۰"
                   />
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                  {toPersianDigits(formatJalali(l.entryDate))}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{ledgerSourceLabel(l.sourceType)}</td>
-                <td className="px-4 py-3 text-foreground">{l.memo ?? "—"}</td>
-                <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums text-foreground">
-                  {l.debit ? money.format(l.debit) : "—"}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums text-foreground">
-                  {l.credit ? money.format(l.credit) : "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function LineCards({
-  lines,
-  pending,
-  busy,
-  money,
-  onToggle,
-}: {
-  lines: readonly ReconciliationLine[];
-  pending: ReadonlySet<string>;
-  busy: boolean;
-  money: ReturnType<typeof useMoney>;
-  onToggle: (id: string, cleared: boolean) => void;
-}) {
-  return (
-    <div className="space-y-3 lg:hidden">
-      {lines.map((l) => (
-        /*
-          A plain <div>, not a <label> wrapping the whole card: the old markup
-          made every square millimetre — the amounts, the date, the source — a
-          toggle for the checkbox, so reading a row with a thumb changed it.
-          The checkbox has its own hit area and its own accessible name.
-        */
-        <div
-          key={l.journalLineId}
-          className={`rounded-xl border p-4 ${
-            l.cleared
-              ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10"
-              : "border-border/80 bg-stone-50/60 dark:bg-stone-800/30"
-          }`}
-        >
-          <div className="flex items-start gap-3">
-            <Checkbox
-              className="mt-1 size-5"
-              checked={l.cleared}
-              onCheckedChange={(value) => onToggle(l.journalLineId, value === true)}
-              disabled={busy || pending.has(l.journalLineId)}
-              aria-label={`تطبیق سند ${toPersianDigits(formatJalali(l.entryDate))} — ${
-                l.memo ?? ledgerSourceLabel(l.sourceType)
-              } — ${money.format(l.debit || l.credit)}`}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <h4 className="min-w-0 text-sm font-semibold text-foreground">{l.memo ?? "—"}</h4>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {toPersianDigits(formatJalali(l.entryDate))}
+                  <span className="mt-1.5 block text-xs text-muted-foreground">
+                    {accountCode === "bank"
+                      ? "مانده پایانی صورتحساب، نه گردش دوره. برای حساب بدهکار، مقدار منفی وارد کنید."
+                      : "مانده پایانی صورتحساب، نه گردش دوره."}
+                  </span>
+                </label>
+              </div>
+              <div className="mt-4 max-w-xs">
+                <PrimaryButton onClick={startReconciliation} disabled={busy || !statementDate}>
+                  {busy ? "در حال ثبت…" : "شروع تطبیق جدید"}
+                </PrimaryButton>
+              </div>
+            </div>
+          ) : detailFailed ? (
+            <div className="space-y-3">
+              <EmptyState>بارگذاری اقلام این تطبیق ناموفق بود.</EmptyState>
+              <div className="max-w-xs">
+                <SecondaryButton onClick={() => setRefreshKey((k) => k + 1)}>تلاش دوباره</SecondaryButton>
+              </div>
+            </div>
+          ) : !detail || !totals ? (
+            <LoadingSkeleton rows={4} label="در حال بارگذاری اقلام تطبیق" />
+          ) : (
+            <div className="space-y-4">
+              {/* Which statement is being reconciled — the screen never said. */}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <StatusBadge tone="active">تطبیق باز</StatusBadge>
+                <span>
+                  صورتحساب تا تاریخ{" "}
+                  <span className="font-medium text-foreground">
+                    {toPersianDigits(formatJalali(detail.statementDate))}
+                  </span>
                 </span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{ledgerSourceLabel(l.sourceType)}</p>
-              <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
-                <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">بدهکار</dt>
-                  <dd className="mt-1 font-semibold break-words tabular-nums text-foreground">
-                    {l.debit ? money.format(l.debit) : "—"}
-                  </dd>
+
+              <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                  <dt className="text-xs text-muted-foreground">مانده صورتحساب</dt>
+                  <dd className="mt-1 font-bold text-foreground">{money.format(detail.statementBalance)}</dd>
                 </div>
-                <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">بستانکار</dt>
-                  <dd className="mt-1 font-semibold break-words tabular-nums text-foreground">
-                    {l.credit ? money.format(l.credit) : "—"}
+                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                  <dt className="text-xs text-muted-foreground">مانده اول دوره</dt>
+                  <dd className="mt-1 font-bold text-foreground">{money.format(detail.openingBalance)}</dd>
+                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                    از آخرین تطبیق قفل‌شدهٔ این حساب
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                  <dt className="text-xs text-muted-foreground">جمع اقلام تطبیق‌شده</dt>
+                  <dd className="mt-1 font-bold text-foreground">{money.format(totals.clearedTotal)}</dd>
+                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                    {toPersianDigits(clearedCount)} از {toPersianDigits(detail.lines.length)} قلم
+                  </p>
+                </div>
+                <div
+                  className={`rounded-xl border p-3 ${
+                    totals.difference === 0
+                      ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10"
+                      : "border-destructive/30 bg-destructive/5"
+                  }`}
+                >
+                  <dt className="text-xs text-muted-foreground">مغایرت</dt>
+                  <dd
+                    aria-live="polite"
+                    className={`mt-1 font-bold ${
+                      totals.difference === 0
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : "text-destructive"
+                    }`}
+                  >
+                    {money.format(Math.abs(totals.difference))}
                   </dd>
+                  {/*
+                    A signed number alone doesn't say which side is short. Naming
+                    the direction is the difference between "there's a gap" and
+                    "look for a deposit the books haven't recorded".
+                  */}
+                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                    {totals.difference === 0
+                      ? "برابر است؛ آمادهٔ قفل کردن"
+                      : totals.difference > 0
+                        ? "صورتحساب بیشتر از دفاتر است؛ قلم ثبت‌نشده را بررسی کنید."
+                        : "دفاتر بیشتر از صورتحساب است؛ قلم وصول‌نشده را بررسی کنید."}
+                  </p>
                 </div>
               </dl>
+
+              {detail.lines.length === 0 ? (
+                <EmptyState>
+                  تا تاریخ این صورتحساب، قلم تطبیق‌نشده‌ای برای این حساب ثبت نشده است.
+                </EmptyState>
+              ) : (
+                <>
+                  <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <caption className="sr-only">
+                          اقلام قابل تطبیق {activeAccount.label} تا تاریخ{" "}
+                          {toPersianDigits(formatJalali(detail.statementDate))}
+                        </caption>
+                        <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                          <tr className="border-b border-border">
+                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
+                              تطبیق
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
+                              تاریخ
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
+                              منبع
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
+                              شرح
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
+                              بدهکار
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
+                              بستانکار
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detail.lines.map((l) => (
+                            <tr
+                              key={l.journalLineId}
+                              className={`border-b border-border transition-colors last:border-b-0 ${
+                                l.cleared ? "bg-amber-50/60 dark:bg-amber-500/10" : ""
+                              }`}
+                            >
+                              <td className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  className="size-5 accent-primary"
+                                  checked={l.cleared}
+                                  onChange={(e) => toggleLine(l.journalLineId, e.target.checked)}
+                                  disabled={pendingLines.has(l.journalLineId)}
+                                  aria-label={`تطبیق ${l.memo ?? "سند"} به تاریخ ${toPersianDigits(
+                                    formatJalali(l.entryDate),
+                                  )}`}
+                                />
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                                {toPersianDigits(formatJalali(l.entryDate))}
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {ledgerSourceLabel(l.sourceType)}
+                              </td>
+                              <td className="px-4 py-3 text-foreground">{l.memo ?? "—"}</td>
+                              <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">
+                                {l.debit ? money.format(l.debit) : "—"}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">
+                                {l.credit ? money.format(l.credit) : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 lg:hidden">
+                    {detail.lines.map((l) => (
+                      <label
+                        key={l.journalLineId}
+                        className={`block rounded-xl border p-4 transition-colors ${
+                          l.cleared
+                            ? "border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10"
+                            : "border-border/80 bg-stone-50/60 dark:bg-stone-800/30"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={l.cleared}
+                            onChange={(e) => toggleLine(l.journalLineId, e.target.checked)}
+                            disabled={pendingLines.has(l.journalLineId)}
+                            className="mt-1 size-5 shrink-0 accent-primary"
+                            aria-label={`تطبیق ${l.memo ?? "سند"} به تاریخ ${toPersianDigits(
+                              formatJalali(l.entryDate),
+                            )}`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap justify-between gap-2">
+                              <h3 className="text-sm font-semibold text-foreground">{l.memo ?? "—"}</h3>
+                              <span className="text-xs text-muted-foreground">
+                                {toPersianDigits(formatJalali(l.entryDate))}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {ledgerSourceLabel(l.sourceType)}
+                            </p>
+                            <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
+                              <div>
+                                <dt className="text-xs text-muted-foreground">بدهکار</dt>
+                                <dd className="mt-1 font-semibold text-foreground">
+                                  {l.debit ? money.format(l.debit) : "—"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs text-muted-foreground">بستانکار</dt>
+                                <dd className="mt-1 font-semibold text-foreground">
+                                  {l.credit ? money.format(l.credit) : "—"}
+                                </dd>
+                              </div>
+                            </dl>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <div className="flex flex-col gap-2 border-t border-border/80 pt-4 sm:flex-row sm:items-center">
+                <div className="max-w-xs sm:w-64">
+                  <PrimaryButton onClick={complete} disabled={busy || totals.difference !== 0}>
+                    {busy ? "در حال قفل کردن…" : "تکمیل و قفل کردن تطبیق"}
+                  </PrimaryButton>
+                </div>
+                {/*
+                  A disabled button that never says why is a dead end; this is the
+                  one sentence that turns it into an instruction.
+                */}
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {totals.difference === 0
+                    ? "پس از قفل شدن، اقلام تطبیق‌شده قابل تغییر نخواهند بود."
+                    : "تا زمانی که مغایرت صفر نشود، امکان قفل کردن وجود ندارد."}
+                </p>
+                {/*
+                  The way out of a typo. A statement balance cannot be edited and
+                  only one reconciliation may be open per account, so without this
+                  a mistyped closing balance wedged the account for good.
+                */}
+                <div className="sm:ms-auto">
+                  <SecondaryButton onClick={discard} disabled={busy}>
+                    انصراف و حذف این تطبیق
+                  </SecondaryButton>
+                </div>
+              </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {completedHistory.length > 0 ? (
+        <div className={cardClass}>
+          <header className="border-b border-border/80 px-4 py-4 sm:px-5">
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سوابق</p>
+            <h2 className="mt-1 text-base font-semibold text-foreground">تاریخچه تطبیق‌ها</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              تطبیق‌های قفل‌شدهٔ {activeAccount.label}؛ اقلام آن‌ها دیگر قابل تغییر نیستند.
+            </p>
+          </header>
+          <div className="p-4 sm:p-5">
+            <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border/80 text-sm">
+              {completedHistory.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <span className="flex min-w-0 items-center gap-2 text-foreground">
+                    <LockIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                    {toPersianDigits(formatJalali(r.statementDate))}
+                  </span>
+                  <span className="font-bold text-foreground">{money.format(r.statementBalance)}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
-      ))}
-    </div>
-  );
-}
-
-function HistoryCard({
-  rows,
-  money,
-}: {
-  rows: readonly ReconciliationSummary[];
-  money: ReturnType<typeof useMoney>;
-}) {
-  return (
-    <div className={cardClass}>
-      <header className="border-b border-border/80 px-4 py-4 sm:px-5">
-        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سوابق</p>
-        <h2 className="mt-1 text-base font-semibold text-foreground">تطبیق‌های قفل‌شده</h2>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          اقلام این تطبیق‌ها قفل شده‌اند و در تطبیق‌های بعدی همین حساب نمی‌آیند.
-        </p>
-      </header>
-      <div className="p-4 sm:p-5">
-        <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-          <table className="w-full text-sm">
-            <caption className="sr-only">تاریخچه تطبیق‌های تکمیل‌شده</caption>
-            <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
-              <tr className="border-b border-border">
-                <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                  تاریخ صورتحساب
-                </th>
-                <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                  مانده صورتحساب
-                </th>
-                <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                  اقلام
-                </th>
-                <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                  تاریخ قفل‌شدن
-                </th>
-                <th scope="col" className="px-4 py-3 text-start text-xs font-medium">
-                  وضعیت
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-b border-border last:border-b-0">
-                  <td className="whitespace-nowrap px-4 py-3 text-foreground">{jalali(r.statementDate)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 font-bold tabular-nums text-foreground">
-                    {money.format(r.statementBalance)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                    {toPersianDigits(r.clearedCount)} قلم
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{jalali(r.completedAt)}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge tone="positive">قفل‌شده</StatusBadge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <ul className="space-y-3 lg:hidden">
-          {rows.map((r) => (
-            <li key={r.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-medium text-foreground">{jalali(r.statementDate)}</span>
-                <StatusBadge tone="positive">قفل‌شده</StatusBadge>
-              </div>
-              <p className="mt-2 font-bold break-words tabular-nums text-foreground">
-                {money.format(r.statementBalance)}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {toPersianDigits(r.clearedCount)} قلم · قفل‌شده در {jalali(r.completedAt)}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
+      ) : null}
+    </section>
   );
 }

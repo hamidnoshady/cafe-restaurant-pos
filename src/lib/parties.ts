@@ -30,6 +30,11 @@
  *    the UI reads today, so its three known keys are validated and typed here.
  */
 
+// The only import this module takes, and it keeps the same promise: `digits.ts`
+// is pure string formatting with no imports of its own, so the contract stays
+// runnable in a route, a client component and a bare vitest process alike.
+import { normalizeNumericText } from "./digits";
+
 /** The three roles a party can hold. The API and the form use these literals. */
 export const PARTY_ROLES = ["Customer", "Employee", "Supplier"] as const;
 export type PartyRole = (typeof PARTY_ROLES)[number];
@@ -596,9 +601,24 @@ export function validatePartyForm(state: PartyFormState): PartyFieldErrors {
     }
 
     if (field.kind === "taxPercent") {
-      const value = typeof raw === "number" ? raw : Number(asciiDigits(raw));
-      if (!Number.isFinite(value) || value < 0 || value > 100) {
-        errors[field.path] = "invalid_tax_percent";
+      /*
+       * Validated exactly the way it is coerced.
+       *
+       * This read the text through `asciiDigits` too, so it disagreed with
+       * `taxPercentageOf` about the same string: «۱۲٫۵» validated as `125`,
+       * out of range, and the form refused a rate that is perfectly legal —
+       * while «۹٫۵» validated as `95`, passed, and was then *stored* as 95%.
+       * Asking the coercion means the answer the person sees and the number
+       * that reaches the column can no longer differ.
+       */
+      const text = typeof raw === "number" ? String(raw) : normalizeNumericText(String(raw ?? ""));
+      // Empty means «use the default», which `taxPercentageOf` supplies; it is
+      // not a validation failure, or clearing the box would block the save.
+      if (text && text !== "-" && text !== ".") {
+        const value = Number(text);
+        if (!Number.isFinite(value) || value < 0 || value > 100) {
+          errors[field.path] = "invalid_tax_percent";
+        }
       }
       continue;
     }
@@ -814,6 +834,16 @@ export function buildNonAccountingPayload(state: PartyFormState): NonAccountingP
  * Takes the loose shape rather than `PartyGeneralInfo` because both callers are
  * mid-parse: the form has a string from an input, and the service has whatever a
  * stored document held. Both are wrong in the same direction, so both get 9.
+ *
+ * Fractional rates are real and must survive this function. It used to read the
+ * text through `asciiDigits`, which strips *every* non-digit — including the
+ * decimal mark — so «۹٫۵» arrived as `95`: a rate inside the valid range, stored
+ * without complaint, ten times what was typed and applied to that party's
+ * invoices from then on. «۱۲٫۵» became `125`, failed the range check, and came
+ * back as the 9% default instead, which at least was visible. `normalizeNumericText`
+ * is the shared parser that understands both Persian «٫» and Arabic-Indic
+ * digits, and it is what `PersianNumberInput` emits, so the form and the service
+ * now read a rate the same way.
  */
 export function taxPercentageOf(state: {
   generalInfo?: { taxPercentage?: unknown } | null;
@@ -823,9 +853,20 @@ export function taxPercentageOf(state: {
   // a party stored before this field existed, or one whose tab was written by an
   // importer that knew nothing about it, must not become tax-free on its first
   // re-save. An empty string is the same case, arriving from a cleared input.
-  if (raw === undefined || raw === null || raw === "") return DEFAULT_TAX_PERCENTAGE;
-  const value = typeof raw === "number" ? raw : Number(asciiDigits(raw));
+  if (raw === undefined || raw === null) return DEFAULT_TAX_PERCENTAGE;
+  let value: number;
+  if (typeof raw === "number") {
+    value = raw;
+  } else {
+    // Whitespace-only is a cleared field, not «۰»: `asciiDigits("  ")` was `""`
+    // and `Number("")` is 0, which made a party accidentally tax-exempt.
+    const text = normalizeNumericText(String(raw), { allowNegative: true });
+    if (!text || text === "-" || text === ".") return DEFAULT_TAX_PERCENTAGE;
+    value = Number(text);
+  }
   if (!Number.isFinite(value) || value < 0 || value > 100) return DEFAULT_TAX_PERCENTAGE;
+  // Two decimal places: enough for any published rate, and it keeps the stored
+  // number free of binary-float tails like 9.299999999999999.
   return Math.round(value * 100) / 100;
 }
 

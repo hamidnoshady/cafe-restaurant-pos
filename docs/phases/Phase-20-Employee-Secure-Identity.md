@@ -322,12 +322,12 @@ panel, logging out, and logging back in with only the biometric prompt, no PIN.
   `pin-login`/`webauthn/login/options`/`webauthn/login/verify`/`webauthn/register/verify`'s JSON
   bodies). The one function deliberately **not** device-filtered is
   `completeWebauthnAuthentication` — see Decisions.
-- **`src/app/dashboard/settings/device-settings.tsx`** ("دستگاه‌های ثبت‌شده" tab, added to
-  `settings-tabs.ts` next to the other `settingsManage`-gated tabs) — pairs the browser it's
-  opened in and lists/revokes every device paired for the business, across branches.
-- **`src/app/login/page.tsx` and `biometric-settings.tsx`** now read `pos:deviceToken` from
-  `localStorage` (absent on every terminal that was never paired) and pass it along on every
-  roster/login/registration call.
+- **`src/app/(app)/settings/device-settings.tsx`** ("دستگاه‌های ثبت‌شده" tab, added to
+  `settings-tabs.ts` next to the other `settingsManage`-gated tabs) — pairs the browser it is
+  opened in and lists, renames, or revokes every device paired for the business, across branches.
+- **`src/lib/device-token.ts`** owns the shared `pos:deviceToken` browser storage contract, used
+  by the Settings screen, `src/app/login/login-form.tsx`, and `biometric-settings.tsx`; absent on
+  every terminal that was never paired, it is passed along on roster/login/registration calls.
 
 ## Out of scope (this wave)
 

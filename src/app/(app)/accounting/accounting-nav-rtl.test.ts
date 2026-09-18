@@ -155,9 +155,17 @@ describe("the directory is one screen with filters", () => {
   it("drives its list from the view, not from a per-role scope", () => {
     expect(SECTION_SOURCE).toMatch(/partyDirectoryView/);
     expect(SECTION_SOURCE).toMatch(/listedRoles/);
-    // The roles asked of the API are the *narrowed* set, so a hand-typed
-    // `?view=` cannot widen what a scope is allowed to list.
-    expect(SECTION_SOURCE).toMatch(/params\.set\("roles", listedRoles\.join\(","\)\)/);
+    /*
+     * The roles asked of the API are the *narrowed* set, so a hand-typed
+     * `?view=` cannot widen what a scope is allowed to list.
+     *
+     * The request carries `rolesParam`, which exists only so the loader's
+     * dependency list compares a string rather than a fresh array on every
+     * render; what matters here is unchanged — that the value handed to the
+     * API is `listedRoles` joined, and nothing else.
+     */
+    expect(SECTION_SOURCE).toMatch(/const rolesParam = listedRoles\.join\(","\)/);
+    expect(SECTION_SOURCE).toMatch(/params\.set\("roles", rolesParam\)/);
   });
 
   it("draws the views with the shared tab primitive, not a bespoke strip", () => {

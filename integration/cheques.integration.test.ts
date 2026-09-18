@@ -24,6 +24,8 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let cheques: typeof import("../src/lib/cheques-service");
+let ar: typeof import("../src/lib/ar-service");
+let ap: typeof import("../src/lib/ap-service");
 let provisioning: typeof import("../src/lib/business-provisioning");
 let fiscalService: typeof import("../src/lib/fiscal-periods-service");
 
@@ -59,6 +61,8 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   dbLib = await import("../src/lib/db");
   cheques = await import("../src/lib/cheques-service");
+  ar = await import("../src/lib/ar-service");
+  ap = await import("../src/lib/ap-service");
   provisioning = await import("../src/lib/business-provisioning");
   fiscalService = await import("../src/lib/fiscal-periods-service");
 
@@ -214,6 +218,97 @@ describe("recording a cheque", () => {
     await expect(receivable({ amount: 0 })).rejects.toThrow("invalid_amount");
     await expect(receivable({ amount: -1 })).rejects.toThrow("invalid_amount");
     await expect(receivable({ amount: 1.5 })).rejects.toThrow("invalid_amount");
+  });
+
+  it("rejects malformed and impossible cheque dates before Postgres sees them", async () => {
+    await expect(receivable({ issueDate: "2026-02-29" })).rejects.toThrow("invalid_issue_date");
+    await expect(receivable({ dueDate: "2026-02-31" })).rejects.toThrow("invalid_due_date");
+    await expect(receivable({ issueDate: "2026-03-11", dueDate: "2026-03-10" })).rejects.toThrow(
+      "due_date_before_issue",
+    );
+  });
+
+  it("rejects a linked party from the other cheque direction", async () => {
+    await expect(receivable({ supplierId: party.supplierId })).rejects.toThrow("invalid_counterparty_for_direction");
+    await expect(payable({ customerId: party.customerId })).rejects.toThrow("invalid_counterparty_for_direction");
+  });
+
+  it("accepts a customer whose primary role is supplier but whose role set includes customer", async () => {
+    await db.query(
+      `UPDATE parties SET role = 'supplier', roles = ARRAY['customer', 'supplier']::text[] WHERE id = $1`,
+      [party.customerId],
+    );
+
+    expect((await ar.listCustomerDirectory(biz.id)).map((customer) => customer.customerId)).toContain(party.customerId);
+    await expect(receivable()).resolves.toMatchObject({ customerId: party.customerId });
+  });
+});
+
+describe("cheque attribution in the party subledgers", () => {
+  it("shows a received cheque against the selected customer in their A/R balance and statement", async () => {
+    const cheque = await receivable();
+
+    await expect(ar.getCustomerArBalance(biz.id, party.customerId)).resolves.toEqual({
+      balance: -5_000_000,
+      hasLedger: true,
+    });
+    const statement = await ar.getCustomerStatement(biz.id, party.customerId);
+    expect(statement).toHaveLength(1);
+    expect(statement[0]).toMatchObject({ credit: 5_000_000, debit: 0, type: "other" });
+    expect(statement[0].description).toContain(cheque.serialNumber);
+  });
+
+  it("shows an issued cheque against its supplier in the A/P register", async () => {
+    const cheque = await payable();
+
+    expect(await ap.listSupplierBalances(biz.id)).toContainEqual({
+      supplierId: party.supplierId,
+      supplierName: "تأمین‌کننده",
+      supplierPartyId: null,
+      supplierPhone: null,
+      balance: -3_000_000,
+    });
+    const statement = await ap.getSupplierStatement(biz.id, party.supplierId);
+    expect(statement).toHaveLength(1);
+    expect(statement[0]).toMatchObject({ debit: 3_000_000, credit: 0, type: "other" });
+    expect(statement[0].description).toContain(cheque.serialNumber);
+  });
+
+  it("keeps an endorsed cheque and its later bounce on the same supplier statement", async () => {
+    const cheque = await receivable();
+    await cheques.transitionCheque({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      chequeId: cheque.id,
+      action: "endorse",
+      endorsedToSupplierId: party.supplierId,
+      occurredOn: "2026-02-10",
+      createdBy: null,
+    });
+
+    expect(await ap.listSupplierBalances(biz.id)).toContainEqual({
+      supplierId: party.supplierId,
+      supplierName: "تأمین‌کننده",
+      supplierPartyId: null,
+      supplierPhone: null,
+      balance: -5_000_000,
+    });
+
+    await cheques.transitionCheque({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      chequeId: cheque.id,
+      action: "bounce",
+      occurredOn: "2026-02-11",
+      createdBy: null,
+    });
+
+    expect(await ap.listSupplierBalances(biz.id)).toEqual([]);
+    const statement = await ap.getSupplierStatement(biz.id, party.supplierId);
+    expect(statement.map((line) => [line.debit, line.credit])).toEqual([
+      [5_000_000, 0],
+      [0, 5_000_000],
+    ]);
   });
 });
 
@@ -453,6 +548,30 @@ describe("guards", () => {
     ).rejects.toThrow("invalid_cheque_transition");
   });
 
+  it("refuses an invalid action date or one that predates the cheque", async () => {
+    const cheque = await receivable();
+    await expect(
+      cheques.transitionCheque({
+        businessId: biz.id,
+        locationId: biz.locationId,
+        chequeId: cheque.id,
+        action: "deposit",
+        occurredOn: "2026-02-30",
+        createdBy: null,
+      }),
+    ).rejects.toThrow("invalid_occurred_on");
+    await expect(
+      cheques.transitionCheque({
+        businessId: biz.id,
+        locationId: biz.locationId,
+        chequeId: cheque.id,
+        action: "deposit",
+        occurredOn: "2026-01-09",
+        createdBy: null,
+      }),
+    ).rejects.toThrow("action_before_issue");
+  });
+
   it("404s on another business's cheque rather than touching it", async () => {
     const cheque = await receivable();
     await expect(
@@ -464,6 +583,10 @@ describe("guards", () => {
         createdBy: null,
       }),
     ).rejects.toThrow("cheque_not_found");
+  });
+
+  it("does not make an unknown cheque look like it has an empty history", async () => {
+    await expect(cheques.getChequeHistory(biz.id, randomUUID())).rejects.toThrow("cheque_not_found");
   });
 
   it("keeps one business's register out of another's", async () => {

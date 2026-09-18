@@ -15,8 +15,6 @@
  * Every tool that returns an enum value returns its label alongside it.
  */
 
-import { RECONCILABLE_ACCOUNT_META, RECONCILABLE_ACCOUNTS } from "./reconciliation";
-
 export const WASTE_REASON_LABELS: Record<string, string> = {
   spoilage: "فساد و ماندگی",
   prep_error: "خطای آماده‌سازی",
@@ -87,17 +85,15 @@ export const RESERVATION_STATUS_LABELS: Record<string, string> = {
 };
 
 /**
- * The settlement accounts «تطبیق بانکی و صندوق» works on, so a tool result
- * names the account instead of handing the model `bankClearing`.
- *
- * Derived from `RECONCILABLE_ACCOUNT_META` rather than re-typed: this map and
- * the screen's own three buttons were two hand-written copies of the same
- * three names, and renaming «کارت‌خوان (در راه)» in one left the assistant
- * saying something else.
+ * The settlement accounts «تطبیق بانکی» works on. Same three keys as
+ * `RECONCILABLE_ACCOUNTS` in reconciliation-service.ts — kept here as labels so
+ * a tool result names the account instead of handing the model `bankClearing`.
  */
-export const RECONCILABLE_ACCOUNT_LABELS: Record<string, string> = Object.fromEntries(
-  RECONCILABLE_ACCOUNTS.map((key) => [key, RECONCILABLE_ACCOUNT_META[key].label]),
-);
+export const RECONCILABLE_ACCOUNT_LABELS: Record<string, string> = {
+  cash: "صندوق",
+  bank: "بانک",
+  bankClearing: "کارت‌خوان (در راه)",
+};
 
 /** Falls back to the raw value rather than to an invented translation. */
 export function labelFor(map: Record<string, string>, value: string | null | undefined): string {

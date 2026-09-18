@@ -577,8 +577,19 @@ export async function postExactOrderPaymentEntry(
   if (tenders.reduce((sum, tender) => sum + tender.amount, 0n) !== totalCollected) {
     throw new Error("tender_total_mismatch");
   }
-  if (commission > 0n && !tenders.some((tender) => tender.settlement === "snappfood")) {
+  const platformTenderTotal = tenders.reduce(
+    (total, tender) => (tender.settlement === "snappfood" ? total + tender.amount : total),
+    0n,
+  );
+  if (commission > 0n && platformTenderTotal === 0n) {
     throw new Error("commission_requires_platform_method");
+  }
+  // Keep a malformed caller from creating a negative platform-receivable line.
+  // The settings-driven checkout path can never hit this with a valid 0–100%
+  // rate, but the ledger boundary should enforce the invariant independently
+  // of its callers.
+  if (commission > platformTenderTotal) {
+    throw new Error("commission_exceeds_platform_tender");
   }
 
   const codes: string[] = [

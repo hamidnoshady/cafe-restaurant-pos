@@ -6,14 +6,14 @@
  *   (the opposite sign convention from AR's asset debit-credit), so "an open
  *   item" is a credit line here and "a payment" is a debit line — backwards
  *   from ar-service.ts everywhere the two would otherwise look identical.
- * - A bill's supplier comes from the purchase that raised it (`purchases.
+ * - A supplier can come from the purchase that raised it (`purchases.
  *   supplier_id`, required for a `credit`-settled purchase since this phase
- *   — see the validation in the purchases receive route), or transitively
- *   from the purchase a supplier_return's `purchase_id` points at, since a
- *   return that credits/debits Accounts Payable also affects the balance.
- *   `suppliers` itself has no `business_id` column (only `location_id`), so
- *   payBill verifies the business match through `locations` explicitly
- *   rather than a plain equality check.
+ *   — see the validation in the purchases receive route), transitively from
+ *   the purchase a supplier_return's `purchase_id` points at, an A/P payment,
+ *   a cheque issued to that supplier, or the supplier stored on a cheque
+ *   endorsement. `suppliers` itself has no `business_id` column (only
+ *   `location_id`), so payBill verifies the business match through `locations`
+ *   explicitly rather than a plain equality check.
  *
  * DB-touching, so per repo convention it has no direct unit test; the pure
  * aging math (shared with AR) lives in aging.ts. Covered here by
@@ -24,13 +24,19 @@ import { businessToday } from "./business-day-service";
 import { isUuid } from "./uuid";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
-import { ageOpenItems, summarizeAging, type AgingSummary } from "./aging";
+import { ageOpenItems, summarizeAging, unappliedCredit, UNKNOWN_SUPPLIER_KEY, type AgingSummary } from "./aging";
 import { enqueueHolooReceiptForApPayment } from "./integrations/holoo/outbox-producer";
 
 export { MissingLedgerAccountError };
 
-/** Group key for AP lines that carry no supplier attribution — a manual journal entry against A/P, or a credit purchase predating this feature. */
-export const UNKNOWN_SUPPLIER_KEY = "unknown";
+/**
+ * Group key for AP lines that carry no supplier attribution — a manual journal
+ * entry against A/P, or a credit purchase predating this feature. Defined in
+ * the pure `aging` module (see the note there) so client components can import
+ * it without pulling in `pg`; re-exported here because this is where callers
+ * expect to find it.
+ */
+export { UNKNOWN_SUPPLIER_KEY };
 
 export class ApError extends Error {
   status: number;
@@ -38,6 +44,11 @@ export class ApError extends Error {
     super(code);
     this.status = status;
   }
+}
+
+/** An actual calendar date in ISO form — see `ar-service.ts` for why the regex alone is not enough. */
+function isIsoDateOnly(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 }
 
 async function apAccountId(businessId: string): Promise<string | null> {
@@ -52,6 +63,7 @@ interface ApLineRow extends Record<string, unknown> {
   supplier_id: string | null;
   supplier_name: string | null;
   supplier_phone: string | null;
+  party_id: string | null;
   entry_date: string;
   source_type: string | null;
   note: string | null;
@@ -76,6 +88,7 @@ async function apLines(businessId: string, accountId: string): Promise<ApLineRow
     `SELECT s.id AS supplier_id,
             COALESCE(pa.name, s.name) AS supplier_name,
             COALESCE(pa.phone, s.phone) AS supplier_phone,
+            s.party_id AS party_id,
             je.entry_date::text AS entry_date, je.source_type,
             COALESCE(p.note, p2.note) AS note, je.memo,
             jl.debit, jl.credit
@@ -85,7 +98,25 @@ async function apLines(businessId: string, accountId: string): Promise<ApLineRow
        LEFT JOIN supplier_returns sr ON je.source_type = 'supplier_return' AND sr.id = je.source_id
        LEFT JOIN purchases p2 ON sr.purchase_id = p2.id
        LEFT JOIN ap_payments ap ON je.source_type = 'ap_payment' AND ap.id = je.source_id
-       LEFT JOIN suppliers s ON s.id = COALESCE(p.supplier_id, p2.supplier_id, ap.supplier_id)
+       LEFT JOIN cheques ch ON je.source_type = 'cheque' AND ch.id = je.source_id
+       -- An endorsed received cheque has no supplier_id on its original row:
+       -- the supplier is the one recorded by the endorsement event. Reuse it
+       -- for a later bounce too, so that debit and reversing credit stay in
+       -- the same supplier statement.
+       LEFT JOIN LATERAL (
+         SELECT endorsed_to_supplier_id
+           FROM cheque_events
+          WHERE cheque_id = ch.id AND endorsed_to_supplier_id IS NOT NULL
+          ORDER BY created_at, id
+          LIMIT 1
+       ) endorsed ON ch.id IS NOT NULL
+       LEFT JOIN suppliers s ON s.id = COALESCE(
+         p.supplier_id,
+         p2.supplier_id,
+         ap.supplier_id,
+         ch.supplier_id,
+         endorsed.endorsed_to_supplier_id
+       )
        LEFT JOIN parties pa ON pa.id = s.party_id
       WHERE je.business_id = $1 AND jl.account_id = $2
       ORDER BY je.entry_date, je.posted_at`,
@@ -98,6 +129,13 @@ export interface SupplierBalance {
   supplierId: string; // UNKNOWN_SUPPLIER_KEY for unattributed lines
   supplierName: string;
   supplierPhone: string | null;
+  /**
+   * The party behind this branch alias (`suppliers.party_id`), or null for the
+   * unattributed bucket and a legacy alias no party was ever linked to. This is
+   * what a deep link into «اشخاص» needs: `supplierId` is the *alias* id, and
+   * the directory is keyed by the party record, not by the alias.
+   */
+  supplierPartyId: string | null;
   balance: number;
 }
 
@@ -113,8 +151,8 @@ export interface SupplierBalance {
  * write references; the name is the party's when there is one.
  */
 export async function listSupplierDirectory(businessId: string): Promise<SupplierBalance[]> {
-  const { rows } = await query<{ id: string; name: string; phone: string | null }>(
-    `SELECT s.id, COALESCE(pa.name, s.name) AS name, COALESCE(pa.phone, s.phone) AS phone
+  const { rows } = await query<{ id: string; name: string; phone: string | null; party_id: string | null }>(
+    `SELECT s.id, COALESCE(pa.name, s.name) AS name, COALESCE(pa.phone, s.phone) AS phone, s.party_id
        FROM suppliers s
        JOIN locations l ON l.id = s.location_id
        LEFT JOIN parties pa ON pa.id = s.party_id
@@ -127,6 +165,7 @@ export async function listSupplierDirectory(businessId: string): Promise<Supplie
     supplierId: r.id,
     supplierName: r.name,
     supplierPhone: r.phone,
+    supplierPartyId: r.party_id,
     balance: balances.get(r.id) ?? 0,
   }));
 }
@@ -144,6 +183,7 @@ export async function listSupplierBalances(businessId: string): Promise<Supplier
       supplierId: key,
       supplierName: l.supplier_name ?? "بدون تأمین‌کننده مشخص",
       supplierPhone: l.supplier_phone,
+      supplierPartyId: l.party_id,
       balance: 0,
     };
     // Liability normal balance: credit-debit.
@@ -205,6 +245,7 @@ export interface AgingReport {
  * late shift's documents in the wrong bucket).
  */
 export async function getApAging(businessId: string, asOfDate?: string): Promise<AgingReport> {
+  if (asOfDate !== undefined && !isIsoDateOnly(asOfDate)) throw new ApError("invalid_date");
   const effectiveAsOf = asOfDate ?? (await businessToday(businessId));
   const accountId = await apAccountId(businessId);
   if (!accountId) return { asOfDate: effectiveAsOf, rows: [], totals: { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 } };
@@ -228,6 +269,12 @@ export async function getApAging(businessId: string, asOfDate?: string): Promise
   for (const [supplierId, { name, bills, payments }] of bySupplier) {
     const aged = ageOpenItems(bills, payments, effectiveAsOf);
     const summary = summarizeAging(aged);
+    // Advance payments to a supplier have no open bill to age; carry them as
+    // negative «current» so the report still agrees with the control account
+    // (the mirror of the same rule in `getArAging`).
+    const credit = unappliedCredit(bills, payments);
+    summary.current -= credit;
+    summary.total -= credit;
     if (summary.total === 0) continue;
     rows.push({ supplierId, supplierName: name, ...summary });
     totals.current += summary.current;
@@ -273,6 +320,11 @@ export async function payBill(params: {
   // A non-uuid supplier id cannot match a row, and asking Postgres anyway
   // raises a syntax error rather than returning none — see `isUuid`.
   if (!isUuid(params.supplierId)) throw new ApError("supplier_not_found", 404);
+  if (params.paymentDate != null && !isIsoDateOnly(params.paymentDate)) throw new ApError("invalid_date");
+
+  // The business's «امروز», not the DB server's UTC date — the same argument
+  // `receivePayment` in ar-service.ts makes for receipts.
+  const paymentDate = params.paymentDate ?? (await businessToday(params.businessId));
 
   const client = await getPool().connect();
   try {
@@ -309,7 +361,7 @@ export async function payBill(params: {
         params.businessId,
         params.locationId,
         params.supplierId,
-        params.paymentDate ?? null,
+        paymentDate,
         params.method,
         params.amount,
         params.memo?.trim() || null,

@@ -150,8 +150,50 @@ describe("recordExpense", () => {
       createdBy: user.id,
     });
     const list = await expenseService.listExpenses(biz.id);
-    expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ accountCode: "5300", paymentAccountCode: "1100", amount: 200_000, memo: "Utilities" });
+    expect(list.expenses).toHaveLength(1);
+    expect(list.expenses[0]).toMatchObject({ accountCode: "5300", paymentAccountCode: "1100", amount: 200_000, memo: "Utilities" });
+    expect(list).toMatchObject({ hasMore: false, totalAmount: 200_000, totalCount: 1 });
+  });
+
+  it("filters by date range, category and free text, and totals the whole match", async () => {
+    const common = { businessId: biz.id, locationId: null, paymentAccountId: acct.cash, createdBy: user.id };
+    await expenseService.recordExpense({ ...common, accountId: acct.rent, amount: 100_000, expenseDate: "2025-01-10", memo: "January rent", vendor: "Landlord" });
+    await expenseService.recordExpense({ ...common, accountId: acct.rent, amount: 300_000, expenseDate: "2025-06-10", memo: "June rent", vendor: "Landlord" });
+
+    const ranged = await expenseService.listExpenses(biz.id, { dateFrom: "2025-05-01", dateTo: "2025-12-31" });
+    expect(ranged.expenses.map((e) => e.memo)).toEqual(["June rent"]);
+    expect(ranged.totalAmount).toBe(300_000);
+    expect(ranged.totalCount).toBe(1);
+
+    const searched = await expenseService.listExpenses(biz.id, { q: "january" });
+    expect(searched.expenses.map((e) => e.memo)).toEqual(["January rent"]);
+
+    const byCategory = await expenseService.listExpenses(biz.id, { accountId: acct.rent });
+    expect(byCategory.totalCount).toBe(2);
+    expect(byCategory.totalAmount).toBe(400_000);
+
+    // The total must describe the whole match, not the returned page — the bug
+    // the old client-side `reduce` over a silently truncated list had.
+    const paged = await expenseService.listExpenses(biz.id, { limit: 1 });
+    expect(paged.expenses).toHaveLength(1);
+    expect(paged.hasMore).toBe(true);
+    expect(paged.totalCount).toBe(2);
+    expect(paged.totalAmount).toBe(400_000);
+  });
+
+  it("rejects an impossible expense date instead of letting Postgres 500", async () => {
+    await expect(
+      expenseService.recordExpense({
+        businessId: biz.id,
+        locationId: null,
+        accountId: acct.rent,
+        paymentAccountId: acct.cash,
+        amount: 10_000,
+        expenseDate: "2025-02-31",
+        memo: "X",
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("invalid_expense_date");
   });
 
   it("rejects a non-expense account as the category", async () => {

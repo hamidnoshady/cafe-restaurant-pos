@@ -141,6 +141,17 @@ export function sortPaymentMethods<T extends { sortOrder: number; name: string }
   return [...methods].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "fa"));
 }
 
+/**
+ * Reordering is an all-or-nothing operation. Accepting a subset, a duplicate,
+ * or an id from another business leaves tied sort positions and makes the till
+ * order unpredictable, so the API and service both use this exact-set check.
+ */
+export function isExactPaymentMethodOrder(currentIds: readonly string[], orderedIds: readonly string[]): boolean {
+  if (currentIds.length !== orderedIds.length || new Set(orderedIds).size !== orderedIds.length) return false;
+  const current = new Set(currentIds);
+  return orderedIds.every((id) => current.has(id));
+}
+
 export const MAX_PAYMENT_METHOD_NAME = 40;
 
 /**
@@ -189,6 +200,12 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): Validatio
   if (!isPaymentSettlement(input.settlement) || !CUSTOM_PAYMENT_SETTLEMENTS.includes(input.settlement)) {
     return { ok: false, error: "invalid_settlement" };
   }
+  if (input.opensDrawer !== undefined && typeof input.opensDrawer !== "boolean") {
+    return { ok: false, error: "bad_request" };
+  }
+  if (input.requiresReference !== undefined && typeof input.requiresReference !== "boolean") {
+    return { ok: false, error: "bad_request" };
+  }
   return {
     ok: true,
     value: {
@@ -196,8 +213,8 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): Validatio
       settlement: input.settlement,
       // A way a business models on cash defaults to behaving like cash at the
       // drawer and the cash-up, which is what it is for.
-      opensDrawer: input.opensDrawer === undefined ? input.settlement === "cash" : Boolean(input.opensDrawer),
-      requiresReference: Boolean(input.requiresReference),
+      opensDrawer: input.opensDrawer === undefined ? input.settlement === "cash" : input.opensDrawer,
+      requiresReference: input.requiresReference ?? false,
     },
   };
 }
@@ -255,8 +272,25 @@ export function changeDue(tenders: readonly { settlement: PaymentSettlement; amo
 /** At most this many slices on one bill — a guard against a runaway client, not a business rule. */
 export const MAX_TENDERS = 10;
 
+/**
+ * The part of a split bill an ordering platform charges commission on.
+ *
+ * Checkout and backdated-order tender lists contain the bill only. Tips are
+ * stored separately on the order and added later by `tendersWithTip` for the
+ * ledger, so summing the SnapFood tender here keeps the tip out of the
+ * commission base by construction.
+ */
+export function platformCommissionBase(
+  tenders: readonly { settlement: PaymentSettlement; amount: Rial }[],
+): Rial {
+  return tenders.reduce(
+    (total, tender) => (tender.settlement === "snappfood" ? total + tender.amount : total),
+    0,
+  );
+}
+
 export interface TenderValidationOptions {
-  /** The bill plus any tip: what the tenders must add up to. */
+  /** The bill amount; tips are stored separately and folded into the ledger later. */
   due: Rial;
   /** Whether a customer was named — a `credit` tender is a debt, so it needs one. */
   hasCustomer: boolean;

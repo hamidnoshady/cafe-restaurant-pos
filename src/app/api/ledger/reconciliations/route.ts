@@ -2,38 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import {
   createReconciliation,
-  getAccountOverview,
   ReconciliationError,
   listReconciliations,
+  RECONCILABLE_ACCOUNTS,
+  type ReconcilableAccount,
 } from "@/lib/reconciliation-service";
-import { isIsoDate, isReconcilableAccount } from "@/lib/reconciliation";
 
 /**
- * «تطبیق بانکی و صندوق» — the account's reconciliation history.
- *
- * The reconcilable set lives in `reconciliation.ts` (`isReconcilableAccount`)
- * so no route can fall behind it — the local copy here was still two entries
- * long after بانک became a posted-to account.
+ * The reconcilable set lives in the service (`RECONCILABLE_ACCOUNTS`) so the
+ * route cannot fall behind it — the local copy here was still two entries long
+ * after بانک became a posted-to account.
  */
+const ACCOUNT_CODES: readonly ReconcilableAccount[] = RECONCILABLE_ACCOUNTS;
+
+/** A reconciliation history, or the current one, for ?accountCode=cash|bank|bankClearing. */
 export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
-  const accountCode = request.nextUrl.searchParams.get("accountCode");
-  if (!isReconcilableAccount(accountCode)) {
+  const accountCode = request.nextUrl.searchParams.get("accountCode") as ReconcilableAccount | null;
+  if (!accountCode || !ACCOUNT_CODES.includes(accountCode)) {
     return NextResponse.json({ error: "invalid_account" }, { status: 400 });
   }
 
+  // `ledger_account_missing` is a real, reachable state — a chart of accounts
+  // that never got ۱۱۱۰, or an account renamed out from under the code — and
+  // the service raises it as a 409. Without this catch it escaped as a 500 and
+  // the screen said «خطای غیرمنتظره» instead of naming the missing account.
   try {
-    // The overview travels with the history: the "start a new one" form needs
-    // the opening balance and the count of unmatched items to be worth filling
-    // in, and fetching it separately doubled the screen's round trips for two
-    // numbers that come from the same account.
-    const [reconciliations, overview] = await Promise.all([
-      listReconciliations(session.businessId, accountCode),
-      getAccountOverview(session.businessId, accountCode),
-    ]);
-    return NextResponse.json({ reconciliations, overview });
+    return NextResponse.json({ reconciliations: await listReconciliations(session.businessId, accountCode) });
   } catch (err) {
     if (err instanceof ReconciliationError) return NextResponse.json({ error: err.message }, { status: err.status });
     throw err;
@@ -58,18 +55,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (!isReconcilableAccount(body.accountCode)) {
+  if (!ACCOUNT_CODES.includes(body.accountCode as ReconcilableAccount)) {
     return NextResponse.json({ error: "invalid_account" }, { status: 400 });
   }
-  const statementDate = body.statementDate?.trim() ?? "";
-  if (!statementDate) {
+  if (!body.statementDate?.trim()) {
     return NextResponse.json({ error: "statement_date_required" }, { status: 400 });
-  }
-  // Validated here rather than left to Postgres: a `date` column handed
-  // anything else raises `invalid input syntax for type date`, which reaches
-  // the accountant as a 500 and «خطای غیرمنتظره».
-  if (!isIsoDate(statementDate)) {
-    return NextResponse.json({ error: "invalid_statement_date" }, { status: 400 });
   }
   const statementBalance = Number(body.statementBalance);
   if (!Number.isSafeInteger(statementBalance)) {
@@ -79,8 +69,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   try {
     const reconciliation = await createReconciliation({
       businessId: session.businessId,
-      accountCode: body.accountCode,
-      statementDate,
+      accountCode: body.accountCode as ReconcilableAccount,
+      statementDate: body.statementDate.trim(),
       statementBalance,
       createdBy: session.sub,
     });

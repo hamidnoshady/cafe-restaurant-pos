@@ -10,9 +10,9 @@
 # refuses the zip. These checks are seconds long and catch exactly that class
 # of breakage.
 #
-# Why it is manual (`workflow_dispatch`), like the two release builds: it is
-# opt-in on purpose, so the shared single Windows runner is not queued behind
-# another automatic job on every PR. Run it before either release build.
+# Why it is manual (`workflow_dispatch`), like every workflow in this
+# repository: nothing runs automatically on a push or a pull request. Run it
+# before either release build.
 #
 # It deliberately does NOT package anything — producing the `.exe` is
 # `build-desktop-installer.yml`, producing the zip is `build-plugin-zip.yml`.
@@ -37,7 +37,7 @@ defaults:
 jobs:
   desktop:
     name: desktop shell
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -107,7 +107,7 @@ jobs:
 
   plugin:
     name: WordPress plugin
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -226,7 +226,7 @@ jobs:
 
   connector:
     name: Windows print connector
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 

@@ -33,4 +33,22 @@ describe("computeSuggestedPrice", () => {
       suggestedPrice: 0,
     });
   });
+
+  it("refuses an invalid margin instead of returning a non-finite price", () => {
+    expect(computeSuggestedPrice({ materialCost: 20_000, overheadRatePercent: 20, marginPercent: 100 })).toEqual({
+      loadedCost: 24_000,
+      suggestedPrice: null,
+    });
+    expect(computeSuggestedPrice({ materialCost: 20_000, overheadRatePercent: 20, marginPercent: Number.NaN })).toEqual({
+      loadedCost: 24_000,
+      suggestedPrice: null,
+    });
+  });
+
+  it("does not let a malformed negative overhead reduce loaded cost below material cost", () => {
+    expect(computeSuggestedPrice({ materialCost: 20_000, overheadRatePercent: -50, marginPercent: 20 })).toEqual({
+      loadedCost: 20_000,
+      suggestedPrice: 25_000,
+    });
+  });
 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import {
-  deleteReconciliation,
+  discardReconciliation,
   getReconciliation,
   ReconciliationError,
 } from "@/lib/reconciliation-service";
@@ -25,13 +25,9 @@ export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
 });
 
 /**
- * Cancels an in-progress reconciliation.
- *
- * The one escape from a reconciliation opened with a wrong statement date or
- * balance: it can never be made to balance, a completed one is immutable and
- * the unique index allows only one in progress per account — so before this
- * existed, one typo left the account's whole screen stuck for good. A
- * *completed* reconciliation is still immutable; the service refuses it.
+ * Discard an in-progress reconciliation, so a mistyped statement balance does
+ * not wedge the account. Completed reconciliations are immutable — they are
+ * the next period's opening balance.
  */
 export const DELETE = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
@@ -39,7 +35,7 @@ export const DELETE = withTenantScope(async (_request: NextRequest, ctx: Ctx) =>
 
   const { id } = await ctx.params;
   try {
-    await deleteReconciliation({ businessId: session.businessId, reconciliationId: id });
+    await discardReconciliation({ businessId: session.businessId, reconciliationId: id });
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof ReconciliationError) return NextResponse.json({ error: err.message }, { status: err.status });

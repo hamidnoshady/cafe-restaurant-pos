@@ -29,6 +29,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  // The column is unbounded `text`, so nothing else stopped a pasted paragraph
+  // from becoming a registry row — and then the label the sync list, the
+  // comparison table and the token banner all have to render. The same 120
+  // ceiling the connection names use (see `invalid_name` in ui.tsx).
+  if (name.length > 120) return NextResponse.json({ error: "field_too_long" }, { status: 400 });
 
   const created = await registerRollupLocation(session.businessId, name);
   return NextResponse.json({ ok: true, ...created });

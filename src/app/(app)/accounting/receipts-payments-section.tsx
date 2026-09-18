@@ -7,7 +7,7 @@ import {
   overlayPanelClass,
 } from "@/app/dashboard/page-chrome";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
@@ -73,23 +73,50 @@ export function ReceiptsPaymentsSection() {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<Voucher[] | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  const load = useCallback(() => {
-    const params = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-    const url = side === "receipts" ? `/api/ledger/ar/receipts${params}` : `/api/ledger/ap/payments${params}`;
-    api<{ receipts?: Voucher[]; payments?: Voucher[]; error?: string }>(url).then(({ ok, data }) => {
-      if (ok) setRows(data.receipts ?? data.payments ?? []);
-      else setError(errorMessage(data.error));
-    });
-  }, [side, q]);
+  /*
+   * Responses race each other — a fast «علی» search easily outruns the slow
+   * unfiltered listing it was typed over, and without the token the *older*
+   * answer wins the setState and the screen shows rows that match nothing the
+   * user asked for. Only the latest request may write state.
+   */
+  const requestSeq = useRef(0);
+  const prevSide = useRef<Side>(side);
 
   useEffect(() => {
-    setRows(null);
-    const t = setTimeout(load, q ? 250 : 0);
+    // Switching دریافتی/پرداختی swaps the whole dataset; what is on screen
+    // belongs to the other stream, so only that transition blanks the list —
+    // searches and refreshes keep their rows and just flag «در حال به‌روزرسانی».
+    if (prevSide.current !== side) {
+      prevSide.current = side;
+      setRows(null);
+    }
+    const seq = ++requestSeq.current;
+    const run = () => {
+      setLoading(true);
+      const params = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+      const url = side === "receipts" ? `/api/ledger/ar/receipts${params}` : `/api/ledger/ap/payments${params}`;
+      api<{ receipts?: Voucher[]; payments?: Voucher[]; error?: string }>(url)
+        .then(({ ok, data }) => {
+          if (requestSeq.current !== seq) return;
+          if (ok) {
+            setRows(data.receipts ?? data.payments ?? []);
+            setError("");
+          } else {
+            // A network failure resolves here too — `api()` answers the
+            // synthetic «network_error» code rather than rejecting.
+            setError(errorMessage(data.error));
+          }
+        })
+        .finally(() => {
+          if (requestSeq.current === seq) setLoading(false);
+        });
+    };
+    const t = setTimeout(run, q ? 250 : 0);
     return () => clearTimeout(t);
-  }, [load, q, refreshKey]);
+  }, [side, q, refreshKey]);
 
   /*
    * The export obeys the same Shamsi rule the screen does: a CSV is read by a
@@ -99,7 +126,7 @@ export function ReceiptsPaymentsSection() {
    * number, because a spreadsheet has to be able to add the column up.
    */
   function downloadCsv() {
-    if (!rows) return;
+    if (!rows || rows.length === 0) return;
     const head = ["تاریخ", "شخص", "شرح", "روش", `مبلغ (${money.unitLabel})`];
     const body = rows.map((r) => [
       fmtJalali(r.date),
@@ -110,12 +137,25 @@ export function ReceiptsPaymentsSection() {
     ]);
     const csv = [head, ...body].map((line) => line.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = side === "receipts" ? "receipts.csv" : "payments.csv";
+    // Firefox only honors the download of an anchor that is in the document,
+    // and revoking the blob URL in the same tick can cancel the navigation the
+    // click just queued — so attach, click, detach, and revoke on a delay.
+    document.body.append(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
+
+  const needle = q.trim();
+  const emptyMessage = needle
+    ? `برای «${needle}» سندی یافت نشد.`
+    : side === "receipts"
+      ? "هنوز سندی برای دریافت ثبت نشده است."
+      : "هنوز سندی برای پرداخت ثبت نشده است.";
 
   return (
     <section className="space-y-4">
@@ -136,10 +176,12 @@ export function ReceiptsPaymentsSection() {
             <button
               type="button"
               onClick={() => setRefreshKey((k) => k + 1)}
+              aria-busy={loading}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 dark:text-stone-300 transition-colors hover:bg-muted"
             >
               <RefreshCwIcon aria-hidden="true" className="size-4" />
-              به‌روزرسانی
+              {/* The design system reports progress with a busy label, not a spinner. */}
+              {loading ? "در حال به‌روزرسانی…" : "به‌روزرسانی"}
             </button>
             <button
               type="button"
@@ -173,18 +215,34 @@ export function ReceiptsPaymentsSection() {
             </button>
           </div>
           <input
+            type="search"
             className={`${inputClass} h-11 ms-auto w-40 sm:w-56`}
             placeholder="جست‌وجوی شخص یا شرح…"
+            aria-label="جست‌وجوی شخص یا شرح"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
 
-        <div className="mt-4">
+        <div className="mt-4" aria-busy={loading && rows !== null}>
           {!rows ? (
-            <SectionCardSkeleton rows={4} />
+            error ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <p className="text-sm text-muted-foreground">بارگذاری اسناد ممکن نشد.</p>
+                <button
+                  type="button"
+                  onClick={() => setRefreshKey((k) => k + 1)}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-4 text-xs font-semibold text-stone-600 dark:text-stone-300 transition-colors hover:bg-muted"
+                >
+                  <RefreshCwIcon aria-hidden="true" className="size-4" />
+                  تلاش مجدد
+                </button>
+              </div>
+            ) : (
+              <SectionCardSkeleton rows={4} />
+            )
           ) : rows.length === 0 ? (
-            <EmptyState>{side === "receipts" ? "هنوز سندی برای دریافت ثبت نشده است." : "هنوز سندی برای پرداخت ثبت نشده است."}</EmptyState>
+            <EmptyState>{emptyMessage}</EmptyState>
           ) : (
             <>
               <p className="mb-2 text-xs text-muted-foreground">
@@ -208,8 +266,8 @@ export function ReceiptsPaymentsSection() {
                     {rows.slice(0, VISIBLE_ROWS).map((r, index) => (
                       <tr key={r.id} className="border-b border-border transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-500/10">
                         <td className="py-3 pe-3 ps-4 text-muted-foreground">{toPersianDigits(index + 1)}</td>
-                        <td className="max-w-48 truncate py-3 pe-3 font-medium">{r.partyName}</td>
-                        <td className="max-w-64 truncate py-3 pe-3 text-muted-foreground">{r.memo ?? "—"}</td>
+                        <td className="max-w-48 truncate py-3 pe-3 font-medium" title={r.partyName}>{r.partyName}</td>
+                        <td className="max-w-64 truncate py-3 pe-3 text-muted-foreground" title={r.memo ?? undefined}>{r.memo ?? "—"}</td>
                         <td className="py-3 pe-3 text-muted-foreground">{METHOD_LABELS[r.method]}</td>
                         <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{fmtJalali(r.date)}</td>
                         <td className="whitespace-nowrap py-3 pe-4 font-semibold">{money.format(r.amount)}</td>
@@ -223,7 +281,7 @@ export function ReceiptsPaymentsSection() {
                   <article key={r.id} className="rounded-xl border border-border/80 bg-muted p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="truncate text-sm font-bold">{r.partyName}</h3>
+                        <h3 className="truncate text-sm font-bold" title={r.partyName}>{r.partyName}</h3>
                         <p className="mt-1 text-xs text-muted-foreground">{r.memo ?? (side === "receipts" ? "دریافت وجه" : "پرداخت وجه")}</p>
                       </div>
                       <span className="whitespace-nowrap font-bold">{money.format(r.amount)}</span>
@@ -253,9 +311,17 @@ export function ReceiptsPaymentsSection() {
   );
 }
 
+interface PartyOption {
+  id: string;
+  name: string;
+  phone: string | null;
+}
+
 function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => void; onCreated: () => void }) {
   const money = useMoney();
-  const [parties, setParties] = useState<{ id: string; name: string }[]>([]);
+  const [parties, setParties] = useState<PartyOption[]>([]);
+  const [partyState, setPartyState] = useState<"loading" | "error" | "ready">("loading");
+  const [directoryKey, setDirectoryKey] = useState(0);
   const [partyId, setPartyId] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"cash" | "bank">("cash");
@@ -273,20 +339,32 @@ function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => 
    * with an unexplained server error rather than a message.
    */
   useEffect(() => {
+    let cancelled = false;
+    setPartyState("loading");
     const url =
       side === "receipts" ? "/api/ledger/ar/customers?scope=directory" : "/api/ledger/ap/suppliers?scope=directory";
     api<{
-      customers?: { customerId: string; customerName: string }[];
-      suppliers?: { supplierId: string; supplierName: string }[];
+      customers?: { customerId: string; customerName: string; customerPhone: string | null }[];
+      suppliers?: { supplierId: string; supplierName: string; supplierPhone: string | null }[];
     }>(url).then(({ ok, data }) => {
-      if (!ok) return;
+      if (cancelled) return;
+      // `api()` resolves even when the network drops (as «network_error»), so
+      // this one branch covers unreachable servers and 4xx/5xx alike.
+      if (!ok) {
+        setPartyState("error");
+        return;
+      }
       setParties(
         side === "receipts"
-          ? (data.customers ?? []).map((c) => ({ id: c.customerId, name: c.customerName }))
-          : (data.suppliers ?? []).map((s) => ({ id: s.supplierId, name: s.supplierName })),
+          ? (data.customers ?? []).map((c) => ({ id: c.customerId, name: c.customerName, phone: c.customerPhone }))
+          : (data.suppliers ?? []).map((s) => ({ id: s.supplierId, name: s.supplierName, phone: s.supplierPhone })),
       );
+      setPartyState("ready");
     });
-  }, [side]);
+    return () => {
+      cancelled = true;
+    };
+  }, [side, directoryKey]);
 
   async function submit() {
     if (!partyId) {
@@ -323,10 +401,10 @@ function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => 
         role="dialog"
         aria-modal="true"
         aria-labelledby="voucher-form-heading"
-        className={`${overlayPanelClass} w-full max-w-md`}
+        className={`${overlayPanelClass} flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
+        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ثبت تراکنش مالی</p>
             <h3 id="voucher-form-heading" className="mt-1 text-lg font-bold">
@@ -338,40 +416,74 @@ function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => 
           </button>
         </header>
 
-        <div className="space-y-4 px-4 py-4 sm:px-5">
-          <ErrorBox>{error}</ErrorBox>
-          <Field label={side === "receipts" ? "دریافت از شخص" : "پرداخت به شخص"}>
-            <SearchableSelect
-              value={partyId}
-              onChange={setPartyId}
-              ariaLabel="انتخاب شخص"
-              options={[{ value: "", label: "انتخاب کنید…" }, ...parties.map((p) => ({ value: p.id, label: p.name }))]}
-            />
-          </Field>
-          <Field label="مبلغ" hint={money.unitLabel}>
-            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="۰" />
-          </Field>
-          <div>
-            <p className="mb-1 text-sm font-medium text-foreground">روش</p>
-            <div className="flex gap-2">
-              <button type="button" aria-pressed={method === "cash"} className={chipClass(method === "cash")} onClick={() => setMethod("cash")}>نقدی</button>
-              <button type="button" aria-pressed={method === "bank"} className={chipClass(method === "bank")} onClick={() => setMethod("bank")}>بانکی</button>
+        {/* A real <form> so Enter in the amount/memo fields submits the voucher,
+            not just a click on the button. */}
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4 sm:px-5">
+            <ErrorBox>{error}</ErrorBox>
+            <Field label={side === "receipts" ? "دریافت از شخص" : "پرداخت به شخص"}>
+              <SearchableSelect
+                value={partyId}
+                onChange={setPartyId}
+                ariaLabel="انتخاب شخص"
+                loading={partyState === "loading"}
+                disabled={partyState === "error"}
+                options={[
+                  { value: "", label: "انتخاب کنید…" },
+                  ...parties.map((p) => ({
+                    value: p.id,
+                    // Two customers can share a name; the phone number is how
+                    // the accountant tells them apart before money moves
+                    // against the wrong person's account.
+                    label: p.phone ? `${p.name} · ${toPersianDigits(p.phone)}` : p.name,
+                    searchString: `${p.name} ${p.phone ?? ""}`,
+                  })),
+                ]}
+              />
+            </Field>
+            {partyState === "error" ? (
+              <div className="-mt-2 mb-4 flex items-center gap-2">
+                <p className="text-xs text-destructive">لیست اشخاص بارگذاری نشد.</p>
+                <button
+                  type="button"
+                  onClick={() => setDirectoryKey((k) => k + 1)}
+                  className="rounded-lg px-2 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-500/10"
+                >
+                  تلاش مجدد
+                </button>
+              </div>
+            ) : null}
+            <Field label="مبلغ" hint={money.unitLabel}>
+              <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="۰" />
+            </Field>
+            <div className="mb-4">
+              <p className="mb-1 text-sm font-medium text-foreground">روش</p>
+              <div className="flex gap-2">
+                <button type="button" aria-pressed={method === "cash"} className={chipClass(method === "cash")} onClick={() => setMethod("cash")}>نقدی</button>
+                <button type="button" aria-pressed={method === "bank"} className={chipClass(method === "bank")} onClick={() => setMethod("bank")}>بانکی</button>
+              </div>
             </div>
+            <Field label="تاریخ (اختیاری)">
+              <JalaliDatePicker value={date} onChange={setDate} className={inputClass} ariaLabel="تاریخ" />
+            </Field>
+            <Field label="شرح (اختیاری)">
+              <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
+            </Field>
           </div>
-          <Field label="تاریخ (اختیاری)">
-            <JalaliDatePicker value={date} onChange={setDate} className={inputClass} />
-          </Field>
-          <Field label="شرح (اختیاری)">
-            <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
-          </Field>
-        </div>
 
-        <footer className="grid grid-cols-2 gap-3 border-t border-border px-4 py-4 sm:px-5">
-          <SecondaryButton onClick={onClose} disabled={busy}>انصراف</SecondaryButton>
-          <PrimaryButton onClick={() => void submit()} disabled={busy}>
-            {busy ? "در حال ثبت…" : side === "receipts" ? "ثبت دریافت" : "ثبت پرداخت"}
-          </PrimaryButton>
-        </footer>
+          <footer className="grid shrink-0 grid-cols-2 gap-3 border-t border-border px-4 py-4 sm:px-5">
+            <SecondaryButton onClick={onClose} disabled={busy}>انصراف</SecondaryButton>
+            <PrimaryButton disabled={busy}>
+              {busy ? "در حال ثبت…" : side === "receipts" ? "ثبت دریافت" : "ثبت پرداخت"}
+            </PrimaryButton>
+          </footer>
+        </form>
       </section>
     </div>
   );

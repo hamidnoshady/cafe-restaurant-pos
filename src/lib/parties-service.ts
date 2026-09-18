@@ -223,9 +223,12 @@ function toParty(row: PartyRow, dek: Buffer | null): Party {
       ...general,
       nationalId: decryptOptional(nationalIdEnc, dek, nationalId ?? null) ?? "",
       economicCode: decryptOptional(economicCodeEnc, dek, economicCode ?? null) ?? "",
-      taxPercentage: taxPercentageOf({
-        generalInfo: { taxPercentage: Number(general.taxPercentage ?? DEFAULT_TAX_PERCENTAGE) },
-      }),
+      // Handed over raw: `taxPercentageOf` already distinguishes «unset» from
+      // «zero» and parses localized text. Wrapping it in `Number()` first threw
+      // that away — `Number("۹٫۵")` is `NaN`, which the coercion could then only
+      // read as «not a rate» and replace with the default, so a stored
+      // fractional rate came back as 9% on every read.
+      taxPercentage: taxPercentageOf({ generalInfo: { taxPercentage: general.taxPercentage } }),
     },
     addressInfo: typeof addressInfo === "object" && addressInfo ? addressInfo : {},
     contactInfo: typeof contactInfo === "object" && contactInfo ? contactInfo : {},

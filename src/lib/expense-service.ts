@@ -16,6 +16,11 @@
  * integration/expense.integration.test.ts.
  */
 import { getPool, query } from "./db";
+import {
+  isValidIsoDate,
+  MAX_EXPENSE_AMOUNT_RIAL,
+  type ExpenseListFilters,
+} from "./expense-input";
 import { postJournalEntry } from "./ledger-service";
 
 export class ExpenseError extends Error {
@@ -97,12 +102,73 @@ const SELECT_EXPENSE = `
     JOIN accounts p ON p.id = e.payment_account_id
     LEFT JOIN users u ON u.id = e.created_by`;
 
-export async function listExpenses(businessId: string): Promise<Expense[]> {
-  const { rows } = await query<ExpenseRow>(
-    `${SELECT_EXPENSE} WHERE e.business_id = $1 ORDER BY e.expense_date DESC, e.created_at DESC LIMIT 200`,
-    [businessId],
+export interface ExpenseListResult {
+  expenses: Expense[];
+  /** Whether the window is cutting rows off, so the screen can say so. */
+  hasMore: boolean;
+  /** Sum over *every* matching row, not just the returned window. */
+  totalAmount: number;
+  /** How many rows match the filters in total. */
+  totalCount: number;
+}
+
+/**
+ * The filtered list plus the true totals.
+ *
+ * It used to be an unfiltered `LIMIT 200` whose caller then summed the rows it
+ * happened to receive and labelled the result «جمع هزینه‌ها» — a number that
+ * silently stopped being the truth on the 201st expense, with nothing on the
+ * screen saying so. The sum and the count are computed in SQL over the whole
+ * matching set now, and `hasMore` reports the truncation.
+ */
+export async function listExpenses(
+  businessId: string,
+  filters: Partial<ExpenseListFilters> = {},
+): Promise<ExpenseListResult> {
+  const where: string[] = ["e.business_id = $1"];
+  const values: unknown[] = [businessId];
+  const add = (sql: string, value: unknown) => {
+    values.push(value);
+    where.push(sql.replace("$n", `$${values.length}`));
+  };
+
+  if (filters.dateFrom) add("e.expense_date >= $n::date", filters.dateFrom);
+  if (filters.dateTo) add("e.expense_date <= $n::date", filters.dateTo);
+  if (filters.accountId) add("e.account_id = $n", filters.accountId);
+  if (filters.paymentAccountId) add("e.payment_account_id = $n", filters.paymentAccountId);
+  if (filters.q) {
+    values.push(`%${filters.q}%`);
+    const i = values.length;
+    where.push(
+      `(e.memo ILIKE $${i} OR e.vendor ILIKE $${i} OR a.code ILIKE $${i} OR a.name ILIKE $${i} OR p.code ILIKE $${i} OR p.name ILIKE $${i})`,
+    );
+  }
+
+  const clause = where.join(" AND ");
+  const limit = Math.max(1, Math.trunc(filters.limit ?? 100));
+
+  const { rows: totals } = await query<{ total: string; count: string }>(
+    `SELECT COALESCE(SUM(e.amount), 0)::text AS total, COUNT(*)::text AS count
+       FROM expenses e
+       JOIN accounts a ON a.id = e.account_id
+       JOIN accounts p ON p.id = e.payment_account_id
+      WHERE ${clause}`,
+    values,
   );
-  return rows.map(toExpense);
+
+  // One extra row is the cheapest possible "is there more?" probe.
+  const { rows } = await query<ExpenseRow>(
+    `${SELECT_EXPENSE} WHERE ${clause} ORDER BY e.expense_date DESC, e.created_at DESC LIMIT $${values.length + 1}`,
+    [...values, limit + 1],
+  );
+
+  const hasMore = rows.length > limit;
+  return {
+    expenses: rows.slice(0, limit).map(toExpense),
+    hasMore,
+    totalAmount: Number(totals[0]?.total ?? 0),
+    totalCount: Number(totals[0]?.count ?? 0),
+  };
 }
 
 export async function recordExpense(params: {
@@ -116,9 +182,21 @@ export async function recordExpense(params: {
   memo: string;
   createdBy: string | null;
 }): Promise<Expense> {
-  if (!Number.isSafeInteger(params.amount) || params.amount <= 0) throw new ExpenseError("invalid_amount");
+  if (!Number.isSafeInteger(params.amount) || params.amount <= 0 || params.amount > MAX_EXPENSE_AMOUNT_RIAL) {
+    throw new ExpenseError("invalid_amount");
+  }
   if (!params.memo.trim()) throw new ExpenseError("memo_required");
+  if (!params.accountId || !params.paymentAccountId) throw new ExpenseError("unknown_account");
   if (params.accountId === params.paymentAccountId) throw new ExpenseError("same_account");
+  /*
+   * An unparsable date used to be handed straight to Postgres as `text`, which
+   * answered with a 22007 the route did not catch — a 500 and a generic
+   * «خطای غیرمنتظره» for what is a user input mistake. Validate it here so the
+   * form gets a named error instead. The journal entry gets the same value, so
+   * an expense and its posting can never disagree about the date either.
+   */
+  const expenseDate = params.expenseDate?.trim() || null;
+  if (expenseDate !== null && !isValidIsoDate(expenseDate)) throw new ExpenseError("invalid_expense_date");
 
   await assertAccount(params.businessId, params.accountId, "expense");
   await assertAccount(params.businessId, params.paymentAccountId, "asset");
@@ -137,7 +215,7 @@ export async function recordExpense(params: {
         params.accountId,
         params.paymentAccountId,
         params.amount,
-        params.expenseDate?.trim() || null,
+        expenseDate,
         params.vendor?.trim() || null,
         params.memo.trim(),
         params.createdBy,
@@ -148,7 +226,7 @@ export async function recordExpense(params: {
     await postJournalEntry(client, {
       businessId: params.businessId,
       locationId: params.locationId,
-      entryDate: params.expenseDate ?? null,
+      entryDate: expenseDate,
       memo: params.memo.trim(),
       sourceType: "expense",
       sourceId: expenseId,

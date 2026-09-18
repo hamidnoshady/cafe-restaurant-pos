@@ -15,10 +15,14 @@ import { addDays } from "./rollup";
 import { computeSuggestedPrice } from "./pricing";
 import { recipeCostDrift } from "./cost-drift";
 
-const OVERHEAD_LOOKBACK_DAYS = 30;
+export const OVERHEAD_LOOKBACK_DAYS = 30;
 
 /** The default drift threshold, used only until an owner sets their own. */
 export const DEFAULT_COST_DRIFT_THRESHOLD_PERCENT = 20;
+
+/** Manual percentages use the same sanity ceiling in the service and API. */
+export const MAX_OVERHEAD_PERCENT = 1000;
+export const MAX_COST_DRIFT_THRESHOLD_PERCENT = 1000;
 
 export interface PricingConfig {
   /** Business-wide target gross margin (%), applied to any item without its own override. Null until an owner sets one. */
@@ -38,18 +42,78 @@ export interface PricingConfig {
   costDriftThresholdPercent?: number;
 }
 
+function storedPercent(value: unknown, options: { max: number; allowZero?: boolean }): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  if (value < 0 || (!options.allowZero && value === 0) || value >= options.max) return null;
+  return value;
+}
+
 export async function getPricingConfig(businessId: string): Promise<PricingConfig> {
   const stored = await getSetting<PricingConfig>(businessId, SETTING_KEYS.pricing);
   return {
-    defaultMarginPercent: stored?.defaultMarginPercent ?? null,
-    fallbackOverheadPercent: stored?.fallbackOverheadPercent ?? null,
+    // Settings predate the current API validation and can also be restored from
+    // an old backup. Normalize them here as well as at the write boundary so a
+    // malformed value can never turn a suggestion into Infinity/NaN.
+    defaultMarginPercent: storedPercent(stored?.defaultMarginPercent, { max: 100, allowZero: true }),
+    fallbackOverheadPercent: storedPercent(stored?.fallbackOverheadPercent, {
+      max: MAX_OVERHEAD_PERCENT,
+      allowZero: true,
+    }),
     overheadMode: stored?.overheadMode === "manual" ? "manual" : "automatic",
-    costDriftThresholdPercent: stored?.costDriftThresholdPercent ?? DEFAULT_COST_DRIFT_THRESHOLD_PERCENT,
+    costDriftThresholdPercent:
+      storedPercent(stored?.costDriftThresholdPercent, {
+        max: MAX_COST_DRIFT_THRESHOLD_PERCENT,
+      }) ?? DEFAULT_COST_DRIFT_THRESHOLD_PERCENT,
   };
 }
 
 export async function setPricingConfig(businessId: string, config: PricingConfig): Promise<void> {
   await setSetting(businessId, SETTING_KEYS.pricing, config);
+}
+
+export interface EffectiveOverheadRate {
+  /** The rate suggestions currently use, or null when neither ledger data nor an estimate exists. */
+  ratePercent: number | null;
+  source: "ledger" | "fallback" | "none";
+  /** Kept separately so the settings screen can explain why an automatic estimate is or is not active. */
+  ledgerRatePercent: number | null;
+  lookbackDays: number;
+}
+
+/**
+ * Resolves the one overhead policy used by suggestions, drift reporting and
+ * the settings status. Keeping this in one place prevents those three surfaces
+ * from disagreeing about whether the ledger or the configured estimate wins.
+ */
+export async function getEffectiveOverheadRate(
+  businessId: string,
+  config?: PricingConfig,
+): Promise<EffectiveOverheadRate> {
+  const resolvedConfig = config ?? (await getPricingConfig(businessId));
+  const dateTo = new Date().toISOString().slice(0, 10);
+  const pnl = await getProfitAndLoss(businessId, {
+    dateFrom: addDays(dateTo, -(OVERHEAD_LOOKBACK_DAYS - 1)),
+    dateTo,
+  });
+  const rawLedgerRate =
+    pnl.totalRevenue > 0 ? ((pnl.operatingExpenses + pnl.laborCost) / pnl.totalRevenue) * 100 : null;
+  // Expense reversals can make a short window's net overhead negative. A
+  // recovery rate below zero would price an item below its material cost, so
+  // zero is the safe lower bound while still reporting the ledger as source.
+  const ledgerRatePercent =
+    rawLedgerRate != null && Number.isFinite(rawLedgerRate) ? Math.max(0, rawLedgerRate) : null;
+  const useLedger = resolvedConfig.overheadMode !== "manual";
+  const ratePercent = useLedger
+    ? ledgerRatePercent ?? resolvedConfig.fallbackOverheadPercent
+    : resolvedConfig.fallbackOverheadPercent;
+  const source: EffectiveOverheadRate["source"] =
+    useLedger && ledgerRatePercent != null
+      ? "ledger"
+      : resolvedConfig.fallbackOverheadPercent != null
+        ? "fallback"
+        : "none";
+
+  return { ratePercent, source, ledgerRatePercent, lookbackDays: OVERHEAD_LOOKBACK_DAYS };
 }
 
 export interface SuggestedPriceBreakdown {
@@ -88,24 +152,9 @@ export async function getSuggestedPrice(businessId: string, menuItemId: string):
   const materialCost = Math.round(Number(recipeRows[0].cost));
 
   const config = await getPricingConfig(businessId);
-  const dateTo = new Date().toISOString().slice(0, 10);
-  const pnl = await getProfitAndLoss(businessId, { dateFrom: addDays(dateTo, -(OVERHEAD_LOOKBACK_DAYS - 1)), dateTo });
-  const ledgerOverheadRatePercent =
-    pnl.totalRevenue > 0 ? ((pnl.operatingExpenses + pnl.laborCost) / pnl.totalRevenue) * 100 : null;
-  // A manual estimate is an intentional choice, not merely a bootstrap value.
-  // Previously it was silently disabled as soon as a single revenue entry
-  // existed, which made the setting misleading for owners who prefer their
-  // own rate even after the 30-day ledger window is populated.
-  const useLedgerOverhead = config.overheadMode !== "manual";
-  const overheadRatePercent = useLedgerOverhead
-    ? ledgerOverheadRatePercent ?? config.fallbackOverheadPercent
-    : config.fallbackOverheadPercent;
-  const overheadSource: SuggestedPriceBreakdown["overheadSource"] =
-    useLedgerOverhead && ledgerOverheadRatePercent != null
-      ? "ledger"
-      : config.fallbackOverheadPercent != null
-        ? "fallback"
-        : "none";
+  const overhead = await getEffectiveOverheadRate(businessId, config);
+  const overheadRatePercent = overhead.ratePercent;
+  const overheadSource = overhead.source;
 
   const itemMargin = item.target_margin_percent != null ? Number(item.target_margin_percent) : null;
   const marginPercent = itemMargin ?? config.defaultMarginPercent;
@@ -130,7 +179,9 @@ export async function getSuggestedPrice(businessId: string, menuItemId: string):
 export interface MenuCostDriftRow {
   menuItemId: string;
   name: string;
+  /** Current loaded recipe cost (materials plus the active overhead policy), integer Rial. */
   currentCost: number;
+  /** Loaded cost implied by the current price at the target margin, integer Rial. */
   referenceCost: number;
   price: number;
   costChangePercent: number;
@@ -146,6 +197,7 @@ export interface MenuCostDriftRow {
  */
 export async function listMenuCostDrift(businessId: string, locationId: string): Promise<MenuCostDriftRow[]> {
   const config = await getPricingConfig(businessId);
+  const overhead = await getEffectiveOverheadRate(businessId, config);
   const { rows } = await query<{
     menu_item_id: string;
     name: string;
@@ -164,12 +216,33 @@ export async function listMenuCostDrift(businessId: string, locationId: string):
     [locationId],
   );
 
-  const marginPercent = (itemMargin: number | null) => itemMargin ?? config.defaultMarginPercent ?? 0;
   const out: MenuCostDriftRow[] = [];
   for (const r of rows) {
     const price = Number(r.price);
-    const currentCost = Math.round(Number(r.current_cost));
-    const referenceCost = Math.round(price * (1 - marginPercent(Number(r.target_margin_percent)) / 100));
+    // A free/invalid item has no selling-price basis from which to reverse a
+    // target cost, and would otherwise produce an Infinity that JSON turns
+    // into null while the TypeScript contract still claims it is a number.
+    if (!Number.isFinite(price) || price <= 0) continue;
+    const materialCost = Math.round(Number(r.current_cost));
+    // Number(null) is 0. The previous implementation therefore treated every
+    // item without an override as an explicit zero-margin item and silently
+    // ignored the business default. Preserve null before converting.
+    const itemMargin = r.target_margin_percent == null ? null : Number(r.target_margin_percent);
+    const marginPercent = itemMargin ?? config.defaultMarginPercent;
+    // Without either margin there is no pricing basis from which a reference
+    // cost can be inferred. Inventing a 0% target made the report look precise
+    // while measuring against a policy the business never selected.
+    if (marginPercent == null) continue;
+
+    // The target margin is applied to loaded cost, not bare recipe cost. Compare
+    // like with like: current material cost with the active overhead folded in,
+    // versus the loaded cost implied by the current price and target margin.
+    const currentCost = computeSuggestedPrice({
+      materialCost,
+      overheadRatePercent: overhead.ratePercent,
+      marginPercent: null,
+    }).loadedCost;
+    const referenceCost = Math.round(price * (1 - marginPercent / 100));
     const drift = recipeCostDrift({
       currentCost,
       referenceCost,

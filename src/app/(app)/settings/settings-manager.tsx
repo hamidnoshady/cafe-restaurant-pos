@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BellIcon,
@@ -22,6 +22,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ResolvedSettingsTab, SettingsTabKey } from "@/lib/settings-tabs";
+import { PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
+import type { Industry } from "@/lib/industries";
 import { settingsTabHref } from "@/lib/settings-routes";
 import { SectionNav, type Section } from "@/app/dashboard/section-nav";
 import { BackupManager } from "@/app/dashboard/backup/backup-manager";
@@ -54,6 +56,8 @@ interface SettingsManagerProps {
   features: Record<string, boolean>;
   currentUserId: string;
   isOwner: boolean;
+  /** The business's trade, so sections whose wording/fields depend on it (tax) can adapt. */
+  industry: Industry;
   /** The signed-in role, for the sections that mount a scoped party directory. */
   role: string;
   /**
@@ -88,9 +92,11 @@ const TAB_ICONS: Record<SettingsTabKey, LucideIcon> = {
 const SETTINGS_GROUPS: Array<{ label: string; keys: SettingsTabKey[] }> = [
   { label: "کسب‌وکار", keys: ["business", "branch-management"] },
   { label: "مالی و فروش", keys: ["tax", "pricing", "payment-methods", "accounts"] },
+  // Keep the platform contract beside payment settings instead of making
+  // owners scan past management and security sections to find it.
+  { label: "فروش آنلاین", keys: ["online-platforms"] },
   { label: "مدیریت", keys: ["team", "menu", "printers", "devices", "notifications", "shifts"] },
   { label: "امنیت و اتصال", keys: ["audit-log", "security-center", "backup"] },
-  { label: "فروش آنلاین", keys: ["online-platforms"] },
 ];
 
 /**
@@ -103,7 +109,8 @@ const SETTINGS_GROUPS: Array<{ label: string; keys: SettingsTabKey[] }> = [
  * button walks the sections the way it walks every other page in the product.
  *
  * `activeTab` therefore comes from the route, not from state. The drill-down's
- * open/closed flag is still local — it is a phone layout detail, not an address.
+ * open/closed flag is a phone layout detail; when the phone back bar closes a
+ * deep-linked section, its handler also canonicalizes the address to `/settings`.
  */
 export function SettingsManager({
   tabs,
@@ -111,6 +118,7 @@ export function SettingsManager({
   features,
   currentUserId,
   isOwner,
+  industry,
   role,
   permissions,
 }: SettingsManagerProps) {
@@ -127,12 +135,32 @@ export function SettingsManager({
   // by the address rather than by a click that may never have happened.
   const [open, setOpen] = useState(Boolean(activeTabProp));
 
+  // The browser back/forward buttons change the server-provided route prop
+  // without remounting this client component. Keep the phone drill-down in
+  // step with that address; otherwise going forward to a bookmarked section
+  // would leave the menu open while its panel stayed hidden.
+  useEffect(() => {
+    setOpen(Boolean(activeTabProp));
+  }, [activeTabProp]);
+
   const goToTab = useCallback(
     (key: SettingsTabKey) => {
       setOpen(true);
       router.push(settingsTabHref(key));
     },
     [router],
+  );
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      setOpen(next);
+      // On a phone the back bar is a real return to the settings list. Keep
+      // the address honest as well; otherwise a refresh of the list would
+      // reopen the old section and a direct link would never have a usable
+      // way back to the list.
+      if (!next && activeTabProp) router.replace(PLATFORM_SETTINGS_HOME);
+    },
+    [activeTabProp, router],
   );
 
   if (!firstTab) return null;
@@ -153,7 +181,7 @@ export function SettingsManager({
       active={activeTab}
       onChange={goToTab}
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={handleOpenChange}
     >
       {/*
         Hidden on a phone: the drill-down's back bar right above this already
@@ -177,7 +205,7 @@ export function SettingsManager({
       ) : null}
 
       {activeTab === "business" ? <BusinessSettings /> : null}
-      {activeTab === "tax" ? <TaxSettings /> : null}
+      {activeTab === "tax" ? <TaxSettings industry={industry} /> : null}
       {activeTab === "pricing" ? <PricingSettings /> : null}
       {activeTab === "online-platforms" ? <OnlinePlatformsSettings /> : null}
       {activeTab === "payment-methods" ? <PaymentMethodsSettings /> : null}

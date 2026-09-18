@@ -486,4 +486,114 @@ describe("retail warehouse documents (رسید/حواله انبار)", () => {
       expect(batch[0].quantity).toBe("6");
     });
   });
+  /* ----------------------------------------------------------------------
+   * Regressions: ways an ordinary retail document used to abort with a raw
+   * Postgres error (a 500), post at the wrong cost, or lose a race.
+   * ------------------------------------------------------------------- */
+
+  describe("regressions", () => {
+    it("answers a non-uuid item id as not-found rather than a uuid syntax error", async () => {
+      await withClient(async (client) => {
+        await expect(
+          createDoc(client, { kind: "receipt", lines: [{ itemId: "unknown", quantity: "1", unitCost: 100 }] }),
+        ).rejects.toThrow(/کالا در این انبار یافت نشد/);
+
+        await expect(
+          createDoc(client, {
+            kind: "receipt",
+            locationId: "not-a-uuid",
+            lines: [{ itemId: item.plainId, quantity: "1", unitCost: 100 }],
+          }),
+        ).rejects.toThrow(/انبار یافت نشد/);
+      });
+    });
+
+    it("refuses a unit cost past what the bigint column holds, before writing anything", async () => {
+      // 1e20 reached the INSERT and aborted the transaction with «value … is
+      // out of range for type bigint» — a 500 for a mistyped cost.
+      expect(() =>
+        warehouseService.parseRetailWarehouseDocumentLines("receipt", [
+          { itemId: item.plainId, quantity: "1", unitCost: 1e20 },
+        ]),
+      ).toThrow("cost_out_of_range");
+    });
+
+    it("refuses to relieve a lot that has no cost basis", async () => {
+      // `Number(batch.unit_cost ?? 0)` valued a costless lot at zero, writing
+      // stock out of the books for free. The tracking='none' branch already
+      // refused the same situation; both branches now agree.
+      await withClient(async (client) => {
+        await client.query(
+          `INSERT INTO item_batches (item_id, batch_number, quantity, unit_cost) VALUES ($1, 'LOT-NOCOST', 5, NULL)`,
+          [item.batchId],
+        );
+        await expect(
+          createDoc(client, { kind: "issue", lines: [{ itemId: item.batchId, quantity: "1", lot: "LOT-NOCOST" }] }),
+        ).rejects.toThrow(/بهای تمام‌شده این بچ ثبت نشده است/);
+      });
+    });
+
+    it("locks item_stock while issuing, so a concurrent taker cannot oversell it", async () => {
+      // The guard used to read item_stock unlocked and UPDATE afterwards:
+      // between the two, a concurrent sale could take the stock this check had
+      // just approved, and the row's CHECK (quantity >= 0) then aborted the
+      // transaction with a Postgres error instead of «موجودی کافی نیست».
+      const setup = await dbLib.getPool().connect();
+      let stocked = false;
+      try {
+        await setup.query("BEGIN");
+        await createDoc(setup, { kind: "receipt", lines: [{ itemId: item.plainId, quantity: "10", unitCost: 1000 }] });
+        await setup.query("COMMIT");
+        stocked = true;
+
+        const holder = await dbLib.getPool().connect();
+        const contender = await dbLib.getPool().connect();
+        try {
+          await holder.query("BEGIN");
+          // The holder takes the row and keeps it.
+          await holder.query("SELECT quantity FROM item_stock WHERE item_id = $1 FOR UPDATE", [item.plainId]);
+
+          await contender.query("BEGIN");
+          const blocked = createDoc(contender, {
+            kind: "issue",
+            lines: [{ itemId: item.plainId, quantity: "4" }],
+          });
+          // The contender must be waiting on the lock, not reading past it.
+          const raced = await Promise.race([
+            blocked.then(() => "finished").catch(() => "failed"),
+            new Promise<string>((resolve) => setTimeout(() => resolve("blocked"), 400)),
+          ]);
+          expect(raced).toBe("blocked");
+
+          // Holder drains the stock and commits; the contender then finds it gone.
+          await holder.query("UPDATE item_stock SET quantity = 1 WHERE item_id = $1", [item.plainId]);
+          await holder.query("COMMIT");
+
+          await expect(blocked).rejects.toThrow(/موجودی کافی نیست/);
+          await contender.query("ROLLBACK");
+        } finally {
+          await holder.query("ROLLBACK").catch(() => {});
+          await contender.query("ROLLBACK").catch(() => {});
+          holder.release();
+          contender.release();
+        }
+      } finally {
+        if (stocked) {
+          // This test commits (a lock needs two real transactions), so it
+          // cleans up after itself rather than relying on the rollback.
+          const cleanup = await dbLib.getPool().connect();
+          try {
+            await cleanup.query("DELETE FROM item_stock WHERE item_id = $1", [item.plainId]);
+            await cleanup.query(
+              `DELETE FROM retail_warehouse_documents WHERE business_id = $1`,
+              [biz.id],
+            );
+          } finally {
+            cleanup.release();
+          }
+        }
+        setup.release();
+      }
+    });
+  });
 });

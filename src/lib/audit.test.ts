@@ -7,6 +7,7 @@ describe("auditActionLabel", () => {
     expect(auditActionLabel("employee.session_created")).toBe("ورود به سیستم");
     expect(auditActionLabel("employee.login_failed")).toBe("تلاش ورود ناموفق");
     expect(auditActionLabel("employee.login_unlocked")).toBe("رفع قفل ورود");
+    expect(auditActionLabel("device.renamed")).toBe("تغییر نام دستگاه");
   });
 
   it("falls back to the raw action for an unrecognised value", () => {
@@ -18,6 +19,11 @@ describe("auditActionLabel", () => {
     expect(auditActionLabel("account.reparented")).toBe("جابه‌جایی حساب در ساختار");
     expect(auditActionLabel("account.archived")).toBe("بایگانی حساب");
     expect(auditActionLabel("account.reactivated")).toBe("بازگردانی حساب از بایگانی");
+  });
+
+  it("labels the settings writers, whose rows the audit tab renders", () => {
+    expect(auditActionLabel("settings.business.update")).toBe("تغییر اطلاعات کسب‌وکار");
+    expect(auditActionLabel("settings.mfa_policy.update")).toBe("تغییر سیاست ورود دومرحله‌ای");
   });
 });
 

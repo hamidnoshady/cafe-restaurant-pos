@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { generateRollupToken, hashRollupToken } from "./rollup-tokens";
 import {
   addDays,
   computePushFromDay,
-  generateRollupToken,
-  hashRollupToken,
   isSyncStale,
   isValidBusinessDay,
   MAX_DAYS_PER_PUSH,
