@@ -50,6 +50,19 @@ const UPDATE = process.argv.includes("--update");
 const MAX_DIFF_RATIO = 0.001;
 
 /**
+ * The Chromium the baselines were recorded with — the build pinned by the
+ * `playwright` devDependency, which is itself pinned to an exact version (not
+ * `^`) precisely so this cannot drift. Only the major is enforced; patch
+ * releases do not move glyph rasterisation.
+ *
+ * Keep this in step with `playwright` in package.json. If you upgrade
+ * Playwright, every baseline must be re-recorded in the same commit, and the
+ * PR should say so — that is a deliberate, reviewable re-record, not a
+ * silently accepted diff.
+ */
+const EXPECTED_CHROMIUM_VERSION = "141.0.7390.37";
+
+/**
  * The screens under watch — one or more per app, chosen because each is the
  * canonical example of a shared pattern rather than because it is pretty.
  *
@@ -106,14 +119,46 @@ async function main() {
 
   // `VISUAL_CHROMIUM_PATH` lets a sandbox that cannot reach Playwright's CDN
   // point at a Chromium it obtained another way. CI leaves it unset and uses
-  // the pinned browser `npx playwright install chromium` downloads, which is
-  // what keeps the baselines comparable run to run.
+  // the browser pinned by the `playwright` devDependency.
   const executablePath = process.env.VISUAL_CHROMIUM_PATH || undefined;
   const browser = await chromium.launch({
     executablePath,
     // Needed only for the unprivileged-container case above; harmless in CI.
     args: executablePath ? ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] : [],
   });
+
+  // Refuse to compare — or worse, to *record* — with the wrong browser.
+  //
+  // This is not defensive padding; it is the bug that made the first CI run
+  // red on every screen. Baselines had been recorded locally with Chromium 153
+  // (extracted from an npm package, because this sandbox cannot reach
+  // Playwright's CDN) while CI installed the Chromium pinned by
+  // `playwright@1.56.0`, which is 141. Chromium rasterises text differently
+  // between majors, so every screen differed by more than the tolerance and
+  // the diff images looked like "everything changed" — which tells you
+  // nothing. A version check turns that into one clear sentence.
+  //
+  // The repo also carries `playwright-core` (1.61.x) as a *runtime* dependency
+  // for PDF and receipt rendering; it pins a third Chromium. That is fine —
+  // nothing visual is recorded with it — but it is why this check names the
+  // version it wants instead of trusting whatever launched.
+  const actualMajor = Number(browser.version().split(".")[0]);
+  const expectedMajor = Number(EXPECTED_CHROMIUM_VERSION.split(".")[0]);
+  if (actualMajor !== expectedMajor) {
+    await browser.close();
+    throw new Error(
+      `Chromium major ${actualMajor} does not match the pinned major ${expectedMajor} ` +
+        `(expected ${EXPECTED_CHROMIUM_VERSION}, got ${browser.version()}).\n` +
+        "Baselines are only comparable within one Chromium major: text rasterises\n" +
+        "differently between majors and every screen will differ.\n" +
+        (executablePath
+          ? `You set VISUAL_CHROMIUM_PATH=${executablePath}. Either point it at a ` +
+            "matching Chromium, or unset it and run `npx playwright install chromium`.\n" +
+            "Do NOT record baselines from a mismatched browser — CI will not match them."
+          : "Run `npx playwright install chromium` to fetch the pinned build."),
+    );
+  }
+
   /** Identical for every screen — the determinism contract lives here. */
   const contextOptions = {
     viewport: { width: 1440, height: 900 },

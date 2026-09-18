@@ -75,6 +75,14 @@ describe("localSubnets", () => {
 });
 
 describe("listSystemPrinters", () => {
+  // 20s, not vitest's 5s default: on Windows this shells out to
+  // `powershell.exe Get-Printer`, which the implementation itself allows 15s
+  // for (discovery.ts). A cold PowerShell start on a CI runner routinely takes
+  // longer than 5s, so the default timeout failed the job before the call it
+  // is testing was allowed to finish. The sibling `scanLanPrinters` test above
+  // already carries 20_000 for the same reason; this one was missed because
+  // the suite had never run on Windows CI — the workflow was manual-only until
+  // a pull_request trigger was added.
   it("is best-effort: resolves to an array on any machine, spooler or not", async () => {
     const printers = await listSystemPrinters();
     expect(Array.isArray(printers)).toBe(true);
@@ -83,5 +91,5 @@ describe("listSystemPrinters", () => {
       expect(typeof printer.isDefault).toBe("boolean");
       expect(typeof printer.likelyThermal).toBe("boolean");
     }
-  });
+  }, 20_000);
 });

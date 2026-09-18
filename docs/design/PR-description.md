@@ -45,23 +45,33 @@ visual-regression procedure and test results. `AGENTS.md`, `CLAUDE.md` and
 `docs/ui-conventions.md` updated to match, so there is one definition of the
 approved design rather than two.
 
-## CI: two jobs are red and I could not read the logs
+## CI: both red jobs are diagnosed and fixed
 
 This PR adds a `pull_request` trigger. The workflow was **manual-only** before,
-so this is the first time these jobs have ever run automatically. First run:
-design checks and type check **pass**; **unit tests (windows-latest) and visual
-regression fail**.
+so run `35401522160` was the first time these jobs had ever run automatically.
+Design checks, type check, build and integration tests passed; **unit tests
+(windows-latest) and visual regression failed**. Both have since been read and
+fixed.
 
-The GitHub token expired mid-run, so I could not fetch either log and I am not
-going to guess in the PR body. `npm test` passes locally on this commit (324
-files / 4760 tests) including under three different timezones, and the visual
-suite passes 8/8 locally. Because the trigger is new there is no previous
-automatic run to compare against, so the Windows failure may predate this
-branch. The visual job now captures and prints the server log on failure so the
-next run is diagnosable. Full detail, including what was ruled out, is in
+- **Visual regression — wrong Chromium major.** The baselines had been recorded
+  with Chromium 153 (the only build obtainable in my environment); CI's
+  `playwright install` uses the 141 pinned by `playwright@1.56.0`, and text
+  rasterises differently between majors, so all eleven screens drifted. Fixed
+  by pinning `playwright` to an exact version, adding a post-launch guard in
+  `scripts/visual-regression.mjs` that refuses to compare *or record* on a
+  mismatched major, and re-recording all 11 baselines on Chromium 141 —
+  verified 6 runs clean. The images are unchanged in content; this was the
+  browser, not the UI. `playwright-core` (149.x) stays where it is: it is a
+  runtime dependency for PDF and receipt rendering, not a test tool.
+- **Unit tests — a pre-existing Windows timeout.** `discovery.test.ts:78` calls
+  `powershell.exe Get-Printer` for real; the implementation allows it 15s, the
+  test used vitest's 5s default. The file was last touched in the base commit,
+  so this predates the branch and was only exposed by the new trigger. Given
+  an explicit `20_000`, matching its sibling test.
+
+Full detail, including how the logs were finally read (`gh run view --log` does
+not work from my sandbox; the check-run annotations API does), is in
 `docs/design/test-results.md` § "The first real CI run".
-
-Please read those two jobs before approving.
 
 ## Two things to read before approving
 
@@ -76,7 +86,7 @@ give something concrete to compare them against.
 against a production build with a deterministic fixture, opened and reviewed one
 by one. Running it end to end is what found the two bugs below, and forced four
 fixes to the harness itself: a 5-run loop went from two failures (diffs up to
-42%) to 8/8 clean. The check was also proven able to *fail* — after the Jalali
+42%) to 8/8 clean, and 6/6 clean again after the re-record on Chromium 141. The check was also proven able to *fail* — after the Jalali
 fix it went red on exactly the one affected screen (0.24%) and stayed green on
 the other ten.
 

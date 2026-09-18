@@ -123,13 +123,46 @@ faker — a fixture that varies produces a baseline that disagrees with itself o
 the next run. It is idempotent (keyed on natural keys), so running it twice
 before a re-record does not double the data.
 
-## The browser
+## The browser — the one thing most likely to break this
 
-CI uses the Chromium pinned by the `playwright` dependency, via
-`npx playwright install chromium`. That pin is what keeps baselines comparable:
-a different Chromium renders text differently enough to redden every screen.
+**Baselines are only comparable within a single Chromium major.** Text
+rasterisation changes between majors, so the wrong browser reddens every screen
+at once and the diff images are useless ("everything changed" tells you
+nothing).
 
-If you are in an environment that cannot reach Playwright's CDN, set
-`VISUAL_CHROMIUM_PATH` to a Chromium binary you obtained another way. The
-harness will use it and add `--no-sandbox`. **Do not commit baselines recorded
-from a non-pinned browser** — they will not match CI.
+This is not hypothetical; it is what made the first CI run fail. Baselines had
+been recorded locally with Chromium 153 while CI installed the Chromium pinned
+by `playwright@1.56.0`, which is **141.0.7390.37**. Three different Chromiums
+are reachable from this repository:
+
+| Source | Chromium | Used for |
+| --- | --- | --- |
+| `playwright` (devDependency, pinned `1.56.0`) | **141.0.7390.37** | **the visual baselines** |
+| `playwright-core` (runtime dependency, `^1.61.1`) | 149.x | PDF and receipt rendering — *not* visual tests |
+| whatever a sandbox can obtain locally | anything | nothing, unless it matches 141 |
+
+Two guards keep those apart:
+
+1. **`playwright` is pinned to an exact version**, not `^1.56.0`. A caret there
+   would let a `npm ci` months from now install a different Chromium and redden
+   the suite for no reason anyone could see.
+2. **The harness checks the browser it launched** and refuses to run —
+   including with `--update` — if the major does not match
+   `EXPECTED_CHROMIUM_VERSION`. It is deliberately impossible to *record* a
+   baseline from the wrong browser, because that failure is invisible until CI
+   disagrees.
+
+`playwright-core` pins a different Chromium and that is fine: it is a real
+runtime dependency for printing, nothing visual is recorded with it, and the
+version check names what it wants rather than trusting whatever launched.
+
+**If you upgrade `playwright`,** every baseline must be re-recorded in the same
+commit and `EXPECTED_CHROMIUM_VERSION` updated to match. Say so in the PR — that
+is a deliberate, reviewable re-record, not a silently accepted diff.
+
+### Recording outside CI
+
+If you cannot reach Playwright's CDN, set `VISUAL_CHROMIUM_PATH` to a Chromium
+you obtained another way — but it must be the **same major**, or the check above
+will stop you. (`@sparticuz/chromium@141.0.0` on npm is one such source, and is
+how the committed baselines were produced.)

@@ -94,7 +94,7 @@ the repo had passed over:
    human noticed. It now ends the loading state and renders an `EmptyState`
    with the reason and a retry button.
 
-## The first real CI run — and an honest unknown
+## The first real CI run — both failures, and what caused them
 
 Adding the `pull_request` trigger did something this repository had never done:
 it ran these jobs automatically. The workflow was **`workflow_dispatch`-only**
@@ -102,7 +102,7 @@ before this change ("Manual only — nothing runs on a push or a pull request"),
 so the four pre-existing Windows jobs had only ever run when somebody started
 them by hand.
 
-First run on PR #672:
+First run on PR #672 (run `35401522160`):
 
 | Job | Result |
 | --- | --- |
@@ -110,34 +110,93 @@ First run on PR #672:
 | type check | **pass** (2m14s) |
 | unit tests (windows-latest) | **fail** (3m4s) |
 | visual regression (ubuntu-latest) | **fail** (6m1s) |
-| production build | did not finish before the token expired |
-| integration tests | did not finish before the token expired |
+| production build | pass |
+| integration tests | pass |
 
-**I could not read either failure log.** The GitHub token expired partway
-through watching the run (`HTTP 401: Bad credentials`), and it has not been
-possible to fetch the job output since. So the following is stated as an
-open question, not a diagnosis:
+Both failures have since been read and fixed. A note on method, because it
+cost real time: `gh run view --log` and `gh run download` are **unusable from
+this sandbox** — the log and artifact endpoints time out with `EOF`. The route
+that works is the check-run annotations API:
 
-- **`npm test` passes locally**, 324 files / 4760 tests, on this exact commit
-  with a clean tree — including under `TZ=UTC`, `TZ=America/Los_Angeles` and
-  `TZ=Europe/London`, and the two suites that touch the changed `formatJalali`
-  (`jalali.test.ts`, `parties-directory-regressions.test.ts`) pass in all of
-  them. The CI job is `windows-latest` with no `TZ` set, which is the most
-  obvious difference, but that hypothesis was tested and did not reproduce.
-- Because the trigger is new, **the Windows unit-test failure may well predate
-  this branch** — there is no previous automatic run to compare against. That is
-  a real possibility, not an excuse, and it is why this section exists instead
-  of a claim that everything is green.
-- The visual job's most likely cause is environmental (browser install, the
-  production server failing to boot, or the new app-role step), so that job now
-  redirects the server's output to `server.log` and prints it on failure, and
-  the health poll prints the log when it times out. The next run will say what
-  happened instead of just failing.
+```
+gh api repos/<owner>/<repo>/check-runs/<jobId>/annotations
+```
 
-**What a reviewer should do:** open the two failing jobs on PR #672 and read
-them. If the Windows unit-test failure reproduces on `main` with a manual run,
-it is pre-existing and should be fixed separately; if it does not, it is from
-this branch and I have not found it.
+That returns the actual failing file, line and assertion text.
+
+### Failure 1 — visual regression: the browser was the wrong Chromium
+
+Every step of the visual job was green — Chromium install, Postgres, migrations,
+app role, build, server start — and only the comparison step failed, with a
+1.9 MB `visual-diffs` artifact. So the screens rendered correctly and were
+compared; they simply did not match. All eleven were over tolerance, which is
+the signature of a global rendering change rather than a real regression.
+
+The cause was mine. Playwright's browser CDN is unreachable from this sandbox,
+so the baselines were recorded with a Chromium obtained from npm
+(`@sparticuz/chromium@153`) — **Chromium 153**. CI runs
+`npx playwright install chromium`, which fetches the build pinned by
+`playwright@1.56.0`: **141.0.7390.37**. Text rasterises differently between
+Chromium majors, so every screen drifted past `MAX_DIFF_RATIO`.
+
+Three different Chromium versions exist in this repo, and conflating them is
+the trap:
+
+| Source | Version | What it is for |
+| --- | --- | --- |
+| `playwright` devDependency, now pinned **exactly** `1.56.0` | 141.0.7390.37 | **the visual baselines** |
+| `playwright-core` runtime dependency `^1.61.1` | 149.x | PDF and receipt rendering (`src/lib/pdf-render.ts`, `src/lib/system-print/render.ts`) — a real product code path, deliberately left alone |
+| ad-hoc npm `@sparticuz/chromium` | whatever you asked for | local convenience only |
+
+Three things changed as a result:
+
+1. `playwright` is pinned to an exact version. A caret range here silently
+   re-pins the browser and invalidates every baseline.
+2. `scripts/visual-regression.mjs` declares `EXPECTED_CHROMIUM_VERSION` and
+   throws after launch if `browser.version()`'s major differs — **including
+   under `--update`**, so a wrong-browser baseline cannot be recorded in the
+   first place. The guard was tested by pointing the harness at the 153 binary;
+   it refused.
+3. All 11 baselines were re-recorded against Chromium **141.0.7390.0**
+   (`@sparticuz/chromium@141.0.0`, same major as CI) on a fresh production
+   build, then verified with a **6-run loop: 6 pass, 0 fail**. The re-recorded
+   images were opened and compared with the old ones — the content is
+   identical, including Persian digits and RTL layout. Nothing was accepted to
+   make a failure go away; the pixels the check compares are the same pixels,
+   drawn by the browser CI actually uses.
+
+Upgrading `playwright` from now on means re-recording all baselines and bumping
+`EXPECTED_CHROMIUM_VERSION` in the same commit. That rule is written down in
+`docs/design/visual-regression.md`.
+
+### Failure 2 — unit tests: a pre-existing Windows timeout
+
+The annotation named it exactly:
+
+```
+src/lib/system-print/discovery.test.ts:78 — Test timed out in 5000ms
+```
+
+The `listSystemPrinters` test shells out to `powershell.exe Get-Printer` for
+real. The implementation itself allows that call **15 seconds**
+(`src/lib/system-print/discovery.ts:50`), but the test relied on vitest's
+**5-second** default — so on a cold Windows runner the implementation is still
+within its own budget when the test has already given up. The sibling
+`scanLanPrinters` test in the same file already carries an explicit `20_000`,
+which is the tell that this was an oversight rather than a design.
+
+This is **not** caused by this branch. The file was last touched in the base
+commit `6ba5931`; it only became visible because the workflow was manual-only
+until this PR added the `pull_request` trigger. It is fixed here anyway, since
+this PR is what made it run: the test now gets `20_000` with a comment
+explaining the relationship to the implementation's own timeout.
+`npx vitest run src/lib/system-print/discovery.test.ts` passes 5/5.
+
+The rest of the suite was swept for the same pattern — tests that await a real
+subprocess with the default timeout. `src/app/api/print/scan/route.test.ts`,
+`src/app/api/print/system-printers/route.test.ts`, `src/lib/print-agent-client.test.ts`
+and `src/lib/system-print/service.test.ts` all mock the transport layer, so
+`discovery.test.ts` was the only one.
 
 ## Manual verification that *was* done
 
