@@ -30,8 +30,10 @@ describe("PROMPT_FRAGMENTS", () => {
       "rule:describe_app",
       // No `app:connections`: the «اتصال‌های فنی» hub is shell
       // infrastructure, not an app, so it contributes no prompt fragment.
-      "app:growth",
       "app:accounting",
+      "app:growth",
+      "app:crm",
+      "app:website",
       "project",
     ];
     for (const key of allKeys) {
@@ -93,7 +95,6 @@ describe("fragmentsForTurn", () => {
 
   it("includes app fragments only for dashboard mode with apps specified", () => {
     const withApps = fragmentsForTurn({ mode: "dashboard", apps: ["accounting"] });
-    expect(withApps).toContain("app:accounting");
     expect(withApps).toContain("app:accounting");
     expect(withApps).not.toContain("app:growth");
 
