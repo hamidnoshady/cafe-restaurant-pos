@@ -202,8 +202,33 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:seed
+          npm run db:seed:visual
+      - name: Provision the unprivileged application role
+        # A production boot refuses to serve if the database role bypasses RLS
+        # (a superuser silently ignores every tenant-isolation policy), so the
+        # visual run needs the same role a real deployment uses.
+        env:
+          APP_DB_PASSWORD: ci-only-app-role-password
+        run: npm run db:app-role
       - name: Build
         run: npm run build
+      - name: Start the production server
+        # The baselines are recorded against a production build, not `next dev`:
+        # the dev server compiles routes on demand, so the first visit to each
+        # screen races a webpack build and the shot can catch a half-rendered
+        # page. `BIND_ADDR` is required — the server refuses to boot a
+        # production "site" role on a non-loopback address without TLS.
+        run: |
+          BIND_ADDR=127.0.0.1 PORT=3000 \
+          DATABASE_URL=postgres://pos_app:ci-only-app-role-password@127.0.0.1:55432/pos \
+          npm run start &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3000/api/health >/dev/null; then
+              echo "server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not become healthy within 60s"; exit 1
       - name: Visual regression
         run: npm run test:visual
       - name: Upload diffs

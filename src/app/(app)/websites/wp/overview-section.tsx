@@ -101,15 +101,31 @@ export function WpOverviewSection() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [busy, setBusy] = useState<string>("");
   const [error, setError] = useState("");
+  /** Set when the connection list itself could not be read (not a sync error). */
+  const [loadError, setLoadError] = useState("");
 
   const load = useCallback(async () => {
     const [connRes, statsRes] = await Promise.all([
-      api<{ connections: Connection[] }>("/api/integrations/connections?provider=woocommerce"),
+      api<{ connections: Connection[]; error?: string }>(
+        "/api/integrations/connections?provider=woocommerce",
+      ),
       api<{ stats: WpOverviewStats }>("/api/integrations/wp-manager/overview"),
     ]);
     if (connRes.ok) {
       setConnections(connRes.data.connections);
       setSelectedId((current) => current || connRes.data.connections[0]?.id || "");
+    } else {
+      // A failed load must still end the loading state. Leaving `connections`
+      // null renders the skeleton forever — which is what this screen did when
+      // the manager is not enabled for the business, or the request 403s, or
+      // the network drops: an eternal shimmer with nothing to read and no way
+      // to retry. An empty list plus the error is honest and actionable.
+      setConnections([]);
+      setLoadError(
+        connRes.data?.error === "network_error"
+          ? "ارتباط با سرور برقرار نشد."
+          : "فهرست فروشگاه‌های متصل خوانده نشد.",
+      );
     }
     if (statsRes.ok) setStats(statsRes.data.stats);
   }, []);
@@ -149,13 +165,23 @@ export function WpOverviewSection() {
       <EmptyState>
         <div className="flex flex-col items-center gap-3 py-8 text-center">
           <PlugIcon className="size-10 text-muted-foreground/60" />
-          <p className="font-semibold text-foreground">هنوز فروشگاهی متصل نیست</p>
-          <p className="max-w-md text-sm text-muted-foreground">
-            برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید.
+          <p className="font-semibold text-foreground">
+            {loadError ? "فهرست فروشگاه‌ها خوانده نشد" : "هنوز فروشگاهی متصل نیست"}
           </p>
-          <Link href="/settings/connections?tab=woocommerce">
-            <Button>اتصال فروشگاه</Button>
-          </Link>
+          <p className="max-w-md text-sm text-muted-foreground">
+            {loadError
+              ? loadError
+              : "برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید."}
+          </p>
+          {loadError ? (
+            <Button variant="outline" onClick={() => { setLoadError(""); setConnections(null); load(); }}>
+              تلاش دوباره
+            </Button>
+          ) : (
+            <Link href="/settings/connections?tab=woocommerce">
+              <Button>اتصال فروشگاه</Button>
+            </Link>
+          )}
         </div>
       </EmptyState>
     );

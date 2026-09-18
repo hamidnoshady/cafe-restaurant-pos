@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { toPersianDigits } from "./digits";
 import {
   formatJalali,
   formatShiftWindow,
@@ -60,24 +61,33 @@ describe("jalali conversion", () => {
     expect(isValidJalaliDate(1404, 0, 1)).toBe(false);
   });
 
-  it("formats ISO timestamps for display (Asia/Tehran)", () => {
-    // 2024-03-19T22:00:00Z is already 1403/01/01 in Tehran (UTC+3:30)
-    expect(formatJalali("2024-03-19T22:00:00Z")).toBe("1403/01/01");
+  it("formats ISO timestamps for display (Asia/Tehran), in Persian digits", () => {
+    // 2024-03-19T22:00:00Z is already 1403/01/01 in Tehran (UTC+3:30).
+    // The digits are Persian because this is a display formatter and every
+    // caller is user-facing text — see the note on formatJalali.
+    expect(formatJalali("2024-03-19T22:00:00Z")).toBe("۱۴۰۳/۰۱/۰۱");
     expect(formatJalali("2024-03-20T12:00:00Z", { withMonthName: true })).toBe(
-      "1 فروردین 1403",
+      "۱ فروردین ۱۴۰۳",
     );
+  });
+
+  it("is safe to wrap in toPersianDigits, so the ~100 callers that do are unaffected", () => {
+    // toPersianDigits only rewrites [0-9], so applying it to already-Persian
+    // output is a no-op. This is what made converting at the source safe.
+    const once = formatJalali("2024-03-19T22:00:00Z");
+    expect(toPersianDigits(once)).toBe(once);
   });
 
   it("appends the Tehran wall-clock time when asked", () => {
     // 22:00Z + 3:30 = 01:30 local, on the next (Jalali) day.
-    expect(formatJalali("2024-03-19T22:00:00Z", { withTime: true })).toBe("1403/01/01 01:30");
+    expect(formatJalali("2024-03-19T22:00:00Z", { withTime: true })).toBe("۱۴۰۳/۰۱/۰۱ ۰۱:۳۰");
     expect(formatJalali("2024-03-20T12:00:00Z", { withMonthName: true, withTime: true })).toBe(
-      "1 فروردین 1403، 15:30",
+      "۱ فروردین ۱۴۰۳، ۱۵:۳۰",
     );
     // Local midnight must read 00:00, not 24:00.
-    expect(formatJalali("2024-03-19T20:30:00Z", { withTime: true })).toBe("1403/01/01 00:00");
+    expect(formatJalali("2024-03-19T20:30:00Z", { withTime: true })).toBe("۱۴۰۳/۰۱/۰۱ ۰۰:۰۰");
     // Without the flag the output is unchanged — the option is additive.
-    expect(formatJalali("2024-03-20T12:00:00Z")).toBe("1403/01/01");
+    expect(formatJalali("2024-03-20T12:00:00Z")).toBe("۱۴۰۳/۰۱/۰۱");
   });
 
   it("parses Jalali back to ISO date string", () => {

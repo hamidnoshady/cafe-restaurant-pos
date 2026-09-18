@@ -58,8 +58,8 @@ const MAX_DIFF_RATIO = 0.001;
  */
 const SCREENS = [
   // — Accounting — the reference trial balance: table hierarchy + status pill.
-  { id: "accounting-trial-balance", path: "/accounting/ledger", theme: "light" },
-  { id: "accounting-trial-balance-dark", path: "/accounting/ledger", theme: "dark" },
+  { id: "accounting-trial-balance", path: "/accounting/trial-balance", theme: "light" },
+  { id: "accounting-trial-balance-dark", path: "/accounting/trial-balance", theme: "dark" },
   // — Accounting — the orders queue: filter chips, search, rich empty state.
   { id: "accounting-orders", path: "/accounting/orders", theme: "light" },
   // — Accounting — inventory: section nav, form card, filters, data table.
@@ -104,53 +104,129 @@ async function main() {
   mkdirSync(BASELINE_DIR, { recursive: true });
   rmSync(DIFF_DIR, { recursive: true, force: true });
 
-  const browser = await chromium.launch();
-  const context = await browser.newContext({
+  // `VISUAL_CHROMIUM_PATH` lets a sandbox that cannot reach Playwright's CDN
+  // point at a Chromium it obtained another way. CI leaves it unset and uses
+  // the pinned browser `npx playwright install chromium` downloads, which is
+  // what keeps the baselines comparable run to run.
+  const executablePath = process.env.VISUAL_CHROMIUM_PATH || undefined;
+  const browser = await chromium.launch({
+    executablePath,
+    // Needed only for the unprivileged-container case above; harmless in CI.
+    args: executablePath ? ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] : [],
+  });
+  /** Identical for every screen — the determinism contract lives here. */
+  const contextOptions = {
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 1,
     locale: "fa-IR",
     timezoneId: "Asia/Tehran",
     // The app kills every animation under this, so shots are of final frames.
     reducedMotion: "reduce",
-  });
+  };
 
-  const page = await context.newPage();
-
-  // Log in once; the session cookie carries to every screen.
-  const login = await page.request.post(`${BASE_URL}/api/auth/login`, {
+  // Log in once and keep the session, so each screen can still get a *fresh*
+  // context. A fresh context per screen matters: init scripts accumulate on a
+  // page, so reusing one context would leave every previous screen's theme
+  // script attached and make the result depend on iteration order.
+  const authContext = await browser.newContext(contextOptions);
+  const login = await authContext.request.post(`${BASE_URL}/api/auth/login`, {
     data: { email: EMAIL, password: PASSWORD },
   });
   if (!login.ok()) {
     throw new Error(`login failed (${login.status()}) — is the seeded database up?`);
   }
+  const storageState = await authContext.storageState();
+  await authContext.close();
 
   const failures = [];
   const recorded = [];
+  /** Screens still showing a loading region when photographed — reported, not hidden. */
+  const busyAtCapture = [];
+  /** Screens whose DOM never stopped changing — the other flake source. */
+  const unsettled = [];
 
   for (const screen of SCREENS) {
-    await context.addCookies([
-      {
-        name: "theme",
-        value: screen.theme,
-        url: BASE_URL,
-      },
-    ]);
-    await page.emulateMedia({ colorScheme: screen.theme });
-    await page.goto(`${BASE_URL}${screen.path}`, { waitUntil: "networkidle" });
+    const context = await browser.newContext({
+      ...contextOptions,
+      storageState,
+      colorScheme: screen.theme,
+    });
+    // next-themes persists the choice in localStorage under "theme" (not a
+    // cookie), and the provider is `defaultTheme="system" enableSystem`. Set
+    // both: the storage key pins the explicit choice, and `colorScheme` makes
+    // the `system` path resolve the same way if storage is ever cleared. It
+    // must be an init script so the value is present before the provider's
+    // blocking script runs, otherwise the first paint is the wrong theme.
+    await context.addInitScript(
+      (theme) => window.localStorage.setItem("theme", theme),
+      screen.theme,
+    );
+    const page = await context.newPage();
+    // NOT `networkidle`: this app holds an open WebSocket for live sync, so
+    // the network is never idle and every navigation would time out. Wait for
+    // the document, then for the app's own "finished loading" signal below.
+    await page.goto(`${BASE_URL}${screen.path}`, { waitUntil: "domcontentloaded" });
 
     // The loaded state, not a race with it: every data region in this app
     // renders a role=status skeleton while fetching.
+    // Three conditions, because any one alone is a lie:
+    //  - a page that has not yet rendered its skeletons also reports zero
+    //    busy regions, so require the shell to exist first;
+    //  - `aria-busy` is only set by *standalone* skeletons — a `KpiRowSkeleton`
+    //    composed inside a larger fallback deliberately omits it, so a screen
+    //    can be mid-load with no busy attribute anywhere. Every skeleton,
+    //    standalone or not, carries `data-slot="skeleton"`; that is the
+    //    reliable signal.
+    //  - and the DOM must then hold still, so we do not photograph the frame
+    //    between "skeleton removed" and "content painted".
     await page
-      .waitForFunction(() => document.querySelectorAll('[aria-busy="true"]').length === 0, null, {
-        timeout: 20_000,
-      })
+      .waitForFunction(
+        () =>
+          document.querySelectorAll("main, [data-page-shell]").length > 0 &&
+          document.querySelectorAll('[aria-busy="true"]').length === 0 &&
+          document.querySelectorAll('[data-slot="skeleton"]').length === 0,
+        null,
+        { timeout: 45_000 },
+      )
       .catch(() => {
-        /* A screen with a permanently busy region still gets photographed. */
+        busyAtCapture.push(screen.id);
       });
+
+    // Settled, not merely loaded. Without this the suite is ~10% flaky: a
+    // screen whose data arrives in two waves briefly shows content, so the
+    // condition above passes, and the shot lands before the second render.
+    await page.waitForFunction(
+      () => {
+        const w = window;
+        const now = document.body.innerHTML.length;
+        const stable = w.__vrLast === now ? (w.__vrStable ?? 0) + 1 : 0;
+        w.__vrLast = now;
+        w.__vrStable = stable;
+        return stable >= 3;
+      },
+      null,
+      { timeout: 20_000, polling: 150 },
+    ).catch(() => {
+      unsettled.push(screen.id);
+    });
+
     // Fonts settled — Vazirmatn loads via next/font and reflows text if early.
     await page.evaluate(() => document.fonts.ready);
 
+    // Assert the theme actually applied, rather than trusting it. A dark
+    // baseline recorded from a light render is worse than no baseline.
+    const isDark = await page.evaluate(() =>
+      document.documentElement.classList.contains("dark"),
+    );
+    if (isDark !== (screen.theme === "dark")) {
+      throw new Error(
+        `${screen.id}: expected the ${screen.theme} theme but the page rendered ` +
+          `${isDark ? "dark" : "light"}. Refusing to record a mislabelled baseline.`,
+      );
+    }
+
     const actual = await page.screenshot({ fullPage: false });
+    await context.close();
     const baselinePath = join(BASELINE_DIR, `${screen.id}.png`);
 
     if (UPDATE || !existsSync(baselinePath)) {
@@ -172,6 +248,20 @@ async function main() {
 
   await browser.close();
 
+  if (unsettled.length > 0) {
+    console.warn(
+      `\nDOM never settled before capture: ${unsettled.join(", ")}.` +
+        "\nThat screen re-renders indefinitely (a polling timer, an animation the" +
+        "\nreduced-motion rule misses). Its baseline will be flaky until that stops.",
+    );
+  }
+  if (busyAtCapture.length > 0) {
+    console.warn(
+      `\nStill loading when photographed: ${busyAtCapture.join(", ")}.` +
+        "\nThat baseline captures a skeleton, which will be unstable. Fix the wait" +
+        "\nor the screen before trusting it.",
+    );
+  }
   if (recorded.length > 0) {
     console.log(`Recorded ${recorded.length} baseline(s): ${recorded.join(", ")}`);
     console.log("Review each image before committing — a baseline is an approval.");

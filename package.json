@@ -22,6 +22,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:app-role": "tsx scripts/create-app-role.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed:visual": "tsx scripts/seed-visual-fixture.ts",
     "db:seed-knowledge": "tsx scripts/seed-knowledge.ts",
     "db:platform-admin": "tsx scripts/seed-platform-admin.ts",
     "mfa:reset-platform": "tsx scripts/reset-platform-mfa.ts",

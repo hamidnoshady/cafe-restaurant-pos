@@ -27,3 +27,7 @@ ds-bundle/
 
 # Plugin release asset built by wordpress-plugin/package-release.sh
 wordpress-plugin/pos-accounting-connector.zip
+
+# Visual-regression diff output is a local artifact of a failing run; the
+# baselines beside it are committed, the diffs never are.
+docs/design/visual/__diff__/
