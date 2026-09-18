@@ -24,6 +24,17 @@ interface PaymentBody {
 
 const METHODS = ["cash", "bank"] as const;
 
+/**
+ * `paymentDate` goes straight into a `date` column, so a malformed value is a
+ * Postgres `22007` error — an unhandled 500 — rather than the 400 a bad input
+ * is. Same shape the aging report's `asOfDate` is checked with.
+ */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidIsoDate(value: string): boolean {
+  return ISO_DATE.test(value) && !Number.isNaN(Date.parse(value));
+}
+
 /** Records the business paying down a supplier's AP balance. Same access as posting a manual journal entry. */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
@@ -45,6 +56,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!Number.isSafeInteger(amount) || amount <= 0) {
     return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
   }
+  const paymentDate = body.paymentDate?.trim() || null;
+  if (paymentDate && !isValidIsoDate(paymentDate)) {
+    return NextResponse.json({ error: "invalid_date" }, { status: 400 });
+  }
 
   const location = await resolveActiveLocation(session);
 
@@ -55,7 +70,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       supplierId,
       method: body.method as "cash" | "bank",
       amount,
-      paymentDate: body.paymentDate?.trim() || null,
+      paymentDate,
       memo: body.memo,
       createdBy: session.sub,
     });

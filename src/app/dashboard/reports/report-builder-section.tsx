@@ -64,15 +64,24 @@ export function ReportBuilderSection() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  function loadSaved() {
-    fetch("/api/reports/saved")
-      .then((response) => response.json())
-      .then((data) => setSaved(data.reports ?? []));
+  async function loadSaved() {
+    try {
+      const response = await fetch("/api/reports/saved");
+      if (!response.ok) throw new Error("saved_reports_failed");
+      const data = await response.json();
+      setSaved(data.reports ?? []);
+    } catch {
+      setSaved([]);
+      setError("بارگذاری گزارش‌های ذخیره‌شده ناموفق بود. دوباره تلاش کنید.");
+    }
   }
 
   useEffect(() => {
     fetch("/api/reports/views")
-      .then((response) => response.json())
+      .then(async (response) => {
+        if (!response.ok) throw new Error("views_failed");
+        return response.json();
+      })
       .then((data) => {
         const list: ViewMeta[] = data.views ?? [];
         setViews(list);
@@ -81,8 +90,9 @@ export function ReportBuilderSection() {
           selectMetric(list[0].metrics[0]?.key ?? "", list[0]);
           setDimension(list[0].dimensions[0]?.key ?? "");
         }
-      });
-    loadSaved();
+      })
+      .catch(() => setError("بارگذاری منابع گزارش ناموفق بود. صفحه را دوباره بارگذاری کنید."));
+    void loadSaved();
   }, []);
 
   const currentView = useMemo(
@@ -114,7 +124,15 @@ export function ReportBuilderSection() {
     const nextView = views?.find((item) => item.key === key) ?? null;
     selectMetric(nextView?.metrics[0]?.key ?? "", nextView);
     setDimension(nextView?.dimensions[0]?.key ?? "");
+    // Date filters belong to the selected source. Keeping them when switching
+    // to a source without a date column makes an otherwise valid form fail on
+    // the server with a confusing "not date filterable" error.
+    if (!nextView?.hasDateColumn) {
+      setDateFrom("");
+      setDateTo("");
+    }
     setRows(null);
+    setError("");
   }
 
   function currentConfig() {
@@ -128,20 +146,29 @@ export function ReportBuilderSection() {
   }
 
   async function preview() {
-    setBusy(true);
-    setError("");
-    const response = await fetch("/api/reports/query", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(currentConfig()),
-    });
-    const data = await response.json();
-    setBusy(false);
-    if (!response.ok) {
-      setError(data.details?.join(" ") ?? "پیکربندی گزارش نامعتبر است.");
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      setError("تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد.");
       return;
     }
-    setRows(data.rows ?? []);
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/reports/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentConfig()),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.details?.join(" ") ?? "پیکربندی گزارش نامعتبر است.");
+        return;
+      }
+      setRows(data.rows ?? []);
+    } catch {
+      setError("دریافت پیش‌نمایش ناموفق بود. اتصال شبکه را بررسی کنید.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function save() {
@@ -154,20 +181,25 @@ export function ReportBuilderSection() {
     const url = editingId
       ? "/api/reports/saved/" + editingId
       : "/api/reports/saved";
-    const response = await fetch(url, {
-      method: editingId ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, config: currentConfig() }),
-    });
-    setBusy(false);
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      setError(data.details?.join(" ") ?? "ذخیرهٔ گزارش ناموفق بود.");
-      return;
+    try {
+      const response = await fetch(url, {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, config: currentConfig() }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        setError(data.details?.join(" ") ?? "ذخیرهٔ گزارش ناموفق بود.");
+        return;
+      }
+      setEditingId(null);
+      setName("");
+      void loadSaved();
+    } catch {
+      setError("ذخیرهٔ گزارش ناموفق بود. اتصال شبکه را بررسی کنید.");
+    } finally {
+      setBusy(false);
     }
-    setEditingId(null);
-    setName("");
-    loadSaved();
   }
 
   function loadIntoBuilder(report: SavedReportRow) {

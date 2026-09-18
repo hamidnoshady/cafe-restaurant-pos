@@ -19,6 +19,7 @@ import type { PoolClient } from "pg";
 
 import { query } from "./db";
 import {
+  barcodeEntryError,
   classifyBarcode,
   internalBarcodeForPayload,
   internalPayloadFromNumber,
@@ -73,6 +74,16 @@ export async function assignBarcode(
   if (!locationId) throw new Error("کالای انبار یافت نشد.");
 
   const code = normalizeBarcode(input.code?.trim() ?? "");
+
+  // A code shaped exactly like EAN-13/UPC-A with a broken check digit is a
+  // typo with certainty — stored it would never scan, because a real scanner
+  // validates the check digit before it emits the code. Refuse it here rather
+  // than letting it live in the table as a phantom "internal" code.
+  if (code) {
+    const entryError = barcodeEntryError(code);
+    if (entryError) throw new Error(entryError);
+  }
+
   const symbology = input.symbology ?? (code ? classifyBarcode(code) : null);
 
   // A supplier code must actually be the symbology the caller claims, or be

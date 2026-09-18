@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
+import { query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
 import { toLatinDigits } from "@/lib/digits";
 import { isPinRole, isValidPin, sanitizeOverrides } from "@/lib/team";
@@ -74,6 +75,18 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const role = body.role;
   if (!role || !ASSIGNABLE_ROLES.includes(role)) {
     return NextResponse.json({ error: "invalid_role" }, { status: 400 });
+  }
+
+  // `team.manage` can be delegated, but ownership cannot. Without this guard a
+  // delegated manager could promote themselves (or a new account) to owner.
+  if (role === "owner") {
+    const { rows } = await query<{ role: Role }>(
+      "SELECT role FROM users WHERE id = $1 AND business_id = $2 AND is_active = true",
+      [session.sub, session.businessId],
+    );
+    if (rows[0]?.role !== "owner") {
+      return NextResponse.json({ error: "owner_only" }, { status: 403 });
+    }
   }
 
   let pin: string | null = null;

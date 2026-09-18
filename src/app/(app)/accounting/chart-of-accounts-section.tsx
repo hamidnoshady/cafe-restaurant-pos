@@ -53,6 +53,7 @@ const WELL_KNOWN_CODE_SET = new Set<string>(Object.values(WELL_KNOWN_CODES));
 
 const errorLabels: Record<string, string> = {
   code_required: "کد حساب الزامی است.",
+  invalid_code: "کد حساب باید فقط شامل عدد باشد (مثل ۶۱۰۰).",
   name_required: "نام حساب الزامی است.",
   invalid_type: "نوع حساب معتبر نیست.",
   parent_not_found: "حساب والد پیدا نشد.",
@@ -136,6 +137,10 @@ export function ChartOfAccountsSection({
   const [statementAccount, setStatementAccount] = useState<{ id: string; code: string; name: string } | null>(null);
   const [historyAccount, setHistoryAccount] = useState<{ id: string; code: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<AccountRow | null>(null);
+  /* The delete dialog keeps its own error: a failed delete must surface inside
+     the open dialog, not in the «افزودن حساب» card's box behind the backdrop
+     (which is what sharing `localError` did — and it stayed there afterwards). */
+  const [deleteError, setDeleteError] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
   /*
    * «ویرایش» — renaming and reparenting.
@@ -226,7 +231,7 @@ export function ChartOfAccountsSection({
   }
 
   function remove(a: AccountRow) {
-    setLocalError("");
+    setDeleteError("");
     setNotice("");
     setDeleting(a);
   }
@@ -237,14 +242,14 @@ export function ChartOfAccountsSection({
     try {
       const { ok, data } = await api<{ error?: string }>(`/api/ledger/accounts/${deleting.id}`, { method: "DELETE" });
       if (!ok) {
-        setLocalError(accountError(data.error));
+        setDeleteError(accountError(data.error));
         return;
       }
       setNotice(`حساب «${deleting.code} — ${deleting.name}» حذف شد.`);
       setDeleting(null);
       refresh();
     } catch {
-      setLocalError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.");
+      setDeleteError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.");
     } finally {
       setSaving(false);
     }
@@ -338,7 +343,12 @@ export function ChartOfAccountsSection({
                 dir="ltr"
                 inputMode="numeric"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                /* Latin digits in storage, Persian on display (digits.ts), and
+                   the placeholder itself invites «۶۱۰۰» — so the field shows
+                   what will actually be saved instead of silently changing it
+                   on submit. Non-digits are dropped: the server now rejects
+                   them outright (`invalid_code`). */
+                onChange={(e) => setCode(toLatinDigits(e.target.value).replace(/\D/g, ""))}
                 placeholder="مثلاً ۶۱۰۰"
                 required
               />
@@ -639,8 +649,11 @@ export function ChartOfAccountsSection({
         <DeleteAccountPanel
           account={deleting}
           busy={actionBusy}
-          error={localError}
-          onClose={() => setDeleting(null)}
+          error={deleteError}
+          onClose={() => {
+            setDeleteError("");
+            setDeleting(null);
+          }}
           onConfirm={() => void confirmRemove()}
         />
       ) : null}

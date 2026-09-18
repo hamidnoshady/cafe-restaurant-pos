@@ -97,6 +97,7 @@ export async function AccountingPageBody({ section }: { section: AccountingSecti
         role={member?.role ?? session.role}
         section={section}
         permissions={member ? [...member.permissions] : undefined}
+        currentUserId={session.sub}
       />
     </PageShell>
   );

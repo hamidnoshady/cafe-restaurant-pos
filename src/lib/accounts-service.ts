@@ -37,6 +37,7 @@ import { toLatinDigits } from "./digits";
 import {
   ACCOUNT_TYPES,
   WELL_KNOWN_CODES,
+  isValidAccountCode,
   nextAccountLevel,
   type AccountLevel,
   type AccountType,
@@ -267,9 +268,16 @@ export async function createAccount(params: {
   parentId?: string | null;
   isContra?: boolean;
 }): Promise<{ id: string }> {
+  /* The convention is «Latin digits in storage, Persian digits in display»
+     (digits.ts), and the add form's own placeholder invites «۶۱۰۰». Storing a
+     Persian-digit code verbatim would make «۶۱۰۰» and «6100» two different
+     accounts to UNIQUE(business_id, code), to ORDER BY code, and to the
+     well-known-code lookups the auto-posting engine keys on — so the code is
+     canonicalised here at the boundary, not trusted to every caller. */
   const code = normalizeAccountCode(params.code);
   const name = params.name.trim();
   if (!code) throw new AccountsError("code_required");
+  if (!isValidAccountCode(code)) throw new AccountsError("invalid_code");
   if (!name) throw new AccountsError("name_required");
   if (!ACCOUNT_TYPES.includes(params.type as AccountType)) throw new AccountsError("invalid_type");
 
@@ -296,8 +304,10 @@ export async function createAccount(params: {
     );
     return { id: rows[0].id };
   } catch (err) {
-    // The SELECT above is a nicety; `UNIQUE (business_id, code)` is the actual
-    // guard, and losing that race must still read as «کد تکراری».
+    // The SELECT above is a pre-flight, not a lock: two simultaneous creates
+    // of the same code race the table's UNIQUE(business_id, code), and before
+    // this the loser of that race got a raw 500 instead of the same 409 the
+    // pre-flight would have produced.
     if (sqlState(err) === UNIQUE_VIOLATION) throw new AccountsError("code_in_use", 409);
     throw err;
   }
