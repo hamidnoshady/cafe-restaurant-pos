@@ -36,7 +36,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BanknoteIcon, CreditCardIcon, LandmarkIcon, LockIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali } from "@/lib/jalali";
+import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 import {
@@ -97,10 +97,18 @@ interface ReconciliationDetail extends ReconciliationSummary {
   lines: ReconciliationLine[];
 }
 
-/** A statement date in the future is almost always a typo; the picker still allows it, this warns. */
+/**
+ * A statement date in the future is almost always a typo; the picker still allows it, this warns.
+ *
+ * "Today" is Tehran's calendar day, not UTC's. `toISOString()` is still the
+ * previous date until 03:30 local, so between midnight and half past three the
+ * warning fired on a statement dated *today* — the single most likely date for
+ * someone reconciling at close of business.
+ */
 function isFutureDate(iso: string): boolean {
   if (!iso) return false;
-  return iso > new Date().toISOString().slice(0, 10);
+  const today = isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
+  return iso > today;
 }
 
 export function ReconciliationSection({

@@ -8,6 +8,7 @@ import {
   isPlausibleStatementDate,
   isValidIsoDate,
   lineDelta,
+  MAX_RECONCILIATION_LINE_BATCH,
   reconciliationTotals,
   STATEMENT_DATE_MAX_YEAR,
   STATEMENT_DATE_MIN_YEAR,
@@ -125,5 +126,14 @@ describe("isLineWithinStatementWindow", () => {
     // The bug this guards: such a line could be *claimed* by a reconciliation
     // that then never displayed it, and no later reconciliation could see it.
     expect(isLineWithinStatementWindow("2025-07-02", "2025-06-30")).toBe(false);
+  });
+});
+
+describe("MAX_RECONCILIATION_LINE_BATCH", () => {
+  it("caps a single «انتخاب همه» at a value a month of settlements fits under", () => {
+    // Hundreds of card settlements in a month is ordinary; thousands in one
+    // request is not, and would pin a connection for an unbounded time.
+    expect(MAX_RECONCILIATION_LINE_BATCH).toBeGreaterThanOrEqual(300);
+    expect(Number.isSafeInteger(MAX_RECONCILIATION_LINE_BATCH)).toBe(true);
   });
 });

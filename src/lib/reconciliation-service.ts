@@ -34,6 +34,7 @@ import {
   differenceOf,
   isLineWithinStatementWindow,
   isPlausibleStatementDate,
+  MAX_RECONCILIATION_LINE_BATCH,
 } from "./bank-reconciliation";
 
 export type ReconcilableAccount = "cash" | "bank" | "bankClearing";
@@ -400,6 +401,111 @@ export async function setLineCleared(params: {
       `DELETE FROM bank_reconciliation_lines WHERE reconciliation_id = $1 AND journal_line_id = $2`,
       [params.reconciliationId, params.journalLineId],
     );
+  }
+}
+
+/**
+ * Clears or un-clears *many* lines against one in-progress reconciliation.
+ *
+ * «انتخاب همه» on a month of card settlements is several hundred lines. Sent
+ * one PATCH per line that is several hundred round-trips: slow enough that the
+ * screen looks hung, and each request its own opportunity to fail and leave
+ * the reconciliation half-ticked with no record of how far it got. One
+ * statement per line still runs here — the per-line rules are not worth
+ * duplicating in SQL — but they run inside a single transaction, so the batch
+ * either lands whole or not at all.
+ *
+ * Every rule `setLineCleared` enforces is enforced here, by calling into the
+ * same checks against the same client: a line on another account, a line past
+ * the statement date, or a line another (completed) reconciliation already
+ * owns still refuses the *whole* batch rather than being skipped silently.
+ *
+ * Returns how many rows actually changed, so «۵ سند علامت خورد» is the truth
+ * rather than the size of the request: re-ticking already-ticked lines is a
+ * no-op, not an error.
+ */
+export async function setLinesCleared(params: {
+  businessId: string;
+  reconciliationId: string;
+  journalLineIds: readonly string[];
+  cleared: boolean;
+}): Promise<{ changed: number }> {
+  if (!isUuid(params.reconciliationId)) throw new ReconciliationError("reconciliation_not_found", 404);
+  if (params.journalLineIds.length === 0) throw new ReconciliationError("journal_line_required");
+  if (params.journalLineIds.length > MAX_RECONCILIATION_LINE_BATCH) {
+    throw new ReconciliationError("too_many_lines");
+  }
+  for (const id of params.journalLineIds) {
+    if (!/^\d+$/.test(id)) throw new ReconciliationError("journal_line_not_found", 404);
+  }
+  // Duplicates in one payload are the caller's slip, not an error; collapse
+  // them so `changed` counts lines rather than mentions.
+  const ids = [...new Set(params.journalLineIds)];
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+
+    // Locked so a completion cannot land between this check and the writes.
+    const { rows } = await client.query<{
+      account_id: string;
+      status: string;
+      statement_date: string;
+    }>(
+      `SELECT account_id, status, statement_date::text AS statement_date
+         FROM bank_reconciliations WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [params.reconciliationId, params.businessId],
+    );
+    const reconciliation = rows[0];
+    if (!reconciliation) throw new ReconciliationError("reconciliation_not_found", 404);
+    if (reconciliation.status !== "in_progress") throw new ReconciliationError("reconciliation_completed", 409);
+
+    // One round-trip to prove every id is a real, in-window line on this
+    // account — the set-based spelling of `setLineCleared`'s two checks.
+    const { rows: lineRows } = await client.query<{ id: string }>(
+      `SELECT jl.id
+         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE jl.id = ANY($1::bigint[]) AND jl.account_id = $2 AND je.business_id = $3
+          AND je.entry_date <= $4::date`,
+      [ids, reconciliation.account_id, params.businessId, reconciliation.statement_date],
+    );
+    if (lineRows.length !== ids.length) throw new ReconciliationError("journal_line_not_found", 404);
+
+    let changed = 0;
+    if (params.cleared) {
+      // A line already owned by a *different* (necessarily completed)
+      // reconciliation is owned for good; refusing the batch is the same
+      // answer `setLineCleared` gives for one line.
+      const { rows: taken } = await client.query<{ journal_line_id: string }>(
+        `SELECT journal_line_id FROM bank_reconciliation_lines
+          WHERE journal_line_id = ANY($1::bigint[]) AND reconciliation_id <> $2`,
+        [ids, params.reconciliationId],
+      );
+      if (taken[0]) throw new ReconciliationError("journal_line_already_reconciled", 409);
+
+      const { rowCount } = await client.query(
+        `INSERT INTO bank_reconciliation_lines (reconciliation_id, journal_line_id)
+         SELECT $1, unnest($2::bigint[])
+         ON CONFLICT (journal_line_id) DO NOTHING`,
+        [params.reconciliationId, ids],
+      );
+      changed = rowCount ?? 0;
+    } else {
+      const { rowCount } = await client.query(
+        `DELETE FROM bank_reconciliation_lines
+          WHERE reconciliation_id = $1 AND journal_line_id = ANY($2::bigint[])`,
+        [params.reconciliationId, ids],
+      );
+      changed = rowCount ?? 0;
+    }
+
+    await client.query("COMMIT");
+    return { changed };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
 }
 

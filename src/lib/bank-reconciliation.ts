@@ -139,3 +139,15 @@ export function isPlausibleStatementDate(value: unknown): value is string {
 export function isLineWithinStatementWindow(entryDate: string, statementDate: string): boolean {
   return entryDate <= statementDate;
 }
+
+/**
+ * How many lines one «انتخاب همه» may claim in a single request.
+ *
+ * Ticking lines one request at a time is the honest reading of the original
+ * contract, but a month of card settlements is several hundred lines and that
+ * turned «انتخاب همه» into a burst of hundreds of round-trips — slow enough to
+ * look broken, and each one its own chance to fail half-way and leave the
+ * reconciliation part-ticked. The batch endpoint exists for that case; the cap
+ * keeps a single request from pinning a connection for an unbounded time.
+ */
+export const MAX_RECONCILIATION_LINE_BATCH = 500;

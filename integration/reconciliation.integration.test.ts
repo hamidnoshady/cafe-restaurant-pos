@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import { MAX_RECONCILIATION_LINE_BATCH } from "../src/lib/bank-reconciliation";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -688,5 +689,237 @@ describe("a negative closing balance is judged per account", () => {
       createdBy: user.id,
     });
     expect(overdrawn.statementBalance).toBe(-250_000);
+  });
+});
+
+/**
+ * «انتخاب همه» over a month of card settlements is hundreds of lines. It used
+ * to be hundreds of PATCHes; `setLinesCleared` does it in one transaction
+ * without loosening any of the per-line rules.
+ */
+describe("setLinesCleared (bulk)", () => {
+  it("clears a whole selection in one call and reports what changed", async () => {
+    const lines = [
+      await postCashEntry("2025-06-05", 1000),
+      await postCashEntry("2025-06-06", 2000),
+      await postCashEntry("2025-06-07", 3000),
+    ];
+    const rec = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-30",
+      statementBalance: 6000,
+      createdBy: user.id,
+    });
+
+    const { changed } = await reconciliationService.setLinesCleared({
+      businessId: biz.id,
+      reconciliationId: rec.id,
+      journalLineIds: lines,
+      cleared: true,
+    });
+    expect(changed).toBe(3);
+
+    const detail = await reconciliationService.getReconciliation(biz.id, rec.id);
+    expect(detail.clearedTotal).toBe(6000);
+    expect(detail.difference).toBe(0);
+  });
+
+  it("re-clearing an already-cleared line is a no-op, not an error", async () => {
+    const line = await postCashEntry("2025-06-05", 1000);
+    const rec = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-30",
+      statementBalance: 1000,
+      createdBy: user.id,
+    });
+    await reconciliationService.setLinesCleared({
+      businessId: biz.id,
+      reconciliationId: rec.id,
+      journalLineIds: [line],
+      cleared: true,
+    });
+    const { changed } = await reconciliationService.setLinesCleared({
+      businessId: biz.id,
+      reconciliationId: rec.id,
+      journalLineIds: [line],
+      cleared: true,
+    });
+    expect(changed).toBe(0);
+  });
+
+  it("un-clears a selection", async () => {
+    const lines = [await postCashEntry("2025-06-05", 1000), await postCashEntry("2025-06-06", 2000)];
+    const rec = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-30",
+      statementBalance: 3000,
+      createdBy: user.id,
+    });
+    await reconciliationService.setLinesCleared({
+      businessId: biz.id,
+      reconciliationId: rec.id,
+      journalLineIds: lines,
+      cleared: true,
+    });
+    const { changed } = await reconciliationService.setLinesCleared({
+      businessId: biz.id,
+      reconciliationId: rec.id,
+      journalLineIds: lines,
+      cleared: false,
+    });
+    expect(changed).toBe(2);
+    expect((await reconciliationService.getReconciliation(biz.id, rec.id)).clearedTotal).toBe(0);
+  });
+
+  it("refuses the whole batch when one line is past the statement date", async () => {
+    // The batch must not be a way around the window check a single PATCH makes.
+    const inWindow = await postCashEntry("2025-06-05", 1000);
+    const outOfWindow = await postCashEntry("2025-07-05", 2000);
+    const rec = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-30",
+      statementBalance: 1000,
+      createdBy: user.id,
+    });
+
+    await expect(
+      reconciliationService.setLinesCleared({
+        businessId: biz.id,
+        reconciliationId: rec.id,
+        journalLineIds: [inWindow, outOfWindow],
+        cleared: true,
+      }),
+    ).rejects.toMatchObject({ message: "journal_line_not_found", status: 404 });
+
+    // Rolled back whole: the in-window line was not quietly claimed.
+    expect((await reconciliationService.getReconciliation(biz.id, rec.id)).clearedTotal).toBe(0);
+  });
+
+  it("refuses a batch containing a line another completed reconciliation owns", async () => {
+    const line1 = await postCashEntry("2025-06-05", 1000);
+    const first = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-10",
+      statementBalance: 1000,
+      createdBy: user.id,
+    });
+    await reconciliationService.setLinesCleared({
+      businessId: biz.id,
+      reconciliationId: first.id,
+      journalLineIds: [line1],
+      cleared: true,
+    });
+    await reconciliationService.completeReconciliation({
+      businessId: biz.id,
+      reconciliationId: first.id,
+      actorId: user.id,
+    });
+
+    const line2 = await postCashEntry("2025-06-20", 2000);
+    const second = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-30",
+      statementBalance: 3000,
+      createdBy: user.id,
+    });
+    await expect(
+      reconciliationService.setLinesCleared({
+        businessId: biz.id,
+        reconciliationId: second.id,
+        journalLineIds: [line1, line2],
+        cleared: true,
+      }),
+    ).rejects.toMatchObject({ message: "journal_line_already_reconciled", status: 409 });
+  });
+
+  it("refuses to touch a completed reconciliation", async () => {
+    const line = await postCashEntry("2025-06-05", 1000);
+    const rec = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-30",
+      statementBalance: 1000,
+      createdBy: user.id,
+    });
+    await reconciliationService.setLinesCleared({
+      businessId: biz.id,
+      reconciliationId: rec.id,
+      journalLineIds: [line],
+      cleared: true,
+    });
+    await reconciliationService.completeReconciliation({
+      businessId: biz.id,
+      reconciliationId: rec.id,
+      actorId: user.id,
+    });
+
+    await expect(
+      reconciliationService.setLinesCleared({
+        businessId: biz.id,
+        reconciliationId: rec.id,
+        journalLineIds: [line],
+        cleared: false,
+      }),
+    ).rejects.toMatchObject({ message: "reconciliation_completed", status: 409 });
+  });
+
+  it("answers a malformed id with a 404 rather than a Postgres error", async () => {
+    const rec = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-30",
+      statementBalance: 0,
+      createdBy: user.id,
+    });
+    await expect(
+      reconciliationService.setLinesCleared({
+        businessId: biz.id,
+        reconciliationId: rec.id,
+        journalLineIds: ["not-a-bigint"],
+        cleared: true,
+      }),
+    ).rejects.toMatchObject({ message: "journal_line_not_found", status: 404 });
+    await expect(
+      reconciliationService.setLinesCleared({
+        businessId: biz.id,
+        reconciliationId: "not-a-uuid",
+        journalLineIds: ["1"],
+        cleared: true,
+      }),
+    ).rejects.toMatchObject({ message: "reconciliation_not_found", status: 404 });
+  });
+
+  it("rejects an empty selection and one over the batch cap", async () => {
+    const rec = await reconciliationService.createReconciliation({
+      businessId: biz.id,
+      accountCode: "cash",
+      statementDate: "2025-06-30",
+      statementBalance: 0,
+      createdBy: user.id,
+    });
+    await expect(
+      reconciliationService.setLinesCleared({
+        businessId: biz.id,
+        reconciliationId: rec.id,
+        journalLineIds: [],
+        cleared: true,
+      }),
+    ).rejects.toMatchObject({ message: "journal_line_required" });
+
+    const tooMany = Array.from({ length: MAX_RECONCILIATION_LINE_BATCH + 1 }, (_, i) => String(i + 1));
+    await expect(
+      reconciliationService.setLinesCleared({
+        businessId: biz.id,
+        reconciliationId: rec.id,
+        journalLineIds: tooMany,
+        cleared: true,
+      }),
+    ).rejects.toMatchObject({ message: "too_many_lines" });
   });
 });
