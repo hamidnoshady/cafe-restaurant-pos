@@ -124,7 +124,10 @@ beforeEach(async () => {
 
   const accounts = await db.query<{ id: string; code: string }>(
     `INSERT INTO accounts (business_id, code, name, type)
-     VALUES ($1, '1100', 'صندوق', 'asset'), ($1, '5300', 'اجاره', 'expense')
+     VALUES ($1, '1100', 'صندوق', 'asset'),
+            ($1, '1200', 'حساب‌های دریافتنی', 'asset'),
+            ($1, '4900', 'سایر درآمدها', 'revenue'),
+            ($1, '5300', 'اجاره', 'expense')
      RETURNING id, code`,
     [biz.id],
   );
@@ -355,6 +358,14 @@ describe("an installment plan's remaining balance", () => {
     // `principal - paidTotal` would have said 1,000,000 — 100,000 of interest
     // the customer owes, missing from the number the screen shows them.
     expect(plan!.remaining).toBe(1100000);
+    const accrued = await db.query<{ debit: string; credit: string }>(
+      `SELECT COALESCE(sum(jl.debit), 0)::text AS debit, COALESCE(sum(jl.credit), 0)::text AS credit
+         FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
+        WHERE je.source_type = 'installment_interest' AND je.source_id = $1`,
+      [id],
+    );
+    expect(Number(accrued.rows[0].debit)).toBe(100000);
+    expect(Number(accrued.rows[0].credit)).toBe(100000);
 
     await db.query(
       `UPDATE installment_items SET paid_at = now(), paid_method = 'cash' WHERE installment_id = $1 AND seq = 1`,
@@ -382,6 +393,83 @@ describe("an installment plan's remaining balance", () => {
         createdBy: user.id,
       }),
     ).rejects.toThrow("invalid_percent");
+  });
+
+  it("refuses an impossible due date before PostgreSQL can raise a 500", async () => {
+    await expect(
+      installments.createInstallmentPlan({
+        businessId: biz.id,
+        locationId: null,
+        direction: "receivable",
+        source: "party",
+        partyId: party.id,
+        principal: 1000000,
+        installmentCount: 2,
+        intervalMonths: 1,
+        firstDueDate: "2026-02-31",
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("invalid_due_date");
+  });
+
+  it("settles a slice only once when two payment requests race", async () => {
+    const { id } = await installments.createInstallmentPlan({
+      businessId: biz.id,
+      locationId: null,
+      direction: "receivable",
+      source: "party",
+      partyId: party.id,
+      principal: 500000,
+      installmentCount: 1,
+      intervalMonths: 1,
+      firstDueDate: "2026-01-10",
+      createdBy: user.id,
+    });
+    const plan = await installments.getInstallmentPlan(biz.id, id);
+    const itemId = plan!.items![0].id;
+
+    const results = await Promise.allSettled([
+      installments.payInstallmentItem({ businessId: biz.id, locationId: null, planId: id, itemId, method: "cash", createdBy: user.id }),
+      installments.payInstallmentItem({ businessId: biz.id, locationId: null, planId: id, itemId, method: "cash", createdBy: user.id }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const receipts = await db.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM ar_receipts WHERE business_id = $1 AND customer_id = $2",
+      [biz.id, party.id],
+    );
+    expect(Number(receipts.rows[0].count)).toBe(1);
+  });
+
+  it("allows only one installment plan for each credit invoice", async () => {
+    const location = await db.query<{ id: string }>(
+      `INSERT INTO locations (business_id, name) VALUES ($1, 'شعبه اقساط') RETURNING id`,
+      [biz.id],
+    );
+    const order = await db.query<{ id: string }>(
+      `INSERT INTO orders (location_id, order_number, type, status, customer_id, subtotal, total, closed_at)
+       VALUES ($1, 2, 'retail', 'completed', $2, 500000, 500000, now()) RETURNING id`,
+      [location.rows[0].id, party.id],
+    );
+    await db.query(
+      `INSERT INTO payments (order_id, location_id, method, amount) VALUES ($1, $2, 'credit', 500000)`,
+      [order.rows[0].id, location.rows[0].id],
+    );
+    const input = {
+      businessId: biz.id,
+      locationId: location.rows[0].id,
+      direction: "receivable" as const,
+      source: "invoice" as const,
+      invoiceOrderId: order.rows[0].id,
+      principal: 500000,
+      installmentCount: 2,
+      intervalMonths: 1,
+      firstDueDate: "2026-01-10",
+      createdBy: user.id,
+    };
+
+    await installments.createInstallmentPlan(input);
+    await expect(installments.createInstallmentPlan(input)).rejects.toThrow("invoice_already_scheduled");
   });
 
   it("refuses an invoice that was not sold on credit", async () => {

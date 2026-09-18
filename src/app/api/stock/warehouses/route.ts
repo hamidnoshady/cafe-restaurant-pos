@@ -34,15 +34,19 @@ export const GET = withTenantScope(async () => {
     `SELECT l.id, l.name, l.address, l.phone, l.is_active, l.created_at,
         (SELECT count(*) FROM items i
           WHERE i.location_id = l.id AND i.is_active AND i.kind <> 'variant_parent')::text AS item_count,
+        /* Keep all summary figures aligned with the visible stock screen:
+         * inactive items and variant families are not sellable inventory. */
         (SELECT COALESCE(sum(COALESCE(s.quantity * s.unit_cost, 0)), 0)::text
            FROM item_stock s JOIN items i ON i.id = s.item_id
-          WHERE i.location_id = l.id AND i.kind <> 'variant_parent')::text AS stock_value_rial,
+          WHERE i.location_id = l.id AND i.is_active AND i.kind <> 'variant_parent')::text AS stock_value_rial,
         (SELECT count(*)
-           FROM item_stock s JOIN items i ON i.id = s.item_id
+           FROM items i
+           LEFT JOIN item_stock s ON s.item_id = i.id
           WHERE i.location_id = l.id AND i.is_active AND i.kind <> 'variant_parent'
-            AND s.reorder_point > 0 AND s.quantity <= s.reorder_point)::text AS low_stock_count,
+            AND COALESCE(s.reorder_point, 0) > 0
+            AND COALESCE(s.quantity, 0) <= s.reorder_point)::text AS low_stock_count,
         (SELECT max(s.updated_at) FROM item_stock s JOIN items i ON i.id = s.item_id
-          WHERE i.location_id = l.id) AS last_movement_at
+          WHERE i.location_id = l.id AND i.is_active AND i.kind <> 'variant_parent') AS last_movement_at
        FROM locations l
       WHERE l.business_id = $1
       ORDER BY l.created_at`,
@@ -61,23 +65,36 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { name?: string; address?: string; phone?: string };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (!body.name?.trim()) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const input = body as Record<string, unknown>;
+  if (typeof input.name !== "string") {
+    return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  }
+  if (
+    (input.address !== undefined && input.address !== null && typeof input.address !== "string") ||
+    (input.phone !== undefined && input.phone !== null && typeof input.phone !== "string")
+  ) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  if (!input.name.trim()) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
 
   try {
     const { locationId } = await createBranch({
       businessId: session.businessId,
-      name: body.name,
-      address: body.address,
-      phone: body.phone,
+      name: input.name,
+      address: input.address as string | null | undefined,
+      phone: input.phone as string | null | undefined,
       timezone: "Asia/Tehran",
       copyMenuFromLocationId: null,
       actorId: session.sub,

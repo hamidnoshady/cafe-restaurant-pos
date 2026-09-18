@@ -447,4 +447,159 @@ describe("warehouse documents (رسید/حواله انبار)", () => {
     await client.query("ROLLBACK");
     await client.end();
   });
+  /* ----------------------------------------------------------------------
+   * Regressions: four ways a perfectly ordinary document used to abort the
+   * transaction with a raw Postgres error (i.e. a 500) instead of posting or
+   * refusing cleanly. Each of these failed on the pre-fix code.
+   * ------------------------------------------------------------------- */
+
+  it("posts an issue whose derived unit cost is fractional", async () => {
+    // 0.7 of a 333-Rial lot costs 233 Rial → 332.857142857 per unit. That went
+    // straight into `warehouse_document_lines.unit_cost`, a BIGINT column, and
+    // Postgres rejected the INSERT: «invalid input syntax for type bigint».
+    // An everyday fractional حواله simply could not be posted.
+    const client = await connect();
+    await client.query("BEGIN");
+    const fixture = await seed(client);
+    await createReceipt(client, fixture, [
+      { item: fixture.inventory_item_id, quantity: "3", unitCost: "333" },
+    ]);
+
+    const issued = await createIssue(client, fixture, [
+      { item: fixture.inventory_item_id, quantity: "0.7" },
+    ]);
+
+    const { rows } = await client.query<{ quantity: string; unit_cost: string; value_rial: string }>(
+      `SELECT trim_scale(quantity)::text quantity, unit_cost::text, value_rial::text
+         FROM warehouse_document_lines WHERE document_id=$1`,
+      [issued.id],
+    );
+    expect(rows[0].quantity).toBe("0.7");
+    // value_rial is authoritative (it is what the ledger posts); unit_cost is
+    // its whole-Rial read-out: 233 / 0.7 = 332.857… → 333.
+    expect(rows[0].value_rial).toBe("233");
+    expect(rows[0].unit_cost).toBe("333");
+    expect(issued.total).toBe("233");
+
+    const after = await balances(client, fixture);
+    expect(after.other_expense_gl).toBe("233");
+    expect(after.inventory_gl).toBe(String(3 * 333 - 233));
+
+    await client.query("ROLLBACK");
+    await client.end();
+  });
+
+  it("keeps a sub-milli-unit quantity exactly as the stock ledger records it", async () => {
+    // `warehouse_document_lines.quantity` was numeric(14,3) while every other
+    // quantity on this path is numeric(24,9) — so a 0.0005 receipt stored
+    // 0.001 on the document and 0.000500000 in stock_movements: the document a
+    // person reads back was not the quantity the inventory moved. Below half a
+    // milli-unit it rounded to 0.000 and tripped the CHECK (quantity > 0).
+    const client = await connect();
+    await client.query("BEGIN");
+    const fixture = await seed(client);
+
+    const docId = await createReceipt(client, fixture, [
+      { item: fixture.inventory_item_id, quantity: "0.0005", unitCost: "1000000" },
+    ]);
+
+    const { rows: line } = await client.query<{ quantity: string; value_rial: string }>(
+      `SELECT trim_scale(quantity)::text quantity, value_rial::text
+         FROM warehouse_document_lines WHERE document_id=$1`,
+      [docId],
+    );
+    const { rows: movement } = await client.query<{ quantity: string }>(
+      `SELECT trim_scale(quantity)::text quantity FROM stock_movements
+        WHERE source_id=$1 AND source_type='warehouse_receipt'`,
+      [docId],
+    );
+    expect(line[0].quantity).toBe("0.0005");
+    expect(line[0].quantity).toBe(movement[0].quantity);
+    expect(line[0].value_rial).toBe("500");
+
+    // And a quantity that used to round away to zero now posts intact.
+    const tinyId = await createReceipt(client, fixture, [
+      { item: fixture.other_item_id, quantity: "0.0001", unitCost: "10000000" },
+    ]);
+    const { rows: tiny } = await client.query<{ quantity: string; value_rial: string }>(
+      `SELECT trim_scale(quantity)::text quantity, value_rial::text
+         FROM warehouse_document_lines WHERE document_id=$1`,
+      [tinyId],
+    );
+    expect(tiny[0].quantity).toBe("0.0001");
+    expect(tiny[0].value_rial).toBe("1000");
+
+    await client.query("ROLLBACK");
+    await client.end();
+  });
+
+  it("refuses a valueless receipt instead of violating the lot's value bounds", async () => {
+    // A zero-cost receipt reached `INSERT INTO inventory_lots` and aborted the
+    // transaction on `inventory_lot_exact_value_bounds` — 0015 forbids a lot
+    // holding quantity at zero value. The refusal now happens at parse time,
+    // identically under every costing method, before anything is written.
+    const client = await connect();
+    await client.query("BEGIN");
+    const fixture = await seed(client);
+
+    expect(() =>
+      parseWarehouseDocumentLines("receipt", [
+        { inventoryItemId: fixture.inventory_item_id, quantity: "2", unitCost: "0" },
+      ]),
+    ).toThrow("receipt_value_required");
+
+    const { rows: docs } = await client.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM warehouse_documents WHERE business_id = $1",
+      [fixture.business_id],
+    );
+    expect(docs[0].n).toBe(0);
+
+    await client.query("ROLLBACK");
+    await client.end();
+  });
+
+  it("answers a non-uuid id as not-found rather than a uuid syntax error", async () => {
+    // `WHERE id = $1` against a uuid column raises «invalid input syntax for
+    // type uuid» for a non-uuid — a 500 where an honest 404 belongs.
+    const client = await connect();
+    await client.query("BEGIN");
+    const fixture = await seed(client);
+
+    const parsed = parseWarehouseDocumentLines("receipt", [
+      { inventoryItemId: "unknown", quantity: "1", unitCost: "100" },
+    ]);
+    await expect(
+      createWarehouseDocumentInTransaction(client as never, {
+        businessId: fixture.business_id,
+        locationId: fixture.location_id,
+        kind: "receipt",
+        supplierId: null,
+        recipient: null,
+        documentNumber: null,
+        note: null,
+        createdBy: null,
+        lines: parsed.lines,
+      }),
+    ).rejects.toThrow("item_not_found");
+
+    const good = parseWarehouseDocumentLines("receipt", [
+      { inventoryItemId: fixture.inventory_item_id, quantity: "1", unitCost: "100" },
+    ]);
+    await expect(
+      createWarehouseDocumentInTransaction(client as never, {
+        businessId: fixture.business_id,
+        locationId: "not-a-uuid",
+        kind: "receipt",
+        supplierId: null,
+        recipient: null,
+        documentNumber: null,
+        note: null,
+        createdBy: null,
+        lines: good.lines,
+      }),
+    ).rejects.toThrow("location_not_found");
+
+    await client.query("ROLLBACK");
+    await client.end();
+  });
 });

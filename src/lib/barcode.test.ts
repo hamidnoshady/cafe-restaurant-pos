@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  barcodeEntryError,
   checkDigitFor,
   classifyBarcode,
+  ean13Modules,
   internalBarcodeForPayload,
   internalPayloadFromNumber,
   isValidEan13,
@@ -94,5 +96,98 @@ describe("internalBarcodeForPayload / internalPayloadFromNumber", () => {
   it("folds negative and over-long inputs into the 11-digit window", () => {
     expect(internalPayloadFromNumber(-7)).toBe("00000000007");
     expect(internalPayloadFromNumber(100_000_000_000 + 5)).toBe("00000000005");
+  });
+});
+
+describe("barcodeEntryError", () => {
+  it("refuses a 13-digit code with a broken check digit", () => {
+    expect(barcodeEntryError("4006381333932")).toMatch(/رقم کنترل/);
+  });
+
+  it("refuses a 12-digit code with a broken check digit", () => {
+    expect(barcodeEntryError("036000291453")).toMatch(/رقم کنترل/);
+  });
+
+  it("accepts valid EAN-13 and UPC-A codes", () => {
+    expect(barcodeEntryError("4006381333931")).toBeNull();
+    expect(barcodeEntryError("036000291452")).toBeNull();
+  });
+
+  it("passes through codes in other shapes (EAN-8, Code 128 text)", () => {
+    // Not EAN-13/UPC-A shaped, so no check-digit claim can be made about them.
+    expect(barcodeEntryError("12345670")).toBeNull();
+    expect(barcodeEntryError("ABC-001")).toBeNull();
+  });
+});
+
+describe("ean13Modules", () => {
+  /** Decode the module string back to digits — the inverse of the encoder. */
+  function decode(modules: string): string {
+    const L = [
+      "0001101", "0011001", "0010011", "0111101", "0100011",
+      "0110001", "0101111", "0111011", "0110111", "0001011",
+    ];
+    const complement = (p: string) => [...p].map((c) => (c === "1" ? "0" : "1")).join("");
+    const reverse = (p: string) => [...p].reverse().join("");
+    const G = L.map((p) => reverse(complement(p)));
+    const R = L.map(complement);
+    const PARITIES = [
+      "LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG",
+      "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL",
+    ];
+    let pos = 3;
+    const digits: number[] = [];
+    let parity = "";
+    for (let i = 0; i < 6; i++) {
+      const seg = modules.slice(pos, pos + 7);
+      pos += 7;
+      const l = L.indexOf(seg);
+      const g = G.indexOf(seg);
+      if (l >= 0) {
+        digits.push(l);
+        parity += "L";
+      } else if (g >= 0) {
+        digits.push(g);
+        parity += "G";
+      } else {
+        throw new Error(`unreadable left segment ${seg}`);
+      }
+    }
+    pos += 5; // centre guard
+    for (let i = 0; i < 6; i++) {
+      const seg = modules.slice(pos, pos + 7);
+      pos += 7;
+      const r = R.indexOf(seg);
+      if (r < 0) throw new Error(`unreadable right segment ${seg}`);
+      digits.push(r);
+    }
+    return String(PARITIES.indexOf(parity)) + digits.join("");
+  }
+
+  it("is 95 modules with the three guards in place", () => {
+    const modules = ean13Modules("4006381333931")!;
+    expect(modules).toHaveLength(95);
+    expect(modules.startsWith("101")).toBe(true);
+    expect(modules.slice(45, 50)).toBe("01010");
+    expect(modules.endsWith("101")).toBe(true);
+  });
+
+  it("round-trips a supplier EAN-13 through decode", () => {
+    expect(decode(ean13Modules("4006381333931")!)).toBe("4006381333931");
+  });
+
+  it("round-trips a minted internal code through decode", () => {
+    const code = internalBarcodeForPayload("12345678901");
+    expect(decode(ean13Modules(code)!)).toBe(code);
+  });
+
+  it("renders a UPC-A as its 13-digit zero-prefixed form", () => {
+    expect(decode(ean13Modules("036000291452")!)).toBe("0036000291452");
+  });
+
+  it("returns null for anything that is not EAN-13/UPC-A", () => {
+    expect(ean13Modules("4006381333932")).toBeNull(); // bad check digit
+    expect(ean13Modules("12345")).toBeNull();
+    expect(ean13Modules("hello")).toBeNull();
   });
 });

@@ -1152,6 +1152,8 @@ export async function getBusinessOverview(
   filters: DateRangeFilters = {},
 ): Promise<BusinessOverview> {
   const { dateFrom, dateTo } = filters;
+  const industry = await getBusinessIndustry(businessId);
+  const costOfSalesCodes = Array.from(costOfSalesCodesForIndustry(industry ?? "food_service"));
 
   const [locationsResult, salesResult, cogsResult, wasteResult, consolidatedSales, consolidatedCogs, consolidatedWaste] =
     await Promise.all([
@@ -1171,10 +1173,10 @@ export async function getBusinessOverview(
       query<{ location_id: string; cogs: string }>(
         `SELECT location_id, sum(debit) - sum(credit) AS cogs
            FROM v_ledger_by_account
-          WHERE business_id = $1 AND account_code = $4
+          WHERE business_id = $1 AND account_code = ANY($4::text[])
             AND ($2::date IS NULL OR entry_date >= $2) AND ($3::date IS NULL OR entry_date <= $3)
           GROUP BY location_id`,
-        [businessId, dateFrom ?? null, dateTo ?? null, WELL_KNOWN_CODES.cogs],
+        [businessId, dateFrom ?? null, dateTo ?? null, costOfSalesCodes],
       ),
       query<{ location_id: string; cost: string }>(
         `SELECT location_id, sum(cost) AS cost
@@ -1195,9 +1197,9 @@ export async function getBusinessOverview(
       query<{ cogs: string }>(
         `SELECT sum(debit) - sum(credit) AS cogs
            FROM v_ledger_by_account
-          WHERE business_id = $1 AND account_code = $4
+          WHERE business_id = $1 AND account_code = ANY($4::text[])
             AND ($2::date IS NULL OR entry_date >= $2) AND ($3::date IS NULL OR entry_date <= $3)`,
-        [businessId, dateFrom ?? null, dateTo ?? null, WELL_KNOWN_CODES.cogs],
+        [businessId, dateFrom ?? null, dateTo ?? null, costOfSalesCodes],
       ),
       query<{ cost: string }>(
         `SELECT sum(cost) AS cost

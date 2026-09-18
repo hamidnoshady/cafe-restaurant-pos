@@ -13,6 +13,7 @@ export interface AuditEntry {
   id: number;
   businessId: string;
   locationId: string | null;
+  locationName: string | null;
   actorId: string | null;
   actorName: string | null;
   action: string;
@@ -35,6 +36,7 @@ interface AuditRow extends Record<string, unknown> {
   id: string;
   business_id: string;
   location_id: string | null;
+  location_name: string | null;
   user_id: string | null;
   actor_name: string | null;
   action: string;
@@ -54,6 +56,7 @@ function toEntry(row: AuditRow): AuditEntry {
     id: Number(row.id),
     businessId: row.business_id,
     locationId: row.location_id,
+    locationName: row.location_name,
     actorId: row.user_id,
     actorName: row.actor_name,
     action: row.action,
@@ -147,7 +150,8 @@ export async function listAuditLog(
   params.push(limit);
 
   const { rows } = await query<AuditRow>(
-    `SELECT a.id, a.business_id, a.location_id, a.user_id, u.full_name AS actor_name,
+    `SELECT a.id, a.business_id, a.location_id, l.name AS location_name,
+            a.user_id, u.full_name AS actor_name,
             a.action, a.entity, a.entity_id, a.payload, a.created_at,
             ec.credential_type::text AS credential_type,
             d.label AS device_label,
@@ -155,7 +159,8 @@ export async function listAuditLog(
             ebp.code || ' — ' || ebp.name AS account_before_parent_label,
             eap.code || ' — ' || eap.name AS account_after_parent_label
        FROM audit_log a
-       LEFT JOIN users u ON u.id = a.user_id
+       LEFT JOIN locations l ON l.id = a.location_id AND l.business_id = a.business_id
+       LEFT JOIN users u ON u.id = a.user_id AND u.business_id = a.business_id
        LEFT JOIN employee_credentials ec
               ON ec.business_id = a.business_id
              AND ec.id = ${uuidOrNull("nullif(a.payload->>'credentialId', '')")}
