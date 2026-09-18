@@ -141,6 +141,17 @@ export function sortPaymentMethods<T extends { sortOrder: number; name: string }
   return [...methods].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "fa"));
 }
 
+/**
+ * Reordering is an all-or-nothing operation. Accepting a subset, a duplicate,
+ * or an id from another business leaves tied sort positions and makes the till
+ * order unpredictable, so the API and service both use this exact-set check.
+ */
+export function isExactPaymentMethodOrder(currentIds: readonly string[], orderedIds: readonly string[]): boolean {
+  if (currentIds.length !== orderedIds.length || new Set(orderedIds).size !== orderedIds.length) return false;
+  const current = new Set(currentIds);
+  return orderedIds.every((id) => current.has(id));
+}
+
 export const MAX_PAYMENT_METHOD_NAME = 40;
 
 /**
@@ -189,6 +200,12 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): Validatio
   if (!isPaymentSettlement(input.settlement) || !CUSTOM_PAYMENT_SETTLEMENTS.includes(input.settlement)) {
     return { ok: false, error: "invalid_settlement" };
   }
+  if (input.opensDrawer !== undefined && typeof input.opensDrawer !== "boolean") {
+    return { ok: false, error: "bad_request" };
+  }
+  if (input.requiresReference !== undefined && typeof input.requiresReference !== "boolean") {
+    return { ok: false, error: "bad_request" };
+  }
   return {
     ok: true,
     value: {
@@ -196,8 +213,8 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): Validatio
       settlement: input.settlement,
       // A way a business models on cash defaults to behaving like cash at the
       // drawer and the cash-up, which is what it is for.
-      opensDrawer: input.opensDrawer === undefined ? input.settlement === "cash" : Boolean(input.opensDrawer),
-      requiresReference: Boolean(input.requiresReference),
+      opensDrawer: input.opensDrawer === undefined ? input.settlement === "cash" : input.opensDrawer,
+      requiresReference: input.requiresReference ?? false,
     },
   };
 }

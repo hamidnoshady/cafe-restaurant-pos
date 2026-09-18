@@ -4,6 +4,7 @@ import {
   CUSTOM_PAYMENT_SETTLEMENTS,
   builtinPaymentMethodsFor,
   changeDue,
+  isExactPaymentMethodOrder,
   ledgerSettlementFor,
   paymentMethodCodeFor,
   remainingAfterTenders,
@@ -51,6 +52,20 @@ describe("sortPaymentMethods", () => {
     const input = [{ sortOrder: 2, name: "ب" }, { sortOrder: 1, name: "الف" }];
     sortPaymentMethods(input);
     expect(input.map((m) => m.name)).toEqual(["ب", "الف"]);
+  });
+});
+
+describe("isExactPaymentMethodOrder", () => {
+  const current = ["cash-id", "card-id", "online-id"];
+
+  it("accepts every current id exactly once in any order", () => {
+    expect(isExactPaymentMethodOrder(current, ["online-id", "cash-id", "card-id"])).toBe(true);
+  });
+
+  it("rejects subsets, duplicates, and foreign ids", () => {
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id"])).toBe(false);
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "cash-id", "online-id"])).toBe(false);
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id", "foreign-id"])).toBe(false);
   });
 });
 
@@ -111,6 +126,17 @@ describe("validatePaymentMethodInput", () => {
     expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: false })).toEqual({
       ok: true,
       value: { name: "تنخواه", settlement: "cash", opensDrawer: false, requiresReference: false },
+    });
+  });
+
+  it("rejects truthy strings instead of silently treating them as enabled", () => {
+    expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: "false" })).toEqual({
+      ok: false,
+      error: "bad_request",
+    });
+    expect(validatePaymentMethodInput({ name: "پوز", settlement: "card", requiresReference: 1 })).toEqual({
+      ok: false,
+      error: "bad_request",
     });
   });
 });

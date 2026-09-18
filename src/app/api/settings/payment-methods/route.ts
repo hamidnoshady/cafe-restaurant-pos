@@ -19,13 +19,16 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  const parsed = validatePaymentMethodInput(body);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const parsed = validatePaymentMethodInput(body as Record<string, unknown>);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
   return NextResponse.json({ paymentMethod: await createPaymentMethod(session.businessId, parsed.value) }, { status: 201 });
@@ -40,18 +43,23 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
 
-  let body: { order?: unknown };
+  let body: unknown;
   try {
-    body = (await request.json()) as { order?: unknown };
+    body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  const order = body.order;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const order = (body as { order?: unknown }).order;
   if (!Array.isArray(order) || order.some((id) => typeof id !== "string")) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  await reorderPaymentMethods(session.businessId, order as string[]);
+  if (!(await reorderPaymentMethods(session.businessId, order as string[]))) {
+    return NextResponse.json({ error: "invalid_payment_method_order" }, { status: 400 });
+  }
   return NextResponse.json({
     paymentMethods: await listPaymentMethods(session.businessId, { includeInactive: true }),
   });
