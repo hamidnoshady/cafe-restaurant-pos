@@ -356,6 +356,7 @@ function errorMessage(code: string | undefined): string {
     invalid_expense_account: "دسته هزینه انتخاب‌شده یک حساب هزینه معتبر نیست.",
     invalid_payment_account: "حساب پرداخت انتخاب‌شده معتبر نیست.",
     same_account: "دسته هزینه و حساب پرداخت نمی‌توانند یکسان باشند.",
+    invalid_expense_date: "تاریخ هزینه معتبر نیست.",
     // Chart of accounts (accounts-service.ts) — these reach here whenever a
     // section routes an accounts error through `run` rather than its own map.
     code_required: "کد حساب الزامی است.",
