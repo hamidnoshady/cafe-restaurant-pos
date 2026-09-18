@@ -92,6 +92,12 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!body.locationId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  // A non-array `lines` would make the parser's for-of throw a TypeError
+  // ("rawLines is not iterable") rather than a validation error, i.e. a 500.
+  // This has to precede the per-line id screen below, which iterates it.
+  if (body.lines !== undefined && !Array.isArray(body.lines)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
   // Malformed ids would surface as Postgres uuid-syntax 500s inside the
   // posting transaction; answer 400/404 up front instead.
   if (!isUuid(body.locationId)) {
@@ -151,10 +157,18 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         invalid_quantity: 400,
         quantity_precision_exceeded: 400,
         invalid_rial: 400,
+        rial_out_of_range: 400,
+        receipt_value_required: 400,
         periodic_system_unsupported: 409,
       };
       const status = known[err.message];
       if (status) return NextResponse.json({ error: err.message }, { status });
+      // An item whose cost basis predates the exact-costing cutover cannot be
+      // received until that item is initialised. It is a documented 409 on the
+      // amend route; without this it fell through as an unhandled 500.
+      if (err.message.startsWith("inventory_exact_cutover_required")) {
+        return NextResponse.json({ error: "inventory_exact_cutover_required" }, { status: 409 });
+      }
     }
     throw err;
   }

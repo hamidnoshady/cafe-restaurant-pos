@@ -15,6 +15,7 @@ import type { PoolClient } from "pg";
 import { getPool, query } from "./db";
 import {
   builtinPaymentMethodsFor,
+  isExactPaymentMethodOrder,
   paymentMethodCodeFor,
   sortPaymentMethods,
   type PaymentMethodView,
@@ -214,25 +215,37 @@ export async function paymentCountForMethod(businessId: string, id: string): Pro
 }
 
 export async function deletePaymentMethod(businessId: string, id: string): Promise<boolean> {
+  // Keep the history guarantee atomic. A payment created between an API-level
+  // count and this DELETE must not silently lose its named way through the
+  // foreign key's ON DELETE SET NULL.
   const { rowCount } = await query(
-    "DELETE FROM payment_methods WHERE business_id = $1 AND id = $2 AND NOT is_builtin",
+    `DELETE FROM payment_methods pm
+      WHERE pm.business_id = $1
+        AND pm.id = $2
+        AND NOT pm.is_builtin
+        AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.payment_method_id = pm.id)`,
     [businessId, id],
   );
   return rowCount === 1;
 }
 
 /**
- * Rewrites the display order from a list of ids — the whole order at once,
- * because reordering one row at a time would leave the grid half-shuffled if
- * the second call failed, and two rows could end up sharing a position. The
- * settings tab therefore sends every id; a way left out of the list keeps
- * whatever `sort_order` it had, which is only well-defined if the caller
- * meant to omit it.
+ * Rewrites the complete display order in one transaction. The row lock makes
+ * concurrent settings tabs serialize, and the exact-set check prevents a
+ * partial/duplicated/foreign list from creating tied, unstable positions.
  */
-export async function reorderPaymentMethods(businessId: string, orderedIds: readonly string[]): Promise<void> {
+export async function reorderPaymentMethods(businessId: string, orderedIds: readonly string[]): Promise<boolean> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    const { rows } = await client.query<{ id: string }>(
+      "SELECT id FROM payment_methods WHERE business_id = $1 FOR UPDATE",
+      [businessId],
+    );
+    if (!isExactPaymentMethodOrder(rows.map((row) => row.id), orderedIds)) {
+      await client.query("ROLLBACK");
+      return false;
+    }
     for (const [index, id] of orderedIds.entries()) {
       await client.query("UPDATE payment_methods SET sort_order = $3 WHERE business_id = $1 AND id = $2", [
         businessId,
@@ -241,6 +254,7 @@ export async function reorderPaymentMethods(businessId: string, orderedIds: read
       ]);
     }
     await client.query("COMMIT");
+    return true;
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

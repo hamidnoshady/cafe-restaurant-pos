@@ -68,13 +68,18 @@ const ERROR_MESSAGES: Record<string, string> = {
     missing_fields: "فیلدهای الزامی را پر کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
-    invalid_margin: "درصد حاشیه سود باید بین ۰ و ۱۰۰ باشد.",
-    invalid_overhead: "درصد سربار برآوردی معتبر نیست.",
+    invalid_range: "بازهٔ تاریخ نامعتبر است؛ «از تاریخ» باید پیش از «تا تاریخ» باشد.",
+    invalid_margin: "درصد حاشیه سود باید از ۰ تا کمتر از ۱۰۰ باشد.",
+    invalid_overhead: "درصد سربار برآوردی باید از ۰ تا کمتر از ۱۰۰۰ باشد.",
+    invalid_overhead_mode: "روش محاسبهٔ سربار معتبر نیست.",
+    manual_overhead_required: "برای روش دستی، درصد سربار را وارد کنید.",
+    invalid_drift_threshold: "آستانهٔ تغییر بها باید بیشتر از ۰ و کمتر از ۱۰۰۰ باشد.",
     invalid_commission_percent: "درصد کارمزد باید بین ۰ و ۱۰۰ باشد.",
     invalid_category_rate: "نرخ یکی از دسته‌ها معتبر نیست.",
     invalid_accounts: "ساختار سرفصل حساب‌ها معتبر نیست.",
     accounts_in_use: "به‌دلیل وجود اسناد حسابداری، جایگزین‌کردن سرفصل‌ها ممکن نیست.",
     code_required: "کد حساب الزامی است.",
+    invalid_code: "کد حساب باید فقط شامل عدد باشد (مثل ۶۱۰۰).",
     code_in_use: "این کد حساب قبلاً استفاده شده است.",
     parent_not_found: "حساب والد پیدا نشد.",
     parent_cycle: "حساب نمی‌تواند والد خودش یا زیرمجموعه‌اش باشد.",
@@ -168,6 +173,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_transition: "این تغییر وضعیت میز مجاز نیست.",
     seat_via_session: "برای نشاندن مهمان از «باز کردن میز» استفاده کنید.",
     session_not_found: "نشست میز پیدا نشد.",
+    employee_session_not_found: "نشست پیدا نشد یا قبلاً پایان یافته است.",
     invalid_guests: "تعداد مهمان‌ها برای تقسیم صورتحساب معتبر نیست.",
     invalid_split: "تقسیم صورتحساب معتبر نیست.",
     reservation_conflict: "این میز در این بازهٔ زمانی رزرو دیگری دارد.",
@@ -185,9 +191,12 @@ const ERROR_MESSAGES: Record<string, string> = {
     too_many_tenders: "تعداد روش‌های پرداخت یک فاکتور بیش از حد مجاز است.",
     payment_reference_required: "برای این روش پرداخت، شمارهٔ پیگیری الزامی است.",
     invalid_settlement: "نحوهٔ تسویه نامعتبر است.",
+    invalid_payment_method_order: "ترتیب روش‌های پرداخت معتبر نیست؛ فهرست را تازه‌سازی و دوباره تلاش کنید.",
     builtin_payment_method: "روش‌های پیش‌فرض حذف نمی‌شوند؛ می‌توانید آن‌ها را غیرفعال کنید.",
     builtin_settlement_locked: "نحوهٔ تسویهٔ روش‌های پیش‌فرض قابل تغییر نیست.",
     payment_method_in_use: "با این روش پرداخت قبلاً وجهی دریافت شده است؛ به‌جای حذف، آن را غیرفعال کنید.",
+    payment_method_settlement_locked: "با این روش قبلاً وجهی دریافت شده و نحوهٔ تسویهٔ آن دیگر قابل تغییر نیست. روش فعلی را غیرفعال و روش تازه‌ای اضافه کنید.",
+    last_active_payment_method: "حداقل یک روش پرداخت باید فعال بماند.",
     payment_method_not_found: "روش پرداخت پیدا نشد.",
     conflict: "این تغییر با یک عملیات دیگر تداخل دارد و باید دستی بررسی شود.",
     printer_not_found: "چاپگر پیدا نشد.",
@@ -196,6 +205,31 @@ const ERROR_MESSAGES: Record<string, string> = {
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
     fiscal_period_locked: "دورهٔ مالی این تاریخ بسته شده و ثبت سند در آن ممکن نیست.",
     fiscal_period_soft_closed: "دورهٔ مالی این تاریخ نیمه‌بسته است؛ فقط مالک یا حسابدار می‌تواند در آن سند ثبت کند.",
+    // Phase 16 — سند دستی (manual journal: draft → review → post, and reversal).
+    // These reach this shared map whenever a screen shows a manual-journal
+    // failure through `errorMessage` rather than the accounting manager's own
+    // copy — «رد کردن» a draft in the review queue is the live example, and
+    // without them a real answer («این پیش‌نویس را کس دیگری تأیید یا رد کرده»)
+    // arrived as the generic «خطای غیرمنتظره».
+    memo_required: "شرح سند الزامی است.",
+    memo_too_long: "شرح سند بیش از حد طولانی است؛ آن را کوتاه‌تر بنویسید.",
+    no_lines: "حداقل یک سطر با مبلغ لازم است.",
+    too_few_lines: "سند باید حداقل دو ردیف داشته باشد.",
+    too_many_lines: "تعداد ردیف‌های سند بیش از حد مجاز است.",
+    single_account_entry: "سند باید حداقل به دو حساب متفاوت بخورد.",
+    invalid_line: "یکی از سطرها معتبر نیست (حساب، یا فقط بدهکار یا بستانکار).",
+    invalid_entry_date: "تاریخ سند معتبر نیست.",
+    not_balanced: "مجموع بدهکار و بستانکار برابر نیست.",
+    unknown_account: "یکی از حساب‌های انتخاب‌شده معتبر نیست.",
+    not_a_leaf_account: "به حساب گروه یا کل نمی‌توان سند زد؛ حساب معین یا تفصیلی را انتخاب کنید.",
+    draft_not_found: "این پیش‌نویس پیدا نشد؛ ممکن است کس دیگری آن را تأیید یا رد کرده باشد.",
+    entry_not_found: "سند پیدا نشد.",
+    not_reversible: "فقط اسناد دستی قابل برگشت هستند.",
+    cannot_reverse_a_reversal: "سند برگشتی را نمی‌توان دوباره برگشت زد.",
+    already_reversed: "این سند قبلاً برگشت خورده است.",
+    entry_has_no_lines: "این سند ردیف حسابداری ندارد و قابل برگشت نیست.",
+    fiscal_period_overlap: "بازهٔ سال مالی با یک دورهٔ موجود هم‌پوشانی دارد؛ دوره‌ها را بررسی کنید.",
+    periods_incomplete: "فهرست دوره‌های سال مالی کامل نیست و سال قابل بستن نیست.",
     negative_ingredient_requirement: "یکی از افزودنی‌ها مقدار مادهٔ اولیه را منفی می‌کند. دستور پخت آن افزودنی را اصلاح کنید.",
     inventory_costing_conflict: "بهای مواد اولیهٔ این سفارش قابل محاسبه نیست. قیمت خرید و موجودی موادی که این سفارش مصرف می‌کند را بررسی کنید.",
     // Phase 11 — delivery
@@ -268,10 +302,17 @@ const ERROR_MESSAGES: Record<string, string> = {
     // Phase 16 — bank & cash reconciliation
     invalid_account: "حساب انتخاب‌شده معتبر نیست.",
     statement_date_required: "تاریخ صورتحساب الزامی است.",
-    reconciliation_in_progress: "یک تطبیق ناتمام برای این حساب وجود دارد؛ ابتدا آن را تکمیل کنید.",
+    invalid_statement_date: "تاریخ صورتحساب معتبر نیست؛ تاریخ را از تقویم انتخاب کنید.",
+    statement_date_already_reconciled:
+      "برای این حساب، تطبیقی با تاریخ مساوی یا جدیدتر قبلاً قفل شده است؛ تاریخ صورتحساب باید بعد از آخرین تطبیق قفل‌شده باشد.",
+    reconciliation_in_progress:
+      "یک تطبیق ناتمام برای این حساب وجود دارد؛ ابتدا آن را تکمیل یا حذف کنید.",
     reconciliation_not_found: "تطبیق پیدا نشد.",
     reconciliation_completed: "این تطبیق قبلاً قفل شده و قابل تغییر نیست.",
+    negative_statement_balance:
+      "مانده صورتحساب صندوق یا کارت‌خوان نمی‌تواند منفی باشد؛ مانده پایانی را وارد کنید، نه گردش دوره.",
     journal_line_not_found: "سند انتخاب‌شده معتبر نیست.",
+    journal_line_already_reconciled: "این سند در یک تطبیق قفل‌شدهٔ دیگر ثبت شده و دوباره قابل تطبیق نیست.",
     balance_mismatch: "مانده محاسبه‌شده با مانده صورتحساب برابر نیست.",
     // Phase 17 — plan limits / feature gating
     feature_disabled: "این امکان برای کسب‌وکار شما فعال نیست.",
@@ -415,6 +456,13 @@ const ERROR_MESSAGES: Record<string, string> = {
     run_not_found: "تعهد حقوق پیدا نشد.",
     no_wages_set: "هیچ عضو فعالی حقوق تعیین‌شده ندارد.",
     period_label_required: "عنوان دوره الزامی است.",
+    period_label_too_long: "عنوان دوره بیش از حد طولانی است.",
+    invalid_accrual_date: "تاریخ تعهد معتبر نیست.",
+    invalid_paid_date: "تاریخ پرداخت معتبر نیست.",
+    // «حقوق ماهانه» is saved through ui.tsx's own errorMessage, so the wage
+    // screen's 404 needs a message here too — without it a wage saved against
+    // a member who was just deactivated reported «خطای غیرمنتظره».
+    user_not_found: "عضو موردنظر پیدا نشد.",
     supplier_record_missing: "این شخص در فهرست تأمین‌کنندگان ثبت نشده است؛ ابتدا او را به‌عنوان تأمین‌کننده ثبت کنید.",
     installment_amount_too_small: "مبلغ هر قسط بسیار کم است؛ تعداد اقساط را کاهش دهید.",
     item_required: "قسط را انتخاب کنید.",
@@ -447,6 +495,10 @@ export function ErrorBox({ children }: { children: React.ReactNode }) {
 }
 
 export function InfoBox({ children }: { children: React.ReactNode }) {
+  // Same empty-children contract as ErrorBox: callers that pass a state string
+  // directly (e.g. `<InfoBox>{notice}</InfoBox>`) must not get a box with an
+  // icon and nothing to say whenever the string is "".
+  if (!children) return null;
   return (
     <Alert className="mb-4 border-primary/30 bg-primary/5">
       <InfoIcon className="text-primary" />
@@ -459,17 +511,28 @@ export function Field({
   label,
   children,
   hint,
+  as = "label",
 }: {
   label: string;
   children: React.ReactNode;
   hint?: string;
+  /**
+   * `label` (the default) is for exactly one control, whose click target the
+   * label text becomes. `div` is for a block of *several* controls — a chip or
+   * radiogroup picker: a `<label>` forwards a click on its text to its first
+   * labelable descendant, so clicking the hint under a picker would press its
+   * first option. The group inside should name itself (`aria-label` on the
+   * radiogroup, or `aria-labelledby` pointing at the visible label).
+   */
+  as?: "label" | "div";
 }) {
+  const Tag = as;
   return (
-    <label className="mb-4 block">
+    <Tag className="mb-4 block">
       <span className="mb-1 block text-sm font-medium text-foreground">{label}</span>
       {children}
       {hint ? <span className="mt-1 block text-xs text-muted-foreground">{hint}</span> : null}
-    </label>
+    </Tag>
   );
 }
 

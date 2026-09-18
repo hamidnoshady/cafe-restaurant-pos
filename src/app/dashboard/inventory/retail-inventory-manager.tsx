@@ -142,7 +142,16 @@ export function RetailInventoryManager() {
             }}
           />
         ) : null}
-        {tab === "document-new" ? <DocumentFormSection /> : null}
+        {tab === "document-new" ? (
+          <DocumentFormSection
+            onCreated={() => {
+              // Same follow-through as the F&B shell: a posted سند lands the
+              // user on the list that now holds it, with fresh item stock.
+              loadItems();
+              setTab("documents");
+            }}
+          />
+        ) : null}
         {tab === "documents" ? <DocumentsSection /> : null}
         {tab === "stock-levels" ? (
           <StockLevelsSection locationId={stockLocationId} />

@@ -54,6 +54,9 @@ export function AccountsSettings() {
           کد و نوع حساب پس از ایجاد ثابت می‌ماند تا ثبت‌های خودکار و گزارش‌های مالی پایدار بمانند. برای شخصی‌سازی، نام یا حساب والد را ویرایش کنید و برای حساب‌های قدیمی از بایگانی استفاده کنید.
         </p>
       </SectionCard>
+      {/* `canEdit` is the default here by construction: this tab is listed in
+          `settings-tabs.ts` with `requiredAnyPermission: [accountsEdit]`, so a
+          member who cannot edit the chart never reaches this screen at all. */}
       <ChartOfAccountsSection busy={busy} run={run} />
     </div>
   );

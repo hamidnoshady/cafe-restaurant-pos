@@ -48,6 +48,7 @@ export function JalaliDatePicker({
   clearable = true,
   disabled = false,
   popoverClass,
+  labelledBy,
 }: {
   value: string;
   onChange: (iso: string) => void;
@@ -62,6 +63,13 @@ export function JalaliDatePicker({
   /** Override the popover's background/text token classes (e.g. the dark
    *  super-admin console, where the shadcn `--popover` tokens are light). */
   popoverClass?: string;
+  /**
+   * id of an existing visible label, when the form renders its own `<label>`
+   * element rather than passing text through `ariaLabel`. `id` above wires the
+   * label to the trigger from the label's side; this is the same association
+   * written from the trigger's, for callers whose label is not a FieldLabel.
+   */
+  labelledBy?: string;
 }) {
   const selected = isoDateToJalali(value);
   const [open, setOpen] = useState(false);
@@ -139,6 +147,7 @@ export function JalaliDatePicker({
         onClick={() => setOpen((o) => !o)}
         className={`${className ?? DEFAULT_INPUT_CLASS} ${clearable && value ? "pe-16" : "pe-3"} flex items-center justify-between gap-2 text-start`}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabel ? undefined : labelledBy}
         aria-haspopup="dialog"
         aria-expanded={open}
       >

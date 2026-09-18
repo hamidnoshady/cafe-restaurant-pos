@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { labelFieldsForTrade, renderLabelHtml, type LabelItem, type LabelTrade } from "./label-template";
+import {
+  labelFieldsForTrade,
+  renderLabelHtml,
+  renderLabelSheetHtml,
+  type LabelItem,
+  type LabelTrade,
+} from "./label-template";
 
 const baseItem: LabelItem = { name: "کالای نمونه", price: 1_250_000 };
 
@@ -73,5 +79,45 @@ describe("renderLabelHtml", () => {
     });
     expect(html).not.toContain("<script>");
     expect(html).not.toContain('<img src="x">');
+  });
+
+  it("draws real scannable bars (SVG) for a valid EAN-13 code", () => {
+    // Digits alone cannot be read by a laser/CCD scanner — the label must
+    // carry actual bars or the scan-driven count never works.
+    const html = renderLabelHtml({
+      businessName: "انبار",
+      itemName: "آرد",
+      code: "2000000000015", // minted internal code, valid check digit
+      fields: [{ label: "واحد", value: "کیلوگرم" }],
+    });
+    expect(html).toContain("<svg");
+    expect(html).toContain('viewBox="0 0 190 64"'); // 95 modules × 2px
+    expect(html).toContain("2000000000015"); // human-readable digits stay
+  });
+
+  it("keeps the text-only block for codes in other shapes", () => {
+    const html = renderLabelHtml({
+      businessName: "انبار",
+      itemName: "قلم",
+      code: "ABC-001",
+      fields: [],
+    });
+    expect(html).not.toContain("<svg");
+    expect(html).toContain("ABC-001");
+  });
+});
+
+describe("renderLabelSheetHtml", () => {
+  it("renders every label as its own page in one document", () => {
+    const html = renderLabelSheetHtml([
+      { businessName: "انبار", itemName: "آرد", code: "2000000000015", fields: [] },
+      { businessName: "انبار", itemName: "شکر", code: "2000000000022", fields: [] },
+    ]);
+    expect(html.match(/<div class="label-page">/g)?.length).toBe(2);
+    expect(html).toContain("آرد");
+    expect(html).toContain("شکر");
+    expect(html).toContain("page-break-after: always");
+    // Both labels carry their scannable bars.
+    expect(html.match(/<svg/g)?.length).toBe(2);
   });
 });

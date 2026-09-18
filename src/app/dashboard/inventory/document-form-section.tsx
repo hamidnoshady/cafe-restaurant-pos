@@ -66,6 +66,8 @@ const DOC_ERRORS: Record<string, string> = {
   invalid_quantity: "مقدار هر قلم باید بزرگ‌تر از صفر باشد.",
   quantity_precision_exceeded: "مقدار واردشده بیش از حد اعشار دارد.",
   invalid_rial: "قیمت واحد باید یک عدد صحیح معتبر باشد.",
+  rial_out_of_range: "قیمت واحد بسیار بزرگ است؛ عدد را بررسی کنید.",
+  receipt_value_required: "رسید بدون ارزش ثبت نمی‌شود؛ برای هر قلم قیمت واحد بزرگ‌تر از صفر وارد کنید.",
   location_not_found: "انبار انتخاب‌شده پیدا نشد.",
   location_inactive: "این انبار غیرفعال است؛ انبار دیگری را انتخاب کنید.",
   supplier_not_found: "تأمین‌کننده انتخاب‌شده در این انبار نیست.",
@@ -77,6 +79,12 @@ const DOC_ERRORS: Record<string, string> = {
   inventory_exact_cutover_required:
     "موجودی این قلم هنوز به سیستم بهای دقیق منتقل نشده است؛ ابتدا عملیات انتقال (cutover) را اجرا کنید.",
 };
+
+/** The document's own posted summary, shown after a successful ثبت. */
+interface PostedSummary {
+  kind: DocKind;
+  totalValue: string;
+}
 
 export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
   const money = useMoney();
@@ -91,6 +99,7 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
   const [lines, setLines] = useState<DocLine[]>([newLine()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [posted, setPosted] = useState<PostedSummary | null>(null);
 
   const loadWarehouses = useCallback(() => {
     api<{ warehouses: Warehouse[] }>("/api/inventory/warehouses").then(({ ok, data }) => {
@@ -121,6 +130,9 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
       return;
     }
     let cancelled = false;
+    // Back to the skeleton while the new warehouse's items load. Without this
+    // the picker kept offering the PREVIOUS warehouse's items — selectable,
+    // and then refused server-side with «قلم به این انبار تعلق ندارد».
     setItems(null);
     api<StockLevelsResponse>(`/api/inventory/stock-levels?locationId=${encodeURIComponent(locationId)}`).then(
       ({ ok, data }) => {
@@ -131,6 +143,32 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
       cancelled = true;
     };
   }, [locationId]);
+
+  /**
+   * Switching warehouse invalidates every line: the items belong to the branch
+   * that was selected when they were picked. Clear the picked items (keeping
+   * typed quantities/costs, which are still meaningful) and drop the supplier,
+   * which is a per-branch list too.
+   */
+  function switchWarehouse(next: string) {
+    if (next === locationId) return;
+    setLocationId(next);
+    setSupplierId("");
+    setPosted(null);
+    setError("");
+    setLines((current) => current.map((line) => ({ ...line, inventoryItemId: "" })));
+  }
+
+  /** Receipt ⇄ حواله swap the meaning of every column, so the lines restart. */
+  function switchKind(next: DocKind) {
+    if (next === kind) return;
+    setKind(next);
+    setLines([newLine()]);
+    setSupplierId("");
+    setRecipient("");
+    setPosted(null);
+    setError("");
+  }
 
   const supplierOptions = useMemo(() => selectedWarehouse?.suppliers ?? [], [selectedWarehouse]);
 
@@ -149,80 +187,129 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
     [items],
   );
 
+  /**
+   * A line's unit cost as integer Rial text, or null when the field is empty
+   * or not a usable number. `money.parseText` is the single conversion from
+   * the business's display unit (تومان/ریال) to the Rial the API stores; it
+   * throws on anything that isn't a whole number, so it is called here — once
+   * — rather than in the submit handler, where an unguarded throw would have
+   * left the form stuck with `busy` still true and no message.
+   */
+  const lineUnitCostRial = useCallback(
+    (line: DocLine): string | null => {
+      if (!line.unitCost.trim()) return null;
+      try {
+        return money.parseText(line.unitCost);
+      } catch {
+        return null;
+      }
+    },
+    [money],
+  );
+
   // Inputs are in the business display unit, while all totals and API payloads
-  // are integer Rial. Keep this conversion at the UI boundary.
+  // are integer Rial. Keep this conversion at the UI boundary — and do the sum
+  // in BigInt, because a float total drifts on large Rial amounts.
   const receiptTotal = useMemo(() => {
     if (kind !== "receipt") return null;
-    let total = 0;
+    let total = 0n;
     for (const line of lines) {
+      const cost = lineUnitCostRial(line);
+      if (cost === null) continue;
+      // Quantities are decimal; multiply in Rial and round half-up per line,
+      // the same rule `lineValue` applies server-side.
       const qty = Number(line.quantity);
-      const cost = Number(line.unitCost);
-      if (Number.isFinite(qty) && Number.isFinite(cost)) total += qty * money.fromInput(cost);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      total += BigInt(Math.round(Number(cost) * qty));
     }
-    return total;
-  }, [kind, lines, money]);
+    return total.toString();
+  }, [kind, lines, lineUnitCostRial]);
+
+  /**
+   * Why the submit button is disabled, or "" when the document is postable.
+   * The server validates all of this too; saying it here means a person is
+   * told what is missing instead of watching a request fail.
+   */
+  const blockingReason = useMemo(() => {
+    if (!locationId) return "انبار را انتخاب کنید.";
+    const filled = lines.filter((line) => line.inventoryItemId || line.quantity.trim() || line.unitCost.trim());
+    if (filled.length === 0) return "حداقل یک قلم با مقدار وارد کنید.";
+    const seen = new Set<string>();
+    for (const line of filled) {
+      // Name the row: «ردیف ۳» beats a generic «یکی از قلم‌ها…» when a long
+      // document has one bad line. Numbering follows the rows on screen, so
+      // it counts `lines`, not the filtered subset.
+      const lineNo = toPersianDigits(String(lines.indexOf(line) + 1));
+      if (!line.inventoryItemId) return `قلم انبار ردیف ${lineNo} را انتخاب کنید.`;
+      if (seen.has(line.inventoryItemId)) {
+        return "هر قلم فقط یک بار می‌تواند در سند بیاید؛ ردیف‌های تکراری را یکی کنید.";
+      }
+      seen.add(line.inventoryItemId);
+      const qty = Number(line.quantity);
+      if (!line.quantity.trim() || !Number.isFinite(qty) || qty <= 0) {
+        return `مقدار ردیف ${lineNo} باید عددی بزرگ‌تر از صفر باشد.`;
+      }
+      if (kind === "receipt") {
+        const cost = lineUnitCostRial(line);
+        // null covers both an empty field and one `money.parseText` refuses,
+        // which is why parsing happens here and not in the submit handler:
+        // an unguarded throw there left the form silent with `busy` stuck on.
+        if (cost === null) {
+          return `قیمت واحد ردیف ${lineNo} را به‌صورت عدد صحیح (${money.unitLabel}) وارد کنید.`;
+        }
+        if (BigInt(cost) <= 0n) return `قیمت واحد ردیف ${lineNo} باید بزرگ‌تر از صفر باشد.`;
+      }
+    }
+    return "";
+  }, [locationId, lines, kind, lineUnitCostRial, money]);
 
   function updateLine(key: string, patch: Partial<DocLine>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+    setPosted(null);
   }
   function removeLine(key: string) {
     setLines((current) => (current.length > 1 ? current.filter((line) => line.key !== key) : current));
+    setPosted(null);
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy || !locationId) return;
-
-    // Validate on the client first: the server rejects these too, but a
-    // named line number beats a generic «یکی از قلم‌ها…».
-    for (const [index, line] of lines.entries()) {
-      const lineNo = toPersianDigits(String(index + 1));
-      if (!line.inventoryItemId) {
-        setError(`قلم انبار ردیف ${lineNo} را انتخاب کنید.`);
-        return;
-      }
-      const qty = Number(line.quantity);
-      if (!Number.isFinite(qty) || qty <= 0) {
-        setError(`مقدار ردیف ${lineNo} باید عددی بزرگ‌تر از صفر باشد.`);
-        return;
-      }
-      if (lines.some((other) => other !== line && other.inventoryItemId === line.inventoryItemId)) {
-        setError("هر قلم فقط یک بار می‌تواند در سند بیاید؛ ردیف‌های تکراری را یکی کنید.");
-        return;
-      }
-    }
-
-    // money.parseText throws on non-integer input; surface it as a form error
-    // instead of an unhandled rejection that leaves the screen silent.
-    let payload;
-    try {
-      payload = {
-        kind,
-        locationId,
-        supplierId: kind === "receipt" && supplierId ? supplierId : null,
-        recipient: kind === "issue" ? recipient : null,
-        documentNumber: documentNumber || null,
-        note: note || null,
-        lines: lines.map((line) => ({
-          inventoryItemId: line.inventoryItemId,
-          quantity: line.quantity,
-          unitCost:
-            kind === "receipt" ? money.parseText(line.unitCost || "0") : "0",
-        })),
-      };
-    } catch {
-      setError(`قیمت واحد باید یک عدد صحیح معتبر (به ${money.unitLabel}) باشد.`);
+    if (busy || blockingReason) {
+      // A keyboard submit can still arrive while the button is disabled.
+      // `blockingReason` already names the offending row, so show it.
+      if (blockingReason) setError(blockingReason);
       return;
     }
+    setPosted(null);
+    // Blank trailing lines are scaffolding, not content: drop them rather than
+    // letting the server reject the whole document over an empty row.
+    // `blockingReason` has already validated everything that survives here,
+    // including that every unit cost parses — so `lineUnitCostRial` cannot
+    // return null for a receipt line at this point.
+    const filled = lines.filter((line) => line.inventoryItemId || line.quantity.trim() || line.unitCost.trim());
+    const payload = {
+      kind,
+      locationId,
+      supplierId: kind === "receipt" && supplierId ? supplierId : null,
+      recipient: kind === "issue" ? recipient.trim() || null : null,
+      documentNumber: documentNumber.trim() || null,
+      note: note.trim() || null,
+      lines: filled.map((line) => ({
+        inventoryItemId: line.inventoryItemId,
+        quantity: line.quantity,
+        unitCost: kind === "receipt" ? (lineUnitCostRial(line) ?? "0") : "0",
+      })),
+    };
     setBusy(true);
     setError("");
-    const { ok, data } = await api("/api/inventory/warehouse-documents", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    const { ok, data } = await api<{ error?: string; totalValue?: string }>(
+      "/api/inventory/warehouse-documents",
+      { method: "POST", body: JSON.stringify(payload) },
+    );
     setBusy(false);
     if (!ok) {
-      setError(DOC_ERRORS[(data as { error?: string }).error ?? ""] ?? warehouseErrorMessage((data as { error?: string }).error));
+      const code = (data as { error?: string }).error;
+      setError(DOC_ERRORS[code ?? ""] ?? warehouseErrorMessage(code));
       return;
     }
     setLines([newLine()]);
@@ -230,6 +317,7 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
     setRecipient("");
     setDocumentNumber("");
     setNote("");
+    setPosted({ kind, totalValue: data.totalValue ?? "0" });
     onCreated();
   }
 
@@ -244,12 +332,26 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
       description="رسید انبار کالا را وارد انبار می‌کند و حواله انبار آن را خارج می‌کند؛ هر دو بلافاصله در موجودی و حسابداری ثبت می‌شوند."
     >
       <ErrorBox>{error}</ErrorBox>
+      {posted ? (
+        <div
+          role="status"
+          className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200"
+        >
+          <p className="font-semibold">
+            {posted.kind === "receipt" ? "رسید انبار ثبت شد." : "حواله انبار ثبت شد."} جمع:{" "}
+            {money.formatText(posted.totalValue)}
+          </p>
+          <p className="mt-1 text-xs">
+            سند در موجودی و دفتر روزنامه ثبت شد و قابل ویرایش نیست؛ برای اصلاح، سند معکوس ثبت کنید.
+          </p>
+        </div>
+      ) : null}
       <form onSubmit={submit} className="min-w-0 space-y-4">
         <div className="flex flex-wrap gap-2" role="group" aria-label="نوع سند">
-          <button type="button" className={kindChipClass(kind === "receipt")} aria-pressed={kind === "receipt"} onClick={() => setKind("receipt")}>
+          <button type="button" className={kindChipClass(kind === "receipt")} aria-pressed={kind === "receipt"} onClick={() => switchKind("receipt")}>
             {KIND_LABELS.receipt}
           </button>
-          <button type="button" className={kindChipClass(kind === "issue")} aria-pressed={kind === "issue"} onClick={() => setKind("issue")}>
+          <button type="button" className={kindChipClass(kind === "issue")} aria-pressed={kind === "issue"} onClick={() => switchKind("issue")}>
             {KIND_LABELS.issue}
           </button>
         </div>
@@ -258,7 +360,7 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
           <Field label="انبار">
             <SearchableSelect
               value={locationId}
-              onChange={setLocationId}
+              onChange={switchWarehouse}
               options={[
                 { value: "", label: "انبار را انتخاب کنید…" },
                 ...(warehouses ?? []).map((w) => ({ value: w.id, label: w.is_active ? w.name : `${w.name} (غیرفعال)` })),
@@ -369,14 +471,25 @@ export function DocumentFormSection({ onCreated }: { onCreated: () => void }) {
             </Button>
             {kind === "receipt" && receiptTotal !== null ? (
               <span className="text-sm font-semibold tabular-nums text-foreground">
-                جمع: {money.format(receiptTotal)}
+                جمع: {money.formatText(receiptTotal)}
               </span>
             ) : null}
           </div>
         </div>
 
-        <div className="border-t border-border/80 pt-4">
-          <Button type="submit" disabled={busy || !locationId} size="lg" className="w-full px-5 font-semibold">
+        <div className="space-y-2 border-t border-border/80 pt-4">
+          {blockingReason ? (
+            <p id="warehouse-document-blocked" className="text-xs text-muted-foreground">
+              {blockingReason}
+            </p>
+          ) : null}
+          <Button
+            type="submit"
+            disabled={busy || blockingReason !== ""}
+            aria-describedby={blockingReason ? "warehouse-document-blocked" : undefined}
+            size="lg"
+            className="w-full px-5 font-semibold"
+          >
             {busy ? "در حال ثبت…" : kind === "receipt" ? "ثبت رسید انبار" : "ثبت حواله انبار"}
           </Button>
         </div>

@@ -264,7 +264,7 @@ export function DocumentsSection() {
                       {!doc.recipient && !doc.document_number ? "—" : null}
                     </td>
                     <td className="px-4 py-3 tabular-nums">{toPersianDigits(String(doc.line_count))}</td>
-                    <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums">{money.format(Number(doc.total_value_rial))}</td>
+                    <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums">{money.formatText(doc.total_value_rial)}</td>
                     <td className="py-3 pe-4 text-end sm:pe-5">
                       <Button
                         type="button"
@@ -367,8 +367,8 @@ export function DocumentsSection() {
                           {line.expiry_date ? formatJalali(line.expiry_date) : "—"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatQuantity(line.quantity)}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{money.format(Number(line.unit_cost))}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 font-medium tabular-nums">{money.format(Number(line.value_rial))}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{money.formatText(line.unit_cost)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 font-medium tabular-nums">{money.formatText(line.value_rial)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -378,7 +378,7 @@ export function DocumentsSection() {
                         جمع کل
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 font-semibold tabular-nums">
-                        {money.format(Number(detail.document.total_value_rial))}
+                        {money.formatText(detail.document.total_value_rial)}
                       </td>
                     </tr>
                   </tfoot>

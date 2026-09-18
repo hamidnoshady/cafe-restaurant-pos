@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { getPool, query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
-import { getSetting, setSetting, SETTING_KEYS } from "@/lib/settings";
+import { getSetting, SETTING_KEYS } from "@/lib/settings";
 
 interface TaxSetting {
   defaultRate: number;
@@ -43,22 +43,45 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "invalid_rate" }, { status: 400 });
   }
   const categories = Array.isArray(body.categories) ? body.categories : [];
+  const parsedCategories: { id: string; taxRate: number }[] = [];
   for (const category of categories) {
     const rate = Number(category.taxRate);
     if (typeof category.id !== "string" || !category.id || !Number.isFinite(rate) || rate < 0 || rate > 100) {
       return NextResponse.json({ error: "invalid_category_rate" }, { status: 400 });
     }
+    parsedCategories.push({ id: category.id, taxRate: rate });
   }
 
-  await setSetting(session.businessId, SETTING_KEYS.tax, { defaultRate });
-  for (const category of categories) {
-    await query(
-      `UPDATE menu_categories mc
-          SET tax_rate = $1
-         FROM locations l
-        WHERE mc.id = $2 AND l.id = mc.location_id AND l.business_id = $3`,
-      [Number(category.taxRate), category.id, session.businessId],
+  // The default rate and every per-category override are one edit the operator
+  // made together, so persist them together: a failure partway through the
+  // category loop must not leave the business with a new default rate and stale
+  // category rates. One connection, one transaction — the pool checkout is
+  // already scoped to this tenant (see installTenantScoping in db.ts).
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO settings (business_id, location_id, key, value)
+       VALUES ($1, NULL, $2, $3)
+       ON CONFLICT (business_id, location_id, key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [session.businessId, SETTING_KEYS.tax, JSON.stringify({ defaultRate })],
     );
+    for (const category of parsedCategories) {
+      await client.query(
+        `UPDATE menu_categories mc
+            SET tax_rate = $1
+           FROM locations l
+          WHERE mc.id = $2 AND l.id = mc.location_id AND l.business_id = $3`,
+        [category.taxRate, category.id, session.businessId],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
   return NextResponse.json({ ok: true });
 });

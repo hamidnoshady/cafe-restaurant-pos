@@ -85,6 +85,12 @@ const DOC_ERRORS: Record<string, string> = {
   missing_cost: "بهای تمام‌شده هر قلم رسید را وارد کنید.",
   invalid_cost: "بهای تمام‌شده باید یک عدد صحیح معتبر باشد.",
   ledger_account_missing: "حساب مورد نیاز در دفتر حساب‌ها موجود نیست.",
+  // Refused by the parser before anything is written: `unit_cost`/the document
+  // total are bigint columns, and a value past 2^63-1 used to reach the INSERT
+  // and abort the transaction with «out of range for type bigint» — a 500 for
+  // what is really a mistyped cost.
+  cost_out_of_range: "بهای تمام‌شده بسیار بزرگ است؛ عدد را بررسی کنید.",
+  quantity_precision_exceeded: "تعداد حداکثر می‌تواند ۹ رقم اعشار داشته باشد.",
 };
 
 interface PostedSummary {

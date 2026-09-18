@@ -163,13 +163,7 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
             disabled={loading}
             className="min-h-8 px-2.5 text-xs"
           >
-            {/*
-              A busy *label*, not a spinning icon: the design system reserves
-              motion for skeletons and states an action's progress in words
-              (docs/design-system.md §Charts and loading), which is also what a
-              screen reader can announce. The spin class this replaced failed
-              `src/app/design-lint.test.ts`.
-            */}
+            {/* اسپینر در رابط کاربری ممنوع است (design-lint)؛ حالت بارگذاری با برچسب busy نمایش داده می‌شود. */}
             <RefreshCwIcon aria-hidden="true" className="me-1.5 size-3.5" />
             {loading ? "در حال بروزرسانی…" : "بروزرسانی"}
           </SecondaryButton>
