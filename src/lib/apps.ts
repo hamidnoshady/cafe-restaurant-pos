@@ -4,7 +4,7 @@
  * Growth, CRM and Website own their own workspaces. Website contains separate
  * Eshobe CMS and WordPress/Woo managers within one app.
  *
- * The dashboard, assistant, workspace, settings and connections are shared
+ * The assistant, workspace, settings and connections are shared
  * platform utilities; they do not have their own app availability state.
  */
 import type { Industry } from "./industries";
@@ -37,9 +37,9 @@ export const APPS: AppDef[] = [
     label: "حسابداری",
     description: "فروش و صندوق، سفارش‌ها، عملیات، خرید و انبار، دفتر حساب‌ها و گزارش‌ها.",
     // Sales/POS and operations are work areas inside Accounting's workspace.
-    // The dashboard home and shared settings remain platform utilities.
+    // The operational dashboard follows Accounting; shared settings do not.
     modules: [
-      "orders", "pos", "tables", "waiter", "kitchen", "reservations",
+      "dashboard", "orders", "pos", "tables", "waiter", "kitchen", "reservations",
       "delivery", "inventory", "menu", "jewelry", "watch", "accessories",
       "cosmetics", "wholesale", "tools_fittings", "haberdashery", "stock",
       "ledger", "reports",
@@ -135,8 +135,7 @@ export const APPS: AppDef[] = [
  * Module → owning app, built once at load. A module claimed by two apps is a
  * real authoring mistake, not a runtime condition, so it throws on import —
  * the same "fail fast on invalid config" posture `industry-profile.ts` uses
- * for its prefix maps. The assistant (`ai`), workspace shell (`workspace`), dashboard home
- * (`dashboard`), shared settings (`settings`) and technical-connections hub (`connections`) are
+ * for its prefix maps. The assistant (`ai`), workspace shell (`workspace`), shared settings (`settings`) and technical-connections hub (`connections`) are
  * intentionally absent: the assistant is the chat *home*, not an app in the
  * rail, the workspace is the shell around the apps, and shared utilities are shell
  * infrastructure — see the NOTE above.
