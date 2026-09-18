@@ -45,17 +45,27 @@ export function isValidStartMinutes(value: unknown): value is number {
  * Persian digits are accepted because the form is Persian-first and a numeric
  * keypad on a Persian device produces them; they are display-only everywhere
  * else in the app (see digits.ts) and normalised away here.
+ *
+ * A trailing `:SS` is accepted and ignored. `<input type="time">` is the only
+ * thing that feeds this in practice, and a browser that decides to render the
+ * seconds field (Firefox does once a control has ever seen a seconds-bearing
+ * value, and some Android WebViews do unconditionally) submits "18:00:00" —
+ * which the HH:MM-only regex rejected, so the branch got «ساعت شروع روز کاری
+ * معتبر نیست» for a time it had picked out of the browser's own widget. Whole
+ * minutes are still the stored resolution, so a non-zero seconds part is a
+ * value this cannot honour and is refused rather than silently truncated.
  */
 export function parseStartTime(text: string): number | null {
   const normalised = text
     .trim()
     .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
     .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
-  const match = /^(\d{1,2}):(\d{2})$/.exec(normalised);
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(normalised);
   if (!match) return null;
   const hour = Number(match[1]);
   const minute = Number(match[2]);
-  if (hour > 23 || minute > 59) return null;
+  const second = match[3] === undefined ? 0 : Number(match[3]);
+  if (hour > 23 || minute > 59 || second !== 0) return null;
   return hour * MINUTES_PER_HOUR + minute;
 }
 

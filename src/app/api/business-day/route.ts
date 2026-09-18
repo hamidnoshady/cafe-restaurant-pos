@@ -7,6 +7,7 @@ import {
   listBusinessDayClosures,
   setBusinessDayStart,
 } from "@/lib/business-day-service";
+import { memberAccessFor } from "@/lib/member-access";
 import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -41,13 +42,28 @@ export const GET = withTenantScope(async () => {
   // Closure history is part of the settings panel, not of the till's "which
   // day am I on?" question, so it rides along only for the audience that can
   // act on it.
-  const canManage = session.role === "owner" || session.role === "manager";
-  const closures = canManage ? await listBusinessDayClosures(location.id) : [];
+  //
+  // Two capabilities, not one, because the two halves of the panel are guarded
+  // differently and always were: the start time is `settings.manage` (PATCH
+  // below), «بستن روز کاری» is owner/manager (close/route.ts). The panel used
+  // to receive a single `canManage` computed from the role and drew the *start
+  // time* form for everyone — so a member holding `team.manage` (which is what
+  // opens the «شیفت‌ها و روز کاری» tab) without `settings.manage` was shown a
+  // «فعال‌سازی روز کاری» button whose only possible outcome was «دسترسی مجاز
+  // نیست». Saying which is which here is what lets the panel draw the truth.
+  const canClose = session.role === "owner" || session.role === "manager";
+  const member = await memberAccessFor(session);
+  const canConfigure = member?.permissions.has(PERMISSIONS.settingsManage) ?? false;
+  const closures = canClose ? await listBusinessDayClosures(location.id) : [];
   return NextResponse.json({
     businessDay: status,
     locationName: location.name,
     closures,
-    canManage,
+    canConfigure,
+    canClose,
+    // Kept for older clients that read the single flag; it means what it always
+    // did in practice — may this caller close the day.
+    canManage: canClose,
   });
 });
 
