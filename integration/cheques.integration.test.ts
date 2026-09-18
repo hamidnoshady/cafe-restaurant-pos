@@ -264,6 +264,7 @@ describe("cheque attribution in the party subledgers", () => {
     expect(await ap.listSupplierBalances(biz.id)).toContainEqual({
       supplierId: party.supplierId,
       supplierName: "تأمین‌کننده",
+      supplierPartyId: null,
       supplierPhone: null,
       balance: -3_000_000,
     });
@@ -288,6 +289,7 @@ describe("cheque attribution in the party subledgers", () => {
     expect(await ap.listSupplierBalances(biz.id)).toContainEqual({
       supplierId: party.supplierId,
       supplierName: "تأمین‌کننده",
+      supplierPartyId: null,
       supplierPhone: null,
       balance: -5_000_000,
     });

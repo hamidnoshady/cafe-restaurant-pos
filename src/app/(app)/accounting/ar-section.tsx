@@ -65,6 +65,15 @@ function LoadFailed({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
+/** A customer who paid ahead (advance or overpayment) has a *negative* balance; mark it, or it reads as debt. */
+function CreditBadge() {
+  return (
+    <span className="ms-2 inline-block rounded-full bg-muted px-2.5 py-1 align-middle text-xs font-medium text-muted-foreground">
+      بستانکار
+    </span>
+  );
+}
+
 /** The two receipt ways, as chips — one tap each, like the «دریافت و پرداخت» voucher form. */
 const chipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${
@@ -112,6 +121,13 @@ export function ArSection() {
         setCustomers([]);
         setCustomersFailed(true);
       }
+    })
+    // `api()` *rejects* on a dead network (no HTTP status to read): without a
+    // catch that is an unhandled rejection and the same endless skeleton.
+    .catch(() => {
+      if (cancelled) return;
+      setCustomers([]);
+      setCustomersFailed(true);
     });
     return () => {
       cancelled = true;
@@ -130,6 +146,9 @@ export function ArSection() {
       // «هیچ حساب دریافتنی بازی وجود ندارد» branch — a false claim — next to
       // an error banner that no later success ever cleared.
       else setAgingFailed(true);
+    })
+    .catch(() => {
+      if (!cancelled) setAgingFailed(true);
     });
     return () => {
       cancelled = true;
@@ -158,7 +177,7 @@ export function ArSection() {
             >
               مشتریان در حسابداری
             </Link>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="نمای حساب‌های دریافتنی">
               <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
               <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
             </div>
@@ -183,8 +202,8 @@ export function ArSection() {
                           <tr key={c.customerId} className="border-b border-border last:border-b-0">
                             <td className="px-4 py-3"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="font-semibold text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{c.customerName}</button></td>
                             <td className="px-4 py-3 text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "—"}</td>
-                            <td className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(c.balance)}</td>
-                            <td className="px-4 py-3">{c.customerId !== UNKNOWN_CUSTOMER_KEY ? <button type="button" onClick={() => setReceiveTarget(c)} className="rounded-lg px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20">دریافت وجه</button> : null}</td>
+                            <td className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(c.balance)}{c.balance < 0 ? <CreditBadge /> : null}</td>
+                            <td className="px-4 py-3">{c.customerId !== UNKNOWN_CUSTOMER_KEY ? <button type="button" onClick={() => setReceiveTarget(c)} className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20">دریافت وجه</button> : null}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -198,6 +217,7 @@ export function ArSection() {
                         <div className="min-w-0"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="truncate text-right font-bold text-foreground hover:text-amber-700 dark:hover:text-amber-300">{c.customerName}</button><p className="mt-1 text-xs text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "شماره‌ای ثبت نشده"}</p></div>
                         <span className="whitespace-nowrap font-bold text-foreground">{money.format(c.balance)}</span>
                       </div>
+                      {c.balance < 0 ? <div className="mt-2"><CreditBadge /></div> : null}
                       {c.customerId !== UNKNOWN_CUSTOMER_KEY ? <button type="button" onClick={() => setReceiveTarget(c)} className="mt-3 min-h-11 w-full rounded-lg bg-amber-100 px-4 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:hover:bg-amber-500/30">دریافت وجه</button> : null}
                     </article>
                   ))}
@@ -230,7 +250,7 @@ export function ArSection() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مشتری</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="px-4 py-3 text-start text-xs font-medium sm:text-sm">{col.label}</th>)}</tr></thead>
-                      <tbody>{aging.rows.map((r) => <tr key={r.customerId} className="border-b border-border last:border-b-0"><td className="px-4 py-3 font-medium text-foreground">{r.customerName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap px-4 py-3 ${col.key === "total" ? "font-bold text-foreground" : "text-foreground"}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
+                      <tbody>{aging.rows.map((r) => <tr key={r.customerId} className="border-b border-border last:border-b-0"><td className="px-4 py-3"><button type="button" onClick={() => setStatementTarget({ id: r.customerId, name: r.customerName })} className="font-medium text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{r.customerName}</button></td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap px-4 py-3 ${col.key === "total" ? "font-bold text-foreground" : "text-foreground"}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
                       <tfoot><tr className="border-t border-border bg-stone-50/60 font-semibold dark:bg-stone-800/30"><td className="px-4 py-3 text-foreground">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
                     </table>
                   </div>
@@ -238,7 +258,7 @@ export function ArSection() {
                 <div className="space-y-3 lg:hidden">
                   {aging.rows.map((r) => (
                     <article key={r.customerId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
-                      <div className="flex justify-between gap-3"><h3 className="text-sm font-semibold text-foreground">{r.customerName}</h3><span className="whitespace-nowrap font-bold text-foreground">{money.format(r.total)}</span></div>
+                      <div className="flex items-start justify-between gap-3"><button type="button" onClick={() => setStatementTarget({ id: r.customerId, name: r.customerName })} className="min-w-0 truncate text-sm font-semibold text-foreground hover:text-amber-700 dark:hover:text-amber-300">{r.customerName}</button><span className="shrink-0 whitespace-nowrap font-bold text-foreground">{money.format(r.total)}</span></div>
                       <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
                         {AGING_COLUMNS.filter((col) => col.key !== "total").map((col) => <div key={col.key}><dt className="text-xs text-muted-foreground">{col.label}</dt><dd className="mt-1 font-semibold text-foreground">{r[col.key] ? money.format(r[col.key]) : "—"}</dd></div>)}
                       </dl>
