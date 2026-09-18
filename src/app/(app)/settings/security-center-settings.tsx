@@ -1,7 +1,5 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
-
 /**
  * Phase 20 Wave 7 — the admin security center's first landing point
  * (team.manage-gated, same permission as shift history and the audit log):
@@ -18,14 +16,22 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  * attempts for that employee, not just showing up in the list below — this
  * section is where an owner/manager sees who's currently locked and can end
  * it early instead of waiting out the window.
+ *
+ * Every section loads, fails and refreshes on its own: one request going
+ * down (or one fetch throwing) must not leave the other cards spinning
+ * skeletons forever, and feedback from an action shows in the card that
+ * action lives in — a lockout cleared up top never prints its notice inside
+ * the sessions card below.
  */
 import { useCallback, useEffect, useState } from "react";
+import { RefreshCwIcon } from "lucide-react";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { credentialKindFromId, credentialKindLabel } from "@/lib/audit";
 import { formatPhoneDisplay } from "@/lib/phone";
+import { roleLabel } from "@/lib/role-labels";
 import { ErrorBox, InfoBox, api, errorMessage } from "@/app/dashboard/ui";
-import { SectionCard } from "@/app/dashboard/page-chrome";
+import { LoadingSkeleton, SectionCard } from "@/app/dashboard/page-chrome";
 import { Button } from "@/components/ui/button";
 
 interface ActiveSession {
@@ -52,47 +58,95 @@ interface LockedEmployee {
   lockedUntil: string;
 }
 
+/** A lockout window is measured in minutes, so every timestamp here carries the time of day. */
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
-  return toPersianDigits(formatJalali(iso, { withMonthName: true }));
+  return toPersianDigits(formatJalali(iso, { withMonthName: true, withTime: true }));
 }
+
+/**
+ * Every `reason` the login routes write with `auditLoginFailure`. Anything
+ * unmapped stays out of the UI (the «—» at the call site) rather than
+ * leaking a raw English code like "invalid_pin_reverify" into a Persian list.
+ */
+const FAILURE_REASONS: Record<string, string> = {
+  invalid_pin: "پین نادرست",
+  invalid_pin_reverify: "تأیید مجدد پین ناموفق",
+  invalid_assertion: "احرازهویت بیومتریک ناموفق",
+  employee_inactive: "کارمند غیرفعال",
+  invalid_phone_otp: "کد پیامکی ورود نادرست",
+};
 
 function failureReason(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const reason = (payload as { reason?: unknown }).reason;
-  if (reason === "invalid_pin") return "پین نادرست";
-  if (reason === "invalid_assertion") return "احرازهویت بیومتریک ناموفق";
-  if (reason === "employee_inactive") return "کارمند غیرفعال";
-  if (reason === "invalid_phone_otp") return "کد پیامکی ورود نادرست";
-  return typeof reason === "string" ? reason : null;
+  return typeof reason === "string" ? (FAILURE_REASONS[reason] ?? null) : null;
+}
+
+/** Card-header refresh control; spins while any section of the tab is reloading. */
+function RefreshButton({ refreshing, onClick }: { refreshing: boolean; onClick: () => void }) {
+  return (
+    <Button type="button" variant="ghost" size="xs" disabled={refreshing} onClick={onClick}>
+      <RefreshCwIcon aria-hidden="true" className={refreshing ? "ops-sync-rotate" : undefined} />
+      به‌روزرسانی
+    </Button>
+  );
 }
 
 export function SecurityCenterSettings() {
   const [sessions, setSessions] = useState<ActiveSession[] | null>(null);
+  const [sessionsError, setSessionsError] = useState("");
+  const [sessionsNotice, setSessionsNotice] = useState("");
   const [failedAttempts, setFailedAttempts] = useState<FailedAttempt[] | null>(null);
+  const [attemptsError, setAttemptsError] = useState("");
   const [lockedEmployees, setLockedEmployees] = useState<LockedEmployee[] | null>(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [lockoutsError, setLockoutsError] = useState("");
+  const [lockoutsNotice, setLockoutsNotice] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [busySessionId, setBusySessionId] = useState<string | null>(null);
+  const [busyEmployeeId, setBusyEmployeeId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [sessionsResult, attemptsResult, lockoutsResult] = await Promise.all([
-      api<{ sessions: ActiveSession[]; error?: string }>("/api/sessions"),
-      api<{ entries: FailedAttempt[]; error?: string }>(
-        "/api/audit-log?action=employee.login_failed&limit=20",
-      ),
-      api<{ lockouts: LockedEmployee[]; error?: string }>("/api/security/lockouts"),
-    ]);
-    if (sessionsResult.ok) {
-      setSessions(sessionsResult.data.sessions);
-    } else {
-      setError(errorMessage(sessionsResult.data.error));
-    }
-    if (attemptsResult.ok) {
-      setFailedAttempts(attemptsResult.data.entries);
-    }
-    if (lockoutsResult.ok) {
-      setLockedEmployees(lockoutsResult.data.lockouts);
+    setRefreshing(true);
+    try {
+      // allSettled: a network-level rejection on one request is a card-level
+      // error message, not an unhandled rejection that blanks all three cards.
+      const [sessionsResult, attemptsResult, lockoutsResult] = await Promise.allSettled([
+        api<{ sessions: ActiveSession[]; error?: string }>("/api/sessions"),
+        api<{ entries: FailedAttempt[]; error?: string }>(
+          "/api/audit-log?action=employee.login_failed&limit=20",
+        ),
+        api<{ lockouts: LockedEmployee[]; error?: string }>("/api/security/lockouts"),
+      ]);
+
+      if (sessionsResult.status === "fulfilled" && sessionsResult.value.ok) {
+        setSessions(sessionsResult.value.data.sessions);
+        setSessionsError("");
+      } else {
+        setSessionsError(
+          errorMessage(sessionsResult.status === "fulfilled" ? sessionsResult.value.data.error : undefined),
+        );
+      }
+
+      if (attemptsResult.status === "fulfilled" && attemptsResult.value.ok) {
+        setFailedAttempts(attemptsResult.value.data.entries);
+        setAttemptsError("");
+      } else {
+        setAttemptsError(
+          errorMessage(attemptsResult.status === "fulfilled" ? attemptsResult.value.data.error : undefined),
+        );
+      }
+
+      if (lockoutsResult.status === "fulfilled" && lockoutsResult.value.ok) {
+        setLockedEmployees(lockoutsResult.value.data.lockouts);
+        setLockoutsError("");
+      } else {
+        setLockoutsError(
+          errorMessage(lockoutsResult.status === "fulfilled" ? lockoutsResult.value.data.error : undefined),
+        );
+      }
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
@@ -101,33 +155,43 @@ export function SecurityCenterSettings() {
   }, [load]);
 
   async function endSession(id: string) {
-    setBusyId(id);
-    setError("");
-    setNotice("");
-    const { ok, data } = await api<{ error?: string }>(`/api/sessions/${id}`, { method: "DELETE" });
-    setBusyId(null);
-    if (!ok) {
-      setError(errorMessage(data.error));
-      return;
+    setBusySessionId(id);
+    setSessionsError("");
+    setSessionsNotice("");
+    try {
+      const { ok, data } = await api<{ error?: string }>(`/api/sessions/${id}`, { method: "DELETE" });
+      if (!ok) {
+        setSessionsError(errorMessage(data.error));
+        return;
+      }
+      setSessionsNotice("نشست پایان یافت.");
+      await load();
+    } catch {
+      setSessionsError(errorMessage(undefined));
+    } finally {
+      setBusySessionId(null);
     }
-    setNotice("نشست پایان یافت.");
-    await load();
   }
 
   async function clearLockout(employeeId: string) {
-    setBusyId(employeeId);
-    setError("");
-    setNotice("");
-    const { ok, data } = await api<{ error?: string }>(`/api/security/lockouts/${employeeId}`, {
-      method: "DELETE",
-    });
-    setBusyId(null);
-    if (!ok) {
-      setError(errorMessage(data.error));
-      return;
+    setBusyEmployeeId(employeeId);
+    setLockoutsError("");
+    setLockoutsNotice("");
+    try {
+      const { ok, data } = await api<{ error?: string }>(`/api/security/lockouts/${employeeId}`, {
+        method: "DELETE",
+      });
+      if (!ok) {
+        setLockoutsError(errorMessage(data.error));
+        return;
+      }
+      setLockoutsNotice("قفل ورود برداشته شد.");
+      await load();
+    } catch {
+      setLockoutsError(errorMessage(undefined));
+    } finally {
+      setBusyEmployeeId(null);
     }
-    setNotice("قفل ورود برداشته شد.");
-    await load();
   }
 
   return (
@@ -142,7 +206,12 @@ export function SecurityCenterSettings() {
           </div>
         }
         description="به‌دلیل تلاش‌های ناموفق مکرر، ورود این کارکنان موقتاً مسدود شده است."
+        actions={<RefreshButton refreshing={refreshing} onClick={() => void load()} />}
       >
+        <ErrorBox>{lockoutsError}</ErrorBox>
+        <InfoBox>{lockoutsNotice}</InfoBox>
+
+        {lockedEmployees === null && !lockoutsError && <LoadingSkeleton rows={2} />}
         {lockedEmployees !== null && lockedEmployees.length === 0 && (
           <p className="text-sm text-muted-foreground">هیچ کارمندی قفل نیست.</p>
         )}
@@ -151,10 +220,10 @@ export function SecurityCenterSettings() {
             {lockedEmployees.map((entry) => (
               <div
                 key={entry.employeeId}
-                className="flex items-center justify-between rounded-lg border border-input px-3 py-2 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-input px-3 py-2 text-sm"
               >
-                <div>
-                  <p className="font-medium">{entry.employeeName}</p>
+                <div className="min-w-0">
+                  <p className="font-medium break-words">{entry.employeeName}</p>
                   <p className="text-xs text-muted-foreground">
                     {toPersianDigits(String(entry.failedCount))} تلاش ناموفق پیاپی · تا{" "}
                     {formatTime(entry.lockedUntil)}
@@ -166,7 +235,7 @@ export function SecurityCenterSettings() {
                   size="xs"
                   className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => clearLockout(entry.employeeId)}
-                  disabled={busyId === entry.employeeId}
+                  disabled={busyEmployeeId === entry.employeeId}
                 >
                   رفع قفل
                 </Button>
@@ -179,16 +248,17 @@ export function SecurityCenterSettings() {
       <SectionCard
         title={
           <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">نشست‌های فعال</p>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">نشست‌ها و دستگاه‌ها</p>
             <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">نشست‌های فعال</h2>
           </div>
         }
         description="کارکنانی که هم‌اکنون وارد سیستم هستند. پایان‌دادن به یک نشست بلافاصله اثر می‌کند."
+        actions={<RefreshButton refreshing={refreshing} onClick={() => void load()} />}
       >
-        <ErrorBox>{error}</ErrorBox>
-        {notice ? <InfoBox>{notice}</InfoBox> : null}
+        <ErrorBox>{sessionsError}</ErrorBox>
+        <InfoBox>{sessionsNotice}</InfoBox>
 
-        {sessions === null && <LoadingSkeleton rows={3} />}
+        {sessions === null && !sessionsError && <LoadingSkeleton rows={3} />}
         {sessions !== null && sessions.length === 0 && (
           <p className="text-sm text-muted-foreground">هیچ نشست فعالی وجود ندارد.</p>
         )}
@@ -197,15 +267,18 @@ export function SecurityCenterSettings() {
             {sessions.map((entry) => (
               <div
                 key={entry.id}
-                className="flex items-center justify-between rounded-lg border border-input px-3 py-2 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-input px-3 py-2 text-sm"
               >
-                <div>
-                  <p className="font-medium">{entry.employeeName}</p>
+                <div className="min-w-0">
+                  <p className="font-medium break-words">{entry.employeeName}</p>
                   <p className="text-xs text-muted-foreground">
                     {credentialKindLabel(credentialKindFromId(entry.credentialId))}
                     {entry.deviceLabel ? ` · ${entry.deviceLabel}` : ""}
-                    {" · آخرین فعالیت: "}
-                    {formatTime(entry.lastSeenAt ?? entry.issuedAt)}
+                    {/* No last_seen_at yet means the session was *just* minted;
+                        the issued time is its login time, not an activity. */}
+                    {entry.lastSeenAt
+                      ? ` · آخرین فعالیت: ${formatTime(entry.lastSeenAt)}`
+                      : ` · زمان ورود: ${formatTime(entry.issuedAt)}`}
                   </p>
                 </div>
                 <Button
@@ -214,7 +287,7 @@ export function SecurityCenterSettings() {
                   size="xs"
                   className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => endSession(entry.id)}
-                  disabled={busyId === entry.id}
+                  disabled={busySessionId === entry.id}
                 >
                   پایان نشست
                 </Button>
@@ -231,9 +304,12 @@ export function SecurityCenterSettings() {
             <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">تلاش‌های ورود ناموفق</h2>
           </div>
         }
-        description="آخرین پین‌های نادرست یا احرازهویت‌های بیومتریک ناموفق."
+        description="آخرین تلاش‌های ناموفق ورود با پین، بیومتریک یا کد پیامکی."
+        actions={<RefreshButton refreshing={refreshing} onClick={() => void load()} />}
       >
-        {failedAttempts === null && <LoadingSkeleton rows={3} />}
+        <ErrorBox>{attemptsError}</ErrorBox>
+
+        {failedAttempts === null && !attemptsError && <LoadingSkeleton rows={3} />}
         {failedAttempts !== null && failedAttempts.length === 0 && (
           <p className="text-sm text-muted-foreground">تلاش ناموفقی ثبت نشده است.</p>
         )}
@@ -241,9 +317,9 @@ export function SecurityCenterSettings() {
           <div className="space-y-2">
             {failedAttempts.map((entry) => (
               <div key={entry.id} className="rounded-lg border border-input px-3 py-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium">{entry.entityName ?? "کارمند ناشناس"}</p>
-                  <p className="text-xs text-muted-foreground">{formatTime(entry.createdAt)}</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="min-w-0 font-medium break-words">{entry.entityName ?? "کارمند ناشناس"}</p>
+                  <p className="shrink-0 text-xs text-muted-foreground">{formatTime(entry.createdAt)}</p>
                 </div>
                 <p className="text-xs text-muted-foreground">{failureReason(entry.payload) ?? "—"}</p>
               </div>
@@ -294,15 +370,24 @@ function PhoneLoginCard() {
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
-    const [selfRes, teamRes] = await Promise.all([
+    const [selfResult, teamResult] = await Promise.allSettled([
       api<PhoneSelfState & { error?: string }>("/api/auth/phone/self"),
       // The security center is team.manage-gated like every tab it shares,
       // so the member list is readable from here; a 403 would mean the tab
       // was reached without it, in which case the self half still matters.
       api<{ members?: TeamPhoneMember[]; error?: string }>("/api/team"),
     ]);
-    if (selfRes.ok) setState(selfRes.data);
-    if (teamRes.ok) setMembers(teamRes.data.members ?? []);
+    if (selfResult.status === "fulfilled" && selfResult.value.ok) {
+      setState(selfResult.value.data);
+      setError("");
+    } else {
+      setError(
+        errorMessage(selfResult.status === "fulfilled" ? selfResult.value.data.error : undefined),
+      );
+    }
+    if (teamResult.status === "fulfilled" && teamResult.value.ok) {
+      setMembers(teamResult.value.data.members ?? []);
+    }
   }, []);
 
   useEffect(() => {
@@ -313,10 +398,17 @@ function PhoneLoginCard() {
     setBusy(true);
     setError("");
     setNotice("");
-    const { ok, data } = await api<{ status?: string; maskedPhone?: string; error?: string; message?: string; retryAfterMs?: number }>(
-      "/api/auth/phone/self",
-      { method: "POST", body: JSON.stringify(body) },
-    );
+    let ok: boolean;
+    let data: { status?: string; maskedPhone?: string; error?: string; message?: string; retryAfterMs?: number };
+    try {
+      ({ ok, data } = await api<
+        { status?: string; maskedPhone?: string; error?: string; message?: string; retryAfterMs?: number }
+      >("/api/auth/phone/self", { method: "POST", body: JSON.stringify(body) }));
+    } catch {
+      setBusy(false);
+      setError(errorMessage(undefined));
+      return null;
+    }
     setBusy(false);
     if (!ok) {
       const map: Record<string, string> = {
@@ -338,7 +430,8 @@ function PhoneLoginCard() {
     const data = await post({ action: "send", ...(phone.trim() ? { phone: phone.trim() } : {}) });
     if (data) {
       setCodeSentTo(data.maskedPhone ?? target);
-      setNotice(`کد تأیید به ${toPersianDigits(data.maskedPhone ?? "")} پیامک شد.`);
+      // Clear any half-typed digits from a previous try on resend.
+      setCode("");
     }
   }
 
@@ -358,6 +451,7 @@ function PhoneLoginCard() {
   }
 
   const unverified = (members ?? []).filter((m) => m.isActive && !(m.phone && m.phoneVerified));
+  const typedPhone = phone.trim();
 
   return (
     <SectionCard
@@ -373,7 +467,13 @@ function PhoneLoginCard() {
       <InfoBox>{notice}</InfoBox>
 
       {state === null ? (
-        <LoadingSkeleton rows={2} />
+        error ? (
+          <Button type="button" variant="outline" size="xs" onClick={() => void load()}>
+            تلاش مجدد
+          </Button>
+        ) : (
+          <LoadingSkeleton rows={2} />
+        )
       ) : (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -398,7 +498,7 @@ function PhoneLoginCard() {
 
           {!codeSentTo ? (
             <div className="flex flex-wrap items-end gap-2">
-              <div className="min-w-52">
+              <div className="min-w-52 grow sm:grow-0">
                 <label className="mb-1 block text-sm text-muted-foreground" htmlFor="phone-self">
                   {state.phone ? "تغییر شماره (اختیاری)" : "شمارهٔ موبایل"}
                 </label>
@@ -406,6 +506,7 @@ function PhoneLoginCard() {
                   id="phone-self"
                   dir="ltr"
                   inputMode="tel"
+                  autoComplete="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="09121234567"
@@ -414,43 +515,54 @@ function PhoneLoginCard() {
               </div>
               <Button
                 type="button"
-                disabled={busy || (!phone.trim() && !(state.phone && state.phoneState !== "verified"))}
+                disabled={busy || (!typedPhone && !(state.phone && state.phoneState !== "verified"))}
                 onClick={() => void sendCode()}
               >
-                {state.phone && state.phoneState !== "verified" ? "ارسال کد تأیید" : "تأیید / تغییر شماره"}
+                {/* The button's only job is sending a code — the verify step is
+                    the next screen, so name it after what actually happens. */}
+                {typedPhone ? "ارسال کد به شمارهٔ جدید" : "ارسال کد تأیید"}
               </Button>
             </div>
           ) : (
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="min-w-36">
-                <label className="mb-1 block text-sm text-muted-foreground" htmlFor="phone-self-code">
-                  کد ۶ رقمی پیامک‌شده
-                </label>
-                <input
-                  id="phone-self-code"
-                  dir="ltr"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="------"
-                  className="w-full rounded-lg border border-input px-3 py-2 text-center tracking-[0.3em] focus:border-primary focus:outline-none"
-                />
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                کد پیامک‌شده به <span dir="ltr">{toPersianDigits(codeSentTo)}</span> را وارد کنید.
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-36 grow sm:grow-0">
+                  <label className="mb-1 block text-sm text-muted-foreground" htmlFor="phone-self-code">
+                    کد ۶ رقمی
+                  </label>
+                  <input
+                    id="phone-self-code"
+                    dir="ltr"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="------"
+                    className="w-full rounded-lg border border-input px-3 py-2 text-center tracking-[0.3em] focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <Button type="button" disabled={busy || code.length !== 6} onClick={() => void verifyCode()}>
+                  تأیید کد
+                </Button>
+                <Button type="button" variant="outline" disabled={busy} onClick={() => void sendCode()}>
+                  ارسال دوبارهٔ کد
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setCodeSentTo(null);
+                    setCode("");
+                  }}
+                >
+                  تغییر شماره
+                </Button>
               </div>
-              <Button type="button" disabled={busy || code.length !== 6} onClick={() => void verifyCode()}>
-                تأیید کد
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={() => {
-                  setCodeSentTo(null);
-                  setCode("");
-                }}
-              >
-                تغییر شماره
-              </Button>
             </div>
           )}
 
@@ -490,12 +602,12 @@ function PhoneLoginCard() {
               ) : (
                 <ul className="divide-y divide-border/80 rounded-lg border border-input text-sm">
                   {unverified.map((m) => (
-                    <li key={m.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                      <span>
+                    <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                      <span className="min-w-0 break-words">
                         {m.fullName}
-                        <span className="ms-2 text-xs text-muted-foreground">{m.role}</span>
+                        <span className="ms-2 text-xs text-muted-foreground">{roleLabel(m.role)}</span>
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="shrink-0 text-xs text-muted-foreground">
                         {m.phone ? "تأییدنشده" : "بدون شماره"}
                       </span>
                     </li>
