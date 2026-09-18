@@ -287,6 +287,10 @@ describe("deleteFixedAsset", () => {
     expect(await fixedAssetsService.listFixedAssets(biz.id)).toEqual([]);
   });
 
+  it("throws 404 for nonexistent asset", async () => {
+    await expect(fixedAssetsService.deleteFixedAsset(biz.id, randomUUID())).rejects.toThrow("fixed_asset_not_found");
+  });
+
   it("refuses to delete an asset that has depreciation posted", async () => {
     const asset = await createAsset();
     await fixedAssetsService.postDepreciation({
@@ -297,6 +301,39 @@ describe("deleteFixedAsset", () => {
       createdBy: owner.id,
     });
     await expect(fixedAssetsService.deleteFixedAsset(biz.id, asset.id)).rejects.toThrow("fixed_asset_has_depreciation");
+  });
+});
+
+describe("getFixedAssetWithDepreciation", () => {
+  it("retrieves the asset along with its full depreciation history", async () => {
+    const asset = await createAsset();
+    await fixedAssetsService.postDepreciation({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      fixedAssetId: asset.id,
+      periodLabel: "1404-01",
+      entryDate: "2025-04-01",
+      createdBy: owner.id,
+    });
+    await fixedAssetsService.postDepreciation({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      fixedAssetId: asset.id,
+      periodLabel: "1404-02",
+      entryDate: "2025-05-01",
+      createdBy: owner.id,
+    });
+
+    const result = await fixedAssetsService.getFixedAssetWithDepreciation(biz.id, asset.id);
+    expect(result.fixedAsset.id).toBe(asset.id);
+    expect(result.fixedAsset.accumulatedDepreciation).toBe(4_000_000);
+    expect(result.fixedAsset.depreciationCount).toBe(2);
+    expect(result.fixedAsset.locationName).toBe("Main");
+    expect(result.depreciationEntries).toHaveLength(2);
+    expect(result.depreciationEntries[0].periodLabel).toBe("1404-02");
+    expect(result.depreciationEntries[0].amount).toBe(2_000_000);
+    expect(result.depreciationEntries[0].journalEntryId).toBeTruthy();
+    expect(result.depreciationEntries[0].createdByName).toBe("Owner");
   });
 });
 

@@ -276,6 +276,12 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_date: "تاریخ واردشده معتبر نیست.",
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
+    // Phase 22 — fixed assets & depreciation
+    fixed_asset_not_found: "دارایی ثابت پیدا نشد.",
+    fixed_asset_has_depreciation: "برای این دارایی استهلاک ثبت شده و قابل حذف نیست.",
+    period_already_depreciated: "استهلاک این دوره قبلاً برای این دارایی ثبت شده است.",
+    fully_depreciated: "این دارایی به‌طور کامل مستهلک شده است.",
+    salvage_value_invalid: "ارزش اسقاط باید کمتر از بهای تمام‌شده باشد.",
     // Phase 16 — bank & cash reconciliation
     invalid_account: "حساب انتخاب‌شده معتبر نیست.",
     statement_date_required: "تاریخ صورتحساب الزامی است.",

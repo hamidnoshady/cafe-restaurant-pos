@@ -35,6 +35,21 @@ export interface FixedAsset {
   accumulatedDepreciation: number;
   bookValue: number;
   createdAt: string;
+  depreciationCount?: number;
+  locationId?: string | null;
+  locationName?: string | null;
+}
+
+export interface FixedAssetDepreciationEntry {
+  id: string;
+  fixedAssetId: string;
+  periodLabel: string;
+  entryDate: string;
+  amount: number;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  journalEntryId: string | null;
 }
 
 interface FixedAssetRow extends Record<string, unknown> {
@@ -46,16 +61,22 @@ interface FixedAssetRow extends Record<string, unknown> {
   useful_life_months: number;
   accumulated_depreciation: string;
   created_at: string;
+  depreciation_count?: number;
+  location_id?: string | null;
+  location_name?: string | null;
 }
 
 const SELECT_FIXED_ASSETS = `
-  SELECT fa.id, fa.name, fa.acquisition_date::text AS acquisition_date, fa.cost::text AS cost,
+  SELECT fa.id, fa.location_id, l.name AS location_name, fa.name,
+         fa.acquisition_date::text AS acquisition_date, fa.cost::text AS cost,
          fa.salvage_value::text AS salvage_value, fa.useful_life_months, fa.created_at::text AS created_at,
-         COALESCE(SUM(d.amount), 0)::text AS accumulated_depreciation
+         COALESCE(SUM(d.amount), 0)::text AS accumulated_depreciation,
+         COUNT(d.id)::int AS depreciation_count
     FROM fixed_assets fa
+    LEFT JOIN locations l ON l.id = fa.location_id
     LEFT JOIN fixed_asset_depreciation_entries d ON d.fixed_asset_id = fa.id
    WHERE fa.business_id = $1
-   GROUP BY fa.id
+   GROUP BY fa.id, l.name
    ORDER BY fa.acquisition_date DESC, fa.created_at DESC`;
 
 function toFixedAsset(r: FixedAssetRow): FixedAsset {
@@ -71,12 +92,76 @@ function toFixedAsset(r: FixedAssetRow): FixedAsset {
     accumulatedDepreciation,
     bookValue: cost - accumulatedDepreciation,
     createdAt: r.created_at,
+    depreciationCount: Number(r.depreciation_count ?? 0),
+    locationId: (r.location_id as string) ?? null,
+    locationName: (r.location_name as string) ?? null,
   };
 }
 
 export async function listFixedAssets(businessId: string): Promise<FixedAsset[]> {
   const { rows } = await query<FixedAssetRow>(SELECT_FIXED_ASSETS, [businessId]);
   return rows.map(toFixedAsset);
+}
+
+export async function getFixedAssetWithDepreciation(
+  businessId: string,
+  id: string,
+): Promise<{
+  fixedAsset: FixedAsset;
+  depreciationEntries: FixedAssetDepreciationEntry[];
+}> {
+  const { rows } = await query<FixedAssetRow>(
+    `SELECT fa.id, fa.location_id, l.name AS location_name, fa.name,
+            fa.acquisition_date::text AS acquisition_date, fa.cost::text AS cost,
+            fa.salvage_value::text AS salvage_value, fa.useful_life_months, fa.created_at::text AS created_at,
+            COALESCE(SUM(d.amount), 0)::text AS accumulated_depreciation,
+            COUNT(d.id)::int AS depreciation_count
+       FROM fixed_assets fa
+       LEFT JOIN locations l ON l.id = fa.location_id
+       LEFT JOIN fixed_asset_depreciation_entries d ON d.fixed_asset_id = fa.id
+      WHERE fa.business_id = $1 AND fa.id = $2
+      GROUP BY fa.id, l.name`,
+    [businessId, id],
+  );
+  if (!rows[0]) throw new FixedAssetError("fixed_asset_not_found", 404);
+
+  const { rows: entries } = await query<{
+    id: string;
+    fixed_asset_id: string;
+    period_label: string;
+    entry_date: string;
+    amount: string;
+    created_by: string | null;
+    created_by_name: string | null;
+    created_at: string;
+    journal_entry_id: string | null;
+  }>(
+    `SELECT d.id, d.fixed_asset_id, d.period_label, d.entry_date::text AS entry_date,
+            d.amount::text AS amount, d.created_by, u.full_name AS created_by_name,
+            d.created_at::text AS created_at, je.id AS journal_entry_id
+       FROM fixed_asset_depreciation_entries d
+       JOIN fixed_assets fa ON fa.id = d.fixed_asset_id
+       LEFT JOIN users u ON u.id = d.created_by
+       LEFT JOIN journal_entries je ON je.source_type = 'fixed_asset_depreciation' AND je.source_id = d.id
+      WHERE fa.business_id = $1 AND d.fixed_asset_id = $2
+      ORDER BY d.entry_date DESC, d.created_at DESC`,
+    [businessId, id],
+  );
+
+  return {
+    fixedAsset: toFixedAsset(rows[0]),
+    depreciationEntries: entries.map((e) => ({
+      id: e.id,
+      fixedAssetId: e.fixed_asset_id,
+      periodLabel: e.period_label,
+      entryDate: e.entry_date,
+      amount: Number(e.amount),
+      createdBy: e.created_by,
+      createdByName: e.created_by_name,
+      createdAt: e.created_at,
+      journalEntryId: e.journal_entry_id,
+    })),
+  };
 }
 
 export async function createFixedAsset(params: {
@@ -119,6 +204,9 @@ export async function createFixedAsset(params: {
     accumulatedDepreciation: 0,
     bookValue: params.cost,
     createdAt: rows[0].created_at,
+    depreciationCount: 0,
+    locationId: params.locationId,
+    locationName: null,
   };
 }
 
