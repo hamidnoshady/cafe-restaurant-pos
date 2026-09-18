@@ -12,6 +12,7 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  *     "location"), with status and a manual "sync now".
  */
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
@@ -112,17 +113,28 @@ function ComparisonCard() {
   const [dateTo, setDateTo] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const [loading, setLoading] = useState(true);
+
   const load = useCallback(async () => {
     const params = new URLSearchParams();
     if (dateFrom) params.set("from", dateFrom);
     if (dateTo) params.set("to", dateTo);
-    const res = await api<{ overview?: Overview; error?: string }>(`/api/rollup/overview?${params}`);
-    if (!res.ok) {
-      setError("خطا در بارگذاری مقایسهٔ شعبه‌ها.");
-      return;
+    // try/catch because a dropped connection makes fetch reject, and the
+    // `loading` flag because an error used to leave `overview` null — which
+    // rendered the pulsing skeleton *under* the error box, forever.
+    try {
+      const res = await api<{ overview?: Overview; error?: string }>(`/api/rollup/overview?${params}`);
+      if (!res.ok) {
+        setError("خطا در بارگذاری مقایسهٔ شعبه‌ها.");
+        return;
+      }
+      setError(null);
+      setOverview(res.data.overview ?? null);
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.");
+    } finally {
+      setLoading(false);
     }
-    setError(null);
-    setOverview(res.data.overview ?? null);
   }, [dateFrom, dateTo]);
 
   useEffect(() => {
@@ -145,8 +157,10 @@ function ComparisonCard() {
       }
     >
       {error ? <ErrorBox>{error}</ErrorBox> : null}
-      {!overview ? (
+      {loading ? (
         <LoadingSkeleton rows={3} />
+      ) : !overview ? (
+        error ? null : <EmptyState>داده‌ای برای نمایش نیست.</EmptyState>
       ) : overview.locations.length === 0 ? (
         <InfoBox>
           هنوز شعبه‌ای داده‌ای ارسال نکرده است. ابتدا در بخش «شعبه‌های ثبت‌شده» یک شعبه ثبت کنید و
@@ -156,7 +170,7 @@ function ComparisonCard() {
         <div className="space-y-6">
           <p className="text-xs text-muted-foreground">
             بازهٔ {toPersianDigits(formatJalali(overview.from))} تا {toPersianDigits(formatJalali(overview.to))}
-            {" — "}ارقام به تومان.
+            {" — "}ارقام به {money.unitLabel}.
           </p>
 
           <div className="overflow-x-auto">
@@ -195,7 +209,13 @@ function ComparisonCard() {
           <div>
             <h3 className="mb-2 text-sm font-medium text-muted-foreground">فروش دوره به تفکیک شعبه ({money.unitLabel})</h3>
             <BarChart
-              data={overview.locations.map((l) => ({ label: l.name, value: Math.trunc(l.total / 10) }))}
+              data={overview.locations.map((l) => ({
+                // Through the money context, not `/ 10`: the hardcoded division
+                // assumed Toman display, so a business showing Rial got a chart
+                // labelled «ریال» over Toman numbers.
+                label: l.name,
+                value: money.toInput(l.total),
+              }))}
             />
           </div>
 
@@ -241,8 +261,20 @@ function RegistryCard() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await api<{ locations?: RegistryRow[] }>("/api/rollup/locations");
-    if (res.ok) setLocations(res.data.locations ?? []);
+    // A failed read must not leave the skeleton pulsing forever with no
+    // explanation — name the failure and stop pretending to load.
+    try {
+      const res = await api<{ locations?: RegistryRow[] }>("/api/rollup/locations");
+      if (res.ok) {
+        setLocations(res.data.locations ?? []);
+      } else {
+        setLocations((prev) => prev ?? []);
+        setError("خواندن فهرست شعبه‌های ثبت‌شده ناموفق بود.");
+      }
+    } catch {
+      setLocations((prev) => prev ?? []);
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.");
+    }
   }, []);
 
   useEffect(() => {
@@ -254,23 +286,53 @@ function RegistryCard() {
     if (!name.trim() || busy) return;
     setBusy(true);
     setError(null);
-    const res = await api<{ token?: string; error?: string }>("/api/rollup/locations", {
-      method: "POST",
-      body: JSON.stringify({ name: name.trim() }),
-    });
-    setBusy(false);
-    if (!res.ok || !res.data.token) {
-      setError("ثبت شعبه ناموفق بود.");
-      return;
+    try {
+      const res = await api<{ token?: string; error?: string }>("/api/rollup/locations", {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (!res.ok || !res.data.token) {
+        setError("ثبت شعبه ناموفق بود.");
+        return;
+      }
+      setNewToken({ name: name.trim(), token: res.data.token });
+      setName("");
+      await load();
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.");
+    } finally {
+      setBusy(false);
     }
-    setNewToken({ name: name.trim(), token: res.data.token });
-    setName("");
-    load();
   }
 
   async function setActive(id: string, isActive: boolean) {
-    await api(`/api/rollup/locations/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) });
-    load();
+    // The old call ignored the result entirely: a 4xx/5xx just re-read the
+    // list, so the row snapped back with no explanation of why.
+    setError(null);
+    try {
+      const res = await api<{ error?: string }>(`/api/rollup/locations/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive }),
+      });
+      if (!res.ok) {
+        setError(isActive ? "فعال‌سازی شعبه ناموفق بود." : "غیرفعال‌سازی شعبه ناموفق بود.");
+      }
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.");
+    }
+    await load();
+  }
+
+  async function copyToken(token: string) {
+    // «کپی» that silently did nothing (clipboard denied, or the API missing
+    // over plain HTTP on a LAN install) is indistinguishable from working —
+    // and this token is shown exactly once, so the person must know.
+    try {
+      await navigator.clipboard.writeText(token);
+      toast.success("توکن کپی شد.");
+    } catch {
+      toast.error("کپی خودکار ممکن نشد؛ توکن را دستی انتخاب و کپی کنید.");
+    }
   }
 
   return (
@@ -286,13 +348,13 @@ function RegistryCard() {
           <p className="mb-2 text-sm">
             توکن شعبهٔ «{newToken.name}» — همین حالا کپی کنید؛ دیگر نمایش داده نمی‌شود:
           </p>
-          <div className="flex items-center gap-2">
-            <code dir="ltr" className="flex-1 overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs">
+          {/* Wraps on a phone: the token is long, and three inline flex
+              children forced it into a few-character-wide scroller. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <code dir="ltr" className="w-full min-w-0 overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs sm:w-auto sm:flex-1">
               {newToken.token}
             </code>
-            <SecondaryButton onClick={() => navigator.clipboard?.writeText(newToken.token)}>
-              کپی
-            </SecondaryButton>
+            <SecondaryButton onClick={() => void copyToken(newToken.token)}>کپی</SecondaryButton>
             <SecondaryButton onClick={() => setNewToken(null)}>بستن</SecondaryButton>
           </div>
         </div>
@@ -325,8 +387,10 @@ function RegistryCard() {
         </ul>
       )}
 
-      <form onSubmit={register} className="flex items-end gap-2">
-        <div className="flex-1">
+      {/* Stacks on a phone: side by side, the input shrank to a sliver and
+          the wide PrimaryButton (w-full by design) fought it for the row. */}
+      <form onSubmit={register} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1">
           <Field label="ثبت شعبهٔ جدید">
             <input
               className={inputClass}
@@ -336,8 +400,10 @@ function RegistryCard() {
             />
           </Field>
         </div>
-        <div className="mb-4">
-          <PrimaryButton disabled={busy || !name.trim()}>ثبت و صدور توکن</PrimaryButton>
+        <div className="sm:mb-4 sm:w-auto">
+          <PrimaryButton disabled={busy || !name.trim()}>
+            {busy ? "در حال ثبت…" : "ثبت و صدور توکن"}
+          </PrimaryButton>
         </div>
       </form>
     </SectionCard>
@@ -356,10 +422,15 @@ function LocalSyncCard() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await api<{ config?: SyncConfig | null; syncState?: SyncState }>("/api/rollup/config");
-    if (res.ok) {
-      if (res.data.config) setConfig(res.data.config);
-      setSyncState(res.data.syncState ?? null);
+    try {
+      const res = await api<{ config?: SyncConfig | null; syncState?: SyncState }>("/api/rollup/config");
+      if (res.ok) {
+        if (res.data.config) setConfig(res.data.config);
+        setSyncState(res.data.syncState ?? null);
+      }
+    } catch {
+      // The form still renders empty; the save/sync buttons surface their own
+      // connection errors, so a failed initial read isn't shouted about here.
     }
   }, []);
 
@@ -372,38 +443,48 @@ function LocalSyncCard() {
     setBusy(true);
     setMessage(null);
     setError(null);
-    const res = await api<{ error?: string }>("/api/rollup/config", {
-      method: "PUT",
-      body: JSON.stringify(config),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError(
-        res.data.error === "invalid_url"
-          ? "نشانی سرور مرکزی باید با http یا https شروع شود."
-          : "برای فعال‌سازی، نشانی سرور مرکزی و توکن هر دو لازم‌اند.",
-      );
-      return;
+    try {
+      const res = await api<{ error?: string }>("/api/rollup/config", {
+        method: "PUT",
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) {
+        setError(
+          res.data.error === "invalid_url"
+            ? "نشانی سرور مرکزی باید با http یا https شروع شود."
+            : "برای فعال‌سازی، نشانی سرور مرکزی و توکن هر دو لازم‌اند.",
+        );
+        return;
+      }
+      setMessage("ذخیره شد.");
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.");
+    } finally {
+      setBusy(false);
     }
-    setMessage("ذخیره شد.");
   }
 
   async function syncNow() {
     setBusy(true);
     setMessage(null);
     setError(null);
-    const res = await api<{ result?: { status: string; daysPushed?: number; error?: string } }>(
-      "/api/rollup/push",
-      { method: "POST" },
-    );
-    setBusy(false);
-    const result = res.data.result;
-    if (result?.status === "ok") {
-      setMessage(`همگام‌سازی انجام شد (${toPersianDigits(result.daysPushed ?? 0)} روز).`);
-    } else if (result?.status === "disabled") {
-      setError("همگام‌سازی فعال نیست؛ ابتدا تنظیمات را ذخیره و فعال کنید.");
-    } else {
-      setError(`همگام‌سازی ناموفق بود: ${result?.error ?? "خطای نامشخص"}`);
+    try {
+      const res = await api<{ result?: { status: string; daysPushed?: number; error?: string } }>(
+        "/api/rollup/push",
+        { method: "POST" },
+      );
+      const result = res.data.result;
+      if (result?.status === "ok") {
+        setMessage(`همگام‌سازی انجام شد (${toPersianDigits(result.daysPushed ?? 0)} روز).`);
+      } else if (result?.status === "disabled") {
+        setError("همگام‌سازی فعال نیست؛ ابتدا تنظیمات را ذخیره و فعال کنید.");
+      } else {
+        setError(`همگام‌سازی ناموفق بود: ${result?.error ?? "خطای نامشخص"}`);
+      }
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.");
+    } finally {
+      setBusy(false);
     }
     load();
   }
