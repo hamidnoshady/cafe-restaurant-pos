@@ -41,6 +41,7 @@ import {
   partyFieldErrorMessage,
   hasPartyRole,
   resetPartyForm,
+  taxPercentageOf,
   togglePartyRole,
   validatePartyForm,
   withPartyRoles,
@@ -51,7 +52,6 @@ import {
 import {
   deletePartyDraft,
   listPartyDrafts,
-  loadPartyDraft,
   localStorageDraftStorage,
   partyDraftLabel,
   partyFormHasUnsavedChanges,
@@ -64,14 +64,17 @@ import {
   type PartyScopeDef,
 } from "@/lib/parties-scopes";
 import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { Switch } from "@/components/ui/switch";
 import { LoadingSkeleton, TabBar, TabPanel } from "../page-chrome";
 import { api, errorMessage, ErrorBox, Field, InfoBox, inputClass } from "../ui";
@@ -96,6 +99,22 @@ function tabForField(path: string): TabKey {
 
 /** The draft autosave interval. Long enough that typing is not a write per keystroke. */
 const DRAFT_AUTOSAVE_MS = 4_000;
+
+/**
+ * The avatar formats the form accepts, matching the `accept` attribute.
+ *
+ * Kept as a real check because `accept` only filters the picker's default view.
+ */
+const PROFILE_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+/**
+ * The size ceiling applied to the *file*, before it is read.
+ *
+ * `MAX_PROFILE_IMAGE_CHARS` caps the base64 text, which runs about 4/3 the size
+ * of the bytes it encodes; this is that limit expressed back in bytes so an
+ * oversize pick is refused without reading it into memory first.
+ */
+const MAX_PROFILE_IMAGE_BYTES = Math.floor((MAX_PROFILE_IMAGE_CHARS * 3) / 4);
 
 export interface PartyFormDialogProps {
   scope: PartyScopeDef;
@@ -161,6 +180,17 @@ export function PartyFormDialog({
   const [draftId, setDraftId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<PartyDraft[]>([]);
   const [showDrafts, setShowDrafts] = useState(false);
+  /**
+   * The tax field's own text, while it is being typed.
+   *
+   * The committed value lives in `state.generalInfo.taxPercentage` as a number,
+   * but a number cannot represent «۹٫» — the moment somebody types the decimal
+   * mark, coercing to a number and rendering it back deletes the character
+   * under their caret. So the input holds text and commits on blur.
+   */
+  const [taxInput, setTaxInput] = useState(() =>
+    String(taxPercentageOf(formStateFromParty(initial ?? null))),
+  );
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -175,9 +205,14 @@ export function PartyFormDialog({
   // record holds every tab.
   useEffect(() => {
     if (!partyId || initial) return;
-    let cancelled = false;
-    void api<{ party: PartyApiRecord }>(`/api/parties/${encodeURIComponent(partyId)}`).then(({ ok, data }) => {
-      if (cancelled) return;
+    const controller = new AbortController();
+    void api<{ party: PartyApiRecord }>(`/api/parties/${encodeURIComponent(partyId)}`, {
+      signal: controller.signal,
+    }).then(({ ok, aborted, data }) => {
+      // A dialog the person closed mid-load must not write state back into a
+      // form that is gone, and must not replace the *next* party's record with
+      // the one they navigated away from.
+      if (aborted) return;
       setLoadingRecord(false);
       if (!ok) {
         setFormError(errorMessage((data as { error?: string }).error));
@@ -186,10 +221,9 @@ export function PartyFormDialog({
       const hydrated = formStateFromParty(data.party);
       setState(hydrated);
       setBaseline(hydrated);
+      setTaxInput(String(taxPercentageOf(hydrated)));
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [partyId, initial]);
 
   /**
@@ -198,19 +232,46 @@ export function PartyFormDialog({
    * so, comparing the *payload* rather than the state so a form that only reset a
    * number to its default does not count as edited).
    */
+  /**
+   * The draft id, in a ref as well as in state.
+   *
+   * The autosave runs on an interval whose closure captures `draftId`. Reading
+   * it from state meant the first tick after a save still saw `null` and minted
+   * a *second* draft for the same form; the ref is written synchronously, so
+   * every tick continues the row the previous one created.
+   */
+  const draftIdRef = useRef(draftId);
   useEffect(() => {
     if (!storage) return;
+    /*
+     * No business id, no draft.
+     *
+     * `businessId` comes from the *list's* response, so on a deep link
+     * (`?customer=…`) the form can open before the list has answered.
+     * `savePartyDraft` returns null for an empty business — drafts are
+     * namespaced per tenant and a draft with no tenant is one that could be
+     * read by the next business on a shared browser — so those early ticks
+     * did nothing but burn a timer. Waiting is the whole fix; the effect
+     * re-runs when the id lands.
+     */
+    if (!businessId) return;
     const timer = window.setInterval(() => {
       const draft = savePartyDraft(storage, {
         businessId,
         state: stateRef.current,
-        draftId,
+        draftId: draftIdRef.current,
         partyId: partyId ?? null,
       });
-      if (draft) setDraftId((current) => current ?? draft.id);
+      if (draft && !draftIdRef.current) {
+        draftIdRef.current = draft.id;
+        setDraftId(draft.id);
+        // A draft that appeared on its own should appear in the list too,
+        // otherwise «پیش‌نویس‌ها (۰)» contradicts the note beside it.
+        setDrafts(listPartyDrafts(storage, businessId));
+      }
     }, DRAFT_AUTOSAVE_MS);
     return () => window.clearInterval(timer);
-  }, [storage, businessId, draftId, partyId]);
+  }, [storage, businessId, partyId]);
 
   function patch(next: Partial<PartyFormState>) {
     setState((current) => ({ ...current, ...next }));
@@ -317,15 +378,34 @@ export function PartyFormDialog({
    * so stripping them changes nothing that is stored.
    */
   async function submit() {
-    const found = validatePartyForm(state);
+    if (busy) return;
+    /*
+     * Commit the tax field before validating.
+     *
+     * Pressing «ذخیره» with the caret still in the rate never fires its blur in
+     * every browser (a mouse-down on a button inside a Radix dialog can move
+     * focus without one), so the state could still hold the *previous* rate
+     * while the input shows the new one — a silently discarded edit.
+     */
+    const submitted: PartyFormState = {
+      ...state,
+      generalInfo: {
+        ...state.generalInfo,
+        taxPercentage: taxPercentageOf({ generalInfo: { taxPercentage: taxInput } }),
+      },
+    };
+    const found = validatePartyForm(submitted);
     if (Object.keys(found).length > 0) {
+      setState(submitted);
       showFirstError(found);
       return;
     }
     setErrors({});
     setBusy(true);
     setFormError("");
-    const payload = accountingEditable ? buildPartyPayload(state) : buildNonAccountingPayload(state);
+    const payload = accountingEditable
+      ? buildPartyPayload(submitted)
+      : buildNonAccountingPayload(submitted);
     const { ok, data } = partyId
       ? await api<{ party?: PartyApiRecord; error?: string; fieldErrors?: Record<string, string> }>(
           `/api/parties/${encodeURIComponent(partyId)}`,
@@ -345,47 +425,106 @@ export function PartyFormDialog({
     // The draft was the form's shadow; the record is now real, so it goes.
     if (draftId) deletePartyDraft(storage, businessId, draftId);
     setInfo("");
+    /*
+     * The saved state is the new baseline.
+     *
+     * Without this the dirty flag stayed true after a successful save, so the
+     * `beforeunload` guard kept firing and — if the parent leaves the dialog
+     * mounted for a beat — «انصراف» asked to discard changes that were already
+     * stored.
+     */
+    setState(submitted);
+    setBaseline(submitted);
+    dirtyRef.current = false;
     onSaved(data.party ?? { id: partyId ?? "" });
   }
 
+  /** The one writer of the draft id: the ref (which the timer reads) and the state stay one value. */
+  function rememberDraft(id: string | null) {
+    draftIdRef.current = id;
+    setDraftId(id);
+  }
+
   function saveDraftNow() {
-    const draft = savePartyDraft(storage, { businessId, state, draftId, partyId: partyId ?? null });
-    if (draft) {
-      setDraftId(draft.id);
-      setInfo(`پیش‌نویس «${partyDraftLabel(state)}» ذخیره شد.`);
-      refreshDrafts();
+    if (!businessId) {
+      setFormError("هنوز فهرست بارگذاری نشده است؛ چند لحظه بعد دوباره تلاش کنید.");
+      return;
     }
+    const draft = savePartyDraft(storage, { businessId, state, draftId, partyId: partyId ?? null });
+    if (!draft) {
+      // `localStorage` refused (private mode, a full quota). Saying so beats a
+      // button that looks like it worked.
+      setFormError("ذخیرهٔ پیش‌نویس در این مرورگر ممکن نیست.");
+      return;
+    }
+    rememberDraft(draft.id);
+    setFormError("");
+    setInfo(`پیش‌نویس «${partyDraftLabel(state)}» ذخیره شد.`);
+    refreshDrafts();
   }
 
   function restoreDraft(draft: PartyDraft) {
+    // A restore replaces everything on screen; if the person had typed
+    // something into this form first, that is what they would lose.
+    if (
+      partyFormHasUnsavedChanges(stateRef.current, baseline) &&
+      !window.confirm(`بازخوانی پیش‌نویس «${draft.label}» آنچه اکنون در فرم است را جایگزین می‌کند. ادامه می‌دهید؟`)
+    ) {
+      return;
+    }
     setState(draft.state);
-    setDraftId(draft.id);
+    setTaxInput(String(taxPercentageOf(draft.state)));
+    rememberDraft(draft.id);
     setErrors({});
     setShowDrafts(false);
+    setFormError("");
     setInfo(`پیش‌نویس «${draft.label}» بازخوانی شد.`);
   }
 
   function discardDraft(id: string) {
     deletePartyDraft(storage, businessId, id);
-    if (id === draftId) setDraftId(null);
+    if (id === draftId) rememberDraft(null);
     refreshDrafts();
   }
 
-  function onProfileImagePicked(file: File | undefined) {
+  /**
+   * Read the picked avatar into the form as a data URL.
+   *
+   * Rejections clear the file input: the browser keeps a rejected file as the
+   * control's value, and «همان فایل را دوباره انتخاب کنید» then fires no
+   * `change` event at all — so after one oversize pick the picker looked dead.
+   */
+  function onProfileImagePicked(input: HTMLInputElement) {
+    const file = input.files?.[0];
     if (!file) return;
-    if (!/^image\//.test(file.type)) {
-      setFormError("فایل انتخابی تصویر نیست.");
+    const reject = (message: string) => {
+      setFormError(message);
+      input.value = "";
+    };
+    // The `accept` attribute is a hint, not a gate: every file picker offers an
+    // «All files» escape, and a drag-and-drop never consults it.
+    if (!PROFILE_IMAGE_TYPES.includes(file.type)) {
+      reject("فقط تصویر PNG، JPEG یا WebP پذیرفته می‌شود.");
+      return;
+    }
+    // Checked before reading, not after: a 40 MB photo would otherwise be
+    // base64-encoded into memory in full just to be thrown away.
+    if (file.size > MAX_PROFILE_IMAGE_BYTES) {
+      reject("حجم تصویر بیش از حد مجاز است (۳۰۰ کیلوبایت).");
       return;
     }
     const reader = new FileReader();
+    reader.onerror = () => reject("خواندن فایل ممکن نشد.");
     reader.onload = () => {
       const value = String(reader.result ?? "");
       if (value.length > MAX_PROFILE_IMAGE_CHARS) {
-        setFormError("حجم تصویر بیش از حد مجاز است (۳۰۰ کیلوبایت).");
+        reject("حجم تصویر بیش از حد مجاز است (۳۰۰ کیلوبایت).");
         return;
       }
       patch({ profileImage: value });
       clearError("profileImage");
+      setFormError("");
+      input.value = "";
     };
     reader.readAsDataURL(file);
   }
@@ -407,19 +546,37 @@ export function PartyFormDialog({
 
   return (
     <Dialog open onOpenChange={(next) => (next ? undefined : requestClose())}>
-      <DialogContent className="sm:max-w-2xl lg:max-w-3xl">
-        <DialogHeader>
+      {/*
+        Header and footer stay put; only the middle scrolls.
+
+        This form is four tabs tall. With the whole dialog as one scroller the
+        «ذخیره» button sat below the fold on every phone and on any laptop in
+        landscape — people filled the form, saw no way to submit, and closed it.
+        `min-h-0` on the middle child is what lets a flex column actually shrink
+        its scroller instead of overflowing the dialog.
+      */}
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden sm:max-w-2xl lg:max-w-3xl">
+        <DialogHeader className="shrink-0">
           <DialogTitle>
             {partyId
               ? `ویرایش ${state.displayName || "شخص"}`
               : `شخص جدید — ${state.roles.map((role) => PARTY_ROLE_LABELS[role]).join(" و ")}`}
           </DialogTitle>
+          <DialogDescription>
+            {partyId
+              ? "تغییرها پس از «ذخیره» اعمال می‌شود. فیلدهای ستاره‌دار الزامی‌اند."
+              : "فقط نام نمایشی و نقش الزامی است؛ بقیهٔ تب‌ها را بعداً هم می‌توانید کامل کنید."}
+          </DialogDescription>
         </DialogHeader>
 
-        <ErrorBox>{formError}</ErrorBox>
-        {info ? <InfoBox>{info}</InfoBox> : null}
+        {/* Kept out of the scroller on purpose: an error that scrolls away is an
+            error nobody reads. */}
+        <div className="shrink-0 empty:hidden">
+          <ErrorBox>{formError}</ErrorBox>
+          {info ? <InfoBox>{info}</InfoBox> : null}
+        </div>
 
-
+        <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {/* The scroller the focus lookup searches — every validated control,
             root fields and tabs alike, lives inside it. */}
         <div ref={bodyRef} className="min-w-0 space-y-4">
@@ -483,15 +640,26 @@ export function PartyFormDialog({
                         type="button"
                         role="checkbox"
                         aria-checked={checked}
-                        disabled={last}
+                        /*
+                         * `aria-disabled`, not `disabled`. A truly disabled
+                         * button leaves the tab order, so a keyboard or screen
+                         * reader user tabbing through the group simply never
+                         * met the ticked role and got no hint as to why it
+                         * would not untick. This way it is still reachable and
+                         * announced, and the click explains the refusal.
+                         */
+                        aria-disabled={last || undefined}
                         data-field={index === 0 ? "roles" : undefined}
-                        title={last ? "دست‌کم یک نقش باید انتخاب شود." : undefined}
                         onClick={() => {
+                          if (last) {
+                            setErrors((current) => ({ ...current, roles: "role_required" }));
+                            return;
+                          }
                           setState((current) => togglePartyRole(current, role));
                           clearError("roles");
                           clearError("role");
                         }}
-                        className={`min-h-10 rounded-xl border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+                        className={`min-h-10 rounded-xl border px-3 text-sm font-medium transition-colors aria-disabled:cursor-not-allowed ${
                           checked
                             ? "border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
                             : "border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -503,14 +671,23 @@ export function PartyFormDialog({
                   })}
                 </div>
               )}
-              {has("roles") ? (
-                <span className="mt-1 block text-xs text-destructive">{partyFieldErrorMessage(has("roles"))}</span>
-              ) : roleLocked ? null : (
-                <span id="party-form-roles-hint" className="mt-1 block text-xs text-muted-foreground">
-                  می‌توانید چند نقش را هم‌زمان انتخاب کنید. کد حسابداری بر پایهٔ «
-                  {PARTY_ROLE_LABELS[state.role]}» ساخته می‌شود.
-                </span>
-              )}
+              {/*
+                The hint always renders, because `aria-describedby` above points
+                at it unconditionally: when an error replaced it, the reference
+                dangled and assistive tech announced nothing at all for the
+                group. The error is appended rather than substituted.
+              */}
+              <span id="party-form-roles-hint" className="mt-1 block text-xs">
+                {has("roles") ? (
+                  <span className="block text-destructive">{partyFieldErrorMessage(has("roles"))}</span>
+                ) : null}
+                {roleLocked ? null : (
+                  <span className="block text-muted-foreground">
+                    می‌توانید چند نقش را هم‌زمان انتخاب کنید. کد حسابداری بر پایهٔ «
+                    {PARTY_ROLE_LABELS[state.role]}» ساخته می‌شود.
+                  </span>
+                )}
+              </span>
             </Field>
           </div>
 
@@ -591,7 +768,8 @@ export function PartyFormDialog({
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
-                onChange={(event) => onProfileImagePicked(event.target.files?.[0])}
+                aria-label="انتخاب تصویر پروفایل"
+                onChange={(event) => onProfileImagePicked(event.currentTarget)}
                 className="block w-full max-w-xs text-sm text-muted-foreground file:me-3 file:rounded-lg file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
               />
               {state.profileImage ? (
@@ -623,18 +801,26 @@ export function PartyFormDialog({
                       </option>
                     ))}
                   </select>
+                  {/*
+                    «با ذخیره ساخته می‌شود» is a placeholder, not a value.
+
+                    As a value it was Persian prose inside a `dir="ltr"` box, so
+                    it rendered flush-left with its punctuation adrift; worse,
+                    it *looked* like content — anyone switching the mode back to
+                    «دستی» expected to find the sentence there and instead got
+                    an empty field. A placeholder greys out, aligns with the
+                    field's own direction and never reaches the payload.
+                  */}
                   <input
-                  data-field="accountingCode"
+                    data-field="accountingCode"
                     className={`${inputClass} sm:flex-1`}
-                    dir="ltr"
+                    dir={state.accountingCodeMode === "Automatic" && !state.accountingCode ? "auto" : "ltr"}
                     inputMode="numeric"
+                    aria-label="کد حسابداری"
                     maxLength={24}
                     disabled={!accountingEditable || state.accountingCodeMode === "Automatic"}
-                    value={
-                      state.accountingCodeMode === "Automatic" && !state.accountingCode
-                        ? "با ذخیره ساخته می‌شود"
-                        : state.accountingCode
-                    }
+                    placeholder={state.accountingCodeMode === "Automatic" ? "با ذخیره ساخته می‌شود" : "مثلاً ۱۰۰۴"}
+                    value={state.accountingCode}
                     onChange={(event) => {
                       patch({ accountingCode: event.target.value });
                       clearError("accountingCode");
@@ -673,14 +859,22 @@ export function PartyFormDialog({
           {tab === "general" ? (
             <div className="grid min-w-0 gap-3 sm:grid-cols-2">
               <Field label="کد ملی">
+                {/*
+                  Persian digits in the box, ASCII in the state — the rule the
+                  rest of the app follows. It also drops `maxLength`: the
+                  browser applies that to the *raw* text before this handler
+                  strips the punctuation, so pasting a dashed «۰۰۱۲-۳۴۵-۶۷۸۹»
+                  lost the last three digits silently. The slice is the real
+                  limit and it counts digits, not characters.
+                */}
                 <input
                   data-field="generalInfo.nationalId"
                   className={inputClass}
                   dir="ltr"
                   inputMode="numeric"
-                  maxLength={10}
+                  autoComplete="off"
                   disabled={state.personType === "Legal"}
-                  value={state.generalInfo.nationalId}
+                  value={toPersianDigits(state.generalInfo.nationalId)}
                   onChange={(event) => {
                     patchTab("generalInfo", { nationalId: asciiDigits(event.target.value).slice(0, 10) });
                     clearError("generalInfo.nationalId");
@@ -703,8 +897,8 @@ export function PartyFormDialog({
                   className={inputClass}
                   dir="ltr"
                   inputMode="numeric"
-                  maxLength={11}
-                  value={state.generalInfo.economicCode}
+                  autoComplete="off"
+                  value={toPersianDigits(state.generalInfo.economicCode)}
                   onChange={(event) => {
                     patchTab("generalInfo", { economicCode: asciiDigits(event.target.value).slice(0, 11) });
                     clearError("generalInfo.economicCode");
@@ -718,17 +912,42 @@ export function PartyFormDialog({
                 ) : null}
               </Field>
               <Field label="نرخ مالیات (٪)">
-                <input
+                {/*
+                  `PersianNumberInput`, not a raw input with a hand-rolled digit
+                  fold. The old handler had three faults, each of which wrote a
+                  wrong number into the ledger's own field:
+
+                    - `Number("")` is 0, so *clearing* the box set the party's
+                      VAT rate to zero — a rate businesses really use, so
+                      nothing downstream could tell it from a deliberate one.
+                    - it folded Persian digits but not the Persian decimal mark
+                      «٫», so «۹٫۵» became 95.
+                    - it did not fold Arabic-Indic digits at all, so «٩» became
+                      0.
+
+                  The shared control handles all three, and the value is held as
+                  text while typing so «۹٫» is not rewritten to «۹» under the
+                  caret.
+                */}
+                <PersianNumberInput
                   data-field="generalInfo.taxPercentage"
                   className={inputClass}
-                  dir="ltr"
                   inputMode="decimal"
+                  allowNegative={false}
+                  grouping={false}
                   disabled={!accountingEditable}
-                  value={String(state.generalInfo.taxPercentage ?? DEFAULT_TAX_PERCENTAGE)}
+                  value={taxInput}
                   onChange={(event) => {
-                    const digits = event.target.value.replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
-                    patchTab("generalInfo", { taxPercentage: Number(digits.replace(/[^\d.]/g, "")) });
+                    setTaxInput(event.target.value);
                     clearError("generalInfo.taxPercentage");
+                  }}
+                  onBlur={(event) => {
+                    // Commit through the same coercion the payload builder and
+                    // the service use, so an emptied field means «the default»
+                    // and never «zero».
+                    const value = taxPercentageOf({ generalInfo: { taxPercentage: event.target.value } });
+                    patchTab("generalInfo", { taxPercentage: value });
+                    setTaxInput(String(value));
                   }}
                 />
                 {has("generalInfo.taxPercentage") ? (
@@ -737,11 +956,11 @@ export function PartyFormDialog({
                   </span>
                 ) : (
                   <span className="mt-1 block text-xs text-muted-foreground">
-                    پیش‌فرض {toPersianDigits(String(DEFAULT_TAX_PERCENTAGE))}٪ است.
+                    خالی گذاشتن این فیلد یعنی نرخ پیش‌فرض {toPersianDigits(String(DEFAULT_TAX_PERCENTAGE))}٪.
                   </span>
                 )}
               </Field>
-              <div className="mb-4" />
+              <div className="hidden sm:block" />
               <Field label="یادداشت">
                 <textarea
                   className={inputClass}
@@ -786,8 +1005,9 @@ export function PartyFormDialog({
                   className={inputClass}
                   dir="ltr"
                   inputMode="numeric"
-                  maxLength={10}
-                  value={state.addressInfo.zipCode}
+                  autoComplete="postal-code"
+                  placeholder="۱۰ رقم"
+                  value={toPersianDigits(state.addressInfo.zipCode)}
                   onChange={(event) => {
                     patchTab("addressInfo", { zipCode: asciiDigits(event.target.value).slice(0, 10) });
                     clearError("addressInfo.zipCode");
@@ -897,14 +1117,21 @@ export function PartyFormDialog({
                   />
                 </Field>
                 <Field label="شماره کارت">
+                  {/*
+                    Shown in the four-by-four grouping that is printed on the
+                    card itself. Sixteen unbroken digits are genuinely hard to
+                    check against a physical card, and this field is the one
+                    people verify digit by digit before paying somebody.
+                  */}
                   <input
-                  data-field="financialInfo.cardNumber"
+                    data-field="financialInfo.cardNumber"
                     className={inputClass}
                     dir="ltr"
                     inputMode="numeric"
+                    autoComplete="off"
                     disabled={!accountingEditable}
-                    maxLength={19}
-                    value={state.financialInfo.cardNumber}
+                    placeholder="۱۶ رقم"
+                    value={toPersianDigits(state.financialInfo.cardNumber).replace(/(.{4})(?=.)/g, "$1 ")}
                     onChange={(event) => {
                       patchTab("financialInfo", { cardNumber: asciiDigits(event.target.value).slice(0, 16) });
                       clearError("financialInfo.cardNumber");
@@ -945,30 +1172,57 @@ export function PartyFormDialog({
         </div>
 
         {/* ---------------- drafts ---------------- */}
-        <div className="rounded-xl border border-border/80 bg-muted/40 p-3">
+        <div className="mt-4 rounded-xl border border-border/80 bg-muted/40 p-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Button type="button" variant="outline" size="xs" onClick={saveDraftNow} disabled={busy}>
               ذخیرهٔ پیش‌نویس
             </Button>
+            {/*
+              Hidden rather than disabled when there is nothing to show: a
+              greyed «پیش‌نویس‌ها (۰)» is a control that explains nothing and
+              takes a tap target on a phone.
+            */}
+            {drafts.length > 0 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                aria-expanded={showDrafts}
+                onClick={() => setShowDrafts((show) => !show)}
+              >
+                پیش‌نویس‌ها ({toPersianDigits(String(drafts.length))})
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
               size="xs"
-              onClick={() => setShowDrafts((show) => !show)}
-              disabled={drafts.length === 0 && !showDrafts}
-            >
-              پیش‌نویس‌ها ({toPersianDigits(String(drafts.length))})
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
+              disabled={busy}
               onClick={() => {
-                // resetForm(): back to the defaults the section started with — not to
-                // blank, which would lose the tax rate and the scope's role too.
-                setState({ ...resetPartyForm(), role: scope.defaultRole });
-                setDraftId(null);
+                /*
+                 * Back to the defaults this form *opened* with.
+                 *
+                 * It used to spread `role: scope.defaultRole` over
+                 * `resetPartyForm()`, whose `roles` is always `["Customer"]` —
+                 * so in the team scope the reset produced
+                 * `{ role: "Employee", roles: ["Customer"] }`. That fails
+                 * `validatePartyForm` with `invalid_role` on «نقش‌ها», a field
+                 * a single-role section does not draw, so «ذخیره» refused with
+                 * nothing on screen to explain it. `withPartyRoles` is the one
+                 * helper that sets the pair together.
+                 */
+                if (
+                  partyFormHasUnsavedChanges(stateRef.current, baseline) &&
+                  !window.confirm("فرم به مقادیر اولیه برمی‌گردد و آنچه وارد کرده‌اید پاک می‌شود. ادامه می‌دهید؟")
+                ) {
+                  return;
+                }
+                const fresh = withPartyRoles(resetPartyForm(), openingRoles);
+                setState(fresh);
+                setTaxInput(String(taxPercentageOf(fresh)));
+                rememberDraft(null);
                 setErrors({});
+                setFormError("");
                 setInfo("فرم به مقادیر اولیه بازگشت.");
               }}
             >
@@ -980,12 +1234,29 @@ export function PartyFormDialog({
             <ul className="mt-2 divide-y divide-border/80">
               {drafts.map((draft) => (
                 <li key={draft.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm">
-                  <span className="min-w-0">
-                    <span className="font-medium text-foreground">{draft.label}</span>
-                    <span className="ms-2 text-xs text-muted-foreground">{toPersianDigits(draft.savedAt.slice(0, 16)).replace("T", " ")}</span>
+                  {/* `min-w-0` alone does nothing; the truncation has to be on
+                      the text itself, or a long company name pushes the two
+                      buttons off the dialog. */}
+                  <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                    <span className="min-w-0 truncate font-medium text-foreground">{draft.label}</span>
+                    {/*
+                      Shamsi and Tehran-local. This printed the raw ISO string
+                      («۲۰۲۶-۰۹-۱۷T۱۰:۲۴» with the T swapped for a space) —
+                      a Gregorian date shown to a user, and in UTC, so a draft
+                      saved after 03:30 Tehran time claimed the wrong day.
+                    */}
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {toPersianDigits(formatJalali(draft.savedAt, { withTime: true }))}
+                    </span>
                   </span>
-                  <span className="flex gap-1">
-                    <Button type="button" variant="ghost" size="xs" onClick={() => restoreDraft(draft)}>
+                  <span className="flex shrink-0 gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => restoreDraft(draft)}
+                      aria-label={`بازخوانی پیش‌نویس «${draft.label}»`}
+                    >
                       بازخوانی
                     </Button>
                     <Button
@@ -994,18 +1265,19 @@ export function PartyFormDialog({
                       size="xs"
                       className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => discardDraft(draft.id)}
+                      aria-label={`حذف پیش‌نویس «${draft.label}»`}
                     >
                       حذف
                     </Button>
                   </span>
                 </li>
               ))}
-              {drafts.length === 0 ? <li className="py-2 text-sm text-muted-foreground">پیش‌نویسی ذخیره نشده است.</li> : null}
             </ul>
           ) : null}
         </div>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="mt-4 shrink-0 border-t border-border/80 pt-3">
           <Button type="button" variant="outline" onClick={requestClose} disabled={busy}>
             انصراف
           </Button>

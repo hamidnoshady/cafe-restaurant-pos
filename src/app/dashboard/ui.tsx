@@ -5,10 +5,28 @@ import { CircleAlertIcon, InfoIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
+/**
+ * The dashboard's fetch wrapper.
+ *
+ * Never rejects. A screen that calls this inside `void api(…).then(…)` — which
+ * is most of them — would otherwise turn a dropped connection, a closed laptop
+ * lid or a component that unmounted mid-request into an unhandled promise
+ * rejection, and the caller's `.then` would never run to clear its loading
+ * state. So a transport failure comes back as `ok: false` carrying
+ * `error: "network_error"`, which `errorMessage` renders in Persian and every
+ * caller already handles as "the server said no".
+ *
+ * `aborted` is the one case a caller must *not* treat as an error: it means the
+ * request was cancelled deliberately (a newer search replaced it, the section
+ * unmounted), so there is nobody left to show a message to and no state worth
+ * writing. It carries no `network_error`, because a superseded request is the
+ * normal path rather than a failure. Callers that pass `init.signal` should
+ * check it before touching state; callers that do not can ignore the field.
+ */
 export async function api<T = Record<string, unknown>>(
   url: string,
   init?: RequestInit,
-): Promise<{ ok: boolean; status: number; data: T }> {
+): Promise<{ ok: boolean; status: number; data: T; aborted: boolean }> {
   try {
     const res = await fetch(url, {
       headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
@@ -18,17 +36,26 @@ export async function api<T = Record<string, unknown>>(
     try {
       data = (await res.json()) as T;
     } catch {
+      // A 204, an HTML error page from a proxy, or a body cut off mid-flight.
       data = {} as T;
     }
-    return { ok: res.ok, status: res.status, data };
-  } catch {
+    return { ok: res.ok, status: res.status, data, aborted: false };
+  } catch (err) {
     // Consumers use the result to release their busy state. Letting a dropped
     // connection reject instead left forms permanently disabled and effects
     // with an unhandled rejection, with no Persian explanation for the user.
+    //
+    // A deliberate cancellation is reported separately rather than as an error:
+    // `network_error` would put «ارتباط با سرور برقرار نشد» on screen every time
+    // a newer search superseded an older one, which is the normal path, not a
+    // failure. Callers that pass `init.signal` check `aborted` and return.
+    const aborted =
+      init?.signal?.aborted === true || (err instanceof DOMException && err.name === "AbortError");
     return {
       ok: false,
       status: 0,
-      data: { error: "network_error" } as T,
+      data: (aborted ? {} : { error: "network_error" }) as T,
+      aborted,
     };
   }
 }

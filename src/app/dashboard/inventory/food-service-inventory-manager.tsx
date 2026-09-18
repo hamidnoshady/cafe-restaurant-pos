@@ -382,6 +382,11 @@ function errorMessage(code: string | undefined): string {
     // Guards these paths can surface but that had no Persian string, so they
     // fell through to «خطای غیرمنتظره» instead of naming what actually failed.
     quantity_precision_exceeded: "مقدار بیش از ۹ رقم اعشار دارد؛ عدد را گرد کنید.",
+    // `invalid_quantity` is deliberately not repeated here: it is already
+    // mapped above, with a message that states the rule («بزرگ‌تر از صفر و
+    // حداکثر ۹ رقم اعشار») rather than only that something is wrong. A second
+    // key in the same object literal is a TS1117 error, and the duplicate — the
+    // vaguer of the two — is what silently won at runtime.
     invalid_rial: "مبلغ واردشده معتبر نیست.",
     periodic_system_unsupported:
       "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",
