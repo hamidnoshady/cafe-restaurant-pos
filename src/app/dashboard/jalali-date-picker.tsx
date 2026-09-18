@@ -41,16 +41,21 @@ function pad2(n: number): string {
 export function JalaliDatePicker({
   value,
   onChange,
+  id,
+  ariaLabel,
   className,
   placeholder = "انتخاب تاریخ",
   clearable = true,
   disabled = false,
   popoverClass,
-  ariaLabel,
   labelledBy,
 }: {
   value: string;
   onChange: (iso: string) => void;
+  /** Connect a visible FieldLabel to the calendar trigger. */
+  id?: string;
+  /** Accessible name when a visible label is not available. */
+  ariaLabel?: string;
   className?: string;
   placeholder?: string;
   clearable?: boolean;
@@ -59,14 +64,11 @@ export function JalaliDatePicker({
    *  super-admin console, where the shadcn `--popover` tokens are light). */
   popoverClass?: string;
   /**
-   * An accessible name for the trigger. The control is a button, not an
-   * `<input>`, so wrapping it in a `<label>` names nothing — a reader
-   * announces only whatever date (or placeholder) it happens to show, and two
-   * pickers on one form are then indistinguishable. Pass one of these, the
-   * same contract `SearchableSelect` uses.
+   * id of an existing visible label, when the form renders its own `<label>`
+   * element rather than passing text through `ariaLabel`. `id` above wires the
+   * label to the trigger from the label's side; this is the same association
+   * written from the trigger's, for callers whose label is not a FieldLabel.
    */
-  ariaLabel?: string;
-  /** id of the visible label element, when the form already renders one. */
   labelledBy?: string;
 }) {
   const selected = isoDateToJalali(value);
@@ -93,7 +95,16 @@ export function JalaliDatePicker({
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      // Something above us (a Radix layer) already handled this Escape.
+      if (e.defaultPrevented) return;
+      // The popover is the topmost layer: consume the key so the press closes
+      // the calendar alone — not the calendar *and* whatever hand-rolled panel
+      // it floats above (useOverlayEscape listens on window, after this
+      // document-level handler). One press of Escape, one layer.
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -130,49 +141,33 @@ export function JalaliDatePicker({
   return (
     <div ref={rootRef} className="relative inline-block w-full" dir="rtl">
       <button
+        id={id}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={`${className ?? DEFAULT_INPUT_CLASS} flex items-center justify-between gap-2 text-start`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
+        className={`${className ?? DEFAULT_INPUT_CLASS} ${clearable && value ? "pe-16" : "pe-3"} flex items-center justify-between gap-2 text-start`}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : labelledBy}
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <span className={label ? "" : "text-muted-foreground"}>{label || placeholder}</span>
-        <span className="flex items-center gap-1 text-muted-foreground">
-          {/*
-            * «پاک کردن» was an <svg role="button">: not focusable, not
-            * operable from a keyboard, and nested inside the trigger button —
-            * which is invalid, so assistive technology could not reach it at
-            * all. A real <span role="button"> with a tabIndex and key
-            * handling is reachable; it stays a span because a <button> inside
-            * a <button> is what the markup could not have.
-            */}
-          {clearable && value ? (
-            <span
-              role="button"
-              tabIndex={0}
-              aria-label="پاک کردن تاریخ"
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded-lg hover:bg-muted hover:text-foreground focus-visible:ring focus-visible:ring-ring/50 focus-visible:outline-none"
-              onClick={(e) => {
-                e.stopPropagation();
-                onChange("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onChange("");
-                }
-              }}
-            >
-              <XIcon className="size-4" />
-            </span>
-          ) : null}
-          <CalendarIcon className="size-4 shrink-0" />
-        </span>
+        <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
       </button>
+      {clearable && value ? (
+        <button
+          type="button"
+          disabled={disabled}
+          className="absolute end-8 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none"
+          aria-label="پاک کردن تاریخ"
+          onClick={() => {
+            onChange("");
+            setOpen(false);
+          }}
+        >
+          <XIcon className="size-4" />
+        </button>
+      ) : null}
 
       {open ? (
         <div
@@ -192,7 +187,7 @@ export function JalaliDatePicker({
             >
               <ChevronRightIcon className="size-4" />
             </button>
-            <span className="text-sm font-semibold">
+            <span id={gridId} className="text-sm font-semibold">
               {JALALI_MONTHS[view.jm - 1]} {toPersianDigits(view.jy)}
             </span>
             <button
@@ -225,6 +220,8 @@ export function JalaliDatePicker({
                   key={d}
                   type="button"
                   onClick={() => pick(d)}
+                  aria-label={`${toPersianDigits(d)} ${JALALI_MONTHS[view.jm - 1]} ${toPersianDigits(view.jy)}`}
+                  aria-current={isToday ? "date" : undefined}
                   aria-selected={isSelected || undefined}
                   className={`flex h-8 items-center justify-center rounded-lg text-sm transition-colors ${
                     isSelected

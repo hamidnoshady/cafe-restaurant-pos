@@ -100,3 +100,94 @@ export function internalPayloadFromNumber(n: number): string {
   const value = Math.floor(Math.abs(n));
   return String(value % 100_000_000_000).padStart(11, "0");
 }
+
+/**
+ * The Persian reason a *manually entered* code must be refused, or null when
+ * it is acceptable.
+ *
+ * Deliberately narrower than `classifyBarcode`: only a digit string shaped
+ * exactly like an EAN-13/UPC-A that fails its own check digit is refused —
+ * that is a typo with certainty, because a real scanner validates the check
+ * digit before it ever emits the code, so the stored code would never scan.
+ * Codes in other shapes (EAN-8, Code 128, a QR payload) pass through: they
+ * scan as plain text and the lookup matches them as plain text.
+ *
+ * Shared by the assignment services (the refusal an API caller gets) and the
+ * label screens (the same refusal before a round trip).
+ */
+export function barcodeEntryError(code: string): string | null {
+  if (/^\d{13}$/.test(code) && !isValidEan13(code)) {
+    return "رقم کنترل این بارکد ۱۳رقمی درست نیست؛ کد روی بسته‌بندی را دوباره وارد کنید.";
+  }
+  if (/^\d{12}$/.test(code) && !isValidUpcA(code)) {
+    return "رقم کنترل این بارکد ۱۲رقمی (UPC) درست نیست؛ کد روی بسته‌بندی را دوباره وارد کنید.";
+  }
+  return null;
+}
+
+/* ────────────────────────── EAN-13 bar geometry ─────────────────────────── */
+
+/** The seven-module L-set patterns, indexed by digit; R = complement, G = reversed R. */
+const L_PATTERNS = [
+  "0001101",
+  "0011001",
+  "0010011",
+  "0111101",
+  "0100011",
+  "0110001",
+  "0101111",
+  "0111011",
+  "0110111",
+  "0001011",
+] as const;
+
+/** Left-half parity sequence selected by the (unbarred) first digit. */
+const PARITY_PATTERNS = [
+  "LLLLLL",
+  "LLGLGG",
+  "LLGGLG",
+  "LLGGGL",
+  "LGLLGG",
+  "LGGLLG",
+  "LGGGLL",
+  "LGLGLG",
+  "LGLGGL",
+  "LGGLGL",
+] as const;
+
+function complement(pattern: string): string {
+  return [...pattern].map((c) => (c === "1" ? "0" : "1")).join("");
+}
+
+function reverse(pattern: string): string {
+  return [...pattern].reverse().join("");
+}
+
+/**
+ * The 95-module bar pattern ("1" = bar, "0" = space) of an EAN-13 code, or
+ * null when `code` is not a structurally valid EAN-13/UPC-A. A UPC-A code is
+ * rendered as its 13-digit form (leading zero) — the standard equivalence, and
+ * what every EAN-capable scanner reads back as the same 12 digits.
+ *
+ * Pure and framework-free so the label template can draw real, scannable bars
+ * (SVG rects) instead of printing the digits as text — digits alone cannot be
+ * read by a laser/CCD scanner, which would defeat the label's purpose.
+ */
+export function ean13Modules(code: string): string | null {
+  const normalized = isValidUpcA(code) ? `0${code}` : code;
+  if (!isValidEan13(normalized)) return null;
+  const digits = [...normalized].map(Number);
+  const parity = PARITY_PATTERNS[digits[0]];
+
+  let modules = "101"; // start guard
+  for (let i = 1; i <= 6; i++) {
+    const l = L_PATTERNS[digits[i]];
+    modules += parity[i - 1] === "L" ? l : reverse(complement(l));
+  }
+  modules += "01010"; // centre guard
+  for (let i = 7; i <= 12; i++) {
+    modules += complement(L_PATTERNS[digits[i]]);
+  }
+  modules += "101"; // end guard
+  return modules;
+}

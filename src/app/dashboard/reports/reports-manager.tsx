@@ -39,7 +39,7 @@ export function ReportsManager({ role, canExplain }: { role: string; canExplain:
       {tab === "shift-orders" ? <ShiftOrdersSection /> : null}
       {tab === "builder" ? <ReportBuilderSection /> : null}
       {tab === "growth" ? <GrowthAccountingView /> : null}
-      {tab === "branches" ? <BranchOverviewSection /> : null}
+      {tab === "branches" ? <BranchOverviewSection canExplain={canExplain} /> : null}
     </SectionNav>
   );
 }

@@ -14,7 +14,12 @@ export const GET = withTenantScope(async () => {
 
   const { rows: counts } = await query(
     `SELECT sc.id, sc.note, sc.counted_at, u.full_name AS counted_by_name,
-            (SELECT count(*) FROM stock_count_lines WHERE stock_count_id = sc.id) AS line_count
+            (SELECT count(*) FROM stock_count_lines WHERE stock_count_id = sc.id) AS line_count,
+            COALESCE((SELECT sum(CASE WHEN variance < 0 THEN -variance_value ELSE 0 END)
+                        FROM stock_count_lines WHERE stock_count_id = sc.id), 0)::text AS shortage_value,
+            COALESCE((SELECT sum(CASE WHEN variance > 0 THEN variance_value ELSE 0 END)
+                        FROM stock_count_lines WHERE stock_count_id = sc.id), 0)::text AS surplus_value,
+            EXISTS (SELECT 1 FROM stock_counts reversal WHERE reversal.reversal_of = sc.id) AS reversed
        FROM stock_counts sc LEFT JOIN users u ON u.id = sc.counted_by
       WHERE sc.location_id = $1 AND sc.reversal_of IS NULL
       ORDER BY sc.counted_at DESC LIMIT 50`,
@@ -58,7 +63,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
     if (err instanceof Error) {
-      const known = ["no_items", "invalid_item", "item_not_found"];
+      const known = [
+        "no_items",
+        "invalid_item",
+        "invalid_quantity",
+        "quantity_precision_exceeded",
+        "duplicate_item",
+        "item_not_found",
+      ];
       if (known.includes(err.message)) return NextResponse.json({ error: err.message }, { status: 400 });
       if (err.message === "periodic_system_unsupported") {
         return NextResponse.json({ error: err.message }, { status: 409 });

@@ -155,6 +155,7 @@ export function CountScanField({
             className={inputClass}
             dir="ltr"
             inputMode="decimal"
+            allowNegative={false}
             value={qtyPerScan}
             onChange={(e) => setQtyPerScan(e.target.value)}
           />

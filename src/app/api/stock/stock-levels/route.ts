@@ -3,6 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { classifyStockLevel } from "@/lib/retail-stock";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Phase 42b — «موجودی انبار»: the per-warehouse stock level on the RETAIL
@@ -23,16 +24,25 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const locationId = url.searchParams.get("locationId") || defaultLocation?.id || "";
   if (!locationId) {
     return NextResponse.json({
-      locationId,
+      locationId: "",
       items: [],
-      totals: { count: 0, lowStockCount: 0, totalUnits: "0", totalValueRial: "0" },
+      totals: { count: 0, lowStockCount: 0, outOfStockCount: 0, totalUnits: "0", totalValueRial: "0" },
     });
   }
+  // Validate and scope an explicitly selected warehouse before it reaches a
+  // UUID comparison. This turns a bad URL into a useful 400 and prevents a
+  // caller from using the stock endpoint as a cross-tenant probe.
+  if (!isUuid(locationId)) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   const search = (url.searchParams.get("search") ?? "").trim();
 
-  const clauses = ["i.location_id = $1", "i.is_active", "i.kind <> 'variant_parent'"];
-  const params: unknown[] = [locationId];
+  const clauses = [
+    "i.location_id = $1",
+    "i.is_active",
+    "i.kind <> 'variant_parent'",
+    "EXISTS (SELECT 1 FROM locations l WHERE l.id = i.location_id AND l.business_id = $2)",
+  ];
+  const params: unknown[] = [locationId, session.businessId];
   if (search) {
     params.push(`%${search}%`);
     clauses.push(`(i.name ILIKE $${params.length} OR i.sku ILIKE $${params.length})`);
@@ -63,7 +73,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     sku: r.sku,
     tracking: r.tracking,
     quantity: r.quantity,
-    unitCost: r.unit_cost == null ? null : Number(r.unit_cost),
+    unitCost: r.unit_cost == null ? null : Math.round(Number(r.unit_cost)),
     reorderPoint: r.reorder_point,
     valueRial: Math.round(Number(r.quantity) * Number(r.unit_cost ?? 0)),
     level: classifyStockLevel(r.quantity, r.reorder_point),
@@ -72,10 +82,12 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   let totalUnits = 0;
   let totalValue = 0;
   let lowStockCount = 0;
+  let outOfStockCount = 0;
   for (const item of items) {
     totalUnits += Number(item.quantity);
     totalValue += item.valueRial;
-    if (item.level === "low" || item.level === "out") lowStockCount += 1;
+    if (item.level === "low") lowStockCount += 1;
+    if (item.level === "out") outOfStockCount += 1;
   }
 
   return NextResponse.json({
@@ -84,6 +96,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     totals: {
       count: items.length,
       lowStockCount,
+      outOfStockCount,
       totalUnits: String(Math.round(totalUnits * 1_000_000) / 1_000_000),
       totalValueRial: String(totalValue),
     },

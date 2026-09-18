@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
+import { isUuid } from "@/lib/uuid";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import {
@@ -41,6 +42,11 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     clauses.push(`d.kind = $${params.length}`);
   }
   if (locationId !== null && locationId !== "") {
+    // A non-uuid locationId would raise `invalid input syntax for type uuid`
+    // (a 500), not "no rows" — refuse it as the caller error it is.
+    if (!isUuid(locationId)) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
     params.push(locationId);
     clauses.push(`d.location_id = $${params.length}`);
   }
@@ -103,6 +109,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!locationId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  // A non-array `lines` would make the parser's for-of throw a TypeError
+  // ("rawLines is not iterable") rather than a validation error, i.e. a 500.
+  // This has to precede the per-line id screen below, which iterates it.
+  if (body.lines !== undefined && !Array.isArray(body.lines)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  // Malformed ids would surface as Postgres uuid-syntax 500s inside the
+  // posting transaction; answer 400 up front instead.
+  if (!isUuid(locationId)) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  if ((body.lines ?? []).some((line) => line?.itemId != null && line.itemId !== "" && !isUuid(line.itemId))) {
+    return NextResponse.json({ error: "invalid_line" }, { status: 400 });
+  }
 
   let parsed;
   try {
@@ -155,6 +175,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       invalid_quantity: 400,
       missing_cost: 400,
       invalid_cost: 400,
+      cost_out_of_range: 400,
+      quantity_precision_exceeded: 400,
     };
     if (err instanceof Error && known[err.message]) {
       return NextResponse.json({ error: err.message }, { status: known[err.message] });

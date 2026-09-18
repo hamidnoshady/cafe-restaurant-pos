@@ -19,7 +19,7 @@
  *      a number that surprises someone later can be *looked at*.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CameraIcon, CircleDotIcon, PaletteIcon, SparklesIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -52,20 +52,18 @@ export function VisionCountPanel({
   const [scans, setScans] = useState<CountScanRecord[] | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [evidenceWarning, setEvidenceWarning] = useState("");
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
-
   const item = useMemo(
     () => items.find((i) => i.id === selectedItemId) ?? null,
     [items, selectedItemId],
   );
 
   const loadScans = useCallback(() => {
-    api<{ scans: CountScanRecord[] }>("/api/inventory/visual-count-scans").then(({ ok, data }) => {
-      if (ok) setScans(data.scans);
-    });
+    api<{ scans: CountScanRecord[] }>("/api/inventory/visual-count-scans")
+      .then(({ ok, data }) => {
+        if (ok) setScans(data.scans);
+        else setScans([]);
+      })
+      .catch(() => setScans([]));
   }, []);
   useEffect(loadScans, [loadScans]);
 
@@ -79,10 +77,14 @@ export function VisionCountPanel({
     setProfiles(null);
     api<{ profiles: VisualProfileRecord[] }>(
       `/api/inventory/visual-profiles?itemId=${encodeURIComponent(selectedItemId)}`,
-    ).then(({ ok, data }) => {
-      if (!cancelled && ok) setProfiles(data.profiles);
-      else if (!cancelled) setProfiles([]);
-    });
+    )
+      .then(({ ok, data }) => {
+        if (!cancelled && ok) setProfiles(data.profiles);
+        else if (!cancelled) setProfiles([]);
+      })
+      .catch(() => {
+        if (!cancelled) setProfiles([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -102,9 +104,11 @@ export function VisionCountPanel({
     if (!selectedItemId) return;
     api<{ profiles: VisualProfileRecord[] }>(
       `/api/inventory/visual-profiles?itemId=${encodeURIComponent(selectedItemId)}`,
-    ).then(({ ok, data }) => {
-      if (ok) setProfiles(data.profiles);
-    });
+    )
+      .then(({ ok, data }) => {
+        if (ok) setProfiles(data.profiles);
+      })
+      .catch(() => setProfiles([]));
   }, [selectedItemId]);
 
   async function deleteProfile(id: string) {
@@ -119,13 +123,15 @@ export function VisionCountPanel({
     void api("/api/inventory/visual-count-scans", {
       method: "POST",
       body: JSON.stringify(payload),
-    }).then(({ ok }) => {
-      if (ok) {
-        loadScans();
-      } else {
-        setEvidenceWarning("شمارش ثبت شد اما ذخیرهٔ تصویر شواهد ناموفق بود.");
-      }
-    });
+    })
+      .then(({ ok }) => {
+        if (ok) {
+          loadScans();
+        } else {
+          setEvidenceWarning("شمارش ثبت شد اما ذخیرهٔ تصویر شواهد ناموفق بود.");
+        }
+      })
+      .catch(() => setEvidenceWarning("شمارش ثبت شد اما ذخیرهٔ تصویر شواهد ناموفق بود."));
   }
 
   return (

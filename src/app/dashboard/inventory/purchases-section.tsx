@@ -3,13 +3,13 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Decimal from "decimal.js";
 import { formatQuantity } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { JalaliDatePicker } from "../jalali-date-picker";
-import { api, Field, inputClass } from "../ui";
+import { api, ErrorBox, Field, inputClass } from "../ui";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { InventoryItem, Runner, Supplier } from "./inventory-manager";
@@ -122,6 +122,8 @@ export function PurchasesSection({
 }) {
   const money = useMoney();
   const [purchases, setPurchases] = useState<Purchase[] | null>(null);
+  // A failed list load keeps the last rows; this holds the message + retry.
+  const [listError, setListError] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [purchaseDate, setPurchaseDate] = useState("");
   const [note, setNote] = useState("");
@@ -129,15 +131,33 @@ export function PurchasesSection({
   const [settlementByPurchase, setSettlementByPurchase] = useState<Record<string, string>>({});
   const [supplierByPurchase, setSupplierByPurchase] = useState<Record<string, string>>({});
 
-  // Filters
+  // Filters. ISO date strings compare lexicographically, so an inverted range
+  // (از بعد از تا) orders itself instead of silently matching nothing.
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSupplier, setFilterSupplier] = useState("");
-  const [filterFrom, setFilterFrom] = useState("");
-  const [filterTo, setFilterTo] = useState("");
+  const [filterFrom, setFilterFromRaw] = useState("");
+  const [filterTo, setFilterToRaw] = useState("");
+
+  function setFilterFrom(value: string) {
+    setFilterFromRaw(value);
+    setFilterToRaw((to) => (value && to && to < value ? value : to));
+  }
+  function setFilterTo(value: string) {
+    setFilterToRaw(value);
+    setFilterFromRaw((from) => (value && from && from > value ? value : from));
+  }
 
   // Expanded row detail, keyed by purchase id. `null` = loading.
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
+  // Token invalidating outstanding detail fetches: expanding one row and
+  // quickly another (or collapsing during the flight) must not let an older
+  // response paint itself into a newer row's panel.
+  const detailRequestRef = useRef(0);
+
+  // Failures raised right where the action lives; the workspace ErrorBox sits
+  // above the tab rail and is easy to miss on a phone.
+  const [localError, setLocalError] = useState("");
 
   // Edit form state, populated from the detail when editing starts.
   const [editing, setEditing] = useState(false);
@@ -149,6 +169,14 @@ export function PurchasesSection({
   const [returnReason, setReturnReason] = useState("");
   const [returnSettlement, setReturnSettlement] = useState<"accounts_payable" | "cash" | "bank" | "supplier_receivable">("accounts_payable");
   const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({});
+  /**
+   * Idempotency key for the supplier-return POST. It is minted once when the
+   * return form opens — NOT per submit attempt: after a response is lost in
+   * flight, the operator's retry must be answered with the stored duplicate,
+   * never a second goods-out. Reopening the form mints a new key, which is
+   * what makes the next deliberate return distinct.
+   */
+  const [returnKey, setReturnKey] = useState("");
 
   const loadPurchases = useCallback(() => {
     const params = new URLSearchParams();
@@ -157,23 +185,36 @@ export function PurchasesSection({
     if (filterFrom) params.set("dateFrom", filterFrom);
     if (filterTo) params.set("dateTo", filterTo);
     const qs = params.toString();
-    api<{ purchases: Purchase[] }>(`/api/inventory/purchases${qs ? `?${qs}` : ""}`).then(({ ok, data }) => {
-      if (ok) setPurchases(data.purchases);
-    });
+    setListError("");
+    api<{ purchases: Purchase[] }>(`/api/inventory/purchases${qs ? `?${qs}` : ""}`)
+      .then(({ ok, data }) => {
+        if (ok) setPurchases(data.purchases);
+        else setListError("خواندن فهرست خریدها ناموفق بود. اتصال را بررسی کنید.");
+      })
+      .catch(() => setListError("خواندن فهرست خریدها ناموفق بود. اتصال را بررسی کنید."));
   }, [filterStatus, filterSupplier, filterFrom, filterTo]);
   useEffect(loadPurchases, [loadPurchases]);
 
   const loadDetail = useCallback((id: string) => {
+    const request = ++detailRequestRef.current;
     setDetail(null);
-    api<PurchaseDetail>(`/api/inventory/purchases/${id}`).then(({ ok, data }) => {
-      if (ok) setDetail(data);
-    });
+    api<PurchaseDetail>(`/api/inventory/purchases/${id}`)
+      .then(({ ok, data }) => {
+        // A newer expand/collapse supersedes this response — drop it.
+        if (request !== detailRequestRef.current) return;
+        if (ok) setDetail(data);
+      })
+      .catch(() => {
+        /* next interaction retries; the panel stays in its loading shape */
+      });
   }, []);
 
   function toggleExpanded(id: string) {
     setEditing(false);
     setReturning(false);
     if (expandedId === id) {
+      // Invalidate the in-flight fetch before the panel unmounts.
+      detailRequestRef.current += 1;
       setExpandedId(null);
       setDetail(null);
       return;
@@ -281,21 +322,39 @@ export function PurchasesSection({
       });
   }
 
+  /** Guard against the silent no-op: every submit path explains instead. */
+  function validatePayloadLines(payloadLines: ReturnType<typeof toPayloadLines>): string {
+    if (payloadLines.length === 0) {
+      return "حداقل یک ردیف با قلم و مقدار معتبر وارد کنید.";
+    }
+    if (payloadLines.some((l) => !l.totalCost)) {
+      return "مبلغ کل یکی از ردیف‌ها معتبر نیست؛ دوباره وارد کنید.";
+    }
+    return "";
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const payloadLines = toPayloadLines(lines);
-    if (payloadLines.length === 0) return;
+    const invalid = validatePayloadLines(payloadLines);
+    if (invalid) {
+      setLocalError(invalid);
+      return;
+    }
+    setLocalError("");
 
-    const ok = await run(() =>
-      api("/api/inventory/purchases", {
-        method: "POST",
-        body: JSON.stringify({
-          supplierId: supplierId || null,
-          purchaseDate: purchaseDate || null,
-          note,
-          items: payloadLines,
+    const ok = await run(
+      () =>
+        api("/api/inventory/purchases", {
+          method: "POST",
+          body: JSON.stringify({
+            supplierId: supplierId || null,
+            purchaseDate: purchaseDate || null,
+            note,
+            items: payloadLines,
+          }),
         }),
-      }),
+      setLocalError,
     );
     if (ok) {
       setNote("");
@@ -308,18 +367,25 @@ export function PurchasesSection({
     e.preventDefault();
     if (!expandedId) return;
     const payloadLines = toPayloadLines(editLines);
-    if (payloadLines.length === 0) return;
+    const invalid = validatePayloadLines(payloadLines);
+    if (invalid) {
+      setLocalError(invalid);
+      return;
+    }
+    setLocalError("");
 
-    const ok = await run(() =>
-      api(`/api/inventory/purchases/${expandedId}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          supplierId: editSupplierId || null,
-          purchaseDate: editPurchaseDate || null,
-          note: editNote,
-          items: payloadLines,
+    const ok = await run(
+      () =>
+        api(`/api/inventory/purchases/${expandedId}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            supplierId: editSupplierId || null,
+            purchaseDate: editPurchaseDate || null,
+            note: editNote,
+            items: payloadLines,
+          }),
         }),
-      }),
+      setLocalError,
     );
     if (ok) {
       setEditing(false);
@@ -329,13 +395,27 @@ export function PurchasesSection({
   }
 
   async function transition(id: string, status: string, settlementMethod?: string) {
-    const ok = await run(() =>
-      api(`/api/inventory/purchases/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status, settlementMethod, supplierId: supplierByPurchase[id] || undefined }),
-      }),
+    setLocalError("");
+    const ok = await run(
+      () =>
+        api(`/api/inventory/purchases/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status, settlementMethod, supplierId: supplierByPurchase[id] || undefined }),
+        }),
+      setLocalError,
     );
     if (ok) {
+      // The row's one-shot receive choices are spent once the status moves.
+      setSettlementByPurchase((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setSupplierByPurchase((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       loadPurchases();
       if (expandedId === id) loadDetail(id);
     }
@@ -346,12 +426,41 @@ export function PurchasesSection({
     setReturnReason("");
     setReturnSettlement("accounts_payable");
     setReturnQuantities(Object.fromEntries(detail.items.map((it) => [it.id, ""])));
+    setReturnKey(
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${expandedId}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
     setReturning(true);
   }
 
   async function submitReturn(e: React.FormEvent) {
     e.preventDefault();
     if (!expandedId || !returnReason.trim() || !detail) return;
+    // Validate in the unit the operator typed (base units) before the server
+    // does: "0" is truthy as a string, and an over-return otherwise comes
+    // back as a raw underflow error.
+    for (const it of detail.items) {
+      const raw = returnQuantities[it.id]?.trim();
+      if (!raw) continue;
+      let qty: Decimal;
+      try {
+        qty = new Decimal(raw);
+      } catch {
+        setLocalError(`مقدار برگشت «${it.inventory_item_name}» عدد معتبری نیست.`);
+        return;
+      }
+      if (qty.lte(0)) {
+        setLocalError(`مقدار برگشت «${it.inventory_item_name}» باید بزرگ‌تر از صفر باشد.`);
+        return;
+      }
+      if (qty.gt(new Decimal(String(it.quantity)))) {
+        setLocalError(
+          `مقدار برگشت «${it.inventory_item_name}» از مقدار خرید (${formatQuantity(it.quantity)} ${it.unit}) بیشتر است.`,
+        );
+        return;
+      }
+    }
     const lines = detail.items
       .map((it) => ({
         purchaseItemId: it.id,
@@ -359,17 +468,24 @@ export function PurchasesSection({
         quantity: returnQuantities[it.id]?.trim() ?? "",
       }))
       .filter((line) => line.quantity);
-    if (lines.length === 0) return;
-    const ok = await run(() => api(`/api/inventory/supplier-returns`, {
-      method: "POST",
-      body: JSON.stringify({
-        purchaseId: expandedId,
-        settlementMethod: returnSettlement,
-        reason: returnReason,
-        idempotencyKey: `${expandedId}-${Date.now()}`,
-        lines,
+    if (lines.length === 0) {
+      setLocalError("حداقل برای یک قلم مقدار برگشت وارد کنید.");
+      return;
+    }
+    setLocalError("");
+    const ok = await run(
+      () => api(`/api/inventory/supplier-returns`, {
+        method: "POST",
+        body: JSON.stringify({
+          purchaseId: expandedId,
+          settlementMethod: returnSettlement,
+          reason: returnReason,
+          idempotencyKey: returnKey,
+          lines,
+        }),
       }),
-    }));
+      setLocalError,
+    );
     if (ok) {
       setReturning(false);
       loadDetail(expandedId);
@@ -378,8 +494,8 @@ export function PurchasesSection({
   }
 
   async function removePurchase(id: string) {
-    if (!window.confirm("این خرید حذف شود؟ خرید دریافت‌شده برای حفظ موجودی و اسناد حسابداری قابل حذف نیست.")) return;
-    const ok = await run(() => api(`/api/inventory/purchases/${id}`, { method: "DELETE" }));
+    if (!window.confirm("این خرید حذف شود؟ دریافت‌نشده است و ردیف‌هایش برای همیشه پاک می‌شوند.")) return;
+    const ok = await run(() => api(`/api/inventory/purchases/${id}`, { method: "DELETE" }), setLocalError);
     if (ok) {
       if (expandedId === id) {
         setExpandedId(null);
@@ -408,6 +524,7 @@ export function PurchasesSection({
               className={inputClass}
               dir="ltr"
               inputMode="decimal"
+              allowNegative={false}
               value={line.purchaseQty}
               onChange={(e) => onChange(i, { purchaseQty: e.target.value })}
             />
@@ -417,14 +534,17 @@ export function PurchasesSection({
               className={inputClass}
               dir="ltr"
               inputMode="numeric"
+              allowNegative={false}
               value={line.totalCost}
               onChange={(e) => onChange(i, { totalCost: e.target.value })}
             />
           </Field>
           <span className="mb-4 self-end break-words text-xs text-muted-foreground">
-            {invItem?.purchase_unit
-              ? `= ${formatQuantity(invItem.purchase_unit_factor)} ${invItem.unit} به ازای هر واحد خرید`
-              : "واحد خرید انتخاب‌شده را مشخص کنید."}
+            {invItem
+              ? invItem.purchase_unit
+                ? `= ${formatQuantity(invItem.purchase_unit_factor)} ${invItem.unit} به ازای هر واحد خرید`
+                : `بدون واحد خرید؛ مقدار در واحد پایه (${invItem.unit}) ثبت می‌شود.`
+              : ""}
           </span>
           <div className="mb-4 flex items-end">
             <Button type="button" variant="outline" onClick={() => onRemove(i)} disabled={source.length === 1}>
@@ -437,6 +557,19 @@ export function PurchasesSection({
   }
 
   function applyOcrDraft(payload: InvoiceOcrApplyPayload) {
+    // Applying replaces the draft lines wholesale — sure up front when the
+    // operator has already typed something, so a scan can't silently discard
+    // hand-entered work.
+    const draftHasContent =
+      lines.some((l) => l.inventoryItemId || l.purchaseQty.trim() || l.totalCost.trim()) ||
+      note.trim() !== "";
+    if (
+      draftHasContent &&
+      payload.lines.length > 0 &&
+      !window.confirm("ردیف‌ها و یادداشت فعلی فرم با نتیجهٔ فاکتور جایگزین می‌شوند. ادامه می‌دهید؟")
+    ) {
+      return;
+    }
     if (payload.supplierId) setSupplierId(payload.supplierId);
     if (payload.purchaseDate) setPurchaseDate(payload.purchaseDate);
     if (payload.note) setNote(payload.note);
@@ -449,6 +582,7 @@ export function PurchasesSection({
         })),
       );
     }
+    setLocalError("");
     // Scroll the manual form into view so the operator sees the filled lines.
     if (typeof document !== "undefined") {
       document.getElementById("purchase-draft-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -463,6 +597,8 @@ export function PurchasesSection({
         disabled={busy}
         onApply={applyOcrDraft}
       />
+
+      <ErrorBox>{localError}</ErrorBox>
 
       <div id="purchase-draft-form">
       <SectionCard
@@ -508,6 +644,7 @@ export function PurchasesSection({
             <h2 className="mt-1 font-semibold text-foreground">خریدهای اخیر</h2>
           </div>
         }
+        description="حداکثر ۱۰۰ خرید اخیر نمایش داده می‌شود؛ برای دیدن سوابق قدیمی‌تر از فیلترهای تاریخ، وضعیت یا تأمین‌کننده استفاده کنید."
       >
         <div className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="وضعیت">
@@ -555,11 +692,11 @@ export function PurchasesSection({
                     below a readable width; buttons pair up two per row.
                   */}
                   <div className="grid w-full grid-cols-2 gap-2 lg:flex lg:w-auto lg:flex-wrap lg:items-end lg:justify-end">
-                    {p.status !== "cancelled" ? (
-                      <Button type="button" variant="outline" onClick={() => toggleExpanded(p.id)}>
-                        {isExpanded ? "بستن" : "مشاهده جزئیات"}
-                      </Button>
-                    ) : null}
+                    {/* Every status opens — a cancelled purchase's contents are
+                        still a record the operator may need to review. */}
+                    <Button type="button" variant="outline" onClick={() => toggleExpanded(p.id)}>
+                      {isExpanded ? "بستن" : "مشاهده جزئیات"}
+                    </Button>
                     {p.status === "draft" || p.status === "ordered" ? (
                       <>
                         {p.status === "draft" ? (
@@ -588,7 +725,7 @@ export function PurchasesSection({
                             />
                           </div>
                         ) : null}
-                        <Button type="button" variant="outline"
+                        <Button type="button"
                           disabled={busy || (!p.supplier_name && (settlementByPurchase[p.id] ?? "credit") === "credit" && !supplierByPurchase[p.id])}
                           onClick={() => transition(p.id, "received", settlementByPurchase[p.id] ?? "credit")}
                         >
@@ -600,7 +737,7 @@ export function PurchasesSection({
                       </>
                     ) : null}
                     {p.status !== "received" ? (
-                      <Button type="button" variant="outline" disabled={busy} onClick={() => void removePurchase(p.id)}>
+                      <Button type="button" variant="destructive" disabled={busy} onClick={() => void removePurchase(p.id)}>
                         حذف
                       </Button>
                     ) : null}
@@ -705,7 +842,7 @@ export function PurchasesSection({
                                 <div key={it.id} className="grid gap-2 sm:grid-cols-[1fr_9rem] sm:items-end">
                                   <span className="text-sm">{it.inventory_item_name} <span className="text-xs text-muted-foreground">({formatQuantity(it.quantity)} {it.unit})</span></span>
                                   <Field label={`مقدار برگشت (${it.unit})`}>
-                                    <PersianNumberInput className={inputClass} dir="ltr" inputMode="decimal" value={returnQuantities[it.id] ?? ""} onChange={(e) => setReturnQuantities((prev) => ({ ...prev, [it.id]: e.target.value }))} />
+                                    <PersianNumberInput className={inputClass} dir="ltr" inputMode="decimal" allowNegative={false} value={returnQuantities[it.id] ?? ""} onChange={(e) => setReturnQuantities((prev) => ({ ...prev, [it.id]: e.target.value }))} />
                                   </Field>
                                 </div>
                               ))}
@@ -735,7 +872,7 @@ export function PurchasesSection({
                             <Button type="button" variant="outline" disabled={busy} onClick={() => startEditing(p.purchase_date)}>
                               ویرایش
                             </Button>
-                          ) : (
+                          ) : p.status === "received" ? (
                             <>
                               <Button type="button" variant="outline" disabled={busy} onClick={startReturning}>
                                 برگشت به تأمین‌کننده
@@ -744,6 +881,10 @@ export function PurchasesSection({
                                 خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از «برگشت به تأمین‌کننده» استفاده کنید.
                               </p>
                             </>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              خرید لغوشده فقط قابل مشاهده است و جایی برای اصلاح یا برگشت ندارد.
+                            </p>
                           )}
                         </div>
                       </>
@@ -753,7 +894,22 @@ export function PurchasesSection({
               </li>
             );
           })}
-          {purchases && purchases.length === 0 ? <li className="p-3 text-sm text-muted-foreground">خریدی ثبت نشده است.</li> : null}
+          {purchases === null && !listError ? (
+            <li className="p-1">
+              <LoadingSkeleton rows={3} compact label="در حال بارگذاری فهرست خریدها" />
+            </li>
+          ) : null}
+          {listError ? (
+            <li className="flex flex-col items-start gap-2 p-3 text-sm">
+              <p className="text-destructive" role="alert">{listError}</p>
+              <Button type="button" variant="outline" onClick={loadPurchases}>
+                تلاش دوباره
+              </Button>
+            </li>
+          ) : null}
+          {purchases && purchases.length === 0 && !listError ? (
+            <li className="p-3 text-sm text-muted-foreground">خریدی ثبت نشده است.</li>
+          ) : null}
         </ul>
       </SectionCard>
     </div>
