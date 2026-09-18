@@ -1,36 +1,20 @@
 /**
- * Phase 35 Wave 1 — the app registry.
+ * The four standalone business apps. Modules are trade capabilities and work
+ * areas, not apps in their own right. Accounting owns selling and operations;
+ * Growth, CRM and Website own their own workspaces. Website contains separate
+ * Eshobe CMS and WordPress/Woo managers within one app.
  *
- * The dashboard used to be one flat list of nav entries (see
- * src/app/dashboard/layout.tsx), each naming the `ModuleKey` that owns it. That
- * list is fine while every entry is a peer, but three of them — «وفاداری»,
- * «کمپین‌ها و کارت هدیه» and «پورسانت فروشندگان» — are really one idea
- * (keeping and growing customers), and the phases that follow this one (CRM,
- * messaging, the website manager) each want to add another peer to the same
- * flat list.
- *
- * This is the grouping they will share. It is deliberately *only* a grouping:
- * `ModuleKey` still answers "does this trade have this area"
- * (src/lib/industry-profile.ts) and `moduleForApiPath` is still the API guard.
- * An app is just a named bundle of modules, so "show the Growth & Marketing
- * app" and "does this business have loyalty?" stay two different, independently
- * true questions — the way `settings-tabs.ts` and `connection-kinds.ts` already
- * keep their concerns separate.
- *
- * Framework-free (no `db`, no `next`) exactly like those two, so the workspace
- * rail, the platform console and any edge code can import it directly.
+ * The dashboard, assistant, workspace, settings and connections are shared
+ * platform utilities; they do not have their own app availability state.
  */
 import type { Industry } from "./industries";
 import { hasModule, MODULE_KEYS, type ModuleKey } from "./industry-profile";
 
 export const APP_KEYS = [
-  "sales",
-  "crm",
-  "growth",
-  "website",
-  "operations",
   "accounting",
-  "settings",
+  "growth",
+  "crm",
+  "website",
 ] as const;
 export type AppKey = (typeof APP_KEYS)[number];
 
@@ -49,13 +33,17 @@ export interface AppDef {
 
 export const APPS: AppDef[] = [
   {
-    key: "sales",
-    label: "فروش",
-    description: "فروش، سفارش‌ها و صندوق — میز کار روزانهٔ کسب‌وکار.",
-    // `customers` used to be here. It moved to the CRM app in Phase 36 — see
-    // the note on that entry. Selling to a customer still happens here; the
-    // customer *record* is the CRM's.
-    modules: ["dashboard", "orders", "pos"],
+    key: "accounting",
+    label: "حسابداری",
+    description: "فروش و صندوق، سفارش‌ها، عملیات، خرید و انبار، دفتر حساب‌ها و گزارش‌ها.",
+    // Sales/POS and operations are work areas inside Accounting's workspace.
+    // The dashboard home and shared settings remain platform utilities.
+    modules: [
+      "orders", "pos", "tables", "waiter", "kitchen", "reservations",
+      "delivery", "inventory", "menu", "jewelry", "watch", "accessories",
+      "cosmetics", "wholesale", "tools_fittings", "haberdashery", "stock",
+      "ledger", "reports",
+    ],
   },
   {
     key: "crm",
@@ -73,11 +61,11 @@ export const APPS: AppDef[] = [
     // POS creates it, the service desk argues with it, the ledger settles
     // against it. Making the record a folder inside the app that markets to it
     // would put a shared source of truth behind one department's door, and
-    // would have left `customers` — a `sales` module — as the only "real" home
+    // would have left `customers` — formerly a Sales module — as the only "real" home
     // of a customer while their file, notes, consent and history lived
     // somewhere else.
     //
-    // So `customers` moves here with `crm`: one app owns the customer, and
+    // So `customers` lives here with `crm`: one app owns the customer, and
     // /dashboard/customers redirects into it. Growth keeps the engines that
     // *act* on customers (loyalty, promotions, commission) and reads the
     // CRM's segments through `crm-segments-service.ts` rather than owning them.
@@ -130,41 +118,6 @@ export const APPS: AppDef[] = [
     // app and sees just that manager.
     modules: ["website", "integrations"],
   },
-  {
-    key: "operations",
-    label: "عملیات",
-    description:
-      "میزها، سالن، آشپزخانه، رزروها، ارسال و انبار — بخش‌های عملیاتی کسب‌وکار.",
-    modules: [
-      "tables",
-      "waiter",
-      "kitchen",
-      "reservations",
-      "delivery",
-      "inventory",
-      "menu",
-      "jewelry",
-      "watch",
-      "accessories",
-      "cosmetics",
-      "wholesale",
-      "tools_fittings",
-      "haberdashery",
-      "stock",
-    ],
-  },
-  {
-    key: "accounting",
-    label: "حسابداری",
-    description: "دفتر حساب‌ها و گزارش‌های مالی.",
-    modules: ["ledger", "reports"],
-  },
-  {
-    key: "settings",
-    label: "تنظیمات",
-    description: "تنظیمات کسب‌وکار، کاربران، شعب و دستگاه‌ها.",
-    modules: ["settings"],
-  },
 ];
 
 // NOTE — there is deliberately no "connections" app. «اتصال‌های فنی»
@@ -182,10 +135,10 @@ export const APPS: AppDef[] = [
  * Module → owning app, built once at load. A module claimed by two apps is a
  * real authoring mistake, not a runtime condition, so it throws on import —
  * the same "fail fast on invalid config" posture `industry-profile.ts` uses
- * for its prefix maps. The assistant (`ai`), the workspace shell
- * (`workspace`) and the technical-connections hub (`connections`) are
+ * for its prefix maps. The assistant (`ai`), workspace shell (`workspace`), dashboard home
+ * (`dashboard`), shared settings (`settings`) and technical-connections hub (`connections`) are
  * intentionally absent: the assistant is the chat *home*, not an app in the
- * rail, the workspace is the shell around the apps, and the hub is shell
+ * rail, the workspace is the shell around the apps, and shared utilities are shell
  * infrastructure — see the NOTE above.
  */
 const MODULE_APP_MAP: Partial<Record<ModuleKey, AppKey>> = (() => {
@@ -205,7 +158,7 @@ const MODULE_APP_MAP: Partial<Record<ModuleKey, AppKey>> = (() => {
 })();
 
 /**
- * Which app owns a module, or null if the module is the home/shell, a future
+ * Which app owns a module, or null if the module is the home/shell, a shared utility, a future
  * placeholder, or the technical-connections hub (`connections` — see the note
  * above: the hub is shell infrastructure, not an app, so it has no availability
  * state and no guard ever blocks it).
