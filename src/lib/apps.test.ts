@@ -21,16 +21,16 @@ describe("appForModule", () => {
     expect(appForModule("commission")).toBe("growth");
   });
 
-  it("gives the customer record its own app, and keeps selling to them in Sales", () => {
+  it("gives the customer record its own app and puts selling in Accounting", () => {
     // Phase 35 seated `crm` under Growth as a forward reference. Phase 36 built
     // it and moved it out, together with `customers`: the customer record is
-    // read by every app (Sales creates it, Growth messages it, the service desk
+    // read by every app (the POS creates it, Growth messages it, the service desk
     // argues with it), so it cannot live behind the door of the one department
     // that markets to them. One app owns the record; the rest read it.
     expect(appForModule("crm")).toBe("crm");
     expect(appForModule("customers")).toBe("crm");
-    expect(appForModule("pos")).toBe("sales");
-    expect(appForModule("orders")).toBe("sales");
+    expect(appForModule("pos")).toBe("accounting");
+    expect(appForModule("orders")).toBe("accounting");
   });
 
   it("keeps the still-unbuilt messaging key under Growth & Marketing", () => {
@@ -54,6 +54,7 @@ describe("appForModule", () => {
     expect(appForModule("ai")).toBeNull();
     expect(appForModule("workspace")).toBeNull();
     expect(appForModule("connections")).toBeNull();
+    expect(appForModule("settings")).toBeNull();
   });
 
   it("keeps every other module in exactly one app", () => {
@@ -117,8 +118,10 @@ describe("appForKey / modulesForApp", () => {
     expect(modulesForApp("crm")).toEqual(expect.arrayContaining(["crm", "customers"]));
   });
 
-  it("returns the Sales app grouping dashboard, orders and pos", () => {
-    expect(modulesForApp("sales")).toEqual(expect.arrayContaining(["dashboard", "orders", "pos"]));
+  it("puts selling and operations inside Accounting", () => {
+    expect(modulesForApp("accounting")).toEqual(expect.arrayContaining([
+      "dashboard", "orders", "pos", "inventory", "kitchen", "ledger", "reports",
+    ]));
   });
 });
 
@@ -129,6 +132,9 @@ describe("isAppKey", () => {
     // The connections hub is a shell utility, not a platform app: it must
     // never resolve as an app key or the switchboard would list it.
     expect(isAppKey("connections")).toBe(false);
+    expect(isAppKey("sales")).toBe(false);
+    expect(isAppKey("operations")).toBe(false);
+    expect(isAppKey("settings")).toBe(false);
     expect(isAppKey(null)).toBe(false);
     expect(isAppKey(undefined)).toBe(false);
   });
@@ -169,6 +175,7 @@ describe("unassignedModules", () => {
     // The «اتصال‌های فنی» hub is a shell utility: its module stays
     // unassigned so the availability gate can never lock it.
     expect(unassigned).toContain("connections");
+    expect(unassigned).toContain("settings");
     expect(unassigned).not.toContain("crm");
     expect(unassigned).not.toContain("loyalty");
   });
@@ -188,11 +195,9 @@ describe("appsForNav", () => {
 
   it("groups nav items by their owning app, in APP_KEYS order", () => {
     const grouped = appsForNav(items);
-    // APP_KEYS order is sales → growth → operations → accounting → …, so the
-    // groups present in `items` come back sales, growth, accounting.
-    expect(grouped.map((group) => group.app.key)).toEqual(["sales", "growth", "accounting"]);
-    expect(grouped[0].app.key).toBe("sales");
-    expect(grouped[0].items.map((item) => item.label)).toEqual(["صندوق"]);
+    // Selling and ledger entries share the Accounting app.
+    expect(grouped.map((group) => group.app.key)).toEqual(["accounting", "growth"]);
+    expect(grouped[0].items.map((item) => item.label)).toEqual(["صندوق", "حسابداری"]);
     expect(grouped.find((group) => group.app.key === "growth")?.items.map((item) => item.label)).toEqual([
       "وفاداری",
       "کمپین‌ها",
@@ -207,9 +212,8 @@ describe("appsForNav", () => {
   });
 
   it("keeps only apps the trade has, given an industry", () => {
-    // Every industry has loyalty (growth), pos (sales) and ledger (accounting),
-    // so all three groups survive for food_service.
+    // Food service has both Accounting and Growth.
     const grouped = appsForNav(items, "food_service");
-    expect(grouped.map((group) => group.app.key)).toEqual(["sales", "growth", "accounting"]);
+    expect(grouped.map((group) => group.app.key)).toEqual(["accounting", "growth"]);
   });
 });
