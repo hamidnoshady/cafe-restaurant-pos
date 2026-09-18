@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-Persian-first (RTL, Jalali calendar, Toman display) multi-industry business platform. It combines accounting, CRM, growth and marketing, website management, sales/POS, operations, inventory, reporting, AI, and platform administration. POS is a major dashboard app, not the product boundary. Next.js 15 App Router (TypeScript) + PostgreSQL 16. Development is phased — see
+Persian-first (RTL, Jalali calendar, business-selected money display) multi-industry business platform with four standalone apps: Accounting, Growth & Marketing, CRM and Website Management. Sales/POS, operations, inventory and reporting are work areas inside Accounting; AI, settings and connections are shared platform surfaces. Website Management has two distinct managers: Eshobe CMS and WordPress/WooCommerce. See [docs/app-boundaries.md](docs/app-boundaries.md). Next.js 15 App Router (TypeScript) + PostgreSQL 16. Development is phased — see
 [docs/phases/README.md](docs/phases/README.md) for the phase index and status, and each
 phase's file for its scope, the decisions made on its open questions, and where its exit
 criteria are satisfied. Don't start a phase until the previous one's exit criteria are met.
@@ -32,7 +32,7 @@ These words have a specific meaning in prompts from the user. Interpret a reques
 this way first; do not assume the everyday English sense, or the sense a code
 comment happens to use, until you have checked this list.
 
-- **Product identity:** this is a multi-app business platform, never “just a café/restaurant POS.” Hospitality is one supported industry and POS is one major app. Product copy, metadata, demo data, and new documentation must lead with the whole suite; mention café/restaurant behavior only where the specific feature or historical phase requires it.
+- **Product identity:** this is a multi-app business platform, never “just a café/restaurant POS.” Hospitality is one supported industry and POS is an Accounting work area. Product copy, metadata, demo data, and new documentation must lead with the whole suite; mention café/restaurant behavior only where the specific feature or historical phase requires it.
 - **Platform** means this whole product — the entire repo / system (POS, accounting,
   CRM, growth, both website managers, the AI assistant, tenancy, the super-admin
   console, desktop, the lot). A prompt about "the platform" is **not** a prompt about
@@ -40,9 +40,8 @@ comment happens to use, until you have checked this list.
   *code* those paths, `requirePlatformAdmin`, platform credits, and a CMS "platform
   key" keep their existing technical meaning; do not rename them, and do not treat a
   platform-wide request as a super-admin-console task.
-- **App** means a dashboard app from `src/lib/apps.ts` — accounting, growth, CRM,
-  sales, operations, website, connections, settings — the things in the
-  workspace rail. It does **not** mean the Next.js application, the Electron desktop
+- **App** means exactly one of the four `src/lib/apps.ts` keys — accounting, growth, CRM,
+  website — with its own business workspace. It does **not** mean the Next.js application, the Electron desktop
   installer, or the WordPress plugin. The AI assistant is not an app (see below).
   When they name one ("the accounting app", "growth", "CRM"), stay inside that app's
   ownership boundary; don't add a peer page in another app's shell.
@@ -69,10 +68,10 @@ comment happens to use, until you have checked this list.
   unless those are named.
 - **Website management** means **both** website systems, not one of them. Since
   migration 0138 they are two **managers inside one app**, `website`
-  («مدیریت وب‌سایت», `/dashboard/website`):
-  1. **Eshobe CMS** — «سایت‌ساز اشوبه», `/dashboard/website/cms/*` (`src/lib/cms/*`,
+  («مدیریت وب‌سایت», `/websites`):
+  1. **Eshobe CMS** — «سایت‌ساز اشوبه», `/websites/cms/*` (`src/lib/cms/*`,
      `src/lib/website/*`, [docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md)).
-  2. **WP / Woo management** — «وردپرس و ووکامرس», `/dashboard/website/wp/*`
+  2. **WP / Woo management** — «وردپرس و ووکامرس», `/websites/wp/*`
      (Phase 40; plugin in `wordpress-plugin/`). `/dashboard/wp/*` redirects here.
   One app is not one product: they are peers inside one door, with separate
   connections, separate sections and separate headers. Never fold one into the
