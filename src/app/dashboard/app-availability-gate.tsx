@@ -152,7 +152,7 @@ function AvailabilityNotice({
  * One route needs its shell to answer: `/dashboard` is the chat home (never
  * gated) in the workspace shell, but the operational overview
  * `/overview` renders in the classic shell. Leaving it ungated in
- * both would leave a sales «به‌زودی» bypassable from the home page, so in the
+ * both would leave an Accounting «به‌زودی» bypassable from the home page, so in the
  * classic shell it is gated as part of Accounting.
  */
 export function AppAvailabilityGate({
