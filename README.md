@@ -1,6 +1,6 @@
 # Business Suite — multi-app business platform
 
-A Persian-first (RTL, Jalali calendar, Toman display) platform for running and growing a business. Accounting, CRM, growth and marketing, website management, sales/POS, operations, inventory, reporting, AI assistance, and multi-business administration live in one product. **POS is a major app in the suite, not the identity or boundary of the platform.** The industry profile adapts the workspace for hospitality, retail, jewelry, cosmetics, wholesale, and other supported businesses.
+A Persian-first (RTL, Jalali calendar, business-selected money display) multi-industry platform with **four standalone apps**: Accounting, Growth & Marketing, CRM, and Website Management. Accounting includes sales/POS, operations, inventory and reporting. Website Management contains two separate SaaS managers, Eshobe CMS and WordPress/WooCommerce. AI, settings and connections are shared platform services. The industry profile adapts the work areas for hospitality, retail, jewelry, cosmetics, wholesale and other supported businesses. See [the app boundaries](docs/app-boundaries.md).
 
 Development history and shipped capability are documented in [docs/phases/README.md](docs/phases/README.md). Early phases began with café/restaurant POS workflows; later phases evolved that foundation into the current multi-industry, multi-app business platform. Phase documents are historical implementation records, not the current product definition.
 
