@@ -23,9 +23,9 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const locationId = url.searchParams.get("locationId") || defaultLocation?.id || "";
   if (!locationId) {
     return NextResponse.json({
-      locationId,
+      locationId: "",
       items: [],
-      totals: { count: 0, lowStockCount: 0, totalUnits: "0", totalValueRial: "0" },
+      totals: { count: 0, lowStockCount: 0, outOfStockCount: 0, totalUnits: "0", totalValueRial: "0" },
     });
   }
 
@@ -63,7 +63,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     sku: r.sku,
     tracking: r.tracking,
     quantity: r.quantity,
-    unitCost: r.unit_cost == null ? null : Number(r.unit_cost),
+    unitCost: r.unit_cost == null ? null : Math.round(Number(r.unit_cost)),
     reorderPoint: r.reorder_point,
     valueRial: Math.round(Number(r.quantity) * Number(r.unit_cost ?? 0)),
     level: classifyStockLevel(r.quantity, r.reorder_point),
@@ -72,10 +72,12 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   let totalUnits = 0;
   let totalValue = 0;
   let lowStockCount = 0;
+  let outOfStockCount = 0;
   for (const item of items) {
     totalUnits += Number(item.quantity);
     totalValue += item.valueRial;
-    if (item.level === "low" || item.level === "out") lowStockCount += 1;
+    if (item.level === "low") lowStockCount += 1;
+    if (item.level === "out") outOfStockCount += 1;
   }
 
   return NextResponse.json({
@@ -84,6 +86,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     totals: {
       count: items.length,
       lowStockCount,
+      outOfStockCount,
       totalUnits: String(Math.round(totalUnits * 1_000_000) / 1_000_000),
       totalValueRial: String(totalValue),
     },

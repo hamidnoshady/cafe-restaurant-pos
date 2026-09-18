@@ -21,7 +21,13 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const defaultLocation = await resolveActiveLocation(session);
   const url = new URL(request.url);
   const locationId = url.searchParams.get("locationId") || defaultLocation?.id || "";
-  if (!locationId) return NextResponse.json({ items: [], totals: { count: 0, lowStockCount: 0, totalValueRial: "0" } });
+  if (!locationId) {
+    return NextResponse.json({
+      locationId: "",
+      items: [],
+      totals: { count: 0, lowStockCount: 0, outOfStockCount: 0, totalValueRial: "0" },
+    });
+  }
 
   const search = (url.searchParams.get("search") ?? "").trim();
 
@@ -50,8 +56,8 @@ export const GET = withTenantScope(async (request: NextRequest) => {
             ii.reorder_level::text AS reorder_level,
             v.valuation::text AS value_rial,
             CASE WHEN v.stock_qty > 0
-                 THEN (v.valuation::numeric / v.stock_qty)::text
-                 ELSE v.weighted_average_cost::text END AS unit_cost
+                 THEN ROUND(v.valuation::numeric / v.stock_qty)::text
+                 ELSE ROUND(COALESCE(v.weighted_average_cost, 0))::text END AS unit_cost
        FROM v_inventory_valuation v
        JOIN inventory_items ii ON ii.id = v.inventory_item_id
       WHERE ${clauses.join(" AND ")}
@@ -59,9 +65,10 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     params,
   );
 
-  const { rows: totals } = await query<{ count: string; low: string; value: string }>(
+  const { rows: totals } = await query<{ count: string; low: string; out: string; value: string }>(
     `SELECT count(*)::text AS count,
-            count(*) FILTER (WHERE ii.reorder_level IS NOT NULL AND v.stock_qty <= ii.reorder_level)::text AS low,
+            count(*) FILTER (WHERE ii.reorder_level IS NOT NULL AND v.stock_qty > 0 AND v.stock_qty <= ii.reorder_level)::text AS low,
+            count(*) FILTER (WHERE v.stock_qty <= 0)::text AS out,
             COALESCE(sum(v.valuation),0)::text AS value
        FROM v_inventory_valuation v
        JOIN inventory_items ii ON ii.id = v.inventory_item_id
@@ -75,6 +82,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     totals: {
       count: Number(totals[0]?.count ?? 0),
       lowStockCount: Number(totals[0]?.low ?? 0),
+      outOfStockCount: Number(totals[0]?.out ?? 0),
       totalValueRial: totals[0]?.value ?? "0",
     },
   });

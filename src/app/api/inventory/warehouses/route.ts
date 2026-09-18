@@ -36,12 +36,12 @@ export const GET = withTenantScope(async () => {
            FROM v_inventory_valuation v WHERE v.location_id = l.id)::text AS stock_value_rial,
         (SELECT count(*)
            FROM inventory_items ii
-           JOIN (SELECT inventory_item_id, sum(quantity) AS qty
+           LEFT JOIN (SELECT inventory_item_id, sum(quantity) AS qty
                    FROM stock_movements WHERE location_id = l.id
                   GROUP BY inventory_item_id) s
              ON s.inventory_item_id = ii.id
           WHERE ii.location_id = l.id AND ii.is_active
-            AND ii.reorder_level IS NOT NULL AND s.qty <= ii.reorder_level
+            AND ii.reorder_level IS NOT NULL AND COALESCE(s.qty, 0) <= ii.reorder_level
         )::text AS low_stock_count,
         (SELECT max(sm.occurred_at) FROM stock_movements sm WHERE sm.location_id = l.id) AS last_movement_at
        FROM locations l
