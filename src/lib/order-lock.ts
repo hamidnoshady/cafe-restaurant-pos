@@ -4,6 +4,7 @@ export interface LockedOpenOrder {
   id: string;
   status: "open";
   type: "dine_in" | "takeaway" | "delivery";
+  customer_id: string | null;
   guest_count: number | null;
   subtotal: string;
   discount: string;
@@ -33,7 +34,7 @@ export async function lockOpenOrder(
   orderId: string,
 ): Promise<LockOpenOrderResult> {
   const { rows } = await client.query<LockedOpenOrder & { status: string }>(
-    `SELECT id, status, type, guest_count, subtotal::text, discount::text, discount_type,
+    `SELECT id, status, type, customer_id, guest_count, subtotal::text, discount::text, discount_type,
             discount_value::text, service_charge::text, tax::text, total::text, note
        FROM orders
       WHERE id = $1 AND location_id = $2
