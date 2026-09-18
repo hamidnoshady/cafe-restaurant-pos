@@ -65,10 +65,22 @@ let scratch: Client;
 /** Everything the backup writes goes under one temp folder, removed at the end. */
 beforeAll(async () => {
   workDir = await fs.mkdtemp(path.join(os.tmpdir(), "pos-platform-backup-"));
-  const dumpSh = path.join(workDir, "pg_dump");
-  const restoreSh = path.join(workDir, "pg_restore");
-  await fs.writeFile(dumpSh, `#!/bin/sh\nexec node "${STUB}" dump "$@"\n`, { mode: 0o755 });
-  await fs.writeFile(restoreSh, `#!/bin/sh\nexec node "${STUB}" restore "$@"\n`, { mode: 0o755 });
+  // The launcher has to be something the *host* can exec directly: `spawn()`
+  // without a shell runs the file itself, so a `#!/bin/sh` script is only
+  // executable on POSIX. Windows (CI runs these suites on windows-latest) needs
+  // a `.cmd` batch file instead — a extension-less shell script there fails with
+  // ENOENT before the stub is ever reached.
+  const windows = process.platform === "win32";
+  const dumpSh = path.join(workDir, windows ? "pg_dump.cmd" : "pg_dump");
+  const restoreSh = path.join(workDir, windows ? "pg_restore.cmd" : "pg_restore");
+  if (windows) {
+    const node = process.execPath;
+    await fs.writeFile(dumpSh, `@echo off\r\n"${node}" "${STUB}" dump %*\r\n`, "utf8");
+    await fs.writeFile(restoreSh, `@echo off\r\n"${node}" "${STUB}" restore %*\r\n`, "utf8");
+  } else {
+    await fs.writeFile(dumpSh, `#!/bin/sh\nexec node "${STUB}" dump "$@"\n`, { mode: 0o755 });
+    await fs.writeFile(restoreSh, `#!/bin/sh\nexec node "${STUB}" restore "$@"\n`, { mode: 0o755 });
+  }
   process.env.PG_DUMP_PATH = dumpSh;
   process.env.PG_RESTORE_PATH = restoreSh;
 
