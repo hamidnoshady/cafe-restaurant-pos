@@ -355,7 +355,8 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/overview", "dashboard"],
   ["/accounting/orders", "orders"],
   // Business work areas render beneath Accounting. The inventory page chooses
-  // the food-service or retail stock model; both follow Accounting availability. Every retired `/dashboard/<area>` address 308s in middleware
+  // the food-service or retail stock model; both follow Accounting availability.
+  // Every retired `/dashboard/<area>` address 308s in middleware
   // before this table is ever consulted, so only canonical prefixes live here.
   ["/accounting/pos", "pos"],
   ["/accounting/floor", "tables"],
