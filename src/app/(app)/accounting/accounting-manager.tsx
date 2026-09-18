@@ -182,14 +182,24 @@ export function AccountingManager({
   async function run(fn: () => Promise<{ ok: boolean; data: { error?: string } }>) {
     setBusy(true);
     setError("");
-    const { ok, data } = await fn();
-    setBusy(false);
-    if (!ok) {
-      setError(errorMessage(data.error));
+    try {
+      const { ok, data } = await fn();
+      if (!ok) {
+        setError(errorMessage(data.error));
+        return false;
+      }
+      setRefreshKey((k) => k + 1);
+      return true;
+    } catch {
+      /* A thrown fetch (dropped connection) used to escape here: the studio's
+         busy flag then stayed set for ever — every action button in every
+         ledger section disabled — and the click ended in an unhandled
+         rejection. The settings area's own runner already caught this way. */
+      setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.");
       return false;
+    } finally {
+      setBusy(false);
     }
-    setRefreshKey((k) => k + 1);
-    return true;
   }
 
   if (!accounts) {
@@ -360,6 +370,7 @@ function errorMessage(code: string | undefined): string {
     // Chart of accounts (accounts-service.ts) — these reach here whenever a
     // section routes an accounts error through `run` rather than its own map.
     code_required: "کد حساب الزامی است.",
+    invalid_code: "کد حساب باید فقط شامل عدد باشد (مثل ۶۱۰۰).",
     name_required: "نام حساب الزامی است.",
     invalid_type: "نوع حساب معتبر نیست.",
     code_in_use: "این کد حساب قبلاً استفاده شده است.",

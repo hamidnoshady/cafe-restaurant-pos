@@ -347,7 +347,6 @@ function errorMessage(code: string | undefined): string {
     purchase_received_cannot_edit:
       "خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از «برگشت به تأمین‌کننده» استفاده کنید.",
     invalid_supplier_return: "اطلاعات برگشت به تأمین‌کننده کامل نیست.",
-    invalid_quantity: "مقدار واردشده معتبر نیست؛ عددی بزرگ‌تر از صفر وارد کنید.",
     // Codes the receive/return journal posting can surface from
     // fiscal-periods.ts when the entry date falls in a closed period.
     fiscal_period_locked: "دورهٔ مالی این تاریخ بسته شده و ثبت سند در آن ممکن نیست.",
@@ -383,7 +382,6 @@ function errorMessage(code: string | undefined): string {
     // Guards these paths can surface but that had no Persian string, so they
     // fell through to «خطای غیرمنتظره» instead of naming what actually failed.
     quantity_precision_exceeded: "مقدار بیش از ۹ رقم اعشار دارد؛ عدد را گرد کنید.",
-    invalid_quantity: "مقدار واردشده معتبر نیست.",
     invalid_rial: "مبلغ واردشده معتبر نیست.",
     periodic_system_unsupported:
       "این عملیات در سیستم ادواری در دسترس نیست؛ بهای تمام‌شده در «بستن دوره» محاسبه می‌شود.",

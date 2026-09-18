@@ -10,6 +10,7 @@ import {
   HABERDASHERY_COA_TEMPLATE,
   JEWELRY_COA_TEMPLATE,
   isNonCurrentCode,
+  isValidAccountCode,
   nextAccountLevel,
   TOOLS_FITTINGS_COA_TEMPLATE,
   WATCH_COA_TEMPLATE,
@@ -405,5 +406,34 @@ describe("auto-posting targets vs. the leaf rule", () => {
         ).toBe(true);
       }
     }
+  });
+});
+
+describe("isValidAccountCode", () => {
+  /* codes are persisted as Latin digits only (digits.ts convention); the
+     create route canonicalises Persian/Arabic digits with toLatinDigits and
+     this predicate is the gate for whatever remains — see
+     accounts-service.ts's createAccount. */
+  it("accepts plain numerals, the shape every well-known code follows", () => {
+    expect(isValidAccountCode("6100")).toBe(true);
+    expect(isValidAccountCode("1")).toBe(true);
+    for (const code of Object.values(WELL_KNOWN_CODES)) {
+      expect(isValidAccountCode(code)).toBe(true);
+    }
+  });
+
+  it("rejects Persian and Arabic digits — they must be canonicalised before storing", () => {
+    expect(isValidAccountCode("۶۱۰۰")).toBe(false);
+    expect(isValidAccountCode("٦١٠٠")).toBe(false);
+    expect(isValidAccountCode("61۰0")).toBe(false);
+  });
+
+  it("rejects letters, separators, signs and whitespace", () => {
+    expect(isValidAccountCode("")).toBe(false);
+    expect(isValidAccountCode("abc")).toBe(false);
+    expect(isValidAccountCode("61-00")).toBe(false);
+    expect(isValidAccountCode("61.00")).toBe(false);
+    expect(isValidAccountCode("61 00")).toBe(false);
+    expect(isValidAccountCode("+6100")).toBe(false);
   });
 });

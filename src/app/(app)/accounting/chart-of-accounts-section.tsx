@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
+import { toLatinDigits } from "@/lib/digits";
+import { normalizePosSearchText } from "@/lib/pos-selection";
 import type { Runner } from "./accounting-manager";
 import {
   ACCOUNT_LEVEL_LABELS,
@@ -36,8 +38,22 @@ const NORMAL_BALANCE_LABELS: Record<NormalBalance, string> = {
 
 const WELL_KNOWN_CODE_SET = new Set<string>(Object.values(WELL_KNOWN_CODES));
 
+/**
+ * How far each tier of the hierarchy indents under its parent (start side, so
+ * it reads correctly in RTL). The list stays ordered by code — which already
+ * groups a child next to its parent for any sane code scheme — but rendered
+ * flat it gave no visual hint that «۶۱۰۱» belongs under «۶۱۰۰».
+ */
+const LEVEL_INDENT: Record<AccountLevel, string> = {
+  group: "",
+  kol: "ps-4",
+  moein: "ps-8",
+  tafsili: "ps-12",
+};
+
 const errorLabels: Record<string, string> = {
   code_required: "کد حساب الزامی است.",
+  invalid_code: "کد حساب باید فقط شامل عدد باشد (مثل ۶۱۰۰).",
   name_required: "نام حساب الزامی است.",
   invalid_type: "نوع حساب معتبر نیست.",
   parent_not_found: "حساب والد پیدا نشد.",
@@ -90,6 +106,10 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
   const [statementAccount, setStatementAccount] = useState<{ id: string; code: string; name: string } | null>(null);
   const [historyAccount, setHistoryAccount] = useState<{ id: string; code: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<AccountRow | null>(null);
+  // The delete dialog keeps its own error: a failed delete must surface inside
+  // the open dialog, not in the «افزودن حساب» card's box behind the backdrop
+  // (which is what sharing `localError` did).
+  const [deleteError, setDeleteError] = useState("");
   /*
    * «ویرایش» — renaming and reparenting.
    *
@@ -155,7 +175,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
   }
 
   function remove(a: AccountRow) {
-    setLocalError("");
+    setDeleteError("");
     setDeleting(a);
   }
 
@@ -165,13 +185,13 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
     try {
       const { ok, data } = await api<{ error?: string }>(`/api/ledger/accounts/${deleting.id}`, { method: "DELETE" });
       if (!ok) {
-        setLocalError(errorLabels[data.error ?? ""] ?? errorMessage(data.error));
+        setDeleteError(errorLabels[data.error ?? ""] ?? errorMessage(data.error));
         return;
       }
       setDeleting(null);
       refresh();
     } catch {
-      setLocalError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.");
+      setDeleteError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.");
     } finally {
       setSaving(false);
     }
@@ -194,16 +214,75 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
   // Only an account that can still take a child: a «تفصیلی» parent is refused
   // server-side (`parent_too_deep`), so offering it is offering an error.
   const parentOptions = accounts.filter((a) => a.isActive && nextAccountLevel(a.level) !== null);
-  const normalizedSearch = search.trim().toLocaleLowerCase();
+  // The edit dialog's parent pick must also skip the account's own subtree —
+  // re-parenting under a descendant is the one `parent_cycle` the server
+  // always refuses, and a select that offers it hands the reader a certain
+  // error (the same reasoning the add form's تفصیلی filter above gives).
+  const childrenByParent = new Map<string, AccountRow[]>();
+  for (const a of accounts) {
+    if (!a.parentId) continue;
+    const list = childrenByParent.get(a.parentId) ?? [];
+    list.push(a);
+    childrenByParent.set(a.parentId, list);
+  }
+  const descendantIdsOf = (rootId: string): Set<string> => {
+    const seen = new Set<string>();
+    const stack = [rootId];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      for (const child of childrenByParent.get(current) ?? []) {
+        if (seen.has(child.id)) continue;
+        seen.add(child.id);
+        stack.push(child.id);
+      }
+    }
+    return seen;
+  };
+  /* The same normaliser every other search box in the product uses (POS
+     pickers, the SearchableSelect above): Arabic ي/ك → Persian letters and
+     Persian/Arabic digits → Latin — because codes are stored Latin-only, a
+     phone keyboard typing «۶۱۰۰» must still find حساب ۶۱۰۰, not nothing. */
+  const normalizedSearch = normalizePosSearchText(search);
   const actionBusy = busy || saving;
+
+  /*
+   * One action set per account, shared by the desktop table row and the
+   * phone card — the two lists used to paste the same five buttons twice,
+   * and a fix applied to only one of them is the classic dual-layout drift.
+   *
+   * A well-known («سیستمی») account can never be archived or deleted:
+   * accounts-service refuses both with `well_known_account`, and the intro
+   * InfoBox already promises they are always protected — so its row does
+   * not offer the two buttons that could only ever fail. Re-activating a
+   * system account stays possible (it can only sit inactive if it was
+   * archived before the guard existed).
+   */
+  function accountActions(a: AccountRow) {
+    const isSystem = WELL_KNOWN_CODE_SET.has(a.code);
+    return (
+      <>
+        <SecondaryButton onClick={() => { setLocalError(""); setEditing(a); }} disabled={actionBusy}>ویرایش</SecondaryButton>
+        <SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton>
+        <SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton>
+        {isSystem && a.isActive ? null : (
+          <SecondaryButton onClick={() => toggleActive(a)} disabled={actionBusy}>
+            {a.isActive ? "غیرفعال کردن" : "فعال کردن"}
+          </SecondaryButton>
+        )}
+        {isSystem || a.hasPostings || a.hasChildren ? null : (
+          <SecondaryButton onClick={() => remove(a)} disabled={actionBusy}>حذف</SecondaryButton>
+        )}
+      </>
+    );
+  }
   const filteredAccounts = accounts.filter((account) => {
     const matchesVisibility =
       visibility === "all" || (visibility === "active" ? account.isActive : !account.isActive);
     if (!matchesVisibility) return false;
     if (!normalizedSearch) return true;
-    return `${account.code} ${account.name} ${account.parentCode ?? ""}`
-      .toLocaleLowerCase()
-      .includes(normalizedSearch);
+    return normalizePosSearchText(`${account.code} ${account.name} ${account.parentCode ?? ""}`).includes(
+      normalizedSearch,
+    );
   });
 
   return (
@@ -216,7 +295,20 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
         {localError ? <div className="px-4 pt-4 sm:px-5"><ErrorBox>{localError}</ErrorBox></div> : null}
         <form onSubmit={submit} className="grid gap-3 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-4" dir="rtl">
           <Field label="کد حساب">
-            <input className={inputClass} dir="ltr" inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} placeholder="مثلاً ۶۱۰۰" required />
+            {/* Codes are stored with Latin digits only («data is always stored
+                with ASCII digits» — lib/digits.ts): a Persian/Arabic keyboard
+                is the norm here, so typing «۶۱۰۰» would otherwise store a
+                second, different «6100» and slip past UNIQUE(business_id,
+                code) and the well-known-code guards. */}
+            <input
+              className={inputClass}
+              dir="ltr"
+              inputMode="numeric"
+              value={code}
+              onChange={(e) => setCode(toLatinDigits(e.target.value).replace(/\D/g, ""))}
+              placeholder="مثلاً ۶۱۰۰"
+              required
+            />
           </Field>
           <Field label="نام حساب">
             <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام حساب" required />
@@ -298,8 +390,13 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                 ? "هنوز سرفصلی ثبت نشده است. از فرم بالا اولین حساب را اضافه کنید."
                 : "حسابی با این فیلتر پیدا نشد؛ عبارت جست‌وجو یا وضعیت را تغییر دهید."}
             </EmptyState>
-          ) : null}
-          <div className={`${filteredAccounts.length === 0 ? "hidden" : ""} overflow-hidden rounded-xl border border-border/80 lg:block`}>
+          ) : (
+          <>
+          {/* The table is the desktop presentation, the cards the phone one —
+              exactly one must render per breakpoint (`hidden … lg:block` /
+              `lg:hidden`). Missing the `hidden` had the whole table *and* the
+              card list on screen together under `lg`. */}
+          <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">کد</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">حساب</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">نوع</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">سطح</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">ماهیت</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">والد</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">وضعیت</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">عملیات</th></tr></thead>
@@ -308,8 +405,10 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                     <tr key={a.id} className="border-b border-border last:border-b-0">
                       <td dir="ltr" className="px-4 py-3 text-start font-medium tabular-nums text-muted-foreground">{a.code}</td>
                       <td className="px-4 py-3 font-semibold text-foreground">
-                        {a.name}
-                        {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 align-middle"><StatusBadge tone="active">سیستمی</StatusBadge></span> : null}
+                        <span className={`inline-block max-w-full ${LEVEL_INDENT[a.level]}`}>
+                          {a.name}
+                          {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 align-middle"><StatusBadge tone="active">سیستمی</StatusBadge></span> : null}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
                       <td className="px-4 py-3 text-muted-foreground">{ACCOUNT_LEVEL_LABELS[a.level]}</td>
@@ -319,7 +418,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                       </td>
                       <td dir="ltr" className="px-4 py-3 text-start tabular-nums text-muted-foreground">{a.parentCode ?? "—"}</td>
                       <td className="px-4 py-3"><StatusBadge tone={a.isActive ? "positive" : "neutral"}>{a.isActive ? "فعال" : "غیرفعال"}</StatusBadge></td>
-                      <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => { setLocalError(""); setEditing(a); }} disabled={actionBusy}>ویرایش</SecondaryButton><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={actionBusy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={actionBusy}>حذف</SecondaryButton> : null}</div></td>
+                      <td className="px-4 py-3"><div className="flex flex-wrap gap-2">{accountActions(a)}</div></td>
                     </tr>
                   ))}
                 </tbody>
@@ -333,7 +432,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p dir="ltr" className="text-start text-xs font-medium tabular-nums text-muted-foreground">{a.code}</p>
-                    <h3 className="mt-1 truncate text-sm font-semibold text-foreground">
+                    <h3 className={`mt-1 truncate text-sm font-semibold text-foreground ${LEVEL_INDENT[a.level]}`}>
                       {a.name}
                       {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 align-middle"><StatusBadge tone="active">سیستمی</StatusBadge></span> : null}
                     </h3>
@@ -346,10 +445,12 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                   <div><dt className="text-xs text-muted-foreground">ماهیت</dt><dd className="mt-1 text-foreground">{NORMAL_BALANCE_LABELS[a.normalBalance]}{a.isContra ? " (کاهنده)" : ""}</dd></div>
                   <div><dt className="text-xs text-muted-foreground">والد</dt><dd dir="ltr" className="mt-1 text-start tabular-nums text-foreground">{a.parentCode ?? "—"}</dd></div>
                 </dl>
-                <div className="mt-3 flex flex-wrap gap-2"><SecondaryButton onClick={() => { setLocalError(""); setEditing(a); }} disabled={actionBusy}>ویرایش</SecondaryButton><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={actionBusy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={actionBusy}>حذف</SecondaryButton> : null}</div>
+                <div className="mt-3 flex flex-wrap gap-2">{accountActions(a)}</div>
               </article>
             ))}
           </div>
+          </>
+          )}
         </div>
       </SectionCard>
 
@@ -365,7 +466,9 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
       {editing ? (
         <EditAccountPanel
           account={editing}
-          parentOptions={parentOptions.filter((candidate) => candidate.id !== editing.id)}
+          parentOptions={parentOptions.filter(
+            (candidate) => candidate.id !== editing.id && !descendantIdsOf(editing.id).has(candidate.id),
+          )}
           busy={busy}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -388,8 +491,13 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
         <DeleteAccountPanel
           account={deleting}
           busy={actionBusy}
-          error={localError}
-          onClose={() => setDeleting(null)}
+          error={deleteError}
+          onClose={() => {
+            if (!actionBusy) {
+              setDeleteError("");
+              setDeleting(null);
+            }
+          }}
           onConfirm={() => void confirmRemove()}
         />
       ) : null}
@@ -428,34 +536,51 @@ function EditAccountPanel({
   const [parentId, setParentId] = useState(account.parentId ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  useOverlayEscape(onClose);
+  /* Closing mid-save abandons the dialog around an in-flight write: the
+     request still lands, but its error is set on an unmounted panel.
+     (A fresh closure every render keeps the listener's flag current.) */
+  useOverlayEscape(() => {
+    if (!(saving || busy)) onClose();
+  });
 
   const nameChanged = name.trim() !== account.name;
   const parentChanged = (parentId || null) !== (account.parentId ?? null);
   const canSave = !!name.trim() && (nameChanged || parentChanged);
 
   async function save() {
-    if (!canSave) return;
+    if (!canSave || saving || busy) return;
     setSaving(true);
     setError("");
     const body: { name?: string; parentId?: string | null } = {};
     if (nameChanged) body.name = name.trim();
     if (parentChanged) body.parentId = parentId || null;
-    const { ok, data } = await api<{ error?: string }>(`/api/ledger/accounts/${account.id}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
-    setSaving(false);
-    if (!ok) {
-      const code = (data as { error?: string }).error;
-      setError(errorLabels[code ?? ""] ?? errorMessage(code));
-      return;
+    try {
+      const { ok, data } = await api<{ error?: string }>(`/api/ledger/accounts/${account.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      if (!ok) {
+        setError(errorLabels[data.error ?? ""] ?? errorMessage(data.error));
+        return;
+      }
+      onSaved();
+    } catch {
+      // Without this a dropped connection rejected the click's promise and
+      // left the dialog wedged on «در حال ذخیره…» with no error and no way
+      // to retry (setSaving(false) was below the throwing await).
+      setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.");
+    } finally {
+      setSaving(false);
     }
-    onSaved();
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4"
+      onClick={() => {
+        if (!(saving || busy)) onClose();
+      }}
+    >
       <section
         role="dialog"
         aria-modal="true"
@@ -526,7 +651,7 @@ function DeleteAccountPanel({
   useOverlayEscape(onClose);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={() => { if (!busy) onClose(); }}>
       <section
         role="dialog"
         aria-modal="true"

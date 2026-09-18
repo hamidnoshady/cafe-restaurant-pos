@@ -130,8 +130,11 @@ export function AuditLogSettings() {
             {entries.map((entry) => {
               const open = expanded.has(entry.id);
               const detail = sessionDetail(entry);
+              // A log entry is a list row *inside* a card, so it takes the
+              // canonical inner-wash (same skin as the ledger's entry lists),
+              // not a restated card skin — design-lint bans the latter.
               return (
-                <article key={entry.id} className="rounded-xl border border-input bg-card px-3 py-3 sm:px-4">
+                <article key={entry.id} className="rounded-xl border border-border/80 bg-stone-50/60 px-3 py-3 sm:px-4 dark:bg-stone-800/30">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <p className="min-w-0 font-medium leading-6">{auditActionLabel(entry.action)}</p>
                     <time dateTime={entry.createdAt} className="shrink-0 text-xs leading-6 text-muted-foreground">
