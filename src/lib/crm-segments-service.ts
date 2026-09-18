@@ -150,6 +150,7 @@ function segmentSourceSql(): string {
       LEFT JOIN ar_stats ars ON ars.customer_id = c.id
      WHERE c.business_id = $1
        AND c.merged_into_id IS NULL
+       AND c.roles && ARRAY['customer']::text[]
   `;
 }
 
@@ -163,6 +164,16 @@ const MEMBER_COLUMNS = `
   s.total_spent AS "totalSpentRial",
   s.lifecycle_stage AS "lifecycleStage"
 `;
+
+function boundedPositiveInteger(
+  value: number | undefined,
+  fallback: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    return fallback;
+  return Math.min(Math.floor(value), max);
+}
 
 /**
  * Build the full statement for a definition.
@@ -225,7 +236,10 @@ export async function listSegments(
   return rows;
 }
 
-export async function getSegment(businessId: string, id: string): Promise<CustomerSegment | null> {
+export async function getSegment(
+  businessId: string,
+  id: string,
+): Promise<CustomerSegment | null> {
   const { rows } = await query<CustomerSegment>(
     `SELECT ${SEGMENT_COLUMNS} FROM customer_segments WHERE business_id = $1 AND id = $2`,
     [businessId, id],
@@ -289,9 +303,12 @@ export async function updateSegment(
   };
 
   if (input.name !== undefined) add("name = $n", input.name.trim());
-  if (input.description !== undefined) add("description = $n", input.description.trim());
-  if (input.definition !== undefined) add("definition = $n::jsonb", JSON.stringify(input.definition));
-  if (input.archived !== undefined) add("archived_at = $n", input.archived ? new Date().toISOString() : null);
+  if (input.description !== undefined)
+    add("description = $n", input.description.trim());
+  if (input.definition !== undefined)
+    add("definition = $n::jsonb", JSON.stringify(input.definition));
+  if (input.archived !== undefined)
+    add("archived_at = $n", input.archived ? new Date().toISOString() : null);
   if (sets.length === 0) return getSegment(businessId, id);
 
   const { rows } = await query<CustomerSegment>(
@@ -304,7 +321,10 @@ export async function updateSegment(
 }
 
 /** Archives rather than deletes — a sent campaign must keep resolving its segment's name. */
-export async function archiveSegment(businessId: string, id: string): Promise<boolean> {
+export async function archiveSegment(
+  businessId: string,
+  id: string,
+): Promise<boolean> {
   const { rowCount } = await query(
     `UPDATE customer_segments SET archived_at = now(), updated_at = now()
       WHERE business_id = $1 AND id = $2 AND archived_at IS NULL`,
@@ -347,7 +367,10 @@ export async function previewSegment(
     countOnly: true,
     anchorDate,
   });
-  const { rows: countRows } = await query<{ count: number }>(counted.sql, counted.params);
+  const { rows: countRows } = await query<{ count: number }>(
+    counted.sql,
+    counted.params,
+  );
 
   // The unfiltered population, so the UI can show «۱۲۰ نفر، ۴۵ نفر با اجازهٔ
   // پیامک» rather than a silently smaller number. Skipped entirely when the
@@ -358,17 +381,28 @@ export async function previewSegment(
       countOnly: true,
       anchorDate,
     });
-    const { rows } = await query<{ count: number }>(unfiltered.sql, unfiltered.params);
+    const { rows } = await query<{ count: number }>(
+      unfiltered.sql,
+      unfiltered.params,
+    );
     totalBeforeConsent = rows[0]?.count ?? 0;
   }
 
   const sampled = await buildSegmentQuery(businessId, definition, purpose, {
-    limit: options.sampleSize ?? 10,
+    limit: boundedPositiveInteger(options.sampleSize, 10, 50),
     anchorDate,
   });
-  const { rows: sample } = await query<SegmentMember>(sampled.sql, sampled.params);
+  const { rows: sample } = await query<SegmentMember>(
+    sampled.sql,
+    sampled.params,
+  );
 
-  return { count: countRows[0]?.count ?? 0, totalBeforeConsent, sample, purpose };
+  return {
+    count: countRows[0]?.count ?? 0,
+    totalBeforeConsent,
+    sample,
+    purpose,
+  };
 }
 
 /**
@@ -396,11 +430,29 @@ export async function resolveDefinition(
   definition: SegmentDefinition,
   options: { purpose: SegmentPurpose; limit?: number },
 ): Promise<SegmentMember[]> {
-  const built = await buildSegmentQuery(businessId, definition, options.purpose, {
-    limit: options.limit ?? 1000,
-  });
+  const built = await buildSegmentQuery(
+    businessId,
+    definition,
+    options.purpose,
+    {
+      limit: boundedPositiveInteger(options.limit, 1000, 10_000),
+    },
+  );
   const { rows } = await query<SegmentMember>(built.sql, built.params);
   return rows;
+}
+
+/** Member count for an unsaved definition — used when counts must not be capped by the sample size. */
+export async function countDefinition(
+  businessId: string,
+  definition: SegmentDefinition,
+  purpose: SegmentPurpose = "view",
+): Promise<number> {
+  const built = await buildSegmentQuery(businessId, definition, purpose, {
+    countOnly: true,
+  });
+  const { rows } = await query<{ count: number }>(built.sql, built.params);
+  return rows[0]?.count ?? 0;
 }
 
 /** Member count for a saved segment — what the segment list shows next to each name. */
@@ -411,9 +463,7 @@ export async function countSegment(
 ): Promise<number> {
   const segment = await getSegment(businessId, segmentId);
   if (!segment) return 0;
-  const built = await buildSegmentQuery(businessId, segment.definition, purpose, { countOnly: true });
-  const { rows } = await query<{ count: number }>(built.sql, built.params);
-  return rows[0]?.count ?? 0;
+  return countDefinition(businessId, segment.definition, purpose);
 }
 
 /** Counts for every segment at once, so the list page is one round trip per segment rather than N+1 in the browser. */
@@ -424,11 +474,7 @@ export async function listSegmentsWithCounts(
   const counts = await Promise.all(
     segments.map(async (segment) => {
       try {
-        const built = await buildSegmentQuery(businessId, segment.definition, "view", {
-          countOnly: true,
-        });
-        const { rows } = await query<{ count: number }>(built.sql, built.params);
-        return rows[0]?.count ?? 0;
+        return await countDefinition(businessId, segment.definition, "view");
       } catch {
         // A stored definition that no longer compiles (a field removed in a
         // later version, say) must not take the whole page down with it — the
@@ -438,5 +484,8 @@ export async function listSegmentsWithCounts(
       }
     }),
   );
-  return segments.map((segment, index) => ({ ...segment, memberCount: counts[index] }));
+  return segments.map((segment, index) => ({
+    ...segment,
+    memberCount: counts[index],
+  }));
 }
