@@ -25,12 +25,13 @@ vi.mock("@/lib/setup-state", async (importOriginal) => {
   return { ...actual, resolveActiveLocation: vi.fn() };
 });
 
-const SESSION = { businessId: "biz-1", sub: "user-1", role: "owner" };
+const SESSION = { businessId: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", sub: "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12", role: "owner" };
+const LOCATION_ID = "c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13";
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(auth.requireRole).mockResolvedValue({ session: SESSION, error: null } as never);
-  vi.mocked(setupState.resolveActiveLocation).mockResolvedValue({ id: "loc-1" } as never);
+  vi.mocked(setupState.resolveActiveLocation).mockResolvedValue({ id: LOCATION_ID } as never);
 });
 
 function getRequest(url: string) {
@@ -79,7 +80,7 @@ describe("GET /api/inventory/stock-levels", () => {
     expect(response.status).toBe(200);
 
     const body = await response.json();
-    expect(body.locationId).toBe("loc-1");
+    expect(body.locationId).toBe(LOCATION_ID);
     expect(body.items).toHaveLength(2);
     expect(body.totals).toEqual({
       count: 2,
@@ -90,20 +91,21 @@ describe("GET /api/inventory/stock-levels", () => {
   });
 
   it("handles explicit locationId and search query parameter", async () => {
+    const explicitLocationId = "d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14";
     vi.mocked(db.query)
       .mockResolvedValueOnce({ rows: [] } as never)
       .mockResolvedValueOnce({ rows: [{ count: "0", low: "0", out: "0", value: "0" }] } as never);
 
     const response = await GET(
-      getRequest("http://localhost:3000/api/inventory/stock-levels?locationId=loc-99&search=قهوه"),
+      getRequest(`http://localhost:3000/api/inventory/stock-levels?locationId=${explicitLocationId}&search=قهوه`),
     );
     expect(response.status).toBe(200);
 
     const body = await response.json();
-    expect(body.locationId).toBe("loc-99");
+    expect(body.locationId).toBe(explicitLocationId);
     expect(db.query).toHaveBeenCalledWith(
       expect.stringContaining("ILIKE"),
-      expect.arrayContaining(["loc-99", "%قهوه%"]),
+      expect.arrayContaining([explicitLocationId, SESSION.businessId, "%قهوه%"]),
     );
   });
 
@@ -116,6 +118,12 @@ describe("GET /api/inventory/stock-levels", () => {
     expect(body.items).toEqual([]);
     expect(body.totals.count).toBe(0);
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it("returns bad_request for invalid uuid locationId", async () => {
+    const response = await GET(getRequest("http://localhost:3000/api/inventory/stock-levels?locationId=invalid-uuid"));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "bad_request" });
   });
 
   it("returns authentication error when role check fails", async () => {
