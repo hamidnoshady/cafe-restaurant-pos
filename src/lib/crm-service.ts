@@ -44,6 +44,7 @@ import {
   type DuplicateReason,
 } from "./crm-shared";
 import { lifetimeValue, scorePopulation, type CustomerRfmInput, type RfmScore } from "./crm-scoring";
+import { isUuid } from "./uuid";
 
 // ---------------------------------------------------------------------------
 // The customer file
@@ -1022,6 +1023,10 @@ export async function listActivities(
     caseId?: string;
     openOnly?: boolean;
     assignedTo?: string;
+    /** Free-text over subject/body/assignee — the list's own search box. */
+    q?: string;
+    /** Only rows whose `dueAt` falls on or before this ISO date (overdue + today). */
+    dueOnOrBefore?: string;
     limit?: number;
   } = {},
 ): Promise<CrmActivity[]> {
@@ -1031,19 +1036,47 @@ export async function listActivities(
     params.push(value);
     where += ` AND ${fragment.replace("$n", `$${params.length}`)}`;
   };
-  if (options.customerId) add("a.customer_id = $n", options.customerId);
-  if (options.dealId) add("a.deal_id = $n", options.dealId);
-  if (options.caseId) add("a.case_id = $n", options.caseId);
+  // Ids are `uuid` columns: a non-uuid filter raises a Postgres syntax error
+  // (a 500) rather than returning nothing, so a junk query string must simply
+  // not be applied as a filter.
+  if (options.customerId && isUuid(options.customerId)) add("a.customer_id = $n", options.customerId);
+  if (options.dealId && isUuid(options.dealId)) add("a.deal_id = $n", options.dealId);
+  if (options.caseId && isUuid(options.caseId)) add("a.case_id = $n", options.caseId);
   if (options.assignedTo) add("a.assigned_to = $n", options.assignedTo);
+  const term = options.q?.trim();
+  if (term) {
+    // `%` and `_` in a user's search string are literals, not wildcards.
+    const escaped = term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+    params.push(`%${escaped}%`);
+    const n = `$${params.length}`;
+    where += ` AND (a.subject ILIKE ${n} ESCAPE '\\' OR a.body ILIKE ${n} ESCAPE '\\'`;
+    where += ` OR a.assigned_to ILIKE ${n} ESCAPE '\\' OR c.name ILIKE ${n} ESCAPE '\\')`;
+  }
   if (options.openOnly) where += " AND a.completed_at IS NULL";
-  params.push(options.limit ?? 100);
+  if (options.dueOnOrBefore) {
+    params.push(options.dueOnOrBefore);
+    where += ` AND a.due_at IS NOT NULL AND a.due_at < (($${params.length})::date + 1)`;
+  }
+  // A caller-supplied limit is clamped rather than trusted: `limit=999999` on a
+  // shared endpoint is a way to make one screen read a whole table.
+  const limit = Math.min(Math.max(Math.trunc(options.limit ?? 200) || 200, 1), 500);
+  params.push(limit);
 
   const { rows } = await query<CrmActivity>(
     `SELECT ${ACTIVITY_COLUMNS}
        FROM crm_activities a
        LEFT JOIN parties c ON c.id = a.customer_id
       WHERE ${where}
-      ORDER BY a.completed_at IS NOT NULL, coalesce(a.due_at, a.created_at)
+      ORDER BY a.completed_at IS NOT NULL,
+               -- Open work: soonest commitment first, and rows with no moeed
+               -- after the dated ones rather than interleaved with them by
+               -- their creation time (coalescing due_at with created_at put a
+               -- note typed last week ahead of a call due tomorrow).
+               CASE WHEN a.completed_at IS NULL AND a.due_at IS NULL THEN 1 ELSE 0 END,
+               CASE WHEN a.completed_at IS NULL THEN a.due_at END ASC,
+               -- Done work reads as history: most recently finished first.
+               a.completed_at DESC NULLS LAST,
+               a.created_at DESC
       LIMIT $${params.length}`,
     params,
   );
@@ -1090,6 +1123,9 @@ export async function createActivity(
 
 /** One activity by id — the read every write path returns through. */
 export async function getActivity(businessId: string, activityId: string): Promise<CrmActivity | null> {
+  // `id` is a uuid column: a non-uuid would raise a cast error (a 500) instead
+  // of answering "no such row".
+  if (!isUuid(activityId)) return null;
   const { rows } = await query<CrmActivity>(
     `SELECT ${ACTIVITY_COLUMNS}
        FROM crm_activities a
@@ -1100,11 +1136,62 @@ export async function getActivity(businessId: string, activityId: string): Promi
   return rows[0] ?? null;
 }
 
+export interface UpdateActivityInput {
+  kind?: ActivityKind;
+  subject?: string;
+  body?: string;
+  dueAt?: string | null;
+  assignedTo?: string;
+  customerId?: string | null;
+  completed?: boolean;
+}
+
+/**
+ * Edit an activity in place.
+ *
+ * Only the keys present are written, so the tick-box (`completed` alone) and
+ * the edit dialog share one path. Without this a mistyped moeed or a callback
+ * that moved to Thursday could only be fixed by deleting the row and losing
+ * who logged it and when.
+ */
+export async function updateActivity(
+  businessId: string,
+  activityId: string,
+  input: UpdateActivityInput,
+): Promise<CrmActivity | null> {
+  if (!isUuid(activityId)) return null;
+  const sets: string[] = [];
+  const params: unknown[] = [businessId, activityId];
+  const set = (column: string, value: unknown) => {
+    params.push(value);
+    sets.push(`${column} = $${params.length}`);
+  };
+  if (input.kind !== undefined) set("kind", input.kind);
+  if (input.subject !== undefined) set("subject", input.subject.trim());
+  if (input.body !== undefined) set("body", input.body.trim());
+  if (input.dueAt !== undefined) set("due_at", input.dueAt);
+  if (input.assignedTo !== undefined) set("assigned_to", input.assignedTo.trim());
+  if (input.customerId !== undefined) set("customer_id", input.customerId);
+  if (input.completed !== undefined) {
+    set("completed_at", input.completed ? new Date().toISOString() : null);
+  }
+  if (sets.length === 0) return getActivity(businessId, activityId);
+
+  const { rowCount } = await query(
+    `UPDATE crm_activities SET ${sets.join(", ")}, updated_at = now()
+      WHERE business_id = $1 AND id = $2`,
+    params,
+  );
+  if ((rowCount ?? 0) === 0) return null;
+  return getActivity(businessId, activityId);
+}
+
 export async function completeActivity(
   businessId: string,
   activityId: string,
   completed: boolean,
 ): Promise<boolean> {
+  if (!isUuid(activityId)) return false;
   const { rowCount } = await query(
     `UPDATE crm_activities SET completed_at = $3, updated_at = now()
       WHERE business_id = $1 AND id = $2`,
@@ -1114,6 +1201,7 @@ export async function completeActivity(
 }
 
 export async function deleteActivity(businessId: string, activityId: string): Promise<boolean> {
+  if (!isUuid(activityId)) return false;
   const { rowCount } = await query(`DELETE FROM crm_activities WHERE business_id = $1 AND id = $2`, [
     businessId,
     activityId,

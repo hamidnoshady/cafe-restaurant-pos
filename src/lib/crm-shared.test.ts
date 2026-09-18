@@ -4,7 +4,12 @@ import {
   ACTIVITY_KIND_LABELS,
   ACTIVITY_STATE_LABELS,
   ACTIVITY_STATE_TONES,
+  ACTIVITY_ASSIGNEE_MAX,
+  ACTIVITY_BODY_MAX,
+  ACTIVITY_STATES,
+  ACTIVITY_SUBJECT_MAX,
   activityState,
+  isActivityState,
   CASE_PRIORITIES,
   CASE_PRIORITY_LABELS,
   CASE_PRIORITY_TARGET_HOURS,
@@ -137,6 +142,25 @@ describe("activityState", () => {
 
   it("treats an activity with no due date as planned, never overdue", () => {
     expect(activityState({ dueAt: null, completedAt: null }, today)).toBe("planned");
+  });
+
+  it("names every state it labels, and nothing else", () => {
+    // The list's filter chips iterate ACTIVITY_STATES; a state with no label
+    // would render an empty chip.
+    for (const state of ACTIVITY_STATES) {
+      expect(ACTIVITY_STATE_LABELS[state]).toBeTruthy();
+      expect(isActivityState(state)).toBe(true);
+    }
+    expect(isActivityState("cancelled")).toBe(false);
+    expect(isActivityState(undefined)).toBe(false);
+  });
+
+  it("keeps the field ceilings usable, not merely present", () => {
+    // The API rejects past these and the inputs mirror them as maxLength, so a
+    // ceiling below a realistic title would silently truncate real work.
+    expect(ACTIVITY_SUBJECT_MAX).toBeGreaterThanOrEqual(100);
+    expect(ACTIVITY_BODY_MAX).toBeGreaterThan(ACTIVITY_SUBJECT_MAX);
+    expect(ACTIVITY_ASSIGNEE_MAX).toBeGreaterThanOrEqual(60);
   });
 
   it("has a Persian label and a tone for every state", () => {
