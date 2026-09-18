@@ -9,7 +9,7 @@ import {
   overlayPanelClass,
 } from "@/app/dashboard/page-chrome";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
@@ -83,20 +83,28 @@ export function InstallmentsSection() {
   const [creating, setCreating] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const requestSequence = useRef(0);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
+    const sequence = ++requestSequence.current;
     const params = new URLSearchParams({ direction, status });
     if (q.trim()) params.set("q", q.trim());
     setError("");
-    api<{ plans: InstallmentPlanRow[]; error?: string }>(`/api/ledger/installments?${params}`).then(({ ok, data }) => {
-      if (ok) setPlans(data.plans);
+    try {
+      const { ok, data } = await api<{ plans: InstallmentPlanRow[]; error?: string }>(`/api/ledger/installments?${params}`);
+      // A slower response for the previous query/filter must not replace the
+      // newest result after rapid typing or tab changes.
+      if (sequence !== requestSequence.current) return;
+      if (ok) setPlans(data.plans ?? []);
       else {
-        // An empty array rather than `null`: the skeleton must not outlive the
-        // request that failed, or a failure reads as "still loading".
         setPlans([]);
         setError(errorMessage(data.error));
       }
-    });
+    } catch {
+      if (sequence !== requestSequence.current) return;
+      setPlans([]);
+      setError("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
+    }
   }, [direction, status, q]);
 
   useEffect(() => {
@@ -118,16 +126,16 @@ export function InstallmentsSection() {
               برنامه پرداخت قسطی بدهی مشتریان یا تعهدات کسب‌وکار؛ هر قسط که تسویه شود، سند دریافت/پرداخت آن هم ثبت می‌شود.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <button
               type="button"
               onClick={() => setRefreshKey((k) => k + 1)}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 dark:text-stone-300 transition-colors hover:bg-muted"
+              className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 transition-colors hover:bg-muted dark:text-stone-300 sm:flex-none"
             >
               <RefreshCwIcon aria-hidden="true" className="size-4" />
               به‌روزرسانی
             </button>
-            <Button onClick={() => setCreating(true)} className="min-h-10">
+            <Button onClick={() => setCreating(true)} className="min-h-11 flex-1 sm:flex-none">
               <PlusIcon aria-hidden="true" className="size-4" />
               اقساط جدید
             </Button>
@@ -143,8 +151,8 @@ export function InstallmentsSection() {
               پرداختنی
             </button>
           </div>
-          <div className="ms-auto flex flex-wrap items-center gap-2">
-            <div className="flex gap-1.5" role="group" aria-label="وضعیت">
+          <div className="flex w-full flex-wrap items-center gap-2 lg:ms-auto lg:w-auto">
+            <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1" role="group" aria-label="وضعیت">
               {(Object.keys(STATUS_LABEL) as StatusFilter[]).map((key) => (
                 <button key={key} type="button" aria-pressed={status === key} className={chipClass(status === key)} onClick={() => setStatus(key)}>
                   {STATUS_LABEL[key]}
@@ -152,7 +160,9 @@ export function InstallmentsSection() {
               ))}
             </div>
             <input
-              className={`${inputClass} h-11 w-40 sm:w-56`}
+              className={`${inputClass} h-11 w-full sm:ms-auto sm:w-56`}
+              type="search"
+              aria-label="جست‌وجوی برنامه‌های اقساط"
               placeholder="جست‌وجوی شخص یا فاکتور…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -289,8 +299,10 @@ function CreateInstallmentPanel({
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [source, setSource] = useState<"party" | "invoice">("party");
   const [parties, setParties] = useState<{ id: string; name: string }[]>([]);
-  const [invoices, setInvoices] = useState<{ id: string; orderNumber: number; total: number; customerName: string | null }[]>([]);
+  const [invoices, setInvoices] = useState<{ id: string; orderNumber: number; total: number; creditTotal: number; customerName: string | null }[]>([]);
   const [invoicesAvailable, setInvoicesAvailable] = useState(true);
+  const [partiesLoading, setPartiesLoading] = useState(true);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [partyId, setPartyId] = useState("");
   const [invoiceOrderId, setInvoiceOrderId] = useState("");
   const [amount, setAmount] = useState("");
@@ -307,73 +319,97 @@ function CreateInstallmentPanel({
   const [moreSettings, setMoreSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useOverlayEscape(onClose);
+  useOverlayEscape(onClose, !busy);
 
   useEffect(() => {
+    let cancelled = false;
     const role = direction === "receivable" ? "Customer" : "Supplier";
-    api<{ customers?: { id: string; name: string }[] }>(`/api/parties?page=1&pageSize=500&roles=${role}`).then(({ ok, data }) => {
-      if (ok) setParties((data.customers ?? []) as { id: string; name: string }[]);
-    });
+    setParties([]);
+    setPartiesLoading(true);
+    void api<{ customers?: { id: string; name: string }[] }>(`/api/parties?page=1&pageSize=500&roles=${role}`)
+      .then(({ ok, data }) => {
+        if (!cancelled && ok) setParties(data.customers ?? []);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setPartiesLoading(false); });
+
     if (direction === "receivable") {
-      // `method=credit` only: an invoice already paid in cash has no receivable
-      // to schedule, and the service refuses one (`invoice_not_on_credit`), so
-      // listing it would only offer an error.
-      api<{ invoices?: { id: string; orderNumber: number; total: number; customerName: string | null }[] }>(
-        "/api/sales/invoices?pageSize=100&method=credit",
+      setInvoicesAvailable(true);
+      setInvoicesLoading(true);
+      void api<{ invoices?: { id: string; orderNumber: number; total: number; creditTotal: number; customerName: string | null }[] }>(
+        "/api/sales/invoices?pageSize=100&method=credit&installmentEligible=true",
       ).then(({ ok, data }) => {
+        if (cancelled) return;
         if (ok) setInvoices(data.invoices ?? []);
         else setInvoicesAvailable(false);
-      });
+      }).catch(() => {
+        if (!cancelled) setInvoicesAvailable(false);
+      }).finally(() => { if (!cancelled) setInvoicesLoading(false); });
+    } else {
+      setInvoices([]);
+      setInvoicesLoading(false);
     }
+    return () => { cancelled = true; };
   }, [direction]);
 
   const selectedInvoice = useMemo(() => invoices.find((i) => i.id === invoiceOrderId), [invoices, invoiceOrderId]);
 
   async function submit() {
-    setBusy(true);
     setError("");
+    if (source === "party" && !partyId) {
+      setError(errorMessage("party_required"));
+      return;
+    }
     if (source === "invoice" && !selectedInvoice) {
       setError(errorMessage("invoice_required"));
-      setBusy(false);
       return;
     }
+
     let principal: number;
+    let parsedDownPayment = 0;
     try {
-      principal = source === "invoice" ? (selectedInvoice?.total ?? 0) : money.parse(amount);
+      principal = source === "invoice" ? (selectedInvoice?.creditTotal ?? 0) : money.parse(amount);
+      parsedDownPayment = hasDownPayment && downPayment ? money.parse(downPayment) : 0;
     } catch {
       setError(errorMessage("invalid_amount"));
-      setBusy(false);
       return;
     }
-    const { ok, data } = await api<{ error?: string; message?: string }>("/api/ledger/installments", {
-      method: "POST",
-      body: JSON.stringify({
-        direction,
-        source,
-        partyId: source === "party" ? partyId : undefined,
-        invoiceOrderId: source === "invoice" ? invoiceOrderId : undefined,
-        principal,
-        downPayment: hasDownPayment && downPayment ? money.parse(downPayment) : 0,
-        interestPercent: hasInterest && interest ? Number(interest) : 0,
-        lateFeePercent: hasLateFee && lateFee ? Number(lateFee) : 0,
-        installmentCount: count,
-        intervalMonths,
-        firstDueDate,
-        note: note.trim() || undefined,
-      }),
-    });
-    setBusy(false);
-    if (ok) onCreated();
-    else setError(errorMessage(data.error));
+
+    setBusy(true);
+    try {
+      const { ok, data } = await api<{ error?: string; message?: string }>("/api/ledger/installments", {
+        method: "POST",
+        body: JSON.stringify({
+          direction,
+          source,
+          partyId: source === "party" ? partyId : undefined,
+          invoiceOrderId: source === "invoice" ? invoiceOrderId : undefined,
+          principal,
+          downPayment: parsedDownPayment,
+          interestPercent: hasInterest && interest ? Number(interest) : 0,
+          lateFeePercent: hasLateFee && lateFee ? Number(lateFee) : 0,
+          installmentCount: count,
+          intervalMonths,
+          firstDueDate,
+          note: note.trim() || undefined,
+        }),
+      });
+      if (ok) onCreated();
+      else setError(errorMessage(data.error));
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. اطلاعات شما ثبت نشده است؛ دوباره تلاش کنید.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => { if (!busy) onClose(); }}>
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-installment-heading"
-        className={`${overlayPanelClass} flex max-h-[90vh] w-full max-w-2xl flex-col`}
+        className={`${overlayPanelClass} flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-b-none sm:max-h-[90vh] sm:rounded-b-2xl`}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
@@ -381,7 +417,7 @@ function CreateInstallmentPanel({
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ایجاد اقساط</p>
             <h3 id="create-installment-heading" className="mt-1 text-lg font-bold">برنامه قسطی جدید</h3>
           </div>
-          <button type="button" onClick={onClose} aria-label="بستن" className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted">
+          <button type="button" onClick={onClose} disabled={busy} aria-label="بستن" className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50">
             <XIcon aria-hidden="true" className="size-4" />
           </button>
         </header>
@@ -443,6 +479,9 @@ function CreateInstallmentPanel({
                   value={partyId}
                   onChange={setPartyId}
                   ariaLabel="انتخاب شخص"
+                  loading={partiesLoading}
+                  disabled={partiesLoading}
+                  emptyText="شخصی با این نقش پیدا نشد."
                   options={[{ value: "", label: "انتخاب کنید…" }, ...parties.map((p) => ({ value: p.id, label: p.name }))]}
                 />
               </Field>
@@ -452,6 +491,9 @@ function CreateInstallmentPanel({
                   value={invoiceOrderId}
                   onChange={setInvoiceOrderId}
                   ariaLabel="انتخاب فاکتور"
+                  loading={invoicesLoading}
+                  disabled={invoicesLoading}
+                  emptyText="فاکتور نسیهٔ بدون برنامهٔ اقساط پیدا نشد."
                   options={[
                     { value: "", label: "انتخاب کنید…" },
                     ...invoices.map((i) => ({
@@ -468,8 +510,8 @@ function CreateInstallmentPanel({
               </Field>
             ) : selectedInvoice ? (
               <div className="rounded-xl border border-border/80 bg-muted px-3 py-2">
-                <p className="text-xs text-muted-foreground">مبلغ فاکتور</p>
-                <p className="mt-1 text-sm font-bold">{money.format(selectedInvoice.total)}</p>
+                <p className="text-xs text-muted-foreground">ماندهٔ نسیهٔ قابل قسط‌بندی</p>
+                <p className="mt-1 text-sm font-bold">{money.format(selectedInvoice.creditTotal)}</p>
               </div>
             ) : null}
           </div>
@@ -516,10 +558,13 @@ function CreateInstallmentPanel({
               <div className="space-y-3 border-t border-border px-3 py-4">
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={hasDownPayment} onChange={(e) => setHasDownPayment(e.target.checked)} className="size-4 accent-amber-600" />
-                  پیش‌پرداخت
+                  پیش‌پرداختِ قبلاً دریافت/پرداخت‌شده
                 </label>
                 {hasDownPayment ? (
-                  <PersianNumberInput className={`${inputClass} max-w-48`} dir="ltr" inputMode="numeric" value={downPayment} onChange={(e) => setDownPayment(e.target.value)} placeholder="۰" />
+                  <>
+                    <PersianNumberInput className={`${inputClass} max-w-48`} dir="ltr" inputMode="numeric" value={downPayment} onChange={(e) => setDownPayment(e.target.value)} placeholder="۰" />
+                    <p className="text-xs leading-5 text-muted-foreground">این مبلغ فقط از ماندهٔ قابل قسط‌بندی کم می‌شود و دریافت/پرداخت تازه‌ای ثبت نمی‌کند.</p>
+                  </>
                 ) : null}
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={hasInterest} onChange={(e) => setHasInterest(e.target.checked)} className="size-4 accent-amber-600" />
@@ -543,7 +588,7 @@ function CreateInstallmentPanel({
                 ) : null}
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={hasLateFee} onChange={(e) => setHasLateFee(e.target.checked)} className="size-4 accent-amber-600" />
-                  جریمه دیرکرد (درصد)
+                  نرخ جریمه دیرکرد (درصد)
                 </label>
                 {hasLateFee ? (
                   <PersianNumberInput
@@ -557,6 +602,9 @@ function CreateInstallmentPanel({
                     onChange={(e) => setLateFee(e.target.value)}
                     placeholder="۰"
                   />
+                ) : null}
+                {hasLateFee ? (
+                  <p className="text-xs leading-5 text-muted-foreground">این نرخ در کارت ثبت می‌شود؛ مبلغ جریمه خودکار به قسط یا سند حسابداری افزوده نمی‌شود.</p>
                 ) : null}
               </div>
             ) : null}
@@ -583,47 +631,63 @@ function CreateInstallmentPanel({
 function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string; onClose: () => void; onChanged: () => void }) {
   const money = useMoney();
   const [plan, setPlan] = useState<InstallmentPlanRow | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [payingId, setPayingId] = useState<string | null>(null);
   const [method, setMethod] = useState<"cash" | "bank">("cash");
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
-  useOverlayEscape(onClose);
+  useOverlayEscape(onClose, !busy);
 
-  const load = useCallback(() => {
-    api<{ plan: InstallmentPlanRow; error?: string }>(`/api/ledger/installments/${planId}`).then(({ ok, data }) => {
-      // Without the else this panel sat on a skeleton for ever on any failure.
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { ok, data } = await api<{ plan: InstallmentPlanRow; error?: string }>(`/api/ledger/installments/${planId}`);
       if (ok) setPlan(data.plan);
-      else setError(errorMessage(data.error));
-    });
+      else {
+        setPlan(null);
+        setError(errorMessage(data.error));
+      }
+    } catch {
+      setPlan(null);
+      setError("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
+    } finally {
+      setLoading(false);
+    }
   }, [planId]);
-  useEffect(load, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   async function pay(itemId: string) {
     setBusy(true);
     setError("");
-    const { ok, data } = await api<{ error?: string }>(`/api/ledger/installments/${planId}/pay`, {
-      method: "POST",
-      body: JSON.stringify({ itemId, method, memo: memo.trim() || undefined }),
-    });
-    setBusy(false);
-    if (ok) {
-      setPayingId(null);
-      setMemo("");
-      load();
-      onChanged();
-    } else {
-      setError(errorMessage(data.error));
+    try {
+      const { ok, data } = await api<{ error?: string }>(`/api/ledger/installments/${planId}/pay`, {
+        method: "POST",
+        body: JSON.stringify({ itemId, method, memo: memo.trim() || undefined }),
+      });
+      if (ok) {
+        setPayingId(null);
+        setMemo("");
+        void load();
+        onChanged();
+      } else {
+        setError(errorMessage(data.error));
+      }
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. وضعیت قسط را به‌روزرسانی کنید و دوباره تلاش کنید.");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => { if (!busy) onClose(); }}>
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="installment-detail-heading"
-        className={`${overlayPanelClass} flex max-h-[90vh] w-full max-w-2xl flex-col`}
+        className={`${overlayPanelClass} flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-b-none sm:max-h-[90vh] sm:rounded-b-2xl`}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
@@ -633,18 +697,23 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
               {plan ? (plan.partyName ?? "بدون شخص") : "…"}
             </h3>
           </div>
-          <button type="button" onClick={onClose} aria-label="بستن" className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted">
+          <button type="button" onClick={onClose} disabled={busy} aria-label="بستن" className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50">
             <XIcon aria-hidden="true" className="size-4" />
           </button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
           <ErrorBox>{error}</ErrorBox>
-          {!plan ? (
+          {loading ? (
             <LoadingSkeleton rows={4} />
+          ) : !plan ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-muted-foreground">اطلاعات برنامه در دسترس نیست.</p>
+              <Button variant="outline" className="mt-3" onClick={() => void load()}>تلاش دوباره</Button>
+            </div>
           ) : (
             <div className="space-y-4">
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <dl className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 md:grid-cols-5">
                 <div className="rounded-xl border border-border/80 bg-muted px-3 py-2">
                   <dt className="text-xs text-muted-foreground">مبلغ اصل</dt>
                   <dd className="mt-1 text-sm font-bold">{money.format(plan.principal)}</dd>
@@ -670,8 +739,17 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
                 </div>
               </dl>
 
-              <div className="overflow-hidden rounded-xl border border-stone-200/80 dark:border-stone-500/30">
-                <table className="w-full text-sm">
+              {(plan.invoiceOrderNumber !== null || plan.interestPercent > 0 || plan.lateFeePercent > 0 || plan.note) ? (
+                <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-border/80 px-3 py-2 text-xs text-muted-foreground">
+                  {plan.invoiceOrderNumber !== null ? <span>فاکتور {toPersianDigits(plan.invoiceOrderNumber)}</span> : null}
+                  {plan.interestPercent > 0 ? <span>سود: ٪{toPersianDigits(plan.interestPercent)}</span> : null}
+                  {plan.lateFeePercent > 0 ? <span>نرخ دیرکرد: ٪{toPersianDigits(plan.lateFeePercent)}</span> : null}
+                  {plan.note ? <span className="basis-full leading-5 text-foreground">{plan.note}</span> : null}
+                </div>
+              ) : null}
+
+              <div className="overflow-x-auto rounded-xl border border-stone-200/80 dark:border-stone-500/30">
+                <table className="w-full min-w-[36rem] text-sm">
                   <thead>
                     <tr className="border-b border-border bg-stone-50 dark:bg-stone-500/10">
                       <th className="py-2.5 pe-3 ps-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400">قسط</th>
@@ -692,7 +770,9 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
                         </td>
                         <td className="py-3 pe-4">
                           {item.paidAt ? (
-                            <span className="text-xs text-muted-foreground">{item.paidMethod === "cash" ? "نقدی" : "بانکی"}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {item.paidMethod === "cash" ? "نقدی" : item.paidMethod === "bank" ? "بانکی" : "ثبت‌شده"}
+                            </span>
                           ) : payingId === item.id ? null : (
                             <button type="button" onClick={() => { setPayingId(item.id); setError(""); }} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20">
                               ثبت پرداخت

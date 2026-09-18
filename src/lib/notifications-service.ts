@@ -138,6 +138,7 @@ const DEVICE_PLATFORMS: readonly string[] = ["ios", "android", "windows", "macos
 
 export interface NotificationDevice {
   id: string;
+  endpoint: string;
   platform: DevicePlatform;
   label: string;
   createdAt: string;
@@ -146,7 +147,7 @@ export interface NotificationDevice {
   lastError: string | null;
 }
 
-const DEVICE_COLUMNS = `id, platform, label, created_at::text AS created_at,
+const DEVICE_COLUMNS = `id, endpoint, platform, label, created_at::text AS created_at,
                         last_success_at::text AS last_success_at, failure_count, last_error`;
 
 export async function listNotificationDevices(
@@ -155,6 +156,7 @@ export async function listNotificationDevices(
 ): Promise<NotificationDevice[]> {
   const { rows } = await query<{
     id: string;
+    endpoint: string;
     platform: string;
     label: string;
     created_at: string;
@@ -169,6 +171,7 @@ export async function listNotificationDevices(
   );
   return rows.map((row) => ({
     id: row.id,
+    endpoint: row.endpoint,
     platform: row.platform as DevicePlatform,
     label: row.label,
     createdAt: row.created_at,
@@ -229,6 +232,7 @@ export async function registerNotificationDevice(
 
   const { rows } = await query<{
     id: string;
+    endpoint: string;
     platform: string;
     label: string;
     created_at: string;
@@ -270,6 +274,7 @@ export async function registerNotificationDevice(
     ok: true,
     device: {
       id: row.id,
+      endpoint: row.endpoint,
       platform: row.platform as DevicePlatform,
       label: row.label,
       createdAt: row.created_at,

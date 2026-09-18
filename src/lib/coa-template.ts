@@ -48,6 +48,18 @@ export function nextAccountLevel(parentLevel: AccountLevel | null): AccountLevel
   return idx < ACCOUNT_LEVELS.length - 1 ? ACCOUNT_LEVELS[idx + 1] : null;
 }
 
+/**
+ * The shape a persisted account code must have: Latin digits only, nothing
+ * else. Every template code and every well-known code follows it («1100»,
+ * «1200», …), and keeping it uniform is what makes ORDER BY code read the way
+ * accountants expect. Callers canonicalise Persian/Arabic digits first
+ * (`toLatinDigits`); this rejects whatever is left that is not a plain numeral
+ * — letters, separators, whitespace inside the code.
+ */
+export function isValidAccountCode(code: string): boolean {
+  return /^\d+$/.test(code);
+}
+
 export type NormalBalance = "debit" | "credit";
 
 /** Asset/expense accounts carry a debit normal balance; liability/equity/revenue carry credit. */

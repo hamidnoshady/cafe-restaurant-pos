@@ -36,8 +36,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const direction: InstallmentDirection = body.direction === "payable" ? "payable" : "receivable";
-  const source = body.source === "invoice" ? "invoice" : "party";
+  if (body.direction !== "receivable" && body.direction !== "payable") {
+    return NextResponse.json({ error: "invalid_direction" }, { status: 400 });
+  }
+  if (body.source !== "party" && body.source !== "invoice") {
+    return NextResponse.json({ error: "invalid_source" }, { status: 400 });
+  }
+  const direction: InstallmentDirection = body.direction;
+  const source = body.source;
 
   const location = await resolveActiveLocation(session);
 

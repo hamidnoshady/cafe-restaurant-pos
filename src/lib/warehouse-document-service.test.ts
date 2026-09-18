@@ -58,12 +58,60 @@ describe("parseWarehouseDocumentLines", () => {
     expect(parsed.totalValue).toBe("0");
   });
 
-  it("treats a missing receipt unit cost as zero", () => {
-    const parsed = parseWarehouseDocumentLines("receipt", [
-      { inventoryItemId: "a", quantity: "2" },
-    ]);
+  it("refuses a receipt line with no value", () => {
+    // Exact costing forbids a lot holding quantity at zero value (0015's
+    // `inventory_lot_exact_value_bounds`), so a costless receipt cannot be
+    // represented: it used to abort the transaction with a CHECK violation
+    // under FIFO, and add cost-basis-free stock under weighted average.
+    expect(() =>
+      parseWarehouseDocumentLines("receipt", [{ inventoryItemId: "a", quantity: "2" }]),
+    ).toThrow("receipt_value_required");
+    expect(() =>
+      parseWarehouseDocumentLines("receipt", [
+        { inventoryItemId: "a", quantity: "2", unitCost: "0" },
+      ]),
+    ).toThrow("receipt_value_required");
+  });
+
+  it("refuses a receipt line whose value rounds away to zero", () => {
+    // 0.004 × 100 = 0.4 Rial → rounds to 0. Quantity is real, value is not.
+    expect(() =>
+      parseWarehouseDocumentLines("receipt", [
+        { inventoryItemId: "a", quantity: "0.004", unitCost: "100" },
+      ]),
+    ).toThrow("receipt_value_required");
+  });
+
+  it("keeps an issue line valueless — the costing path prices it", () => {
+    const parsed = parseWarehouseDocumentLines("issue", [{ inventoryItemId: "a", quantity: "2" }]);
     expect(parsed.lines[0].unitCost).toBe("0");
     expect(parsed.totalValue).toBe("0");
+  });
+
+  it("refuses a unit cost past what a bigint Rial column holds", () => {
+    // 2^63 — one past the ceiling. Reaching the INSERT with this aborted the
+    // transaction with «out of range for type bigint», i.e. a 500 for a typo.
+    expect(() =>
+      parseWarehouseDocumentLines("receipt", [
+        { inventoryItemId: "a", quantity: "1", unitCost: "9223372036854775808" },
+      ]),
+    ).toThrow("rial_out_of_range");
+  });
+
+  it("refuses a total past the ceiling even when every line fits", () => {
+    expect(() =>
+      parseWarehouseDocumentLines("receipt", [
+        { inventoryItemId: "a", quantity: "1", unitCost: "9223372036854775807" },
+        { inventoryItemId: "b", quantity: "1", unitCost: "9223372036854775807" },
+      ]),
+    ).toThrow("rial_out_of_range");
+  });
+
+  it("accepts a unit cost exactly at the ceiling", () => {
+    const parsed = parseWarehouseDocumentLines("receipt", [
+      { inventoryItemId: "a", quantity: "1", unitCost: "9223372036854775807" },
+    ]);
+    expect(parsed.totalValue).toBe("9223372036854775807");
   });
 
   it("rejects an empty document", () => {

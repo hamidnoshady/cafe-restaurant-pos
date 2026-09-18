@@ -1424,6 +1424,33 @@ export interface FoodCostVariance {
   unexplainedVariance: number;
 }
 
+export interface BranchOverviewMetrics {
+  grossProfit: number;
+  grossMarginPct: number;
+  avgTicket: number;
+  revenueSharePct: number;
+}
+
+/**
+ * Computes derived metrics (Gross Profit, Gross Margin %, Average Ticket, and Revenue Share %)
+ * for a branch comparison row. Guaranteed not to divide by zero.
+ */
+export function computeBranchOverviewMetrics(
+  row: { orderCount: number; total: number; cogs: number },
+  consolidatedTotal: number,
+): BranchOverviewMetrics {
+  const grossProfit = row.total - row.cogs;
+  const grossMarginPct = row.total > 0 ? (grossProfit / row.total) * 100 : 0;
+  const avgTicket = row.orderCount > 0 ? Math.round(row.total / row.orderCount) : 0;
+  const revenueSharePct = consolidatedTotal > 0 ? (row.total / consolidatedTotal) * 100 : 0;
+  return {
+    grossProfit,
+    grossMarginPct,
+    avgTicket,
+    revenueSharePct,
+  };
+}
+
 export function buildFoodCostVariance(
   items: FoodCostVarianceItemInput[],
   actualCogs: number,

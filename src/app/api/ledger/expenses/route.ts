@@ -2,14 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { ExpenseError, listExpenses, recordExpense } from "@/lib/expense-service";
+import { parseExpenseListQuery } from "@/lib/expense-input";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
 
-export const GET = withTenantScope(async () => {
+/**
+ * The expense list, filterable by date range, category, payment account and a
+ * free-text search over the memo/vendor/account names — the same shape the
+ * journal («دفتر روزنامه») already had. It also returns the *true* total and
+ * count over the whole matching set plus `hasMore`, because the screen shows a
+ * «جمع هزینه‌ها» that must not quietly become the sum of one page.
+ */
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
-  const expenses = await listExpenses(session.businessId);
-  return NextResponse.json({ expenses });
+  const filters = parseExpenseListQuery(request.nextUrl.searchParams);
+  const { expenses, hasMore, totalAmount, totalCount } = await listExpenses(session.businessId, filters);
+  return NextResponse.json({ expenses, hasMore, totalAmount, totalCount });
 });
 
 /** Records a paid operating expense and posts it immediately (Debit the chosen expense account / Credit the payment account). */
@@ -39,7 +48,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       locationId: location?.id ?? null,
       accountId: String(body.accountId ?? ""),
       paymentAccountId: String(body.paymentAccountId ?? ""),
-      amount: Number(body.amount),
+      amount: Math.trunc(Number(body.amount)),
       expenseDate: body.expenseDate,
       vendor: body.vendor,
       memo: String(body.memo ?? ""),

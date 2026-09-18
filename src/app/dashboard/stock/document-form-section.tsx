@@ -16,7 +16,7 @@
  * the GL entry (Dr/Cr account codes) the posting engine wrote.
  */
 import { PlusIcon, Trash2Icon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
@@ -85,6 +85,12 @@ const DOC_ERRORS: Record<string, string> = {
   missing_cost: "بهای تمام‌شده هر قلم رسید را وارد کنید.",
   invalid_cost: "بهای تمام‌شده باید یک عدد صحیح معتبر باشد.",
   ledger_account_missing: "حساب مورد نیاز در دفتر حساب‌ها موجود نیست.",
+  // Refused by the parser before anything is written: `unit_cost`/the document
+  // total are bigint columns, and a value past 2^63-1 used to reach the INSERT
+  // and abort the transaction with «out of range for type bigint» — a 500 for
+  // what is really a mistyped cost.
+  cost_out_of_range: "بهای تمام‌شده بسیار بزرگ است؛ عدد را بررسی کنید.",
+  quantity_precision_exceeded: "تعداد حداکثر می‌تواند ۹ رقم اعشار داشته باشد.",
 };
 
 interface PostedSummary {
@@ -110,6 +116,9 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
   const [posted, setPosted] = useState<PostedSummary | null>(null);
   // Lots of the issue line being edited: fetched per (item, branch) on demand.
   const [lotOptions, setLotOptions] = useState<Record<string, BatchOption[]>>({});
+  // Which item ids already have a lot request out (or resolved) — guards the
+  // fetch effect against firing duplicates on every re-render.
+  const lotRequestsRef = useRef(new Set<string>());
 
   const loadWarehouses = useCallback(() => {
     api<{ warehouses: Warehouse[] }>("/api/stock/warehouses").then(({ ok, data }) => {
@@ -123,10 +132,15 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
   useEffect(loadWarehouses, [loadWarehouses]);
 
   // Item options come from the selected warehouse's own stock levels: retail
-  // items are per-branch, so switching warehouse re-points the picker. Only
-  // fungible items (none/batch) can travel on a warehouse document — serial
-  // and weight items have their own intake paths and are refused server-side.
+  // items are per-branch, so switching warehouse re-points the picker AND
+  // resets the lines and the lot cache — a line or lot chosen for the
+  // previous warehouse does not exist in the new one. Only fungible items
+  // (none/batch) can travel on a warehouse document — serial and weight
+  // items have their own intake paths and are refused server-side.
   useEffect(() => {
+    setLines([newLine()]);
+    lotRequestsRef.current = new Set();
+    setLotOptions({});
     if (!locationId) {
       setItems([]);
       return;
@@ -161,25 +175,40 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
   const itemById = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
 
   // The issue form's lot select: fetch the item's lots at this branch once
-  // per item, when an issue line names it.
+  // per item, when an issue line names it. `lotRequestsRef` remembers which
+  // ids are already requested, so re-renders while a request is in flight
+  // (every keystroke re-runs this effect) don't fire duplicates.
   useEffect(() => {
     if (kind !== "issue" || !locationId) return;
     const missing = lines
       .map((l) => l.itemId)
-      .filter((id) => id && itemById.get(id)?.tracking === "batch" && !lotOptions[id]);
+      .filter(
+        (id) => id && itemById.get(id)?.tracking === "batch" && !lotRequestsRef.current.has(id),
+      );
     if (missing.length === 0) return;
     let cancelled = false;
     for (const itemId of missing) {
+      lotRequestsRef.current.add(itemId);
       api<{ batches: BatchOption[] }>(
         `/api/stock/batches?item=${encodeURIComponent(itemId)}&branch=${encodeURIComponent(locationId)}`,
       ).then(({ ok, data }) => {
-        if (!cancelled && ok) setLotOptions((current) => ({ ...current, [itemId]: data.batches }));
+        if (cancelled) return;
+        if (ok) setLotOptions((current) => ({ ...current, [itemId]: data.batches }));
+        // A failed fetch may be retried next time the effect runs.
+        else lotRequestsRef.current.delete(itemId);
       });
     }
     return () => {
       cancelled = true;
     };
-  }, [kind, lines, locationId, itemById, lotOptions]);
+  }, [kind, lines, locationId, itemById]);
+
+  // Posted documents change lot quantities/costs; a warehouse switch changes
+  // the universe. Either way the cache must be re-fetched, not trusted.
+  function resetLotCache() {
+    lotRequestsRef.current = new Set();
+    setLotOptions({});
+  }
 
   /** The cost an issue line will relieve at: the named lot's own, or the item's running cost. */
   function issueUnitCost(line: DocLine): number | null {
@@ -199,7 +228,9 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
     if (kind === "receipt") {
       const cost = Number(line.unitCost);
       if (!Number.isFinite(cost) || cost < 0) return null;
-      return qty * money.fromInput(Math.max(0, Math.round(cost)));
+      // Convert to Rial FIRST, then round: with Toman display, «۱۰.۵ تومان»
+      // is exactly 105 Rial — rounding the Toman value would distort it.
+      return qty * Math.round(money.fromInput(cost));
     }
     const cost = issueUnitCost(line);
     return cost == null ? null : qty * cost;
@@ -235,6 +266,43 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
     e.preventDefault();
     if (busy || !locationId) return;
     setPosted(null);
+
+    // Validate on the client first: the server rejects these too, but a
+    // named line number beats a generic «یکی از اقلام…».
+    for (const [index, line] of lines.entries()) {
+      const lineNo = toPersianDigits(String(index + 1));
+      if (!line.itemId) {
+        setError(`کالای ردیف ${lineNo} را انتخاب کنید.`);
+        return;
+      }
+      if (lines.some((other) => other !== line && other.itemId === line.itemId)) {
+        setError("هر کالا فقط یک بار می‌تواند در سند بیاید؛ ردیف‌های تکراری را یکی کنید.");
+        return;
+      }
+      const qty = Number(line.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        setError(`تعداد ردیف ${lineNo} باید عددی بزرگ‌تر از صفر باشد.`);
+        return;
+      }
+      if (kind === "receipt") {
+        const cost = Number(line.unitCost);
+        if (line.unitCost === "" || !Number.isFinite(cost) || cost < 0) {
+          setError(`بهای هر واحد ردیف ${lineNo} را وارد کنید (عدد صحیح غیرمنفی به ${money.unitLabel}).`);
+          return;
+        }
+      } else if (itemById.get(line.itemId)?.tracking === "batch") {
+        if (!line.lot) {
+          setError(`برای کالای بچ‌محور ردیف ${lineNo}، بچ را انتخاب کنید.`);
+          return;
+        }
+        const lot = (lotOptions[line.itemId] ?? []).find((b) => b.batchNumber === line.lot);
+        if (lot && Number(lot.quantity) < qty) {
+          setError(`موجودی بچ «${lot.batchNumber}» برای ردیف ${lineNo} کافی نیست (موجودی: ${formatQuantity(lot.quantity)}).`);
+          return;
+        }
+      }
+    }
+
     const payload = {
       kind,
       locationId,
@@ -244,8 +312,10 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
       lines: lines.map((line) => ({
         itemId: line.itemId,
         quantity: line.quantity,
+        // Convert to Rial FIRST, then round to the whole Rial the server
+        // requires: with Toman display «۱۰.۵ تومان» is exactly 105 Rial.
         unitCost:
-          kind === "receipt" ? money.fromInput(Math.max(0, Math.round(Number(line.unitCost || "0")))) : undefined,
+          kind === "receipt" ? Math.max(0, Math.round(money.fromInput(Number(line.unitCost || "0")))) : undefined,
         lot: line.lot || null,
         expiryDate: kind === "receipt" && line.expiryDate ? line.expiryDate : null,
       })),
@@ -278,6 +348,9 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
     setRecipient("");
     setDocumentNumber("");
     setNote("");
+    // The posted document changed lot quantities/costs — the cached options
+    // are stale now and must be re-fetched for the next document.
+    resetLotCache();
     setPosted({
       kind,
       totalValue: data.totalValue ?? "0",
@@ -288,14 +361,19 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
     onCreated?.();
   }
 
+  // The line editor's shape (same rationale as the F&B form): one shared
+  // fixed-column grid from xl up (with a header row naming the columns);
+  // below that each line is its own bordered mini-card with per-field
+  // labels — six unlabeled columns never fit a phone or a tablet.
   const lineGridClass =
     kind === "receipt"
-      ? "grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_40px] xl:items-center"
-      : "grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_40px] xl:items-center";
+      ? "grid min-w-0 grid-cols-1 gap-2 rounded-xl border border-border/80 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_2.75rem] xl:items-center xl:rounded-none xl:border-0 xl:p-0"
+      : "grid min-w-0 grid-cols-1 gap-2 rounded-xl border border-border/80 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_2.75rem] xl:items-center xl:rounded-none xl:border-0 xl:p-0";
   const headerGridClass =
     kind === "receipt"
-      ? "hidden text-xs font-medium text-stone-500 dark:text-stone-400 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_40px] xl:gap-2"
-      : "hidden text-xs font-medium text-stone-500 dark:text-stone-400 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_40px] xl:gap-2";
+      ? "hidden text-xs font-medium text-stone-500 dark:text-stone-400 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_minmax(120px,0.9fr)_2.75rem] xl:gap-2"
+      : "hidden text-xs font-medium text-stone-500 dark:text-stone-400 xl:grid xl:grid-cols-[minmax(0,2fr)_minmax(80px,0.7fr)_minmax(110px,0.9fr)_minmax(120px,1fr)_minmax(130px,1fr)_2.75rem] xl:gap-2";
+  const lineFieldClass = "grid min-w-0 gap-1 text-xs font-medium text-stone-500 dark:text-stone-400";
 
   return (
     <SectionCard
@@ -377,78 +455,105 @@ export function DocumentFormSection({ onCreated }: { onCreated?: () => void }) {
               const value = lineValueRial(line);
               return (
                 <div key={line.key} className={lineGridClass}>
-                  <SearchableSelect value={line.itemId} onChange={(v) => updateLine(line.key, { itemId: v })} options={itemOptions} />
-                  <PersianNumberInput
-                    className={inputClass}
-                    dir="ltr"
-                    inputMode="decimal"
-                    value={line.quantity}
-                    onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                    placeholder="۰"
-                    aria-label="تعداد"
-                  />
-                  {kind === "receipt" ? (
+                  <label className={`${lineFieldClass} sm:col-span-2 xl:col-span-1`}>
+                    <span className="xl:sr-only">کالا</span>
+                    <SearchableSelect
+                      value={line.itemId}
+                      onChange={(v) => updateLine(line.key, { itemId: v, lot: "" })}
+                      options={itemOptions}
+                      ariaLabel="کالا"
+                    />
+                  </label>
+                  <label className={lineFieldClass}>
+                    <span className="xl:sr-only">تعداد</span>
                     <PersianNumberInput
                       className={inputClass}
                       dir="ltr"
-                      inputMode="numeric"
-                      value={line.unitCost}
-                      onChange={(e) => updateLine(line.key, { unitCost: e.target.value })}
+                      inputMode="decimal"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
                       placeholder="۰"
-                      aria-label="بهای هر واحد"
+                      aria-label="تعداد"
                     />
+                  </label>
+                  {kind === "receipt" ? (
+                    <label className={lineFieldClass}>
+                      <span className="xl:sr-only">بهای هر واحد ({money.unitLabel})</span>
+                      <PersianNumberInput
+                        className={inputClass}
+                        dir="ltr"
+                        inputMode="numeric"
+                        value={line.unitCost}
+                        onChange={(e) => updateLine(line.key, { unitCost: e.target.value })}
+                        placeholder="۰"
+                        aria-label={`بهای هر واحد به ${money.unitLabel}`}
+                      />
+                    </label>
                   ) : (
-                    <span className="truncate text-xs tabular-nums text-muted-foreground" title="بهای relieved از خود بچ/موجودی">
+                    <span className="truncate text-xs tabular-nums text-muted-foreground" title="بهای برداشت از خود بچ/موجودی">
+                      <span className="xl:hidden">بهای هر واحد: </span>
                       {resolvedCost == null ? "در لحظه ثبت" : money.format(resolvedCost)}
                     </span>
                   )}
                   {kind === "receipt" ? (
-                    <input
-                      className={inputClass}
-                      value={line.lot}
-                      onChange={(e) => updateLine(line.key, { lot: e.target.value })}
-                      placeholder={isBatch ? "شماره بچ (اختیاری)" : "—"}
-                      disabled={!isBatch}
-                      aria-label="شماره بچ"
-                    />
+                    <label className={lineFieldClass}>
+                      <span className="xl:sr-only">بچ/لات</span>
+                      <input
+                        className={inputClass}
+                        value={line.lot}
+                        onChange={(e) => updateLine(line.key, { lot: e.target.value })}
+                        placeholder={isBatch ? "شماره بچ (اختیاری)" : "—"}
+                        disabled={!isBatch}
+                        aria-label="شماره بچ"
+                      />
+                    </label>
                   ) : isBatch ? (
-                    <SearchableSelect
-                      value={line.lot}
-                      onChange={(v) => updateLine(line.key, { lot: v })}
-                      options={[
-                        { value: "", label: "بچ را انتخاب کنید…" },
-                        ...(lotOptions[line.itemId] ?? []).map((b) => ({
-                          value: b.batchNumber,
-                          label: `${b.batchNumber} · ${formatQuantity(b.quantity)}`,
-                          searchString: b.batchNumber,
-                        })),
-                      ]}
-                    />
+                    <label className={lineFieldClass}>
+                      <span className="xl:sr-only">بچ/لات</span>
+                      <SearchableSelect
+                        value={line.lot}
+                        onChange={(v) => updateLine(line.key, { lot: v })}
+                        options={[
+                          { value: "", label: "بچ را انتخاب کنید…" },
+                          ...(lotOptions[line.itemId] ?? []).map((b) => ({
+                            value: b.batchNumber,
+                            label: `${b.batchNumber} · ${formatQuantity(b.quantity)}`,
+                            searchString: b.batchNumber,
+                          })),
+                        ]}
+                        ariaLabel="بچ/لات"
+                      />
+                    </label>
                   ) : (
-                    <span className="truncate text-xs text-muted-foreground">—</span>
+                    <span className="hidden truncate text-xs text-muted-foreground xl:block">—</span>
                   )}
                   {kind === "receipt" ? (
-                    <JalaliDatePicker
-                      className={inputClass}
-                      value={line.expiryDate}
-                      onChange={(iso) => updateLine(line.key, { expiryDate: iso })}
-                      disabled={!isBatch}
-                    />
+                    <label className={lineFieldClass}>
+                      <span className="xl:sr-only">انقضا (شمسی)</span>
+                      <JalaliDatePicker
+                        className={inputClass}
+                        value={line.expiryDate}
+                        onChange={(iso) => updateLine(line.key, { expiryDate: iso })}
+                        disabled={!isBatch}
+                      />
+                    </label>
                   ) : null}
                   <span className="truncate text-xs font-medium tabular-nums text-foreground">
+                    <span className="xl:hidden">ارزش: </span>
                     {value == null ? "≈ —" : `≈ ${money.format(value)}`}
                   </span>
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon-sm"
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    size="sm"
+                    className="w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive sm:col-span-2 xl:col-span-1 xl:w-auto"
                     onClick={() => removeLine(line.key)}
                     disabled={lines.length === 1}
                     aria-label="حذف این قلم"
                     title="حذف این قلم"
                   >
                     <Trash2Icon aria-hidden="true" className="size-4" />
+                    <span className="xl:sr-only">حذف این قلم</span>
                   </Button>
                 </div>
               );

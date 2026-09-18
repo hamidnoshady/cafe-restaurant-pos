@@ -5,8 +5,10 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { UNKNOWN_SUPPLIER_KEY } from "@/lib/aging";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "@/app/dashboard/ui";
+import { accountingSupplierHref } from "./accounting-routes";
 import { overlayPanelClass } from "@/app/dashboard/page-chrome";
 import { useOverlayEscape } from "./use-overlay-escape";
 
@@ -30,22 +32,40 @@ const TYPE_LABELS: Record<ApStatementLine["type"], string> = {
 export function ApStatementPanel({
   supplierId,
   supplierName,
+  supplierPartyId,
   onClose,
 }: {
   supplierId: string;
   supplierName: string;
+  /** The party behind the branch alias — what a deep link into «اشخاص» is keyed by. Null for the unattributed bucket. */
+  supplierPartyId: string | null;
   onClose: () => void;
 }) {
   const money = useMoney();
   const [lines, setLines] = useState<ApStatementLine[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   useOverlayEscape(onClose);
 
   useEffect(() => {
+    let cancelled = false;
     setLines(null);
-    api<{ lines: ApStatementLine[] }>("/api/ledger/ap/suppliers/" + supplierId).then(({ ok, data }) => {
-      if (ok) setLines(data.lines);
-    });
-  }, [supplierId]);
+    setFailed(false);
+    api<{ lines: ApStatementLine[] }>("/api/ledger/ap/suppliers/" + supplierId)
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (ok) setLines(data.lines);
+        // Without this the panel sat on its skeleton for ever — a failed load
+        // and a slow one were indistinguishable, with «بستن» the only way out.
+        else setFailed(true);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supplierId, reloadKey]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
@@ -60,13 +80,42 @@ export function ApStatementPanel({
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات حساب</p>
             <h3 id="ap-statement-heading" className="mt-1 text-lg font-bold">صورتحساب {supplierName}</h3>
+            {/*
+              The A/R mirror's «مشتریان در حسابداری» link, which this panel never
+              had: the supplier's file in the one directory, with its accounting
+              code, tax and balance. Keyed by the *party* (`supplierPartyId`) —
+              `supplierId` is the branch alias, which the directory does not know.
+              Hidden for unattributed A/P lines, which belong to no supplier
+              record and would link nowhere.
+            */}
+            {supplierId !== UNKNOWN_SUPPLIER_KEY && supplierPartyId ? (
+              <a
+                href={accountingSupplierHref(supplierPartyId)}
+                className="mt-1 inline-block text-xs font-semibold text-primary underline-offset-4 hover:underline"
+              >
+                تأمین‌کنندگان در حسابداری
+              </a>
+            ) : null}
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground">
             بستن
           </button>
         </header>
 
-        {lines === null ? (
+        {failed ? (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-6 text-center">
+            <p role="alert" className="text-sm text-destructive">بارگذاری صورتحساب این تأمین‌کننده ناموفق بود.</p>
+            <div className="mt-3 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="min-h-10 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
+              >
+                تلاش دوباره
+              </button>
+            </div>
+          </div>
+        ) : lines === null ? (
           <LoadingSkeleton rows={3} />
         ) : lines.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">

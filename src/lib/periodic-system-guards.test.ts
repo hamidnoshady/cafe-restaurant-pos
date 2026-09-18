@@ -154,18 +154,25 @@ describe("perpetual-only instruments refuse a periodic business", () => {
   });
 
   it("createWarehouseDocumentInTransaction — رسید/حواله write priced stock movements", async () => {
+    // Real uuids here, unlike the scripted ids the other cases use: this
+    // service screens every id with `isUuid` before it queries (a non-uuid
+    // against a uuid column raises a syntax error, i.e. a 500 instead of a
+    // 404), so a "loc-1" would be refused by that guard and never reach the
+    // periodic one this test is about.
+    const locationId = "11111111-1111-4111-8111-111111111111";
+    const itemId = "22222222-2222-4222-8222-222222222222";
     const { client } = scriptedClient((sql) => {
-      if (sql.includes("FROM locations")) return [{ id: "loc-1", is_active: true }];
+      if (sql.includes("FROM locations")) return [{ id: locationId, is_active: true }];
       if (sql.includes("FROM settings")) return [{ value: PERIODIC_COSTING }];
       return undefined;
     });
     const parsed = parseWarehouseDocumentLines("receipt", [
-      { inventoryItemId: "item-a", quantity: "1", unitCost: "100" },
+      { inventoryItemId: itemId, quantity: "1", unitCost: "100" },
     ]);
     await expect(
       createWarehouseDocumentInTransaction(client, {
         businessId: "biz-1",
-        locationId: "loc-1",
+        locationId,
         kind: parsed.kind,
         supplierId: null,
         recipient: null,
