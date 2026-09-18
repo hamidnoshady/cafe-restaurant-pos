@@ -6,6 +6,14 @@
 import { toLatinDigits } from "./digits";
 import { tomanToRial, type Rial } from "./money";
 
+/**
+ * The unit the numbers in an import file are denominated in. The app is
+ * unit-aware everywhere else (`business.prefs.currencyDisplay`), so a business
+ * that displays Rial must not have its file silently read as Toman — that is a
+ * 10× price error on every row.
+ */
+export type ImportMoneyUnit = "toman" | "rial";
+
 export interface ImportedModifier {
   name: string;
   /** stored unit: Rial */
@@ -140,13 +148,22 @@ function mapHeader(cells: string[]): (keyof RawRow | null)[] {
   });
 }
 
-/** Parse a price in Toman (Persian/Latin digits, separators) → integer Rial. */
-export function parsePriceToman(input: string): Rial | null {
+/**
+ * Parse a price in the file's unit (Persian/Latin digits, separators) → integer
+ * Rial. `unit` defaults to Toman, the unit the onboarding wizard's copy
+ * promises; Settings passes the business's own display unit instead.
+ */
+export function parsePrice(input: string, unit: ImportMoneyUnit = "toman"): Rial | null {
   const cleaned = toLatinDigits(String(input)).replace(/[٬,\s]/g, "");
   if (!/^\d+$/.test(cleaned)) return null;
   const value = Number(cleaned);
   if (!Number.isSafeInteger(value)) return null;
-  return tomanToRial(value);
+  return unit === "toman" ? tomanToRial(value) : value;
+}
+
+/** Parse a price in Toman → integer Rial. Kept for the wizard and its tests. */
+export function parsePriceToman(input: string): Rial | null {
+  return parsePrice(input, "toman");
 }
 
 function parseTaxRate(input: string): number | null {
@@ -163,14 +180,14 @@ function parseSelection(input: string): number | null {
   return Number.isSafeInteger(value) ? value : null;
 }
 
-function parseModifiers(input: string): ImportedModifier[] | null {
+function parseModifiers(input: string, unit: ImportMoneyUnit): ImportedModifier[] | null {
   const entries = input.split(/[|؛;]/).map((item) => item.trim()).filter(Boolean);
   const modifiers: ImportedModifier[] = [];
   for (const entry of entries) {
     const separator = Math.max(entry.lastIndexOf(":"), entry.lastIndexOf("："));
     if (separator < 1) return null;
     const name = entry.slice(0, separator).trim();
-    const priceDelta = parsePriceToman(entry.slice(separator + 1));
+    const priceDelta = parsePrice(entry.slice(separator + 1), unit);
     if (!name || priceDelta === null) return null;
     modifiers.push({ name, priceDelta });
   }
@@ -178,7 +195,7 @@ function parseModifiers(input: string): ImportedModifier[] | null {
 }
 
 /** Turn raw rows (first row = header) into validated import items. */
-export function rowsToImport(rows: string[][]): ImportResult {
+export function rowsToImport(rows: string[][], unit: ImportMoneyUnit = "toman"): ImportResult {
   const errors: string[] = [];
   if (rows.length === 0) return { items: [], categories: [], errors: ["فایل خالی است."] };
 
@@ -205,7 +222,7 @@ export function rowsToImport(rows: string[][]): ImportResult {
       errors.push(`سطر ${rowNo}: نام خالی است.`);
       continue;
     }
-    const price = parsePriceToman(raw.price ?? "");
+    const price = parsePrice(raw.price ?? "", unit);
     if (price === null) {
       errors.push(`سطر ${rowNo}: قیمت «${raw.price ?? ""}» معتبر نیست.`);
       continue;
@@ -223,7 +240,7 @@ export function rowsToImport(rows: string[][]): ImportResult {
       errors.push(`سطر ${rowNo}: برای افزودنی‌ها نام گروه افزودنی لازم است.`);
       continue;
     }
-    const modifiers = raw.modifiers ? parseModifiers(raw.modifiers) : undefined;
+    const modifiers = raw.modifiers ? parseModifiers(raw.modifiers, unit) : undefined;
     if (raw.modifiers && modifiers === null) {
       errors.push(`سطر ${rowNo}: قالب افزودنی‌ها معتبر نیست. از «نام:مبلغ | نام:مبلغ» استفاده کنید.`);
       continue;
@@ -260,8 +277,8 @@ export function rowsToImport(rows: string[][]): ImportResult {
   return { items, categories, errors };
 }
 
-export function parseMenuCsv(text: string): ImportResult {
-  return rowsToImport(parseCsv(text));
+export function parseMenuCsv(text: string, unit: ImportMoneyUnit = "toman"): ImportResult {
+  return rowsToImport(parseCsv(text), unit);
 }
 
 /** Basic sample offered by the onboarding wizard. */

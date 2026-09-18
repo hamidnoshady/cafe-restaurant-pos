@@ -22,8 +22,8 @@ import {
   SecondaryButton,
 } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { ChevronDown } from "lucide-react";
-import { SectionCard } from "../page-chrome";
+import { ChevronDown, SearchIcon, XIcon } from "lucide-react";
+import { EmptyState, SectionCard } from "../page-chrome";
 import { MediaImageField, mediaFileUrl } from "../media/media-picker";
 
 interface Category {
@@ -81,34 +81,73 @@ interface MenuData {
   itemModifierGroups: ItemGroupLink[];
 }
 
-export function MenuManager() {
+export function MenuManager({
+  /**
+   * Bump to reload the menu from the server. The editor fetches once on mount,
+   * so a sibling flow that changes the menu — the CSV/Excel import above —
+   * needs a way to make this list reflect what it just wrote.
+   */
+  refreshToken = 0,
+}: {
+  refreshToken?: number;
+}) {
   const [data, setData] = useState<MenuData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  const load = useCallback(() => {
-    api<MenuData>("/api/menu").then(({ ok, data }) => {
+  const load = useCallback(async () => {
+    setLoadFailed(false);
+    try {
+      const { ok, data } = await api<MenuData>("/api/menu");
       if (ok) setData(data);
-    });
+      else setLoadFailed(true);
+    } catch {
+      setLoadFailed(true);
+    }
   }, []);
-  useEffect(load, [load]);
+  useEffect(
+    () => {
+      void load();
+    },
+    [load, refreshToken],
+  );
 
   async function run(
     fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
   ) {
     setBusy(true);
     setError("");
-    const { ok, data } = await fn();
-    setBusy(false);
-    if (!ok) {
-      setError(errorMessage(data.error));
+    let result: { ok: boolean; data: { error?: string } };
+    try {
+      result = await fn();
+    } catch {
+      // A rejected fetch used to leave `busy` stuck on, disabling every
+      // button on the screen until the page was reloaded.
+      setBusy(false);
+      setError("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
       return false;
     }
-    load();
+    setBusy(false);
+    if (!result.ok) {
+      setError(errorMessage(result.data.error));
+      return false;
+    }
+    await load();
     return true;
   }
 
-  if (!data) return <LoadingSkeleton rows={3} />;
+  if (!data) {
+    if (loadFailed) {
+      return (
+        <SectionCard title="منو">
+          <ErrorBox>بارگذاری منو ممکن نشد. اتصال را بررسی و دوباره تلاش کنید.</ErrorBox>
+          <SecondaryButton onClick={() => void load()}>تلاش دوباره</SecondaryButton>
+        </SectionCard>
+      );
+    }
+    return <LoadingSkeleton rows={3} />;
+  }
 
   return (
     <div className="space-y-8">
@@ -134,6 +173,7 @@ function CategorySection({
   run: Runner;
 }) {
   const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   async function add() {
     if (!name.trim()) return;
@@ -161,6 +201,7 @@ function CategorySection({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="مثلاً نوشیدنی گرم"
+            required
           />
         </Field>
         <div className="mb-4 flex items-end">
@@ -170,39 +211,123 @@ function CategorySection({
         </div>
       </form>
       <ul className="divide-y divide-border">
-        {data.categories.map((c) => (
-          <li
-            key={c.id}
-            className="flex min-w-0 flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
-          >
-            <span
-              className={`min-w-0 break-words ${c.is_active ? "" : "text-muted-foreground line-through"}`}
+        {data.categories.map((c) =>
+          editingId === c.id ? (
+            <EditCategoryRow
+              key={c.id}
+              category={c}
+              busy={busy}
+              run={run}
+              onDone={() => setEditingId(null)}
+            />
+          ) : (
+            <li
+              key={c.id}
+              className="flex min-w-0 flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
             >
-              {c.name}{" "}
-              <span className="text-xs text-muted-foreground">
-                (مالیات {toPersianDigits(c.tax_rate)}%)
+              <span
+                className={`min-w-0 break-words ${c.is_active ? "" : "text-muted-foreground line-through"}`}
+              >
+                {c.name}{" "}
+                <span className="text-xs text-muted-foreground">
+                  (مالیات {toPersianDigits(c.tax_rate)}%)
+                </span>
               </span>
-            </span>
-            <SecondaryButton
-              disabled={busy}
-              onClick={() =>
-                run(() =>
-                  api(`/api/menu/categories/${c.id}`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ isActive: !c.is_active }),
-                  }),
-                )
-              }
-            >
-              {c.is_active ? "غیرفعال" : "فعال"}
-            </SecondaryButton>
-          </li>
-        ))}
+              <div className="flex flex-wrap items-center gap-2">
+                <SecondaryButton disabled={busy} onClick={() => setEditingId(c.id)}>
+                  ویرایش
+                </SecondaryButton>
+                <SecondaryButton
+                  disabled={busy}
+                  onClick={() =>
+                    run(() =>
+                      api(`/api/menu/categories/${c.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ isActive: !c.is_active }),
+                      }),
+                    )
+                  }
+                >
+                  {c.is_active ? "غیرفعال" : "فعال"}
+                </SecondaryButton>
+                <SecondaryButton
+                  disabled={busy}
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        `دستهٔ «${c.name}» حذف شود؟ اگر آیتمی داشته باشد، به‌جای حذف غیرفعال می‌شود.`,
+                      )
+                    )
+                      return;
+                    void run(() =>
+                      api(`/api/menu/categories/${c.id}`, { method: "DELETE" }),
+                    );
+                  }}
+                >
+                  حذف
+                </SecondaryButton>
+              </div>
+            </li>
+          ),
+        )}
         {data.categories.length === 0 ? (
           <p className="text-sm text-muted-foreground">دسته‌ای ثبت نشده است.</p>
         ) : null}
       </ul>
     </SectionCard>
+  );
+}
+
+function EditCategoryRow({
+  category,
+  busy,
+  run,
+  onDone,
+}: {
+  category: Category;
+  busy: boolean;
+  run: Runner;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState(category.name);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!name.trim()) return;
+    const ok = await run(() =>
+      api(`/api/menu/categories/${category.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+    );
+    if (ok) onDone();
+  }
+
+  return (
+    <li className="py-3">
+      <form
+        onSubmit={save}
+        className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+      >
+        <Field label="نام دسته">
+          <input
+            className={inputClass}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            autoFocus
+          />
+        </Field>
+        <div className="mb-4 flex items-end gap-2">
+          <div className="w-full sm:w-40">
+            <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+          </div>
+          <SecondaryButton disabled={busy} onClick={onDone}>
+            انصراف
+          </SecondaryButton>
+        </div>
+      </form>
+    </li>
   );
 }
 
@@ -219,6 +344,7 @@ function ItemSection({
   const [categoryId, setCategoryId] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [formError, setFormError] = useState("");
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
     () => new Set(),
   );
@@ -236,12 +362,26 @@ function ItemSection({
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
+    // The category combobox is not a native control, so the browser's
+    // `required` validation cannot cover it — and without this check an empty
+    // category reached the API and came back as a generic «فیلدهای الزامی را
+    // پر کنید» that named nothing.
+    if (!categoryId) {
+      setFormError("دستهٔ آیتم را انتخاب کنید.");
+      return;
+    }
+    if (!name.trim()) {
+      setFormError("نام آیتم را بنویسید.");
+      return;
+    }
     let priceRial: number;
     try {
       priceRial = money.parse(price);
     } catch {
+      setFormError("قیمت معتبر نیست.");
       return;
     }
+    setFormError("");
     const ok = await run(() =>
       api("/api/menu/items", {
         method: "POST",
@@ -298,13 +438,28 @@ function ItemSection({
     return map;
   }, [filteredItems]);
 
+  // `menu_items.category_id` is nullable (categories delete with ON DELETE SET
+  // NULL), and such rows used to disappear from this list entirely — alive in
+  // the database, sellable by no screen, fixable nowhere.
+  const uncategorizedItems = useMemo(
+    () => filteredItems.filter((item) => !item.category_id),
+    [filteredItems],
+  );
+
   return (
     <SectionCard title="آیتم‌ها">
       <form
         onSubmit={add}
         className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <Field label="دسته">
+        <Field
+          label="دسته"
+          hint={
+            activeCategories.length === 0
+              ? "ابتدا در بخش «دسته‌ها» یک دستهٔ فعال بسازید."
+              : undefined
+          }
+        >
           <SearchableSelect
             value={categoryId}
             onChange={setCategoryId}
@@ -334,60 +489,110 @@ function ItemSection({
           />
         </Field>
         <div className="mb-4 flex items-end">
-          <PrimaryButton disabled={busy || activeCategories.length === 0}>
+          <PrimaryButton
+            disabled={busy || activeCategories.length === 0 || !categoryId}
+          >
             افزودن آیتم
           </PrimaryButton>
         </div>
       </form>
+      <ErrorBox>{formError}</ErrorBox>
 
-      <input
-        className={inputClass}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="جستجوی آیتم…"
-        aria-label="جستجوی آیتم"
-      />
-      <div className="space-y-4">
-        {data.categories.map((c) => {
-          const items = itemsByCategory.get(c.id) ?? [];
-          if (items.length === 0) return null;
-          const isCollapsed = collapsedCategories.has(c.id);
-          return (
-            <div key={c.id}>
-              <button
-                type="button"
-                onClick={() => toggleCategory(c.id)}
-                className="mb-1 flex items-center gap-1.5 text-sm font-medium text-foreground"
-                aria-expanded={!isCollapsed}
-              >
-                <ChevronDown
-                  className={`size-4 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
-                  aria-hidden="true"
-                />
-                {c.name}
-                <span className="text-xs font-normal text-muted-foreground">
-                  ({toPersianDigits(items.length)})
-                </span>
-              </button>
-              {isCollapsed ? null : (
-                <ul className="divide-y divide-border/80 rounded-xl border border-border/80">
-                  {items.map((i) => (
-                    <ItemRow
-                      key={i.id}
-                      item={i}
-                      categories={data.categories}
-                      groups={data.modifierGroups}
-                      links={data.itemModifierGroups}
-                      busy={busy}
-                      run={run}
-                    />
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
+      <div className="relative mb-4">
+        <SearchIcon
+          aria-hidden="true"
+          className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <input
+          className={`${inputClass} ps-9 pe-9`}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="جستجوی آیتم…"
+          aria-label="جستجوی آیتم"
+          type="search"
+        />
+        {query ? (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            aria-label="پاک کردن جستجو"
+            title="پاک کردن جستجو"
+            className="absolute end-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <XIcon className="size-4" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
+      {data.items.length === 0 ? (
+        <EmptyState>هنوز آیتمی ثبت نشده است.</EmptyState>
+      ) : filteredItems.length === 0 ? (
+        <EmptyState>آیتمی با این جستجو پیدا نشد.</EmptyState>
+      ) : (
+        <div className="space-y-4">
+          {data.categories.map((c) => {
+            const items = itemsByCategory.get(c.id) ?? [];
+            if (items.length === 0) return null;
+            const isCollapsed = collapsedCategories.has(c.id);
+            return (
+              <div key={c.id}>
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(c.id)}
+                  className="mb-1 flex items-center gap-1.5 text-sm font-medium text-foreground"
+                  aria-expanded={!isCollapsed}
+                >
+                  <ChevronDown
+                    className={`size-4 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                    aria-hidden="true"
+                  />
+                  {c.name}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    ({toPersianDigits(items.length)})
+                  </span>
+                </button>
+                {isCollapsed ? null : (
+                  <ul className="divide-y divide-border/80 rounded-xl border border-border/80">
+                    {items.map((i) => (
+                      <ItemRow
+                        key={i.id}
+                        item={i}
+                        categories={data.categories}
+                        groups={data.modifierGroups}
+                        links={data.itemModifierGroups}
+                        busy={busy}
+                        run={run}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+          {uncategorizedItems.length > 0 ? (
+            <div>
+              <p className="mb-1 text-sm font-medium text-muted-foreground">
+                بدون دسته
+                <span className="ms-1 text-xs font-normal">
+                  ({toPersianDigits(uncategorizedItems.length)})
+                </span>
+              </p>
+              <ul className="divide-y divide-border/80 rounded-xl border border-dashed border-border">
+                {uncategorizedItems.map((i) => (
+                  <ItemRow
+                    key={i.id}
+                    item={i}
+                    categories={data.categories}
+                    groups={data.modifierGroups}
+                    links={data.itemModifierGroups}
+                    busy={busy}
+                    run={run}
+                  />
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      )}
     </SectionCard>
   );
 }
@@ -563,19 +768,31 @@ function EditItemRow({
   const [imageMediaId, setImageMediaId] = useState<string | null>(
     item.image_media_id,
   );
+  const [formError, setFormError] = useState("");
   const selectableCategories = categories.filter(
     (category) => category.is_active || category.id === item.category_id,
   );
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    // These used to `return` silently, leaving a «ذخیره» button that visibly
+    // did nothing when a field was missing.
+    if (!categoryId) {
+      setFormError("دستهٔ آیتم را انتخاب کنید.");
+      return;
+    }
+    if (!name.trim()) {
+      setFormError("نام آیتم را بنویسید.");
+      return;
+    }
     let priceRial: number;
     try {
       priceRial = money.parse(price);
     } catch {
+      setFormError("قیمت معتبر نیست.");
       return;
     }
-    if (!categoryId || !name.trim()) return;
+    setFormError("");
     const ok = await run(() =>
       api(`/api/menu/items/${item.id}`, {
         method: "PATCH",
@@ -632,6 +849,9 @@ function EditItemRow({
             disabled={busy}
           />
         </div>
+        <div className="sm:col-span-2 xl:col-span-3">
+          <ErrorBox>{formError}</ErrorBox>
+        </div>
         <div className="flex flex-col gap-2 sm:col-span-2 xl:col-span-3 sm:flex-row">
           <div className="w-full sm:w-40">
             <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
@@ -658,6 +878,7 @@ function PricingPanel({
   const money = useMoney();
   const [suggestion, setSuggestion] = useState<SuggestedPrice | null>(null);
   const [loading, setLoading] = useState(true);
+  const [marginError, setMarginError] = useState("");
   const [marginInput, setMarginInput] = useState(
     item.target_margin_percent != null
       ? String(item.target_margin_percent)
@@ -684,8 +905,12 @@ function PricingPanel({
     if (
       value !== null &&
       (!Number.isFinite(value) || value < 0 || value >= 100)
-    )
+    ) {
+      // Used to return silently, so an out-of-range margin just refused to save.
+      setMarginError("حاشیه سود باید عددی بین ۰ تا ۱۰۰ باشد.");
       return;
+    }
+    setMarginError("");
     await run(() =>
       api(`/api/menu/items/${item.id}`, {
         method: "PATCH",
@@ -773,6 +998,9 @@ function PricingPanel({
             onChange={(e) => setMarginInput(e.target.value)}
             placeholder="پیش‌فرض"
           />
+          {marginError ? (
+            <span className="mt-1 block text-xs text-destructive">{marginError}</span>
+          ) : null}
         </Field>
         <div className="mb-4 flex items-end">
           <SecondaryButton disabled={busy} onClick={saveMargin}>
@@ -796,16 +1024,38 @@ function ModifierSection({
   const [groupName, setGroupName] = useState("");
   const [minSelect, setMinSelect] = useState("0");
   const [maxSelect, setMaxSelect] = useState("1");
+  const [formError, setFormError] = useState("");
 
   async function addGroup() {
-    if (!groupName.trim()) return;
+    const min = Number(minSelect);
+    const max = Number(maxSelect);
+    if (!groupName.trim()) {
+      setFormError("نام گروه را بنویسید.");
+      return;
+    }
+    // Mirrors resolveSelectionBounds server-side. Without this, min > max was
+    // sent to the API and came back as «فیلدهای الزامی را پر کنید» — the
+    // fields were filled; the range was just impossible.
+    if (
+      !Number.isInteger(min) ||
+      !Number.isInteger(max) ||
+      min < 0 ||
+      max < 1 ||
+      min > max
+    ) {
+      setFormError(
+        "«حداقل انتخاب» نمی‌تواند از «حداکثر انتخاب» بیشتر باشد و حداکثر باید دست‌کم ۱ باشد.",
+      );
+      return;
+    }
+    setFormError("");
     const ok = await run(() =>
       api("/api/menu/modifier-groups", {
         method: "POST",
         body: JSON.stringify({
           name: groupName,
-          minSelect: Number(minSelect),
-          maxSelect: Number(maxSelect),
+          minSelect: min,
+          maxSelect: max,
         }),
       }),
     );
@@ -831,6 +1081,7 @@ function ModifierSection({
             value={groupName}
             onChange={(e) => setGroupName(e.target.value)}
             placeholder="مثلاً نوع شیر"
+            required
           />
         </Field>
         <Field label="حداقل انتخاب">
@@ -857,6 +1108,7 @@ function ModifierSection({
           </SecondaryButton>
         </div>
       </form>
+      <ErrorBox>{formError}</ErrorBox>
 
       <div className="space-y-4">
         {data.modifierGroups.map((g) => (
@@ -894,19 +1146,26 @@ function ModifierGroupRow({
   const money = useMoney();
   const [modifierName, setModifierName] = useState("");
   const [modifierDelta, setModifierDelta] = useState("0");
+  const [addModifierError, setAddModifierError] = useState("");
   const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState("");
   const [editName, setEditName] = useState(group.name);
   const [editMin, setEditMin] = useState(String(group.min_select));
   const [editMax, setEditMax] = useState(String(group.max_select));
 
   async function addModifier() {
-    if (!modifierName.trim()) return;
+    if (!modifierName.trim()) {
+      setAddModifierError("نام افزودنی را بنویسید.");
+      return;
+    }
     let deltaRial: number;
     try {
       deltaRial = money.parse(modifierDelta || "0");
     } catch {
+      setAddModifierError("مبلغ اضافه معتبر نیست.");
       return;
     }
+    setAddModifierError("");
     const ok = await run(() =>
       api("/api/menu/modifiers", {
         method: "POST",
@@ -927,16 +1186,23 @@ function ModifierGroupRow({
     event.preventDefault();
     const min = Number(editMin);
     const max = Number(editMax);
+    if (!editName.trim()) {
+      setEditError("نام گروه را بنویسید.");
+      return;
+    }
     if (
-      !editName.trim() ||
       !Number.isInteger(min) ||
       !Number.isInteger(max) ||
       min < 0 ||
       max < 1 ||
       min > max
     ) {
+      setEditError(
+        "«حداقل انتخاب» نمی‌تواند از «حداکثر انتخاب» بیشتر باشد و حداکثر باید دست‌کم ۱ باشد.",
+      );
       return;
     }
+    setEditError("");
     const ok = await run(() =>
       api(`/api/menu/modifier-groups/${group.id}`, {
         method: "PATCH",
@@ -1003,6 +1269,9 @@ function ModifierGroupRow({
               انصراف
             </SecondaryButton>
           </div>
+          <div className="sm:col-span-2 xl:col-span-3">
+            <ErrorBox>{editError}</ErrorBox>
+          </div>
         </form>
       ) : (
         <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -1020,6 +1289,7 @@ function ModifierGroupRow({
                 setEditName(group.name);
                 setEditMin(String(group.min_select));
                 setEditMax(String(group.max_select));
+                setEditError("");
                 setEditing(true);
               }}
             >
@@ -1059,6 +1329,7 @@ function ModifierGroupRow({
             className={inputClass}
             value={modifierName}
             onChange={(e) => setModifierName(e.target.value)}
+            required
           />
         </Field>
         <Field label={`مبلغ اضافه (${money.unitLabel})`}>
@@ -1074,6 +1345,9 @@ function ModifierGroupRow({
           <SecondaryButton onClick={addModifier} disabled={busy}>
             افزودن
           </SecondaryButton>
+        </div>
+        <div className="sm:col-span-2 xl:col-span-3">
+          <ErrorBox>{addModifierError}</ErrorBox>
         </div>
       </form>
     </div>
@@ -1173,17 +1447,27 @@ function EditModifierRow({
   const [delta, setDelta] = useState(
     String(money.toInput(Number(modifier.price_delta))),
   );
+  const [formError, setFormError] = useState("");
   const moved = groupId !== modifier.group_id;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    if (!groupId) {
+      setFormError("گروه افزودنی را انتخاب کنید.");
+      return;
+    }
+    if (!name.trim()) {
+      setFormError("نام افزودنی را بنویسید.");
+      return;
+    }
     let deltaRial: number;
     try {
       deltaRial = money.parse(delta);
     } catch {
+      setFormError("مبلغ اضافه معتبر نیست.");
       return;
     }
-    if (!name.trim() || !groupId) return;
+    setFormError("");
     const ok = await run(() =>
       api(`/api/menu/modifiers/${modifier.id}`, {
         method: "PATCH",
@@ -1232,6 +1516,9 @@ function EditModifierRow({
           <SecondaryButton onClick={onDone} disabled={busy}>
             انصراف
           </SecondaryButton>
+        </div>
+        <div className="sm:col-span-2 xl:col-span-3">
+          <ErrorBox>{formError}</ErrorBox>
         </div>
         {moved ? (
           <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">
