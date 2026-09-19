@@ -125,7 +125,9 @@ export function DuplicatesSection() {
         description="پرونده‌هایی که احتمالاً یک نفرند. هیچ‌کدام خودکار ادغام نمی‌شوند."
         actions={
           <Button type="button" variant="ghost" size="icon-sm" onClick={() => void load()} disabled={loading} aria-label={loading ? "در حال بازخوانی" : "بازخوانی"}>
-            <RefreshCwIcon aria-hidden="true" className={`size-4 ${loading ? "animate-spin" : ""}`} />
+            {/* No spinner while busy: the busy state is the disabled button +
+                its label, per the design system's loading rule. */}
+            <RefreshCwIcon aria-hidden="true" className="size-4" />
           </Button>
         }
       >

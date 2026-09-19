@@ -47,7 +47,7 @@ export function AppSettingsPanel({
           <a
             key={group.key}
             href={`#crm-setting-${group.key}`}
-            className="shrink-0 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-amber-300 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
+            className="shrink-0 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-amber-300 hover:text-foreground dark:hover:border-amber-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
           >
             {group.label}
           </a>
@@ -55,7 +55,7 @@ export function AppSettingsPanel({
         {platformLinks.length > 0 ? (
           <a
             href="#crm-platform-settings"
-            className="shrink-0 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-amber-300 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
+            className="shrink-0 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-amber-300 hover:text-foreground dark:hover:border-amber-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
           >
             تنظیمات پلتفرم
           </a>
