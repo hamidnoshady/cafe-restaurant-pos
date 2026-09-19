@@ -37,6 +37,8 @@ interface AssetRow {
   aiLabels: { category?: string | null; tags?: string[]; description?: string };
   variant: "original" | "enhanced";
   sourceAssetId: string | null;
+  source: "upload" | "ai_attachment" | "ai_generated";
+  createdByAi: boolean;
   createdAt: string;
 }
 
@@ -392,6 +394,17 @@ export function MediaManager() {
                   {asset.variant === "enhanced" ? (
                     <span className="absolute end-1 top-1">
                       <StatusBadge tone="positive">استاندارد</StatusBadge>
+                    </span>
+                  ) : null}
+                  {/* Phase G — where this asset came from. A generated image is
+                      AI-authored; an attachment came from a chat. */}
+                  {asset.createdByAi ? (
+                    <span className="absolute bottom-1 start-1">
+                      <StatusBadge tone="active">ساختهٔ دستیار</StatusBadge>
+                    </span>
+                  ) : asset.source === "ai_attachment" ? (
+                    <span className="absolute bottom-1 start-1">
+                      <StatusBadge tone="neutral">از گفت‌وگو</StatusBadge>
                     </span>
                   ) : null}
                 </span>
