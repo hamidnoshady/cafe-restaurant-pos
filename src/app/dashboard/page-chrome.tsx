@@ -102,6 +102,7 @@ export function SectionCard({
   flush,
   className,
   bodyClassName,
+  actionsClassName,
 }: {
   title?: ReactNode;
   description?: ReactNode;
@@ -113,6 +114,13 @@ export function SectionCard({
   flush?: boolean;
   className?: string;
   bodyClassName?: string;
+  /**
+   * Tuning for the actions strip (same escape hatch as `className`/`bodyClassName`).
+   * Toolbars with a search box + a couple of controls pass `max-sm:w-full` so
+   * they take their own full-width row under the title on phones instead of
+   * squeezing beside it.
+   */
+  actionsClassName?: string;
 }) {
   return (
     <section
@@ -133,10 +141,22 @@ export function SectionCard({
               <div className="font-semibold text-foreground">{title}</div>
             )}
             {description ? (
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+              // A <div>, not a <p>: descriptions are often a plain string, but
+              // SectionCardSkeleton hands over block-level <Skeleton> bars and a
+              // <div> inside a <p> is invalid HTML — the parser hoists it out,
+              // the server/client trees disagree and React throws the whole
+              // section tree away as a hydration failure.
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">{description}</div>
             ) : null}
           </div>
-          {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+          {actions ? (
+            // The strip used to be `shrink-0`: sized to its widest content, it
+            // crossed the edge on narrow screens and the card's overflow-hidden
+            // clipped whatever stuck out (the leftmost button went off-screen).
+            // min-w-0 lets it give way and wrap gracefully instead — same look
+            // whenever there *is* room, never off-screen when there isn't.
+            <div className={cn("flex min-w-0 flex-wrap items-center gap-2", actionsClassName)}>{actions}</div>
+          ) : null}
         </div>
       ) : null}
       {children ? (

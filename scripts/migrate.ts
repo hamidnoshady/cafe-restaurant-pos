@@ -48,18 +48,41 @@ export const MIGRATION_ADVISORY_LOCK_ID = "7310318183545164275";
  * identical — so a database that applied the original wording has the exact
  * schema the reworded file produces. Adopting the checksum is schema-neutral
  * for the same reason as 0103 above.
+ *
+ * 0140_installments.sql had its leading comment block reworded too
+ * (commit ddab7d11, "harden installment workflows": the note about what a
+ * plan's creation posts was expanded to describe interest accrual) after
+ * deployments had already applied the original wording from PR #516. Only
+ * comment lines changed — every statement is byte-for-byte identical — so
+ * adopting the checksum is schema-neutral, exactly like 0127.
  */
-const CHECKSUM_REPAIRS: ReadonlyMap<string, string> = new Map([
+const CHECKSUM_REPAIRS: ReadonlyMap<string, readonly string[]> = new Map([
   [
     "0103_holoo_integration.sql",
     // sha256 of the original, broken revision (over-strict provider_credentials).
-    "889ff7579bd57c57882cde73de2a2bb5cdc7b5f76ffb377532fca3ef6bd614e8",
+    [
+      "889ff7579bd57c57882cde73de2a2bb5cdc7b5f76ffb377532fca3ef6bd614e8",
+      "e45906ce02e79f16fb87a838d86bb4e497e37a9591f97608fa013bbcd8b9cbc2",
+    ],
   ],
   [
     "0127_bug_reports.sql",
     // sha256 of the original revision (comment block described the since-removed
     // floating "report" button instead of the sidebar footer icon).
-    "f780470a9aeebc4400ea14c3fee5ade194d4aa598c5bd79840802b2aa372b5ff",
+    [
+      "f780470a9aeebc4400ea14c3fee5ade194d4aa598c5bd79840802b2aa372b5ff",
+      "0945fb3adf3714f8293fd5459710432d09c523449d01b0bcce8b194129f95975",
+    ],
+  ],
+  [
+    "0140_installments.sql",
+    // sha256 of the original revision (comment block predates the
+    // interest-accrual wording; SQL statements identical).
+    [
+      "6ce624cd31cda355f2ca902bfa4482996d1ab67ca67ff6c3d80ef4c2ae170c9d",
+      "2f7d0533d17b57793c754daa8c503314f4e627f88ed716a592c7b9a73bee6551",
+      "3d120a57d143127361cea6ec598993a80e0e4e2e680f94cb20d26788cc29752b",
+    ],
   ],
 ]);
 
@@ -135,13 +158,13 @@ export async function runMigrations(options: MigrationRunOptions): Promise<Migra
         continue;
       }
       if (storedChecksum !== migration.checksum) {
-        const knownBrokenChecksum = CHECKSUM_REPAIRS.get(migration.filename);
-        if (knownBrokenChecksum && storedChecksum === knownBrokenChecksum) {
+        const knownBrokenChecksums = CHECKSUM_REPAIRS.get(migration.filename);
+        if (storedChecksum && knownBrokenChecksums && knownBrokenChecksums.includes(storedChecksum)) {
           // The applied revision is the documented broken one; the current
           // file repairs it with a schema-neutral result (see CHECKSUM_REPAIRS).
           await client.query(
             "UPDATE schema_migrations SET checksum = $2 WHERE filename = $1 AND checksum = $3",
-            [migration.filename, migration.checksum, knownBrokenChecksum],
+            [migration.filename, migration.checksum, storedChecksum],
           );
           applied.set(migration.filename, migration.checksum);
           repairedChecksums.push(migration.filename);

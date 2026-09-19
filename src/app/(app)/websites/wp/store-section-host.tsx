@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { api, errorMessageOrRaw } from "@/app/dashboard/ui";
+import { api, ErrorBox, errorMessageOrRaw } from "@/app/dashboard/ui";
 import { EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { CatalogueSection, StoreOrdersSection, TaxonomiesSection } from "./woo-store-sections";
 import { PluginWaitNote } from "./plugin-wait-note";
@@ -99,7 +99,7 @@ function HostFrame({
           <PluginWaitNote connections={connections} selectedId={selectedId} />
           {children}
           {notice ? <p className="text-xs text-teal-700 dark:text-teal-300">{notice}</p> : null}
-          {callResult ? <p className="text-xs text-red-600 dark:text-red-400">{callResult}</p> : null}
+          <ErrorBox>{callResult}</ErrorBox>
         </>
       ) : null}
     </div>

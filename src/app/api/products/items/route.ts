@@ -1,31 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
+import { BarcodeConflictError } from "@/lib/item-barcodes-service";
 import { requireProductWorkspaceForApi } from "@/lib/industry-guard";
+import { createProductRecord } from "@/lib/product-creation-service";
+import { parseProductCreateInput } from "@/lib/product-input";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { createItem, createVariantChild, updateItemMeta, type ItemMetaPatch } from "@/lib/items-service";
-import { receiveStock, setUnitPrice } from "@/lib/accessories-service";
-import { validateVariantAttributes, type VariantAttributeInput } from "@/lib/items";
-
-interface VariantInput {
-  name?: string;
-  sku?: string | null;
-  attributes?: VariantAttributeInput[];
-}
-
-interface CreateProductBody extends ItemMetaPatch {
-  variants?: VariantInput[];
-  /** Opening stock/price for a simple product, or for every variant row. */
-  quantity?: number;
-  sellPrice?: number | null;
-  purchasePrice?: number | null;
-}
 
 /**
- * The add-product form's write path: one product (a `simple` item, or a
- * `variant_parent` plus its variant rows) with its Phase 42 meta columns and
- * optional opening stock/price. The trade's own items routes keep serving
- * the older surfaces; this is the workspace's door. Validation runs before
- * any write so a bad form never leaves a half-saved product behind.
+ * Creates one simple product or one complete variant family.
+ *
+ * Validation is shared with the form and finishes before the first write. The
+ * service then commits the parent, children, scanner barcodes and opening
+ * values in one transaction, so a conflict cannot leave a partial product.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
@@ -33,68 +19,41 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const industryError = await requireProductWorkspaceForApi(session);
   if (industryError) return industryError;
 
-  let body: CreateProductBody;
+  let raw: unknown;
   try {
-    body = await request.json();
+    raw = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  const name = body.name?.trim();
-  if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
 
-  const variants = (body.variants ?? []).filter((v) => v && (v.name?.trim() || (v.attributes ?? []).some((a) => a.value?.trim())));
-  for (const variant of variants) {
-    const attributeErrors = validateVariantAttributes(variant.attributes ?? []);
-    if (attributeErrors.length > 0) {
-      return NextResponse.json({ error: "invalid_attributes", message: attributeErrors.join("؛ ") }, { status: 400 });
-    }
+  const parsed = parseProductCreateInput(raw);
+  if (!parsed.ok) {
+    return NextResponse.json(
+      {
+        error: "validation_failed",
+        message: parsed.issues[0]?.message ?? "اطلاعات محصول معتبر نیست.",
+        issues: parsed.issues,
+      },
+      { status: 400 },
+    );
   }
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   try {
-    const parent = await createItem({
-      locationId: location.id,
-      name,
-      sku: body.sku?.trim() || null,
-      kind: variants.length > 0 ? "variant_parent" : "simple",
-    });
-
-    const meta: ItemMetaPatch = { ...body };
-    delete meta.name;
-    await updateItemMeta(parent.id, meta);
-
-    const priced: string[] = variants.length > 0 ? [] : [parent.id];
-    if (variants.length > 0) {
-      for (const variant of variants) {
-        const attributes = (variant.attributes ?? []).filter((a) => a.name?.trim() && a.value?.trim());
-        const child = await createVariantChild(
-          parent.id,
-          location.id,
-          variant.name?.trim() || [name, ...attributes.map((a) => a.value)].join(" — "),
-          variant.sku?.trim() || null,
-          attributes,
-        );
-        priced.push(child.id);
-      }
+    const created = await createProductRecord(location.id, parsed.data);
+    return NextResponse.json({ ok: true, ...created }, { status: 201 });
+  } catch (creationError) {
+    if (creationError instanceof BarcodeConflictError) {
+      return NextResponse.json(
+        {
+          error: "duplicate_barcode",
+          message: "این بارکد قبلاً برای محصول دیگری در همین شعبه ثبت شده است.",
+        },
+        { status: 409 },
+      );
     }
-
-    for (const itemId of priced) {
-      if (body.sellPrice != null && body.sellPrice > 0) await setUnitPrice(itemId, body.sellPrice);
-      if (body.purchasePrice != null || (body.quantity ?? 0) > 0) {
-        await receiveStock(itemId, {
-          quantity: String(body.quantity ?? 0),
-          unitCost: Number(body.purchasePrice ?? 0),
-        });
-      }
-    }
-
-    return NextResponse.json({ ok: true, item: parent });
-  } catch (err) {
-    if (err instanceof Error && /duplicate/i.test(err.message)) {
-      return NextResponse.json({ error: "duplicate_item" }, { status: 409 });
-    }
-    throw err;
+    throw creationError;
   }
 });

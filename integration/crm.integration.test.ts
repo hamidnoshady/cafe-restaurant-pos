@@ -33,6 +33,7 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let crm: typeof import("../src/lib/crm-service");
+let overview: typeof import("../src/lib/crm-overview");
 let segmentsService: typeof import("../src/lib/crm-segments-service");
 let timelineService: typeof import("../src/lib/customer-timeline-service");
 
@@ -68,6 +69,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   dbLib = await import("../src/lib/db");
   crm = await import("../src/lib/crm-service");
+  overview = await import("../src/lib/crm-overview");
   segmentsService = await import("../src/lib/crm-segments-service");
   timelineService = await import("../src/lib/customer-timeline-service");
 
@@ -297,16 +299,77 @@ describe("merging two customer records", () => {
   });
 });
 
+describe("the CRM overview", () => {
+  it("counts only active customer parties and computes pipeline values from each deal", async () => {
+    const customer = await makeCustomer(biz.id, "مشتری فعال", { phone: "+989121234567" });
+    const inactive = await makeCustomer(biz.id, "مشتری بایگانی", { phone: "+989121234568" });
+    await db.query("UPDATE parties SET is_active = false WHERE id = $1", [inactive]);
+    const supplier = (
+      await db.query<{ id: string }>(
+        "INSERT INTO parties (business_id, name, role) VALUES ($1, 'تأمین‌کننده', 'supplier') RETURNING id",
+        [biz.id],
+      )
+    ).rows[0].id;
+
+    await makeSale(biz.locationId, biz.id, customer, 400_000, 2);
+    // These sales must not leak into active-customer totals, even though they
+    // belong to this tenant and point at a valid party.
+    await makeSale(biz.locationId, biz.id, inactive, 900_000, 2);
+    await makeSale(biz.locationId, biz.id, supplier, 800_000, 2);
+
+    await db.query(
+      `INSERT INTO crm_deals (business_id, customer_id, title, stage, value_rial, probability)
+       VALUES ($1, $2, 'سرنخ اول', 'lead', 1000000, 50),
+              ($1, $2, 'سرنخ دوم', 'lead', 1000000, 10),
+              ($1, $2, 'واجد شرایط', 'qualified', 2000000, NULL),
+              ($1, $2, 'فروش موفق', 'won', 1000000, NULL),
+              ($1, $2, 'فروش از دست رفته', 'lost', 3000000, NULL)`,
+      [biz.id, customer],
+    );
+    await db.query(
+      "INSERT INTO customer_segments (business_id, name, definition) VALUES ($1, 'مشتریان فعال', '{}'::jsonb)",
+      [biz.id],
+    );
+
+    const result = await dbLib.withTenant(biz.id, () => overview.crmOverview(biz.id));
+
+    expect(result.customers.total).toBe(1);
+    expect(result.customers.active).toBe(1);
+    expect(result.customers.neverPurchased).toBe(0);
+    expect(result.value.totalHistoricRial).toBe("400000");
+    expect(result.value.averageCustomerRial).toBe("400000");
+    expect(result.topCustomers[0]).toMatchObject({
+      id: customer,
+      totalSpentRial: "400000",
+      orderCount: 1,
+    });
+    expect(result.pipeline.openCount).toBe(3);
+    expect(result.pipeline.openValueRial).toBe("4000000");
+    // 500k + 100k + the default 30% of 2m = 1.2m. Won/lost are terminal and
+    // do not contribute to the open weighted forecast.
+    expect(result.pipeline.weightedValueRial).toBe("1200000");
+    expect(result.pipeline.winRatePercent).toBe(50);
+    expect(result.pipeline.byStage).toEqual([
+      { stage: "lead", count: 2, valueRial: "2000000" },
+      { stage: "qualified", count: 1, valueRial: "2000000" },
+    ]);
+    expect(result.segments).toEqual({ total: 1, names: ["مشتریان فعال"] });
+  });
+});
+
 describe("segments", () => {
   it("filters by consent in SQL, and still reports the unfiltered population", async () => {
-    // Three loyal customers; only one has agreed to be texted.
+    // Four loyal customers; only one has agreed to be texted on a mobile line.
     const willing = await makeCustomer(biz.id, "زهرا", { phone: "+989120000001", smsConsent: true });
     const unwilling = await makeCustomer(biz.id, "حسن", { phone: "+989120000002", smsConsent: false });
     // Agreed to be texted, but there is no number to text — granted is not the
     // same as reachable, and a send must use the second.
     const unreachable = await makeCustomer(biz.id, "نگار", { phone: null, smsConsent: true });
+    // A landline can parse as an Iranian number, but it cannot receive the SMS
+    // campaign; the segment predicate must use the mobile reachability rule.
+    const landline = await makeCustomer(biz.id, "دفتر", { phone: "+982112345678", smsConsent: true });
 
-    for (const id of [willing, unwilling, unreachable]) {
+    for (const id of [willing, unwilling, unreachable, landline]) {
       await makeSale(biz.locationId, biz.id, id, 300_000, 3);
       await makeSale(biz.locationId, biz.id, id, 300_000, 6);
     }
@@ -316,20 +379,35 @@ describe("segments", () => {
     };
 
     const view = await segmentsService.previewSegment(biz.id, definition, { purpose: "view" });
-    expect(view.count).toBe(3);
+    expect(view.count).toBe(4);
 
     const sms = await segmentsService.previewSegment(biz.id, definition, { purpose: "sms" });
-    // Only the one who agreed AND can be reached.
+    // Only the one who agreed AND can be reached on a mobile number.
     expect(sms.count).toBe(1);
-    // The gap is reported rather than hidden: «۳ نفر همخوانی دارند، ۱ نفر
+    // The gap is reported rather than hidden: «۴ نفر همخوانی دارند، ۱ نفر
     // اجازه داده» is the fact an owner needs, and a silently smaller number is
     // the thing that makes people distrust the tool.
-    expect(sms.totalBeforeConsent).toBe(3);
+    expect(sms.totalBeforeConsent).toBe(4);
 
     const audience = await segmentsService.resolveDefinition(biz.id, definition, { purpose: "sms" });
     expect(audience.map((row) => row.id)).toEqual([willing]);
     expect(audience.map((row) => row.id)).not.toContain(unwilling);
     expect(audience.map((row) => row.id)).not.toContain(unreachable);
+    expect(audience.map((row) => row.id)).not.toContain(landline);
+  });
+
+  it("keeps suppliers and personnel out of customer segments unless they are also customers", async () => {
+    const customer = await makeCustomer(biz.id, "خریدار");
+    const supplier = await db.query<{ id: string }>(
+      `INSERT INTO parties (business_id, name, role, roles)
+       VALUES ($1, 'تأمین‌کننده', 'supplier', ARRAY['supplier']::text[]) RETURNING id`,
+      [biz.id],
+    );
+
+    const preview = await segmentsService.previewSegment(biz.id, {});
+    expect(preview.count).toBe(1);
+    expect(preview.sample.map((row) => row.id)).toContain(customer);
+    expect(preview.sample.map((row) => row.id)).not.toContain(supplier.rows[0].id);
   });
 
   it("excludes a merged-away record, so a person is never counted twice", async () => {

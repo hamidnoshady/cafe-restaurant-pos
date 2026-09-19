@@ -14,12 +14,21 @@ import { messageCostRial, smsSegmentCount } from "@/lib/messaging-billing-pure";
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-  const body = await request.json().catch(() => null) as { templateId?: unknown; segmentId?: unknown } | null;
+  const body = await request.json().catch(() => null) as {
+    templateId?: unknown; segmentId?: unknown; creditRial?: unknown; discountCode?: unknown;
+  } | null;
   if (!body || typeof body.templateId !== "string" || typeof body.segmentId !== "string") {
     return NextResponse.json({ error: "template_and_segment_required" }, { status: 400 });
   }
   const template = await getMessageTemplate(session.businessId, body.templateId);
   if (!template) return NextResponse.json({ error: "template_not_found" }, { status: 404 });
+  const creditRial = body.creditRial === undefined ? undefined : Number(body.creditRial);
+  if (creditRial !== undefined && (!Number.isSafeInteger(creditRial) || creditRial < 0)) {
+    return NextResponse.json({ error: "invalid_credit" }, { status: 400 });
+  }
+  const discountCode = typeof body.discountCode === "string" && body.discountCode.trim()
+    ? body.discountCode.trim()
+    : undefined;
   const audience = await audienceForSegment(session.businessId, body.segmentId, template.channel, { limit: 1 });
   const member = audience.members[0];
   if (!member) return NextResponse.json({ error: "no_reachable_customer" }, { status: 400 });
@@ -30,7 +39,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     getPublicMessageConfig(),
   ]);
   try {
-    const values = buildMessageVariables({ name: member.name, shopName: businesses[0]?.name ?? "", points: Number(pointsRows[0]?.points ?? 0) });
+    const values = buildMessageVariables({
+      name: member.name,
+      shopName: businesses[0]?.name ?? "",
+      points: Number(pointsRows[0]?.points ?? 0),
+      creditRial,
+      discountCode,
+    });
     const renderedBody = renderRecipientBody(template.body, values);
     const subject = template.channel === "email" ? renderRecipientBody(template.subject, values) : "";
     return NextResponse.json({

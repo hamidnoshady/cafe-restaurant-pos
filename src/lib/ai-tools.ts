@@ -44,6 +44,7 @@ import { listWebsitePostsTool, listWebsiteProductsTool, websiteStatusTool } from
 import { WEBSITE_ERROR_LABELS } from "./website/adapter";
 import {
   describeSegment,
+  isSegmentPurpose,
   validateSegmentDefinition,
   type SegmentDefinition,
   type SegmentPurpose,
@@ -771,8 +772,11 @@ async function previewCustomerSegmentTool(businessId: string, args: Record<strin
   const problems = validateSegmentDefinition(args.definition ?? {});
   if (problems.length > 0) return { error: `تعریف بخش نامعتبر است: ${problems.join("، ")}` };
 
-  const purpose: SegmentPurpose =
-    args.purpose === "sms" || args.purpose === "email" ? args.purpose : "view";
+  const requestedPurpose = args.purpose ?? "view";
+  if (!isSegmentPurpose(requestedPurpose)) {
+    return { error: "هدف بخش نامعتبر است؛ از view، sms یا email استفاده کن." };
+  }
+  const purpose: SegmentPurpose = requestedPurpose;
 
   const preview = await previewSegment(businessId, args.definition as SegmentDefinition, {
     purpose,

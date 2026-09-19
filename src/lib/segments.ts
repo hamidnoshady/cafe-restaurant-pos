@@ -160,13 +160,44 @@ function assertFiniteNumber(value: unknown, what: string): number {
 
 function assertInteger(value: unknown, what: string): number {
   const n = assertFiniteNumber(value, what);
-  if (!Number.isInteger(n)) throw new SegmentRuleError(`${what} must be an integer`);
+  if (!Number.isInteger(n))
+    throw new SegmentRuleError(`${what} must be an integer`);
   return n;
 }
 
 /** Type guard for a field name, so an unknown key is rejected before it can reach `FIELD_SQL`. */
 export function isSegmentField(value: unknown): value is SegmentField {
-  return typeof value === "string" && Object.prototype.hasOwnProperty.call(FIELD_SQL, value);
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(FIELD_SQL, value)
+  );
+}
+
+/** Type guard for wire values that claim to be a segment resolution purpose. */
+export function isSegmentPurpose(value: unknown): value is SegmentPurpose {
+  return value === "view" || value === "sms" || value === "email";
+}
+
+/**
+ * A literal `contains` pattern for ILIKE. `%`, `_` and the escape character are
+ * user text, not wildcards; the wildcards that make this a contains search are
+ * added by the compiler around the escaped value.
+ */
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => "\\" + match);
+}
+
+/**
+ * "Can this row actually receive an SMS?" Mirrors the party-level reachable
+ * count: use `phone_kind` when classified, and fall back to the canonical
+ * Iranian-mobile shape for older rows. A raw landline in `phone` is not enough.
+ */
+function smsReachableSql(alias = "c"): string {
+  const a = alias ? `${alias}.` : "";
+  return (
+    `(CASE WHEN ${a}phone_kind IS NOT NULL THEN ${a}phone_kind = 'mobile'` +
+    ` ELSE ${a}phone_e164 LIKE '+989%' AND length(${a}phone_e164) = 13 END)`
+  );
 }
 
 /**
@@ -181,8 +212,14 @@ function compileRule(
   bind: (value: unknown) => string,
   options: CompileOptions,
 ): string {
-  if (!rule || typeof rule !== "object" || !isSegmentField((rule as SegmentRule).field)) {
-    throw new SegmentRuleError(`Unknown segment field: ${String((rule as { field?: unknown })?.field)}`);
+  if (
+    !rule ||
+    typeof rule !== "object" ||
+    !isSegmentField((rule as SegmentRule).field)
+  ) {
+    throw new SegmentRuleError(
+      `Unknown segment field: ${String((rule as { field?: unknown })?.field)}`,
+    );
   }
   const column = FIELD_SQL[rule.field];
 
@@ -198,15 +235,18 @@ function compileRule(
       const interval = bind(`${days} days`);
       const cutoff = `(${anchor}::date - ${interval}::interval)::date`;
       if (rule.op === "before") {
-        // "hasn't bought in 90 days" must include "has never bought at all",
-        // which is the whole population a win-back campaign is aimed at. A
-        // plain `<` on a NULL column silently drops exactly those customers.
-        return rule.field === "createdAt"
-          ? `${column} < ${cutoff}`
-          : `(${column} IS NULL OR ${column} < ${cutoff})`;
+        // "Last purchase was more than N days ago" must include "has never
+        // purchased" — that is the win-back population. "First purchase was
+        // more than N days ago" means a first purchase exists, so NULL must not
+        // leak never-purchased records into an onboarding/tenure segment.
+        return rule.field === "lastPurchaseAt"
+          ? `(${column} IS NULL OR ${column} < ${cutoff})`
+          : `${column} < ${cutoff}`;
       }
       if (rule.op === "after") return `${column} >= ${cutoff}`;
-      throw new SegmentRuleError(`Unsupported operator for ${rule.field}: ${String(rule.op)}`);
+      throw new SegmentRuleError(
+        `Unsupported operator for ${rule.field}: ${String(rule.op)}`,
+      );
     }
 
     case "totalSpentRial":
@@ -216,7 +256,9 @@ function compileRule(
     case "loyaltyPoints": {
       const value = assertFiniteNumber(rule.value, "value");
       if (rule.op !== "gte" && rule.op !== "lte") {
-        throw new SegmentRuleError(`Unsupported operator for ${rule.field}: ${String(rule.op)}`);
+        throw new SegmentRuleError(
+          `Unsupported operator for ${rule.field}: ${String(rule.op)}`,
+        );
       }
       // coalesce: a customer with no orders has spent zero, not "unknown" —
       // otherwise «کمتر از ۱۰۰ هزار تومان خرید کرده» would exclude the
@@ -225,8 +267,11 @@ function compileRule(
     }
 
     case "tags": {
-      if (!Array.isArray(rule.values)) throw new SegmentRuleError("tags rule needs a values array");
-      const values = rule.values.filter((v): v is string => typeof v === "string" && v.trim() !== "");
+      if (!Array.isArray(rule.values))
+        throw new SegmentRuleError("tags rule needs a values array");
+      const values = rule.values
+        .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+        .map((v) => v.trim());
       // An empty tag list is not a filter. Returning TRUE (rather than
       // throwing) lets a half-filled form preview sensibly instead of erroring
       // on every keystroke.
@@ -235,12 +280,15 @@ function compileRule(
       if (rule.op === "hasAny") return `${column} && ${bound}::text[]`;
       if (rule.op === "hasAll") return `${column} @> ${bound}::text[]`;
       if (rule.op === "hasNone") return `NOT (${column} && ${bound}::text[])`;
-      throw new SegmentRuleError(`Unsupported operator for tags: ${String(rule.op)}`);
+      throw new SegmentRuleError(
+        `Unsupported operator for tags: ${String(rule.op)}`,
+      );
     }
 
     case "birthdayMonth": {
       const month = assertInteger(rule.month, "month");
-      if (month < 1 || month > 12) throw new SegmentRuleError("month must be between 1 and 12");
+      if (month < 1 || month > 12)
+        throw new SegmentRuleError("month must be between 1 and 12");
       return `${column} = ${bind(month)}`;
     }
 
@@ -252,7 +300,8 @@ function compileRule(
       // `value: boolean`, so inside the `if` TypeScript has narrowed `rule`
       // itself to `never` and cannot see `.field` any more.
       const field = rule.field;
-      if (typeof rule.value !== "boolean") throw new SegmentRuleError(`${field} needs a boolean value`);
+      if (typeof rule.value !== "boolean")
+        throw new SegmentRuleError(`${field} needs a boolean value`);
       return `${column} = ${bind(rule.value)}`;
     }
 
@@ -261,9 +310,10 @@ function compileRule(
         throw new SegmentRuleError("city needs a non-empty value");
       }
       // ILIKE with the wildcards added *around the bound parameter*, so the
-      // user's text stays a value. A user typing `%` matches literally more
-      // rows — which is harmless — and can never end the string literal.
-      return `${column} ILIKE ${bind(`%${rule.value.trim()}%`)}`;
+      // user's text stays a value. Escape LIKE wildcards too: typing `%` or `_`
+      // should search for those characters, not silently turn the rule into a
+      // match-everything pattern.
+      return `${column} ILIKE ${bind(`%${escapeLikePattern(rule.value.trim())}%`)} ESCAPE '\'`;
     }
 
     default: {
@@ -272,7 +322,9 @@ function compileRule(
       // added to the union without a case into a compile error rather than a
       // rule silently compiling to nothing.
       const unhandled: never = rule;
-      throw new SegmentRuleError(`Unhandled rule: ${JSON.stringify(unhandled)}`);
+      throw new SegmentRuleError(
+        `Unhandled rule: ${JSON.stringify(unhandled)}`,
+      );
     }
   }
 }
@@ -313,14 +365,25 @@ export function compileSegment(
     return `$${offset + params.length}`;
   };
 
-  const all = (definition.all ?? []).map((rule) => compileRule(rule, bind, options));
-  const any = (definition.any ?? []).map((rule) => compileRule(rule, bind, options));
+  const all = (definition.all ?? []).map((rule) =>
+    compileRule(rule, bind, options),
+  );
+  const any = (definition.any ?? []).map((rule) =>
+    compileRule(rule, bind, options),
+  );
 
   const clauses: string[] = [];
   if (all.length > 0) clauses.push(all.map((c) => `(${c})`).join(" AND "));
-  if (any.length > 0) clauses.push(`(${any.map((c) => `(${c})`).join(" OR ")})`);
+  if (any.length > 0)
+    clauses.push(`(${any.map((c) => `(${c})`).join(" OR ")})`);
 
-  return { sql: clauses.length === 0 ? "TRUE" : clauses.map((c) => `(${c})`).join(" AND "), params };
+  return {
+    sql:
+      clauses.length === 0
+        ? "TRUE"
+        : clauses.map((c) => `(${c})`).join(" AND "),
+    params,
+  };
 }
 
 /** ISO calendar date, the repo's storage/wire convention. */
@@ -333,14 +396,91 @@ export function isIsoDate(value: unknown): value is string {
  * than throwing on the first one — a form should be able to show every invalid
  * row at once.
  */
-export function validateSegmentDefinition(definition: unknown): string[] {
+export interface SegmentValidationOptions {
+  /**
+   * Previewing a half-built form should still be possible. Persisting that same
+   * form should not: an empty tag rule is a no-op that looks like a saved rule.
+   */
+  allowIncomplete?: boolean;
+}
+
+function localizedRuleError(message: string): string {
+  if (message.startsWith("Unknown segment field"))
+    return "فیلد این شرط شناخته نشد.";
+  if (message.startsWith("Unsupported operator"))
+    return "عملگر انتخاب‌شده برای این فیلد پشتیبانی نمی‌شود.";
+  if (message.includes("days must be a finite number"))
+    return "تعداد روز باید عدد معتبر باشد.";
+  if (message.includes("days must be an integer"))
+    return "تعداد روز باید عدد صحیح باشد.";
+  if (message.includes("days must not be negative"))
+    return "تعداد روز نمی‌تواند منفی باشد.";
+  if (message.includes("value must be a finite number"))
+    return "مقدار باید عدد معتبر باشد.";
+  if (message.includes("value must be an integer"))
+    return "مقدار باید عدد صحیح باشد.";
+  if (message.includes("tags rule needs a values array"))
+    return "برچسب‌ها باید به صورت فهرست ارسال شوند.";
+  if (message.includes("month must be a finite number"))
+    return "ماه تولد باید عدد معتبر باشد.";
+  if (message.includes("month must be an integer"))
+    return "ماه تولد باید عدد صحیح باشد.";
+  if (message.includes("month must be between 1 and 12"))
+    return "ماه تولد باید بین ۱ تا ۱۲ باشد.";
+  if (message.includes("needs a boolean value"))
+    return "این شرط باید مقدار بله یا خیر داشته باشد.";
+  if (message.includes("city needs a non-empty value"))
+    return "متن نشانی را بنویسید.";
+  return message;
+}
+
+function incompleteRuleProblem(rule: unknown): string | null {
+  if (
+    !rule ||
+    typeof rule !== "object" ||
+    !isSegmentField((rule as SegmentRule).field)
+  )
+    return null;
+  const typed = rule as SegmentRule;
+  if (typed.field === "tags") {
+    const values = Array.isArray(typed.values)
+      ? typed.values.filter(
+          (value) => typeof value === "string" && value.trim() !== "",
+        )
+      : [];
+    return values.length === 0
+      ? "برای شرط برچسب، حداقل یک برچسب بنویسید."
+      : null;
+  }
+  if (typed.field === "city") {
+    return typeof typed.value !== "string" || typed.value.trim() === ""
+      ? "متن نشانی را برای شرط «نشانی شامل» بنویسید."
+      : null;
+  }
+  return null;
+}
+
+/**
+ * Validate a rule document coming off the wire, returning the problems rather
+ * than throwing on the first one — a form should be able to show every invalid
+ * row at once.
+ */
+export function validateSegmentDefinition(
+  definition: unknown,
+  options: SegmentValidationOptions = {},
+): string[] {
   const problems: string[] = [];
-  if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+  if (
+    !definition ||
+    typeof definition !== "object" ||
+    Array.isArray(definition)
+  ) {
     return ["تعریف بخش باید یک شیء باشد."];
   }
   const doc = definition as SegmentDefinition;
   for (const key of Object.keys(doc)) {
-    if (key !== "all" && key !== "any") problems.push(`کلید ناشناخته در تعریف بخش: ${key}`);
+    if (key !== "all" && key !== "any")
+      problems.push(`کلید ناشناخته در تعریف بخش: ${key}`);
   }
   const check = (rules: unknown, group: string) => {
     if (rules === undefined) return;
@@ -349,13 +489,20 @@ export function validateSegmentDefinition(definition: unknown): string[] {
       return;
     }
     rules.forEach((rule, index) => {
+      const prefix = `شرط ${index + 1} در «${group}»`;
+      const incomplete = options.allowIncomplete ? null : incompleteRuleProblem(rule);
+      if (incomplete) problems.push(`${prefix}: ${incomplete}`);
       try {
         // Compiled against a throwaway binder purely to run the validation the
         // compiler already performs — one definition of "valid", not two.
-        compileRule(rule as SegmentRule, () => "$1", { anchorDate: "2024-01-01" });
+        if (!incomplete) {
+          compileRule(rule as SegmentRule, () => "$1", {
+            anchorDate: "2024-01-01",
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        problems.push(`شرط ${index + 1} در «${group}»: ${message}`);
+        problems.push(`${prefix}: ${localizedRuleError(message)}`);
       }
     });
   };
@@ -396,7 +543,7 @@ export type SegmentPurpose = "view" | "sms" | "email";
 export function consentPredicate(purpose: SegmentPurpose): string {
   switch (purpose) {
     case "sms":
-      return "c.sms_consent = true AND c.phone IS NOT NULL AND btrim(c.phone) <> ''";
+      return `c.sms_consent = true AND ${smsReachableSql("c")}`;
     case "email":
       return "c.marketing_consent = true AND c.email IS NOT NULL AND btrim(c.email) <> ''";
     case "view":
@@ -410,7 +557,9 @@ export function consentPredicate(purpose: SegmentPurpose): string {
 }
 
 /** Whether a purpose is a *send* — the case consent applies to. */
-export function isSendingPurpose(purpose: SegmentPurpose): boolean {
+export function isSendingPurpose(
+  purpose: unknown,
+): purpose is Exclude<SegmentPurpose, "view"> {
   return purpose === "sms" || purpose === "email";
 }
 
@@ -424,7 +573,8 @@ export interface SegmentFieldMeta {
   /** Which operators the form offers for this field. */
   operators: readonly string[];
   /** What kind of value editor the form shows. */
-  valueKind: "days" | "money" | "number" | "tags" | "month" | "boolean" | "text";
+  valueKind:
+    "days" | "money" | "number" | "tags" | "month" | "boolean" | "text";
   /** One line of help under the row. */
   hint?: string;
 }
@@ -450,10 +600,30 @@ export const SEGMENT_FIELDS: readonly SegmentFieldMeta[] = [
     valueKind: "days",
     hint: "«بعد از» یعنی مشتری تازه است و اولین خریدش در این بازه بوده.",
   },
-  { field: "totalSpentRial", label: "مجموع خرید", operators: ["gte", "lte"], valueKind: "money" },
-  { field: "orderCount", label: "تعداد خرید", operators: ["gte", "lte"], valueKind: "number" },
-  { field: "averageOrderRial", label: "میانگین هر خرید", operators: ["gte", "lte"], valueKind: "money" },
-  { field: "tags", label: "برچسب‌ها", operators: ["hasAny", "hasAll", "hasNone"], valueKind: "tags" },
+  {
+    field: "totalSpentRial",
+    label: "مجموع خرید",
+    operators: ["gte", "lte"],
+    valueKind: "money",
+  },
+  {
+    field: "orderCount",
+    label: "تعداد خرید",
+    operators: ["gte", "lte"],
+    valueKind: "number",
+  },
+  {
+    field: "averageOrderRial",
+    label: "میانگین هر خرید",
+    operators: ["gte", "lte"],
+    valueKind: "money",
+  },
+  {
+    field: "tags",
+    label: "برچسب‌ها",
+    operators: ["hasAny", "hasAll", "hasNone"],
+    valueKind: "tags",
+  },
   {
     field: "birthdayMonth",
     label: "ماه تولد",
@@ -461,14 +631,54 @@ export const SEGMENT_FIELDS: readonly SegmentFieldMeta[] = [
     valueKind: "month",
     hint: "ماه میلادیِ ذخیره‌شده در پروندهٔ مشتری.",
   },
-  { field: "loyaltyPoints", label: "امتیاز وفاداری", operators: ["gte", "lte"], valueKind: "number" },
-  { field: "isActive", label: "وضعیت فعال", operators: ["is"], valueKind: "boolean" },
-  { field: "hasEmail", label: "ایمیل دارد", operators: ["is"], valueKind: "boolean" },
-  { field: "smsConsent", label: "اجازهٔ پیامک", operators: ["is"], valueKind: "boolean" },
-  { field: "marketingConsent", label: "اجازهٔ بازاریابی", operators: ["is"], valueKind: "boolean" },
-  { field: "receivableRial", label: "مانده بدهی (حسابداری)", operators: ["gte", "lte"], valueKind: "money" },
-  { field: "city", label: "نشانی شامل", operators: ["contains"], valueKind: "text" },
-  { field: "createdAt", label: "تاریخ ثبت مشتری", operators: ["before", "after"], valueKind: "days" },
+  {
+    field: "loyaltyPoints",
+    label: "امتیاز وفاداری",
+    operators: ["gte", "lte"],
+    valueKind: "number",
+  },
+  {
+    field: "isActive",
+    label: "وضعیت فعال",
+    operators: ["is"],
+    valueKind: "boolean",
+  },
+  {
+    field: "hasEmail",
+    label: "ایمیل دارد",
+    operators: ["is"],
+    valueKind: "boolean",
+  },
+  {
+    field: "smsConsent",
+    label: "اجازهٔ پیامک",
+    operators: ["is"],
+    valueKind: "boolean",
+  },
+  {
+    field: "marketingConsent",
+    label: "اجازهٔ بازاریابی",
+    operators: ["is"],
+    valueKind: "boolean",
+  },
+  {
+    field: "receivableRial",
+    label: "مانده بدهی (حسابداری)",
+    operators: ["gte", "lte"],
+    valueKind: "money",
+  },
+  {
+    field: "city",
+    label: "نشانی شامل",
+    operators: ["contains"],
+    valueKind: "text",
+  },
+  {
+    field: "createdAt",
+    label: "تاریخ ثبت مشتری",
+    operators: ["before", "after"],
+    valueKind: "days",
+  },
 ];
 
 export const SEGMENT_OPERATOR_LABELS: Record<string, string> = {
@@ -495,7 +705,10 @@ export function segmentFieldMeta(field: SegmentField): SegmentFieldMeta {
  * business's Toman/Rial preference); this returns the raw Rial in the text's
  * place-holder position via `formatValue`.
  */
-export function describeRule(rule: SegmentRule, formatMoney: (rial: number) => string): string {
+export function describeRule(
+  rule: SegmentRule,
+  formatMoney: (rial: number) => string,
+): string {
   switch (rule.field) {
     case "lastPurchaseAt":
       return rule.op === "before"
@@ -543,8 +756,12 @@ export function describeSegment(
   definition: SegmentDefinition,
   formatMoney: (rial: number) => string,
 ): string {
-  const all = (definition.all ?? []).map((r) => describeRule(r, formatMoney)).filter(Boolean);
-  const any = (definition.any ?? []).map((r) => describeRule(r, formatMoney)).filter(Boolean);
+  const all = (definition.all ?? [])
+    .map((r) => describeRule(r, formatMoney))
+    .filter(Boolean);
+  const any = (definition.any ?? [])
+    .map((r) => describeRule(r, formatMoney))
+    .filter(Boolean);
   const parts: string[] = [];
   if (all.length > 0) parts.push(all.join(" و "));
   if (any.length > 0) parts.push(`(${any.join(" یا ")})`);

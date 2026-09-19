@@ -47,6 +47,31 @@ describe("parsePrinterInput", () => {
     expect(parsePrinterInput({ ...base, transport: "webusb", usbVendorId: "04b8" })).toBeNull();
   });
 
+  it("strips NUL padding a printer firmware reports in its USB strings (Postgres rejects \\u0000 in jsonb)", () => {
+    // Real-world payload shape: a paired thermal printer whose firmware pads
+    // the serial descriptor with NULs ("VNBV9BJGLG\0\0…"). Storing that verbatim
+    // makes the INSERT fail with 22P05 — the whole save must survive it instead.
+    const input = parsePrinterInput({
+      ...base,
+      transport: "webusb",
+      usbVendorId: 0x04b8,
+      usbProductId: 0x8d17,
+      usbSerial: "VNBV9BJGLG\u0000\u0000\u0000\u0000",
+      usbProductName: "USB Printer\u0000P",
+    })!;
+    expect(input.connection.usbSerial).toBe("VNBV9BJGLG");
+    expect(input.connection.usbProductName).toBe("USB PrinterP");
+    expect(JSON.stringify(input.connection)).not.toContain("\\u0000");
+    // A string that is nothing but padding stores as null, not "".
+    const padded = parsePrinterInput({
+      ...base,
+      transport: "webusb",
+      usbVendorId: 0x04b8,
+      usbSerial: "\u0000\u0000",
+    })!;
+    expect(padded.connection.usbSerial).toBeNull();
+  });
+
   it("rejects a missing name, an unknown kind and an out-of-range port", () => {
     expect(parsePrinterInput({ kind: "receipt", ip: "10.0.0.1" })).toBeNull();
     expect(parsePrinterInput({ ...base, kind: "banner", ip: "10.0.0.1" })).toBeNull();
