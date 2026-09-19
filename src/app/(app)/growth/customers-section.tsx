@@ -354,7 +354,7 @@ export function GrowthCustomersSection({
                         {customer.isActive ? "فعال" : "آرشیو"}
                       </StatusBadge>
                     </div>
-                    <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border/80 pt-3 text-sm">
+                    <dl className="mt-3 grid gap-2 border-t border-border/80 pt-3 text-sm sm:grid-cols-2">
                       <div className="min-w-0">
                         <dt className="text-xs text-muted-foreground">مرحلهٔ چرخهٔ حیات</dt>
                         <dd className="mt-1 font-medium">{stageLabel(customer.lifecycleStage)}</dd>

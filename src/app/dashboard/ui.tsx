@@ -72,6 +72,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     missing_fields: "فیلدهای الزامی را پر کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
+    campaign_audience_limit_exceeded:
+      "این بخش بیش از سقف ارسال یک‌باره مخاطب دارد. برای ارسال کامل، بخش مشتریان را کوچک‌تر کنید.",
+    campaign_has_no_recipients:
+      "در این بخش، مشتریِ دارای رضایت و راه ارتباطیِ قابل‌ارسال وجود ندارد.",
     // لیست قیمت‌ها
     duplicate_name: "لیستی با همین نام وجود دارد.",
     invalid_quick_update_value:
