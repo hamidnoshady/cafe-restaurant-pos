@@ -45,7 +45,7 @@ export function CrmSection({
   if (section === "segments") return <SegmentsSection />;
   if (section === "deals") return <DealsSection />;
   if (section === "activities") return <ActivitiesSection />;
-  if (section === "cases") return <CasesSection />;
+  if (section === "cases") return <CasesSection role={role} />;
   if (section === "duplicates") return <DuplicatesSection />;
   if (section === "settings") return <CrmSettingsSection />;
   return <ConsentSection />;

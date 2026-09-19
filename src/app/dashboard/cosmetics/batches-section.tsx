@@ -24,6 +24,7 @@ interface BatchItem {
 interface NearExpiryRow {
   itemId: string;
   itemName: string;
+  parentName: string | null;
   batchNumber: string;
   expiryDate: string | null;
   quantity: string;
@@ -55,12 +56,18 @@ export function BatchesSection() {
       api<{ items: BatchItem[] }>("/api/cosmetics/items"),
       api<{ rows: NearExpiryRow[] }>("/api/cosmetics/reports/near-expiry"),
     ]);
+    const failures: string[] = [];
     if (itemsResult.status === "fulfilled" && itemsResult.value.ok) {
       setItems(itemsResult.value.data.items.filter((i) => i.tracking === "batch"));
+    } else {
+      failures.push("فهرست کالاها بارگذاری نشد.");
     }
     if (expiryResult.status === "fulfilled" && expiryResult.value.ok) {
       setNearExpiry(expiryResult.value.data.rows);
+    } else {
+      failures.push("گزارش انقضا بارگذاری نشد.");
     }
+    setError(failures.join(" "));
     setLoaded(true);
   }, []);
   useEffect(() => {
@@ -97,6 +104,7 @@ export function BatchesSection() {
   }
 
   async function writeOff(itemIdToWriteOff: string) {
+    if (!window.confirm("همه بچ‌های منقضی این کالا از موجودی حذف و هزینه آن‌ها ثبت شود؟")) return;
     setBusy(true);
     setError("");
     const { ok, data } = await api<{ error?: string; message?: string }>(
@@ -133,16 +141,18 @@ export function BatchesSection() {
           </p>
         </div>
         <ul className="divide-y divide-border/80">
-          {nearExpiry.map((row) => (
-            <li key={`${row.itemId}-${row.batchNumber}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
-              <div className="min-w-0">
-                <span className="font-medium text-foreground">{row.itemName}</span>
+          {nearExpiry.map((row, index) => (
+            <li key={`${row.itemId}-${row.batchNumber}-${row.expiryDate ?? "undated"}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+              <div className="min-w-0 flex-1">
+                <span className="font-medium text-foreground">
+                  {row.parentName ? `${row.parentName} — ` : ""}{row.itemName}
+                </span>
                 <span className="mr-2 text-xs text-muted-foreground">
                   بچ {row.batchNumber} · {formatQuantity(row.quantity)} عدد
                   {row.expiryDate ? ` · انقضا ${toPersianDigits(formatJalali(row.expiryDate))}` : ""}
                 </span>
                 <span
-                  className={`ms-2 rounded-full px-2 py-0.5 text-xs font-medium ${
+                  className={`ms-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                     row.bucket === "expired"
                       ? "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-200"
                       : row.bucket === "under30"
@@ -153,9 +163,9 @@ export function BatchesSection() {
                   {BUCKET_LABELS[row.bucket]}
                 </span>
               </div>
-              {row.bucket === "expired" ? (
-                <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => writeOff(row.itemId)}>
-                  حذف از موجودی
+              {row.bucket === "expired" && nearExpiry.findIndex((candidate) => candidate.itemId === row.itemId && candidate.bucket === "expired") === index ? (
+                <Button type="button" variant="outline" size="sm" className="min-h-10 shrink-0" disabled={busy} onClick={() => writeOff(row.itemId)}>
+                  حذف منقضی‌های کالا
                 </Button>
               ) : null}
             </li>
@@ -194,8 +204,8 @@ export function BatchesSection() {
             <Field label={`بهای تمام‌شده هر واحد (${money.unitLabel})`}>
               <PersianNumberInput className={accInputClass} value={unitCost} onChange={(e) => setUnitCost(e.target.value)} dir="ltr" inputMode="numeric" />
             </Field>
-            {error ? <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p> : null}
-            {done ? <p className="text-xs text-emerald-700 dark:text-emerald-300">{done}</p> : null}
+            {error ? <p role="alert" className="text-xs leading-5 text-rose-700 dark:text-rose-300">{error}</p> : null}
+            {done ? <p role="status" className="text-xs leading-5 text-emerald-700 dark:text-emerald-300">{done}</p> : null}
             <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
               ثبت بچ
             </Button>

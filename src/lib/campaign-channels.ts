@@ -36,7 +36,10 @@ export const CHANNEL_PURPOSE: Record<CampaignChannel, SegmentPurpose> = {
 };
 
 export function isCampaignChannel(value: unknown): value is CampaignChannel {
-  return typeof value === "string" && (CAMPAIGN_CHANNELS as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (CAMPAIGN_CHANNELS as readonly string[]).includes(value)
+  );
 }
 
 /** Default cap. Generous enough for a real send, small enough not to page a whole customer base into memory by accident. */
@@ -75,7 +78,10 @@ export interface AudienceMember {
  * no usable address. Consent is necessary but not sufficient — somebody can
  * have granted SMS consent and have no phone number on file.
  */
-export function contactFor<T extends AudienceMember>(member: T, channel: CampaignChannel): string | null {
+export function contactFor<T extends AudienceMember>(
+  member: T,
+  channel: CampaignChannel,
+): string | null {
   if (channel === "sms") return member.phoneE164 ?? member.phone ?? null;
   const email = member.email?.trim();
   return email ? email : null;
@@ -89,15 +95,15 @@ export function unreachableForLackOfContact<T extends AudienceMember>(
   return members.filter((m) => contactFor(m, channel) === null);
 }
 
-/** Assemble the counts. Pure, so the arithmetic that matters is unit-testable without a database. */
-export function summarizeAudience<T extends AudienceMember>(
+/** Assemble the counts when the database already counted the full populations. */
+export function summarizeAudienceCounts<T extends AudienceMember>(
   channel: CampaignChannel,
-  matchedMembers: readonly T[],
+  matched: number,
+  reachable: number,
   reachableMembers: readonly T[],
   limit: number,
 ): CampaignAudience {
-  const matched = matchedMembers.length;
-  const reachable = reachableMembers.length;
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : AUDIENCE_LIMIT;
   return {
     channel,
     matched,
@@ -106,7 +112,23 @@ export function summarizeAudience<T extends AudienceMember>(
     // here would mean the two queries disagreed about the population, and
     // reporting "-3 excluded" would be worse than reporting 0.
     excludedByConsent: Math.max(0, matched - reachable),
-    members: reachableMembers.slice(0, limit),
-    truncated: reachable > limit,
+    members: reachableMembers.slice(0, safeLimit),
+    truncated: reachable > safeLimit,
   };
+}
+
+/** Assemble the counts. Pure, so the arithmetic that matters is unit-testable without a database. */
+export function summarizeAudience<T extends AudienceMember>(
+  channel: CampaignChannel,
+  matchedMembers: readonly T[],
+  reachableMembers: readonly T[],
+  limit: number,
+): CampaignAudience {
+  return summarizeAudienceCounts(
+    channel,
+    matchedMembers.length,
+    reachableMembers.length,
+    reachableMembers,
+    limit,
+  );
 }

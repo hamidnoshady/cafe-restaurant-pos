@@ -173,9 +173,15 @@ export async function saveMessageTemplate(
 ): Promise<MessageTemplateRecord> {
   const body = input.body.trim();
   if (!body) throw new Error("invalid_template_body");
-  const unknown = validateTemplateBody(body);
-  if (unknown.length > 0) throw new Error(`unknown_template_variable:${unknown.join(",")}`);
   const subject = input.channel === "email" ? (input.subject ?? "").trim() : "";
+  // Email subjects are rendered by the same engine as bodies. Validate both at
+  // authoring time; otherwise an unknown token in a subject survives every
+  // preview and is delivered literally to customers.
+  const unknown = [...new Set([
+    ...validateTemplateBody(body),
+    ...validateTemplateBody(subject),
+  ])];
+  if (unknown.length > 0) throw new Error(`unknown_template_variable:${unknown.join(",")}`);
   const name = input.name.trim();
   if (!name) throw new Error("invalid_template_name");
 
@@ -348,6 +354,8 @@ export async function launchMessageCampaign(
 
   const template = await getMessageTemplate(businessId, campaign.templateId ?? "");
   if (!template) throw new Error("template_not_found");
+  const messageConfig = await getPublicMessageConfig();
+  if (!messageConfig.enabled || !messageConfig.configured) throw new Error("messaging_not_configured");
 
   const audience = await audienceForSegment(businessId, campaign.segmentId, campaign.channel);
   const businessRow = await query<{ name: string }>(
@@ -359,7 +367,12 @@ export async function launchMessageCampaign(
   // Every used variable must have a data path before we write a single row: a
   // template that names a variable no one can resolve is a blocked launch, not
   // a body with holes. `credit`/`discount` only exist when the launcher said so.
-  const used = templateVariableTokens(template.body);
+  // Subject variables matter just as much as body variables for email. Keeping
+  // them out of this check used to queue messages with unresolved {{…}} tokens.
+  const used = [...new Set([
+    ...templateVariableTokens(template.body),
+    ...templateVariableTokens(template.subject),
+  ])];
   const blocked: string[] = [];
   if (used.includes("اعتبار") && options.creditRial === undefined) blocked.push("اعتبار");
   if (used.includes("کد_تخفیف") && !options.discountCode) blocked.push("کد_تخفیف");
@@ -391,11 +404,15 @@ export async function launchMessageCampaign(
       address,
       subject:
         template.channel === "email"
-          ? renderMessageTemplate(template.subject, values)
+          ? renderRecipientBody(template.subject, values)
           : "",
       body: renderRecipientBody(template.body, values),
     });
   }
+
+  // Keep an empty campaign as a recoverable draft. A zero-recipient campaign
+  // marked as `sending` has no outbox row that could ever complete it.
+  if (recipients.length === 0) throw new Error("no_reachable_customer");
 
   const client = await getPool().connect();
   try {

@@ -28,6 +28,6 @@ export function GrowthSection({ section, role }: { section: GrowthSectionKey; ro
   if (section === "campaigns") return <CampaignsSection />;
   if (section === "messaging") return <MessagingSection />;
   if (section === "gift-cards") return <GiftCardsSection />;
-  if (section === "loyalty") return <LoyaltySection />;
+  if (section === "loyalty") return <LoyaltySection role={role} />;
   return <CommissionSection />;
 }
