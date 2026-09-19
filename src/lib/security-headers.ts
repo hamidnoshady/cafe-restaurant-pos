@@ -53,7 +53,12 @@ export function contentSecurityPolicy(
     "form-action 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // Website managers render image URLs owned by the business's connected
+    // CMS/WordPress host. Restricting img-src to self made every remote media
+    // thumbnail fail as soon as CSP moved from report-only to enforcement.
+    // Images may load over HTTP on a local HTTP deployment; enforced HTTPS
+    // deployments upgrade them through `upgrade-insecure-requests` below.
+    "img-src 'self' data: blob: http: https:",
     "font-src 'self'",
     `connect-src 'self' ws: wss: ${printAgentConnectSources().join(" ")}`,
     "worker-src 'self'",
