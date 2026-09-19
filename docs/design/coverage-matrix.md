@@ -70,54 +70,56 @@ pattern, not drift — a per-section header would double up.
 | Dashboard → media manager | Hand-rolled chips | `FilterChip` |
 | 79 files across all apps | Hardcoded `stone-*` light/dark pairs | Theme tokens that flip automatically |
 
-## Remaining work — ordered checklist
+## Table migration — complete
 
-Every item is enforced by `TABLE_MIGRATION_BACKLOG` in
-`src/app/dashboard/primitive-lint.test.ts`: the rule is live, these files are
-named exceptions, and removing an entry is how the work is marked done. **A new
-hand-rolled table in any other file fails the check today.**
+Every hand-rolled table in the tenant-facing apps now composes `DataTable`.
+`TABLE_MIGRATION_BACKLOG` — the named-exception list that tracked this work —
+**has been deleted**, because there is nothing left on it. The rule in
+`src/app/dashboard/primitive-lint.test.ts` is now unconditional: any `<thead>`
+in a non-operational tenant file that does not import `DataTable` fails the
+check. That was verified by reintroducing one and watching it fail with the
+file and line.
 
-### Batch A — Accounting ledger tables (13 files, highest impact)
+| Batch | Files | Tables | Status |
+| --- | --- | --- | --- |
+| A — Accounting ledger | 13 | 15 | **done** |
+| B — Inventory, stock, products | 7 | 10 | **done** |
+| C — Reports | 4 | 6 | **done** |
+| D — Long tail | 4 | 4 | **done** |
 
-- [ ] `(app)/accounting/entries-section.tsx` — journal register
-- [ ] `(app)/accounting/chart-of-accounts-section.tsx`
-- [ ] `(app)/accounting/expense-section.tsx`
-- [ ] `(app)/accounting/receipts-payments-section.tsx`
-- [ ] `(app)/accounting/ar-section.tsx` and `ar-statement-panel.tsx`
-- [ ] `(app)/accounting/ap-section.tsx` and `ap-statement-panel.tsx`
-- [ ] `(app)/accounting/account-statement-panel.tsx`
-- [ ] `(app)/accounting/reconciliation-section.tsx`
-- [ ] `(app)/accounting/fiscal-periods-section.tsx`
-- [ ] `(app)/accounting/fixed-assets-section.tsx`
-- [ ] `(app)/accounting/installments-section.tsx`
+Batch B and C swapped order against the original plan: the inventory tables
+were near-duplicates of each other and of the accounting ones just finished, so
+doing them second kept the conversion in one mental model, while Reports needed
+a design decision (below) that was better taken with more of the product
+already migrated.
 
-### Batch B — Reports (4 files, one shared component)
+Two things worth knowing before touching this area again:
 
-- [ ] `dashboard/reports/report-table.tsx` — migrate this **first**; the other
-      three are its consumers and may need no change afterwards
-- [ ] `dashboard/reports/ledger-report-view.tsx`
-- [ ] `dashboard/reports/drill-down-panel.tsx`
-- [ ] `dashboard/reports/shift-orders-section.tsx`
+- **`report-table.tsx` was not replaced.** It is the reports section's own
+  declarative table — columns as data, desktop grid and phone cards generated
+  from one declaration — and that is a genuinely better abstraction for those
+  screens. It now composes `DataTable` internally, so its three consumers
+  inherit the shared chrome without changing a line.
+- **The primitive grew exactly two props**, each forced by a real caller:
+  `DataTable frame={false}` for a table that sits inside a `flush` SectionCard
+  and would otherwise draw a hairline inside a hairline, and `Th scope="row"`
+  for a totals row that labels its figures with a row header. Both keep their
+  previous behaviour as the default.
 
-### Batch C — Inventory, stock and products (7 remaining of 8)
+### What the conversion changed beyond deduplication
 
-- [ ] `dashboard/inventory/documents-section.tsx`
-- [ ] `dashboard/inventory/purchases-section.tsx`
-- [ ] `dashboard/inventory/stock-section.tsx`
-- [ ] `dashboard/stock/documents-section.tsx`
-- [ ] `dashboard/stock/stock-levels-section.tsx`
-- [x] `dashboard/stock/warehouses-section.tsx` — done in this PR
-- [ ] `dashboard/products/price-lists-section.tsx`
-- [ ] `dashboard/products/products-list-section.tsx`
+- **Accessible names.** `DataTable` makes `caption` required. Most of these
+  tables had none and presented to a screen reader as an unnamed grid.
+- **Money columns are end-aligned.** The approved trial-balance screenshot
+  shows them that way; the majority of the migrated tables had them
+  start-aligned.
+- **Judgement the mapping could not make.** A Jalali date carrying
+  `tabular-nums` is *not* a numeric column — it keeps tabular figures and stays
+  start-aligned. Nor is an end-aligned action column: it says `text-end`
+  directly rather than borrowing `numeric` and picking up tabular figures and a
+  medium weight. Same for two-line quantity cells.
 
-### Batch D — Long tail (4 files)
-
-- [ ] `dashboard/parties/parties-section.tsx`
-- [ ] `dashboard/locations/locations-manager.tsx`
-- [ ] `dashboard/backup/backup-manager.tsx`
-- [ ] `setup/accounts/page.tsx`
-
-### Batch E — Not yet covered by any automated rule
+### Remaining — not yet covered by any automated rule
 
 - [x] **Search fields**: the four files whose markup matched `SearchField`
       exactly were migrated in this PR (inventory + stock `warehouses-section`,

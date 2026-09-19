@@ -13,7 +13,7 @@ so rather than implying it passed.
 | `npm run test:design` | **4 files / 34 tests passed** | `design-lint` (14) + app `design-lint` (9) + `primitive-lint` (5) + `loading-coverage` (6). |
 | `npm run test:db` | **110 files / 1181 passed, 1 skipped** | Integration suite against the embedded Postgres. |
 | `npm run build` | **clean** | Full production build; every route compiled. |
-| `npm run test:visual` | **11/11 screens match; 8 consecutive runs clean** | Baselines recorded, reviewed and committed. |
+| `npm run test:visual` | **14/14 screens match** | Baselines recorded, reviewed and committed. |
 
 One transient failure is worth recording because the next person will hit it:
 `src/app/route-tree.test.ts` → "agrees with the production build" fails against a
@@ -23,9 +23,22 @@ this change.
 
 ## Visual regression — run, reviewed, committed
 
-The harness runs. All 11 baselines in `docs/design/visual/` were recorded
+The harness runs. All 14 baselines in `docs/design/visual/` were recorded
 against a **production build** with the deterministic fixture, opened and looked
 at one by one, and committed as approvals.
+
+**The last three exist because the first eleven proved nothing about the table
+migration.** After the migration landed, the suite reported "11 screens match"
+— byte-identical. Reading that as a pass would have been wrong: going through
+the screen list showed that *not one of the eleven rendered a migrated table*,
+so the green run was over untouched code. Three ledger registers were added —
+`accounting-chart-of-accounts`, `accounting-expenses`, `accounting-receivables`
+— and two of them then photographed **empty states**, which would have frozen
+nothing either. `scripts/seed-visual-fixture.ts` was extended with three
+expenses and two receivable-raising cheques, and the two baselines re-recorded.
+That extension also added accounts `1200` and `5020`, which legitimately changed
+the two `accounting-trial-balance` baselines (one extra row, still balanced);
+both were re-read before being re-approved.
 
 A browser was obtained by extracting the Chromium that ships inside the
 `@sparticuz/chromium` npm package (Playwright's own CDN and the Azure mirror are
@@ -218,8 +231,9 @@ Note for whoever reads the HTML: the server response for these screens is the
 waits for the skeletons to disappear *and* for the DOM to settle before it
 captures, and why grepping the SSR HTML for table markup finds nothing.
 
-Beyond the status codes, all 11 baseline screenshots were opened and read —
-which is how the two bugs above were found.
+Beyond the status codes, all 14 baseline screenshots were opened and read —
+which is how the two bugs above, the two empty-state baselines and the expenses
+column clipping were found.
 
 ## Lint enforcement was tested, not assumed
 
@@ -232,21 +246,35 @@ cannot be silently grown. The probe was deleted.
 
 ## Remaining deviations
 
-Stated plainly: **the platform is not fully migrated.** What remains, in the
-order it should be done, is the Batch A–E checklist in
-[`docs/design/coverage-matrix.md`](coverage-matrix.md). The headline items:
+**The table migration is finished.** Every hand-rolled table in the four tenant
+apps composes `DataTable`, across 35 tables in 28 files. The
+`TABLE_MIGRATION_BACKLOG` exception list was **deleted rather than shortened**:
+the lint rule is now unconditional, so any new `<thead>` in a non-operational
+tenant file fails immediately. That was re-verified after the constant was
+removed by reintroducing a hand-rolled `<thead>` and watching the rule name the
+file and line.
 
-1. **28 files still hand-roll a table** (`TABLE_MIGRATION_BACKLOG`). They are
-   named, grouped and ordered; the list can only shrink. Migrate
-   `dashboard/reports/report-table.tsx` first — three of the four reports files
-   are its consumers.
+What still deviates, in the order it should be done, is in
+[`docs/design/coverage-matrix.md`](coverage-matrix.md):
+
+1. **The expenses register clips its amount column at 1440px.** Its table sets
+   `tableClassName="min-w-[56rem]"` inside a content column narrower than that,
+   so `DataTable`'s `overflow-x-auto` kicks in and the right-hand money column
+   scrolls out of frame — visible in the `accounting-expenses` baseline. This is
+   pre-existing (the `min-w` came over unchanged from the hand-rolled table; the
+   migration did not introduce it) and it is a real horizontal scroll, not a
+   broken layout. Fixing it means deciding which of its seven columns collapses
+   first, which is a content decision, so it was not changed blind. Recorded
+   here rather than hidden by re-framing the screenshot.
 2. **Six search fields** still position their own magnifier. Each differs from
    `SearchField` in a real way (clear button at a different offset, a combobox,
    a nav filter), so they need the component to grow a prop rather than a
    copy-paste. Left deliberately.
 3. **~15 mobile card fallbacks** duplicate each other's shape beside the tables.
    A `DataTableMobileList` would remove them; they are live and each renders
-   different fields, so they were not touched blind.
+   different fields, so they were not touched blind. Note that migrating the
+   tables did *not* touch these: keeping the two halves separate is what made
+   the table diffs reviewable.
 4. **The "token conflict" was a misdiagnosis — resolved, no change needed.**
    An earlier pass in this work flagged `globals.css` defining `--primary` and
    `--ring` as teal (`oklch(0.52 0.1 205)`) while the screenshots and
@@ -283,4 +311,4 @@ order it should be done, is the Batch A–E checklist in
 3. `src/app/dashboard/primitive-lint.test.ts` — the rules, the exemptions and
    the backlog constant. The exemptions are where a lint like this goes wrong,
    so they carry their reasons inline.
-4. The deviations above, and whether item 4 should block or follow.
+4. The deviations above, and whether item 5 should block or follow.

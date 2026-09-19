@@ -77,6 +77,26 @@ const SCREENS = [
   { id: "accounting-orders", path: "/accounting/orders", theme: "light" },
   // — Accounting — inventory: section nav, form card, filters, data table.
   { id: "accounting-inventory", path: "/accounting/inventory", theme: "light" },
+  /*
+   * Three ledger registers, added when the hand-rolled tables were migrated
+   * onto `DataTable`. The eleven screens above all passed that migration
+   * unchanged — which proved nothing, because not one of them rendered a
+   * migrated table. These do: the chart of accounts is the widest (seven
+   * columns, indentation, two badge kinds), expenses is the money-column case
+   * the trial-balance screenshot governs, and receivables pairs a table with
+   * the tab bar and an in-row action link.
+   */
+  { id: "accounting-chart-of-accounts", path: "/accounting/chart-of-accounts", theme: "light" },
+  // The expenses register sits below its entry form, so the default viewport
+  // frames the form and only the first table row. `anchor` scrolls the table
+  // itself into view, which is the point of the baseline.
+  {
+    id: "accounting-expenses",
+    path: "/accounting/expenses",
+    theme: "light",
+    anchor: "table",
+  },
+  { id: "accounting-receivables", path: "/accounting/receivables", theme: "light" },
   // — CRM —
   { id: "crm-overview", path: "/crm/overview", theme: "light" },
   { id: "crm-deals", path: "/crm/deals", theme: "light" },
@@ -267,6 +287,33 @@ async function main() {
       throw new Error(
         `${screen.id}: expected the ${screen.theme} theme but the page rendered ` +
           `${isDark ? "dark" : "light"}. Refusing to record a mislabelled baseline.`,
+      );
+    }
+
+    // Some registers live below a form or a filter bar, so the default viewport
+    // would photograph chrome rather than the table under test. Scroll the
+    // named element to the top of the viewport — `instant`, and reduced motion
+    // is already on, so there is no smooth-scroll frame to race.
+    if (screen.anchor) {
+      const anchored = await page.evaluate((selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return false;
+        element.scrollIntoView({ behavior: "instant", block: "start" });
+        return true;
+      }, screen.anchor);
+      if (!anchored) {
+        throw new Error(
+          `${screen.id}: anchor "${screen.anchor}" not found. Refusing to record ` +
+            `a baseline that frames something other than the intended element.`,
+        );
+      }
+      // Let the scroll commit before the shot; two frames is enough and is not
+      // a timing guess the way a sleep would be.
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
       );
     }
 

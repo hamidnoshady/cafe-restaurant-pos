@@ -67,6 +67,11 @@ async function main() {
       { code: "1020", name: "بانک ملت", type: "asset" },
       { code: "4010", name: "فروش کافه", type: "revenue" },
       { code: "5010", name: "خرید مواد اولیه", type: "expense" },
+      // 1200 is WELL_KNOWN_CODES.accountsReceivable — the A/R screens read
+      // balances from journal lines posted to exactly this code, so without it
+      // «حساب‌های دریافتنی» photographs as an empty state.
+      { code: "1200", name: "حساب‌های دریافتنی", type: "asset" },
+      { code: "5020", name: "اجاره محل", type: "expense" },
     ];
     const accountIds = new Map<string, string>();
     for (const account of ACCOUNTS) {
@@ -216,9 +221,97 @@ async function main() {
       );
     }
 
+    // ---- Expenses ----------------------------------------------------------
+    // The «هزینه‌ها» register reads the `expenses` table directly, so the
+    // journal entries above do not populate it. Three rows: two categories,
+    // two payment accounts, one with a vendor and one without, which is what
+    // makes the "طرف حساب" column's «—» fallback visible in the baseline.
+    const EXPENSES: Array<{
+      memo: string;
+      date: string;
+      amount: number;
+      account: string;
+      paymentAccount: string;
+      vendor: string | null;
+    }> = [
+      { memo: "اجاره اسفند", date: "2026-03-05", amount: 240_000_000, account: "5020", paymentAccount: "1020", vendor: "املاک مرکزی" },
+      { memo: "خرید دانه قهوه", date: "2026-03-12", amount: 18_000_000, account: "5010", paymentAccount: "1010", vendor: "پخش مواد غذایی آریا" },
+      { memo: "هزینه حمل", date: "2026-03-14", amount: 3_500_000, account: "5010", paymentAccount: "1010", vendor: null },
+    ];
+    for (const expense of EXPENSES) {
+      const existing = await client.query(
+        "SELECT id FROM expenses WHERE business_id = $1 AND memo = $2",
+        [businessId, expense.memo],
+      );
+      if (existing.rowCount) continue;
+      await client.query(
+        `INSERT INTO expenses (business_id, location_id, account_id, payment_account_id, amount, expense_date, vendor, memo, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          businessId,
+          locationId,
+          accountIds.get(expense.account),
+          accountIds.get(expense.paymentAccount),
+          expense.amount,
+          expense.date,
+          expense.vendor,
+          expense.memo,
+          T0,
+        ],
+      );
+    }
+
+    // ---- Accounts receivable -----------------------------------------------
+    // A/R balances are derived, not stored: `listCustomerBalances` sums journal
+    // lines on account 1200 and attributes each to a party through the order,
+    // receipt or cheque the entry came from. A cheque is the cheapest of the
+    // three to seed, so each customer gets one receivable-raising entry.
+    const RECEIVABLES: Array<{ customer: string; amount: number; serial: string; due: string }> = [
+      { customer: "سارا محمدی", amount: 32_000_000, serial: "۸۸۱۲۳۴", due: "2026-04-20" },
+      { customer: "رضا کریمی", amount: 14_500_000, serial: "۸۸۱۲۳۵", due: "2026-05-02" },
+    ];
+    for (const receivable of RECEIVABLES) {
+      const existing = await client.query(
+        "SELECT id FROM cheques WHERE business_id = $1 AND serial_number = $2",
+        [businessId, receivable.serial],
+      );
+      if (existing.rowCount) continue;
+      const cheque = await client.query(
+        `INSERT INTO cheques (business_id, location_id, direction, status, serial_number, bank_name,
+                              amount, issue_date, due_date, counterparty_name, customer_id, created_at, updated_at)
+         VALUES ($1, $2, 'receivable', 'on_hand', $3, 'بانک ملت', $4, '2026-03-08', $5, $6, $7, $8, $8)
+         RETURNING id`,
+        [
+          businessId,
+          locationId,
+          receivable.serial,
+          receivable.amount,
+          receivable.due,
+          receivable.customer,
+          partyIds.get(receivable.customer),
+          T0,
+        ],
+      );
+      const entry = await client.query(
+        `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type, source_id, posted_at)
+         VALUES ($1, $2, '2026-03-08', $3, 'cheque', $4, $5) RETURNING id`,
+        [businessId, locationId, `چک دریافتی ${receivable.customer}`, cheque.rows[0].id, T0],
+      );
+      // Debit A/R, credit sales — the customer owes this amount.
+      for (const line of [
+        { code: "1200", debit: receivable.amount, credit: 0 },
+        { code: "4010", debit: 0, credit: receivable.amount },
+      ]) {
+        await client.query(
+          "INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES ($1, $2, $3, $4)",
+          [entry.rows[0].id, accountIds.get(line.code), line.debit, line.credit],
+        );
+      }
+    }
+
     await client.query("COMMIT");
     console.log(
-      "Visual fixture ready: 4 accounts, 2 journal entries, 3 inventory items, 3 parties, 3 deals.",
+      "Visual fixture ready: 6 accounts, 4 journal entries, 3 inventory items, 3 parties, 3 deals, 3 expenses, 2 receivables.",
     );
   } catch (error) {
     await client.query("ROLLBACK");

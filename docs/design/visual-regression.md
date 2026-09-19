@@ -27,6 +27,9 @@ It also runs on every pull request (`.github/workflows/test.yml`, job
 | `accounting-trial-balance-dark` | Accounting | The same screen in dark mode — the tokens must flip, nothing hardcoded |
 | `accounting-orders` | Accounting | Page header, search + filter chips, order queue, rich empty states |
 | `accounting-inventory` | Accounting | Section nav, form card, filters, data table, status badges |
+| `accounting-chart-of-accounts` | Accounting | The widest migrated `DataTable`: seven columns, tree indentation, two badge kinds, row actions |
+| `accounting-expenses` | Accounting | A migrated register below a form — money column, `—` fallbacks, totals footer |
+| `accounting-receivables` | Accounting | Tab bar above a migrated table with an in-row action link |
 | `crm-overview` | CRM | KPI tiles, section cards |
 | `crm-deals` | CRM | Pipeline columns on the shared card skin |
 | `growth-overview` | Growth and Marketing | KPI tiles |
@@ -34,6 +37,14 @@ It also runs on every pull request (`.github/workflows/test.yml`, job
 | `websites-cms` | Website Management (Eshobe CMS) | Manager landing, stacked cards |
 | `websites-wp` | Website Management (WP/Woo) | The peer manager — deliberately its own screen, not the CMS's |
 | `settings-business` | Settings | Section nav, stacked form cards, selected money-unit control |
+
+The last three were added *after* the table migration, and the reason is worth
+keeping: the eleven screens above them all passed that migration byte-identical
+— not because nothing changed, but because **not one of them rendered a
+migrated table**. A green run over screens that do not include the code under
+test is not evidence. When you change a surface, check it is actually in
+`SCREENS` before reporting a pass, and open the PNG to check it is not
+photographing an empty state.
 
 ## Determinism
 
@@ -76,6 +87,14 @@ not a cache. Re-recording without reading the diff silently converts a
 regression into the new normal, which is exactly the failure mode this check
 exists to prevent.
 
+## Framing: the `anchor` option
+
+A screen entry may carry `anchor: "<css selector>"`, which scrolls that element
+to the top of the viewport before the shot. `accounting-expenses` uses it: the
+register sits under its entry form, so the default viewport frames the form and
+one row of the table the baseline exists to protect. The harness throws if the
+selector matches nothing, rather than silently recording the unscrolled frame.
+
 ## Adding a screen
 
 Add an entry to `SCREENS` in `scripts/visual-regression.mjs`, run
@@ -116,7 +135,14 @@ re-run that loop; one green run proves nothing.
 empty state — a baseline that cannot catch a regression in how a row, an amount
 or a badge renders. `npm run db:seed:visual` adds a fixed cast on top: four
 accounts with two balanced journal entries, three stock items, three parties and
-three CRM deals.
+three CRM deals, plus three expenses and two receivable-raising cheques.
+
+Those last two groups were added when the three ledger baselines were recorded:
+both `accounting-expenses` and `accounting-receivables` first photographed their
+empty states. Note that A/R balances are *derived* — `listCustomerBalances` sums
+journal lines on the `1200` account and attributes each to a party through the
+order, receipt or cheque its entry came from — so seeding a party is not enough;
+the fixture posts a cheque and its journal entry.
 
 Every value in that fixture is hard-coded. No `Math.random`, no `new Date()`, no
 faker — a fixture that varies produces a baseline that disagrees with itself on

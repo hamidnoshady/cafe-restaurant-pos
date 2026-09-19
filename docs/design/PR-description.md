@@ -104,9 +104,12 @@ Both had passed every text-based test in the repo:
 
 ## Not done, on purpose
 
-The platform is **not** fully migrated. 28 tables, six search fields and ~15
-mobile card fallbacks remain, ordered as Batch A–E in
-`docs/design/coverage-matrix.md`.
+The **table migration is complete**: every hand-rolled table in the four tenant
+apps now composes `DataTable`, and the `TABLE_MIGRATION_BACKLOG` exception list
+has been deleted rather than shortened, so the lint rule is now unconditional.
+Six bespoke search fields and ~15 mobile card fallbacks remain, both blocked on
+a prop design rather than on effort, and both listed with their blocking
+decision in `docs/design/coverage-matrix.md`.
 
 An earlier pass in this work flagged a "token conflict" — `globals.css` defining
 `--primary` as teal while the screenshots use amber — and proposed repainting the
