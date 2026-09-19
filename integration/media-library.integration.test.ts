@@ -34,6 +34,7 @@ let media: typeof import("../src/lib/media-service");
 let mediaLib: typeof import("../src/lib/media");
 let wallet: typeof import("../src/lib/wallet-service");
 let dbLib: typeof import("../src/lib/db");
+let mediaPersist: typeof import("../src/lib/ai-media-persist");
 
 const BID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // کافه اول — the funded one
 const BID2 = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; // کافه دوم — the broke one
@@ -110,6 +111,7 @@ beforeAll(async () => {
   mediaLib = await import("../src/lib/media");
   wallet = await import("../src/lib/wallet-service");
   dbLib = await import("../src/lib/db");
+  mediaPersist = await import("../src/lib/ai-media-persist");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -530,5 +532,86 @@ describe("Phase G — asset provenance (source, AI authorship, conversation/proj
     expect(survived!.projectId).toBeNull();
     // The provenance label itself is retained — we still know it came from chat.
     expect(survived!.source).toBe("ai_attachment");
+  });
+});
+
+describe("Phase G pt.2 — persisting AI chat image attachments into the library", () => {
+  // The config singleton was saved earlier in this file; persist reads it via
+  // getMediaConfig(). Guard by re-saving so this block is order-independent.
+  beforeAll(async () => {
+    await dbLib.withoutTenantScope("test", () => media.saveMediaConfig(config, null));
+  });
+
+  function pngDataUrl(size: number): string {
+    return `data:image/png;base64,${pngOf(size).toString("base64")}`;
+  }
+
+  it("stores a chat image with source=ai_attachment linked to its conversation and project", async () => {
+    const { rows: proj } = await db.query<{ id: string }>(
+      `INSERT INTO ai_projects (business_id, name, created_by) VALUES ($1, 'کمپین چت', 'seed') RETURNING id`,
+      [BID],
+    );
+    const { rows: conv } = await db.query<{ id: string }>(
+      `INSERT INTO ai_conversations (business_id, actor_user_id, mode, title, project_id)
+       VALUES ($1, gen_random_uuid(), 'dashboard', 'رسید چت', $2) RETURNING id`,
+      [BID, proj[0].id],
+    );
+
+    const stored = await scoped(BID, () =>
+      mediaPersist.persistChatImageAttachments({
+        businessId: BID,
+        userId: null,
+        conversationId: conv[0].id,
+        projectId: proj[0].id,
+        attachments: [
+          { kind: "image", dataUrl: pngDataUrl(220), name: "رسید.png" },
+          // A PDF in the same turn must NOT be persisted — only images are kept.
+          { kind: "pdf", dataUrl: "data:application/pdf;base64,JVBERi0xLjc=", name: "فاکتور.pdf" },
+        ],
+      }),
+    );
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0].source).toBe("ai_attachment");
+    expect(stored[0].createdByAi).toBe(false);
+    expect(stored[0].conversationId).toBe(conv[0].id);
+    expect(stored[0].projectId).toBe(proj[0].id);
+    expect(stored[0].fileName).toBe("رسید.png");
+
+    // It is now a real, listable library asset for this conversation.
+    const listed = await scoped(BID, () => media.listMediaAssets(BID, { conversationId: conv[0].id }));
+    expect(listed.assets.map((a) => a.id)).toContain(stored[0].id);
+  });
+
+  it("skips silently when storage is not configured", async () => {
+    await dbLib.withoutTenantScope("test", () =>
+      media.saveMediaConfig({ ...config, enabled: false }, null),
+    );
+    const stored = await scoped(BID, () =>
+      mediaPersist.persistChatImageAttachments({
+        businessId: BID,
+        userId: null,
+        conversationId: null,
+        projectId: null,
+        attachments: [{ kind: "image", dataUrl: pngDataUrl(120) }],
+      }),
+    );
+    expect(stored).toEqual([]);
+    // Restore for any later block.
+    await dbLib.withoutTenantScope("test", () => media.saveMediaConfig(config, null));
+  });
+
+  it("refuses a mislabeled image (bytes not matching the MIME) without storing it", async () => {
+    const evil = Buffer.from("<script>alert(1)</script>").toString("base64");
+    const stored = await scoped(BID, () =>
+      mediaPersist.persistChatImageAttachments({
+        businessId: BID,
+        userId: null,
+        conversationId: null,
+        projectId: null,
+        attachments: [{ kind: "image", dataUrl: `data:image/png;base64,${evil}` }],
+      }),
+    );
+    expect(stored).toEqual([]);
   });
 });

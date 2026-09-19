@@ -16,6 +16,7 @@ import {
   getOrCreateConversation,
 } from "@/lib/ai-conversations";
 import { buildProjectPromptContext, getProjectPromptContext } from "@/lib/ai-projects";
+import { persistChatImageAttachments } from "@/lib/ai-media-persist";
 import { createInputRequest } from "@/lib/ai-input-requests-service";
 import {
   parseChatAttachments,
@@ -284,6 +285,22 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     } catch (err) {
       console.error("ai project context load failed", err);
     }
+  }
+
+  // Phase G pt.2 — persist any IMAGE attachments this turn carried into the
+  // Media Library, tagged with their provenance (from chat, and the
+  // conversation/project they belong to). Best-effort and non-blocking: it
+  // never throws and the turn proceeds regardless. Only dashboard/wizard turns
+  // attach files (the same scope parseChatAttachments enforces), and only when
+  // the conversation was actually persisted.
+  if (conversationId && attachments.length > 0 && (mode === "dashboard" || mode === "wizard")) {
+    void persistChatImageAttachments({
+      businessId: session.businessId,
+      userId: session.sub,
+      conversationId,
+      projectId: activeProjectId,
+      attachments,
+    }).catch((err) => console.error("ai chat attachment persistence failed", err));
   }
 
   // Phase 36 Wave 7 — the question's embedding, over the shared platform
