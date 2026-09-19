@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { crmOverview } from "@/lib/crm-overview";
 
+/** This dashboard contains tenant-scoped live data; never serve a cached snapshot. */
+export const dynamic = "force-dynamic";
+
 /**
  * The CRM app's dashboard, in one call (Phase 36).
  *
@@ -19,5 +22,8 @@ export const GET = withTenantScope(async () => {
   if (error) return error;
 
   const overview = await crmOverview(session.businessId);
-  return NextResponse.json({ overview });
+  return NextResponse.json(
+    { overview },
+    { headers: { "Cache-Control": "private, no-store, max-age=0" } },
+  );
 });

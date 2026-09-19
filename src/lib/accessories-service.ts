@@ -61,8 +61,8 @@ export async function getStock(itemId: string, client?: PoolClient): Promise<Ite
 }
 
 /** Only a sellable variant carries stock: a variant_parent is a product family, not a thing on a shelf. */
-async function assertSellableVariant(itemId: string): Promise<void> {
-  const item = await getItem(itemId);
+async function assertSellableVariant(itemId: string, client?: PoolClient): Promise<void> {
+  const item = await getItem(itemId, client);
   if (!item) throw new Error("کالا یافت نشد.");
   if (item.kind === "variant_parent") {
     throw new Error("موجودی روی خودِ خانوادهٔ کالا ثبت نمی‌شود؛ روی هر تنوع جداگانه ثبت کنید.");
@@ -73,18 +73,52 @@ async function assertSellableVariant(itemId: string): Promise<void> {
 }
 
 /** Sets the shelf price of one variant (Rial per unit, pre-VAT), creating its stock row if this is the first thing recorded about it. */
-export async function setUnitPrice(itemId: string, unitPrice: number): Promise<ItemStock> {
+export async function setUnitPrice(
+  itemId: string,
+  unitPrice: number,
+  client?: PoolClient,
+): Promise<ItemStock> {
   if (!Number.isInteger(unitPrice) || unitPrice <= 0) {
     throw new Error("قیمت فروش هر واحد باید یک عدد صحیح مثبت (ریال) باشد.");
   }
-  await assertSellableVariant(itemId);
+  await assertSellableVariant(itemId, client);
 
-  const { rows } = await query<StockRow>(
-    `INSERT INTO item_stock (item_id, unit_price) VALUES ($1, $2)
+  const statement = `INSERT INTO item_stock (item_id, unit_price) VALUES ($1, $2)
      ON CONFLICT (item_id) DO UPDATE SET unit_price = EXCLUDED.unit_price, updated_at = now()
-     RETURNING *`,
-    [itemId, unitPrice],
-  );
+     RETURNING *`;
+  const { rows } = client
+    ? await client.query<StockRow>(statement, [itemId, unitPrice])
+    : await query<StockRow>(statement, [itemId, unitPrice]);
+  return mapStock(rows[0]);
+}
+
+/**
+ * Records an opening purchase cost before any quantity exists. This is not a
+ * receipt and therefore must never overwrite the weighted-average cost of
+ * existing stock. The add-product form uses it when a purchase price is known
+ * but opening quantity is left empty or zero.
+ */
+export async function setInitialUnitCost(
+  itemId: string,
+  unitCost: number,
+  client?: PoolClient,
+): Promise<ItemStock> {
+  if (!Number.isInteger(unitCost) || unitCost < 0) {
+    throw new Error("قیمت خرید هر واحد باید یک عدد صحیح غیرمنفی (ریال) باشد.");
+  }
+  await assertSellableVariant(itemId, client);
+
+  const statement = `INSERT INTO item_stock (item_id, unit_cost) VALUES ($1, $2)
+     ON CONFLICT (item_id) DO UPDATE
+       SET unit_cost = EXCLUDED.unit_cost, updated_at = now()
+       WHERE item_stock.quantity = 0
+     RETURNING *`;
+  const { rows } = client
+    ? await client.query<StockRow>(statement, [itemId, unitCost])
+    : await query<StockRow>(statement, [itemId, unitCost]);
+  if (!rows[0]) {
+    throw new Error("قیمت خرید اولیه پس از ثبت موجودی قابل جایگزینی نیست.");
+  }
   return mapStock(rows[0]);
 }
 
@@ -102,7 +136,7 @@ export async function receiveStock(
 ): Promise<ItemStock> {
   const errors = validateStockReceipt(input);
   if (errors.length > 0) throw new Error(errors.join("؛ "));
-  await assertSellableVariant(itemId);
+  await assertSellableVariant(itemId, client);
 
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);

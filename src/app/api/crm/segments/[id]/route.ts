@@ -6,7 +6,11 @@ import {
   resolveSegment,
   updateSegment,
 } from "@/lib/crm-segments-service";
-import { isSendingPurpose, validateSegmentDefinition, type SegmentPurpose } from "@/lib/segments";
+import {
+  isSegmentPurpose,
+  validateSegmentDefinition,
+  type SegmentPurpose,
+} from "@/lib/segments";
 
 /**
  * One saved segment (Phase 36).
@@ -18,26 +22,36 @@ import { isSendingPurpose, validateSegmentDefinition, type SegmentPurpose } from
  * customer is not merely hidden by the UI — they are not in the result at all.
  */
 export const GET = withTenantScope(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> },
+  ) => {
     const { session, error } = await requireRole("owner", "manager");
     if (error) return error;
 
     const { id } = await params;
     const segment = await getSegment(session.businessId, id);
-    if (!segment) return NextResponse.json({ error: "segment_not_found" }, { status: 404 });
+    if (!segment)
+      return NextResponse.json({ error: "segment_not_found" }, { status: 404 });
 
     const search = request.nextUrl.searchParams;
     if (search.get("members") !== "1") return NextResponse.json({ segment });
 
     const requested = search.get("purpose") ?? "view";
-    const purpose: SegmentPurpose =
-      requested === "view" || isSendingPurpose(requested as SegmentPurpose)
-        ? (requested as SegmentPurpose)
-        : "view";
+    if (!isSegmentPurpose(requested)) {
+      return NextResponse.json(
+        { error: "segment_purpose_invalid" },
+        { status: 400 },
+      );
+    }
+    const purpose: SegmentPurpose = requested;
     const limitParam = Number(search.get("limit"));
     const members = await resolveSegment(session.businessId, id, {
       purpose,
-      limit: Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 5000) : 1000,
+      limit:
+        Number.isFinite(limitParam) && limitParam > 0
+          ? Math.min(limitParam, 5000)
+          : 1000,
     });
     return NextResponse.json({ segment, members, purpose });
   },
@@ -51,7 +65,10 @@ interface UpdateBody {
 }
 
 export const PATCH = withTenantScope(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> },
+  ) => {
     const { session, error } = await requireRole("owner", "manager");
     if (error) return error;
 
@@ -63,12 +80,18 @@ export const PATCH = withTenantScope(
     }
 
     if (body.name !== undefined && !body.name.trim()) {
-      return NextResponse.json({ error: "segment_name_required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "segment_name_required" },
+        { status: 400 },
+      );
     }
     if (body.definition !== undefined) {
       const problems = validateSegmentDefinition(body.definition);
       if (problems.length > 0) {
-        return NextResponse.json({ error: "segment_definition_invalid", problems }, { status: 400 });
+        return NextResponse.json(
+          { error: "segment_definition_invalid", problems },
+          { status: 400 },
+        );
       }
     }
 
@@ -76,10 +99,13 @@ export const PATCH = withTenantScope(
     const segment = await updateSegment(session.businessId, id, {
       name: body.name,
       description: body.description,
-      definition: body.definition as Parameters<typeof updateSegment>[2]["definition"],
+      definition: body.definition as Parameters<
+        typeof updateSegment
+      >[2]["definition"],
       archived: body.archived,
     });
-    if (!segment) return NextResponse.json({ error: "segment_not_found" }, { status: 404 });
+    if (!segment)
+      return NextResponse.json({ error: "segment_not_found" }, { status: 404 });
     return NextResponse.json({ segment });
   },
 );
@@ -92,13 +118,17 @@ export const PATCH = withTenantScope(
  * asks months later. Archiving hides it from the builder and keeps the answer.
  */
 export const DELETE = withTenantScope(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (
+    _request: NextRequest,
+    { params }: { params: Promise<{ id: string }> },
+  ) => {
     const { session, error } = await requireRole("owner", "manager");
     if (error) return error;
 
     const { id } = await params;
     const archived = await archiveSegment(session.businessId, id);
-    if (!archived) return NextResponse.json({ error: "segment_not_found" }, { status: 404 });
+    if (!archived)
+      return NextResponse.json({ error: "segment_not_found" }, { status: 404 });
     return NextResponse.json({ result: "archived" });
   },
 );

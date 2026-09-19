@@ -21,17 +21,27 @@
  * so client components can import them without pulling in `pg`.
  */
 
-import { resolveDefinition, resolveSegment, getSegment } from "./crm-segments-service";
+import {
+  countDefinition,
+  getSegment,
+  resolveDefinition,
+} from "./crm-segments-service";
 import {
   AUDIENCE_LIMIT,
   CHANNEL_PURPOSE,
-  summarizeAudience,
+  summarizeAudienceCounts,
   type CampaignAudience,
   type CampaignChannel,
 } from "./campaign-channels";
 import type { SegmentDefinition } from "./segments";
 
 export * from "./campaign-channels";
+
+function audienceLimit(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    return AUDIENCE_LIMIT;
+  return Math.min(Math.floor(value), AUDIENCE_LIMIT);
+}
 
 /**
  * Resolve a *saved* CRM segment into a sendable audience for one channel.
@@ -46,18 +56,20 @@ export async function audienceForSegment(
   channel: CampaignChannel,
   options: { limit?: number } = {},
 ): Promise<CampaignAudience> {
-  const limit = options.limit ?? AUDIENCE_LIMIT;
+  const limit = audienceLimit(options.limit);
   const segment = await getSegment(businessId, segmentId);
-  if (!segment) return summarizeAudience(channel, [], [], limit);
+  if (!segment) return summarizeAudienceCounts(channel, 0, 0, [], limit);
 
-  // Two resolutions, deliberately: "view" is the unfiltered population and the
-  // channel purpose is the reachable one. The difference is the number the
-  // operator needs to see before sending.
-  const matched = await resolveSegment(businessId, segmentId, { purpose: "view" });
-  const reachable = await resolveSegment(businessId, segmentId, {
-    purpose: CHANNEL_PURPOSE[channel],
-  });
-  return summarizeAudience(channel, matched, reachable, limit);
+  // Count with `COUNT(*)`, not by resolving the default member page. The old
+  // path silently capped both numbers at 1,000, then sent only that capped page;
+  // an audience of 1,350 consenting customers looked like 1,000 and lost 350.
+  const purpose = CHANNEL_PURPOSE[channel];
+  const [matched, reachable, members] = await Promise.all([
+    countDefinition(businessId, segment.definition, "view"),
+    countDefinition(businessId, segment.definition, purpose),
+    resolveDefinition(businessId, segment.definition, { purpose, limit }),
+  ]);
+  return summarizeAudienceCounts(channel, matched, reachable, members, limit);
 }
 
 /** The same, for a definition that has not been saved yet — the "preview this send" path. */
@@ -67,10 +79,12 @@ export async function audienceForDefinition(
   channel: CampaignChannel,
   options: { limit?: number } = {},
 ): Promise<CampaignAudience> {
-  const limit = options.limit ?? AUDIENCE_LIMIT;
-  const matched = await resolveDefinition(businessId, definition, { purpose: "view" });
-  const reachable = await resolveDefinition(businessId, definition, {
-    purpose: CHANNEL_PURPOSE[channel],
-  });
-  return summarizeAudience(channel, matched, reachable, limit);
+  const limit = audienceLimit(options.limit);
+  const purpose = CHANNEL_PURPOSE[channel];
+  const [matched, reachable, members] = await Promise.all([
+    countDefinition(businessId, definition, "view"),
+    countDefinition(businessId, definition, purpose),
+    resolveDefinition(businessId, definition, { purpose, limit }),
+  ]);
+  return summarizeAudienceCounts(channel, matched, reachable, members, limit);
 }
