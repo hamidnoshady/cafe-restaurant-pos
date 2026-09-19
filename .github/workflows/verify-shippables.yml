@@ -10,9 +10,13 @@
 # refuses the zip. These checks are seconds long and catch exactly that class
 # of breakage.
 #
-# Why it is manual (`workflow_dispatch`), like every workflow in this
-# repository: nothing runs automatically on a push or a pull request. Run it
-# before either release build.
+# Triggers: `workflow_dispatch` (run it by hand before either release build),
+# plus `pull_request` and `push` to `main`, scoped with `paths:` to only the
+# folders this workflow actually checks (`electron/`, `windows/`,
+# `public/windows/`, `wordpress-plugin/`). That keeps it "active" exactly
+# when someone is developing the desktop shell, the print connector, or the
+# WordPress plugin — a PR touching only `src/` never runs it, the same way
+# `test.yml` never touches these folders.
 #
 # It deliberately does NOT package anything — producing the `.exe` is
 # `build-desktop-installer.yml`, producing the zip is `build-plugin-zip.yml`.
@@ -21,6 +25,19 @@ name: verify-shippables
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'electron/**'
+      - 'windows/**'
+      - 'public/windows/**'
+      - 'wordpress-plugin/**'
+  push:
+    branches: [main]
+    paths:
+      - 'electron/**'
+      - 'windows/**'
+      - 'public/windows/**'
+      - 'wordpress-plugin/**'
 
 concurrency:
   group: verify-shippables-${{ github.ref }}

@@ -1,8 +1,8 @@
-# Builds the WordPress plugin's installable zip — manually, never on a push.
+# Builds the WordPress plugin's installable zip.
 #
-# One run = one version, decided by a person:
-#   1. bumps the version (patch/minor/major choice) in the three places the
-#      repo rule names — the `Version:` header, POS_CONNECTOR_VERSION, and
+# One run = one version:
+#   1. bumps the version (patch/minor/major) in the three places the repo
+#      rule names — the `Version:` header, POS_CONNECTOR_VERSION, and
 #      readme.txt's `Stable tag` — and writes the changelog entry;
 #   2. builds the clean zip (only the plugin folder, nothing else);
 #   3. generates update.json when self-hosted updates are configured
@@ -11,10 +11,19 @@
 #      version was actually shipped;
 #   5. uploads the zip (+ update.json) as a downloadable artifact.
 #
-# There is deliberately no push/tag/release trigger here: a build is a
-# release decision, and the download is hosted on the owner's own server,
-# not attached to a GitHub release. Full runbook:
-# docs/wordpress-plugin-updates.md
+# Triggers: automatically on every `push` to `main` that touches
+# `wordpress-plugin/**`, and still `workflow_dispatch` for a manual build with
+# a chosen bump size and release notes.
+#
+# The automatic trigger is deliberately `push`-to-`main` only, never
+# `pull_request`: this job commits a version bump and pushes a `vX.Y.Z` tag,
+# and a tag is meant to say "this version was actually shipped" — tagging
+# every push to an unmerged, still-changing PR would create tags for work
+# that never ships as that version. Automatic runs always use a `patch` bump
+# with no custom notes (the generic changelog line below); use
+# `workflow_dispatch` for a minor/major bump or written release notes.
+# The download is hosted on the owner's own server, not attached to a GitHub
+# release. Full runbook: docs/wordpress-plugin-updates.md
 #
 # Runs on the GitHub-hosted **Windows** runner (`windows-latest`), so every
 # step is PowerShell and uses only what Windows ships with: `Compress-Archive`
@@ -44,9 +53,21 @@ on:
         description: 'Release notes — written into the readme.txt changelog and update.json'
         type: string
         required: false
+  push:
+    branches: [main]
+    paths:
+      - 'wordpress-plugin/**'
 
-# Two quick manual builds in a row must queue, not race: the version bump
-# reads the repo HEAD, and a race would ship two different zips as one version.
+# Two builds in a row must queue, not race: the version bump reads the repo
+# HEAD, and a race would ship two different zips as one version. Always a
+# single global queue, manual or automatic, since both write the same tag
+# namespace and push to the same branch.
+#
+# No infinite loop: the "Commit the bump and tag it" step pushes back to
+# `main` using the default `GITHUB_TOKEN` (via actions/checkout@v4), and
+# GitHub does not fire further `push`-triggered workflow runs for commits
+# made with `GITHUB_TOKEN` — even though that commit touches
+# `wordpress-plugin/**` again.
 concurrency:
   group: build-plugin-zip
   cancel-in-progress: false
@@ -68,7 +89,10 @@ jobs:
       - name: Compute the next version
         id: version
         env:
-          BUMP: ${{ inputs.bump }}
+          # `inputs.bump` only exists on a workflow_dispatch run; an automatic
+          # push-triggered run has no such input, so it always falls back to
+          # a patch bump (see this workflow's header comment).
+          BUMP: ${{ inputs.bump || 'patch' }}
         run: |
           $ErrorActionPreference = "Stop"
           # Windows PowerShell 5.1's `Out-File -Encoding utf8` writes a UTF-8
@@ -221,13 +245,14 @@ jobs:
       - name: Commit the bump and tag it
         env:
           NEXT: ${{ steps.version.outputs.next }}
+          TRIGGER: ${{ github.event_name == 'workflow_dispatch' && 'manual build' || 'automatic build' }}
         run: |
           $ErrorActionPreference = "Stop"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add wordpress-plugin/pos-accounting-connector/pos-accounting-connector.php `
                   wordpress-plugin/pos-accounting-connector/readme.txt
-          git commit -m "WordPress plugin v$env:NEXT (manual build)"
+          git commit -m "WordPress plugin v$env:NEXT ($env:TRIGGER)"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           git tag "v$env:NEXT"
           if ($LASTEXITCODE -ne 0) { exit 1 }
