@@ -1439,6 +1439,19 @@ class POS_Connector_Sync {
 				++$paged;
 			} while ( count( $posts ) === 100 && $paged <= 500 );
 		}
+		// This marker is queued after every exported row. The outbound queue is
+		// FIFO, so the app only advances its content watermark after the whole
+		// snapshot in front of this marker has been accepted.
+		$sync_id = wp_generate_uuid4();
+		POS_Connector_Queue::enqueue(
+			'content.sync_completed',
+			$sync_id,
+			array(
+				'id'    => $sync_id,
+				'type'  => 'content',
+				'count' => $count,
+			)
+		);
 		POS_Connector_Log::info( 'export', sprintf( '%d محتوای وردپرس در صف ارسال قرار گرفت.', $count ) );
 	}
 

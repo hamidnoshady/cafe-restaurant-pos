@@ -1,9 +1,18 @@
 "use client";
 
-/** Shared store picker for WP Manager sections. */
+/**
+ * Shared store picker for WP Manager sections.
+ *
+ * Two forms. `embedded` is the common one: the caller already owns a toolbar
+ * card (`${cardClass} flex … p-4`) holding the picker next to its own
+ * actions, so the picker contributes the label and the select and no chrome
+ * of its own — nesting one bordered, padded surface inside another drew a
+ * doubled border with dead space around the select. The standalone form
+ * keeps the card for a host that renders the picker on its own.
+ */
 import { useId } from "react";
 import { cardClass } from "@/app/dashboard/page-chrome";
-import { cn } from "@/lib/utils";
+import { inputClass } from "@/app/dashboard/ui";
 
 export interface ConnectionLite {
   id: string;
@@ -16,44 +25,45 @@ export function ConnectionPicker({
   connections,
   value,
   onChange,
-  disabled = false,
   embedded = false,
-  className,
+  disabled,
 }: {
   connections: ConnectionLite[];
   value: string;
   onChange: (id: string) => void;
-  disabled?: boolean;
-  /** Omit the picker card when it already lives inside a toolbar/card. */
+  /**
+   * Drop the card chrome when the picker sits inside another surface (a
+   * toolbar card with the section's actions). The default standalone form
+   * keeps the chrome so hosts that render it on its own are unchanged.
+   */
   embedded?: boolean;
-  className?: string;
+  disabled?: boolean;
 }) {
-  const generatedId = useId();
-  const id = `wp-connection-${generatedId.replaceAll(":", "")}`;
-
+  // A page can host two pickers (a section plus a dialog); the hardcoded id
+  // this replaces tied both labels — and both click targets — to whichever
+  // select mounted first.
+  const id = useId();
   return (
     <div
-      className={cn(
-        "flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3",
-        !embedded && cardClass,
-        !embedded && "p-4",
-        embedded && "w-full md:w-auto md:flex-1",
-        className,
-      )}
+      className={
+        embedded
+          ? "flex min-w-0 flex-1 flex-wrap items-center gap-2"
+          : `${cardClass} flex flex-wrap items-center gap-3 p-4`
+      }
     >
       <label className="shrink-0 text-sm font-medium text-foreground" htmlFor={id}>
-        فروشگاه
+        فروشگاه:
       </label>
       <select
         id={id}
-        className="h-10 w-full min-w-0 rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none transition-colors focus-visible:border-teal-500 focus-visible:ring-2 focus-visible:ring-teal-400/30 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-[14rem] sm:flex-1"
+        className={`${inputClass} min-w-0 flex-1 basis-40 sm:min-w-56`}
         value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled || connections.length === 0}
+        onChange={(e) => onChange(e.target.value)}
       >
-        {connections.map((connection) => (
-          <option key={connection.id} value={connection.id}>
-            {connection.name} ({connection.linkMode === "plugin" ? "افزونه" : "REST"})
+        {connections.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name} ({c.linkMode === "plugin" ? "افزونه" : "REST"})
           </option>
         ))}
       </select>

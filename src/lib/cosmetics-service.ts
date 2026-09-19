@@ -379,7 +379,7 @@ export async function writeOffExpiredBatches(
 
   const batches = await listBatches(input.itemId, client);
   const today = todayIso();
-  const expired = batches.filter((b) => isBatchExpired(b.expiryDate, today));
+  const expired = batches.filter((b) => isBatchExpired(b.expiryDate, today) && new Decimal(b.quantity).gt(0));
   if (expired.length === 0) return { writtenOffQuantity: "0", cost: rialText("0"), entryId: null };
 
   const cost = rialText(
@@ -558,7 +558,9 @@ export async function nearExpiryBatches(locationId: string): Promise<NearExpiryB
        JOIN items i ON i.id = b.item_id
        LEFT JOIN items p ON p.id = i.parent_item_id
       WHERE i.location_id = $1
-        AND (b.expiry_date IS NOT NULL AND b.expiry_date < CURRENT_DATE + 90)
+        AND b.quantity > 0
+        AND b.expiry_date IS NOT NULL
+        AND b.expiry_date < CURRENT_DATE + 90
       ORDER BY b.expiry_date NULLS LAST, b.batch_number`,
     [locationId],
   );

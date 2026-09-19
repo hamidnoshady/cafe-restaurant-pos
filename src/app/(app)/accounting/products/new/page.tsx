@@ -5,15 +5,15 @@ import { requireProductWorkspace } from "@/app/dashboard/products/workspace-cont
 
 /** «افزودن محصول» — the tabbed product form with drafts and variant rows. */
 export default async function ProductAddPage() {
-  const { apiBase } = await requireProductWorkspace();
+  const { draftScope } = await requireProductWorkspace();
   return (
     <PageShell>
       <PageHeader
         title="افزودن محصول"
-        description="ثبت خانوادهٔ کالا با قیمت‌گذاری، واحدها، سفارش، مالیات و ویژگی‌های تنوع — پیش‌نویس‌ها روی همین دستگاه می‌مانند."
+        description="ثبت محصول ساده یا خانوادهٔ چندتنوعی با قیمت، موجودی اولیه، واحد، سفارش، مالیات و بارکد — پیش‌نویس‌ها فقط روی همین دستگاه می‌مانند."
         actions={<KnowledgeHelpButton section="pos" />}
       />
-      <ProductAddSection apiBase={apiBase} />
+      <ProductAddSection draftScope={draftScope} />
     </PageShell>
   );
 }

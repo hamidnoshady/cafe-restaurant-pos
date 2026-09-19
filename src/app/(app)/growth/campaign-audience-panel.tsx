@@ -160,12 +160,16 @@ export function CampaignAudiencePanel() {
             <>
               <div className="grid gap-2 sm:grid-cols-3">
                 <Figure label="مطابق قاعده" value={audience.matched} />
-                <Figure label={`قابل ارسال (${CAMPAIGN_CHANNEL_LABELS[audience.channel]})`} value={audience.reachable} tone="positive" />
+                <Figure
+                  label={`قابل ارسال (${CAMPAIGN_CHANNEL_LABELS[audience.channel]})`}
+                  value={Math.max(0, audience.reachable - audience.missingContact)}
+                  tone="positive"
+                />
                 <Figure label="بدون اجازه" value={audience.excludedByConsent} tone="muted" />
               </div>
               {audience.missingContact > 0 ? (
                 <p className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-                  {formatPersianNumber(audience.missingContact)} نفر اجازه داده‌اند اما شماره یا ایمیل ثبت‌شده ندارند.
+                  {formatPersianNumber(audience.missingContact)} نفر اجازه داده‌اند اما شماره یا ایمیل ثبت‌شده ندارند؛ در ارسال وارد نمی‌شوند.
                 </p>
               ) : null}
               {audience.excludedByConsent > 0 ? (

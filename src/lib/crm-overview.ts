@@ -22,10 +22,10 @@ import { query } from "./db";
 import { mobileReachableSql, phonePairKeySql } from "./parties-service";
 import { businessToday } from "./business-day-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
-import { accountBalance } from "./growth-shared";
-import { previousWindow, rollingWindow, weightedPipelineValue, winRate, type DealStage } from "./crm-shared";
+import { accountBalanceText } from "./growth-shared";
+import { previousWindow, rollingWindow, type DealStage } from "./crm-shared";
 import { retentionBetween, stageDistribution, type LifecycleStage } from "./crm-scoring";
-import { scoredPopulation } from "./crm-service";
+import { customerPurchasePopulation, scoredPopulation } from "./crm-service";
 
 export interface CrmOverview {
   window: { from: string; to: string };
@@ -53,18 +53,18 @@ export interface CrmOverview {
   lastScoredAt: string | null;
   retention: ReturnType<typeof retentionBetween>;
   value: {
-    /** Realised lifetime spend across all customers, integer Rial. */
-    totalHistoricRial: number;
-    averageCustomerRial: number;
-    /** The ledger's 2410 store-credit liability — the books' number, not ours. */
-    storeCreditRial: number;
+    /** Realised lifetime spend across all customers, integer Rial as text for BigInt safety. */
+    totalHistoricRial: string;
+    averageCustomerRial: string;
+    /** The ledger's 2410 store-credit liability — the books' number, not ours, as text for BigInt safety. */
+    storeCreditRial: string;
   };
   pipeline: {
     openCount: number;
-    openValueRial: number;
-    weightedValueRial: number;
+    openValueRial: string;
+    weightedValueRial: string;
     winRatePercent: number;
-    byStage: { stage: DealStage; count: number; valueRial: number }[];
+    byStage: { stage: DealStage; count: number; valueRial: string }[];
   };
   cases: {
     open: number;
@@ -75,7 +75,7 @@ export interface CrmOverview {
   };
   tasks: { open: number; overdue: number; dueToday: number };
   segments: { total: number; names: string[] };
-  topCustomers: { id: string; name: string; totalSpentRial: number; orderCount: number; stage: string }[];
+  topCustomers: { id: string; name: string; totalSpentRial: string; orderCount: number; stage: string }[];
   duplicates: number;
 }
 
@@ -104,7 +104,10 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
               count(*) FILTER (WHERE phone IS NOT NULL AND btrim(phone) <> '')::text AS with_phone,
               count(*) FILTER (WHERE email IS NOT NULL AND btrim(email) <> '')::text AS with_email
          FROM parties
-        WHERE business_id = $1 AND merged_into_id IS NULL`,
+        WHERE business_id = $1
+          AND roles && ARRAY['customer']::text[]
+          AND is_active
+          AND merged_into_id IS NULL`,
       [businessId, window.from, window.to, prior.from, prior.to],
     ),
     query<Record<string, string>>(
@@ -117,18 +120,39 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
               count(*) FILTER (WHERE marketing_consent AND email IS NOT NULL AND btrim(email) <> '')::text AS email_reachable,
               count(*)::text AS total
          FROM parties
-        WHERE business_id = $1 AND merged_into_id IS NULL`,
+        WHERE business_id = $1
+          AND roles && ARRAY['customer']::text[]
+          AND is_active
+          AND merged_into_id IS NULL`,
       [businessId],
     ),
-    query<{ stage: string; count: string; value_rial: string; probability: number | null }>(
+    query<{ stage: string; count: string; value_rial: string; weighted_value_rial: string }>(
       `SELECT stage, count(*)::text AS count, coalesce(sum(value_rial), 0)::text AS value_rial,
-              avg(probability)::int AS probability
-         FROM crm_deals WHERE business_id = $1 GROUP BY stage`,
+              coalesce(sum(
+                CASE WHEN stage IN ('won', 'lost') THEN 0::bigint
+                     ELSE round(value_rial::numeric * coalesce(probability,
+                       CASE stage
+                         WHEN 'lead' THEN 10
+                         WHEN 'qualified' THEN 30
+                         WHEN 'proposal' THEN 55
+                         WHEN 'negotiation' THEN 75
+                         ELSE 0
+                       END
+                     ) / 100)::bigint
+                END
+              ), 0)::text AS weighted_value_rial
+         FROM crm_deals
+        WHERE business_id = $1
+        GROUP BY stage
+        ORDER BY CASE stage
+          WHEN 'lead' THEN 1 WHEN 'qualified' THEN 2 WHEN 'proposal' THEN 3
+          WHEN 'negotiation' THEN 4 WHEN 'won' THEN 5 WHEN 'lost' THEN 6 ELSE 7
+        END`,
       [businessId],
     ),
     query<Record<string, string>>(
       `SELECT count(*) FILTER (WHERE status IN ('open', 'in_progress', 'waiting'))::text AS open,
-              count(*) FILTER (WHERE status IN ('open', 'in_progress') AND priority = 'urgent')::text AS urgent,
+              count(*) FILTER (WHERE status IN ('open', 'in_progress', 'waiting') AND priority = 'urgent')::text AS urgent,
               count(*) FILTER (WHERE resolved_at IS NOT NULL
                                AND resolved_at::date BETWEEN $2::date AND $3::date)::text AS resolved_window,
               (percentile_cont(0.5) WITHIN GROUP (
@@ -139,11 +163,20 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       [businessId, window.from, window.to],
     ),
     query<Record<string, string>>(
-      `SELECT count(*) FILTER (WHERE completed_at IS NULL)::text AS open,
-              count(*) FILTER (WHERE completed_at IS NULL AND due_at IS NOT NULL
-                               AND due_at::date < $2::date)::text AS overdue,
-              count(*) FILTER (WHERE completed_at IS NULL AND due_at::date = $2::date)::text AS due_today
-         FROM crm_activities WHERE business_id = $1`,
+      `SELECT count(*) FILTER (WHERE a.completed_at IS NULL)::text AS open,
+              count(*) FILTER (WHERE a.completed_at IS NULL AND a.due_at IS NOT NULL
+                               AND app_business_date(a.due_at, coalesce(l.timezone, 'Asia/Tehran'), coalesce(l.business_day_start_minutes, 0)) < $2::date)::text AS overdue,
+              count(*) FILTER (WHERE a.completed_at IS NULL AND a.due_at IS NOT NULL
+                               AND app_business_date(a.due_at, coalesce(l.timezone, 'Asia/Tehran'), coalesce(l.business_day_start_minutes, 0)) = $2::date)::text AS due_today
+         FROM crm_activities a
+         LEFT JOIN LATERAL (
+           SELECT timezone, business_day_start_minutes
+             FROM locations
+            WHERE business_id = $1 AND is_active
+            ORDER BY created_at
+            LIMIT 1
+         ) l ON true
+        WHERE a.business_id = $1`,
       [businessId, today],
     ),
     query<{ name: string }>(
@@ -170,7 +203,10 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
               o.customer_id
          FROM orders o
          JOIN locations l ON l.id = o.location_id
-        WHERE l.business_id = $1 AND o.status = 'completed' AND o.closed_at IS NOT NULL
+         JOIN parties c ON c.id = o.customer_id
+        WHERE l.business_id = $1 AND c.business_id = $1
+          AND c.roles && ARRAY['customer']::text[] AND c.is_active AND c.merged_into_id IS NULL
+          AND o.status = 'completed' AND o.closed_at IS NOT NULL
           AND o.customer_id IS NOT NULL
           AND app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes)
               BETWEEN $4::date AND $3::date
@@ -189,18 +225,31 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
           AND ${phonePairKeySql("b")} = ${phonePairKeySql("a")}
           AND a.id < b.id
         WHERE a.business_id = $1 AND ${phonePairKeySql("a")} IS NOT NULL
+          AND a.roles && ARRAY['customer']::text[] AND b.roles && ARRAY['customer']::text[]
+          AND a.is_active AND b.is_active
           AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL`,
       [businessId],
     ),
     query<{ scored_at: string | null }>(
-      `SELECT max(rfm_scored_at)::text AS scored_at FROM parties WHERE business_id = $1`,
+      `SELECT max(rfm_scored_at)::text AS scored_at
+         FROM parties
+        WHERE business_id = $1
+          AND roles && ARRAY['customer']::text[]
+          AND is_active
+          AND merged_into_id IS NULL`,
       [businessId],
     ),
   ]);
 
-  const scores = await scoredPopulation(businessId);
+  const [scores, purchases] = await Promise.all([
+    scoredPopulation(businessId),
+    customerPurchasePopulation(businessId),
+  ]);
   const lifecycle = stageDistribution(scores);
-  const totalHistoricRial = scores.reduce((sum, score) => sum + score.totalSpentRial, 0);
+  const scoreByCustomer = new Map(scores.map((score) => [score.customerId, score]));
+  const totalHistoricRial = purchases
+    .reduce((sum, customer) => sum + BigInt(customer.totalSpentRial), 0n)
+    .toString();
 
   const customer = customerRows[0] ?? {};
   const consent = consentRows[0] ?? {};
@@ -211,17 +260,18 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
   const deals = pipelineRows.map((row) => ({
     stage: row.stage as DealStage,
     count: Number(row.count),
-    valueRial: Number(row.value_rial),
-    probability: row.probability,
+    valueRial: row.value_rial,
+    weightedValueRial: row.weighted_value_rial,
   }));
   const openDeals = deals.filter((deal) => deal.stage !== "won" && deal.stage !== "lost");
 
   const consentTotal = n(consent, "total");
   const storeCredit = creditRows[0]
-    ? accountBalance(creditRows[0].type, Number(creditRows[0].debit), Number(creditRows[0].credit))
-    : 0;
+    ? accountBalanceText(creditRows[0].type, creditRows[0].debit, creditRows[0].credit)
+    : "0";
 
-  const scoredCount = scores.length;
+  const customerCount = purchases.length;
+  const sumBigInt = (values: string[]) => values.reduce((sum, value) => sum + BigInt(value), 0n).toString();
 
   return {
     window,
@@ -232,7 +282,7 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       newPrevious30d: n(customer, "new_prior"),
       withPhone: n(customer, "with_phone"),
       withEmail: n(customer, "with_email"),
-      neverPurchased: scores.filter((score) => score.stage === "never_purchased").length,
+      neverPurchased: purchases.filter((customer) => customer.orderCount === 0).length,
     },
     consent: {
       smsGranted: n(consent, "sms_granted"),
@@ -250,27 +300,28 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
     }),
     value: {
       totalHistoricRial,
-      averageCustomerRial: scoredCount === 0 ? 0 : Math.round(totalHistoricRial / scoredCount),
+      averageCustomerRial:
+        customerCount === 0
+          ? "0"
+          : ((BigInt(totalHistoricRial) + BigInt(customerCount) / 2n) / BigInt(customerCount)).toString(),
       storeCreditRial: storeCredit,
     },
     pipeline: {
       openCount: openDeals.reduce((sum, deal) => sum + deal.count, 0),
-      openValueRial: openDeals.reduce((sum, deal) => sum + deal.valueRial, 0),
-      // Weighted by each stage's probability — the honest version of "how much
-      // is in the pipeline", since a first-contact lead is not a signed deal.
-      weightedValueRial: weightedPipelineValue(
-        deals.flatMap((deal) =>
-          Array.from({ length: deal.count }, () => ({
-            stage: deal.stage,
-            valueRial: Math.round(deal.valueRial / Math.max(deal.count, 1)),
-            probability: deal.probability,
-          })),
-        ),
-      ),
-      winRatePercent: winRate(
-        deals.flatMap((deal) => Array.from({ length: deal.count }, () => ({ stage: deal.stage }))),
-      ),
-      byStage: deals.map(({ stage, count, valueRial }) => ({ stage, count, valueRial })),
+      openValueRial: sumBigInt(openDeals.map((deal) => deal.valueRial)),
+      // Weighted in SQL from every deal's own probability. Expanding grouped
+      // counts into one JS object per deal made a large pipeline a browser/server
+      // memory hazard and rounded different probabilities into one average.
+      weightedValueRial: sumBigInt(openDeals.map((deal) => deal.weightedValueRial)),
+      winRatePercent: (() => {
+        const decided = deals.filter((deal) => deal.stage === "won" || deal.stage === "lost");
+        const decidedCount = decided.reduce((sum, deal) => sum + deal.count, 0);
+        const wonCount = decided
+          .filter((deal) => deal.stage === "won")
+          .reduce((sum, deal) => sum + deal.count, 0);
+        return decidedCount === 0 ? 0 : Math.round((wonCount / decidedCount) * 1000) / 10;
+      })(),
+      byStage: openDeals.map(({ stage, count, valueRial }) => ({ stage, count, valueRial })),
     },
     cases: {
       open: n(cases, "open"),
@@ -284,15 +335,18 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       dueToday: n(tasks, "due_today"),
     },
     segments: { total: segmentRows.length, names: segmentRows.map((row) => row.name) },
-    topCustomers: [...scores]
-      .sort((a, b) => b.totalSpentRial - a.totalSpentRial)
+    topCustomers: [...purchases]
+      .sort((a, b) => {
+        const difference = BigInt(b.totalSpentRial) - BigInt(a.totalSpentRial);
+        return difference === 0n ? a.name.localeCompare(b.name) : difference > 0n ? 1 : -1;
+      })
       .slice(0, 10)
-      .map((score) => ({
-        id: score.customerId,
-        name: score.name,
-        totalSpentRial: score.totalSpentRial,
-        orderCount: score.orderCount,
-        stage: score.stage,
+      .map((customer) => ({
+        id: customer.customerId,
+        name: customer.name,
+        totalSpentRial: customer.totalSpentRial,
+        orderCount: customer.orderCount,
+        stage: scoreByCustomer.get(customer.customerId)?.stage ?? "unscored",
       })),
     duplicates: Number(duplicateRows[0]?.count ?? 0),
   };

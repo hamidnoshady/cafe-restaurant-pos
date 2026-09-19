@@ -1,0 +1,82 @@
+import { describe, expect, test } from "vitest";
+import {
+  applyQuickUpdate,
+  isValidQuickUpdateValue,
+  MAX_PERCENT,
+  MIN_PERCENT,
+} from "./price-lists-service";
+
+/**
+ * «بروزرسانی سریع» arithmetic. The SQL in `quickUpdatePrices` is the same
+ * expression written for Postgres; these cases pin the behaviour the screen
+ * promises, and in particular the two ways the original rounding silently
+ * destroyed a price.
+ */
+describe("applyQuickUpdate", () => {
+  const base = { round: false } as const;
+
+  test("a percent move scales the current price", () => {
+    expect(applyQuickUpdate(100_000, { mode: "percent", value: 10, ...base })).toBe(110_000);
+    expect(applyQuickUpdate(100_000, { mode: "percent", value: -25, ...base })).toBe(75_000);
+  });
+
+  test("an amount move adds Rial", () => {
+    expect(applyQuickUpdate(100_000, { mode: "amount", value: 5_000, ...base })).toBe(105_000);
+    expect(applyQuickUpdate(100_000, { mode: "amount", value: -5_000, ...base })).toBe(95_000);
+  });
+
+  test("a reduction below zero clamps at zero rather than going negative", () => {
+    expect(applyQuickUpdate(1_000, { mode: "amount", value: -9_000, ...base })).toBe(0);
+    expect(applyQuickUpdate(1_000, { mode: "percent", value: -100, ...base })).toBe(0);
+  });
+
+  test("rounding snaps to the nearest thousand Toman", () => {
+    expect(applyQuickUpdate(123_000, { mode: "percent", value: 0, round: true })).toBe(120_000);
+    expect(applyQuickUpdate(126_000, { mode: "percent", value: 0, round: true })).toBe(130_000);
+  });
+
+  /**
+   * The bug this pins: «۴٬۰۰۰ ریال» rounded to the nearest 10,000 is 0, and a
+   * price of zero means *unpriced*. For the sale column that then fails the
+   * `unit_price > 0` check, so the row was skipped and the shopkeeper saw the
+   * old price with no error. A real price stays a real price.
+   */
+  test("rounding never wipes a non-zero price down to unpriced", () => {
+    expect(applyQuickUpdate(4_000, { mode: "percent", value: 0, round: true })).toBe(10_000);
+    expect(applyQuickUpdate(1, { mode: "percent", value: 0, round: true })).toBe(10_000);
+  });
+
+  test("a price that really did reach zero stays zero", () => {
+    expect(applyQuickUpdate(1_000, { mode: "amount", value: -1_000, round: true })).toBe(0);
+  });
+
+  test("results are whole Rial — a percent move never leaves a fraction", () => {
+    const result = applyQuickUpdate(3_333, { mode: "percent", value: 7, round: false });
+    expect(Number.isInteger(result)).toBe(true);
+  });
+});
+
+describe("isValidQuickUpdateValue", () => {
+  test("rejects a percent cut deeper than the whole price", () => {
+    // Clamping -500% to zero would have unpriced the entire branch without
+    // saying so; it is refused instead.
+    expect(isValidQuickUpdateValue("percent", -500)).toBe(false);
+    expect(isValidQuickUpdateValue("percent", MIN_PERCENT)).toBe(true);
+  });
+
+  test("rejects an absurd percent increase", () => {
+    expect(isValidQuickUpdateValue("percent", MAX_PERCENT + 1)).toBe(false);
+    expect(isValidQuickUpdateValue("percent", MAX_PERCENT)).toBe(true);
+  });
+
+  test("rejects values that are not finite numbers", () => {
+    expect(isValidQuickUpdateValue("percent", Number.NaN)).toBe(false);
+    expect(isValidQuickUpdateValue("amount", Number.POSITIVE_INFINITY)).toBe(false);
+  });
+
+  test("an amount move may be any finite Rial figure, in either direction", () => {
+    expect(isValidQuickUpdateValue("amount", -5_000_000)).toBe(true);
+    expect(isValidQuickUpdateValue("amount", 5_000_000)).toBe(true);
+    expect(isValidQuickUpdateValue("amount", 0)).toBe(true);
+  });
+});

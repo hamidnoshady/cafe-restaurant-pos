@@ -229,11 +229,20 @@ async function applyIngestEvent(connection: ConnectionRow, event: WebhookEvent):
       await upsertWpContent(connection, event.payload as never);
     } else if (event.topic.endsWith("content.deleted")) {
       // Trash is an ordinary update carrying status=trash; only a permanent
-      // deletion removes the mirror row. The plugin sends this before core
-      // destroys the post object, so type and id remain unambiguous.
+      // deletion removes the mirror row. Validate the plugin payload before
+      // it reaches the tenant-scoped delete query.
       const contentType = typeof event.payload.type === "string" ? event.payload.type.trim() : "";
       if (!contentType || !/^[1-9]\d*$/.test(remoteId)) throw new Error("invalid_content_delete");
-      await deleteWpContent(businessId, connection.id, contentType, remoteId);
+      await deleteWpContent(businessId, connection.id, { id: remoteId, type: contentType });
+    } else if (event.topic.endsWith("content.sync_completed")) {
+      // The plugin enqueues this marker *after* every row in a full export.
+      // Queue ordering therefore makes this an honest watermark: all content
+      // that preceded it has already reached the local mirror.
+      await query(
+        `UPDATE integration_connections SET last_content_sync_at = now(), updated_at = now()
+          WHERE business_id = $1 AND id = $2`,
+        [businessId, connection.id],
+      );
     }
     // Any other topic is acknowledged and left alone — we never want a
     // re-delivery storm for an event we don't handle yet.

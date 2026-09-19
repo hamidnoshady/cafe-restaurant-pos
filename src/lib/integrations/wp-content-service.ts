@@ -20,6 +20,7 @@ import { query } from "../db";
 import { writeIntegrationAudit } from "./audit";
 import { enqueueExport } from "./woo-ops-service";
 import type { ConnectionRow } from "./connections-service";
+import { safeWpExternalUrl, type WpMediaKind } from "./wp-media";
 
 export type WpContentType = "post" | "page" | "attachment" | string;
 
@@ -44,6 +45,7 @@ export interface WpContentPayload {
   source_url?: string;
   media_type?: string;
   mime_type?: string;
+  alt_text?: string;
   /** Media: the attachment URL in either of the shapes plugins send. */
   url?: string;
 }
@@ -58,6 +60,7 @@ export interface WpContentRow {
   authorName: string;
   mediaUrl: string | null;
   mimeType: string | null;
+  altText: string;
   remoteUpdatedAt: string | null;
   syncedAt: string;
 }
@@ -156,17 +159,9 @@ export function editableWpField(raw: unknown): string {
   return typeof value.rendered === "string" ? value.rendered : "";
 }
 
-/** Only http(s) links may become clickable links or browser-loaded media. */
+/** Only absolute, credential-free HTTP(S) URLs may leave the API. */
 export function safeWpUrl(raw: unknown): string {
-  if (typeof raw !== "string" || !raw.trim()) return "";
-  try {
-    const parsed = new URL(raw.trim());
-    return parsed.protocol === "http:" || parsed.protocol === "https:"
-      ? parsed.toString().slice(0, 2000)
-      : "";
-  } catch {
-    return "";
-  }
+  return safeWpExternalUrl(raw) ?? "";
 }
 
 /** WordPress post ids are positive decimal integers. */
@@ -201,7 +196,7 @@ export async function upsertWpContent(
       : wpType === "attachment" && typeof payload.media_type === "string"
         ? payload.media_type
         : "";
-  const mimeType = rawMimeType.trim().slice(0, 200) || null;
+  const mimeType = rawMimeType.trim().toLowerCase().slice(0, 200) || null;
   const permalink = safeWpUrl(payload.link) || safeWpUrl(payload.permalink);
   const remoteUpdated =
     validRemoteDate(payload.date_modified) ||
@@ -256,16 +251,43 @@ export async function upsertWpContent(
   return rows[0]?.inserted ? "created" : "updated";
 }
 
-/** The mirrored content for a connection, newest first, optionally by type. */
+export interface WpContentListOptions {
+  wpType?: string;
+  search?: string;
+  mediaKind?: Exclude<WpMediaKind, "all">;
+  limit?: number;
+  offset?: number;
+}
+
+/** Parameters shared by the list and count queries, so filters cannot drift. */
+function contentFilterParams(
+  businessId: string,
+  connectionId: string,
+  options: WpContentListOptions,
+): [string, string, string | null, string | null, string | null] {
+  return [
+    businessId,
+    connectionId,
+    options.wpType ?? null,
+    options.search?.trim() || null,
+    options.mediaKind ?? null,
+  ];
+}
+
+/**
+ * The mirrored content for a connection, newest first, optionally filtered
+ * and paged. Media uses this server-side paging so a site with more than one
+ * hundred attachments does not silently hide the rest of its library.
+ */
 export async function listWpContent(
   businessId: string,
   connectionId: string,
-  options: { wpType?: string; search?: string; limit?: number; offset?: number } = {},
+  options: WpContentListOptions = {},
 ): Promise<WpContentRow[]> {
   const requestedLimit = Number.isFinite(options.limit) ? Math.trunc(options.limit!) : 100;
   const requestedOffset = Number.isFinite(options.offset) ? Math.trunc(options.offset!) : 0;
   const limit = Math.min(200, Math.max(1, requestedLimit));
-  const offset = Math.min(100_000, Math.max(0, requestedOffset));
+  const offset = Math.min(1_000_000, Math.max(0, requestedOffset));
   const { rows } = await query<{
     remote_id: string;
     wp_type: string;
@@ -276,18 +298,34 @@ export async function listWpContent(
     author_name: string;
     media_url: string | null;
     mime_type: string | null;
+    alt_text: string;
     remote_updated_at: string | null;
     synced_at: string;
   }>(
     `SELECT remote_id, wp_type, title, slug, status, permalink, author_name,
-            media_url, mime_type, remote_updated_at, synced_at
+            media_url, mime_type, COALESCE(payload->>'alt_text', '') AS alt_text,
+            remote_updated_at, synced_at
        FROM integration_wp_content
       WHERE business_id = $1 AND connection_id = $2
         AND ($3::text IS NULL OR wp_type = $3)
-        AND ($4::text IS NULL OR title ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
+        AND (
+          $4::text IS NULL
+          OR title ILIKE '%' || $4 || '%'
+          OR slug ILIKE '%' || $4 || '%'
+          OR COALESCE(mime_type, '') ILIKE '%' || $4 || '%'
+        )
+        AND (
+          $5::text IS NULL
+          OR ($5 = 'image' AND lower(COALESCE(mime_type, '')) LIKE 'image/%')
+          OR ($5 = 'video' AND lower(COALESCE(mime_type, '')) LIKE 'video/%')
+          OR ($5 = 'audio' AND lower(COALESCE(mime_type, '')) LIKE 'audio/%')
+          OR ($5 = 'document' AND lower(COALESCE(mime_type, '')) NOT LIKE 'image/%'
+                              AND lower(COALESCE(mime_type, '')) NOT LIKE 'video/%'
+                              AND lower(COALESCE(mime_type, '')) NOT LIKE 'audio/%')
+        )
       ORDER BY remote_updated_at DESC NULLS LAST, synced_at DESC, remote_id DESC
-      LIMIT $5 OFFSET $6`,
-    [businessId, connectionId, options.wpType ?? null, options.search?.trim() || null, limit, offset],
+      LIMIT $6 OFFSET $7`,
+    [...contentFilterParams(businessId, connectionId, options), limit, offset],
   );
   return rows.map((r) => ({
     remoteId: r.remote_id,
@@ -295,28 +333,45 @@ export async function listWpContent(
     title: r.title,
     slug: r.slug,
     status: r.status,
-    permalink: safeWpUrl(r.permalink),
+    permalink: safeWpExternalUrl(r.permalink) ?? "",
     authorName: r.author_name,
-    mediaUrl: safeWpUrl(r.media_url) || null,
+    // Sanitize again on read so rows mirrored before this boundary was added
+    // cannot retain an executable external href forever.
+    mediaUrl: safeWpExternalUrl(r.media_url),
     mimeType: r.mime_type,
+    altText: r.alt_text,
     remoteUpdatedAt: r.remote_updated_at,
     syncedAt: r.synced_at,
   }));
 }
 
-/** Total rows behind a paged content list, with the same filters as the list. */
+/** Total matching rows for paged manager screens. */
 export async function countWpContent(
   businessId: string,
   connectionId: string,
-  options: { wpType?: string; search?: string } = {},
+  options: Omit<WpContentListOptions, "limit" | "offset"> = {},
 ): Promise<number> {
   const { rows } = await query<{ n: string }>(
     `SELECT count(*)::text AS n
        FROM integration_wp_content
       WHERE business_id = $1 AND connection_id = $2
         AND ($3::text IS NULL OR wp_type = $3)
-        AND ($4::text IS NULL OR title ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')`,
-    [businessId, connectionId, options.wpType ?? null, options.search?.trim() || null],
+        AND (
+          $4::text IS NULL
+          OR title ILIKE '%' || $4 || '%'
+          OR slug ILIKE '%' || $4 || '%'
+          OR COALESCE(mime_type, '') ILIKE '%' || $4 || '%'
+        )
+        AND (
+          $5::text IS NULL
+          OR ($5 = 'image' AND lower(COALESCE(mime_type, '')) LIKE 'image/%')
+          OR ($5 = 'video' AND lower(COALESCE(mime_type, '')) LIKE 'video/%')
+          OR ($5 = 'audio' AND lower(COALESCE(mime_type, '')) LIKE 'audio/%')
+          OR ($5 = 'document' AND lower(COALESCE(mime_type, '')) NOT LIKE 'image/%'
+                              AND lower(COALESCE(mime_type, '')) NOT LIKE 'video/%'
+                              AND lower(COALESCE(mime_type, '')) NOT LIKE 'audio/%')
+        )`,
+    contentFilterParams(businessId, connectionId, options),
   );
   return Number(rows[0]?.n ?? 0);
 }
@@ -338,12 +393,14 @@ export async function getWpContent(
     author_name: string;
     media_url: string | null;
     mime_type: string | null;
+    alt_text: string;
     remote_updated_at: string | null;
     synced_at: string;
     payload: WpContentPayload;
   }>(
     `SELECT remote_id, wp_type, title, slug, status, permalink, author_name,
-            media_url, mime_type, remote_updated_at, synced_at, payload
+            media_url, mime_type, COALESCE(payload->>'alt_text', '') AS alt_text,
+            remote_updated_at, synced_at, payload
        FROM integration_wp_content
       WHERE business_id = $1 AND connection_id = $2 AND wp_type = $3 AND remote_id = $4
       LIMIT 1`,
@@ -362,6 +419,7 @@ export async function getWpContent(
     authorName: row.author_name,
     mediaUrl: safeWpUrl(row.media_url) || null,
     mimeType: row.mime_type,
+    altText: row.alt_text,
     remoteUpdatedAt: row.remote_updated_at,
     syncedAt: row.synced_at,
     editorTitle: editableWpField(payload.title) || row.title,
@@ -374,17 +432,30 @@ export async function getWpContent(
 export async function deleteWpContent(
   businessId: string,
   connectionId: string,
+  payload: Pick<WpContentPayload, "id" | "type">,
+): Promise<boolean>;
+export async function deleteWpContent(
+  businessId: string,
+  connectionId: string,
   wpType: string,
   remoteId: string,
-): Promise<void> {
-  const id = remoteContentId(remoteId);
-  const type = wpType.trim().slice(0, 100);
-  if (!id || !type) return;
-  await query(
+): Promise<boolean>;
+export async function deleteWpContent(
+  businessId: string,
+  connectionId: string,
+  typeOrPayload: string | Pick<WpContentPayload, "id" | "type">,
+  remoteId?: string,
+): Promise<boolean> {
+  const id = remoteContentId(typeof typeOrPayload === "string" ? remoteId : typeOrPayload.id);
+  const rawType = typeof typeOrPayload === "string" ? typeOrPayload : typeOrPayload.type;
+  const type = typeof rawType === "string" ? rawType.trim().slice(0, 100) : "";
+  if (!id || !type) return false;
+  const { rowCount } = await query(
     `DELETE FROM integration_wp_content
       WHERE business_id = $1 AND connection_id = $2 AND wp_type = $3 AND remote_id = $4`,
     [businessId, connectionId, type, id],
   );
+  return (rowCount ?? 0) > 0;
 }
 
 export interface WpContentCounts {
@@ -440,10 +511,15 @@ export function contentDeliveryId(connectionId: string, payload: WpContentPayloa
 /**
  * Pull posts/pages/media over the WordPress core REST API.
  *
- * WooCommerce consumer keys authenticate wp/v2 requests on the standard
- * WordPress+WooCommerce setup, so no second credential pair is needed. Pages
- * the store returns but the store's host withholds a paging header on are
- * still walked to the end via the short-page rule.
+ * Authenticated `context=edit` retains raw editor fields and includes the
+ * site's non-public posts/pages. Hosts that omit `X-WP-TotalPages` are walked
+ * until a short page instead of silently stopping after the first hundred
+ * attachments.
+ *
+ * A completed pull is authoritative. Rows no longer present at WordPress are
+ * pruned only after all three collections were fetched successfully, so a
+ * timeout halfway through a sync can add fresh rows but can never erase the
+ * last known-good mirror.
  */
 export async function syncWpContentRest(
   connection: ConnectionRow,
@@ -456,55 +532,63 @@ export async function syncWpContentRest(
 ): Promise<{ total: number; removed: number }> {
   let total = 0;
   let removed = 0;
-  const types = [
+  const collections = [
     { endpoint: "posts", wpType: "post", status: "publish,draft,pending,private,future,trash" },
     { endpoint: "pages", wpType: "page", status: "publish,draft,pending,private,future,trash" },
     { endpoint: "media", wpType: "attachment", status: "inherit" },
   ] as const;
+  const seenByType = new Map<string, string[]>();
 
-  for (const type of types) {
-    const seenIds: string[] = [];
+  for (const collection of collections) {
+    const seen = new Set<string>();
     let page = 1;
     for (;;) {
-      // `edit` is essential here. The default `view` context omits raw body
-      // text and non-public rows, so opening an existing draft in the manager
-      // showed an empty editor and saving it erased the actual post body.
-      const { items, totalPages } = await client.wpListPage(type.endpoint, {
+      // `edit` retains raw Gutenberg/shortcode text and allows authenticated
+      // sites to return non-public posts. Saving rendered text would otherwise
+      // destroy editor data that the manager never received.
+      const { items, totalPages } = await client.wpListPage(collection.endpoint, {
         context: "edit",
-        status: type.status,
+        status: collection.status,
         per_page: 100,
         page,
       });
+      const reportedPages = Number.isFinite(Number(totalPages)) ? Math.max(0, Number(totalPages)) : 0;
+
       for (const item of items) {
-        const payload = {
+        const remoteId = remoteContentId(item.id);
+        if (!remoteId) continue;
+        await upsertWpContent(connection, {
           ...item,
-          type: typeof item.type === "string" ? item.type : type.wpType,
-        } as unknown as WpContentPayload;
-        const id = remoteContentId(payload.id);
-        if (!id) continue;
-        await upsertWpContent(connection, payload);
-        seenIds.push(id);
+          // Pin sparse/proxied responses to the collection being fetched.
+          type: collection.wpType,
+        } as unknown as WpContentPayload);
+        seen.add(remoteId);
         total += 1;
       }
-      if (!totalPages || page >= totalPages || items.length === 0) break;
-      // A broken proxy/header must not make a sync loop forever. 500 pages is
-      // already 50,000 rows of one content type; stop with an error rather
-      // than prune against an incomplete remote snapshot.
-      if (page >= 500) throw new Error("wordpress_content_page_limit");
+
+      if (items.length === 0) {
+        if (reportedPages > 0 && page < reportedPages) throw new Error("wp_content_incomplete_page");
+        break;
+      }
+      if (reportedPages > 0 ? page >= reportedPages : items.length < 100) break;
+      if (page >= 500) throw new Error("wp_content_page_limit");
       page += 1;
     }
+    seenByType.set(collection.wpType, [...seen]);
+  }
 
-    // This type completed successfully, so the collected ids are an exact
-    // snapshot. Reconcile permanently deleted posts/media instead of leaving
-    // ghost rows in the manager forever.
-    const { rowCount } = await query(
+  // Prune only after every collection completed. A failure halfway through a
+  // pull may add fresh rows but must never erase the last known-good snapshot.
+  for (const [wpType, remoteIds] of seenByType) {
+    const result = await query(
       `DELETE FROM integration_wp_content
         WHERE business_id = $1 AND connection_id = $2 AND wp_type = $3
           AND NOT (remote_id = ANY($4::text[]))`,
-      [connection.business_id, connection.id, type.wpType, seenIds],
+      [connection.business_id, connection.id, wpType, remoteIds],
     );
-    removed += rowCount ?? 0;
+    removed += result.rowCount ?? 0;
   }
+
   await query(
     `UPDATE integration_connections SET last_content_sync_at = now(), updated_at = now()
       WHERE business_id = $1 AND id = $2`,
