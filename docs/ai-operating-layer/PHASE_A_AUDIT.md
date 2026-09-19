@@ -944,3 +944,56 @@ safe to do from the sandbox under the standing "verify against the deployed
 image / prove the cutover before removing" rule. The remaining sandbox-doable
 work is **Phase I** (UI redesign / IA, Parts 11/24–28) plus the optional Phase G
 AI-generated-image persistence (waits on an image-generation call site in chat).
+
+## 6i. Phase I — Part 1 DELIVERED (the AI Workspace becomes a real IA)
+
+The audit's north star (§4) draws the AI Workspace as one product with several
+sections — Chat · Coworkers · Automations · Activity · Projects — over the same
+business services. Until now `/ai` was a single ChatGPT-like chat page, and two
+whole engines that had already *shipped* were unreachable from the UI: the
+coworker inbox/jobs/review (`AiCoworkerPanel`, Phase 32) was mounted by no
+route, and the automation engine (Phase D) had its management UI explicitly
+deferred to Phase I. Part 1 turns `/ai` into that workspace and closes both
+gaps.
+
+- **Framework-free section registry (`(app)/ai/ai-workspace-nav.ts`).** One
+  source of truth — keys, labels, help lines, hrefs, named icons, the
+  owner/manager role gate, and the active-section rule — read by both the chat
+  rail and every management page, the same shape `growth-routes.ts`/`apps.ts`
+  use. No `next`, no `db`, no JSX, so the unit tests and the server pages share
+  it. **10 unit tests** cover the list shape, the role gate (owner/manager in,
+  cashier/accountant out), and active-section resolution (incl. the regression
+  that `/ai/coworkers` must not resolve to the chat root just because it starts
+  with `/ai`).
+- **The chat surface is now *only* the chat (`assistant-route.ts`).**
+  `isAssistantSurface` matched every `/ai/*` path, which would have forced the
+  new scrolling management pages into the pinned-composer full-height chat
+  layout. Tightened to the exact chat root (`/ai`, and `/dashboard` under the
+  workspace shell); **4 new unit tests** pin it, including that the three
+  management sections are NOT chat surfaces.
+- **Shared chrome.** `AiWorkspaceSubnav` (client) maps the registry's named
+  icons back to lucide and draws the section strip; `AiWorkspacePage` (server)
+  wraps each management page in the `ai_assistant` FeatureLock + shell + strip +
+  header, so a new section is a page plus a registry entry and the chrome never
+  drifts. The chat rail (`ai-sidebar.tsx`) now links out to the other sections.
+- **New reachable sections.** `/ai/coworkers` mounts the shipped-but-orphaned
+  `AiCoworkerPanel`; `/ai/activity` mounts `AiAutopilotActivity`; `/ai/automations`
+  is a **new** management UI (`automations-manager.tsx`) — list, create
+  (trigger · optional single condition · action · approval · optional project
+  label), enable/disable, run-now, delete — every write through the same
+  `/api/ai/automations` the assistant proposes through, so a rule made by hand
+  and one the AI proposes are one object under one guard. Owner-only for the
+  `auto` approval mode, mirroring the route's `owner_required`.
+- **Verification.** `tsc` clean; full suite **4862 unit / 329 files** (+14/+2).
+  Live smoke test against embedded PG (migrations through 0162 applied, seeded
+  owner, `ai_assistant` enabled): all four routes return 200 authenticated and
+  render the section strip; the automations API round-trips create → list with
+  `projectId` present (the Phase F/M4 wiring confirmed end-to-end too).
+
+**Still to do in Phase I** (later parts): fold the workspace sections into the
+main navigation/rail as a first-class app (they are reachable from the chat rail
+and by URL now, not yet from the global nav); a custom-Agents management surface
+(the engine shipped in Phase D; `/api/ai/agents` exists, no UI yet); a
+Files/Knowledge and Usage section; and the richer structured-card chat polish
+(Parts 25–28). Phases **H** (#682) and **J** (#683) remain blocked on production
+access.

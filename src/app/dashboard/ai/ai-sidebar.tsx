@@ -13,7 +13,14 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FolderIcon, MessageSquarePlusIcon, XIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  BotIcon,
+  FolderIcon,
+  MessageSquarePlusIcon,
+  XIcon,
+  ZapIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { api } from "@/app/dashboard/ui";
@@ -111,15 +118,26 @@ export function AiSidebar({
         )}
       </nav>
 
-      <div className="shrink-0 border-t border-border/80 p-2">
-        <Link
-          href="/projects"
-          onClick={onNavigate}
-          className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
-        >
-          <FolderIcon className="size-4 shrink-0" aria-hidden="true" />
-          پروژه‌ها
-        </Link>
+      <div className="shrink-0 space-y-1 border-t border-border/80 p-2">
+        {/* The rest of the AI Workspace — the management sections the chat is
+            one part of. Each is an ordinary page (not the pinned-composer chat),
+            so these are plain links out of the rail. */}
+        {[
+          { href: "/ai/coworkers", label: "همکاران هوشمند", icon: BotIcon },
+          { href: "/ai/automations", label: "اتوماسیون‌ها", icon: ZapIcon },
+          { href: "/ai/activity", label: "فعالیت خودکار", icon: ActivityIcon },
+          { href: "/projects", label: "پروژه‌ها", icon: FolderIcon },
+        ].map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
+          >
+            <item.icon className="size-4 shrink-0" aria-hidden="true" />
+            {item.label}
+          </Link>
+        ))}
       </div>
     </div>
   );
