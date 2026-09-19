@@ -422,3 +422,55 @@ Still to do in Phase D: **Automation engine** (generic trigger→condition→act
 entity, `ai_automations`) and **autopilot-as-policy** (make the guardrail engine
 a named, reusable execution/approval policy rather than a fixed per-category
 table). Neither drops or rewrites the existing coworker/autopilot schema.
+
+### Part 2 of 3 — Automation engine — DELIVERED (test-backed)
+
+The coworker (0100) fills a fixed TEMPLATE; an automation is a free
+composition the owner assembles themselves:
+
+    WHEN  <trigger>      (manual | schedule | event)
+    IF    <conditions>   (a typed rule document over run-time facts)
+    THEN  <action>       (one ACTION_CATALOG action + payload)
+
+What it adds over everything before it is the **condition** — a typed,
+deterministic rule document evaluated against facts read from the database at
+fire time. It opens **no new mutation path**: a fired automation proposes
+exactly what the chat could, through the same role-guarded executor; the
+conditions only decide *whether* to propose.
+
+What changed:
+- **Migration `0155_ai_automations.sql`** (additive): `ai_automations`
+  (trigger + `conditions jsonb` + `action_type` + `action_payload` +
+  ask/auto). Trigger vocabulary and the shape CHECK mirror `ai_coworker_jobs`
+  exactly, so one tick can drive both later without a schema change. FORCE-RLS,
+  unique name per business, auto-verified by the tenant-isolation suite. Widens
+  `ai_action_audit.source` with `'automation'` (now manual/autopilot/coworker/
+  agent/automation).
+- **`ai-automations.ts`** (pure): a small bounded condition DSL over five
+  deterministic facts (`receivableTotalRial`, `payableTotalRial`,
+  `stockValuationRial`, `weekday`, `hour`) with `gte`/`lte`/`eq`;
+  `evaluateConditions` (empty ⇒ matches, all-of AND any-of); `validateAutomation`
+  (rejects — never ignores — an unknown field/operator/action and every
+  coworker-only action; enforces the trigger shape); `selectableAutomationActions`.
+- **`ai-automations-service.ts`**: tenant-scoped CRUD; `gatherAutomationFacts`
+  (reads the same numbers the chat's report tools return — A/R aging total,
+  A/P aging total, inventory valuation, business-clock weekday/hour);
+  `previewAutomation` (a dry run that reports whether the conditions hold *right
+  now* and what it would propose, proposing nothing). `authorized_by` is stored
+  only for an `auto` automation.
+- **Routes**: `GET/POST /api/ai/automations`, `GET/PUT/DELETE
+  /api/ai/automations/[id]`, `GET /api/ai/automations/[id]/preview`
+  (manager-guarded; `auto` requires owner; GET list returns the selectable
+  fields/operators/event-kinds/actions so a future editor renders from the live
+  vocabulary).
+
+Tests: `src/lib/ai-automations.test.ts` (11 — evaluator AND/OR semantics +
+validation), `integration/ai-automations.integration.test.ts` (5 — CRUD,
+auto authority, unknown-action rejection, real-fact gathering + preview
+fires/doesn't-fire, duplicate-name + cross-tenant). All 4789 unit tests + AI
+integration suites green; `tsc` clean; tenant-isolation covers 0155.
+
+UI deferred to Phase I; the engine's firing hook (wiring `previewAutomation` +
+`gatherAutomationFacts` into the existing coworker/proactive tick to actually
+enqueue proposals) lands with **Part 3 — autopilot-as-policy**, which unifies
+the ask/auto approval ceiling across coworker, autopilot and automations.
