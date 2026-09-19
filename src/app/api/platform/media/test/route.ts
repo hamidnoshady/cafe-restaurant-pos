@@ -10,7 +10,7 @@ import { s3Delete, s3Put } from "@/lib/s3-lite";
  * credential apart from a healthy connection before any tenant uploads.
  */
 export const POST = withPlatformScope(async () => {
-  const { error } = await requirePlatformCapability("backup.manage");
+  const { error } = await requirePlatformCapability("media.manage");
   if (error) return error;
 
   const config = await getMediaConfig();

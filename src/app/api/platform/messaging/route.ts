@@ -34,7 +34,7 @@ function finiteNonNegativeInteger(value: unknown): number | undefined {
 
 /** Save provider/rate configuration, packages, or review a top-up request. */
 export const POST = withPlatformScope(async (request: NextRequest) => {
-  const guard = await requirePlatformCapability("billing.manage");
+  const guard = await requirePlatformCapability("messaging.manage");
   if (guard.error) return guard.error;
 
   let body: Record<string, unknown>;
