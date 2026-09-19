@@ -38,7 +38,7 @@ import { safeRandomId } from "@/lib/client-id";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
 import type { ReceiptData } from "@/lib/receipt-template";
-import { api, ErrorBox, Field, inputClass } from "../ui";
+import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
 import { usePaymentMethods } from "../payment-ways";
 import { PageHeader, PageShell, TabBar, TabPanel, cardClass } from "../page-chrome";
 import { KnowledgeHelpButton } from "../knowledge-help";
@@ -136,6 +136,19 @@ function newKey(): string {
   return safeRandomId();
 }
 
+/** Numeric inputs are editable text. A pasted currency symbol or a half-typed
+ * value must make the line unavailable, not throw during render and blank the
+ * whole invoice screen. */
+function safeMoneyInput(parse: (value: string) => number, value: string): number | null {
+  if (!value.trim()) return 0;
+  try {
+    const parsed = parse(value);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   const money = useMoney();
   const [weightItems, setWeightItems] = useState<WeightItem[]>([]);
@@ -163,6 +176,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   // tender the cashier never picked. `submit` (and the button below) refuses
   // to run without a real selection.
   const paymentMethod = selectedWay ? ledgerSettlementFor(selectedWay.settlement) : null;
+  const [paymentReference, setPaymentReference] = useState("");
   const [note, setNote] = useState("");
 
   const [loading, setLoading] = useState(true);
@@ -234,8 +248,12 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
   async function submit() {
     if (lines.length === 0) return;
-    if (!paymentMethod) {
+    if (!selectedWay || !paymentMethod) {
       setError("روش پرداخت را انتخاب کنید.");
+      return;
+    }
+    if (selectedWay.requiresReference && !paymentReference.trim()) {
+      setError("برای این روش پرداخت، واردکردن شماره پیگیری الزامی است.");
       return;
     }
     setBusy(true);
@@ -264,6 +282,8 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       body: JSON.stringify({
         lines: lines.map((l) => l.payload),
         paymentMethod,
+        paymentMethodId: selectedWay.id,
+        paymentReference: paymentReference.trim() || null,
         customerId: customerId || null,
         note: note.trim() || null,
       }),
@@ -307,13 +327,14 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       }
       setLines([]);
       setCustomerId("");
+      setPaymentReference("");
       setNote("");
       void load();
     } else {
       // The server sends the sell services' own Persian refusals (no stock, no
       // cost basis, no gold rate recorded for today) as `message`; showing that
       // is far more useful than a generic failure.
-      setError(data.message ?? "ثبت فاکتور ناموفق بود.");
+      setError(data.message ?? errorMessage(data.error));
     }
   }
 
@@ -490,6 +511,17 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
                   </div>
                 )}
               </Field>
+              {selectedWay?.requiresReference ? (
+                <Field label="شماره پیگیری" hint="برای ثبت این روش پرداخت الزامی است.">
+                  <input
+                    className={inputClass}
+                    value={paymentReference}
+                    maxLength={120}
+                    onChange={(event) => setPaymentReference(event.target.value)}
+                    placeholder="شماره پیگیری یا مرجع تراکنش"
+                  />
+                </Field>
+              ) : null}
               <Field label="توضیح">
                 <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} />
               </Field>
@@ -913,12 +945,14 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
   const inStock = useMemo(() => units.filter((u) => u.status === "in_stock"), [units]);
   const unit = inStock.find((u) => u.id === serialId) ?? null;
 
-  const priceRial = price.trim() ? money.parse(price) : 0;
-  const discountRial = discount.trim() ? money.parse(discount) : 0;
+  const parsedPrice = safeMoneyInput(money.parse, price);
+  const priceRial = parsedPrice ?? 0;
+  const parsedDiscount = safeMoneyInput(money.parse, discount);
+  const discountRial = parsedDiscount ?? 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
   let previewError: string | null = null;
-  if (unit && priceRial > 0) {
+  if (unit && parsedPrice !== null && parsedDiscount !== null && priceRial > 0) {
     try {
       const breakdown = computeWatchSalePrice({
         price: priceRial,
@@ -1026,12 +1060,14 @@ function AccessoryLineForm({
   );
   const variant = sellable.find((v) => v.id === itemId) ?? null;
 
-  const effectivePrice = unitPrice.trim() ? money.parse(unitPrice) : (variant?.unitPrice ?? 0);
-  const discountRial = discount.trim() ? money.parse(discount) : 0;
+  const parsedUnitPrice = unitPrice.trim() ? safeMoneyInput(money.parse, unitPrice) : variant?.unitPrice ?? 0;
+  const effectivePrice = parsedUnitPrice ?? 0;
+  const parsedDiscount = safeMoneyInput(money.parse, discount);
+  const discountRial = parsedDiscount ?? 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
   let previewError: string | null = null;
-  if (variant && effectivePrice > 0 && quantity.trim()) {
+  if (variant && parsedUnitPrice !== null && parsedDiscount !== null && effectivePrice > 0 && quantity.trim()) {
     try {
       const breakdown = computeAccessorySalePrice({
         unitPrice: effectivePrice,
@@ -1147,12 +1183,14 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
   );
   const variant = sellable.find((v) => v.id === itemId) ?? null;
 
-  const effectivePrice = unitPrice.trim() ? money.parse(unitPrice) : (variant?.unitPrice ?? 0);
-  const discountRial = discount.trim() ? money.parse(discount) : 0;
+  const parsedUnitPrice = unitPrice.trim() ? safeMoneyInput(money.parse, unitPrice) : variant?.unitPrice ?? 0;
+  const effectivePrice = parsedUnitPrice ?? 0;
+  const parsedDiscount = safeMoneyInput(money.parse, discount);
+  const discountRial = parsedDiscount ?? 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
   let previewError: string | null = null;
-  if (variant && effectivePrice > 0 && quantity.trim()) {
+  if (variant && parsedUnitPrice !== null && parsedDiscount !== null && effectivePrice > 0 && quantity.trim()) {
     try {
       const breakdown = computeCosmeticSalePrice({
         unitPrice: effectivePrice,

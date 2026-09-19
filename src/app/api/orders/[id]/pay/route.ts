@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { broadcast } from "@/lib/realtime";
 import { deductForOrder } from "@/lib/inventory-service";
 import {
@@ -22,6 +23,7 @@ import {
 } from "@/lib/payment-methods";
 import { listPaymentMethods } from "@/lib/payment-methods-service";
 import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-producer";
+import { earnPoints } from "@/lib/loyalty-service";
 
 interface PayTenderBody {
   /** `payment_methods.id` — the way the cashier tapped. */
@@ -87,6 +89,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+  const businessDay = await getBusinessDayStatus(location.id);
 
   let body: PayBody;
   try {
@@ -140,7 +143,8 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     const order = locked.order;
     if (customerId) {
       const { rowCount: customerOwned } = await client.query(
-        `SELECT 1 FROM parties WHERE id = $1 AND business_id = $2`,
+        `SELECT 1 FROM parties
+          WHERE id = $1 AND business_id = $2 AND roles && ARRAY['customer']::text[]`,
         [customerId, session.businessId],
       );
       if (customerOwned !== 1) {
@@ -230,6 +234,28 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       totalCost,
       inventoryEventId,
     });
+    // Every sales model awards a known customer in the transaction that closes
+    // the sale. F&B previously omitted this hook, so the same loyalty program
+    // behaved differently at a café counter and a retail counter.
+    const loyaltyCustomerId = customerId ?? order.customer_id;
+    if (loyaltyCustomerId) {
+      const { rowCount: isCustomer } = await client.query(
+        `SELECT 1 FROM parties
+          WHERE id = $1 AND business_id = $2 AND roles && ARRAY['customer']::text[]`,
+        [loyaltyCustomerId, session.businessId],
+      );
+      if (isCustomer === 1) {
+        await earnPoints(client, {
+          businessId: session.businessId,
+          customerId: loyaltyCustomerId,
+          amountRial: total,
+          sourceType: "order",
+          sourceId: id,
+          earnedOn: businessDay?.businessDate,
+          createdBy: session.sub,
+        });
+      }
+    }
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
     await enqueueHolooSaleForOrder(client, session.businessId, id);
     await client.query("COMMIT");

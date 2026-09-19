@@ -118,7 +118,7 @@ export interface CreateItemInput {
 }
 
 /** Creates a `simple` (default) item, or a bare `variant_parent` with no attributes of its own — use createVariantChild for its children. */
-export async function createItem(input: CreateItemInput): Promise<Item> {
+export async function createItem(input: CreateItemInput, client?: PoolClient): Promise<Item> {
   const kind = input.kind ?? "simple";
   const parentItemId = input.parentItemId ?? null;
   if (kind === "variant_child") {
@@ -129,19 +129,26 @@ export async function createItem(input: CreateItemInput): Promise<Item> {
   const intervalError = validateServiceIntervalMonths(input.serviceIntervalMonths);
   if (intervalError) throw new Error(intervalError);
 
-  const { rows } = await query<ItemRow>(
-    `INSERT INTO items (location_id, parent_item_id, name, sku, kind, tracking, service_interval_months)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [
-      input.locationId,
-      parentItemId,
-      input.name,
-      input.sku ?? null,
-      kind,
-      input.tracking ?? "none",
-      input.serviceIntervalMonths ?? null,
-    ],
-  );
+  const params = [
+    input.locationId,
+    parentItemId,
+    input.name,
+    input.sku ?? null,
+    kind,
+    input.tracking ?? "none",
+    input.serviceIntervalMonths ?? null,
+  ];
+  const { rows } = client
+    ? await client.query<ItemRow>(
+        `INSERT INTO items (location_id, parent_item_id, name, sku, kind, tracking, service_interval_months)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        params,
+      )
+    : await query<ItemRow>(
+        `INSERT INTO items (location_id, parent_item_id, name, sku, kind, tracking, service_interval_months)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        params,
+      );
   return mapItem(rows[0]);
 }
 
@@ -152,25 +159,36 @@ export async function createVariantChild(
   name: string,
   sku: string | null,
   attributes: VariantAttributeInput[],
+  transactionClient?: PoolClient,
 ): Promise<Item> {
   const errors = validateVariantAttributes(attributes);
   if (errors.length > 0) throw new Error(errors.join("؛ "));
 
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
+  const insert = async (client: PoolClient): Promise<Item> => {
     const { rows } = await client.query<ItemRow>(
       `INSERT INTO items (location_id, parent_item_id, name, sku, kind)
        VALUES ($1, $2, $3, $4, 'variant_child') RETURNING *`,
       [locationId, parentItemId, name, sku],
     );
     const item = mapItem(rows[0]);
-    for (const a of attributes) {
+    for (const attribute of attributes) {
       await client.query(
         `INSERT INTO item_variant_attributes (item_id, name, value) VALUES ($1, $2, $3)`,
-        [item.id, a.name.trim(), a.value.trim()],
+        [item.id, attribute.name.trim(), attribute.value.trim()],
       );
     }
+    return item;
+  };
+
+  // Product creation already owns a wider transaction (parent, every child,
+  // barcodes and opening prices). Reuse it instead of committing each child
+  // independently; standalone callers retain the original atomic helper.
+  if (transactionClient) return insert(transactionClient);
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const item = await insert(client);
     await client.query("COMMIT");
     return item;
   } catch (err) {
@@ -204,7 +222,11 @@ export interface ItemMetaPatch {
   isSellable?: boolean;
 }
 
-export async function updateItemMeta(id: string, patch: ItemMetaPatch): Promise<Item | null> {
+export async function updateItemMeta(
+  id: string,
+  patch: ItemMetaPatch,
+  client?: PoolClient,
+): Promise<Item | null> {
   const sets: string[] = [];
   const params: unknown[] = [id];
   const push = (column: string, value: unknown) => {
@@ -224,13 +246,18 @@ export async function updateItemMeta(id: string, patch: ItemMetaPatch): Promise<
   if (patch.taxSalePercent !== undefined) push("tax_sale_percent", patch.taxSalePercent);
   if (patch.taxPurchasePercent !== undefined) push("tax_purchase_percent", patch.taxPurchasePercent);
   if (patch.isSellable !== undefined) push("is_sellable", patch.isSellable);
-  if (sets.length === 0) return getItem(id);
+  if (sets.length === 0) return getItem(id, client);
   sets.push(`updated_at = now()`);
 
-  const { rows } = await query<ItemRow>(
-    `UPDATE items SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
-    params,
-  );
+  const { rows } = client
+    ? await client.query<ItemRow>(
+        `UPDATE items SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
+        params,
+      )
+    : await query<ItemRow>(
+        `UPDATE items SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
+        params,
+      );
   return rows[0] ? mapItem(rows[0]) : null;
 }
 
@@ -250,8 +277,10 @@ export async function listVariantChildren(parentItemId: string): Promise<Item[]>
   return rows.map(mapItem);
 }
 
-export async function getItem(id: string): Promise<Item | null> {
-  const { rows } = await query<ItemRow>(`SELECT * FROM items WHERE id = $1`, [id]);
+export async function getItem(id: string, client?: PoolClient): Promise<Item | null> {
+  const { rows } = client
+    ? await client.query<ItemRow>(`SELECT * FROM items WHERE id = $1`, [id])
+    : await query<ItemRow>(`SELECT * FROM items WHERE id = $1`, [id]);
   return rows[0] ? mapItem(rows[0]) : null;
 }
 

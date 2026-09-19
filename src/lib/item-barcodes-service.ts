@@ -9,7 +9,7 @@
  */
 import { randomInt } from "node:crypto";
 
-import { query } from "./db";
+import { query, type PoolClient } from "./db";
 import {
   barcodeEntryError,
   classifyBarcode,
@@ -27,6 +27,13 @@ export interface ItemBarcode {
   code: string;
   symbology: BarcodeSymbology;
   note: string | null;
+}
+
+export class BarcodeConflictError extends Error {
+  constructor() {
+    super("این بارکد قبلاً در همین شعبه برای کالای دیگری ثبت شده است.");
+    this.name = "BarcodeConflictError";
+  }
 }
 
 interface BarcodeRow extends Record<string, unknown> {
@@ -53,8 +60,11 @@ function mapBarcode(row: BarcodeRow): ItemBarcode {
 export async function assignBarcode(
   itemId: string,
   input: { code?: string | null; symbology?: BarcodeSymbology | null; note?: string | null },
+  client?: PoolClient,
 ): Promise<ItemBarcode> {
-  const item = await getItem(itemId);
+  const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
+  const item = await getItem(itemId, client);
   if (!item) throw new Error("کالا یافت نشد.");
 
   const code = normalizeBarcode(input.code?.trim() ?? "");
@@ -84,32 +94,40 @@ export async function assignBarcode(
   // before the UNIQUE constraint could fire, with a message a shop clerk can
   // act on rather than a constraint name.
   if (code) {
-    const { rows: existing } = await query<{ id: string }>(
+    const { rows: existing } = await run<{ id: string }>(
       `SELECT id FROM item_barcodes WHERE location_id = $1 AND code = $2`,
       [item.locationId, code],
     );
-    if (existing[0]) {
-      throw new Error("این بارکد قبلاً در همین شعبه برای کالای دیگری ثبت شده است.");
-    }
+    if (existing[0]) throw new BarcodeConflictError();
   }
 
   const finalSymbology = symbology ?? "internal";
-  const finalCode = code || (await mintUniqueInternalCode(item.locationId));
+  const finalCode = code || (await mintUniqueInternalCode(item.locationId, client));
 
-  const { rows } = await query<BarcodeRow>(
-    `INSERT INTO item_barcodes (location_id, item_id, code, symbology, note)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [item.locationId, itemId, finalCode, finalSymbology, input.note?.trim() || null],
-  );
+  let rows: BarcodeRow[];
+  try {
+    ({ rows } = await run<BarcodeRow>(
+      `INSERT INTO item_barcodes (location_id, item_id, code, symbology, note)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [item.locationId, itemId, finalCode, finalSymbology, input.note?.trim() || null],
+    ));
+  } catch (error) {
+    // The pre-check gives the normal readable refusal; this catches the race
+    // where another request inserts the same branch/code before our INSERT.
+    if ((error as { code?: string }).code === "23505") throw new BarcodeConflictError();
+    throw error;
+  }
   return mapBarcode(rows[0]);
 }
 
 /** Mint an internal code that is free at this branch, retrying the payload on the rare collision. */
-async function mintUniqueInternalCode(locationId: string): Promise<string> {
+async function mintUniqueInternalCode(locationId: string, client?: PoolClient): Promise<string> {
+  const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
   for (let attempt = 0; attempt < 20; attempt++) {
     const payload = internalPayloadFromNumber(randomInt(100_000_000_000));
     const code = internalBarcodeForPayload(payload);
-    const { rows } = await query<{ id: string }>(
+    const { rows } = await run<{ id: string }>(
       `SELECT id FROM item_barcodes WHERE location_id = $1 AND code = $2`,
       [locationId, code],
     );

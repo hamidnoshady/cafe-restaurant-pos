@@ -83,6 +83,20 @@ export async function updateItemProfile(
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
 
+  // Never allow a brand from another branch to be attached. The API checks
+  // item ownership, but the service is also called by non-HTTP flows.
+  if (input.brandId) {
+    const { rows } = await run<{ ok: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM item_brands b
+         JOIN items i ON i.location_id = b.location_id
+        WHERE b.id = $1 AND i.id = $2
+       ) AS ok`,
+      [input.brandId, itemId],
+    );
+    if (!rows[0]?.ok) throw new Error("برند انتخاب‌شده متعلق به شعبه این کالا نیست.");
+  }
+
   await run(
     `UPDATE items SET
        brand_id = $2,

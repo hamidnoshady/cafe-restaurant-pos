@@ -71,6 +71,21 @@ function usb(): Usb | null {
   return ((navigator as unknown as { usb?: Usb }).usb) ?? null;
 }
 
+/**
+ * USB string descriptors arrive NUL-padded from plenty of printer firmwares
+ * (a fixed-size EEPROM field reported verbatim: "VNBV9BJGLG\0\0\0…"). Those
+ * NULs are invisible in the UI but fatal on the server — PostgreSQL refuses
+ * \u0000 inside jsonb (error 22P05) — and they break serial matching, since
+ * a cleaned stored value would never strictly equal the raw padded one. So
+ * every serial/product string is normalised here, both when a pairing is
+ * captured and when a stored serial is compared against a live device.
+ */
+function cleanUsbString(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  return cleaned || null;
+}
+
 /** Does this browser expose WebUSB at all (Chromium on a secure context)? */
 export function webUsbSupported(): boolean {
   return usb() !== null;
@@ -118,8 +133,8 @@ export async function requestWebUsbPrinter(): Promise<
     printer: {
       usbVendorId: device.vendorId,
       usbProductId: device.productId,
-      usbSerial: device.serialNumber ?? null,
-      usbProductName: device.productName ?? null,
+      usbSerial: cleanUsbString(device.serialNumber),
+      usbProductName: cleanUsbString(device.productName),
     },
   };
 }
@@ -134,8 +149,11 @@ export async function findPairedDevice(connection: WebUsbConnectionLike): Promis
       d.vendorId === connection.usbVendorId &&
       (connection.usbProductId == null || d.productId === connection.usbProductId),
   );
-  if (matches.length > 1 && connection.usbSerial) {
-    const bySerial = matches.find((d) => d.serialNumber === connection.usbSerial);
+  const wantedSerial = cleanUsbString(connection.usbSerial);
+  if (matches.length > 1 && wantedSerial) {
+    // Compare cleaned-to-cleaned: the stored serial has its NUL padding
+    // stripped, the live device's does not.
+    const bySerial = matches.find((d) => cleanUsbString(d.serialNumber) === wantedSerial);
     if (bySerial) return bySerial;
   }
   return matches[0] ?? null;
