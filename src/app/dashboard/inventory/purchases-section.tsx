@@ -18,6 +18,7 @@ import {
   type InvoiceOcrApplyPayload,
 } from "./invoice-ocr-panel";
 import { SectionCard, StatusBadge } from "../page-chrome";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface Purchase {
   id: string;
@@ -782,33 +783,29 @@ export function PurchasesSection({
                       </form>
                     ) : (
                       <>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="border-b border-border">
-                                <th className="py-2 pe-3 text-start font-medium">قلم انبار</th>
-                                <th className="py-2 pe-3 text-start font-medium">مقدار</th>
-                                <th className="py-2 pe-3 text-start font-medium">بهای واحد</th>
-                                <th className="py-2 text-start font-medium">مبلغ کل</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {detail.items.map((it) => (
-                                <tr key={it.id} className="border-b border-border/60 last:border-0">
-                                  <td className="py-2 pe-3">{it.inventory_item_name}</td>
-                                  <td className="whitespace-nowrap py-2 pe-3">
-                                    {formatQuantity(it.quantity)} {it.unit}
-                                  </td>
-                                  <td className="whitespace-nowrap py-2 pe-3 text-muted-foreground">
-                                    {/* unit_cost is numeric(24,9); formatText only accepts integer Rial. */}
-                                    {money.formatText(new Decimal(String(it.unit_cost)).toFixed(0))}
-                                  </td>
-                                  <td className="whitespace-nowrap py-2">{money.formatText(String(it.extended_cost))}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <DataTable caption="اقلام این فاکتور خرید" tableClassName="text-xs">
+                          <DataTableHead>
+                            <Th>قلم انبار</Th>
+                            <Th numeric>مقدار</Th>
+                            <Th numeric>بهای واحد</Th>
+                            <Th numeric>مبلغ کل</Th>
+                          </DataTableHead>
+                          <DataTableBody>
+                            {detail.items.map((it) => (
+                              <DataTableRow key={it.id}>
+                                <Td>{it.inventory_item_name}</Td>
+                                <Td numeric nowrap>
+                                  {formatQuantity(it.quantity)} {it.unit}
+                                </Td>
+                                <Td numeric nowrap muted>
+                                  {/* unit_cost is numeric(24,9); formatText only accepts integer Rial. */}
+                                  {money.formatText(new Decimal(String(it.unit_cost)).toFixed(0))}
+                                </Td>
+                                <Td numeric nowrap>{money.formatText(String(it.extended_cost))}</Td>
+                              </DataTableRow>
+                            ))}
+                          </DataTableBody>
+                        </DataTable>
 
                         <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-xs sm:grid-cols-4">
                           <div>

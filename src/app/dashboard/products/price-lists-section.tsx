@@ -26,6 +26,7 @@ import type { PriceEntry, PriceList } from "@/lib/price-lists-service";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { EmptyState, SectionCard, SectionCardSkeleton } from "../page-chrome";
 import { SearchField } from "@/app/dashboard/filters";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 type ColumnKey = string; // "sale" | "purchase" | <price list id>
 
@@ -232,45 +233,39 @@ export function PriceListsSection({ apiBase }: { apiBase: string }) {
             <EmptyState>کالایی برای قیمت‌گذاری ثبت نشده است.</EmptyState>
           </div>
         ) : (
-          <div className="min-w-0 overflow-x-auto">
-            <table className="w-full min-w-[56rem] text-sm">
-              <thead>
-                <tr className="border-b border-border/80 bg-muted/60 text-xs text-muted-foreground">
-                  <th className="px-3 py-3 text-start font-medium">#</th>
-                  <th className="px-3 py-3 text-start font-medium">کد کالا</th>
-                  <th className="px-3 py-3 text-start font-medium">عنوان کالا</th>
-                  <th className="px-3 py-3 text-start font-medium">قیمت فروش</th>
-                  <th className="px-3 py-3 text-start font-medium">قیمت خرید</th>
-                  {lists.map((list) => (
-                    <th key={list.id} className="px-3 py-3 text-start font-medium">
-                      {list.name}
-                    </th>
+          <DataTable caption="قیمت کالاها در فهرست‌های قیمت" tableClassName="min-w-[56rem]">
+            <DataTableHead>
+              <Th>#</Th>
+              <Th>کد کالا</Th>
+              <Th>عنوان کالا</Th>
+              <Th>قیمت فروش</Th>
+              <Th>قیمت خرید</Th>
+              {lists.map((list) => (
+                <Th key={list.id}>{list.name}</Th>
+              ))}
+            </DataTableHead>
+            <DataTableBody>
+              {filtered.map((item, index) => (
+                <DataTableRow key={item.id}>
+                  <Td muted className="text-xs">{toPersianDigits(index + 1)}</Td>
+                  <Td dir="ltr" muted className="text-xs">
+                    {item.sku ?? "—"}
+                  </Td>
+                  <Td className="font-medium">{item.name}</Td>
+                  {(["sale", "purchase"] as const).map((column) => (
+                    <Td key={column}>
+                      <PriceCell value={cells[item.id]?.[column] ?? ""} onChange={(value) => setCell(item.id, column, value)} />
+                    </Td>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/80">
-                {filtered.map((item, index) => (
-                  <tr key={item.id}>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{toPersianDigits(index + 1)}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground" dir="ltr">
-                      {item.sku ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 font-medium text-foreground">{item.name}</td>
-                    {(["sale", "purchase"] as const).map((column) => (
-                      <td key={column} className="px-3 py-2">
-                        <PriceCell value={cells[item.id]?.[column] ?? ""} onChange={(value) => setCell(item.id, column, value)} />
-                      </td>
-                    ))}
-                    {lists.map((list) => (
-                      <td key={list.id} className="px-3 py-2">
-                        <PriceCell value={cells[item.id]?.[list.id] ?? ""} onChange={(value) => setCell(item.id, list.id, value)} />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  {lists.map((list) => (
+                    <Td key={list.id}>
+                      <PriceCell value={cells[item.id]?.[list.id] ?? ""} onChange={(value) => setCell(item.id, list.id, value)} />
+                    </Td>
+                  ))}
+                </DataTableRow>
+              ))}
+            </DataTableBody>
+          </DataTable>
         )}
       </SectionCard>
       {notice ? <p className="text-xs text-emerald-600 dark:text-emerald-400">{notice}</p> : null}

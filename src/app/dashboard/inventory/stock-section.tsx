@@ -19,6 +19,7 @@ import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, inputClass } from "../ui";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "../page-chrome";
 import { type Warehouse, warehouseErrorMessage } from "./warehouses-section";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface StockItem {
   id: string;
@@ -303,70 +304,53 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
             </EmptyState>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/60">
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
-                    قلم انبار
-                  </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">
-                    موجودی و آستانه
-                  </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">
-                    وضعیت
-                  </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">
-                    قیمت واحد
-                  </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">
-                    ارزش کل
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleItems.map((item) => {
-                  const status = stockStatus(item);
-                  const unitCostNum = Math.round(Number(item.unit_cost));
-                  const valueNum = Math.round(Number(item.value_rial));
-                  return (
-                    <tr
-                      key={item.id}
-                      className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-900/30"
-                    >
-                      <td className="px-4 py-3 sm:px-5">
-                        <span className="font-medium text-foreground">{item.item_name}</span>
-                        {item.sku ? (
-                          <span className="ms-2 inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                            {item.sku}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 tabular-nums">
-                        <div className="font-medium text-foreground">
-                          {formatQuantity(item.quantity)} {item.unit}
+          <DataTable caption="موجودی اقلام این انبار" tableClassName="min-w-[680px]">
+            <DataTableHead>
+              <Th>قلم انبار</Th>
+              <Th>موجودی و آستانه</Th>
+              <Th>وضعیت</Th>
+              <Th numeric>قیمت واحد</Th>
+              <Th numeric>ارزش کل</Th>
+            </DataTableHead>
+            <DataTableBody>
+              {visibleItems.map((item) => {
+                const status = stockStatus(item);
+                const unitCostNum = Math.round(Number(item.unit_cost));
+                const valueNum = Math.round(Number(item.value_rial));
+                return (
+                  <DataTableRow key={item.id}>
+                    <Td className="sm:px-5">
+                      <span className="font-medium text-foreground">{item.item_name}</span>
+                      {item.sku ? (
+                        <span className="ms-2 inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          {item.sku}
+                        </span>
+                      ) : null}
+                    </Td>
+                    <Td nowrap className="tabular-nums">
+                      <div className="font-medium text-foreground">
+                        {formatQuantity(item.quantity)} {item.unit}
+                      </div>
+                      {item.reorder_level !== null && (
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          حداقل: {formatQuantity(item.reorder_level)} {item.unit}
                         </div>
-                        {item.reorder_level !== null && (
-                          <div className="mt-0.5 text-xs text-muted-foreground">
-                            حداقل: {formatQuantity(item.reorder_level)} {item.unit}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge tone={STATUS_META[status].tone}>{STATUS_META[status].label}</StatusBadge>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground tabular-nums">
-                        {unitCostNum > 0 ? money.format(unitCostNum) : "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold tabular-nums text-foreground">
-                        {money.format(valueNum)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      )}
+                    </Td>
+                    <Td>
+                      <StatusBadge tone={STATUS_META[status].tone}>{STATUS_META[status].label}</StatusBadge>
+                    </Td>
+                    <Td numeric nowrap muted>
+                      {unitCostNum > 0 ? money.format(unitCostNum) : "—"}
+                    </Td>
+                    <Td numeric nowrap className="font-semibold">
+                      {money.format(valueNum)}
+                    </Td>
+                  </DataTableRow>
+                );
+              })}
+            </DataTableBody>
+          </DataTable>
         )}
       </SectionCard>
     </div>

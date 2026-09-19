@@ -62,19 +62,11 @@ const EXCLUDED_PREFIXES: readonly string[] = ["platform/", "components/ui/"];
  * screenshot first, then the rest of Accounting, then the operational
  * inventory/stock pages, then the remaining long tail.
  *
- * Progress: 19 of 36 migrated (trial balance, growth customers, CMS billing,
+ * Progress: 26 of 36 migrated (trial balance, growth customers, CMS billing,
  * CMS product sync, inventory warehouses, plus the shared report table's
  * consumers are unchanged pending a `report-table.tsx` refactor).
  */
 const TABLE_MIGRATION_BACKLOG: readonly string[] = [
-  // — Inventory / stock / products —
-  "dashboard/inventory/documents-section.tsx",
-  "dashboard/inventory/purchases-section.tsx",
-  "dashboard/inventory/stock-section.tsx",
-  "dashboard/products/price-lists-section.tsx",
-  "dashboard/products/products-list-section.tsx",
-  "dashboard/stock/documents-section.tsx",
-  "dashboard/stock/stock-levels-section.tsx",
   // — Reports: all four share report-table.tsx, which should be migrated once —
   "dashboard/reports/drill-down-panel.tsx",
   "dashboard/reports/ledger-report-view.tsx",

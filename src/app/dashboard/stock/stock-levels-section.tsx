@@ -19,6 +19,7 @@ import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, inputClass } from "../ui";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "../page-chrome";
 import { type Warehouse, warehouseErrorMessage } from "./warehouses-section";
+import { DataTable, DataTableBody, DataTableFoot, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface StockItem {
   id: string;
@@ -286,90 +287,71 @@ export function StockLevelsSection({ locationId: controlledLocationId }: { locat
             <EmptyState>کالایی با این فیلترها پیدا نشد.</EmptyState>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/60">
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
-                    کالا
-                  </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
-                    ردیابی
-                  </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
-                    موجودی و نقطه سفارش
-                  </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
-                    بهای تمام‌شده
-                  </th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">
-                    ارزش کل
-                  </th>
-                  <th className="py-3 pe-4 text-start text-xs font-medium text-muted-foreground sm:pe-5 sm:text-sm">
-                    وضعیت
-                  </th>
+          <DataTable caption="موجودی کالاها و نقطه سفارش" tableClassName="min-w-[760px]">
+            <DataTableHead>
+              <Th>کالا</Th>
+              <Th>ردیابی</Th>
+              <Th>موجودی و نقطه سفارش</Th>
+              <Th numeric>بهای تمام‌شده</Th>
+              <Th numeric>ارزش کل</Th>
+              <Th>وضعیت</Th>
+            </DataTableHead>
+            <DataTableBody>
+              {visibleItems.map((item) => (
+                <DataTableRow key={item.id}>
+                  <Td className="sm:px-5">
+                    <span className="font-medium text-foreground">{item.name}</span>
+                    {item.sku ? (
+                      <span className="ms-2 inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {item.sku}
+                      </span>
+                    ) : null}
+                  </Td>
+                  <Td muted className="text-xs">
+                    {TRACKING_LABELS[item.tracking] ?? item.tracking}
+                  </Td>
+                  <Td nowrap className="tabular-nums">
+                    <div className="font-medium text-foreground">{formatQuantity(item.quantity)}</div>
+                    {Number(item.reorderPoint) > 0 && (
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        نقطه سفارش: {formatQuantity(item.reorderPoint)}
+                      </div>
+                    )}
+                  </Td>
+                  <Td numeric nowrap muted>
+                    {item.unitCost == null || item.unitCost === 0 ? "—" : money.format(item.unitCost)}
+                  </Td>
+                  <Td numeric nowrap className="font-semibold">
+                    {money.format(item.valueRial)}
+                  </Td>
+                  <Td className="sm:pe-5">
+                    <StatusBadge tone={STATUS_META[item.level].tone}>{STATUS_META[item.level].label}</StatusBadge>
+                  </Td>
+                </DataTableRow>
+              ))}
+            </DataTableBody>
+            {data ? (
+              <DataTableFoot className="text-xs sm:text-sm">
+                <tr>
+                  <Td muted className="font-semibold sm:px-5">
+                    {visibleItems.length !== data.items.length
+                      ? `نمایش ${toPersianDigits(String(visibleItems.length))} از ${toPersianDigits(String(data.totals.count))} کالا`
+                      : `${toPersianDigits(String(data.totals.count))} کالا`}
+                    {counts.low > 0 ? ` · ${toPersianDigits(String(counts.low))} کم‌موجودی` : ""}
+                    {counts.out > 0 ? ` · ${toPersianDigits(String(counts.out))} ناموجود` : ""}
+                  </Td>
+                  <Td muted className="text-xs sm:px-5">جمع واحدها:</Td>
+                  <Td numeric nowrap className="font-semibold">
+                    {formatQuantity(data.totals.totalUnits)}
+                  </Td>
+                  <Td muted className="text-xs sm:px-5">جمع ارزش:</Td>
+                  <Td colSpan={2} numeric nowrap className="font-semibold sm:pe-5">
+                    {money.format(Number(data.totals.totalValueRial))}
+                  </Td>
                 </tr>
-              </thead>
-              <tbody>
-                {visibleItems.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-900/30"
-                  >
-                    <td className="px-4 py-3 sm:px-5">
-                      <span className="font-medium text-foreground">{item.name}</span>
-                      {item.sku ? (
-                        <span className="ms-2 inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                          {item.sku}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {TRACKING_LABELS[item.tracking] ?? item.tracking}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 tabular-nums">
-                      <div className="font-medium text-foreground">{formatQuantity(item.quantity)}</div>
-                      {Number(item.reorderPoint) > 0 && (
-                        <div className="mt-0.5 text-xs text-muted-foreground">
-                          نقطه سفارش: {formatQuantity(item.reorderPoint)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground tabular-nums">
-                      {item.unitCost == null || item.unitCost === 0 ? "—" : money.format(item.unitCost)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 font-semibold tabular-nums text-foreground">
-                      {money.format(item.valueRial)}
-                    </td>
-                    <td className="py-3 pe-4 sm:pe-5">
-                      <StatusBadge tone={STATUS_META[item.level].tone}>{STATUS_META[item.level].label}</StatusBadge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              {data ? (
-                <tfoot>
-                  <tr className="border-t border-border/80 bg-muted/60 text-xs sm:text-sm">
-                    <td className="px-4 py-3 font-semibold text-muted-foreground sm:px-5">
-                      {visibleItems.length !== data.items.length
-                        ? `نمایش ${toPersianDigits(String(visibleItems.length))} از ${toPersianDigits(String(data.totals.count))} کالا`
-                        : `${toPersianDigits(String(data.totals.count))} کالا`}
-                      {counts.low > 0 ? ` · ${toPersianDigits(String(counts.low))} کم‌موجودی` : ""}
-                      {counts.out > 0 ? ` · ${toPersianDigits(String(counts.out))} ناموجود` : ""}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground sm:px-5">جمع واحدها:</td>
-                    <td className="whitespace-nowrap px-4 py-3 font-semibold tabular-nums">
-                      {formatQuantity(data.totals.totalUnits)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground sm:px-5">جمع ارزش:</td>
-                    <td colSpan={2} className="whitespace-nowrap py-3 pe-4 font-semibold tabular-nums sm:pe-5">
-                      {money.format(Number(data.totals.totalValueRial))}
-                    </td>
-                  </tr>
-                </tfoot>
-              ) : null}
-            </table>
-          </div>
+              </DataTableFoot>
+            ) : null}
+          </DataTable>
         )}
       </SectionCard>
     </div>

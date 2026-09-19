@@ -16,6 +16,7 @@ import { api, Field, inputClass } from "../ui";
 import { EmptyState, SectionCard, SectionCardSkeleton } from "../page-chrome";
 import type { VariantSummary } from "@/lib/accessories-service";
 import { SearchField } from "@/app/dashboard/filters";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 const PAGE_SIZES = [10, 20, 50] as const;
 
@@ -145,44 +146,40 @@ export function ProductsListSection({ apiBase }: { apiBase: string }) {
             <EmptyState>کالایی ثبت نشده است؛ از «افزودن محصول» اولین کالا را ثبت کنید.</EmptyState>
           </div>
         ) : (
-          <div className="min-w-0 overflow-x-auto">
-            <table className="w-full min-w-[52rem] text-sm">
-              <thead>
-                <tr className="border-b border-border/80 bg-muted/60 text-xs text-muted-foreground">
-                  <th className="px-3 py-3 text-start font-medium">#</th>
-                  <th className="px-3 py-3 text-start font-medium">نام</th>
-                  <th className="px-3 py-3 text-start font-medium">کد کالا</th>
-                  <th className="px-3 py-3 text-start font-medium">بارکد</th>
-                  <th className="px-3 py-3 text-start font-medium">واحد اصلی</th>
-                  <th className="px-3 py-3 text-start font-medium">موجودی</th>
-                  <th className="px-3 py-3 text-start font-medium">قیمت فروش</th>
-                  <th className="px-3 py-3 text-start font-medium">قیمت خرید</th>
-                  <th className="px-3 py-3 text-start font-medium" aria-label="عملیات" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/80">
-                {rows.map((item, index) => (
-                  <ProductRow
-                    key={item.id}
-                    item={item}
-                    index={safePage * pageSize + index + 1}
-                    apiBase={apiBase}
-                    busy={busy}
-                    setBusy={setBusy}
-                    panelOpen={panelFor === item.id}
-                    onTogglePanel={() => {
-                      setNotice("");
-                      setPanelFor((current) => (current === item.id ? null : item.id));
-                    }}
-                    onSaved={() => {
-                      setNotice("ذخیره شد.");
-                      load();
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable caption="فهرست کالاها و قیمت‌ها" tableClassName="min-w-[52rem]">
+            <DataTableHead>
+              <Th>#</Th>
+              <Th>نام</Th>
+              <Th>کد کالا</Th>
+              <Th>بارکد</Th>
+              <Th>واحد اصلی</Th>
+              <Th numeric>موجودی</Th>
+              <Th numeric>قیمت فروش</Th>
+              <Th numeric>قیمت خرید</Th>
+              <Th aria-label="عملیات" />
+            </DataTableHead>
+            <DataTableBody>
+              {rows.map((item, index) => (
+                <ProductRow
+                  key={item.id}
+                  item={item}
+                  index={safePage * pageSize + index + 1}
+                  apiBase={apiBase}
+                  busy={busy}
+                  setBusy={setBusy}
+                  panelOpen={panelFor === item.id}
+                  onTogglePanel={() => {
+                    setNotice("");
+                    setPanelFor((current) => (current === item.id ? null : item.id));
+                  }}
+                  onSaved={() => {
+                    setNotice("ذخیره شد.");
+                    load();
+                  }}
+                />
+              ))}
+            </DataTableBody>
+          </DataTable>
         )}
         {filtered && filtered.length > 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/80 bg-muted/40 px-4 py-3">
@@ -228,9 +225,9 @@ function ProductRow({
   const isFamily = item.kind === "variant_parent";
   return (
     <>
-      <tr className={isFamily ? "bg-muted/60" : ""}>
-        <td className="px-3 py-3 text-xs text-muted-foreground">{toPersianDigits(index)}</td>
-        <td className="px-3 py-3">
+      <DataTableRow className={isFamily ? "bg-muted/60" : undefined}>
+        <Td muted className="text-xs">{toPersianDigits(index)}</Td>
+        <Td>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium text-foreground">{item.name}</span>
             {isFamily ? (
@@ -253,33 +250,33 @@ function ProductRow({
               </span>
             ) : null}
           </div>
-        </td>
-        <td className="px-3 py-3 text-xs text-muted-foreground">{item.sku ?? "—"}</td>
-        <td className="px-3 py-3 text-xs text-muted-foreground" dir="ltr">
+        </Td>
+        <Td muted className="text-xs">{item.sku ?? "—"}</Td>
+        <Td dir="ltr" muted className="text-xs">
           {item.barcode ?? "—"}
-        </td>
-        <td className="px-3 py-3 text-xs text-muted-foreground">{item.unit ?? "عدد"}</td>
-        <td className="px-3 py-3 text-xs">{isFamily ? "—" : formatQuantity(item.quantity)}</td>
-        <td className="px-3 py-3 text-xs">
+        </Td>
+        <Td muted className="text-xs">{item.unit ?? "عدد"}</Td>
+        <Td numeric className="text-xs">{isFamily ? "—" : formatQuantity(item.quantity)}</Td>
+        <Td numeric className="text-xs">
           {isFamily ? "—" : item.unitPrice != null ? money.format(item.unitPrice) : "تعیین نشده"}
-        </td>
-        <td className="px-3 py-3 text-xs">
+        </Td>
+        <Td numeric className="text-xs">
           {isFamily ? "—" : item.unitCost != null ? money.format(item.unitCost) : "تعیین نشده"}
-        </td>
-        <td className="px-3 py-3">
+        </Td>
+        <Td>
           {!isFamily ? (
             <Button type="button" variant="outline" size="sm" className="min-h-8 px-2 text-xs" onClick={onTogglePanel} disabled={busy}>
               ورود کالا / قیمت
             </Button>
           ) : null}
-        </td>
-      </tr>
+        </Td>
+      </DataTableRow>
       {panelOpen ? (
-        <tr>
-          <td colSpan={9} className="px-3 py-3">
+        <DataTableRow>
+          <Td colSpan={9}>
             <StockPanel item={item} busy={busy} setBusy={setBusy} onSaved={onSaved} apiBase={apiBase} />
-          </td>
-        </tr>
+          </Td>
+        </DataTableRow>
       ) : null}
     </>
   );

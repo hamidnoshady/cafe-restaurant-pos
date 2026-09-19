@@ -23,6 +23,7 @@ import { useMoney } from "@/components/money/money-context";
 import { api, inputClass } from "../ui";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "../page-chrome";
 import { type Warehouse } from "./warehouses-section";
+import { DataTable, DataTableBody, DataTableFoot, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface WarehouseDocument {
   id: string;
@@ -212,80 +213,74 @@ export function DocumentsSection() {
             </EmptyState>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/60">
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">تاریخ</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">نوع</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">انبار</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">گیرنده / شماره سند</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">اقلام</th>
-                  <th className="px-4 py-3 text-start text-xs font-medium text-muted-foreground sm:px-5 sm:text-sm">مبلغ</th>
-                  <th className="py-3 pe-4 text-end text-xs font-medium text-muted-foreground sm:pe-5 sm:text-sm">جزئیات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((doc) => (
-                  <tr
-                    key={doc.id}
-                    className="cursor-pointer border-b border-border/80 transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.99]"
-                    onClick={() => openDetail(doc.id)}
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      // Space activates a button-role element too; prevent the
-                      // page from scrolling instead of opening the dialog.
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
+          <DataTable caption="اسناد رسید و حواله انبار" tableClassName="min-w-[760px]">
+            <DataTableHead>
+              <Th>تاریخ</Th>
+              <Th>نوع</Th>
+              <Th>انبار</Th>
+              <Th>گیرنده / شماره سند</Th>
+              <Th numeric>اقلام</Th>
+              <Th numeric>مبلغ</Th>
+              <Th className="text-end">جزئیات</Th>
+            </DataTableHead>
+            <DataTableBody>
+              {documents.map((doc) => (
+                <DataTableRow
+                  key={doc.id}
+                  onClick={() => openDetail(doc.id)}
+                  onKeyDown={(e) => {
+                    // Space activates a button-role element too; prevent the
+                    // page from scrolling instead of opening the dialog.
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openDetail(doc.id);
+                    }
+                  }}
+                >
+                  <Td nowrap className="tabular-nums sm:px-5">{formatJalali(doc.created_at)}</Td>
+                  <Td>
+                    {doc.kind === "receipt" ? (
+                      <StatusBadge tone="positive">
+                        <ArrowUpCircleIcon aria-hidden="true" className="size-3.5" />
+                        رسید
+                      </StatusBadge>
+                    ) : (
+                      <StatusBadge tone="neutral">
+                        <ArrowDownCircleIcon aria-hidden="true" className="size-3.5" />
+                        حواله
+                      </StatusBadge>
+                    )}
+                  </Td>
+                  <Td>{doc.location_name}</Td>
+                  <Td className="max-w-[220px] truncate">
+                    {doc.recipient}
+                    {doc.document_number ? (
+                      <span className="text-xs text-muted-foreground"> · سند {toPersianDigits(doc.document_number)}</span>
+                    ) : null}
+                    {!doc.recipient && !doc.document_number ? "—" : null}
+                  </Td>
+                  <Td numeric>{toPersianDigits(String(doc.line_count))}</Td>
+                  <Td numeric nowrap>{money.formatText(doc.total_value_rial)}</Td>
+                  <Td className="text-end sm:pe-5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:bg-muted/60 dark:hover:bg-stone-900/40 hover:text-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         openDetail(doc.id);
-                      }
-                    }}
-                  >
-                    <td className="whitespace-nowrap px-4 py-3 tabular-nums sm:px-5">{formatJalali(doc.created_at)}</td>
-                    <td className="px-4 py-3">
-                      {doc.kind === "receipt" ? (
-                        <StatusBadge tone="positive">
-                          <ArrowUpCircleIcon aria-hidden="true" className="size-3.5" />
-                          رسید
-                        </StatusBadge>
-                      ) : (
-                        <StatusBadge tone="neutral">
-                          <ArrowDownCircleIcon aria-hidden="true" className="size-3.5" />
-                          حواله
-                        </StatusBadge>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">{doc.location_name}</td>
-                    <td className="max-w-[220px] truncate px-4 py-3">
-                      {doc.recipient}
-                      {doc.document_number ? (
-                        <span className="text-xs text-muted-foreground"> · سند {toPersianDigits(doc.document_number)}</span>
-                      ) : null}
-                      {!doc.recipient && !doc.document_number ? "—" : null}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums">{toPersianDigits(String(doc.line_count))}</td>
-                    <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums">{money.formatText(doc.total_value_rial)}</td>
-                    <td className="py-3 pe-4 text-end sm:pe-5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-muted-foreground hover:bg-muted/60 dark:hover:bg-stone-900/40 hover:text-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openDetail(doc.id);
-                        }}
-                        aria-label={`جزئیات سند ${doc.kind === "receipt" ? "رسید" : "حواله"} ${doc.location_name}`}
-                        title="جزئیات سند"
-                      >
-                        <EyeIcon aria-hidden="true" className="size-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      }}
+                      aria-label={`جزئیات سند ${doc.kind === "receipt" ? "رسید" : "حواله"} ${doc.location_name}`}
+                      title="جزئیات سند"
+                    >
+                      <EyeIcon aria-hidden="true" className="size-4" />
+                    </Button>
+                  </Td>
+                </DataTableRow>
+              ))}
+            </DataTableBody>
+          </DataTable>
         )}
       </SectionCard>
 
@@ -346,44 +341,40 @@ export function DocumentsSection() {
                   </p>
                 ) : null}
               </div>
-              <div className="overflow-x-auto rounded-xl border border-border/80">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/60">
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">کالا</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">بچ/لات</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">انقضا</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">تعداد</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">بهای واحد</th>
-                      <th className="px-3 py-2.5 text-start text-xs font-medium text-muted-foreground">ارزش</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.lines.map((line) => (
-                      <tr key={line.id} className="border-b border-border/80 last:border-b-0">
-                        <td className="px-3 py-2.5">{line.item_name}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground">{line.lot_number ?? "—"}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground">
-                          {line.expiry_date ? formatJalali(line.expiry_date) : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatQuantity(line.quantity)}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{money.formatText(line.unit_cost)}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 font-medium tabular-nums">{money.formatText(line.value_rial)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-muted/60">
-                      <td colSpan={5} className="px-3 py-2.5 text-xs font-semibold text-muted-foreground">
-                        جمع کل
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold tabular-nums">
-                        {money.formatText(detail.document.total_value_rial)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <DataTable caption="اقلام این سند انبار" tableClassName="min-w-[560px]">
+                <DataTableHead>
+                  <Th>کالا</Th>
+                  <Th>بچ/لات</Th>
+                  <Th>انقضا</Th>
+                  <Th numeric>تعداد</Th>
+                  <Th numeric>بهای واحد</Th>
+                  <Th numeric>ارزش</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {detail.lines.map((line) => (
+                    <DataTableRow key={line.id}>
+                      <Td>{line.item_name}</Td>
+                      <Td nowrap muted className="text-xs">{line.lot_number ?? "—"}</Td>
+                      <Td nowrap muted className="text-xs">
+                        {line.expiry_date ? formatJalali(line.expiry_date) : "—"}
+                      </Td>
+                      <Td numeric nowrap>{formatQuantity(line.quantity)}</Td>
+                      <Td numeric nowrap>{money.formatText(line.unit_cost)}</Td>
+                      <Td numeric nowrap>{money.formatText(line.value_rial)}</Td>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+                <DataTableFoot>
+                  <tr>
+                    <Td colSpan={5} className="text-xs font-semibold text-muted-foreground">
+                      جمع کل
+                    </Td>
+                    <Td numeric nowrap>
+                      {money.formatText(detail.document.total_value_rial)}
+                    </Td>
+                  </tr>
+                </DataTableFoot>
+              </DataTable>
             </div>
           )}
         </DialogContent>
