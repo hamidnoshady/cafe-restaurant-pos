@@ -9,7 +9,7 @@
 import { query } from "../db";
 import { getConnection } from "./connections-service";
 import { drainOutbox } from "./outbox-service";
-import { applyIngestEvent } from "./webhook-ingest-service";
+import { reprocessExistingIngestEvent } from "./webhook-ingest-service";
 import { wpContentCounts } from "./wp-content-service";
 
 export interface WpOverviewStats {
@@ -109,7 +109,7 @@ export async function wpOverviewStats(
       WHERE business_id = $1
         AND connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
         ${connectionId ? "AND connection_id = $2" : ""}
-        AND status IN ('pending', 'failed')
+        AND status IN ('pending', 'failed', 'deferred')
       GROUP BY status`,
     connectionId ? [businessId, connectionId] : [businessId],
   );
@@ -130,7 +130,7 @@ export async function wpOverviewStats(
     pendingJobs: (outbox.get("pending") ?? 0) + (outbox.get("processing") ?? 0) + (outbox.get("failed") ?? 0),
     failedJobs: outbox.get("failed") ?? 0,
     deadJobs: outbox.get("dead") ?? 0,
-    pendingInboxEvents: inbox.get("pending") ?? 0,
+    pendingInboxEvents: (inbox.get("pending") ?? 0) + (inbox.get("deferred") ?? 0),
     failedInboxEvents: inbox.get("failed") ?? 0,
   };
 }
@@ -149,6 +149,14 @@ export interface WpStoreCustomersPage {
   customers: WpStoreCustomerRow[];
   /** All matched mappings, including the ones past the returned page. */
   total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface WpStoreCustomerOptions {
+  page?: number;
+  pageSize?: number;
+  search?: string;
 }
 
 /**
@@ -161,14 +169,25 @@ export interface WpStoreCustomersPage {
  * falls back to the mapping's own update time: a store that only ever
  * pull-syncs (REST scheduled pulls, plugin exports) has no `customer.*`
  * inbox events, and without the fallback the column was blank for exactly
- * those stores. The page is capped at 500 rows; `total` is the *full*
- * matched count so the UI can say «نمایش ۵۰۰ نخست از N» instead of
- * silently implying 500 customers is everyone.
+ * those stores. Pagination is server-side; `total` is the *full* matched
+ * count so the UI can say «صفحه ۲ از N» without downloading the whole CRM.
  */
 export async function wpStoreCustomers(
   businessId: string,
   connectionId: string,
+  options: WpStoreCustomerOptions = {},
 ): Promise<WpStoreCustomersPage> {
+  const page = Math.max(1, Math.floor(options.page ?? 1));
+  const pageSize = Math.min(100, Math.max(10, Math.floor(options.pageSize ?? 25)));
+  const offset = (page - 1) * pageSize;
+  const search = options.search?.trim().slice(0, 200) ?? "";
+  const params: unknown[] = [businessId, connectionId, pageSize, offset];
+  const searchSql = search
+    ? (() => {
+        params.push(`%${search}%`);
+        return `AND (m.remote_id ILIKE $${params.length} OR c.name ILIKE $${params.length} OR c.phone ILIKE $${params.length} OR c.email ILIKE $${params.length})`;
+      })()
+    : "";
   const { rows } = await query<{
     remote_id: string;
     local_id: string;
@@ -203,9 +222,10 @@ export async function wpStoreCustomers(
       WHERE m.business_id = $1 AND m.connection_id = $2
         AND m.connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
         AND m.entity_type = 'customer'
+        ${searchSql}
       ORDER BY name, m.remote_id
-      LIMIT 500`,
-    [businessId, connectionId],
+      LIMIT $3 OFFSET $4`,
+    params,
   );
   return {
     customers: rows.map((r) => ({
@@ -218,6 +238,8 @@ export async function wpStoreCustomers(
       lastSeen: r.last_seen,
     })),
     total: Number(rows[0]?.total_count ?? 0),
+    page,
+    pageSize,
   };
 }
 
@@ -240,10 +262,12 @@ export interface WpQueueRow {
 }
 
 export interface WpQueueFilterOptions {
-  status?: "open" | "pending" | "processing" | "failed" | "dead" | "sent" | "all";
+  status?: "open" | "pending" | "processing" | "failed" | "dead" | "sent" | "deferred" | "all";
   direction?: "all" | "out" | "in";
   search?: string;
   limit?: number;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface WpQueueSummary {
@@ -253,6 +277,7 @@ export interface WpQueueSummary {
   failed: number;
   dead: number;
   sent: number;
+  deferred: number;
   inboundFailed: number;
   outboundFailed: number;
 }
@@ -266,7 +291,12 @@ export async function wpQueue(
   const statusFilter = options?.status ?? "open";
   const direction = options?.direction ?? "all";
   const search = options?.search?.trim() || "";
-  const limit = Math.min(Math.max(1, options?.limit ?? 200), 500);
+  const page = Math.max(1, Math.floor(options?.page ?? 1));
+  const pageSize = Math.min(100, Math.max(10, Math.floor(options?.pageSize ?? options?.limit ?? 25)));
+  const limit = options?.pageSize === undefined && options?.limit !== undefined
+    ? Math.min(Math.max(1, Math.floor(options.limit)), 500)
+    : pageSize;
+  const offset = (page - 1) * pageSize;
 
   const outboxParts: string[] = [
     "business_id = $1",
@@ -280,16 +310,16 @@ export async function wpQueue(
   ];
 
   if (statusFilter === "open") {
-    outboxParts.push("status IN ('pending', 'failed', 'processing', 'dead')");
-    inboxParts.push("status IN ('failed', 'pending')");
+    outboxParts.push("status IN ('pending', 'failed', 'processing', 'dead', 'needs_review')");
+    inboxParts.push("status IN ('failed', 'pending', 'deferred')");
   } else if (statusFilter === "pending") {
     outboxParts.push("status IN ('pending', 'processing')");
-    inboxParts.push("status = 'pending'");
+    inboxParts.push("status IN ('pending', 'deferred')");
   } else if (statusFilter === "processing") {
     outboxParts.push("status = 'processing'");
     inboxParts.push("1=0");
   } else if (statusFilter === "failed") {
-    outboxParts.push("status IN ('failed', 'dead')");
+    outboxParts.push("status IN ('failed', 'dead', 'needs_review')");
     inboxParts.push("status = 'failed'");
   } else if (statusFilter === "dead") {
     outboxParts.push("status = 'dead'");
@@ -297,6 +327,9 @@ export async function wpQueue(
   } else if (statusFilter === "sent") {
     outboxParts.push("status = 'sent'");
     inboxParts.push("status = 'processed'");
+  } else if (statusFilter === "deferred") {
+    outboxParts.push("1=0");
+    inboxParts.push("status = 'deferred'");
   }
   // statusFilter === 'all' adds no extra status constraint
 
@@ -328,11 +361,11 @@ export async function wpQueue(
 
   let combinedSql: string;
   if (direction === "out") {
-    combinedSql = `${outboxSql} ORDER BY created_at DESC LIMIT ${limit}`;
+    combinedSql = `${outboxSql} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
   } else if (direction === "in") {
-    combinedSql = `${inboxSql} ORDER BY created_at DESC LIMIT ${limit}`;
+    combinedSql = `${inboxSql} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
   } else {
-    combinedSql = `(${outboxSql}) UNION ALL (${inboxSql}) ORDER BY created_at DESC LIMIT ${limit}`;
+    combinedSql = `(${outboxSql}) UNION ALL (${inboxSql}) ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
   }
 
   const { rows } = await query<{
@@ -392,12 +425,13 @@ export async function wpQueueSummary(businessId: string, connectionId: string): 
   const outbox = new Map(outboxRes.rows.map((r) => [r.status, Number(r.n)]));
   const inbox = new Map(inboxRes.rows.map((r) => [r.status, Number(r.n)]));
 
-  const pending = (outbox.get("pending") ?? 0) + (inbox.get("pending") ?? 0);
+  const deferred = inbox.get("deferred") ?? 0;
+  const pending = (outbox.get("pending") ?? 0) + (inbox.get("pending") ?? 0) + deferred;
   const processing = outbox.get("processing") ?? 0;
-  const failed = (outbox.get("failed") ?? 0) + (inbox.get("failed") ?? 0);
+  const failed = (outbox.get("failed") ?? 0) + (outbox.get("needs_review") ?? 0) + (inbox.get("failed") ?? 0);
   const dead = outbox.get("dead") ?? 0;
   const sent = (outbox.get("sent") ?? 0) + (inbox.get("processed") ?? 0);
-  const outboundFailed = (outbox.get("failed") ?? 0) + (outbox.get("dead") ?? 0);
+  const outboundFailed = (outbox.get("failed") ?? 0) + (outbox.get("dead") ?? 0) + (outbox.get("needs_review") ?? 0);
   const inboundFailed = inbox.get("failed") ?? 0;
   const total =
     Array.from(outbox.values()).reduce((a, b) => a + b, 0) +
@@ -410,6 +444,7 @@ export async function wpQueueSummary(businessId: string, connectionId: string): 
     failed,
     dead,
     sent,
+    deferred,
     inboundFailed,
     outboundFailed,
   };
@@ -473,25 +508,8 @@ export async function retryWpQueueRow(
     const connection = await getConnection(businessId, connectionId);
     if (!connection) return { ok: false, error: "connection_not_found" };
 
-    await query(
-      `UPDATE integration_webhook_events
-          SET status = 'pending', error = NULL, processed_at = NULL
-        WHERE id = $1`,
-      [row.id],
-    );
-
-    try {
-      const outcome = await applyIngestEvent(connection, {
-        topic: row.event_topic,
-        deliveryId: row.delivery_id,
-        payload: (row.payload ?? {}) as Record<string, unknown>,
-      });
-      return { ok: outcome.status !== "failed", status: outcome.status, error: "error" in outcome ? outcome.error : undefined };
-    } catch (err) {
-      const message = (err as Error).message;
-      await query(`UPDATE integration_webhook_events SET status = 'failed', error = $2 WHERE id = $1`, [row.id, message]);
-      return { ok: false, status: "failed", error: message };
-    }
+    const outcome = await reprocessExistingIngestEvent(connection, row.id);
+    return { ok: outcome.status !== "failed", status: outcome.status, error: "error" in outcome ? outcome.error : undefined };
   }
 
   return { ok: false, error: "not_found" };
@@ -516,10 +534,11 @@ export async function retryAllFailedWpQueue(
   );
 
   // 2. Fetch failed inbox events and re-process them
-  const { rows: failedInbox } = await query<{ id: string; event_topic: string; delivery_id: string; payload: unknown }>(
-    `SELECT id, event_topic, delivery_id, payload
+  const { rows: failedInbox } = await query<{ id: string }>(
+    `SELECT id
        FROM integration_webhook_events
-      WHERE business_id = $1 AND connection_id = $2 AND status = 'failed'`,
+      WHERE business_id = $1 AND connection_id = $2 AND status = 'failed'
+      ORDER BY created_at ASC`,
     [businessId, connectionId],
   );
 
@@ -527,22 +546,8 @@ export async function retryAllFailedWpQueue(
   let inboxRetried = 0;
   if (connection) {
     for (const item of failedInbox) {
-      await query(
-        `UPDATE integration_webhook_events
-            SET status = 'pending', error = NULL, processed_at = NULL
-          WHERE id = $1`,
-        [item.id],
-      );
-      try {
-        await applyIngestEvent(connection, {
-          topic: item.event_topic,
-          deliveryId: item.delivery_id,
-          payload: (item.payload ?? {}) as Record<string, unknown>,
-        });
-        inboxRetried++;
-      } catch (err) {
-        await query(`UPDATE integration_webhook_events SET status = 'failed', error = $2 WHERE id = $1`, [item.id, (err as Error).message]);
-      }
+      const outcome = await reprocessExistingIngestEvent(connection, item.id);
+      if (outcome.status !== "failed") inboxRetried++;
     }
 
     if (connection.status === "active" && connection.link_mode === "rest_api" && (outboxCount ?? 0) > 0) {

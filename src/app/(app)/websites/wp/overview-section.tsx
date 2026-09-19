@@ -6,7 +6,7 @@
  * (همگام‌سازی) per connection. All numbers come from local mirrors so the
  * page behaves identically in plugin and REST link modes.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,12 +21,12 @@ import {
   AlertTriangleIcon,
 } from "lucide-react";
 import { api, errorMessageOrRaw } from "@/app/dashboard/ui";
-import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import type { WpOverviewStats } from "@/lib/integrations/wp-manager-service";
 import { PluginWaitNote } from "./plugin-wait-note";
+import { useWpStore } from "./wp-store-context";
 
 interface Connection {
   id: string;
@@ -121,45 +121,11 @@ function SyncRow({ label, value }: { label: string; value: string | null }) {
 }
 
 export function WpOverviewSection() {
-  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const { connections, selectedId, setSelectedId, selectedConnection: selected, reloadConnections } = useWpStore();
   const [stats, setStats] = useState<WpOverviewStats | null>(null);
-  const [selectedId, setSelectedId] = useState<string>("");
   const [busy, setBusy] = useState<SyncKind | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const locked = useFeatureLocked();
-
-  const load = useCallback(async () => {
-    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
-    // would only light the console with 403s behind the grayed-out preview.
-    if (locked) {
-      setConnections([]);
-      return;
-    }
-    setError("");
-    const connRes = await api<{ connections: Connection[]; error?: string }>(
-      "/api/integrations/connections?provider=woocommerce",
-    );
-    if (connRes.ok) {
-      setConnections(connRes.data.connections);
-      setSelectedId((current) => current || connRes.data.connections[0]?.id || "");
-    } else {
-      // A refused read must land somewhere visible. The old flow left
-      // `connections` null, which rendered the skeleton forever — a page that
-      // looked like a slow load for as long as the member cared to wait.
-      setConnections([]);
-      setError(errorMessageOrRaw(String(connRes.data?.error ?? "")) || "خطا در خواندن اتصال‌ها");
-    }
-  }, [locked]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const selected = useMemo(
-    () => connections?.find((c) => c.id === selectedId) ?? connections?.[0] ?? null,
-    [connections, selectedId],
-  );
 
   // One stats fetch per selected connection — never a business-wide one
   // racing it. The tiles describe the store the member is looking at, and a
@@ -199,7 +165,7 @@ export function WpOverviewSection() {
     } else {
       setNotice(`همگام‌سازی ${SYNC_LABELS[kind]} انجام شد.`);
     }
-    setTimeout(load, 400);
+    setTimeout(() => void reloadConnections(), 400);
     setTimeout(() => setStatsKey((k) => k + 1), 600);
   }
 
@@ -207,26 +173,9 @@ export function WpOverviewSection() {
     return <SectionCardSkeleton rows={6} />;
   }
 
-  if (connections.length === 0 && error) {
-    return (
-      <EmptyState>
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <AlertTriangleIcon className="size-10 text-muted-foreground/60" />
-          <p className="font-semibold text-foreground">اتصال‌ها خوانده نشد</p>
-          <p className="max-w-md text-sm text-red-600 dark:text-red-400">{error}</p>
-          <Button variant="outline" onClick={() => void load()}>
-            <RefreshCwIcon className="size-4" />
-            تلاش دوباره
-          </Button>
-        </div>
-      </EmptyState>
-    );
-  }
-
   if (connections.length === 0) {
     return (
       <div className="space-y-4">
-        {error && !locked ? <EmptyState>{error}</EmptyState> : null}
         <EmptyState>
           <div className="flex flex-col items-center gap-3 py-8 text-center">
             <PlugIcon className="size-10 text-muted-foreground/60" />

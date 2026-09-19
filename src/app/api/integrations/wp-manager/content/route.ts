@@ -80,6 +80,9 @@ export const POST = withTenantScope(async (request: Request) => {
   if (!connection || connection.provider !== "woocommerce") {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+  if (connection.status === "paused") {
+    return NextResponse.json({ error: "connection_paused" }, { status: 409 });
+  }
 
   if (connection.link_mode === "plugin") {
     await enqueueContentExport(session.businessId, body.connectionId);

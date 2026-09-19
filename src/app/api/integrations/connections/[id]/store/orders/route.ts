@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getConnection } from "@/lib/integrations/connections-service";
-import { enqueueOperation, storeOrderKnownFor, storeOrdersFor } from "@/lib/integrations/woo-ops-service";
+import { enqueueOperation, storeOrderKnownFor, storeOrdersPageFor } from "@/lib/integrations/woo-ops-service";
 
 /**
  * The store's orders, and the two operations an owner asks for against one:
@@ -12,7 +12,7 @@ import { enqueueOperation, storeOrderKnownFor, storeOrdersFor } from "@/lib/inte
  * the outbox means the same button works for both connection modes and gets
  * retry, backoff and a visible trail for free.
  */
-export const GET = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
+export const GET = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -20,8 +20,20 @@ export const GET = withTenantScope(async (_request: Request, context: { params: 
   const connection = await getConnection(session.businessId, id);
   if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const orders = await storeOrdersFor(session.businessId, id, 100);
-  return NextResponse.json({ orders });
+  const url = new URL(request.url);
+  const parsedPage = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+  const parsedPageSize = Number.parseInt(url.searchParams.get("pageSize") ?? "25", 10);
+  const page = Math.max(1, Number.isFinite(parsedPage) ? parsedPage : 1);
+  const pageSize = Math.min(50, Math.max(10, Number.isFinite(parsedPageSize) ? parsedPageSize : 25));
+  const search = (url.searchParams.get("search") ?? "").trim().slice(0, 200);
+  const status = (url.searchParams.get("status") ?? "").trim().slice(0, 80);
+  const ingestStatus = (url.searchParams.get("ingestStatus") ?? "").trim().slice(0, 80);
+  const viewParam = (url.searchParams.get("view") ?? "").trim();
+  const view = ["imported", "unrecorded", "queued", "attention"].includes(viewParam)
+    ? (viewParam as "imported" | "unrecorded" | "queued" | "attention")
+    : "";
+  const result = await storeOrdersPageFor(session.businessId, id, { page, pageSize, search, status, ingestStatus, view });
+  return NextResponse.json(result);
 });
 
 /**
@@ -40,6 +52,7 @@ export const POST = withTenantScope(async (request: Request, context: { params: 
 
   const connection = await getConnection(session.businessId, id);
   if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (connection.status === "paused") return NextResponse.json({ error: "connection_paused" }, { status: 409 });
 
   let body: { action?: string; remoteId?: string; status?: string; amount?: string; reason?: string };
   try {

@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { createWooCommerceClient, wooApiUrl, wooAuthHeader, wpApiUrl, WooCommerceError } from "./woocommerce-client";
+import { createWooCommerceClient, wooApiUrl, wooAuthHeader, wpApiUrl, wpAuthHeader, WooCommerceError } from "./woocommerce-client";
 
 const credentials = {
   baseUrl: "https://shop.example.com",
   consumerKey: "ck_123",
   consumerSecret: "cs_456",
+};
+
+const wpCredentials = {
+  ...credentials,
+  wpUsername: "wp_user",
+  wpApplicationPassword: "app pass",
 };
 
 /** A response with no paging header — what every existing call site assumes. */
@@ -22,9 +28,20 @@ function paged(items: unknown[], totalPages = 1) {
   };
 }
 
-describe("wooAuthHeader", () => {
-  it("is Basic base64(consumerKey:consumerSecret)", () => {
+describe("REST auth headers", () => {
+  it("uses Woo consumer credentials only for wc/v3", () => {
     expect(wooAuthHeader(credentials)).toBe(`Basic ${Buffer.from("ck_123:cs_456").toString("base64")}`);
+  });
+
+  it("uses separate WordPress Application Password credentials for wp/v2", () => {
+    expect(wpAuthHeader(wpCredentials)).toBe(`Basic ${Buffer.from("wp_user:app pass").toString("base64")}`);
+  });
+
+  it("refuses wp/v2 calls without WordPress credentials instead of reusing Woo keys", async () => {
+    const fetch = vi.fn().mockResolvedValue(json(200, []));
+    const client = createWooCommerceClient(credentials, fetch);
+    await expect(client.listTaxonomies()).rejects.toMatchObject({ message: "wordpress_credentials_missing", status: 401 });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 
@@ -167,7 +184,7 @@ describe("taxonomies", () => {
         category: { name: "Categories", slug: "category", rest_base: "categories", types: ["post"] },
       }),
     );
-    const client = createWooCommerceClient(credentials, fetch);
+    const client = createWooCommerceClient(wpCredentials, fetch);
     const taxonomies = await client.listTaxonomies();
     expect(taxonomies.map((t) => t.slug)).toEqual(["product_cat", "brand"]);
     expect(fetch).toHaveBeenCalledWith(
@@ -178,7 +195,7 @@ describe("taxonomies", () => {
 
   it("lists a custom taxonomy's terms through its own rest_base", async () => {
     const fetch = vi.fn().mockResolvedValue(paged([{ id: 3, name: "نایک", slug: "nike", parent: 0, count: 12 }], 1));
-    const client = createWooCommerceClient(credentials, fetch);
+    const client = createWooCommerceClient(wpCredentials, fetch);
     const terms = await client.listTerms("brand");
     expect(terms[0]).toMatchObject({ id: 3, taxonomy: "brand" });
     expect(fetch).toHaveBeenCalledWith(
@@ -206,7 +223,7 @@ describe("taxonomies", () => {
 describe("WordPress core content (wp/v2)", () => {
   it("lists a content type over wp/v2 with a view context by default", async () => {
     const fetch = vi.fn().mockResolvedValue(paged([{ id: 1, title: { rendered: "خانه" } }], 3));
-    const client = createWooCommerceClient(credentials, fetch);
+    const client = createWooCommerceClient(wpCredentials, fetch);
     const { items, totalPages } = await client.wpListPage("pages", { page: 2, per_page: 100 });
     expect(items).toHaveLength(1);
     expect(totalPages).toBe(3);
@@ -218,7 +235,7 @@ describe("WordPress core content (wp/v2)", () => {
 
   it("creates a post with POST to the collection when no id is given", async () => {
     const fetch = vi.fn().mockResolvedValue(json(201, { id: 99 }));
-    const client = createWooCommerceClient(credentials, fetch);
+    const client = createWooCommerceClient(wpCredentials, fetch);
     await client.wpUpsertPost("posts", { title: "تازه", status: "draft" });
     expect(fetch).toHaveBeenCalledWith(
       "https://shop.example.com/wp-json/wp/v2/posts",
@@ -228,7 +245,7 @@ describe("WordPress core content (wp/v2)", () => {
 
   it("updates a post with POST to the item path — wp/v2 has no PUT for content", async () => {
     const fetch = vi.fn().mockResolvedValue(json(200, { id: 42 }));
-    const client = createWooCommerceClient(credentials, fetch);
+    const client = createWooCommerceClient(wpCredentials, fetch);
     await client.wpUpsertPost("pages", { title: "به‌روز" }, 42);
     expect(fetch).toHaveBeenCalledWith(
       "https://shop.example.com/wp-json/wp/v2/pages/42",

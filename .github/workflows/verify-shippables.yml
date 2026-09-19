@@ -74,8 +74,7 @@ jobs:
           $files = @(
             "electron/main.js",
             "electron/preload.js",
-            "electron/scripts/prepare-wincodesign-cache.js",
-            "windows/usb-printer-bridge.js"
+            "electron/scripts/prepare-wincodesign-cache.js"
           )
           foreach ($f in $files) {
             node --check $f
@@ -116,10 +115,6 @@ jobs:
             exit 1
           }
 
-          if (-not (Test-Path -LiteralPath "windows/cafe-pos.ico")) {
-            Write-Host "::error::windows/cafe-pos.ico is missing; electron-builder references it for the app and installer icons."
-            exit 1
-          }
           Write-Host "packaging constraints ok"
 
   plugin:
@@ -166,12 +161,12 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $bad = @()
-          # `-Include` is only honoured when -Path ends in a wildcard; with a
-          # bare directory it silently matches nothing and this check would
-          # "pass" without reading a single file. The count assertion below is
-          # the backstop for that whole class of mistake.
+          # Filter the extension after a LiteralPath traversal. PowerShell's
+          # `-Include` has surprising wildcard rules and once matched nothing
+          # here; the count assertion below is the backstop for that whole
+          # class of mistake.
           $scanned = 0
-          foreach ($f in Get-ChildItem -Path wordpress-plugin\* -Recurse -File -Include *.php, *.txt) {
+          foreach ($f in Get-ChildItem -LiteralPath "wordpress-plugin" -Recurse -File | Where-Object { $_.Extension -in @(".php", ".txt") }) {
             $scanned++
             $bytes = [IO.File]::ReadAllBytes($f.FullName)
             if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
@@ -247,16 +242,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # These two .ps1 files are downloaded and executed on a cafe PC. Nothing
-      # else in the repo executes them, so a syntax error ships silently and
+      # This .ps1 file is downloaded and executed on a cafe PC. Nothing
+      # else in the repo executes it, so a syntax error ships silently and
       # only shows up when a cashier clicks "install the printer connector".
       # Parsing is done without running a single line.
       - name: PowerShell scripts parse
         run: |
           $ErrorActionPreference = "Stop"
           $files = @(
-            "public/windows/cafe-pos-print-agent.ps1",
-            "windows/Install-CafePOS.ps1"
+            "public/windows/cafe-pos-print-connector.ps1"
           )
           $failed = $false
           foreach ($f in $files) {

@@ -9,6 +9,7 @@
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
 import { AskAssistant } from "@/components/ai/ask-assistant";
+import { WpStoreProvider } from "./wp-store-context";
 
 export function WpManagerShell({ children }: { children: React.ReactNode }) {
   return (
@@ -26,7 +27,9 @@ export function WpManagerShell({ children }: { children: React.ReactNode }) {
           </>
         }
       />
-      <div className="min-w-0">{children}</div>
+      <WpStoreProvider>
+        <div className="min-w-0">{children}</div>
+      </WpStoreProvider>
     </PageShell>
   );
 }

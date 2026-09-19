@@ -7,53 +7,23 @@
  * components accept a `connectionId` prop so every WP Manager surface can use
  * the same selected store; the connection is chosen once here.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { PlugIcon } from "lucide-react";
 import { api, ErrorBox, errorMessageOrRaw } from "@/app/dashboard/ui";
-import { cardClass, EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { cardClass, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { Button } from "@/components/ui/button";
-import { useFeatureLocked } from "@/components/feature-lock";
 import { CatalogueSection, StoreOrdersSection } from "./woo-store-sections";
 import { TaxonomiesSection } from "./taxonomies-section";
 import { PluginWaitNote } from "./plugin-wait-note";
-import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
-
-type Connection = ConnectionLite;
+import { ConnectionPicker } from "./connection-lite";
+import { useWpStore, type WpManagerConnection as Connection } from "./wp-store-context";
 
 function useConnectionHost() {
-  const locked = useFeatureLocked();
-  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const { connections, selectedId, setSelectedId } = useWpStore();
   const [busy, setBusy] = useState(false);
   const [callResult, setCallResult] = useState("");
   const [notice, setNotice] = useState("");
-  const [selectedId, setSelectedId] = useState("");
-
-  useEffect(() => {
-    // Inside a locked preview the API answers `feature_disabled`, so the
-    // request only exists to paint the preview with an error. Skip it and
-    // show the same "no store" state the preview is meant to demonstrate.
-    if (locked) {
-      setConnections([]);
-      return;
-    }
-    let alive = true;
-    api<{ connections: Connection[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
-      // Without this, navigating away mid-flight set state on an unmounted
-      // host and, worse, re-selected the first store after the member had
-      // already picked another one on the screen they moved to.
-      if (!alive) return;
-      if (res.ok) {
-        setConnections(res.data.connections);
-        setSelectedId(res.data.connections[0]?.id ?? "");
-      } else {
-        setConnections([]);
-      }
-    });
-    return () => {
-      alive = false;
-    };
-  }, [locked]);
 
   const call = useCallback(
     async <T extends Record<string, unknown>>(path: string, method = "POST", body?: unknown): Promise<T | null> => {

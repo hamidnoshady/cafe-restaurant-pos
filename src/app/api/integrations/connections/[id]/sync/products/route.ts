@@ -20,7 +20,13 @@ export const POST = withTenantScope(async (_request: Request, context: { params:
   const { id } = await context.params;
 
   const connection = await getConnection(session.businessId, id);
-  if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!connection.sync_products) {
+    return NextResponse.json({ ok: false, error: "sync_products_disabled" }, { status: 409 });
+  }
+  if (connection.status === "paused") {
+    return NextResponse.json({ ok: false, error: "connection_paused" }, { status: 409 });
+  }
 
   if (connection.link_mode === "plugin") {
     await enqueuePluginExport(session.businessId, id, "catalogue_export");

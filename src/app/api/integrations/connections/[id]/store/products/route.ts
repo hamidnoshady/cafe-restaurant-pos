@@ -25,6 +25,7 @@ export const POST = withTenantScope(async (request: Request, context: { params: 
 
   const connection = await getConnection(session.businessId, id);
   if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (connection.status === "paused") return NextResponse.json({ error: "connection_paused" }, { status: 409 });
 
   let body: { remoteId?: string; fields?: Record<string, unknown> };
   try {

@@ -26,7 +26,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useFeatureLocked } from "@/components/feature-lock";
 import {
   api,
   ErrorBox,
@@ -50,6 +49,7 @@ import { cn } from "@/lib/utils";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
 import { wpEditorIsDirty, wpEditorPatch, type WpEditorValues } from "./content-editor-state";
 import { PluginWaitNote } from "./plugin-wait-note";
+import { useWpStore } from "./wp-store-context";
 
 interface ContentRow {
   remoteId: string;
@@ -93,10 +93,7 @@ function statusTone(status: string): "active" | "positive" | "neutral" | "danger
 }
 
 export function WpContentSection() {
-  const [connections, setConnections] = useState<ConnectionLite[] | null>(null);
-  const [connectionError, setConnectionError] = useState("");
-  const [connectionAttempt, setConnectionAttempt] = useState(0);
-  const [selectedId, setSelectedId] = useState("");
+  const { connections, selectedId, setSelectedId } = useWpStore();
   const [tab, setTab] = useState<ContentTab>("post");
   const [rows, setRows] = useState<ContentRow[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -110,35 +107,6 @@ export function WpContentSection() {
   const [notice, setNotice] = useState("");
   const [actionError, setActionError] = useState("");
   const [editing, setEditing] = useState<ContentRow | "new" | null>(null);
-  const locked = useFeatureLocked();
-
-  useEffect(() => {
-    // Locked previews cannot call integration APIs; suppress the otherwise
-    // guaranteed 403 and let the feature-lock overlay explain availability.
-    if (locked) {
-      setConnections([]);
-      setSelectedId("");
-      return;
-    }
-    const controller = new AbortController();
-    setConnections(null);
-    setConnectionError("");
-    void api<{ connections: ConnectionLite[]; error?: string }>(
-      "/api/integrations/connections?provider=woocommerce",
-      { signal: controller.signal },
-    ).then((response) => {
-      if (response.aborted) return;
-      if (!response.ok) {
-        setConnections([]);
-        setConnectionError(errorMessageOrRaw(response.data?.error));
-        return;
-      }
-      const next = Array.isArray(response.data.connections) ? response.data.connections : [];
-      setConnections(next);
-      setSelectedId((current) => (next.some((connection) => connection.id === current) ? current : (next[0]?.id ?? "")));
-    });
-    return () => controller.abort();
-  }, [connectionAttempt, locked]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -250,18 +218,6 @@ export function WpContentSection() {
 
   if (connections === null) {
     return <SectionCardSkeleton rows={6} label="در حال بارگذاری فروشگاه‌ها و محتوای وردپرس" />;
-  }
-
-  if (connectionError) {
-    return (
-      <section className={`${cardClass} p-4 sm:p-5`} aria-label="خطای خواندن فروشگاه‌ها">
-        <ErrorBox>{connectionError}</ErrorBox>
-        <Button variant="outline" onClick={() => setConnectionAttempt((value) => value + 1)}>
-          <RefreshCwIcon aria-hidden="true" className="size-4" />
-          تلاش دوباره
-        </Button>
-      </section>
-    );
   }
 
   if (connections.length === 0) {

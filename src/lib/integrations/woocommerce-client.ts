@@ -2,11 +2,13 @@
  * Phase 23 (issue #118) — the Integration Gateway: the only place in the app
  * that talks to a WooCommerce store.
  *
- * Credentials are sent as HTTP Basic auth (consumer key = username, consumer
- * secret = password), WooCommerce REST API v3's recommended scheme. The URL
- * and auth-header construction is pure (unit-tested); `fetch` is injectable
- * so tests never touch the network and the background outbox tick can pass a
- * shared client around.
+ * WooCommerce credentials are sent as HTTP Basic auth for `wc/v3` only
+ * (consumer key = username, consumer secret = password), WooCommerce REST API
+ * v3's recommended scheme. WordPress Core `wp/v2` calls require a separate
+ * Application Password credential; Woo consumer keys are not silently reused
+ * for posts/pages/media. The URL and auth-header construction is pure
+ * (unit-tested); `fetch` is injectable so tests never touch the network and
+ * the background outbox tick can pass a shared client around.
  *
  * Phase 38 widened it from "products and orders" to the whole catalogue:
  * variations, the taxonomy tree (categories, tags, attribute terms and the
@@ -20,6 +22,10 @@ export interface WooCredentials {
   baseUrl: string;
   consumerKey: string;
   consumerSecret: string;
+  /** WordPress Core REST username for wp/v2. Separate from Woo consumer key. */
+  wpUsername?: string;
+  /** WordPress Application Password for wp/v2. Separate from Woo consumer secret. */
+  wpApplicationPassword?: string;
 }
 
 export interface WooProductAttribute {
@@ -241,6 +247,7 @@ export interface WooRefund {
   total_tax?: string;
   reason: string;
   line_items?: WooRefundLineItem[];
+  meta_data?: WooMetaData[];
 }
 
 export interface WooList<T> {
@@ -269,9 +276,17 @@ export class WooCommerceError extends Error {
   }
 }
 
-/** `consumerKey:consumerSecret` in base64 — the Basic auth credential. */
+/** `consumerKey:consumerSecret` in base64 — the WooCommerce wc/v3 Basic auth credential. */
 export function wooAuthHeader(credentials: WooCredentials): string {
   return `Basic ${Buffer.from(`${credentials.consumerKey}:${credentials.consumerSecret}`).toString("base64")}`;
+}
+
+/** `wpUsername:wpApplicationPassword` in base64 — WordPress Core wp/v2 auth. */
+export function wpAuthHeader(credentials: WooCredentials): string {
+  if (!credentials.wpUsername || !credentials.wpApplicationPassword) {
+    throw new WooCommerceError("wordpress_credentials_missing", 401);
+  }
+  return `Basic ${Buffer.from(`${credentials.wpUsername}:${credentials.wpApplicationPassword}`).toString("base64")}`;
 }
 
 /** The REST API URL for a path, keeping the store's base exactly as given. */
@@ -329,11 +344,12 @@ async function request<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const url = namespacedApiUrl(credentials.baseUrl, options.namespace ?? "wc/v3", path, options.query);
+  const namespace = options.namespace ?? "wc/v3";
+  const url = namespacedApiUrl(credentials.baseUrl, namespace, path, options.query);
   const response = await fetchImpl(url, {
     method,
     headers: {
-      Authorization: wooAuthHeader(credentials),
+      Authorization: namespace === "wp/v2" ? wpAuthHeader(credentials) : wooAuthHeader(credentials),
       "Content-Type": "application/json",
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -591,9 +607,8 @@ export function createWooCommerceClient(
       request<WooRefund>(credentials, fetchImpl, "POST", `orders/${orderId}/refunds`, { body }),
     listCustomers: (query) => get<WooCustomer[]>("customers", query),
     listCustomersPage: (query) => requestPage<WooCustomer>(credentials, fetchImpl, "customers", { query }),
-    // WordPress core content. wp/v2 uses the same Basic auth: a WooCommerce
-    // consumer key with read/write scope is accepted by the core REST API on
-    // any standard WooCommerce install, so no second credential pair.
+    // WordPress core content. wp/v2 requires a WordPress Application Password;
+    // WooCommerce consumer keys are deliberately not reused here.
     wpListPage: (type, query) =>
       requestPage<Record<string, unknown>>(credentials, fetchImpl, type, {
         query: { context: "view", ...query },

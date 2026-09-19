@@ -315,10 +315,15 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
           deliveryId: randomUUID(),
           payload: { id: 104, type: "page" },
         },
+        {
+          topic: "content.sync_completed",
+          deliveryId: randomUUID(),
+          payload: { id: "content:batch", type: "content", count: 1 },
+        },
       ],
     });
     const answer = (await response.json()) as { results: { status: string }[] };
-    expect(answer.results[0]?.status).toBe("processed");
+    expect(answer.results.map((result) => result.status)).toEqual(["processed", "processed"]);
     expect(await content.getWpContent(biz.id, biz.pluginConnId, "page", "104")).toBeNull();
     expect((await connections.getConnection(biz.id, biz.pluginConnId))?.last_content_sync_at).toBeTruthy();
   });

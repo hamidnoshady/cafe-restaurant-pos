@@ -20,7 +20,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
-import { useFeatureLocked } from "@/components/feature-lock";
 import { EmptyState, SectionCard, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -29,8 +28,9 @@ import {
   wpMediaKindForMime,
   type WpMediaKind,
 } from "@/lib/integrations/wp-media";
-import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
+import { ConnectionPicker } from "./connection-lite";
 import { PluginWaitNote } from "./plugin-wait-note";
+import { useWpStore } from "./wp-store-context";
 import { FilterChip } from "@/app/dashboard/filters";
 
 interface MediaRow {
@@ -194,9 +194,7 @@ function MediaTile({ row }: { row: MediaRow }) {
 }
 
 export function WpMediaSection() {
-  const [connections, setConnections] = useState<ConnectionLite[] | null>(null);
-  const [connectionsError, setConnectionsError] = useState("");
-  const [selectedId, setSelectedId] = useState("");
+  const { connections, selectedId, setSelectedId } = useWpStore();
   const [rows, setRows] = useState<MediaRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
@@ -213,36 +211,6 @@ export function WpMediaSection() {
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
 
-  const locked = useFeatureLocked();
-
-  const loadConnections = useCallback(async () => {
-    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
-    // would only light the console with 403s behind the grayed-out preview.
-    if (locked) {
-      setConnections([]);
-      return;
-    }
-    setConnections(null);
-    setConnectionsError("");
-    const response = await api<{ connections: ConnectionLite[]; error?: string }>(
-      "/api/integrations/connections?provider=woocommerce",
-    );
-    if (!response.ok) {
-      setConnections([]);
-      setConnectionsError(errorMessageOrRaw(response.data?.error) || "خواندن اتصال‌های فروشگاه ناموفق بود.");
-      return;
-    }
-    setConnections(response.data.connections);
-    setSelectedId((current) =>
-      response.data.connections.some((connection) => connection.id === current)
-        ? current
-        : response.data.connections[0]?.id ?? "",
-    );
-  }, [locked]);
-
-  useEffect(() => {
-    void loadConnections();
-  }, [loadConnections]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setSearchQuery(searchInput.trim()), 300);
@@ -341,17 +309,6 @@ export function WpMediaSection() {
   }
 
   if (connections === null) return <SectionCardSkeleton rows={6} label="در حال خواندن فروشگاه‌های متصل" />;
-
-  if (connectionsError) {
-    return (
-      <SectionCard title="اتصال فروشگاه" description="برای نمایش رسانه‌ها باید اتصال وردپرس خوانده شود.">
-        <ErrorBox>{connectionsError}</ErrorBox>
-        <Button variant="outline" onClick={() => void loadConnections()}>
-          تلاش دوباره
-        </Button>
-      </SectionCard>
-    );
-  }
 
   if (connections.length === 0) {
     return (

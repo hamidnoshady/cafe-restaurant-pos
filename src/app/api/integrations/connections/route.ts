@@ -22,6 +22,8 @@ interface CreateBody {
   linkMode?: LinkMode;
   consumerKey?: string;
   consumerSecret?: string;
+  wpUsername?: string;
+  wpApplicationPassword?: string;
   currencyUnit?: WooCurrencyUnit;
   locationId?: string | null;
   syncOrders?: boolean;
@@ -29,6 +31,9 @@ interface CreateBody {
   syncCustomers?: boolean;
   pushStock?: boolean;
   pushPrices?: boolean;
+  syncCategories?: boolean;
+  autoPullOrders?: boolean;
+  orderLookbackDays?: number;
   /** "holoo" creates a Holoo connection instead of a WooCommerce one. */
   provider?: string;
   // Holoo connection fields (used only when provider === "holoo").
@@ -81,6 +86,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     linkMode: body.linkMode === "plugin" ? "plugin" : "rest_api",
     consumerKey: body.consumerKey ?? "",
     consumerSecret: body.consumerSecret ?? "",
+    wpUsername: body.wpUsername,
+    wpApplicationPassword: body.wpApplicationPassword,
     currencyUnit: body.currencyUnit ?? "toman",
     locationId: body.locationId ?? location.id,
     syncOrders: body.syncOrders,
@@ -88,6 +95,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     syncCustomers: body.syncCustomers,
     pushStock: body.pushStock,
     pushPrices: body.pushPrices,
+    syncCategories: body.syncCategories,
+    autoPullOrders: body.autoPullOrders,
+    orderLookbackDays: body.orderLookbackDays,
   });
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });

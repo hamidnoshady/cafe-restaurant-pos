@@ -23,8 +23,14 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     syncCustomers: typeof body.syncCustomers === "boolean" ? body.syncCustomers : undefined,
     pushStock: typeof body.pushStock === "boolean" ? body.pushStock : undefined,
     pushPrices: typeof body.pushPrices === "boolean" ? body.pushPrices : undefined,
+    syncCategories: typeof body.syncCategories === "boolean" ? body.syncCategories : undefined,
+    autoPullOrders: typeof body.autoPullOrders === "boolean" ? body.autoPullOrders : undefined,
+    orderLookbackDays: typeof body.orderLookbackDays === "number" ? body.orderLookbackDays : undefined,
     consumerKey: typeof body.consumerKey === "string" && body.consumerKey ? body.consumerKey : undefined,
     consumerSecret: typeof body.consumerSecret === "string" && body.consumerSecret ? body.consumerSecret : undefined,
+    wpUsername: typeof body.wpUsername === "string" && body.wpUsername ? body.wpUsername : undefined,
+    wpApplicationPassword:
+      typeof body.wpApplicationPassword === "string" && body.wpApplicationPassword ? body.wpApplicationPassword : undefined,
   });
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.error === "not_found" ? 404 : 400 });
