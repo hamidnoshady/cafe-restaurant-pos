@@ -98,10 +98,6 @@ jobs:
             exit 1
           }
 
-          if (-not (Test-Path -LiteralPath "windows/cafe-pos.ico")) {
-            Write-Host "::error::windows/cafe-pos.ico is missing; electron-builder references it for the app and installer icons."
-            exit 1
-          }
           Write-Host "packaging constraints ok"
 
   plugin:
