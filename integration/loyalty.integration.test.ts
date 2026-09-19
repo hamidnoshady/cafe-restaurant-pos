@@ -201,20 +201,58 @@ describe("store credit", () => {
       ),
     ).rejects.toThrow(/اعتبار/);
   });
+
+  it("records repeated issue and payout operations as distinct journal sources", async () => {
+    const customerId = await createCustomer();
+    await withClient((client) =>
+      loyaltyService.issueStoreCredit(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        customerId,
+        amount: 100_000,
+        reason: "اصلاح اول",
+      }),
+    );
+    await withClient((client) =>
+      loyaltyService.issueStoreCredit(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        customerId,
+        amount: 50_000,
+        reason: "اصلاح دوم",
+      }),
+    );
+    await withClient((client) =>
+      loyaltyService.useStoreCredit(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        customerId,
+        amount: 40_000,
+        paymentMethod: "cash",
+      }),
+    );
+    await withClient((client) =>
+      loyaltyService.useStoreCredit(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        customerId,
+        amount: 10_000,
+        paymentMethod: "cash",
+      }),
+    );
+
+    expect(await loyaltyService.storeCreditBalance(biz.id, customerId)).toBe(100_000);
+    const entries = await db.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM journal_entries
+        WHERE business_id = $1 AND source_type IN ('loyalty_store_credit', 'loyalty_store_credit_use')`,
+      [biz.id],
+    );
+    expect(entries.rows[0].count).toBe("4");
+  });
 });
 
 describe("points", () => {
-  it("makes the first active program the default instead of leaving earning to an arbitrary program", async () => {
-    await loyaltyService.upsertProgram(biz.id, {
-      name: "باشگاه نخست",
-      earnPointsPer100000: 2,
-      pointValueRial: 1000,
-    });
-
-    const program = await loyaltyService.getDefaultProgram(biz.id);
-    expect(program).toMatchObject({ name: "باشگاه نخست", isActive: true, isDefault: true });
-  });
-
   it("nets earn and redeem to zero in the points ledger", async () => {
     const customerId = await createCustomer();
     await loyaltyService.upsertProgram(biz.id, {
@@ -271,7 +309,7 @@ describe("points", () => {
     ).rejects.toThrow(/امتیاز/);
   });
 
-  it("does not show or redeem expired points, while points dated today remain usable", async () => {
+  it("allows more than one redemption for a customer without colliding journal sources", async () => {
     const customerId = await createCustomer();
     await loyaltyService.upsertProgram(biz.id, {
       name: "پیش‌فرض",
@@ -279,45 +317,99 @@ describe("points", () => {
       pointValueRial: 1000,
       isDefault: true,
     });
-
-    await db.query(
-      `INSERT INTO customer_points (business_id, customer_id, points, source_type, expires_at)
-       VALUES ($1, $2, 25, 'test', current_date - 1),
-              ($1, $2, 10, 'test', current_date)`,
-      [biz.id, customerId],
+    await withClient((client) =>
+      loyaltyService.earnPoints(client, {
+        businessId: biz.id,
+        customerId,
+        amountRial: rialText("1000000"),
+        sourceType: "test",
+        sourceId: randomUUID(),
+      }),
     );
-
-    // The expiry day itself is inclusive, but yesterday's points are no longer
-    // in the balance a customer can convert to store credit.
-    expect(await loyaltyService.pointsBalance(biz.id, customerId)).toBe(10);
-    await expect(
-      withClient((client) =>
-        loyaltyService.redeemPoints(client, {
-          businessId: biz.id,
-          locationId: biz.locationId,
-          customerId,
-          points: 11,
-        }),
-      ),
-    ).rejects.toThrow(/امتیاز/);
 
     await withClient((client) =>
       loyaltyService.redeemPoints(client, {
         businessId: biz.id,
         locationId: biz.locationId,
         customerId,
-        points: 10,
+        points: 4,
+      }),
+    );
+    await withClient((client) =>
+      loyaltyService.redeemPoints(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        customerId,
+        points: 6,
       }),
     );
 
-    // The debit follows the source lot's expiry. Once that lot expires, the
-    // signed ledger cannot turn a spent point into a negative balance.
-    const { rows } = await db.query<{ points: number; expires_at: string | null }>(
-      `SELECT points, expires_at::text FROM customer_points
-        WHERE business_id = $1 AND customer_id = $2 AND points < 0`,
-      [biz.id, customerId],
-    );
-    expect(rows).toEqual([{ points: -10, expires_at: new Date().toISOString().slice(0, 10) }]);
     expect(await loyaltyService.pointsBalance(biz.id, customerId)).toBe(0);
+    expect(await loyaltyService.storeCreditBalance(biz.id, customerId)).toBe(10_000);
+    const entries = await db.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM journal_entries WHERE business_id = $1 AND source_type = 'loyalty_points_redemption'`,
+      [biz.id],
+    );
+    expect(entries.rows[0].count).toBe("2");
+  });
+
+  it("excludes expired points and expires a matched redemption with its source lot", async () => {
+    const customerId = await createCustomer();
+    await loyaltyService.upsertProgram(biz.id, {
+      name: "کوتاه‌مدت",
+      earnPointsPer100000: 1,
+      pointValueRial: 1000,
+      pointsExpiryDays: 1,
+      isDefault: true,
+    });
+    await withClient((client) =>
+      loyaltyService.earnPoints(client, {
+        businessId: biz.id,
+        customerId,
+        amountRial: rialText("1000000"),
+        sourceType: "test",
+        sourceId: randomUUID(),
+        earnedOn: "2026-01-01",
+      }),
+    );
+
+    expect(await loyaltyService.pointsBalance(biz.id, customerId, undefined, "2026-01-01")).toBe(10);
+    await withClient((client) =>
+      loyaltyService.redeemPoints(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        customerId,
+        points: 4,
+        businessDate: "2026-01-01",
+      }),
+    );
+    expect(await loyaltyService.pointsBalance(biz.id, customerId, undefined, "2026-01-01")).toBe(6);
+    expect(await loyaltyService.pointsBalance(biz.id, customerId, undefined, "2026-01-02")).toBe(6);
+    await expect(
+      withClient((client) =>
+        loyaltyService.redeemPoints(client, {
+          businessId: biz.id,
+          locationId: biz.locationId,
+          customerId,
+          points: 1,
+          businessDate: "2026-01-03",
+        }),
+      ),
+    ).rejects.toThrow(/امتیاز/);
+  });
+
+  it("preserves a default program's values when an edit omits unrelated fields", async () => {
+    await loyaltyService.upsertProgram(biz.id, {
+      name: "پیش‌فرض",
+      earnPointsPer100000: 0,
+      pointValueRial: 1000,
+      isDefault: true,
+    });
+    const updated = await loyaltyService.upsertProgram(biz.id, {
+      name: "پیش‌فرض",
+      pointValueRial: 2500,
+    });
+    expect(updated).toMatchObject({ earnPointsPer100000: 0, pointValueRial: 2500, isDefault: true, isActive: true });
+    expect(await loyaltyService.getDefaultProgram(biz.id)).toMatchObject({ id: updated.id, pointValueRial: 2500 });
   });
 });

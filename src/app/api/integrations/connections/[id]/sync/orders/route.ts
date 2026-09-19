@@ -25,7 +25,7 @@ export const POST = withTenantScope(
     const { id } = await context.params;
 
     const connection = await getConnection(session.businessId, id);
-    if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
     let sinceDays: number | undefined;
     try {

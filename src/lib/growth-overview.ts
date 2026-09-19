@@ -84,6 +84,8 @@ export interface GrowthActivityRow {
 
 export interface GrowthOverview {
   window: { from: string; to: string };
+  /** Repurchase predictions are per-branch, so no selected branch is not a zero result. */
+  hasLocation: boolean;
   campaigns: {
     counts: Record<CampaignState, number>;
     list: CampaignSummaryRow[];
@@ -134,7 +136,8 @@ export async function growthOverview(
   const [
     promoRows,
     perfRows,
-    pointRows,
+    pointActivityRows,
+    pointBalanceRows,
     customerRows,
     programRows,
     giftCardRows,
@@ -172,30 +175,43 @@ export async function growthOverview(
     query<{
       earned: number;
       redeemed: number;
-      outstanding: number;
-      customers_with_points: number;
     }>(
-      // Earning/redemption are period events, but «امتیاز در گردش» means
-      // currently spendable points. An expired point is still historical
-      // earning, never a current marketing liability or a customer with an
-      // available balance.
-      `WITH active_balances AS (
-         SELECT customer_id, COALESCE(SUM(points), 0)::int AS balance
-           FROM customer_points
-          WHERE business_id = $1
-            AND (expires_at IS NULL OR expires_at >= current_date)
-          GROUP BY customer_id
-       )
-       SELECT
-         COALESCE(SUM(points) FILTER (WHERE points > 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS earned,
-         COALESCE(-SUM(points) FILTER (WHERE points < 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS redeemed,
-         COALESCE((SELECT SUM(balance) FROM active_balances WHERE balance > 0), 0)::int AS outstanding,
-         COALESCE((SELECT COUNT(*) FROM active_balances WHERE balance > 0), 0)::int AS customers_with_points
-       FROM customer_points
-      WHERE business_id = $1`,
+      `SELECT
+              COALESCE(SUM(points) FILTER (WHERE points > 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS earned,
+              COALESCE(-SUM(points) FILTER (WHERE points < 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS redeemed
+         FROM customer_points
+        WHERE business_id = $1`,
       [businessId, from, to],
     ),
-    query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM parties WHERE business_id = $1`, [businessId]),
+    // A customer who earned and then redeemed every point is not "a customer
+    // with points". Neither is one whose expiring lot lapsed. Calculate the
+    // live balance in the same expiry-aware shape the customer screen uses.
+    query<{
+      outstanding: string;
+      customers_with_points: number;
+    }>(
+      `SELECT COALESCE(SUM(balance), 0)::text AS outstanding,
+              COUNT(*) FILTER (WHERE balance > 0)::int AS customers_with_points
+         FROM (
+           SELECT customer_id,
+                  COALESCE(SUM(points) FILTER (WHERE expires_at IS NULL OR expires_at >= $2::date), 0) AS balance
+             FROM customer_points
+            WHERE business_id = $1
+            GROUP BY customer_id
+         ) point_balances`,
+      [businessId, opts.today],
+    ),
+    // Compare point holders with actual, live customers — `parties` also holds
+    // suppliers and staff, and a person may hold several roles.
+    query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total
+         FROM parties
+        WHERE business_id = $1
+          AND roles && ARRAY['customer']::text[]
+          AND is_active
+          AND merged_into_id IS NULL`,
+      [businessId],
+    ),
     query<{ programs: number }>(
       `SELECT COUNT(*)::int AS programs FROM loyalty_programs WHERE business_id = $1 AND is_active`,
       [businessId],
@@ -300,16 +316,14 @@ export async function growthOverview(
     balance: accountBalance(row.type, Number(row.debit), Number(row.credit)),
   }));
 
-  const points = pointRows.rows[0] ?? {
-    earned: 0,
-    redeemed: 0,
-    outstanding: 0,
-    customers_with_points: 0,
-  };
+  const pointActivity = pointActivityRows.rows[0] ?? { earned: 0, redeemed: 0 };
+  const pointBalances = pointBalanceRows.rows[0] ?? { outstanding: "0", customers_with_points: 0 };
+  const outstandingPoints = Number(pointBalances.outstanding);
   const program = await getDefaultProgram(businessId);
 
   return {
     window: { from, to },
+    hasLocation: Boolean(opts.locationId),
     campaigns: {
       counts: campaignStateCounts(campaignList.map((c) => c.state)),
       list: campaignList.slice(0, 6),
@@ -319,11 +333,11 @@ export async function growthOverview(
     },
     loyalty: {
       programs: programRows.rows[0]?.programs ?? 0,
-      pointsOutstanding: points.outstanding,
-      pointsValueEstimate: points.outstanding * (program?.pointValueRial ?? 0),
-      earned30d: points.earned,
-      redeemed30d: points.redeemed,
-      customersWithPoints: points.customers_with_points,
+      pointsOutstanding: outstandingPoints,
+      pointsValueEstimate: outstandingPoints * (program?.pointValueRial ?? 0),
+      earned30d: pointActivity.earned,
+      redeemed30d: pointActivity.redeemed,
+      customersWithPoints: pointBalances.customers_with_points,
       customersTotal: customerRows.rows[0]?.total ?? 0,
     },
     giftCards: {

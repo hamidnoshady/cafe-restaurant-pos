@@ -3,12 +3,12 @@
  *
  * Store credit is a real liability, never a number in a column. Issuing it
  * (e.g. a refund the customer takes as credit) debits «برگشت از فروش» (4400,
- * contra-revenue) and credits «اعتبار فروشگاهی» (2410); spending it debits
- * that liability and credits the tender that received the value. Both are
- * balanced journal entries posted through the domain-event engine, so the
- * trial balance carries the obligation and a customer's balance is
- * reconstructed from the events, the same discipline consignment-service.ts
- * follows for what is owed to a consignor.
+ * contra-revenue) and credits «اعتبار فروشگاهی» (2410); paying that credit
+ * back to a customer debits the liability and credits the cash/bank tender
+ * that paid it. Both are balanced journal entries posted through the domain-
+ * event engine, so the trial balance carries the obligation and a customer's
+ * balance is reconstructed from the events, the same discipline
+ * consignment-service.ts follows for what is owed to a consignor.
  */
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { rialBigInt, type RialText } from "./inventory-exact";
@@ -26,6 +26,9 @@ const CREDIT_TENDER_ACCOUNT_CODE: Record<Extract<SettlementMethod, "cash" | "ban
 interface StoreCreditIssuedPayload {
   customerId: string;
   amount: RialText;
+  reason?: string | null;
+  /** The branch business date, resolved before the financial action starts. */
+  entryDate?: string | null;
 }
 
 registerPostingRule("loyalty.store_credit_issued", async (event, client): Promise<PostingResult | null> => {
@@ -36,13 +39,15 @@ registerPostingRule("loyalty.store_credit_issued", async (event, client): Promis
     WELL_KNOWN_CODES.salesReturns,
     WELL_KNOWN_CODES.storeCreditPayable,
   ]);
+  const reason = typeof payload.reason === "string" && payload.reason.trim() ? ` — ${payload.reason.trim()}` : "";
 
   return {
     lines: [
       { accountId: accounts.get(WELL_KNOWN_CODES.salesReturns)!, debit: payload.amount, credit: ZERO },
       { accountId: accounts.get(WELL_KNOWN_CODES.storeCreditPayable)!, debit: ZERO, credit: payload.amount },
     ],
-    memo: "صدور اعتبار فروشگاهی",
+    entryDate: payload.entryDate ?? null,
+    memo: `صدور اعتبار فروشگاهی${reason}`,
     postingKind: "loyalty_store_credit_issued",
   };
 });
@@ -51,6 +56,8 @@ interface StoreCreditUsedPayload {
   customerId: string;
   amount: RialText;
   paymentMethod: Extract<SettlementMethod, "cash" | "bank">;
+  /** The branch business date, resolved before the financial action starts. */
+  entryDate?: string | null;
 }
 
 registerPostingRule("loyalty.store_credit_used", async (event, client): Promise<PostingResult | null> => {
@@ -68,7 +75,8 @@ registerPostingRule("loyalty.store_credit_used", async (event, client): Promise<
       { accountId: accounts.get(WELL_KNOWN_CODES.storeCreditPayable)!, debit: payload.amount, credit: ZERO },
       { accountId: accounts.get(tenderCode)!, debit: ZERO, credit: payload.amount },
     ],
-    memo: "مصرف اعتبار فروشگاهی",
+    entryDate: payload.entryDate ?? null,
+    memo: "بازپرداخت اعتبار فروشگاهی",
     postingKind: "loyalty_store_credit_used",
   };
 });
