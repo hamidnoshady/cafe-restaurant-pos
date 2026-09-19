@@ -21,7 +21,14 @@
  * search/group chrome is the only markup it owns.
  */
 
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  useDeferredValue,
+} from "react";
 import { SearchIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,7 +38,13 @@ import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { normalizePosSearchText } from "@/lib/pos-selection";
 import { cn } from "@/lib/utils";
-import { EmptyState, LoadingSkeleton, SectionCard, SectionCardSkeleton, cardClass } from "../page-chrome";
+import {
+  EmptyState,
+  LoadingSkeleton,
+  SectionCard,
+  SectionCardSkeleton,
+  cardClass,
+} from "../page-chrome";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { BusinessDayRangePresets } from "./business-day-range";
 import { inputClass } from "../ui";
@@ -132,7 +145,9 @@ function documentFacts(
 ): string {
   if (typeof document !== "object" || document === null) return "";
   const root =
-    "current" in document && typeof document.current === "object" && document.current !== null
+    "current" in document &&
+    typeof document.current === "object" &&
+    document.current !== null
       ? (document.current as ReportPayload)
       : document;
   const parts: string[] = [];
@@ -154,7 +169,9 @@ function documentFacts(
       figure("totalLiabilities", "جمع بدهی‌ها");
       figure("totalEquity", "جمع حقوق صاحبان سرمایه");
       if (typeof root.balanced === "boolean") {
-        parts.push(root.balanced ? "وضعیت تراز: متوازن" : "وضعیت تراز: نامتوازن");
+        parts.push(
+          root.balanced ? "وضعیت تراز: متوازن" : "وضعیت تراز: نامتوازن",
+        );
       }
       break;
     case "cash_flow":
@@ -186,7 +203,11 @@ function normalizeSearch(value: string): string {
   return normalizePosSearchText(value);
 }
 
-export function StandardReportsSection({ canExplain }: { canExplain: boolean }) {
+export function StandardReportsSection({
+  canExplain,
+}: {
+  canExplain: boolean;
+}) {
   const money = useMoney();
   const searchId = useId();
   const resultPanelId = `${useId()}-report-result`;
@@ -195,6 +216,8 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   const [savedIds, setSavedIds] = useState<Map<string, string>>(new Map());
   const [selected, setSelected] = useState<StandardReportDef | null>(null);
   const [search, setSearch] = useState("");
+  // ⚡ Bolt: Use deferred search query to prevent UI blocking on slow text inputs.
+  const deferredSearch = useDeferredValue(search);
   const [chartType, setChartType] = useState<ChartType>("bar");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -253,7 +276,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
 
   const isDocument = selected ? DOCUMENT_SHAPES.has(selected.shape) : false;
   const hasDateColumn = selected?.config
-    ? Boolean(views.find((view) => view.key === selected.config!.view)?.hasDateColumn)
+    ? Boolean(
+        views.find((view) => view.key === selected.config!.view)?.hasDateColumn,
+      )
     : false;
   const acceptsDateRange = selected
     ? (isDocument && !UNDATED_SHAPES.has(selected.shape)) || hasDateColumn
@@ -265,8 +290,12 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   // has a «تاریخ ترازنامه», the warranty register a plain «تا تاریخ».
   const snapshotDateLabel =
     selected?.shape === "balance_sheet" ? "تاریخ ترازنامه" : "تا تاریخ";
-  const invalidRange = selected ? isInvalidRange(selected.shape, dateFrom, dateTo) : false;
-  const comparisonReady = selected ? canCompareRange(selected.shape, dateFrom, dateTo) : false;
+  const invalidRange = selected
+    ? isInvalidRange(selected.shape, dateFrom, dateTo)
+    : false;
+  const comparisonReady = selected
+    ? canCompareRange(selected.shape, dateFrom, dateTo)
+    : false;
 
   // Keep the checkbox honest if the range that justified it is cleared.
   useEffect(() => {
@@ -351,7 +380,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
         const response = await fetch("/api/reports/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(configWithRange(selected.config, dateFrom, dateTo)),
+          body: JSON.stringify(
+            configWithRange(selected.config, dateFrom, dateTo),
+          ),
           signal,
         });
         const data = await response.json().catch(() => ({}));
@@ -398,27 +429,40 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     () =>
       (reports ?? []).map((report) => ({
         report,
-        haystack: normalizeSearch(`${report.label} ${report.description ?? ""}`),
+        haystack: normalizeSearch(
+          `${report.label} ${report.description ?? ""}`,
+        ),
       })),
     [reports],
   );
 
   const groups = useMemo(() => {
-    const needle = normalizeSearch(search);
+    const needle = normalizeSearch(deferredSearch);
     const matching = needle
-      ? searchable.filter((entry) => entry.haystack.includes(needle)).map((entry) => entry.report)
+      ? searchable
+          .filter((entry) => entry.haystack.includes(needle))
+          .map((entry) => entry.report)
       : searchable.map((entry) => entry.report);
-    const byGroup = new Map<string, { label: string; reports: StandardReportDef[] }>();
+    const byGroup = new Map<
+      string,
+      { label: string; reports: StandardReportDef[] }
+    >();
     for (const report of matching) {
-      const entry = byGroup.get(report.group) ?? { label: report.groupLabel, reports: [] };
+      const entry = byGroup.get(report.group) ?? {
+        label: report.groupLabel,
+        reports: [],
+      };
       entry.reports.push(report);
       byGroup.set(report.group, entry);
     }
     return [...byGroup.entries()].map(([key, value]) => ({ key, ...value }));
-  }, [searchable, search]);
+  }, [searchable, deferredSearch]);
 
   const totalCount = reports?.length ?? 0;
-  const matchCount = groups.reduce((sum, group) => sum + group.reports.length, 0);
+  const matchCount = groups.reduce(
+    (sum, group) => sum + group.reports.length,
+    0,
+  );
 
   function select(report: StandardReportDef) {
     setSelected(report);
@@ -435,10 +479,15 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     // could not see and looked like it had done nothing at all. Take them to
     // the result, the same way the page-level section menu does when it opens
     // a section (see section-nav.tsx).
-    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 1023px)").matches
+    ) {
       // After paint, so the panel being scrolled to exists.
       requestAnimationFrame(() => {
-        window.document.getElementById(resultPanelId)?.scrollIntoView({ block: "start", behavior: "smooth" });
+        window.document
+          .getElementById(resultPanelId)
+          ?.scrollIntoView({ block: "start", behavior: "smooth" });
       });
     }
   }
@@ -458,7 +507,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
           .map(
             (row) =>
               `${row.label}: ${
-                selected.money ? money.format(Math.round(row.value)) : formatPersianNumber(Math.round(row.value))
+                selected.money
+                  ? money.format(Math.round(row.value))
+                  : formatPersianNumber(Math.round(row.value))
               }`,
           )
           .join("؛ ")
@@ -468,7 +519,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     const period =
       loadedRange.dateFrom || loadedRange.dateTo
         ? `بازهٔ انتخاب‌شده: ${
-            loadedRange.dateFrom ? toPersianDigits(formatJalali(loadedRange.dateFrom)) : "ابتدای داده"
+            loadedRange.dateFrom
+              ? toPersianDigits(formatJalali(loadedRange.dateFrom))
+              : "ابتدای داده"
           } تا ${loadedRange.dateTo ? toPersianDigits(formatJalali(loadedRange.dateTo)) : "امروز"}.`
         : "";
     const prompt = [
@@ -483,15 +536,23 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   }
 
   if (!reports) {
-    return <SectionCardSkeleton rows={5} label="در حال بارگذاری گزارش‌های آماده" />;
+    return (
+      <SectionCardSkeleton rows={5} label="در حال بارگذاری گزارش‌های آماده" />
+    );
   }
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(15rem,17rem)_minmax(0,1fr)] lg:items-start lg:gap-5">
-      <aside className={cn("min-w-0 overflow-hidden lg:sticky lg:top-5", cardClass)}>
+      <aside
+        className={cn("min-w-0 overflow-hidden lg:sticky lg:top-5", cardClass)}
+      >
         <div className="border-b border-border/80 px-4 py-4 sm:px-5">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">کتابخانهٔ گزارش</p>
-          <h2 className="mt-1 font-semibold text-foreground">گزارش‌های آماده</h2>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+            کتابخانهٔ گزارش
+          </p>
+          <h2 className="mt-1 font-semibold text-foreground">
+            گزارش‌های آماده
+          </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             گزارش‌های مشترک، به‌همراه گزارش‌های ویژهٔ کسب‌وکار شما.
           </p>
@@ -520,7 +581,11 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
             short, and there was nothing to announce the change to a screen
             reader either.
           */}
-          <p id={`${searchId}-count`} aria-live="polite" className="mt-2 text-xs text-muted-foreground">
+          <p
+            id={`${searchId}-count`}
+            aria-live="polite"
+            className="mt-2 text-xs text-muted-foreground"
+          >
             {search.trim()
               ? `${formatPersianNumber(matchCount)} از ${formatPersianNumber(totalCount)} گزارش`
               : `${formatPersianNumber(totalCount)} گزارش`}
@@ -558,15 +623,17 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                         "flex min-h-11 w-full items-center rounded-xl px-3 py-2 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40",
                         isSelected
                           ? "bg-amber-100 font-semibold text-amber-950 dark:bg-amber-500/20 dark:text-amber-200"
-                          // `text-muted-foreground` on a long list of names is
-                          // below AA on the card background; the names are the
-                          // content here, not secondary detail.
-                          : "text-foreground/80 hover:bg-muted hover:text-foreground",
+                          : // `text-muted-foreground` on a long list of names is
+                            // below AA on the card background; the names are the
+                            // content here, not secondary detail.
+                            "text-foreground/80 hover:bg-muted hover:text-foreground",
                       )}
                     >
                       {/* `break-words`: a long report name used to overflow the
                           17rem rail rather than wrap inside it. */}
-                      <span className="min-w-0 flex-1 break-words">{report.label}</span>
+                      <span className="min-w-0 flex-1 break-words">
+                        {report.label}
+                      </span>
                     </button>
                   );
                 })}
@@ -591,9 +658,17 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
         itself to be read out; the polite announcement that belongs here is the
         short status line inside `ReportBody`, which owns one now.
       */}
-      <div id={resultPanelId} role="region" aria-label="نتیجهٔ گزارش" className="min-w-0 scroll-mt-4">
+      <div
+        id={resultPanelId}
+        role="region"
+        aria-label="نتیجهٔ گزارش"
+        className="min-w-0 scroll-mt-4"
+      >
         {!selected ? (
-          <SectionCard title="پیش‌نمایش گزارش" description="برای دیدن نتیجه، یک گزارش را از فهرست انتخاب کنید.">
+          <SectionCard
+            title="پیش‌نمایش گزارش"
+            description="برای دیدن نتیجه، یک گزارش را از فهرست انتخاب کنید."
+          >
             <EmptyState>یک گزارش را از فهرست انتخاب کنید.</EmptyState>
           </SectionCard>
         ) : (
@@ -616,10 +691,17 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                         one clearly-named field, and the second date appears
                         only where it is really the start of a period.
                       */}
-                      <div className={cn("grid gap-3", !isSnapshot && "sm:grid-cols-2")}>
+                      <div
+                        className={cn(
+                          "grid gap-3",
+                          !isSnapshot && "sm:grid-cols-2",
+                        )}
+                      >
                         {isSnapshot ? null : (
                           <label className="block">
-                            <span className="mb-1.5 block text-sm font-medium text-foreground">از تاریخ</span>
+                            <span className="mb-1.5 block text-sm font-medium text-foreground">
+                              از تاریخ
+                            </span>
                             <JalaliDatePicker
                               value={dateFrom}
                               onChange={setDateFrom}
@@ -635,7 +717,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                           <JalaliDatePicker
                             value={dateTo}
                             onChange={setDateTo}
-                            placeholder={isSnapshot ? snapshotDateLabel : "تا تاریخ"}
+                            placeholder={
+                              isSnapshot ? snapshotDateLabel : "تا تاریخ"
+                            }
                             className={inputClass}
                           />
                         </label>
@@ -681,8 +765,12 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                         `load` refuses to send the request at all.
                       */}
                       {invalidRange ? (
-                        <p role="alert" className="text-sm font-medium text-destructive">
-                          «از تاریخ» بعد از «تا تاریخ» است؛ ترتیب بازه را اصلاح کنید.
+                        <p
+                          role="alert"
+                          className="text-sm font-medium text-destructive"
+                        >
+                          «از تاریخ» بعد از «تا تاریخ» است؛ ترتیب بازه را اصلاح
+                          کنید.
                         </p>
                       ) : null}
                     </>
@@ -690,7 +778,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
 
                   {selected.chartType ? (
                     <label className="block sm:max-w-xs">
-                      <span className="mb-1.5 block text-sm font-medium text-foreground">نوع نمایش</span>
+                      <span className="mb-1.5 block text-sm font-medium text-foreground">
+                        نوع نمایش
+                      </span>
                       <SearchableSelect
                         className={inputClass}
                         value={chartType}
@@ -716,7 +806,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                           // returned `previous: null` and drew nothing, so the
                           // control now says so instead of looking broken.
                           disabled={!comparisonReady}
-                          onCheckedChange={(value) => setCompare(value === true)}
+                          onCheckedChange={(value) =>
+                            setCompare(value === true)
+                          }
                         />
                         مقایسه با دورهٔ قبل
                       </label>
@@ -726,7 +818,8 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                         </p>
                       ) : isSnapshot && compare && !dateFrom ? (
                         <p className="mt-1.5 text-xs text-muted-foreground">
-                          تاریخ مقایسه را انتخاب کنید تا ترازنامهٔ آن تاریخ کنار ترازنامهٔ فعلی نمایش داده شود.
+                          تاریخ مقایسه را انتخاب کنید تا ترازنامهٔ آن تاریخ کنار
+                          ترازنامهٔ فعلی نمایش داده شود.
                         </p>
                       ) : null}
                     </div>
@@ -763,9 +856,15 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                   its own numbers never covered. `disabled` while a read is in
                   flight or failed, since there is nothing truthful to export.
                 */}
-                {selected.shape === "rows" || EXPORT_KIND_BY_SHAPE[selected.shape] ? (
+                {selected.shape === "rows" ||
+                EXPORT_KIND_BY_SHAPE[selected.shape] ? (
                   <ExportButtons
-                    disabled={loading || Boolean(loadError) || invalidRange || (rows === null && document === null)}
+                    disabled={
+                      loading ||
+                      Boolean(loadError) ||
+                      invalidRange ||
+                      (rows === null && document === null)
+                    }
                     request={
                       EXPORT_KIND_BY_SHAPE[selected.shape]
                         ? {
@@ -800,7 +899,8 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                     onClick={explainSelectedReport}
                     className="min-h-11 gap-1.5 border-amber-200 bg-amber-50 px-3 font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300 dark:hover:bg-amber-500/20"
                   >
-                    <SparklesIcon className="size-4" aria-hidden="true" /> توضیح این عدد
+                    <SparklesIcon className="size-4" aria-hidden="true" /> توضیح
+                    این عدد
                   </Button>
                 ) : null}
                 {selected.chartType && savedIds.has(selected.key) ? (
@@ -849,7 +949,9 @@ function ReportBody({
   if (invalidRange) {
     return (
       <SectionCard title="نتیجهٔ گزارش">
-        <EmptyState>پس از اصلاح بازهٔ تاریخ، گزارش دوباره خوانده می‌شود.</EmptyState>
+        <EmptyState>
+          پس از اصلاح بازهٔ تاریخ، گزارش دوباره خوانده می‌شود.
+        </EmptyState>
       </SectionCard>
     );
   }
@@ -888,7 +990,9 @@ function ReportBody({
         return (
           <SectionCard title="نتیجهٔ گزارش">
             <ProfitAndLossView
-              report={document as unknown as ProfitAndLoss | Comparison<ProfitAndLoss>}
+              report={
+                document as unknown as ProfitAndLoss | Comparison<ProfitAndLoss>
+              }
               dateFrom={dateFrom || undefined}
               dateTo={dateTo || undefined}
             />
@@ -898,7 +1002,9 @@ function ReportBody({
         return (
           <SectionCard title="نتیجهٔ گزارش">
             <BalanceSheetView
-              report={document as unknown as BalanceSheet | Comparison<BalanceSheet>}
+              report={
+                document as unknown as BalanceSheet | Comparison<BalanceSheet>
+              }
               dateTo={dateTo || undefined}
             />
           </SectionCard>
@@ -906,13 +1012,17 @@ function ReportBody({
       case "cash_flow":
         return (
           <SectionCard title="نتیجهٔ گزارش">
-            <CashFlowView report={document as unknown as CashFlow | Comparison<CashFlow>} />
+            <CashFlowView
+              report={document as unknown as CashFlow | Comparison<CashFlow>}
+            />
           </SectionCard>
         );
       case "food_cost_variance":
         return (
           <SectionCard title="نتیجهٔ گزارش">
-            <FoodCostVarianceView report={document as unknown as FoodCostVariance} />
+            <FoodCostVarianceView
+              report={document as unknown as FoodCostVariance}
+            />
           </SectionCard>
         );
     }
@@ -939,7 +1049,8 @@ function ReportBody({
   }
 
   const data = rowsToChartData(rows);
-  const rowLimit = typeof report.config?.limit === "number" ? report.config.limit : null;
+  const rowLimit =
+    typeof report.config?.limit === "number" ? report.config.limit : null;
 
   /*
     An empty result used to render a chart of nothing above a table of nothing —
@@ -959,17 +1070,27 @@ function ReportBody({
   }
 
   return (
-    <div className="min-w-0 space-y-4 sm:space-y-5" aria-busy={loading || undefined}>
+    <div
+      className="min-w-0 space-y-4 sm:space-y-5"
+      aria-busy={loading || undefined}
+    >
       {/*
         The one polite live region on the result side: a short sentence, so a
         screen reader hears "۱۲ ردیف" instead of the entire table being
         re-announced on every refetch.
       */}
       <p aria-live="polite" className="sr-only">
-        {loading ? `در حال خواندن ${report.label}` : `${report.label}: ${formatPersianNumber(data.length)} ردیف`}
+        {loading
+          ? `در حال خواندن ${report.label}`
+          : `${report.label}: ${formatPersianNumber(data.length)} ردیف`}
       </p>
       <SectionCard title="نمودار">
-        <ChartPreview chartType={chartType} data={data} label={report.label} formatValue={formatValue} />
+        <ChartPreview
+          chartType={chartType}
+          data={data}
+          label={report.label}
+          formatValue={formatValue}
+        />
       </SectionCard>
       <SectionCard
         title="داده‌های گزارش"
@@ -986,26 +1107,50 @@ function ReportBody({
             : undefined
         }
       >
-        <DataTable columns={["بُعد", "مقدار"]} data={data} formatValue={formatValue} />
+        <DataTable
+          columns={["بُعد", "مقدار"]}
+          data={data}
+          formatValue={formatValue}
+        />
       </SectionCard>
     </div>
   );
 }
 
-function TradeReportBody({ shape, payload }: { shape: ReportShape; payload: ReportPayload }) {
+function TradeReportBody({
+  shape,
+  payload,
+}: {
+  shape: ReportShape;
+  payload: ReportPayload;
+}) {
   switch (shape) {
     case "weight_reconciliation":
-      return <WeightReconciliationView report={payload as unknown as WeightReconciliationReport} />;
+      return (
+        <WeightReconciliationView
+          report={payload as unknown as WeightReconciliationReport}
+        />
+      );
     case "consignor_statements":
-      return <ConsignorStatementsView report={payload as unknown as ConsignorStatementsReport} />;
+      return (
+        <ConsignorStatementsView
+          report={payload as unknown as ConsignorStatementsReport}
+        />
+      );
     case "layaway_book":
-      return <LayawayBookView report={payload as unknown as LayawayBookReport} />;
+      return (
+        <LayawayBookView report={payload as unknown as LayawayBookReport} />
+      );
     case "warranty":
-      return <WarrantyRegisterView report={payload as unknown as WarrantyReport} />;
+      return (
+        <WarrantyRegisterView report={payload as unknown as WarrantyReport} />
+      );
     case "repairs":
       return <RepairsView report={payload as unknown as RepairsReport} />;
     case "variant_sales":
-      return <VariantSalesView report={payload as unknown as VariantSalesReport} />;
+      return (
+        <VariantSalesView report={payload as unknown as VariantSalesReport} />
+      );
     case "brand_sales":
       return <BrandSalesView report={payload as unknown as BrandSalesReport} />;
     case "near_expiry":

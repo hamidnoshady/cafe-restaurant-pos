@@ -19,3 +19,7 @@
 **Learning:** When a list view (like the POS screen products list) calls a seemingly lightweight helper function (`attachedGroups`) that filters arrays under the hood on every item mapping iteration, it causes significant typing delay in search bars due to repeated O(N * M) calculations on the main thread.
 
 **Action:** Identify and lift expensive O(N) array filtering operations from inside `.map()` render loops by using `useMemo` to construct a pre-computed data structure (like a `Map`) keyed by the entity ID, allowing the render loop to perform fast O(1) lookups instead.
+
+## 2024-05-18 - Deferred UI Blocking Search Operations
+**Learning:** React state updates block user input events if they trigger expensive UI recalculations (like filtering lists or complex object mapping).
+**Action:** Always wrap `search` state variables in `useDeferredValue` when those inputs drive heavy DOM re-renders or data manipulation (`useMemo`), isolating the typing responsiveness from the cost of the result update.
