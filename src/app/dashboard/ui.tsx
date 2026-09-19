@@ -442,6 +442,26 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_price: "قیمت باید عدد صحیح و غیرمنفی باشد.",
     invalid_inventory: "موجودی باید عدد صحیح و غیرمنفی باشد.",
     domain_taken: "این دامنه قبلاً برای سایت دیگری ثبت شده است.",
+    // «ساخت سایت» (the four-step wizard) and the site services behind it.
+    // Without these, a refused build or a rejected quote rendered the generic
+    // «خطای غیرمنتظره», which tells an owner nothing about which step to fix.
+    not_ready: "گام‌های قبلی کامل نیست؛ دامنه، CDN و نوع سایت را تمام کنید.",
+    already_connected: "این حساب از قبل به یک سایت وصل است؛ برای ساخت سایت تازه، اول اتصال فعلی را قطع کنید.",
+    already_built: "سایت قبلاً ساخته شده است؛ تغییرها را از «میز کار سایت» انجام دهید.",
+    invalid_domain_mode: "نوع تأمین دامنه معتبر نیست.",
+    invalid_cdn_provider: "ارائه‌دهندهٔ CDN معتبر نیست.",
+    invalid_cdn_status: "وضعیت CDN معتبر نیست.",
+    invalid_period: "مدت ثبت دامنه باید بین ۱ تا ۵ سال باشد.",
+    invalid_operation: "نوع عملیات دامنه معتبر نیست.",
+    // `invalid_status` is already mapped above (the floor-plan's table status)
+    // and the CMS order select only ever submits one of its four options, so
+    // that code stays a server-side guard rather than a second message here.
+    tld_not_sold: "پسوند این دامنه از طریق پلتفرم فروخته نمی‌شود.",
+    quote_failed: "استعلام قیمت دامنه ناموفق بود؛ بعداً دوباره تلاش کنید.",
+    registrar_disabled: "خرید دامنه از طریق پلتفرم فعلاً فعال نیست.",
+    unsupported_currency: "قیمت این دامنه به ارز دیگری اعلام شده و از این‌جا قابل خرید نیست.",
+    insufficient_credit: "اعتبار پلتفرم برای این خرید کافی نیست؛ ابتدا اعتبار را افزایش دهید.",
+    cdn_purge_failed: "خالی‌کردن حافظهٔ CDN ناموفق بود؛ بعداً دوباره تلاش کنید.",
     // Parties (the shared «اشخاص» record every app reads) — src/app/api/parties.
     // `validation_failed` is the collection's answer to a body the form rules
     // reject; the message per field comes from `partyFieldErrorMessage` in
