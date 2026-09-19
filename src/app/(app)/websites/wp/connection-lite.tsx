@@ -25,6 +25,8 @@ export function ConnectionPicker({
   connections,
   value,
   onChange,
+  children,
+  className,
   embedded = false,
   disabled,
 }: {
@@ -36,6 +38,8 @@ export function ConnectionPicker({
    * toolbar card with the section's actions). The default standalone form
    * keeps the chrome so hosts that render it on its own are unchanged.
    */
+  children?: React.ReactNode;
+  className?: string;
   embedded?: boolean;
   disabled?: boolean;
 }) {
@@ -48,25 +52,32 @@ export function ConnectionPicker({
       className={
         embedded
           ? "flex min-w-0 flex-1 flex-wrap items-center gap-2"
-          : `${cardClass} flex flex-wrap items-center gap-3 p-4`
+          : `${cardClass} flex flex-wrap items-center justify-between gap-3 p-3 sm:p-4 ${className ?? ""}`
       }
     >
-      <label className="shrink-0 text-sm font-medium text-foreground" htmlFor={id}>
-        فروشگاه:
-      </label>
-      <select
-        id={id}
-        className={`${inputClass} min-w-0 flex-1 basis-40 sm:min-w-56`}
-        value={value}
-        disabled={disabled || connections.length === 0}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {connections.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name} ({c.linkMode === "plugin" ? "افزونه" : "REST"})
-          </option>
-        ))}
-      </select>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        <label className="shrink-0 text-sm font-medium text-foreground" htmlFor={id}>
+          فروشگاه:
+        </label>
+        <select
+          id={id}
+          className={`${inputClass} min-w-0 flex-1 basis-40 sm:min-w-56`}
+          value={value}
+          disabled={disabled || connections.length === 0}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {connections.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({c.linkMode === "plugin" ? "افزونهٔ وردپرس" : "REST API"})
+            </option>
+          ))}
+        </select>
+      </div>
+      {children ? (
+        <div className={`flex flex-wrap items-center gap-2 ${embedded ? "" : "ms-auto"}`}>
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }
