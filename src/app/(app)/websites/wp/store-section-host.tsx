@@ -26,6 +26,7 @@ function useConnectionHost() {
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [callResult, setCallResult] = useState("");
+  const [notice, setNotice] = useState("");
   const [selectedId, setSelectedId] = useState("");
 
   useEffect(() => {
@@ -58,18 +59,23 @@ function useConnectionHost() {
     async <T extends Record<string, unknown>>(path: string, method = "POST", body?: unknown): Promise<T | null> => {
       setBusy(true);
       setCallResult("");
+      setNotice("");
       const res = await api<T>(path, { method, body: body ? JSON.stringify(body) : undefined });
       setBusy(false);
       if (!res.ok) {
         setCallResult(errorMessageOrRaw(String(res.data?.error ?? "")) || "خطا در اجرای عملیات");
         return null;
       }
+      // Every write on this panel is queued — the response's word for it is
+      // `queued: true` in plugin mode, and the REST path drains the same
+      // outbox — so one honest confirmation fits all of them.
+      setNotice("درخواست در صف قرار گرفت و با اجرای بعدی به فروشگاه می‌رود.");
       return res.data;
     },
     [],
   );
 
-  return { connections, busy, callResult, selectedId, setSelectedId, call };
+  return { connections, busy, callResult, notice, selectedId, setSelectedId, call };
 }
 
 /**
@@ -100,12 +106,14 @@ function HostFrame({
   selectedId,
   setSelectedId,
   callResult,
+  notice,
   children,
 }: {
   connections: Connection[] | null;
   selectedId: string;
   setSelectedId: (id: string) => void;
   callResult: string;
+  notice: string;
   children: React.ReactNode;
 }) {
   if (connections === null) return <SectionCardSkeleton rows={6} />;
@@ -127,6 +135,7 @@ function HostFrame({
         <>
           <PluginWaitNote connections={connections} selectedId={selectedId} />
           {children}
+          {notice ? <p className="text-xs text-teal-700 dark:text-teal-300">{notice}</p> : null}
           <ErrorBox>{callResult}</ErrorBox>
         </>
       ) : null}
@@ -135,27 +144,45 @@ function HostFrame({
 }
 
 export function ProductsSectionHost() {
-  const { connections, busy, callResult, selectedId, setSelectedId, call } = useConnectionHost();
+  const { connections, busy, callResult, notice, selectedId, setSelectedId, call } = useConnectionHost();
   return (
-    <HostFrame connections={connections} selectedId={selectedId} setSelectedId={setSelectedId} callResult={callResult}>
+    <HostFrame
+      connections={connections}
+      selectedId={selectedId}
+      setSelectedId={setSelectedId}
+      callResult={callResult}
+      notice={notice}
+    >
       <CatalogueSection connectionId={selectedId} busy={busy} call={call} />
     </HostFrame>
   );
 }
 
 export function OrdersSectionHost() {
-  const { connections, busy, callResult, selectedId, setSelectedId, call } = useConnectionHost();
+  const { connections, busy, callResult, notice, selectedId, setSelectedId, call } = useConnectionHost();
   return (
-    <HostFrame connections={connections} selectedId={selectedId} setSelectedId={setSelectedId} callResult={callResult}>
+    <HostFrame
+      connections={connections}
+      selectedId={selectedId}
+      setSelectedId={setSelectedId}
+      callResult={callResult}
+      notice={notice}
+    >
       <StoreOrdersSection connectionId={selectedId} busy={busy} call={call} />
     </HostFrame>
   );
 }
 
 export function TaxonomiesSectionHost() {
-  const { connections, callResult, selectedId, setSelectedId } = useConnectionHost();
+  const { connections, callResult, notice, selectedId, setSelectedId } = useConnectionHost();
   return (
-    <HostFrame connections={connections} selectedId={selectedId} setSelectedId={setSelectedId} callResult={callResult}>
+    <HostFrame
+      connections={connections}
+      selectedId={selectedId}
+      setSelectedId={setSelectedId}
+      callResult={callResult}
+      notice={notice}
+    >
       <TaxonomiesSection connectionId={selectedId} />
     </HostFrame>
   );
