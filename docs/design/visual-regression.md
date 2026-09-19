@@ -90,9 +90,10 @@ exists to prevent.
 ## Framing: the `anchor` option
 
 A screen entry may carry `anchor: "<css selector>"`, which scrolls that element
-to the top of the viewport before the shot. `accounting-expenses` uses it: the
-register sits under its entry form, so the default viewport frames the form and
-one row of the table the baseline exists to protect. The harness throws if the
+to the top of the viewport before the shot. `accounting-chart-of-accounts` and
+`accounting-expenses` use it: both registers sit under an entry form, so the
+default viewport frames the form and one row of the table the baseline exists to
+protect. The harness throws if the
 selector matches nothing, rather than silently recording the unscrolled frame.
 
 ## Adding a screen

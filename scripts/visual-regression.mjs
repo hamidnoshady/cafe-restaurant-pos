@@ -86,10 +86,15 @@ const SCREENS = [
    * the trial-balance screenshot governs, and receivables pairs a table with
    * the tab bar and an in-row action link.
    */
-  { id: "accounting-chart-of-accounts", path: "/accounting/chart-of-accounts", theme: "light" },
-  // The expenses register sits below its entry form, so the default viewport
-  // frames the form and only the first table row. `anchor` scrolls the table
-  // itself into view, which is the point of the baseline.
+  // Both registers sit below an entry form, so the default viewport frames the
+  // form and one row of the table. `anchor` scrolls the table itself into
+  // view, which is the point of these baselines.
+  {
+    id: "accounting-chart-of-accounts",
+    path: "/accounting/chart-of-accounts",
+    theme: "light",
+    anchor: "table",
+  },
   {
     id: "accounting-expenses",
     path: "/accounting/expenses",
