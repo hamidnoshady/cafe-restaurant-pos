@@ -87,13 +87,15 @@ export async function upsertProgram(
   },
 ): Promise<LoyaltyProgram> {
   const name = input.name?.trim();
-  const earnPointsPer100000 = input.earnPointsPer100000 ?? 1;
-  const pointValueRial = input.pointValueRial ?? 1000;
   if (!name) throw new Error("نام برنامه وفاداری نمی‌تواند خالی باشد.");
-  if (!Number.isSafeInteger(earnPointsPer100000) || earnPointsPer100000 < 0) {
-    throw new Error("نرخ کسب امتیاز باید یک عدد صحیح غیرمنفی باشد.");
+  const earnRate = input.earnPointsPer100000 ?? 1;
+  // Integer checks, not just sign checks: both columns are `integer`, and a
+  // fractional value otherwise surfaced as an opaque database error.
+  if (!Number.isSafeInteger(earnRate) || earnRate < 0) {
+    throw new Error("نرخ کسب امتیاز باید یک عدد صحیح صفر یا بیشتر باشد.");
   }
-  if (!Number.isSafeInteger(pointValueRial) || pointValueRial <= 0) {
+  const pointValue = input.pointValueRial ?? 1000;
+  if (!Number.isSafeInteger(pointValue) || pointValue <= 0) {
     throw new Error("ارزش ریالی هر امتیاز باید یک عدد صحیح مثبت باشد.");
   }
   if (
@@ -107,28 +109,31 @@ export async function upsertProgram(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    // A partial unique index protects "at most one" default. These locked
-    // reads and the business-level advisory lock also protect the missing half
-    // of the rule: a business with an active program should always have one
-    // deterministic program that sales use for earning points.
+    // The unique index gives us "at most one" default. The business-scoped
+    // advisory lock gives us the other half: concurrent creates cannot leave
+    // active programs with no deterministic default for sales to use.
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`loyalty-program:${businessId}`]);
     const [{ rows: defaultRows }, { rows: existingRows }] = await Promise.all([
       client.query<Pick<ProgramRow, "id">>(
-        `SELECT id FROM loyalty_programs WHERE business_id = $1 AND is_default AND is_active FOR UPDATE`,
+        `SELECT id
+           FROM loyalty_programs
+          WHERE business_id = $1 AND is_active AND is_default
+          FOR UPDATE`,
         [businessId],
       ),
       client.query<Pick<ProgramRow, "id" | "is_active" | "is_default">>(
         `SELECT id, is_active, is_default
            FROM loyalty_programs
-          WHERE business_id = $1 AND name = $2 FOR UPDATE`,
+          WHERE business_id = $1 AND name = $2
+          FOR UPDATE`,
         [businessId, name],
       ),
     ]);
     const existing = existingRows[0];
     const isActive = input.isActive ?? existing?.is_active ?? true;
-    // An explicit `false` cannot create an active orphan program. When there
-    // is no default yet, the first active program becomes it automatically.
     const requestedDefault = input.isDefault ?? existing?.is_default ?? false;
+    // First active program (including a repair of an old inactive default)
+    // must become the selected program rather than relying on arbitrary order.
     const isDefault = requestedDefault || (!defaultRows[0] && isActive);
 
     if (isDefault && !isActive) {
@@ -141,30 +146,38 @@ export async function upsertProgram(
       throw new Error("برای غیرفعال‌کردن برنامهٔ پیش‌فرض، ابتدا یک برنامهٔ فعال دیگر را پیش‌فرض کنید.");
     }
 
-    // Making one default demotes every other one before the upsert, so the
-    // partial unique index stays true even when this is an existing row.
-    if (isDefault) {
+    // Demote before the upsert when selecting a different program. An ordinary
+    // edit of the program already selected must not churn every row or replace
+    // omitted fields with client defaults.
+    if (isDefault && (input.isDefault === true || !existing?.is_default)) {
       await client.query(`UPDATE loyalty_programs SET is_default = false WHERE business_id = $1`, [businessId]);
     }
+
+    // Omitted numeric/expiry values retain their stored value when editing an
+    // existing program; `null` expiry deliberately means "never expires".
+    const expiryProvided = input.pointsExpiryDays !== undefined;
+    const writeIsActive = existing && input.isActive === undefined ? null : isActive;
+    const writeIsDefault = existing && input.isDefault === undefined && existing.is_default === isDefault ? null : isDefault;
     const { rows } = await client.query<ProgramRow>(
       `INSERT INTO loyalty_programs
          (business_id, name, earn_points_per_100000, point_value_rial, points_expiry_days, is_active, is_default)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES ($1, $2, COALESCE($3, 1), COALESCE($4, 1000), $6, $7, $8)
        ON CONFLICT (business_id, name) DO UPDATE
-         SET earn_points_per_100000 = EXCLUDED.earn_points_per_100000,
-             point_value_rial = EXCLUDED.point_value_rial,
-             points_expiry_days = EXCLUDED.points_expiry_days,
-             is_active = EXCLUDED.is_active,
-             is_default = EXCLUDED.is_default
+         SET earn_points_per_100000 = COALESCE($3, loyalty_programs.earn_points_per_100000),
+             point_value_rial = COALESCE($4, loyalty_programs.point_value_rial),
+             points_expiry_days = CASE WHEN $5 THEN $6 ELSE loyalty_programs.points_expiry_days END,
+             is_active = COALESCE($7, loyalty_programs.is_active),
+             is_default = COALESCE($8, loyalty_programs.is_default)
        RETURNING *`,
       [
         businessId,
         name,
-        earnPointsPer100000,
-        pointValueRial,
+        input.earnPointsPer100000 ?? null,
+        input.pointValueRial ?? null,
+        expiryProvided,
         input.pointsExpiryDays ?? null,
-        isActive,
-        isDefault,
+        writeIsActive,
+        writeIsDefault,
       ],
     );
     await client.query("COMMIT");
@@ -177,6 +190,10 @@ export async function upsertProgram(
   }
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function addDaysIso(days: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + days);
@@ -184,24 +201,61 @@ function addDaysIso(days: number): string {
 }
 
 /**
- * Spendable points = the signed points ledger whose lots have not expired.
+ * Balance = Σ earned − Σ redeemed, honouring expiry. Never a stored column.
  *
- * `expires_at` is inclusive: a point dated today remains usable for the whole
- * business day and expires only after that date. Redemption rows inherit the
- * lot's expiry (see `redeemPoints`), so when a lot expires its matching debit
- * leaves this sum at zero rather than making a customer's balance negative.
+ * `expires_at` is written on every earn and the program screen advertises
+ * «انقضای امتیاز», so lapsed points must actually lapse — a plain SUM never
+ * enforced it. The ledger is replayed as earn *lots*: each redemption (at its
+ * own date) consumes from the lots that were still valid on that day,
+ * soonest-expiring first, and the balance is what remains in the lots that
+ * are still valid today. This way an expired lot forfeits only the part of it
+ * that was never spent in time, a redemption made before expiry keeps
+ * counting against the lot it actually drew from, and the result can never go
+ * negative through expiry alone.
  */
 export async function pointsBalance(businessId: string, customerId: string, client?: PoolClient): Promise<number> {
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
-  const { rows } = await run<{ balance: string | null }>(
-    `SELECT COALESCE(SUM(points), 0)::text AS balance
+  const { rows } = await run<{ points: number; expires_at: string | null; created_on: string }>(
+    `SELECT points, expires_at::text AS expires_at, (created_at AT TIME ZONE 'UTC')::date::text AS created_on
        FROM customer_points
       WHERE business_id = $1 AND customer_id = $2
-        AND (expires_at IS NULL OR expires_at >= current_date)`,
+      ORDER BY created_at, id`,
     [businessId, customerId],
   );
-  return Math.max(0, Number(rows[0]?.balance ?? 0));
+
+  const lots: { remaining: number; expiresAt: string | null }[] = [];
+  for (const row of rows) {
+    if (row.points > 0) {
+      lots.push({ remaining: row.points, expiresAt: row.expires_at });
+      continue;
+    }
+    let toConsume = -row.points;
+    // Lots valid on the redemption's own day, soonest-expiring first — the
+    // order any loyalty scheme spends in, and the one that forfeits least.
+    const usable = lots
+      .filter((lot) => lot.remaining > 0 && (lot.expiresAt === null || lot.expiresAt >= row.created_on))
+      .sort((a, b) => (a.expiresAt ?? "9999-12-31").localeCompare(b.expiresAt ?? "9999-12-31"));
+    for (const lot of usable) {
+      if (toConsume <= 0) break;
+      const take = Math.min(lot.remaining, toConsume);
+      lot.remaining -= take;
+      toConsume -= take;
+    }
+    // Historical over-redemption (recorded before the balance check existed):
+    // absorb it against whatever is left rather than resurrecting points.
+    for (const lot of lots) {
+      if (toConsume <= 0) break;
+      const take = Math.min(lot.remaining, toConsume);
+      lot.remaining -= take;
+      toConsume -= take;
+    }
+  }
+
+  const today = todayIso();
+  return lots
+    .filter((lot) => lot.expiresAt === null || lot.expiresAt >= today)
+    .reduce((sum, lot) => sum + lot.remaining, 0);
 }
 
 export interface EarnPointsResult {
@@ -282,11 +336,10 @@ export async function redeemPoints(
 
   const valueRial = input.points * program.pointValueRial;
 
-  // Debit the oldest-expiring spendable lots first. The debit inherits the
-  // source lot's expiry, which keeps an expired lot and the points already
-  // spent from it out of every future balance calculation together. A single
-  // redemption can span lots, so it may deliberately produce several signed
-  // ledger rows while still producing one store-credit event below.
+  // Match each debit to the lot it consumed. Current projections can then
+  // exclude an expired lot and its matching redemption together; otherwise an
+  // old, expiry-less debit would make an expired balance look permanently
+  // negative outside this service.
   const { rows: lots } = await client.query<{ expires_at: string | null; points: string }>(
     `SELECT expires_at::text, COALESCE(SUM(points), 0)::text AS points
        FROM customer_points
@@ -297,12 +350,10 @@ export async function redeemPoints(
       ORDER BY expires_at NULLS LAST`,
     [input.businessId, input.customerId],
   );
-
   let remaining = input.points;
   for (const lot of lots) {
     if (remaining === 0) break;
-    const available = Number(lot.points);
-    const consumed = Math.min(remaining, available);
+    const consumed = Math.min(remaining, Number(lot.points));
     if (consumed <= 0) continue;
     await client.query(
       `INSERT INTO customer_points (business_id, customer_id, points, source_type, source_id, expires_at)
@@ -311,9 +362,8 @@ export async function redeemPoints(
     );
     remaining -= consumed;
   }
-  // The advisory lock above protects this invariant. Keeping the guard makes
-  // a malformed historical ledger fail closed rather than issuing unbacked
-  // store credit if the grouped lots disagree with the balance query.
+  // The customer-level lock and the preceding ledger replay make this a
+  // malformed-historical-ledger guard rather than a normal user-facing path.
   if (remaining > 0) throw new Error("امتیاز کافی نیست.");
 
   const { entryId } = await emitDomainEvent(client, {

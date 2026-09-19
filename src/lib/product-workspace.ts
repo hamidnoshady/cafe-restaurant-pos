@@ -33,9 +33,10 @@ export function isProductWorkspaceIndustry(
 }
 
 /**
- * The trade's own items/stock API prefix — the workspace's add form and the
- * stock panel write through the same routes the old «کالاها» tab used, so a
- * sale, a receipt and a catalogue edit stay one code path per trade.
+ * The trade's own items/stock API prefix — list, stock and price panels keep
+ * using the same routes the old «کالاها» tab used. The multi-row add form has
+ * a shared atomic endpoint because its parent, variants and barcodes are one
+ * transaction rather than a sequence of per-trade requests.
  */
 export function productApiBaseFor(industry: ProductWorkspaceIndustry): string {
   const map: Record<ProductWorkspaceIndustry, string> = {

@@ -1,15 +1,10 @@
 /**
  * What «مدیریت وب‌سایت» knows about a business's two website systems.
  *
- * One read, answering the question the app is organised around: which of the
- * two managers does this business actually have? The sidebar builds its menu
- * from it, the app home draws its two cards from it, and both do so from
- * *observed* state — a live CMS connection row and the WooCommerce/WordPress
- * connections — never from a flag somebody set or the absence of an error.
- *
- * Deliberately cheap: two local queries and no call to either external system.
- * A down CMS must not make the app's own menu slow or empty, which is the same
- * rule `src/lib/cms/client.ts` states for reads.
+ * All reads are local. A down CMS must not make the app's own menu slow or
+ * empty. The home variant also returns the setup row from the same read pass,
+ * avoiding the duplicate setup query and mismatched progress/status snapshot
+ * the old overview could produce while a site was being provisioned.
  */
 import { query } from "../db";
 import { cmsWebsiteState } from "../cms/website-service";
@@ -28,7 +23,17 @@ export interface WebsiteManagersState {
   };
 }
 
-export async function websiteManagersState(businessId: string): Promise<WebsiteManagersState> {
+export interface WebsiteHomeState {
+  managers: WebsiteManagersState;
+  setup: WebsiteSetupState;
+}
+
+/**
+ * Read the app-home snapshot once. `websiteManagersState` intentionally wraps
+ * this so the sidebar/API and the server-rendered overview continue to use the
+ * exact same connection rules.
+ */
+export async function websiteHomeState(businessId: string): Promise<WebsiteHomeState> {
   const [connection, setup, stores] = await Promise.all([
     cmsWebsiteState(businessId),
     getWebsiteSetup(businessId),
@@ -40,7 +45,7 @@ export async function websiteManagersState(businessId: string): Promise<WebsiteM
   ]);
 
   const storeCount = Number(stores.rows[0]?.count ?? 0);
-  return {
+  const managers: WebsiteManagersState = {
     cms: {
       connected: Boolean(connection),
       domain: connection?.siteDomain ?? setup.domain,
@@ -48,6 +53,14 @@ export async function websiteManagersState(businessId: string): Promise<WebsiteM
       // that has, but has no site yet, shows where it got to.
       setupStep: connection ? "built" : setup.domain || setup.stage !== "domain" ? setup.stage : null,
     },
+    // Paused/error connections still count as connected: their manager is the
+    // place where the owner diagnoses or resumes them. Deleting disconnects.
     wp: { connected: storeCount > 0, storeCount },
   };
+
+  return { managers, setup };
+}
+
+export async function websiteManagersState(businessId: string): Promise<WebsiteManagersState> {
+  return (await websiteHomeState(businessId)).managers;
 }

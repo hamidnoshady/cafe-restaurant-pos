@@ -351,6 +351,8 @@ export async function launchMessageCampaign(
 
   const template = await getMessageTemplate(businessId, campaign.templateId ?? "");
   if (!template) throw new Error("template_not_found");
+  const messageConfig = await getPublicMessageConfig();
+  if (!messageConfig.enabled || !messageConfig.configured) throw new Error("messaging_not_configured");
 
   const audience = await audienceForSegment(businessId, campaign.segmentId, campaign.channel);
   // `members` is intentionally capped so an accidental broad segment cannot

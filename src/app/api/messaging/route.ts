@@ -130,6 +130,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       "campaign_already_launched",
       "campaign_audience_limit_exceeded",
       "campaign_has_no_recipients",
+      "no_reachable_customer",
+      "messaging_not_configured",
       "template_not_found",
       "invalid_amount",
     ];

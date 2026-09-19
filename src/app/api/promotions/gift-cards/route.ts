@@ -10,11 +10,17 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   if (error) return error;
   const code = (request.nextUrl.searchParams.get("code") ?? "").trim();
   if (!code) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+
+  // Distinguish an unknown code from a genuine zero balance: both would
+  // otherwise return 0, and the screen would show «۰» as if the card existed.
   const card = await getGiftCardByCode(session.businessId, code);
-  // A missing code is not a zero-value card. Returning 404 keeps the counter
-  // from telling a cashier that an unknown card has a valid zero balance.
   if (!card) return NextResponse.json({ error: "gift_card_not_found" }, { status: 404 });
-  return NextResponse.json({ balance: await giftCardBalance(session.businessId, code) });
+
+  return NextResponse.json({
+    found: true,
+    balance: await giftCardBalance(session.businessId, code),
+    isActive: card.isActive,
+  });
 });
 
 /** Issues a gift card, posting its value as a liability (2420). */
