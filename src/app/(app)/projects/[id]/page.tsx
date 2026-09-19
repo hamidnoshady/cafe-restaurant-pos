@@ -10,6 +10,8 @@ import {
   BrainIcon,
   CheckIcon,
   CircleIcon,
+  FileTextIcon,
+  ImageIcon,
   ListTodoIcon,
   MessageSquareIcon,
   PencilIcon,
@@ -49,6 +51,14 @@ interface Project {
 interface Cost { spentRial: number; budgetRial: number | null; remainingBudgetRial: number | null; campaigns: number }
 interface OwnerOption { id: string; fullName: string }
 interface AgentOption { id: string; name: string }
+interface ProjectFile {
+  id: string;
+  kind: "image" | "video" | "document";
+  fileName: string;
+  source: "upload" | "ai_attachment" | "ai_generated";
+  createdByAi: boolean;
+  createdAt: string;
+}
 
 interface Note {
   id: string;
@@ -105,6 +115,7 @@ export default function ProjectDetailPage() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [memory, setMemory] = useState<Memory[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [files, setFiles] = useState<ProjectFile[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showAddMemory, setShowAddMemory] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
@@ -118,11 +129,12 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const [projRes, notesRes, memoryRes, tasksRes, convsRes] = await Promise.all([
+    const [projRes, notesRes, memoryRes, tasksRes, filesRes, convsRes] = await Promise.all([
       api<{ project: Project; cost: Cost; owners: OwnerOption[]; agents: AgentOption[] }>(`/api/ai/projects/${id}`),
       api<{ notes: Note[] }>(`/api/ai/projects/${id}/notes`),
       api<{ memory: Memory[] }>(`/api/ai/projects/${id}/memory`),
       api<{ tasks: Task[] }>(`/api/ai/projects/${id}/tasks`),
+      api<{ files: ProjectFile[] }>(`/api/ai/projects/${id}/files`),
       api<{ conversations: Conversation[] }>(`/api/ai/conversations?project=${id}&limit=100`),
     ]);
     if (projRes.ok) {
@@ -134,6 +146,7 @@ export default function ProjectDetailPage() {
     if (notesRes.ok) setNotes(notesRes.data.notes);
     if (memoryRes.ok) setMemory(memoryRes.data.memory);
     if (tasksRes.ok) setTasks(tasksRes.data.tasks);
+    if (filesRes.ok) setFiles(filesRes.data.files);
     // The API already scopes to this project (?project=), so no client filter.
     if (convsRes.ok) setConversations(convsRes.data.conversations);
   }, [id]);
@@ -401,6 +414,53 @@ export default function ProjectDetailPage() {
                         <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate">{conv.title}</span>
                       </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </SectionCard>
+
+          {/* Files — the media assets tagged to this project (images users sent
+              the assistant here, and anything else filed under the project).
+              Read-only: files are created through chat/media and tagged there. */}
+          <SectionCard title={`فایل‌ها (${formatPersianNumber(files.length)})`}>
+            <div className="p-4">
+              {files.length === 0 ? (
+                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <ImageIcon className="size-4" />
+                  هنوز فایلی در این پروژه نیست. تصویری که در گفت‌وگوهای این پروژه به دستیار می‌فرستید اینجا نگهداری می‌شود.
+                </p>
+              ) : (
+                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {files.map((file) => (
+                    <li key={file.id} className="overflow-hidden rounded-xl border border-border/80 bg-card">
+                      <a href={`/api/media/${file.id}/file`} target="_blank" rel="noreferrer" className="block">
+                        {file.kind === "image" ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`/api/media/${file.id}/file`}
+                            alt={file.fileName}
+                            className="h-24 w-full bg-muted/50 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-24 w-full items-center justify-center bg-muted/50">
+                            <FileTextIcon className="size-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="p-2">
+                          <p className="truncate text-xs text-foreground" title={file.fileName}>{file.fileName}</p>
+                          {file.createdByAi ? (
+                            <span className="mt-1 inline-block rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
+                              ساختهٔ دستیار
+                            </span>
+                          ) : file.source === "ai_attachment" ? (
+                            <span className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                              از گفت‌وگو
+                            </span>
+                          ) : null}
+                        </div>
+                      </a>
                     </li>
                   ))}
                 </ul>

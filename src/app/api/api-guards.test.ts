@@ -276,6 +276,9 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   // project, exactly like notes and memory.
   "ai/projects/[id]/tasks": "lists/adds tasks to a project — RLS through parent project",
   "ai/projects/[id]/tasks/[taskId]": "toggles/deletes a task — RLS through parent project",
+  // Phase F capstone — a project's media files, scoped by project ownership and
+  // the tenant-isolated media_assets table.
+  "ai/projects/[id]/files": "lists a project's media files — ownership through parent project",
 };
 
 /** True for the super-admin console's own routes, which use the platform guards. */
