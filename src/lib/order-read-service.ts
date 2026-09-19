@@ -164,6 +164,8 @@ export interface OrderDetail {
   order: Record<string, unknown>;
   items: Record<string, unknown>[];
   modifiers: Record<string, unknown>[];
+  /** Tender snapshots are needed for an accurate reprint, especially for retail invoices. */
+  payments: Record<string, unknown>[];
 }
 
 /** Fetches one order and its immutable line/modifier snapshots from one branch. */
@@ -178,7 +180,7 @@ export async function getOrderDetail(locationId: string, id: string): Promise<Or
   const order = orders[0];
   if (!order) return null;
 
-  const [{ rows: items }, { rows: modifiers }] = await Promise.all([
+  const [{ rows: items }, { rows: modifiers }, { rows: payments }] = await Promise.all([
     query(
       "SELECT id, menu_item_id, name_snapshot, unit_price, quantity, status, note, void_reason, created_at FROM order_items WHERE order_id = $1 ORDER BY created_at",
       [id],
@@ -189,7 +191,11 @@ export async function getOrderDetail(locationId: string, id: string): Promise<Or
       "SELECT oim.id, oim.order_item_id, oim.modifier_id, oim.name_snapshot, oim.price_delta FROM order_item_modifiers oim JOIN order_items oi ON oi.id = oim.order_item_id WHERE oi.order_id = $1",
       [id],
     ),
+    query(
+      "SELECT p.id, p.method::text AS method, p.amount, p.reference, p.received_at, pm.name AS payment_method_name FROM payments p LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id WHERE p.order_id = $1 ORDER BY p.received_at, p.id",
+      [id],
+    ),
   ]);
 
-  return { order, items, modifiers };
+  return { order, items, modifiers, payments };
 }
