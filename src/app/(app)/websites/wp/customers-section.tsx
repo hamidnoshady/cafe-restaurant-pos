@@ -11,6 +11,7 @@ import Link from "next/link";
 import { ContactIcon, RefreshCwIcon, ExternalLinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, inputClass } from "@/app/dashboard/ui";
+import { useFeatureLocked } from "@/components/feature-lock";
 import {
   cardClass,
   EmptyState,
@@ -58,8 +59,15 @@ export function WpCustomersSection() {
   const loadSeqRef = useRef(0);
   const selectedRef = useRef("");
   const syncTimerRef = useRef<number | null>(null);
+  const locked = useFeatureLocked();
 
   const fetchConnections = useCallback(async () => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only light the console with 403s behind the grayed-out preview.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     setConnections(null);
     setConnectionsError(false);
     const res = await api<{ connections: ConnectionLite[] }>(
@@ -73,7 +81,7 @@ export function WpCustomersSection() {
     } else {
       setConnectionsError(true);
     }
-  }, []);
+  }, [locked]);
 
   useEffect(() => {
     mountedRef.current = true;

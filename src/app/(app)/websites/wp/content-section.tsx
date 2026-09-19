@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/app/dashboard/ui";
 import { api, errorMessageOrRaw } from "@/app/dashboard/ui";
 import { RefreshCwIcon, FileTextIcon, PlusIcon, ExternalLinkIcon, PencilIcon } from "lucide-react";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge, TabBar } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -48,15 +49,22 @@ export function WpContentSection() {
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<ContentRow | "new" | null>(null);
+  const locked = useFeatureLocked();
 
   useEffect(() => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only light the console with 403s behind the grayed-out preview.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok) {
         setConnections(res.data.connections);
         setSelectedId(res.data.connections[0]?.id ?? "");
       } else setConnections([]);
     });
-  }, []);
+  }, [locked]);
 
   const load = useCallback(
     (connectionId: string, type: string) => {

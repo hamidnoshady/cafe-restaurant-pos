@@ -277,6 +277,14 @@ describe("the route tree resolves every promised URL", () => {
       new URL("../../.next/server/app-paths-manifest.json", import.meta.url),
     );
     if (!existsSync(manifestPath)) return;
+    // A dev server writes this manifest too — but only for the routes compiled
+    // so far, so reading it would fail every promised URL that was never
+    // opened in that session. `next build` stamps a unique BUILD_ID (dev
+    // writes "development" or none at all), and only that says the manifest
+    // is the complete one.
+    const buildIdPath = fileURLToPath(new URL("../../.next/BUILD_ID", import.meta.url));
+    const buildId = existsSync(buildIdPath) ? readFileSync(buildIdPath, "utf8").trim() : "";
+    if (!buildId || buildId === "development") return;
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<
       string,
       string
