@@ -43,7 +43,8 @@ import {
   type DealStage,
   type DuplicateReason,
 } from "./crm-shared";
-import { lifetimeValue, scorePopulation, type CustomerRfmInput, type RfmScore } from "./crm-scoring";
+import { daysBetween, lifetimeValue, scorePopulation, type CustomerRfmInput, type RfmScore } from "./crm-scoring";
+import type { LifecycleStage } from "./crm-scoring";
 
 // ---------------------------------------------------------------------------
 // The customer file
@@ -153,7 +154,8 @@ export async function getCustomerFile(
          SELECT count(*)::int AS open_deals FROM crm_deals
           WHERE customer_id = c.id AND business_id = $1 AND stage NOT IN ('won', 'lost')
        ) od ON true
-      WHERE c.business_id = $1 AND c.id = $2`,
+      WHERE c.business_id = $1 AND c.id = $2
+        AND c.roles && ARRAY['customer']::text[]`,
     [businessId, customerId],
   );
   const row = rows[0];
@@ -314,7 +316,9 @@ export async function setConsent(
 
   return withTenant(businessId, async () => {
     const { rows: current } = await query<{ sms_consent: boolean; marketing_consent: boolean }>(
-      `SELECT sms_consent, marketing_consent FROM parties WHERE business_id = $1 AND id = $2`,
+      `SELECT sms_consent, marketing_consent FROM parties
+         WHERE business_id = $1 AND id = $2
+           AND roles && ARRAY['customer']::text[] AND is_active AND merged_into_id IS NULL`,
       [businessId, customerId],
     );
     if (!current[0]) return null;
@@ -325,7 +329,9 @@ export async function setConsent(
 
     if (changed) {
       await query(
-        `UPDATE parties SET ${column} = $3, updated_at = now() WHERE business_id = $1 AND id = $2`,
+        `UPDATE parties SET ${column} = $3, updated_at = now()
+           WHERE business_id = $1 AND id = $2
+             AND roles && ARRAY['customer']::text[] AND is_active AND merged_into_id IS NULL`,
         [businessId, customerId, update.granted],
       );
     }
@@ -384,6 +390,10 @@ export async function listConsentEvents(
             e.created_at AS "createdAt"
        FROM crm_consent_events e
        JOIN parties c ON c.id = e.customer_id
+        AND c.business_id = e.business_id
+        AND c.roles && ARRAY['customer']::text[]
+        AND c.is_active
+        AND c.merged_into_id IS NULL
       WHERE ${where}
       ORDER BY e.created_at DESC
       LIMIT $${params.length}`,
@@ -417,7 +427,10 @@ export async function consentCoverage(businessId: string): Promise<{
             count(*) FILTER (WHERE sms_consent AND ${mobileReachableSql()})::text AS sms_reachable,
             count(*) FILTER (WHERE marketing_consent AND email IS NOT NULL AND btrim(email) <> '')::text AS email_reachable
        FROM parties
-      WHERE business_id = $1 AND merged_into_id IS NULL`,
+      WHERE business_id = $1
+        AND roles && ARRAY['customer']::text[]
+        AND is_active
+        AND merged_into_id IS NULL`,
     [businessId],
   );
   const row = rows[0] ?? {};
@@ -541,6 +554,7 @@ export async function findDuplicates(
        AND ${rightPhone} = ${leftPhone}
        AND a.id < b.id
       WHERE a.business_id = $1 AND ${leftPhone} IS NOT NULL
+        AND a.roles && ARRAY['customer']::text[] AND b.roles && ARRAY['customer']::text[]
         AND a.is_active AND b.is_active
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
       LIMIT $2`,
@@ -552,6 +566,7 @@ export async function findDuplicates(
     `SELECT ${selectPair} FROM parties a JOIN parties b
         ON b.business_id = a.business_id AND ${emailKey("b")} = ${emailKey("a")} AND a.id < b.id
       WHERE a.business_id = $1 AND a.email IS NOT NULL AND btrim(a.email) <> ''
+        AND a.roles && ARRAY['customer']::text[] AND b.roles && ARRAY['customer']::text[]
         AND a.is_active AND b.is_active
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
         -- Already reported by the stronger phone rule; reporting the same pair
@@ -567,6 +582,7 @@ export async function findDuplicates(
         ON b.business_id = a.business_id
        AND ${nameKey("b")} = ${nameKey("a")} AND a.id < b.id
       WHERE a.business_id = $1 AND btrim(a.name) <> ''
+        AND a.roles && ARRAY['customer']::text[] AND b.roles && ARRAY['customer']::text[]
         AND a.is_active AND b.is_active
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
         AND (${leftPhone} IS NULL OR ${rightPhone} IS NULL OR ${leftPhone} <> ${rightPhone})
@@ -628,7 +644,7 @@ export async function previewMerge(
     `SELECT id, name, tags, sms_consent, marketing_consent
        FROM parties
       WHERE business_id = $1 AND id = ANY($2::uuid[])
-        AND is_active AND merged_into_id IS NULL`,
+        AND roles && ARRAY['customer']::text[] AND is_active AND merged_into_id IS NULL`,
     [businessId, [winnerId, loserId]],
   );
   const winner = rows.find((row) => row.id === winnerId);
@@ -708,7 +724,8 @@ export async function mergeCustomers(
               email, address, birthday::text AS birthday,
               notes, tags, sms_consent, marketing_consent, merged_into_id
          FROM parties
-        WHERE business_id = $1 AND id = ANY($2::uuid[]) AND is_active
+        WHERE business_id = $1 AND id = ANY($2::uuid[])
+          AND roles && ARRAY['customer']::text[] AND is_active AND merged_into_id IS NULL
         ORDER BY id FOR UPDATE`,
       [businessId, [winnerId, loserId]],
     );
@@ -866,27 +883,93 @@ export async function mergeCustomers(
  * Callers refresh it from the CRM dashboard, and every screen treats a null
  * score as "not scored yet" rather than as zero.
  */
-export async function recomputeRfm(businessId: string): Promise<{ scored: number; anchorDate: string }> {
-  const anchorDate = await businessToday(businessId);
-  const { rows } = await query<{
-    customer_id: string;
-    name: string;
-    last_purchase_date: string | null;
-    order_count: number;
-    total_spent: string;
-  }>(
-    `SELECT c.id AS customer_id, c.name,
-            max(app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes))::text AS last_purchase_date,
-            count(o.id)::int AS order_count,
-            coalesce(sum(o.total), 0)::text AS total_spent
+interface CustomerPurchaseRow extends Record<string, unknown> {
+  customer_id: string;
+  name: string;
+  last_purchase_date: string | null;
+  order_count: number;
+  total_spent: string;
+  rfm_recency: number | null;
+  rfm_frequency: number | null;
+  rfm_monetary: number | null;
+  lifecycle_stage: string | null;
+}
+
+/**
+ * The customer purchase population used by CRM analytics.
+ *
+ * Keep the order aggregation in one query shape for the stored-score reader,
+ * the RFM recompute and the overview leaderboard. In particular, the location
+ * join belongs *inside* the order aggregation: a LEFT JOIN of `orders` to a
+ * non-matching location still counts the order while returning NULL dates,
+ * which made a leaked/misassigned order inflate a customer's spend without a
+ * valid business-day date.
+ */
+async function customerPurchaseRows(
+  businessId: string,
+  options: { storedOnly?: boolean } = {},
+): Promise<CustomerPurchaseRow[]> {
+  const scoreFilter = options.storedOnly ? "AND c.rfm_scored_at IS NOT NULL" : "";
+  const { rows } = await query<CustomerPurchaseRow>(
+    `WITH order_stats AS (
+       SELECT o.customer_id,
+              count(*)::int AS order_count,
+              coalesce(sum(o.total), 0)::text AS total_spent,
+              min(app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes))::text AS first_purchase_date,
+              max(app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes))::text AS last_purchase_date
+         FROM orders o
+         JOIN locations l ON l.id = o.location_id AND l.business_id = $1
+        WHERE o.status = 'completed' AND o.closed_at IS NOT NULL
+          AND o.customer_id IS NOT NULL
+        GROUP BY o.customer_id
+     )
+     SELECT c.id AS customer_id, c.name,
+            os.last_purchase_date,
+            coalesce(os.order_count, 0)::int AS order_count,
+            coalesce(os.total_spent, '0')::text AS total_spent,
+            c.rfm_recency, c.rfm_frequency, c.rfm_monetary, c.lifecycle_stage
        FROM parties c
-       LEFT JOIN orders o
-         ON o.customer_id = c.id AND o.status = 'completed' AND o.closed_at IS NOT NULL
-       LEFT JOIN locations l ON l.id = o.location_id AND l.business_id = $1
-      WHERE c.business_id = $1 AND c.merged_into_id IS NULL
-      GROUP BY c.id, c.name`,
+       LEFT JOIN order_stats os ON os.customer_id = c.id
+      WHERE c.business_id = $1
+        AND c.roles && ARRAY['customer']::text[]
+        AND c.is_active
+        AND c.merged_into_id IS NULL
+        ${scoreFilter}`,
     [businessId],
   );
+  return rows;
+}
+
+/** Lifetime purchase totals for every live CRM customer, independent of RFM. */
+export interface CustomerPurchaseSummary {
+  customerId: string;
+  name: string;
+  orderCount: number;
+  totalSpentRial: string;
+}
+
+export async function customerPurchasePopulation(businessId: string): Promise<CustomerPurchaseSummary[]> {
+  const rows = await customerPurchaseRows(businessId);
+  return rows.map((row) => ({
+    customerId: row.customer_id,
+    name: row.name,
+    orderCount: Number(row.order_count ?? 0),
+    totalSpentRial: String(row.total_spent ?? "0"),
+  }));
+}
+
+/**
+ * Recompute every customer's RFM score and lifecycle stage.
+ *
+ * Whole-population, because quintiles are relative — there is no such thing as
+ * scoring one customer. That is also why the result is *stored*: recomputing
+ * on every list render would mean reading every order on every page load.
+ * Callers refresh it from the CRM dashboard, and every screen treats a null
+ * score as "not scored yet" rather than as zero.
+ */
+export async function recomputeRfm(businessId: string): Promise<{ scored: number; anchorDate: string }> {
+  const anchorDate = await businessToday(businessId);
+  const rows = await customerPurchaseRows(businessId);
 
   const input: CustomerRfmInput[] = rows.map((row) => ({
     customerId: row.customer_id,
@@ -910,7 +993,10 @@ export async function recomputeRfm(businessId: string): Promise<{ scored: number
                 unnest($4::int[]) AS frequency, unnest($5::int[]) AS monetary,
                 unnest($6::text[]) AS stage
        ) v
-      WHERE c.business_id = $1 AND c.id = v.id`,
+      WHERE c.business_id = $1 AND c.id = v.id
+        AND c.roles && ARRAY['customer']::text[]
+        AND c.is_active
+        AND c.merged_into_id IS NULL`,
     [
       businessId,
       scores.map((s) => s.customerId),
@@ -924,38 +1010,39 @@ export async function recomputeRfm(businessId: string): Promise<{ scored: number
   return { scored: scores.length, anchorDate };
 }
 
-/** The scored population, for the dashboard's distribution and leaderboards. */
+/** The stored scored population — null scores stay out until the owner recomputes. */
 export async function scoredPopulation(businessId: string): Promise<RfmScore[]> {
   const anchorDate = await businessToday(businessId);
-  const { rows } = await query<{
-    customer_id: string;
-    name: string;
-    last_purchase_date: string | null;
-    order_count: number;
-    total_spent: string;
-  }>(
-    `SELECT c.id AS customer_id, c.name,
-            max(app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes))::text AS last_purchase_date,
-            count(o.id)::int AS order_count,
-            coalesce(sum(o.total), 0)::text AS total_spent
-       FROM parties c
-       LEFT JOIN orders o
-         ON o.customer_id = c.id AND o.status = 'completed' AND o.closed_at IS NOT NULL
-       LEFT JOIN locations l ON l.id = o.location_id AND l.business_id = $1
-      WHERE c.business_id = $1 AND c.merged_into_id IS NULL
-      GROUP BY c.id, c.name`,
-    [businessId],
-  );
-  return scorePopulation(
-    rows.map((row) => ({
-      customerId: row.customer_id,
-      name: row.name,
-      lastPurchaseDate: row.last_purchase_date,
-      orderCount: Number(row.order_count ?? 0),
-      totalSpentRial: Number(row.total_spent ?? 0),
-    })),
-    anchorDate,
-  );
+  const rows = await customerPurchaseRows(businessId, { storedOnly: true });
+  return rows.flatMap((row) => {
+    if (
+      row.rfm_recency === null ||
+      row.rfm_frequency === null ||
+      row.rfm_monetary === null ||
+      !row.lifecycle_stage
+    ) {
+      return [];
+    }
+    const recency = Number(row.rfm_recency);
+    const frequency = Number(row.rfm_frequency);
+    const monetary = Number(row.rfm_monetary);
+    const stage = row.lifecycle_stage as LifecycleStage;
+    return [
+      {
+        customerId: row.customer_id,
+        name: row.name,
+        recencyDays: row.last_purchase_date ? daysBetween(row.last_purchase_date, anchorDate) : null,
+        orderCount: Number(row.order_count ?? 0),
+        totalSpentRial: Number(row.total_spent ?? 0),
+        recency,
+        frequency,
+        monetary,
+        cell: `${recency}${frequency}${monetary}`,
+        total: recency + frequency + monetary,
+        stage,
+      },
+    ];
+  });
 }
 
 /**

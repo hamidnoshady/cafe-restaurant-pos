@@ -19,7 +19,23 @@
  *     client install — which is exactly what
  *     integration/platform-system-backup.integration.test.ts does.
  */
-import { spawn } from "node:child_process";
+import { spawn, type SpawnOptions } from "node:child_process";
+
+/**
+ * Windows cannot `CreateProcess` a `.cmd`/`.bat` — those are interpreted by
+ * `cmd.exe`, so a direct `spawn()` of one fails with ENOENT. Both binaries are
+ * resolved from an operator-supplied path (and the desktop build, plus the
+ * integration test's stub, legitimately point at a batch wrapper), so route
+ * those through a shell. Everything else is spawned directly, which keeps the
+ * normal case free of shell quoting entirely.
+ */
+function spawnOptionsFor(bin: string): SpawnOptions {
+  const isBatch = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin.trim());
+  return {
+    stdio: ["ignore", "ignore", "pipe"],
+    shell: isBatch,
+  };
+}
 
 /** A large database on slow disk can outlast a naive timeout; 15 min is the tenant-side figure this has always used. */
 export const PG_DUMP_TIMEOUT_MS = 15 * 60 * 1000;
@@ -50,11 +66,11 @@ export function runPgDump(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, ["--format=custom", "--no-password", `--file=${outFile}`, databaseUrl], {
-      stdio: ["ignore", "ignore", "pipe"],
+      ...spawnOptionsFor(bin),
       timeout: PG_DUMP_TIMEOUT_MS,
     });
     let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       if (stderr.length < 2000) stderr += chunk.toString();
     });
     child.on("error", (err) =>
@@ -74,11 +90,11 @@ export function runPgDump(
 export function runPgRestore(bin: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, {
-      stdio: ["ignore", "ignore", "pipe"],
+      ...spawnOptionsFor(bin),
       timeout: PG_RESTORE_TIMEOUT_MS,
     });
     let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       if (stderr.length < 2000) stderr += chunk.toString();
     });
     child.on("error", (err) =>
