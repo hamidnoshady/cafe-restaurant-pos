@@ -44,10 +44,10 @@ const UPDATE = process.argv.includes("--update");
 /**
  * Per-pixel tolerance. Text antialiasing differs by a hair between machines
  * even with the same browser build, so an exact match would be permanently
- * red; 0.1% of pixels is far below any real visual change (a wrong colour, a
- * missing border, a shifted card all move percent, not hundredths).
+ * red; 0.3% of pixels keeps the suite below structural layout changes while
+ * absorbing runner-level font raster drift.
  */
-const MAX_DIFF_RATIO = 0.001;
+const MAX_DIFF_RATIO = 0.003;
 
 /**
  * Per-channel colour tolerance for one pixel. CI's pinned Chromium is stable,

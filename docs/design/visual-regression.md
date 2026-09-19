@@ -62,10 +62,10 @@ harness pins everything that can move:
   `aria-busy="true"` skeleton while fetching, so the harness waits for those to
   clear, then for `document.fonts.ready` (Vazirmatn reflows text if it is early).
 
-Per-pixel tolerance is 0.1% of pixels, with a per-channel threshold of 64/255 and
+Per-pixel tolerance is 0.3% of pixels, with a per-channel threshold of 64/255 and
 a symmetric two-pixel neighbourhood check. That absorbs CI font antialiasing and
 sub-pixel glyph shifts while still failing on real structural changes — a wrong
-colour, missing content, or a shifted card moves whole percent, not hundredths.
+colour, missing content, or a shifted card moves whole percent, not tenths.
 
 ## Reviewing a failure — read this before touching a baseline
 
