@@ -24,15 +24,21 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 import { useCallback, useEffect, useState } from "react";
 import { api, InfoBox, inputClass } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
+import { normalizeNumericText } from "@/lib/digits";
 import { formatDateTime } from "./format";
 
 export { formatDateTime } from "./format";
 /** Money in Toman, the way every other screen in the dashboard shows it. */
 function rialToTomanText(rial: string | null): string {
   if (rial === null) return "—";
-  const value = BigInt(rial);
-  const toman = value / 10n;
-  return Number(toman).toLocaleString("fa-IR");
+  try {
+    const value = BigInt(rial);
+    const toman = value / 10n;
+    return toman.toLocaleString("fa-IR");
+  } catch {
+    // A malformed value from an old sync must not crash the whole catalogue.
+    return "نامعتبر";
+  }
 }
 
 /** Persian labels for the WooCommerce types a row can be. */
@@ -108,16 +114,24 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   const [typeFilter, setTypeFilter] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState({ price: "", stock: "" });
+  const [loadError, setLoadError] = useState("");
+  const [validationError, setValidationError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     const { ok, data } = await api<{
       products?: CatalogueProduct[];
       summary?: Record<string, number>;
+      error?: string;
     }>(`/api/integrations/connections/${connectionId}/catalogue`);
     if (ok) {
       setProducts(data.products ?? []);
       setSummary(data.summary ?? null);
+    } else {
+      setProducts([]);
+      setSummary(null);
+      setLoadError(String(data?.error ?? "دریافت محصولات ناموفق بود."));
     }
     setLoading(false);
   }, [connectionId]);
@@ -140,17 +154,34 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   });
 
   async function push(remoteId: string) {
+    setValidationError("");
     const fields: Record<string, unknown> = {};
     if (draft.price.trim()) {
-      // Typed in Toman, sent as Rial — the app's own money rule.
-      const toman = Number(draft.price.replace(/[^\d.]/g, ""));
-      if (Number.isFinite(toman)) fields.priceRial = String(Math.round(toman * 10));
+      // Persian/Arabic digits and pasted grouping separators are accepted.
+      const canonical = normalizeNumericText(draft.price, { allowDecimal: false, allowNegative: false });
+      if (!canonical || !/^\d+$/.test(canonical)) {
+        setValidationError("قیمت باید یک عدد صحیح و نامنفی باشد.");
+        return;
+      }
+      fields.priceRial = (BigInt(canonical) * 10n).toString();
     }
     if (draft.stock.trim()) {
-      const stock = Number(draft.stock.replace(/[^\d]/g, ""));
-      if (Number.isFinite(stock)) fields.stock_quantity = stock;
+      const canonical = normalizeNumericText(draft.stock, { allowDecimal: false, allowNegative: false });
+      if (!canonical || !/^\d+$/.test(canonical)) {
+        setValidationError("موجودی باید یک عدد صحیح و نامنفی باشد.");
+        return;
+      }
+      const stock = Number(canonical);
+      if (!Number.isSafeInteger(stock)) {
+        setValidationError("موجودی واردشده بیش از حد بزرگ است.");
+        return;
+      }
+      fields.stock_quantity = stock;
     }
-    if (Object.keys(fields).length === 0) return;
+    if (Object.keys(fields).length === 0) {
+      setValidationError("حداقل قیمت یا موجودی جدید را وارد کنید.");
+      return;
+    }
     const result = await call<Record<string, unknown>>(
       `/api/integrations/connections/${connectionId}/store/products`,
       "POST",
@@ -163,8 +194,14 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-xl bg-muted p-2 text-xs">
-      {loading ? <LoadingSkeleton rows={3} compact /> : null}
+    <section className="mt-2 space-y-4 rounded-xl bg-muted p-3 text-sm sm:p-4" aria-busy={loading} aria-label="فهرست محصولات ووکامرس">
+      {loading ? <LoadingSkeleton rows={5} compact /> : null}
+      {!loading && loadError ? (
+        <div role="alert" className="flex flex-col gap-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-red-700 sm:flex-row sm:items-center sm:justify-between dark:text-red-300">
+          <span>{loadError}</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void load()}>تلاش دوباره</Button>
+        </div>
+      ) : null}
 
       {!loading && summary ? (
         <div className="flex flex-wrap gap-2">
@@ -184,25 +221,37 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
       ) : null}
 
       {!loading && products.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          <input
-            className={inputClass}
-            placeholder="جست‌وجو در نام، SKU، دسته یا ویژگی…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <select className={inputClass} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-end">
+          <label className="grid gap-1">
+            <span className="text-xs font-medium">جست‌وجوی محصول</span>
+            <input
+              className={`${inputClass} w-full`}
+              placeholder="نام، SKU، دسته یا ویژگی…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-medium">نوع محصول</span>
+            <select className={`${inputClass} w-full`} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
             <option value="">همهٔ نوع‌ها</option>
             {types.map((type) => (
               <option key={type} value={type}>
                 {WOO_TYPE_LABELS[type] ?? type}
               </option>
             ))}
-          </select>
+            </select>
+          </label>
+          <Button type="button" variant="outline" className="w-full sm:w-auto" disabled={!query && !typeFilter} onClick={() => { setQuery(""); setTypeFilter(""); }}>
+            پاک‌کردن فیلتر
+          </Button>
+          <p className="text-xs text-muted-foreground sm:col-span-3" aria-live="polite">
+            نمایش {visible.length.toLocaleString("fa-IR")} از {products.length.toLocaleString("fa-IR")} محصول
+          </p>
         </div>
       ) : null}
 
-      {!loading && products.length === 0 ? (
+      {!loading && !loadError && products.length === 0 ? (
         <p className="text-muted-foreground">
           هنوز محصولی همگام‌سازی نشده است. دکمهٔ «همگام‌سازی محصولات» را بزنید.
         </p>
@@ -212,7 +261,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
         <p className="text-muted-foreground">محصولی با این فیلتر پیدا نشد.</p>
       ) : null}
 
-      <ul className="max-h-80 space-y-1 overflow-y-auto">
+      <ul className="grid gap-2 lg:grid-cols-2">
         {visible.map((product) => (
           <li key={product.remoteId} className="rounded-lg border border-border/70 bg-card p-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -246,19 +295,29 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
 
             {product.sellable ? (
               editing === product.remoteId ? (
-                <div className="mt-2 flex flex-wrap items-end gap-2">
-                  <input
-                    className={inputClass}
-                    placeholder="قیمت جدید (تومان)"
-                    value={draft.price}
-                    onChange={(e) => setDraft({ ...draft, price: e.target.value })}
-                  />
-                  <input
-                    className={inputClass}
-                    placeholder="موجودی جدید"
-                    value={draft.stock}
-                    onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
-                  />
+                <div className="mt-3 grid gap-2 border-t border-border/60 pt-3 sm:grid-cols-2">
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium">قیمت جدید (تومان)</span>
+                    <input
+                      className={`${inputClass} w-full`}
+                      placeholder="مثلاً ۱۵۰٬۰۰۰"
+                      inputMode="numeric"
+                      value={draft.price}
+                      onChange={(e) => { setDraft({ ...draft, price: e.target.value }); setValidationError(""); }}
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium">موجودی جدید</span>
+                    <input
+                      className={`${inputClass} w-full`}
+                      placeholder="مثلاً ۱۲"
+                      inputMode="numeric"
+                      value={draft.stock}
+                      onChange={(e) => { setDraft({ ...draft, stock: e.target.value }); setValidationError(""); }}
+                    />
+                  </label>
+                  {validationError ? <p role="alert" className="text-xs text-red-600 sm:col-span-2 dark:text-red-400">{validationError}</p> : null}
+                  <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row">
                   <Button type="button" size="xs" disabled={busy} onClick={() => void push(product.remoteId)}>
                     ارسال به فروشگاه
                   </Button>
@@ -273,6 +332,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
                   >
                     انصراف
                   </Button>
+                  </div>
                 </div>
               ) : (
                 <Button
@@ -299,7 +359,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
       <InfoBox>
         تغییر قیمت و موجودی در صف قرار می‌گیرد و در اجرای بعدی (خودکار یا افزونهٔ وردپرس) به فروشگاه می‌رود.
       </InfoBox>
-    </div>
+    </section>
   );
 }
 
