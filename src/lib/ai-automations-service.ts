@@ -11,7 +11,12 @@
  * and firing it (later) reuses the same guarded executor the chat does.
  */
 import { query } from "./db";
-import { localBusinessClock, DEFAULT_PROACTIVE_TIMEZONE } from "./ai-proactive";
+import {
+  localBusinessClock,
+  DEFAULT_PROACTIVE_TIMEZONE,
+  compactProactiveFacts,
+  type LocalBusinessClock,
+} from "./ai-proactive";
 import { getArAging } from "./ar-service";
 import { getApAging } from "./ap-service";
 import {
@@ -24,7 +29,19 @@ import {
   type AutomationEventKind,
   type AutomationTriggerKind,
 } from "./ai-automations";
-import type { ActionType } from "./ai";
+import { ACTION_CATALOG, type ActionType, type ProposedAction } from "./ai";
+import {
+  evaluateUnattendedAction,
+  type AutopilotCategory,
+} from "./ai-autopilot";
+import { AUTOPILOT_EXECUTORS } from "./ai-autopilot-executors";
+import { autopilotAmountContext } from "./ai-amount-context";
+import { getAutopilotSettings } from "./ai-autopilot-service";
+import { createAiActionAudit } from "./ai-action-audit";
+import { dedupeKeyForEvent, dedupeKeyForManual, scheduleDedupeKeyIfDue } from "./ai-coworker";
+import { recordNotification } from "./notification-events";
+import { notificationDedupeKey } from "./notifications";
+import { isFeatureEnabled } from "./features";
 
 export interface Automation {
   id: string;
@@ -297,4 +314,417 @@ export async function previewAutomation(
     actionType: automation.actionType,
     actionPayload: automation.actionPayload,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Firing — turning a stored automation into a proposal on the same guarded path
+// ---------------------------------------------------------------------------
+//
+// An automation is configuration; firing it must open NO new mutation surface.
+// So firing reuses, without exception, the machinery the coworker and autopilot
+// already use:
+//   * `evaluateUnattendedAction` — the ONE named ceiling. An `auto` automation
+//     still passes through the owner's per-category caps; an over-cap payload
+//     is HELD for a human, not dropped and not forced through.
+//   * `AUTOPILOT_EXECUTORS` — the same role-guarded executor a chat apply runs.
+//   * `ai_action_audit` (source = 'automation') — the same history.
+//   * `autopilotAmountContext` — caps are measured against DB-read numbers, not
+//     the automation's own stored payload.
+// The only thing the automation adds is the typed CONDITION deciding WHETHER to
+// propose at all, evaluated against the same facts `previewAutomation` shows.
+
+export type AutomationRunOutcome = "applied" | "pending_approval" | "skipped" | "failed";
+
+export interface FireAutomationResult {
+  runId: string;
+  outcome: AutomationRunOutcome;
+}
+
+/**
+ * Claims `(automation_id, dedupe_key)`. A second caller for the same key gets
+ * null and does nothing — the whole idempotency story, enforced by the UNIQUE
+ * index (migration 0156) rather than by a read-then-write. This is what makes a
+ * tick that runs twice, or two app instances ticking at once, safe.
+ */
+async function claimAutomationRun(input: {
+  businessId: string;
+  automationId: string;
+  locationId: string | null;
+  triggerSource: AutomationTriggerKind;
+  dedupeKey: string;
+}): Promise<string | null> {
+  const { rows } = await query<{ id: string }>(
+    `INSERT INTO ai_automation_runs
+       (business_id, automation_id, location_id, trigger_source, dedupe_key, status)
+     VALUES ($1, $2, $3, $4, $5, 'skipped')
+     ON CONFLICT (automation_id, dedupe_key) DO NOTHING
+     RETURNING id`,
+    [input.businessId, input.automationId, input.locationId, input.triggerSource, input.dedupeKey],
+  );
+  return rows[0]?.id ?? null;
+}
+
+async function userName(businessId: string, userId: string | null): Promise<string> {
+  if (!userId) return "نامشخص";
+  const { rows } = await query<{ full_name: string | null }>(
+    `SELECT full_name FROM users WHERE id = $1 AND business_id = $2`,
+    [userId, businessId],
+  );
+  return rows[0]?.full_name?.trim() || "نامشخص";
+}
+
+/**
+ * How many actions in this category have already been applied unattended today,
+ * across ALL three unattended features. An automation shares the daily counter
+ * with autopilot and the coworker on purpose: "money: at most 3 unattended
+ * writes a day" is a statement about the business, not about one feature.
+ */
+async function appliedTodayInCategory(businessId: string, category: AutopilotCategory): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    `SELECT count(*)::text AS count
+       FROM ai_action_audit
+      WHERE business_id = $1 AND source IN ('autopilot', 'coworker', 'automation')
+        AND autopilot_category = $2 AND status IN ('applied', 'reverted')
+        AND created_at >= now() - interval '24 hours'`,
+    [businessId, category],
+  );
+  return Number(rows[0]?.count ?? 0);
+}
+
+async function finishAutomationRun(input: {
+  businessId: string;
+  runId: string;
+  status: AutomationRunOutcome;
+  conditionsMet: boolean;
+  actionType: ActionType | null;
+  auditId: string | null;
+  facts: AutomationFacts | null;
+  summary: string;
+  error?: string | null;
+}): Promise<void> {
+  await query(
+    `UPDATE ai_automation_runs
+        SET status = $3, conditions_met = $4, action_type = $5, audit_id = $6,
+            facts = $7::jsonb, summary = $8, error = $9, finished_at = now()
+      WHERE id = $1 AND business_id = $2`,
+    [
+      input.runId,
+      input.businessId,
+      input.status,
+      input.conditionsMet,
+      input.actionType,
+      input.auditId,
+      input.facts === null ? null : JSON.stringify(compactProactiveFacts(input.facts)),
+      input.summary.slice(0, 2_000),
+      input.error?.slice(0, 500) ?? null,
+    ],
+  );
+}
+
+/**
+ * One firing of one automation, after its run has been claimed: gather the
+ * facts, evaluate the conditions, and — only if they hold — record the action
+ * as a proposal and either apply it (when the shared ceiling admits an `auto`
+ * automation) or leave it pending for a human.
+ *
+ * Split from the tick so an integration test can drive it directly with a real
+ * automation and a real database, no scheduler and no provider involved — the
+ * guardrail equivalence with autopilot is exactly what must be proven.
+ */
+async function executeAutomationRun(input: {
+  businessId: string;
+  automation: Automation;
+  runId: string;
+  now: Date;
+}): Promise<AutomationRunOutcome> {
+  const { businessId, automation, runId, now } = input;
+  try {
+    const facts = await gatherAutomationFacts(businessId, now);
+    const conditionsMet = evaluateConditions(automation.conditions, facts);
+
+    if (!conditionsMet) {
+      // A run that legitimately had nothing to do is 'skipped', not 'failed'.
+      await finishAutomationRun({
+        businessId, runId, status: "skipped", conditionsMet: false,
+        actionType: null, auditId: null, facts,
+        summary: `«${automation.name}»: شرط‌ها برقرار نبود؛ اقدامی انجام نشد.`,
+      });
+      return "skipped";
+    }
+
+    const proposal: ProposedAction = {
+      type: automation.actionType,
+      title: automation.name,
+      summary: `اتوماسیون «${automation.name}»`,
+      payload: automation.actionPayload,
+    };
+    const meta = ACTION_CATALOG[automation.actionType];
+    const category = meta?.autopilotCategory ?? null;
+
+    // Every firing is recorded in the shared audit trail, tagged 'automation',
+    // exactly as a chat, autopilot or coworker write is — one history, five
+    // authors.
+    const authorizedByName = await userName(businessId, automation.authorizedBy);
+    const auditId = await createAiActionAudit({
+      businessId,
+      actorUserId: automation.authorizedBy ?? "automation",
+      actorName: `اتوماسیون (مجوز: ${authorizedByName})`,
+      prompt: `اتوماسیون «${automation.name}»`,
+      proposal,
+    });
+    await query(
+      `UPDATE ai_action_audit SET source = 'automation', autopilot_category = $3
+        WHERE id = $1 AND business_id = $2`,
+      [auditId, businessId, category],
+    );
+
+    // The shared ceiling — the identical gate autopilot and the coworker use.
+    const settings = await getAutopilotSettings(businessId);
+    const decision = evaluateUnattendedAction({
+      meta,
+      payload: proposal.payload,
+      approvalMode: automation.approvalMode,
+      hasAuthorizer: Boolean(automation.authorizedBy),
+      setting: category ? settings[category] ?? null : null,
+      appliedTodayInCategory: category ? await appliedTodayInCategory(businessId, category) : 0,
+      context: await autopilotAmountContext(businessId, proposal),
+    });
+
+    if (decision.decision === "needs_confirmation") {
+      // Held for a human: the audit row stays 'proposed' and shows in the hub
+      // as an ordinary clickable proposal, with the reason attached — never
+      // dropped, never forced through.
+      await query(
+        `UPDATE ai_action_audit SET deferred_reason = $3
+          WHERE id = $1 AND business_id = $2 AND status = 'proposed'`,
+        [auditId, businessId, decision.reasonCode],
+      );
+      await finishAutomationRun({
+        businessId, runId, status: "pending_approval", conditionsMet: true,
+        actionType: automation.actionType, auditId, facts,
+        summary: `«${automation.name}»: ${decision.reasonFa}`,
+      });
+      await recordNotification({
+        businessId,
+        locationId: automation.locationId,
+        eventKey: "ai.automation.pending",
+        severity: "important",
+        title: `اتوماسیون «${automation.name}»: در انتظار تأیید شما`,
+        body: decision.reasonFa,
+        url: "/ai",
+        dedupeKey: notificationDedupeKey("ai.automation.pending", runId),
+        payload: { runId, automationId: automation.id },
+      });
+      return "pending_approval";
+    }
+
+    // auto_apply — through the same role-guarded executor a chat apply uses.
+    const executor = meta?.executor ? AUTOPILOT_EXECUTORS[meta.executor] : null;
+    if (!executor) {
+      await query(
+        `UPDATE ai_action_audit SET status = 'failed', result = $3::jsonb
+          WHERE id = $1 AND business_id = $2 AND status = 'proposed'`,
+        [auditId, businessId, JSON.stringify({ error: "automation_executor_missing" })],
+      );
+      await finishAutomationRun({
+        businessId, runId, status: "failed", conditionsMet: true,
+        actionType: automation.actionType, auditId, facts,
+        summary: `«${automation.name}»: اجراکنندهٔ این اقدام موجود نیست.`,
+        error: "automation_executor_missing",
+      });
+      return "failed";
+    }
+
+    const result = await executor({
+      businessId,
+      authorizedByUserId: automation.authorizedBy,
+      payload: proposal.payload,
+    });
+    await query(
+      `UPDATE ai_action_audit
+          SET status = $3, result = $4::jsonb, prior_state = $5::jsonb,
+              applied_at = CASE WHEN $3 = 'applied' THEN now() ELSE applied_at END
+        WHERE id = $1 AND business_id = $2 AND status = 'proposed'`,
+      [
+        auditId,
+        businessId,
+        result.ok ? "applied" : "failed",
+        JSON.stringify(compactProactiveFacts(result.result)),
+        result.priorState === undefined ? null : JSON.stringify(compactProactiveFacts(result.priorState)),
+      ],
+    );
+
+    if (result.ok) {
+      await finishAutomationRun({
+        businessId, runId, status: "applied", conditionsMet: true,
+        actionType: automation.actionType, auditId, facts,
+        summary: `«${automation.name}»: اقدام به‌صورت خودکار ثبت شد.`,
+      });
+      return "applied";
+    }
+
+    await finishAutomationRun({
+      businessId, runId, status: "failed", conditionsMet: true,
+      actionType: automation.actionType, auditId, facts,
+      summary: `«${automation.name}»: اجرای اقدام ناموفق بود.`,
+      error: result.errorCode ?? "execution_failed",
+    });
+    await recordNotification({
+      businessId,
+      locationId: automation.locationId,
+      eventKey: "ai.automation.failed",
+      severity: "important",
+      title: `اتوماسیون «${automation.name}»: اجرا ناموفق بود`,
+      body: result.errorCode ?? "execution_failed",
+      url: "/ai",
+      dedupeKey: notificationDedupeKey("ai.automation.failed", runId),
+      payload: { runId, automationId: automation.id },
+    });
+    return "failed";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`automation ${automation.id} failed:`, message);
+    await finishAutomationRun({
+      businessId, runId, status: "failed", conditionsMet: false,
+      actionType: automation.actionType, auditId: null, facts: null,
+      summary: `«${automation.name}»: اجرای این اتوماسیون ناموفق بود.`,
+      error: message,
+    });
+    await recordNotification({
+      businessId,
+      locationId: automation.locationId,
+      eventKey: "ai.automation.failed",
+      severity: "important",
+      title: `اتوماسیون «${automation.name}»: اجرا ناموفق بود`,
+      body: message.slice(0, 200),
+      url: "/ai",
+      dedupeKey: notificationDedupeKey("ai.automation.failed", runId),
+      payload: { runId, automationId: automation.id },
+    });
+    return "failed";
+  } finally {
+    await query(`UPDATE ai_automations SET last_run_at = now() WHERE business_id = $1 AND id = $2`, [
+      businessId,
+      automation.id,
+    ]);
+  }
+}
+
+/**
+ * Fire one automation now, claiming its run first. Returns null when the claim
+ * was already taken (idempotent no-op), or the outcome otherwise. Shared by the
+ * tick and by a manual "run now" from the editor.
+ */
+export async function fireAutomation(input: {
+  businessId: string;
+  automation: Automation;
+  triggerSource: AutomationTriggerKind;
+  dedupeKey: string;
+  now?: Date;
+}): Promise<FireAutomationResult | null> {
+  const runId = await claimAutomationRun({
+    businessId: input.businessId,
+    automationId: input.automation.id,
+    locationId: input.automation.locationId,
+    triggerSource: input.triggerSource,
+    dedupeKey: input.dedupeKey,
+  });
+  if (!runId) return null;
+  const outcome = await executeAutomationRun({
+    businessId: input.businessId,
+    automation: input.automation,
+    runId,
+    now: input.now ?? new Date(),
+  });
+  return { runId, outcome };
+}
+
+/**
+ * Run an owner's manual automation once, right now. The dedupe key is the
+ * instant, so two rapid taps still produce two runs (a manual "run again" is a
+ * deliberate act), but a retried request with the same instant does not.
+ */
+export async function runAutomationNow(
+  businessId: string,
+  id: string,
+  now: Date = new Date(),
+): Promise<FireAutomationResult | null> {
+  const automation = await getAutomation(businessId, id);
+  if (!automation || !automation.enabled) return null;
+  return fireAutomation({
+    businessId,
+    automation,
+    triggerSource: "manual",
+    dedupeKey: dedupeKeyForManual(now),
+    now,
+  });
+}
+
+/**
+ * The tick for one business, riding the proactive enumeration exactly as the
+ * coworker and autopilot do (one tenant walk, not three). Fires every enabled
+ * SCHEDULE automation that is due this local business day, and every enabled
+ * EVENT automation matching an unprocessed coworker event.
+ *
+ * It deliberately does NOT mark events processed: the coworker tick owns that
+ * (`markEventsProcessed`, in the same business pass). So this tick must run
+ * BEFORE the coworker in `runBusinessProactiveJobs`, while the lifecycle events
+ * are still unprocessed — the two features read the same rows, and the coworker
+ * clears them afterwards. Idempotency across ticks is the per-event run claim
+ * (`event:<id>`), not the processed flag.
+ */
+export async function runAutomationsTick(
+  businessId: string,
+  clock: LocalBusinessClock,
+  now: Date = new Date(),
+): Promise<number> {
+  if (!(await isFeatureEnabled(businessId, "ai_assistant"))) return 0;
+
+  const automations = (await listAutomations(businessId)).filter((a) => a.enabled);
+  if (automations.length === 0) return 0;
+
+  let fired = 0;
+
+  // Scheduled: due once per local business day from its hour onwards.
+  for (const automation of automations.filter((a) => a.triggerKind === "schedule")) {
+    const baseKey = scheduleDedupeKeyIfDue(
+      {
+        triggerKind: "schedule",
+        scheduleHour: automation.scheduleHour,
+        scheduleWeekday: automation.scheduleWeekday,
+        enabled: true,
+      },
+      clock,
+    );
+    if (!baseKey) continue;
+    const result = await fireAutomation({
+      businessId, automation, triggerSource: "schedule", dedupeKey: baseKey, now,
+    });
+    if (result) fired += 1;
+  }
+
+  // Event: match unprocessed coworker lifecycle events (shift_open/close,
+  // day_close). Read-only here — the coworker tick clears the queue.
+  const eventAutomations = automations.filter((a) => a.triggerKind === "event");
+  if (eventAutomations.length > 0) {
+    const { rows: events } = await query<{ id: string; location_id: string | null; kind: string }>(
+      `SELECT id, location_id, kind FROM ai_coworker_events
+        WHERE business_id = $1 AND processed_at IS NULL
+        ORDER BY occurred_at LIMIT 100`,
+      [businessId],
+    );
+    for (const event of events) {
+      for (const automation of eventAutomations) {
+        if (automation.eventKind !== event.kind) continue;
+        if (automation.locationId !== null && automation.locationId !== event.location_id) continue;
+        const result = await fireAutomation({
+          businessId, automation, triggerSource: "event",
+          dedupeKey: dedupeKeyForEvent(event.id), now,
+        });
+        if (result) fired += 1;
+      }
+    }
+  }
+
+  return fired;
 }

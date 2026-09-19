@@ -418,10 +418,9 @@ AI integration suites green; `tsc` clean; tenant-isolation suite covers 0154.
 A management **UI** is deliberately deferred to Phase I (UI redesign); the REST
 API is complete and usable now.
 
-Still to do in Phase D: **Automation engine** (generic trigger→condition→action
-entity, `ai_automations`) and **autopilot-as-policy** (make the guardrail engine
-a named, reusable execution/approval policy rather than a fixed per-category
-table). Neither drops or rewrites the existing coworker/autopilot schema.
+Phase D is now COMPLETE across all three parts (custom Agents, Automation
+engine, autopilot-as-policy) — see Parts 1–3 below. Nothing dropped or rewrote
+the existing coworker/autopilot schema.
 
 ### Part 2 of 3 — Automation engine — DELIVERED (test-backed)
 
@@ -474,3 +473,57 @@ UI deferred to Phase I; the engine's firing hook (wiring `previewAutomation` +
 `gatherAutomationFacts` into the existing coworker/proactive tick to actually
 enqueue proposals) lands with **Part 3 — autopilot-as-policy**, which unifies
 the ask/auto approval ceiling across coworker, autopilot and automations.
+
+### Part 3 of 3 — autopilot-as-policy + firing hook — DELIVERED (test-backed)
+
+The final Phase D part turns the guardrail engine into ONE named
+unattended-execution ceiling shared by every feature that can write without a
+person watching, and wires the Automation engine's firing into the existing
+tick so a fired automation actually enqueues a proposal on that same guarded
+path.
+
+**One named ceiling.** `evaluateUnattendedAction` (in the pure `ai-autopilot.ts`)
+is now the single gate every unattended write funnels through — autopilot, the
+coworker AND automations. It applies four ordered gates, none of which a
+caller's own `approvalMode` can override and none of which is ever a *drop*
+(a "no" holds the proposal for a human on the identical manual apply path):
+(1) a real action with an unattended executor; (2) the owner chose `auto` for
+this work; (3) a real user's authority backs it; (4) the per-category caps admit
+this specific payload (delegated to `evaluateAutopilotProposal`, unchanged). The
+coworker's `planCoworkerActions` was refactored to a thin adapter over it, so
+its four hand-rolled copies of the same reasoning are gone — an owner who set
+"money: at most 5,000,000 ﷼ unattended" said that about their *business*, and
+there is now exactly one place that rule lives.
+
+**Firing hook.** `ai-automations-service.ts` gained the runtime:
+`fireAutomation`/`runAutomationNow`/`runAutomationsTick` plus a claimed
+`ai_automation_runs` ledger (migration **0156**, RLS like every tenant table,
+`UNIQUE (automation_id, dedupe_key)` mirroring `ai_coworker_runs`). A firing
+gathers the same facts `previewAutomation` shows, evaluates the typed
+conditions, and only if they hold records the action in the shared
+`ai_action_audit` (`source = 'automation'`) and either applies it through the
+same `AUTOPILOT_EXECUTORS` (when the shared ceiling admits an `auto`
+automation) or leaves it `proposed` with a `deferred_reason` — held, never
+dropped, never forced. The daily category counter is shared across
+autopilot + coworker + automation, so an automation cannot be a way around the
+day's allowance either.
+
+**Riding the tick.** `runBusinessProactiveJobs` now runs `runAutomationsTick`
+BEFORE the coworker (the coworker clears the lifecycle-event queue on finish, so
+automations must read the unprocessed rows first); its per-event/per-schedule
+run claim, not the processed flag, is what keeps it idempotent across ticks.
+Like the coworker it uses no provider and spends no credit, needs no opt-in, and
+never takes the digests down. A `POST /api/ai/automations/[id]/run` endpoint
+fires one on demand (owner required for an `auto` automation).
+
+Tests: `src/lib/ai-autopilot.test.ts` (+6 for `evaluateUnattendedAction`),
+`integration/ai-automations.integration.test.ts` (+5 firing: in-cap applies &
+audits as `automation` with prior-state; over-cap held as clickable proposal
+with the price unmoved; `ask` always held; conditions-not-met ⇒ `skipped`,
+proposes nothing; dedupe-key idempotency). Full suite **4796 unit tests / 325
+files**; AI integration suites green (automations 10/10, coworker 15/15,
+autopilot 10/10, tenant-isolation 20/20 — the last covers 0156); `tsc` clean.
+
+**Phase D COMPLETE** (Parts 1–3: custom Agents, Automation engine,
+autopilot-as-policy). UI for all three deferred to Phase I. Next in the agreed
+sequence: **Phase E — structured chat input protocol**.

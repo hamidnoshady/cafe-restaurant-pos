@@ -23,7 +23,7 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let service: typeof import("../src/lib/ai-automations-service");
 
-const alpha = { businessId: "" };
+const alpha = { businessId: "", userId: "", locationId: "", menuItemId: "" };
 const beta = { businessId: "" };
 
 function urlFor(database: string): string {
@@ -63,9 +63,26 @@ beforeAll(async () => {
     [`alpha-${randomUUID().slice(0, 8)}`],
   );
   alpha.businessId = a.rows[0].id;
-  await db.query(`INSERT INTO locations (business_id, name, timezone) VALUES ($1, 'Main', 'Asia/Tehran')`, [
-    alpha.businessId,
-  ]);
+  const loc = await db.query<{ id: string }>(
+    `INSERT INTO locations (business_id, name, timezone) VALUES ($1, 'Main', 'Asia/Tehran') RETURNING id`,
+    [alpha.businessId],
+  );
+  alpha.locationId = loc.rows[0].id;
+  const owner = await db.query<{ id: string }>(
+    `INSERT INTO users (business_id, role, full_name, email, password_hash)
+     VALUES ($1, 'owner', 'Owner', $2, 'x') RETURNING id`,
+    [alpha.businessId, `owner-${randomUUID().slice(0, 8)}@example.test`],
+  );
+  alpha.userId = owner.rows[0].id;
+  const cat = await db.query<{ id: string }>(
+    `INSERT INTO menu_categories (location_id, name) VALUES ($1, 'Drinks') RETURNING id`,
+    [alpha.locationId],
+  );
+  const item = await db.query<{ id: string }>(
+    `INSERT INTO menu_items (location_id, category_id, name, price) VALUES ($1, $2, 'Espresso', 100000) RETURNING id`,
+    [alpha.locationId, cat.rows[0].id],
+  );
+  alpha.menuItemId = item.rows[0].id;
   const b = await db.query<{ id: string }>(
     `INSERT INTO businesses (name, slug, industry) VALUES ('Beta', $1, 'food_service') RETURNING id`,
     [`beta-${randomUUID().slice(0, 8)}`],
@@ -260,5 +277,202 @@ describe("automation engine service", () => {
       service.deleteAutomation(alpha.businessId, first.automation.id),
     );
     expect(alphaDelete).toBe(true);
+  });
+});
+
+describe("firing an automation through the shared guarded path", () => {
+  let autopilot: typeof import("../src/lib/ai-autopilot-service");
+
+  beforeAll(async () => {
+    autopilot = await import("../src/lib/ai-autopilot-service");
+    // The owner opts the pricing category into unattended writes, with a cap
+    // that a +5,000 ﷼ change clears but a +50,000 ﷼ change does not.
+    await dbLib.withTenant(alpha.businessId, () =>
+      autopilot.setAutopilotCategory(
+        alpha.businessId,
+        "pricing",
+        { enabled: true, maxPercent: 10, maxAmountRial: 10_000 },
+        alpha.userId,
+      ),
+    );
+  });
+
+  async function priceOf(menuItemId: string): Promise<number> {
+    const { rows } = await db.query<{ price: string }>(
+      "SELECT price::text AS price FROM menu_items WHERE id = $1",
+      [menuItemId],
+    );
+    return Number(rows[0].price);
+  }
+
+  it("an auto automation within the caps applies unattended and audits as 'automation'", async () => {
+    const created = await dbLib.withTenant(alpha.businessId, () =>
+      service.createAutomation(
+        alpha.businessId,
+        {
+          name: "افزایش قیمت خودکار",
+          triggerKind: "manual",
+          conditions: { all: [{ field: "receivableTotalRial", op: "lte", value: 0 }] },
+          actionType: "menu.item.priceUpdate",
+          actionPayload: { menuItemId: alpha.menuItemId, price: 105_000 },
+          approvalMode: "auto",
+        },
+        { userId: alpha.userId, authorizedBy: alpha.userId },
+      ),
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const result = await dbLib.withTenant(alpha.businessId, () =>
+      service.runAutomationNow(alpha.businessId, created.automation.id),
+    );
+    expect(result?.outcome).toBe("applied");
+    expect(await priceOf(alpha.menuItemId)).toBe(105_000);
+
+    const { rows } = await db.query<{ status: string; source: string; category: string; prior_state: { price: number } }>(
+      `SELECT a.status, a.source, a.autopilot_category AS category, a.prior_state
+         FROM ai_action_audit a
+         JOIN ai_automation_runs r ON r.audit_id = a.id
+        WHERE r.id = $1`,
+      [result!.runId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "applied", source: "automation", category: "pricing" });
+    // Only prior_state can answer "what was the price before" — what makes undo possible.
+    expect(rows[0].prior_state.price).toBe(100_000);
+  });
+
+  it("an over-cap auto automation is HELD as a clickable proposal, never applied", async () => {
+    const before = await priceOf(alpha.menuItemId);
+    const created = await dbLib.withTenant(alpha.businessId, () =>
+      service.createAutomation(
+        alpha.businessId,
+        {
+          name: "افزایش قیمت بیش از سقف",
+          triggerKind: "manual",
+          actionType: "menu.item.priceUpdate",
+          // +50,000 ﷼ — well past the 10,000 ﷼ cap AND the 10% cap.
+          actionPayload: { menuItemId: alpha.menuItemId, price: before + 50_000 },
+          approvalMode: "auto",
+        },
+        { userId: alpha.userId, authorizedBy: alpha.userId },
+      ),
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const result = await dbLib.withTenant(alpha.businessId, () =>
+      service.runAutomationNow(alpha.businessId, created.automation.id),
+    );
+    expect(result?.outcome).toBe("pending_approval");
+    // The price did NOT move: over-cap means held, not forced through.
+    expect(await priceOf(alpha.menuItemId)).toBe(before);
+
+    const { rows } = await db.query<{ status: string; source: string; deferred_reason: string | null }>(
+      `SELECT a.status, a.source, a.deferred_reason
+         FROM ai_action_audit a JOIN ai_automation_runs r ON r.audit_id = a.id
+        WHERE r.id = $1`,
+      [result!.runId],
+    );
+    // Still a 'proposed' row a human can click and apply — never dropped.
+    expect(rows[0]).toMatchObject({ status: "proposed", source: "automation" });
+    expect(rows[0].deferred_reason).not.toBeNull();
+  });
+
+  it("an 'ask' automation is always held even when the caps would admit it", async () => {
+    const nextPrice = (await priceOf(alpha.menuItemId)) + 1_000;
+    const created = await dbLib.withTenant(alpha.businessId, () =>
+      service.createAutomation(
+        alpha.businessId,
+        {
+          name: "همیشه بپرس",
+          triggerKind: "manual",
+          actionType: "menu.item.priceUpdate",
+          actionPayload: { menuItemId: alpha.menuItemId, price: nextPrice },
+          approvalMode: "ask",
+        },
+        { userId: alpha.userId, authorizedBy: alpha.userId },
+      ),
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const result = await dbLib.withTenant(alpha.businessId, () =>
+      service.runAutomationNow(alpha.businessId, created.automation.id),
+    );
+    expect(result?.outcome).toBe("pending_approval");
+  });
+
+  it("a run whose conditions do not hold ends 'skipped' and proposes nothing", async () => {
+    const created = await dbLib.withTenant(alpha.businessId, () =>
+      service.createAutomation(
+        alpha.businessId,
+        {
+          name: "شرط برقرار نیست",
+          triggerKind: "manual",
+          conditions: { all: [{ field: "receivableTotalRial", op: "gte", value: 5_000_000 }] },
+          actionType: "menu.item.priceUpdate",
+          actionPayload: { menuItemId: alpha.menuItemId, price: 999_000 },
+          approvalMode: "auto",
+        },
+        { userId: alpha.userId, authorizedBy: alpha.userId },
+      ),
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const result = await dbLib.withTenant(alpha.businessId, () =>
+      service.runAutomationNow(alpha.businessId, created.automation.id),
+    );
+    expect(result?.outcome).toBe("skipped");
+
+    const { rows } = await db.query<{ conditions_met: boolean; audit_id: string | null }>(
+      `SELECT conditions_met, audit_id FROM ai_automation_runs WHERE id = $1`,
+      [result!.runId],
+    );
+    expect(rows[0].conditions_met).toBe(false);
+    expect(rows[0].audit_id).toBeNull();
+  });
+
+  it("is idempotent: the same dedupe key claims once", async () => {
+    const created = await dbLib.withTenant(alpha.businessId, () =>
+      service.createAutomation(
+        alpha.businessId,
+        {
+          name: "یک‌بار در روز",
+          triggerKind: "schedule",
+          scheduleHour: 0,
+          actionType: "menu.item.priceUpdate",
+          actionPayload: { menuItemId: alpha.menuItemId, price: 106_000 },
+          approvalMode: "ask",
+        },
+        { userId: alpha.userId, authorizedBy: alpha.userId },
+      ),
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const automation = await dbLib.withTenant(alpha.businessId, () =>
+      service.getAutomation(alpha.businessId, created.automation.id),
+    );
+    // Fire twice with the same schedule dedupe key — the second claim is a no-op.
+    const first = await dbLib.withTenant(alpha.businessId, () =>
+      service.fireAutomation({
+        businessId: alpha.businessId,
+        automation: automation!,
+        triggerSource: "schedule",
+        dedupeKey: "schedule:2026-03-18:00",
+      }),
+    );
+    const second = await dbLib.withTenant(alpha.businessId, () =>
+      service.fireAutomation({
+        businessId: alpha.businessId,
+        automation: automation!,
+        triggerSource: "schedule",
+        dedupeKey: "schedule:2026-03-18:00",
+      }),
+    );
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
   });
 });

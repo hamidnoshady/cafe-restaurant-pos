@@ -38,6 +38,7 @@ import { query, withTenant, withoutTenantScope } from "./db";
 import { isFeatureEnabled } from "./features";
 import { serviceDueDate } from "./watch";
 import { runCoworkerTick } from "./ai-coworker-service";
+import { runAutomationsTick } from "./ai-automations-service";
 import {
   AGENT_RUN_KIND,
   AI_AGENT_KEYS,
@@ -748,6 +749,22 @@ async function runBusinessProactiveJobs(
   // shift just closed" cannot wait for the once-a-day digest hour, and a job's
   // actions are built by a pure template with no provider call, so it spends no
   // credits and needs no credit opt-in. It must never take the digests down.
+  //
+  // Phase D — automations ride the same tick, and MUST run before the coworker:
+  // an event automation reads the same lifecycle events (shift close, day
+  // close) the coworker does, and the coworker's tick clears that queue
+  // (`markEventsProcessed`) when it finishes. Running automations first means
+  // both features see the unprocessed rows; the automation's own per-event run
+  // claim (not the processed flag) is what keeps it idempotent across ticks.
+  // Like the coworker it uses no provider and spends no credit, so it needs no
+  // opt-in and must never take the digests down.
+  let automationsCompleted = 0;
+  try {
+    automationsCompleted = await runAutomationsTick(businessId, clock, now);
+  } catch (error) {
+    console.error(`automations tick failed for business ${businessId}:`, errorText(error));
+  }
+
   let coworkerCompleted = 0;
   try {
     coworkerCompleted = await runCoworkerTick(businessId, clock);
@@ -756,7 +773,7 @@ async function runBusinessProactiveJobs(
   }
 
   const due = dueProactiveRuns(settings, clock);
-  if (due.length === 0) return coworkerCompleted;
+  if (due.length === 0) return coworkerCompleted + automationsCompleted;
   // Phase 31 — autopilot rides this tick rather than opening a second business
   // enumeration under its own bypass. It is gated by the same credit opt-in
   // (settings.enabled, already true to be here) plus its own per-category
@@ -796,7 +813,7 @@ async function runBusinessProactiveJobs(
       console.error(`proactive AI ${kind} run failed for business ${businessId}:`, errorText(error));
     }
   }
-  return completed + autopilotCompleted + coworkerCompleted;
+  return completed + autopilotCompleted + coworkerCompleted + automationsCompleted;
 }
 
 /**
