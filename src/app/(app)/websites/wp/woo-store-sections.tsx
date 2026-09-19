@@ -117,7 +117,6 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   const [draft, setDraft] = useState({ price: "", stock: "" });
   const [loadError, setLoadError] = useState("");
   const [validationError, setValidationError] = useState("");
-
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError("");
@@ -298,7 +297,12 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
               editing === product.remoteId ? (
                 <div className="mt-3 grid gap-2 border-t border-border/60 pt-3 sm:grid-cols-2">
                   <label className="grid gap-1">
-                    <span className="text-xs font-medium">قیمت جدید (تومان)</span>
+                    <span className="text-xs font-medium">
+                      قیمت جدید (تومان)
+                      {product.priceRial !== null ? (
+                        <span className="font-normal text-muted-foreground"> — الان {rialToTomanText(product.priceRial)}</span>
+                      ) : null}
+                    </span>
                     <input
                       className={`${inputClass} w-full`}
                       placeholder="مثلاً ۱۵۰٬۰۰۰"
@@ -308,7 +312,12 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
                     />
                   </label>
                   <label className="grid gap-1">
-                    <span className="text-xs font-medium">موجودی جدید</span>
+                    <span className="text-xs font-medium">
+                      موجودی جدید
+                      {product.quantity !== null ? (
+                        <span className="font-normal text-muted-foreground"> — الان {product.quantity.toLocaleString("fa-IR")}</span>
+                      ) : null}
+                    </span>
                     <input
                       className={`${inputClass} w-full`}
                       placeholder="مثلاً ۱۲"
@@ -329,11 +338,15 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
                     onClick={() => {
                       setEditing(null);
                       setDraft({ price: "", stock: "" });
+                      setValidationError("");
                     }}
                   >
                     انصراف
                   </Button>
                   </div>
+                  <p className="text-[11px] text-muted-foreground sm:col-span-2">
+                    خالی بماند یعنی بدون تغییر؛ فقط فیلدهایی که پر کنید ارسال می‌شوند.
+                  </p>
                 </div>
               ) : (
                 <Button
@@ -344,6 +357,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
                   onClick={() => {
                     setEditing(product.remoteId);
                     setDraft({ price: "", stock: "" });
+                    setValidationError("");
                   }}
                 >
                   تغییر قیمت / موجودی

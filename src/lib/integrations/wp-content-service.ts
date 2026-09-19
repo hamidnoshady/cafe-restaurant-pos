@@ -56,6 +56,15 @@ export interface WpContentRow {
   authorName: string;
   mediaUrl: string | null;
   mimeType: string | null;
+  /**
+   * The post's own HTML, when the mirror carries it — the plugin sends the
+   * raw `post_content` and a `context: edit` REST pull would send
+   * `content.raw`. Null when the payload never carried content (a
+   * `context: view` REST pull exposes only `content.rendered`, which this
+   * app deliberately does not round-trip: writing rendered HTML back would
+   * re-wrap paragraphs and expand shortcodes on the live site).
+   */
+  content: string | null;
   altText: string;
   remoteUpdatedAt: string | null;
   syncedAt: string;
@@ -133,6 +142,26 @@ export function plainTitle(raw: unknown): string {
         ? String((raw as { rendered?: string }).rendered ?? "")
         : "";
   return decodeWpEntities(text.replace(/<[^>]*>/g, "")).trim();
+}
+
+/**
+ * The round-trippable post content in a mirrored payload, if any.
+ *
+ * The plugin sends `content` as the raw `post_content` string, which the
+ * manager's editor can safely send back. A REST `context: edit` pull would
+ * send `{ raw, rendered }` and `raw` is the same thing. **`rendered` is
+ * deliberately refused**: it has been through `the_content` filters
+ * (`wpautop` paragraph wrapping, shortcode expansion), so writing it back
+ * would rewrite the live post's HTML — a quieter cousin of wiping it. When
+ * neither raw shape is present the editor keeps the field locked and never
+ * sends `content` at all.
+ */
+export function mirroredContent(raw: unknown): string | null {
+  if (typeof raw === "string") return raw;
+  if (raw && typeof raw === "object" && typeof (raw as { raw?: unknown }).raw === "string") {
+    return (raw as { raw: string }).raw;
+  }
+  return null;
 }
 
 /** Normalise one pushed/REST content object and upsert the mirror row. */
@@ -238,12 +267,14 @@ export async function listWpContent(
     author_name: string;
     media_url: string | null;
     mime_type: string | null;
+    content: unknown;
     alt_text: string;
     remote_updated_at: string | null;
     synced_at: string;
   }>(
     `SELECT remote_id, wp_type, title, slug, status, permalink, author_name,
-            media_url, mime_type, COALESCE(payload->>'alt_text', '') AS alt_text,
+            media_url, mime_type, payload->'content' AS content,
+            COALESCE(payload->>'alt_text', '') AS alt_text,
             remote_updated_at, synced_at
        FROM integration_wp_content
       WHERE business_id = $1 AND connection_id = $2
@@ -279,6 +310,7 @@ export async function listWpContent(
     // cannot retain an executable external href forever.
     mediaUrl: safeWpExternalUrl(r.media_url),
     mimeType: r.mime_type,
+    content: mirroredContent(r.content),
     altText: r.alt_text,
     remoteUpdatedAt: r.remote_updated_at,
     syncedAt: r.synced_at,
@@ -415,9 +447,28 @@ export async function syncWpContentRest(
 
   for (const collection of collections) {
     const seen = new Set<string>();
+    // Posts and pages are asked for with `context: edit` first: that is the
+    // only context that carries `content.raw`, the round-trippable HTML the
+    // manager's editor needs (a `view` pull exposes only `content.rendered`,
+    // which must never be written back — see `mirroredContent`). A key whose
+    // user cannot edit posts refuses the context, and the pull retries with
+    // `view` so the mirror still arrives, minus the editable content. Media
+    // needs no edit context — `source_url` is the same in both.
+    let context: "edit" | "view" = collection.wpType === "attachment" ? "view" : "edit";
     let page = 1;
     for (;;) {
-      const { items, totalPages } = await client.wpListPage(collection.endpoint, { per_page: 100, page });
+      let result: { items: Record<string, unknown>[]; totalPages: number };
+      try {
+        result = await client.wpListPage(collection.endpoint, { context, per_page: 100, page });
+      } catch (err) {
+        if (context === "edit" && page === 1) {
+          context = "view";
+          result = await client.wpListPage(collection.endpoint, { context, per_page: 100, page });
+        } else {
+          throw err;
+        }
+      }
+      const { items, totalPages } = result;
       const reportedPages = Number.isFinite(Number(totalPages)) ? Math.max(0, Number(totalPages)) : 0;
 
       for (const item of items) {

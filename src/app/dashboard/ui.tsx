@@ -468,6 +468,9 @@ const ERROR_MESSAGES: Record<string, string> = {
     // src/lib/parties.ts, which is why this one stays general.
     validation_failed: "اطلاعات شخص کامل یا معتبر نیست؛ فیلدهای مشخص‌شده را بررسی کنید.",
     party_not_found: "این شخص پیدا نشد یا در همین کسب‌وکار نیست.",
+    // Promotions/campaigns — src/app/api/promotions. Returned when a pause or
+    // resume names a campaign that was deleted, or belongs to another business.
+    promotion_not_found: "این کمپین پیدا نشد؛ ممکن است حذف شده باشد. فهرست را تازه کنید.",
     display_name_required: "نام نمایشی شخص الزامی است.",
     // `invalid_role` and `category_not_found` above already cover the party
     // routes' versions of those two codes; only the party-specific ones are added.

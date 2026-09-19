@@ -557,7 +557,7 @@ export function WpQueueSection() {
           )}
         </div>
 
-        {rows === null || loading ? (
+        {rows === null ? (
           <SectionCardSkeleton rows={5} />
         ) : rows.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground sm:px-5 space-y-2">
