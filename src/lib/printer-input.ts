@@ -42,8 +42,16 @@ export function parsePrinterInput(
   body: Record<string, unknown>,
   fallback?: ExistingPrinter,
 ): PrinterInput | null {
+  // Strip control characters before anything is stored. USB printer firmware
+  // routinely pads its descriptor strings (serial, product name) with NUL
+  // bytes, and PostgreSQL rejects \u0000 in jsonb outright (error 22P05:
+  // "\u0000 cannot be converted to text") — so a paired printer whose serial
+  // was "VNBV9BJGLG\0\0…" made every save 500 until the bytes are dropped
+  // here, at the one write boundary both routes share.
+  const stripControls = (value: string) => value.replace(/[\u0000-\u001f\u007f]/g, "");
+
   const nameValue = body.name ?? fallback?.name;
-  const name = typeof nameValue === "string" ? nameValue.trim() : "";
+  const name = typeof nameValue === "string" ? stripControls(nameValue).trim() : "";
   const kindValue = body.kind ?? fallback?.kind;
   const kind = kindValue === "kitchen" ? "kitchen" : kindValue === "receipt" ? "receipt" : null;
   const existing: PrinterConnection = fallback?.connection ?? {};
@@ -55,7 +63,7 @@ export function parsePrinterInput(
       : "network";
 
   const text = (value: unknown, previous: string | null | undefined) =>
-    (typeof value === "string" ? value.trim() : (previous ?? "")).slice(0, 255);
+    stripControls(typeof value === "string" ? value.trim() : (previous ?? "")).slice(0, 255);
 
   const ip = text(body.ip, existing.ip);
   const systemName = text(body.systemName, existing.systemName);
@@ -77,7 +85,7 @@ export function parsePrinterInput(
   const paper = isPaperKey(paperValue) ? paperValue : paperWidthMm === 58 ? "thermal58" : "thermal80";
   const driverMode = (body.driverMode ?? existing.driverMode) === "document" ? "document" : "raster";
   const templateValue = body.templateKey ?? existing.templateKey;
-  const templateKey = typeof templateValue === "string" && templateValue.trim() ? templateValue.trim().slice(0, 64) : null;
+  const templateKey = typeof templateValue === "string" && templateValue.trim() ? stripControls(templateValue).trim().slice(0, 64) : null;
   const openDrawer = typeof body.openDrawer === "boolean" ? body.openDrawer : existing.openDrawer === true;
   const isActive = typeof body.isActive === "boolean" ? body.isActive : (fallback?.is_active ?? true);
   const isDefault = (typeof body.isDefault === "boolean" ? body.isDefault : (existing.isDefault === true)) && isActive;

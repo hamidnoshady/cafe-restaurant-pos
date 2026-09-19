@@ -12,6 +12,7 @@ import { getPool, query } from "./db";
 import { rialText } from "./inventory-exact";
 import { emitDomainEvent } from "./posting-engine";
 import { promotionEffectiveness } from "./industry-reports";
+import { validateCampaignDraft } from "./campaign-rules";
 import type { Promotion } from "./promotions";
 // Side-effect import: registers the gift-card posting rules.
 import "./promotions-posting-rules";
@@ -145,18 +146,97 @@ export async function listPromotionCatalogue(businessId: string): Promise<Promot
   }));
 }
 
+/**
+ * Pause or resume one campaign, and nothing else.
+ *
+ * The campaigns screen used to "pause" by POSTing the whole row back with
+ * `isActive` flipped, which made a one-tap toggle a full rewrite of every
+ * column: it clobbered any edit made elsewhere since the list was loaded, and
+ * — once the catalogue started validating properly — it also meant a campaign
+ * stored before those rules existed could no longer be switched off at all,
+ * because its own row failed validation on the way back in.
+ *
+ * A campaign's life-cycle state is one boolean, so this writes one boolean.
+ * Returns null when the id belongs to another business or no longer exists,
+ * which RLS already guarantees but the caller still has to report.
+ */
+export async function setPromotionActive(
+  businessId: string,
+  promotionId: string,
+  isActive: boolean,
+): Promise<PromotionCatalogueRow | null> {
+  const { rows } = await query<PromotionRow>(
+    `UPDATE promotions SET is_active = $3
+      WHERE business_id = $1 AND id = $2
+      RETURNING id, name, kind, value, min_quantity, item_ids, brand_ids, category_ids,
+                active_from::text AS active_from, active_to::text AS active_to,
+                days_of_week, time_from::text AS time_from, time_to::text AS time_to,
+                priority, stacking, is_active`,
+    [businessId, promotionId, isActive],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    value: Number(row.value),
+    minQuantity: row.min_quantity,
+    itemIds: row.item_ids ?? [],
+    brandIds: row.brand_ids ?? [],
+    categoryIds: row.category_ids ?? [],
+    activeFrom: row.active_from,
+    activeTo: row.active_to,
+    daysOfWeek: row.days_of_week ?? [],
+    timeFrom: row.time_from ? row.time_from.slice(0, 5) : null,
+    timeTo: row.time_to ? row.time_to.slice(0, 5) : null,
+    priority: row.priority,
+    stacking: row.stacking,
+    isActive: row.is_active,
+  };
+}
+
+/**
+ * "" is what an untouched form control sends, and a `date`/`time` column casts
+ * it to an error rather than to NULL. Normalising at the service boundary
+ * keeps that driver error away from every caller.
+ */
+function blankToNull(value: string | null | undefined): string | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed === "" ? null : trimmed;
+}
+
 export async function upsertPromotion(businessId: string, input: PromotionInput): Promise<Promotion> {
   const name = input.name?.trim();
-  if (!name) throw new Error("نام کمپین نمی‌تواند خالی باشد.");
-  if (!["percent", "amount", "bundle_price", "buy_x_get_y"].includes(input.kind)) {
-    throw new Error("نوع کمپین نامعتبر است.");
-  }
-  if (!Number.isInteger(input.value) || input.value < 0) {
-    throw new Error("مقدار کمپین باید یک عدد صحیح غیرمنفی باشد.");
-  }
-  if (input.kind === "percent" && input.value > 100) {
-    throw new Error("درصد کمپین نمی‌تواند بیشتر از ۱۰۰ باشد.");
-  }
+  const activeFrom = blankToNull(input.activeFrom);
+  const activeTo = blankToNull(input.activeTo);
+  const timeFrom = blankToNull(input.timeFrom);
+  const timeTo = blankToNull(input.timeTo);
+  // Only `buy_x_get_y` reads a minimum quantity; carrying one on another kind
+  // would survive a kind change and quietly gate a campaign that never shows
+  // the field.
+  const minQuantity = input.kind === "buy_x_get_y" ? (input.minQuantity ?? null) : null;
+
+  // The full rule set, shared with the Growth app's campaign form
+  // (`campaign-rules.ts`). Validating here rather than only in the screen is
+  // what stops a campaign that can never fire — a backwards date window, a
+  // `buy_x_get_y` with no minimum quantity, a time range that crosses midnight
+  // — from being stored by any caller: this route, an import, an AI tool.
+  const problems = validateCampaignDraft({
+    name,
+    kind: input.kind,
+    value: input.value,
+    minQuantity,
+    priority: input.priority,
+    stacking: input.stacking,
+    activeFrom,
+    activeTo,
+    timeFrom,
+    timeTo,
+    daysOfWeek: input.daysOfWeek,
+    itemIds: input.itemIds,
+  });
+  if (problems.length > 0) throw new Error(problems.join("؛ "));
 
   const { rows } = await query<PromotionRow>(
     `INSERT INTO promotions
@@ -176,15 +256,15 @@ export async function upsertPromotion(businessId: string, input: PromotionInput)
       name,
       input.kind,
       input.value,
-      input.minQuantity ?? null,
+      minQuantity,
       input.itemIds ?? [],
       input.brandIds ?? [],
       input.categoryIds ?? [],
-      input.activeFrom ?? null,
-      input.activeTo ?? null,
+      activeFrom,
+      activeTo,
       input.daysOfWeek ?? [],
-      input.timeFrom ?? null,
-      input.timeTo ?? null,
+      timeFrom,
+      timeTo,
       input.priority ?? 0,
       input.stacking ?? "exclusive",
       input.isActive ?? true,

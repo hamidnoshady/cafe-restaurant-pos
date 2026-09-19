@@ -17,6 +17,7 @@ import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrom
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { PlusIcon, RefreshCwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,7 +41,7 @@ import {
   type CasePriority,
   type CaseStatus,
 } from "@/lib/crm-shared";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
 import { crmCustomerHref } from "./crm-routes";
 
@@ -60,25 +61,71 @@ interface ServiceCase {
   resolvedAt: string | null;
 }
 
-export function CasesSection() {
+export function CasesSection({ role }: { role?: string }) {
   const [cases, setCases] = useState<ServiceCase[] | null>(null);
   const [openOnly, setOpenOnly] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<ServiceCase | "new" | null>(null);
+  const searchParams = useSearchParams();
+  const deepLinkId = searchParams.get("case");
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
 
+  // Deleting a case is the one action here that is not floor work — the API
+  // itself gates it to owner/manager (see /api/crm/cases/[id]), so the button
+  // only exists for them.
+  const canDelete = role === "owner" || role === "manager";
+
+  // Returns a cleanup so a toggle of «فقط بازها» cancels the superseded fetch
+  // instead of letting two in-flight responses race each other into the list.
   const load = useCallback(() => {
+    let cancelled = false;
     api<{ cases: ServiceCase[] }>(`/api/crm/cases${openOnly ? "?open=1" : ""}`).then(
       ({ ok, data }) => {
-        if (ok) setCases(data.cases);
-        else setError("بارگذاری تیکت‌ها ناموفق بود.");
+        if (cancelled) return;
+        if (ok) {
+          setCases(data.cases);
+          setError("");
+        } else setError("بارگذاری تیکت‌ها ناموفق بود.");
       },
     );
+    return () => {
+      cancelled = true;
+    };
   }, [openOnly]);
   useEffect(load, [load]);
 
+  // The customer timeline links here as `/crm/cases?case=<id>`. Honour it:
+  // fetch that one ticket (it may be resolved and thus invisible under the
+  // default open-only filter) and open it directly. Non-UUID values are
+  // ignored rather than sent to the API to trip over.
+  useEffect(() => {
+    if (!deepLinkId || deepLinkHandled) return;
+    setDeepLinkHandled(true);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deepLinkId)) return;
+    void api<{ case?: ServiceCase; error?: string }>(`/api/crm/cases/${deepLinkId}`).then(
+      ({ ok, data }) => {
+        if (ok && data.case) setEditing(data.case);
+        else setError(errorMessage(data.error ?? "case_not_found"));
+      },
+    );
+  }, [deepLinkId, deepLinkHandled]);
+
   if (!cases) {
+    // A failed first load must surface the error, not an eternal skeleton.
     return (
-      <SectionCardSkeleton rows={4} />
+      <div className="min-w-0 space-y-4">
+        <ErrorBox>
+          {error ? (
+            <span className="flex flex-wrap items-center gap-2">
+              {error}
+              <Button type="button" variant="outline" size="xs" onClick={load}>
+                تلاش دوباره
+              </Button>
+            </span>
+          ) : null}
+        </ErrorBox>
+        {!error ? <SectionCardSkeleton rows={4} /> : null}
+      </div>
     );
   }
 
@@ -129,12 +176,12 @@ export function CasesSection() {
                     <button
                       type="button"
                       onClick={() => setEditing(row)}
-                      className="text-right font-medium text-foreground hover:underline"
+                      className="max-w-full break-words text-start font-medium text-foreground hover:underline"
                     >
                       {row.subject}
                     </button>
                     {row.body ? (
-                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      <p className="mt-0.5 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
                         {row.body}
                       </p>
                     ) : null}
@@ -146,12 +193,16 @@ export function CasesSection() {
                         {CASE_PRIORITY_LABELS[row.priority]}
                       </StatusBadge>
                       {breached ? <StatusBadge tone="danger">از زمان هدف گذشته</StatusBadge> : null}
-                      {row.customerId ? (
+                      {row.customerId && row.customerName ? (
                         <Link href={crmCustomerHref(row.customerId)} className="hover:underline">
                           {row.customerName}
                         </Link>
                       ) : null}
-                      <span>{toPersianDigits(formatJalali(row.openedAt))}</span>
+                      {/* The urgent target is 4 hours, so the opened time matters, not just the day. */}
+                      <span>ثبت: {toPersianDigits(formatJalali(row.openedAt, { withTime: true }))}</span>
+                      {row.resolvedAt ? (
+                        <span>رسیدگی: {toPersianDigits(formatJalali(row.resolvedAt, { withTime: true }))}</span>
+                      ) : null}
                     </p>
                   </div>
                 </li>
@@ -163,7 +214,8 @@ export function CasesSection() {
         <p className="mt-3 text-xs leading-6 text-muted-foreground">
           زمان هدف رسیدگی: فوری {toPersianDigits(String(CASE_PRIORITY_TARGET_HOURS.urgent))} ساعت،
           زیاد {toPersianDigits(String(CASE_PRIORITY_TARGET_HOURS.high))} ساعت، عادی{" "}
-          {toPersianDigits(String(CASE_PRIORITY_TARGET_HOURS.normal))} ساعت. تیکتی که «منتظر مشتری»
+          {toPersianDigits(String(CASE_PRIORITY_TARGET_HOURS.normal))} ساعت، کم{" "}
+          {toPersianDigits(String(CASE_PRIORITY_TARGET_HOURS.low))} ساعت. تیکتی که «منتظر مشتری»
           است از زمان هدف نمی‌گذرد.
         </p>
       </SectionCard>
@@ -171,6 +223,7 @@ export function CasesSection() {
       {editing ? (
         <CaseDialog
           record={editing === "new" ? null : editing}
+          canDelete={canDelete}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -184,10 +237,13 @@ export function CasesSection() {
 
 function CaseDialog({
   record,
+  canDelete,
   onClose,
   onSaved,
 }: {
   record: ServiceCase | null;
+  /** Owner/manager only — mirrors the DELETE route's own gate. */
+  canDelete?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -214,8 +270,10 @@ function CaseDialog({
     let cancelled = false;
     setMatchesLoading(true);
     const timer = setTimeout(() => {
+      // Scoped to the customer slice — a ticket belongs to a customer, and an
+      // unscoped search would offer suppliers and employees as matches.
       void api<{ customers: { id: string; name: string }[] }>(
-        `/api/parties?q=${encodeURIComponent(customerQuery.trim())}`,
+        `/api/parties?roles=Customer&q=${encodeURIComponent(customerQuery.trim())}`,
       )
         .then(({ ok, data }) => {
           if (!cancelled && ok) setMatches(data.customers.slice(0, 6));
@@ -232,6 +290,7 @@ function CaseDialog({
   }, [customerQuery, customerId]);
 
   const save = async () => {
+    if (busy) return;
     if (!subject.trim()) {
       setError(errorMessage("case_subject_required"));
       return;
@@ -250,7 +309,26 @@ function CaseDialog({
         assignedTo: assignedTo.trim(),
         resolution: resolution.trim(),
         customerId,
+        // Threaded back unchanged so an edit never silently unlinks the ticket
+        // from the order the complaint was about.
+        orderId: record?.orderId ?? null,
       }),
+    });
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessage(data.error));
+      return;
+    }
+    onSaved();
+  };
+
+  const remove = async () => {
+    if (!record || busy) return;
+    if (!window.confirm(`تیکت «${record.subject}» برای همیشه حذف شود؟ بستن تیکت (وضعیت «بسته‌شده») معمولاً کافی است.`)) return;
+    setBusy(true);
+    setError("");
+    const { ok, data } = await api<{ error?: string }>(`/api/crm/cases/${record.id}`, {
+      method: "DELETE",
     });
     setBusy(false);
     if (!ok) {
@@ -266,7 +344,9 @@ function CaseDialog({
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{record ? `تیکت: ${record.subject}` : "تیکت جدید"}</DialogTitle>
+          <DialogTitle className="break-words">
+            {record ? `تیکت: ${record.subject}` : "تیکت جدید"}
+          </DialogTitle>
         </DialogHeader>
         <ErrorBox>{error}</ErrorBox>
 
@@ -275,7 +355,7 @@ function CaseDialog({
         </Field>
         <Field label="شرح">
           <textarea
-            className={inputClass}
+            className={`${inputClass} h-auto min-h-20 py-2`}
             rows={3}
             value={body}
             onChange={(e) => setBody(e.target.value)}
@@ -284,7 +364,9 @@ function CaseDialog({
         <Field label="مشتری (اختیاری)">
           {customerId ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-foreground">{customerQuery}</span>
+              <span className="break-words text-sm text-foreground">
+                {customerQuery.trim() || "مشتری انتخاب‌شده"}
+              </span>
               <Button
                 type="button"
                 variant="ghost"
@@ -307,6 +389,8 @@ function CaseDialog({
               />
               {matchesLoading ? (
                 <LoadingSkeleton rows={1} compact className="mt-1" label="در حال جست‌وجوی مشتری" />
+              ) : customerQuery.trim().length >= 2 && matches.length === 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">مشتری‌ای با این مشخصات پیدا نشد.</p>
               ) : matches.length > 0 ? (
                 <ul className="mt-1 flex flex-wrap gap-1.5">
                   {matches.map((match) => (
@@ -372,7 +456,7 @@ function CaseDialog({
         {resolved ? (
           <Field label="شرح رسیدگی" hint="چه کاری برای مشتری انجام شد.">
             <textarea
-              className={inputClass}
+              className={`${inputClass} h-auto min-h-16 py-2`}
               rows={2}
               value={resolution}
               onChange={(e) => setResolution(e.target.value)}
@@ -381,11 +465,22 @@ function CaseDialog({
         ) : null}
 
         <DialogFooter>
+          {record && canDelete ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={remove}
+              disabled={busy}
+              className="me-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              حذف
+            </Button>
+          ) : null}
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             انصراف
           </Button>
           <Button type="button" onClick={save} disabled={busy}>
-            ذخیره
+            {busy ? "در حال ذخیره…" : "ذخیره"}
           </Button>
         </DialogFooter>
       </DialogContent>

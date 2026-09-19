@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { requireProductWorkspaceForApi } from "@/lib/industry-guard";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { deletePriceList, renamePriceList } from "@/lib/price-lists-service";
 
 export const PATCH = withTenantScope(
@@ -18,7 +19,10 @@ export const PATCH = withTenantScope(
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
 
-    const { list, error: renameError } = await renamePriceList(id, body.name ?? "");
+    const location = await resolveActiveLocation(session);
+    if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+
+    const { list, error: renameError } = await renamePriceList(id, body.name ?? "", location.id);
     if (renameError) {
       const status = renameError === "not_found" ? 404 : renameError === "duplicate_name" ? 409 : 400;
       return NextResponse.json({ error: renameError }, { status });
@@ -36,7 +40,10 @@ export const DELETE = withTenantScope(
     if (industryError) return industryError;
 
     const { id } = await context.params;
-    const deleted = await deletePriceList(id);
+    const location = await resolveActiveLocation(session);
+    if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+
+    const deleted = await deletePriceList(id, location.id);
     if (!deleted) return NextResponse.json({ error: "not_found" }, { status: 404 });
     return NextResponse.json({ ok: true });
   },

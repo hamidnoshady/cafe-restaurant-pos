@@ -1,9 +1,13 @@
 node_modules/
 .next/
 backups/
-out/
-build/
-dist/
+# Build output lives at the repo root. These patterns are anchored with a
+# leading slash because the unanchored form matches a directory of that name at
+# any depth — and App Router turns every URL segment into a directory, so a
+# bare `build/` silently untracked `src/app/api/.../setup/build/route.ts`.
+/out/
+/build/
+/dist/
 
 .env
 .env.local

@@ -22,9 +22,19 @@
  * A fourth, «بدون شماره/ایمیل», separates "consented but we have no address"
  * from "refused" — the first is a data-quality problem an owner can fix, the
  * second is a decision they must respect.
+ *
+ * ## Why the numbers are tied to a request id
+ *
+ * Changing the channel changes the answer, and the two requests can come back
+ * out of order: an SMS result arriving after an email result would leave email
+ * selected above SMS figures, which is the one thing this panel exists to
+ * prevent. Every resolve carries a sequence number and only the newest is
+ * allowed to write state — the same reason the panel also clears the figures
+ * the moment the selection changes.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { formatPersianNumber } from "@/lib/digits";
 import { CAMPAIGN_CHANNELS, CAMPAIGN_CHANNEL_LABELS, type CampaignChannel } from "@/lib/campaign-channels";
 import { cardClass, EmptyState, LoadingSkeleton, SectionCard } from "@/app/dashboard/page-chrome";
@@ -48,55 +58,72 @@ interface Audience {
 
 export function CampaignAudiencePanel() {
   const [segments, setSegments] = useState<SegmentOption[] | null>(null);
+  const [segmentsFailed, setSegmentsFailed] = useState(false);
   const [segmentId, setSegmentId] = useState("");
   const [channel, setChannel] = useState<CampaignChannel>("sms");
   const [audience, setAudience] = useState<Audience | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Monotonic id of the newest resolve; older replies are dropped. */
+  const requestRef = useRef(0);
+
+  const loadSegments = useCallback(async () => {
+    setSegments(null);
+    setSegmentsFailed(false);
+    const { ok, status, data } = await api<{ segments: SegmentOption[] }>("/api/crm/segments");
+    // No segments yet — or the CRM module switched off (403) — is an empty
+    // state with a way forward, not an error. A server or network failure is a
+    // real error and must not masquerade as «هنوز بخشی تعریف نشده».
+    if (ok) {
+      setSegments(data?.segments ?? []);
+      return;
+    }
+    if (status === 403 || status === 404) {
+      setSegments([]);
+      return;
+    }
+    setSegments([]);
+    setSegmentsFailed(true);
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    void api<{ segments: SegmentOption[] }>("/api/crm/segments")
-      .then(({ ok, data }) => {
-        if (cancelled) return;
-        // A business with the CRM module off, or simply no segments yet, is not
-        // an error state — it is an empty state with a way forward.
-        setSegments(ok && data ? data.segments : []);
-      })
-      .catch(() => {
-        if (!cancelled) setSegments([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void loadSegments();
+  }, [loadSegments]);
 
   const check = useCallback(async () => {
     if (!segmentId) return;
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+
     setBusy(true);
     setAudience(null);
     setError(null);
-    try {
-      const { ok, data } = await api<{ audience?: Audience; error?: string }>(
-        "/api/growth/campaign-audience",
-        { method: "POST", body: JSON.stringify({ segmentId, channel }) },
-      );
-      if (!ok || !data?.audience) {
-        setError(errorMessage(data?.error));
-        return;
-      }
-      setAudience(data.audience);
-    } catch {
-      setError("محاسبهٔ مخاطبان ممکن نشد.");
-    } finally {
-      setBusy(false);
+
+    const { ok, data } = await api<{ audience?: Audience; error?: string }>(
+      "/api/growth/campaign-audience",
+      { method: "POST", body: JSON.stringify({ segmentId, channel }) },
+    );
+
+    // A superseded request must not write anything: its answer describes a
+    // channel or segment the operator has already moved on from.
+    if (requestRef.current !== requestId) return;
+
+    setBusy(false);
+    if (!ok || !data?.audience) {
+      setError(errorMessage(data?.error));
+      return;
     }
+    setAudience(data.audience);
   }, [segmentId, channel]);
 
-  // Re-resolve when the channel changes, so the numbers can never describe a
-  // channel other than the one selected.
+  // Clear the figures whenever the question changes, so the numbers on screen
+  // can never describe a channel or segment other than the selected one. The
+  // bumped request id also invalidates any resolve still in flight.
   useEffect(() => {
+    requestRef.current += 1;
     setAudience(null);
+    setError(null);
+    setBusy(false);
   }, [channel, segmentId]);
 
   return (
@@ -108,12 +135,22 @@ export function CampaignAudiencePanel() {
 
       {segments === null ? (
         <LoadingSkeleton rows={3} label="در حال بارگذاری بخش‌های مشتریان" />
+      ) : segmentsFailed ? (
+        <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+          <p>خواندن بخش‌های مشتریان ممکن نشد.</p>
+          <div className="mt-3 flex justify-center">
+            <SecondaryButton onClick={() => void loadSegments()}>تلاش دوباره</SecondaryButton>
+          </div>
+        </div>
       ) : segments.length === 0 ? (
         <EmptyState>
           هنوز بخشی از مشتریان تعریف نشده است.{" "}
-          <a className="font-semibold text-teal-700 dark:text-teal-300 underline-offset-4 hover:underline" href={crmSectionHref("segments")}>
+          <Link
+            className="font-semibold text-teal-700 dark:text-teal-300 underline-offset-4 hover:underline"
+            href={crmSectionHref("segments")}
+          >
             ساخت بخش در CRM
-          </a>
+          </Link>
         </EmptyState>
       ) : (
         <div className="space-y-3">
@@ -126,9 +163,14 @@ export function CampaignAudiencePanel() {
                 onChange={(event) => setSegmentId(event.target.value)}
               >
                 <option value="">انتخاب کنید…</option>
-                {(segments ?? []).map((segment) => (
+                {segments.map((segment) => (
                   <option key={segment.id} value={segment.id}>
                     {segment.name}
+                    {/* The saved count, so the list is choosable without
+                        resolving each segment one at a time. */}
+                    {Number.isFinite(segment.memberCount)
+                      ? ` (${formatPersianNumber(segment.memberCount)} نفر)`
+                      : ""}
                   </option>
                 ))}
               </select>
@@ -157,24 +199,53 @@ export function CampaignAudiencePanel() {
           {busy ? (
             <LoadingSkeleton rows={3} compact label="در حال محاسبه مخاطبان کمپین" />
           ) : audience ? (
-            <>
+            <div className="space-y-2">
               <div className="grid gap-2 sm:grid-cols-3">
                 <Figure label="مطابق قاعده" value={audience.matched} />
-                <Figure label={`قابل ارسال (${CAMPAIGN_CHANNEL_LABELS[audience.channel]})`} value={audience.reachable} tone="positive" />
+                {/*
+                  Consent alone does not make someone reachable: a customer who
+                  agreed to SMS but has no phone number on file cannot be sent
+                  to. Subtracting `missingContact` keeps this figure equal to
+                  the number of messages that will actually go out, which is
+                  what an operator reads it as. The gap itself is named on the
+                  amber line below so it stays actionable rather than hidden.
+                */}
+                <Figure
+                  label={`قابل ارسال (${CAMPAIGN_CHANNEL_LABELS[audience.channel]})`}
+                  value={Math.max(0, audience.reachable - audience.missingContact)}
+                  tone="positive"
+                />
                 <Figure label="بدون اجازه" value={audience.excludedByConsent} tone="muted" />
               </div>
               {audience.missingContact > 0 ? (
-                <p className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-                  {formatPersianNumber(audience.missingContact)} نفر اجازه داده‌اند اما شماره یا ایمیل ثبت‌شده ندارند.
+                <p className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs leading-5 text-amber-900 dark:text-amber-200">
+                  {formatPersianNumber(audience.missingContact)}
+                  {/* Beyond the resolve cap the address check only saw the
+                      first page of members, so the number is a floor. Saying
+                      «حداقل» is the honest form of that. */}
+                  {audience.truncated ? " نفر (حداقل)" : " نفر"} اجازه داده‌اند اما شماره یا ایمیل
+                  ثبت‌شده ندارند؛ در ارسال وارد نمی‌شوند.
                 </p>
               ) : null}
               {audience.excludedByConsent > 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs leading-5 text-muted-foreground">
                   اختلاف این دو عدد، مشتریانی است که اجازهٔ دریافت{" "}
                   {CAMPAIGN_CHANNEL_LABELS[audience.channel]} نداده‌اند و در ارسال حذف می‌شوند.
                 </p>
               ) : null}
-            </>
+              {/*
+                Tested against the same figure shown above, not against
+                `reachable` alone: a segment where everyone consented but
+                nobody has a phone number has a non-zero `reachable` and still
+                reaches no one, which is exactly when this warning is needed.
+              */}
+              {Math.max(0, audience.reachable - audience.missingContact) === 0 ? (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  با این کانال، کمپین به هیچ‌کس نمی‌رسد؛ رضایت ارتباط مشتریان در برنامهٔ «ارتباط با
+                  مشتری» ثبت و ویرایش می‌شود.
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </div>
       )}

@@ -3,6 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { getCustomer } from "@/lib/parties-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { redeemPoints } from "@/lib/loyalty-service";
 
 /** Redeems points into store credit, in one transaction. */
@@ -24,6 +25,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
+  const businessDay = await getBusinessDayStatus(location.id);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -31,7 +33,8 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       businessId: session.businessId,
       locationId: location.id,
       customerId: id,
-      points: Number(body.points),
+      points: body.points as number,
+      businessDate: businessDay?.businessDate,
       createdBy: session.sub,
     });
     await client.query("COMMIT");

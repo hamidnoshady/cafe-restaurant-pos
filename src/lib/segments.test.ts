@@ -5,6 +5,7 @@ import {
   countRules,
   describeSegment,
   isSegmentField,
+  isSegmentPurpose,
   isSendingPurpose,
   SEGMENT_FIELDS,
   SegmentRuleError,
@@ -30,12 +31,17 @@ describe("compileSegment", () => {
     // closed the way an unknown consent purpose does.
     expect(() =>
       compileSegment(
-        { match: "all", rules: [{ field: "orderCount", operator: "gte", value: 5 }] } as never,
+        {
+          match: "all",
+          rules: [{ field: "orderCount", operator: "gte", value: 5 }],
+        } as never,
         ANCHOR,
       ),
     ).toThrow(SegmentRuleError);
     // …and the error names the offending key, so the caller can fix it.
-    expect(() => compileSegment({ rules: [] } as never, ANCHOR)).toThrow(/rules/);
+    expect(() => compileSegment({ rules: [] } as never, ANCHOR)).toThrow(
+      /rules/,
+    );
   });
 
   it("ANDs `all` rules and ORs `any` rules", () => {
@@ -58,10 +64,13 @@ describe("compileSegment", () => {
   });
 
   it("numbers parameters from the caller's offset so it can be embedded", () => {
-    const compiled = compileSegment({ all: [{ field: "orderCount", op: "gte", value: 5 }] }, {
-      ...ANCHOR,
-      paramOffset: 1,
-    });
+    const compiled = compileSegment(
+      { all: [{ field: "orderCount", op: "gte", value: 5 }] },
+      {
+        ...ANCHOR,
+        paramOffset: 1,
+      },
+    );
     // $1 belongs to the caller (the business id); the compiler starts at $2.
     expect(compiled.sql).toContain("$2");
     expect(compiled.sql).not.toContain("$1");
@@ -70,16 +79,37 @@ describe("compileSegment", () => {
   describe("injection safety — the property that makes user-authored rules survivable", () => {
     it("binds every value rather than interpolating it", () => {
       const hostile = "'; DROP TABLE customers; --";
-      const compiled = compileSegment({ all: [{ field: "city", op: "contains", value: hostile }] }, ANCHOR);
+      const compiled = compileSegment(
+        { all: [{ field: "city", op: "contains", value: hostile }] },
+        ANCHOR,
+      );
       // The attack string is a *parameter*, never part of the statement.
       expect(compiled.sql).not.toContain("DROP TABLE");
       expect(compiled.sql).not.toContain(hostile);
       expect(compiled.params).toEqual([`%${hostile}%`]);
     });
 
+    it("treats LIKE wildcards in a contains rule as literal customer text", () => {
+      const literal = "100%_تهران\\";
+      const compiled = compileSegment(
+        { all: [{ field: "city", op: "contains", value: literal }] },
+        ANCHOR,
+      );
+      expect(compiled.sql).toContain("ESCAPE");
+      expect(compiled.params).toEqual(["%100\\%\\_تهران\\\\%"]);
+    });
+
     it("binds hostile tag values too", () => {
       const compiled = compileSegment(
-        { all: [{ field: "tags", op: "hasAny", values: ["a'); DELETE FROM orders; --"] }] },
+        {
+          all: [
+            {
+              field: "tags",
+              op: "hasAny",
+              values: ["a'); DELETE FROM orders; --"],
+            },
+          ],
+        },
         ANCHOR,
       );
       expect(compiled.sql).not.toContain("DELETE");
@@ -97,13 +127,27 @@ describe("compileSegment", () => {
 
     it("rejects an unknown operator", () => {
       expect(() =>
-        compileSegment({ all: [{ field: "orderCount", op: "!=" } as never] }, ANCHOR),
+        compileSegment(
+          { all: [{ field: "orderCount", op: "!=" } as never] },
+          ANCHOR,
+        ),
       ).toThrow(SegmentRuleError);
     });
 
     it("rejects a non-numeric value where a number is required", () => {
       expect(() =>
-        compileSegment({ all: [{ field: "totalSpentRial", op: "gte", value: "1 OR 1=1" } as never] }, ANCHOR),
+        compileSegment(
+          {
+            all: [
+              {
+                field: "totalSpentRial",
+                op: "gte",
+                value: "1 OR 1=1",
+              } as never,
+            ],
+          },
+          ANCHOR,
+        ),
       ).toThrow(SegmentRuleError);
     });
 
@@ -120,7 +164,11 @@ describe("compileSegment", () => {
             case "number":
               return { field: meta.field, op: meta.operators[0], value: 10 };
             case "tags":
-              return { field: meta.field, op: meta.operators[0], values: [hostile] };
+              return {
+                field: meta.field,
+                op: meta.operators[0],
+                values: [hostile],
+              };
             case "month":
               return { field: meta.field, op: "is", month: 5 };
             case "boolean":
@@ -155,6 +203,15 @@ describe("compileSegment", () => {
       expect(compiled.sql).toContain("IS NULL");
     });
 
+    it("does not treat 'no first purchase' as a first purchase before the cutoff", () => {
+      const compiled = compileSegment(
+        { all: [{ field: "firstPurchaseAt", op: "before", days: 90 }] },
+        ANCHOR,
+      );
+      expect(compiled.sql).not.toContain("IS NULL");
+      expect(compiled.sql).toContain("s.first_purchase_date <");
+    });
+
     it("does not add the IS NULL branch to a «bought recently» rule", () => {
       const compiled = compileSegment(
         { all: [{ field: "lastPurchaseAt", op: "after", days: 30 }] },
@@ -165,34 +222,73 @@ describe("compileSegment", () => {
 
     it("rejects a negative day count and a non-ISO anchor", () => {
       expect(() =>
-        compileSegment({ all: [{ field: "lastPurchaseAt", op: "before", days: -1 }] }, ANCHOR),
+        compileSegment(
+          { all: [{ field: "lastPurchaseAt", op: "before", days: -1 }] },
+          ANCHOR,
+        ),
       ).toThrow(SegmentRuleError);
-      expect(() => compileSegment({}, { anchorDate: "10/03/2026" })).toThrow(SegmentRuleError);
+      expect(() => compileSegment({}, { anchorDate: "10/03/2026" })).toThrow(
+        SegmentRuleError,
+      );
     });
   });
 
   it("treats a customer with no orders as having spent zero, not unknown", () => {
-    const compiled = compileSegment({ all: [{ field: "totalSpentRial", op: "lte", value: 100 }] }, ANCHOR);
+    const compiled = compileSegment(
+      { all: [{ field: "totalSpentRial", op: "lte", value: 100 }] },
+      ANCHOR,
+    );
     expect(compiled.sql).toContain("coalesce");
   });
 
   it("ignores an empty tag list rather than erroring mid-typing", () => {
-    const compiled = compileSegment({ all: [{ field: "tags", op: "hasAny", values: [] }] }, ANCHOR);
+    const compiled = compileSegment(
+      { all: [{ field: "tags", op: "hasAny", values: [] }] },
+      ANCHOR,
+    );
     expect(compiled.sql).toContain("TRUE");
     expect(compiled.params).toEqual([]);
   });
 
+  it("trims tag values before binding them", () => {
+    const compiled = compileSegment(
+      {
+        all: [{ field: "tags", op: "hasAll", values: [" vip ", "", "طلایی "] }],
+      },
+      ANCHOR,
+    );
+    expect(compiled.params).toEqual([["vip", "طلایی"]]);
+  });
+
   it("validates the month range", () => {
-    expect(() => compileSegment({ all: [{ field: "birthdayMonth", op: "is", month: 13 }] }, ANCHOR)).toThrow();
-    expect(() => compileSegment({ all: [{ field: "birthdayMonth", op: "is", month: 0 }] }, ANCHOR)).toThrow();
-    expect(compileSegment({ all: [{ field: "birthdayMonth", op: "is", month: 7 }] }, ANCHOR).params).toEqual([7]);
+    expect(() =>
+      compileSegment(
+        { all: [{ field: "birthdayMonth", op: "is", month: 13 }] },
+        ANCHOR,
+      ),
+    ).toThrow();
+    expect(() =>
+      compileSegment(
+        { all: [{ field: "birthdayMonth", op: "is", month: 0 }] },
+        ANCHOR,
+      ),
+    ).toThrow();
+    expect(
+      compileSegment(
+        { all: [{ field: "birthdayMonth", op: "is", month: 7 }] },
+        ANCHOR,
+      ).params,
+    ).toEqual([7]);
   });
 });
 
 describe("consentPredicate — the rule the messaging phase will depend on", () => {
   it("requires consent and a reachable address for a send", () => {
-    expect(consentPredicate("sms")).toContain("sms_consent = true");
-    expect(consentPredicate("sms")).toContain("phone IS NOT NULL");
+    const sms = consentPredicate("sms");
+    expect(sms).toContain("sms_consent = true");
+    expect(sms).toContain("phone_kind");
+    expect(sms).toContain("phone_e164 LIKE '+989%'");
+    expect(sms).not.toContain("c.phone IS NOT NULL");
     expect(consentPredicate("email")).toContain("marketing_consent = true");
     expect(consentPredicate("email")).toContain("email IS NOT NULL");
   });
@@ -204,6 +300,13 @@ describe("consentPredicate — the rule the messaging phase will depend on", () 
   it("fails closed on an unrecognised purpose", () => {
     // A typo must produce an empty send, never an unconsented one.
     expect(consentPredicate("whatsapp" as never)).toBe("FALSE");
+  });
+
+  it("recognises valid purpose values before a route resolves an audience", () => {
+    expect(isSegmentPurpose("view")).toBe(true);
+    expect(isSegmentPurpose("sms")).toBe(true);
+    expect(isSegmentPurpose("email")).toBe(true);
+    expect(isSegmentPurpose("whatsapp")).toBe(false);
   });
 
   it("knows which purposes are sends", () => {
@@ -224,6 +327,16 @@ describe("validateSegmentDefinition", () => {
     };
     expect(validateSegmentDefinition(definition)).toEqual([]);
     expect(countRules(definition)).toBe(3);
+  });
+
+  it("rejects incomplete no-op rows for saved segments but allows them while previewing", () => {
+    const definition = { all: [{ field: "tags", op: "hasAny", values: [] }] };
+    expect(validateSegmentDefinition(definition).join(" ")).toContain(
+      "حداقل یک برچسب",
+    );
+    expect(
+      validateSegmentDefinition(definition, { allowIncomplete: true }),
+    ).toEqual([]);
   });
 
   it("reports every problem rather than only the first", () => {
@@ -264,7 +377,8 @@ describe("describeSegment", () => {
 
 describe("isSegmentField", () => {
   it("accepts every declared field and nothing else", () => {
-    for (const meta of SEGMENT_FIELDS) expect(isSegmentField(meta.field)).toBe(true);
+    for (const meta of SEGMENT_FIELDS)
+      expect(isSegmentField(meta.field)).toBe(true);
     expect(isSegmentField("password")).toBe(false);
     expect(isSegmentField(null)).toBe(false);
   });
@@ -272,6 +386,8 @@ describe("isSegmentField", () => {
   it("has metadata for every field the compiler accepts", () => {
     // Drift here would mean a field the engine supports that the builder form
     // cannot offer, or vice versa.
-    expect(SEGMENT_FIELDS.every((meta) => isSegmentField(meta.field))).toBe(true);
+    expect(SEGMENT_FIELDS.every((meta) => isSegmentField(meta.field))).toBe(
+      true,
+    );
   });
 });

@@ -5,6 +5,7 @@ import { query } from "@/lib/db";
 import { getMessageTemplate, buildMessageVariables, renderRecipientBody } from "@/lib/message-campaigns-service";
 import { getPublicMessageConfig } from "@/lib/messaging-billing";
 import { messageCostRial, smsSegmentCount } from "@/lib/messaging-billing-pure";
+import { storeCreditBalance } from "@/lib/loyalty-service";
 
 /**
  * Renders a selected template against one actual, consent-eligible member of
@@ -24,13 +25,25 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const member = audience.members[0];
   if (!member) return NextResponse.json({ error: "no_reachable_customer" }, { status: 400 });
 
-  const [{ rows: businesses }, { rows: pointsRows }, config] = await Promise.all([
+  const [{ rows: businesses }, { rows: pointsRows }, config, creditRial] = await Promise.all([
     query<{ name: string }>(`SELECT name FROM businesses WHERE id = $1`, [session.businessId]),
-    query<{ points: string | number }>(`SELECT coalesce(sum(points), 0) AS points FROM customer_points WHERE business_id = $1 AND customer_id = $2`, [session.businessId, member.id]),
+    query<{ points: string | number }>(
+      `SELECT coalesce(sum(points), 0) AS points
+         FROM customer_points
+        WHERE business_id = $1 AND customer_id = $2
+          AND (expires_at IS NULL OR expires_at >= current_date)`,
+      [session.businessId, member.id],
+    ),
     getPublicMessageConfig(),
+    storeCreditBalance(session.businessId, member.id),
   ]);
   try {
-    const values = buildMessageVariables({ name: member.name, shopName: businesses[0]?.name ?? "", points: Number(pointsRows[0]?.points ?? 0) });
+    const values = buildMessageVariables({
+      name: member.name,
+      shopName: businesses[0]?.name ?? "",
+      points: Math.max(0, Number(pointsRows[0]?.points ?? 0)),
+      creditRial,
+    });
     const renderedBody = renderRecipientBody(template.body, values);
     const subject = template.channel === "email" ? renderRecipientBody(template.subject, values) : "";
     return NextResponse.json({

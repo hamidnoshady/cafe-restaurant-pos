@@ -35,7 +35,7 @@ import {
 import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatPhoneDisplay } from "@/lib/phone";
+import { formatPhoneDisplay, isMobilePhone } from "@/lib/phone";
 import { LIFECYCLE_STAGES, type LifecycleStage } from "@/lib/crm-scoring";
 import {
   CONSENT_SOURCE_LABELS,
@@ -344,8 +344,15 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
             <ConsentRow
               label="پیامک"
               granted={file.smsConsent}
-              reachable={Boolean(file.phone)}
-              unreachableHint="شماره‌ای ثبت نشده است."
+              // Reachability here must match what a send and the consent-coverage
+              // page count: an SMS reaches a mobile, not a landline. Using
+              // `Boolean(file.phone)` marked a landline customer «قابل ارسال»
+              // while the coverage page (mobile-only) did not — the two screens
+              // then disagreed about the same person.
+              reachable={isMobilePhone(file.phoneE164 ?? file.phone)}
+              unreachableHint={
+                file.phone ? "شمارهٔ ثبت‌شده موبایل نیست." : "شماره‌ای ثبت نشده است."
+              }
               canManage={canManageConsent && !isMerged}
               onChange={() => setConsentTarget("sms")}
             />

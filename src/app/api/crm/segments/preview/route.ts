@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { previewSegment } from "@/lib/crm-segments-service";
-import { isSendingPurpose, validateSegmentDefinition, type SegmentPurpose } from "@/lib/segments";
+import {
+  isSegmentPurpose,
+  validateSegmentDefinition,
+  type SegmentPurpose,
+} from "@/lib/segments";
 
 /**
  * Count and sample an *unsaved* definition — what the builder shows while the
@@ -26,16 +30,24 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const problems = validateSegmentDefinition(body.definition ?? {});
+  const problems = validateSegmentDefinition(body.definition ?? {}, {
+    allowIncomplete: true,
+  });
   if (problems.length > 0) {
-    return NextResponse.json({ error: "segment_definition_invalid", problems }, { status: 400 });
+    return NextResponse.json(
+      { error: "segment_definition_invalid", problems },
+      { status: 400 },
+    );
   }
 
   const requested = body.purpose ?? "view";
-  const purpose: SegmentPurpose =
-    requested === "view" || isSendingPurpose(requested as SegmentPurpose)
-      ? (requested as SegmentPurpose)
-      : "view";
+  if (!isSegmentPurpose(requested)) {
+    return NextResponse.json(
+      { error: "segment_purpose_invalid" },
+      { status: 400 },
+    );
+  }
+  const purpose: SegmentPurpose = requested;
 
   const preview = await previewSegment(
     session.businessId,

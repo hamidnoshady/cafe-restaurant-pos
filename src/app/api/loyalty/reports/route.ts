@@ -8,9 +8,13 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   if (error) return error;
 
   const params = request.nextUrl.searchParams;
-  const report = await loyaltyRedemptionReport(session.businessId, {
-    from: params.get("from") ?? null,
-    to: params.get("to") ?? null,
-  });
-  return NextResponse.json(report);
+  try {
+    const report = await loyaltyRedemptionReport(session.businessId, {
+      from: params.get("from") ?? null,
+      to: params.get("to") ?? null,
+    });
+    return NextResponse.json(report);
+  } catch (err) {
+    return NextResponse.json({ error: "invalid_range", message: (err as Error).message }, { status: 400 });
+  }
 });

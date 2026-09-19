@@ -226,6 +226,56 @@ describe("migration runner", () => {
     expect(second).toEqual({ applied: 0, adoptedChecksums: 0, repairedChecksums: [] });
   });
 
+  it("repairs the checksum of 0140_installments.sql and 0127_bug_reports.sql across revisions", async () => {
+    const database = await createDatabase();
+    const migrationsDir = await tempMigrations({
+      "0127_bug_reports.sql": "CREATE TABLE probe_127(id integer);",
+      "0140_installments.sql": "CREATE TABLE probe_140(id integer);",
+    });
+    const repairedChecksum127 = createHash("sha256")
+      .update(readFileSync(join(migrationsDir, "0127_bug_reports.sql")))
+      .digest("hex");
+    const repairedChecksum140 = createHash("sha256")
+      .update(readFileSync(join(migrationsDir, "0140_installments.sql")))
+      .digest("hex");
+
+    const client = new Client({ connectionString: database.url });
+    await client.connect();
+    await client.query(
+      `CREATE TABLE schema_migrations(
+         filename text PRIMARY KEY, checksum text,
+         applied_at timestamptz NOT NULL DEFAULT now())`,
+    );
+    await client.query("INSERT INTO schema_migrations(filename, checksum) VALUES($1, $2), ($3, $4)", [
+      "0127_bug_reports.sql",
+      "f780470a9aeebc4400ea14c3fee5ade194d4aa598c5bd79840802b2aa372b5ff",
+      "0140_installments.sql",
+      "6ce624cd31cda355f2ca902bfa4482996d1ab67ca67ff6c3d80ef4c2ae170c9d",
+    ]);
+    await client.end();
+
+    const first = await runMigrations({ databaseUrl: database.url, migrationsDir, quiet: true });
+    expect(first).toEqual({
+      applied: 0,
+      adoptedChecksums: 0,
+      repairedChecksums: ["0127_bug_reports.sql", "0140_installments.sql"],
+    });
+
+    const verify = new Client({ connectionString: database.url });
+    await verify.connect();
+    const { rows } = await verify.query<{ filename: string; checksum: string }>(
+      "SELECT filename, checksum FROM schema_migrations WHERE filename IN ('0127_bug_reports.sql', '0140_installments.sql') ORDER BY filename",
+    );
+    await verify.end();
+    expect(rows).toEqual([
+      { filename: "0127_bug_reports.sql", checksum: repairedChecksum127 },
+      { filename: "0140_installments.sql", checksum: repairedChecksum140 },
+    ]);
+
+    const second = await runMigrations({ databaseUrl: database.url, migrationsDir, quiet: true });
+    expect(second).toEqual({ applied: 0, adoptedChecksums: 0, repairedChecksums: [] });
+  });
+
   it("rejects drift in an already-applied migration", async () => {
     const database = await createDatabase();
     const migrationsDir = await tempMigrations({ "0001_value.sql": "CREATE TABLE value_one(id integer);" });
