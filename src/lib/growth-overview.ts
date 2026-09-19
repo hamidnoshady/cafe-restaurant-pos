@@ -84,6 +84,13 @@ export interface GrowthActivityRow {
 
 export interface GrowthOverview {
   window: { from: string; to: string };
+  /**
+   * Whether the reader actually has a branch in context. `repurchase` is a
+   * per-branch prediction, so without one its `due` is 0 *because nothing was
+   * asked*, not because nobody is due — a difference the dashboard has to be
+   * able to say out loud instead of printing a confident «۰».
+   */
+  hasLocation: boolean;
   campaigns: {
     counts: Record<CampaignState, number>;
     list: CampaignSummaryRow[];
@@ -175,16 +182,43 @@ export async function growthOverview(
       outstanding: number;
       customers_with_points: number;
     }>(
-      `SELECT
-              COALESCE(SUM(points) FILTER (WHERE points > 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS earned,
-              COALESCE(-SUM(points) FILTER (WHERE points < 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS redeemed,
-              COALESCE(SUM(points), 0)::int AS outstanding,
-              COUNT(DISTINCT customer_id)::int AS customers_with_points
-         FROM customer_points
-        WHERE business_id = $1`,
+      // `customers_with_points` is a count of *balances*, not of rows: the old
+      // COUNT(DISTINCT customer_id) over the whole ledger counted anyone who
+      // had ever earned a point, including customers who have since spent
+      // every one of them — so the dashboard could claim more point-holders
+      // than there were points. The per-customer sum is taken first and only
+      // the positive balances are counted, which is the same definition
+      // `pointsBalance` gives one customer.
+      `WITH balances AS (
+         SELECT customer_id, SUM(points)::int AS balance
+           FROM customer_points
+          WHERE business_id = $1
+          GROUP BY customer_id
+       )
+       SELECT
+              COALESCE((SELECT SUM(points) FILTER (WHERE points > 0)
+                          FROM customer_points
+                         WHERE business_id = $1
+                           AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS earned,
+              COALESCE((SELECT -SUM(points) FILTER (WHERE points < 0)
+                          FROM customer_points
+                         WHERE business_id = $1
+                           AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS redeemed,
+              COALESCE((SELECT SUM(balance) FROM balances), 0)::int AS outstanding,
+              (SELECT COUNT(*) FROM balances WHERE balance > 0)::int AS customers_with_points`,
       [businessId, from, to],
     ),
-    query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM parties WHERE business_id = $1`, [businessId]),
+    // Only *customers*, and only the surviving record of a merge: `parties`
+    // holds employees and suppliers on the same table since migration 0137, so
+    // the unfiltered COUNT(*) made «۱۲ مشتری از ۹۰» compare point-holders with
+    // the whole counterparty book — staff, suppliers, merged duplicates and
+    // archived rows included.
+    query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total
+         FROM parties
+        WHERE business_id = $1 AND role = 'customer' AND is_active AND merged_into_id IS NULL`,
+      [businessId],
+    ),
     query<{ programs: number }>(
       `SELECT COUNT(*)::int AS programs FROM loyalty_programs WHERE business_id = $1 AND is_active`,
       [businessId],
@@ -299,6 +333,7 @@ export async function growthOverview(
 
   return {
     window: { from, to },
+    hasLocation: Boolean(opts.locationId),
     campaigns: {
       counts: campaignStateCounts(campaignList.map((c) => c.state)),
       list: campaignList.slice(0, 6),
