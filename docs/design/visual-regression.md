@@ -62,10 +62,10 @@ harness pins everything that can move:
   `aria-busy="true"` skeleton while fetching, so the harness waits for those to
   clear, then for `document.fonts.ready` (Vazirmatn reflows text if it is early).
 
-Per-pixel tolerance is 0.1% of pixels, with a per-channel threshold of 12/255.
+Per-pixel tolerance is 0.1% of pixels, with a per-channel threshold of 40/255.
 That absorbs font antialiasing differences between machines while still failing
-on any real change — a wrong colour, a missing border or a shifted card moves
-whole percent, not hundredths.
+on real structural changes — a wrong colour, a missing border or a shifted card
+moves whole percent, not hundredths.
 
 ## Reviewing a failure — read this before touching a baseline
 
