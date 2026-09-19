@@ -94,6 +94,7 @@ import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { cardClass } from "../page-chrome";
+import { safeRandomId } from "@/lib/client-id";
 
 interface Category {
   id: string;
@@ -538,7 +539,7 @@ export function PosScreen({
       return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
     });
     return {
-      key: key ?? `${item.id}-${crypto.randomUUID()}`,
+      key: key ?? `${item.id}-${safeRandomId()}`,
       menuItemId: item.id,
       name: item.name,
       unitPrice: Number(item.price),
@@ -579,7 +580,7 @@ export function PosScreen({
       selectedModifierIds,
       note,
       quantity,
-      `${item.id}-${crypto.randomUUID()}`,
+      `${item.id}-${safeRandomId()}`,
     );
     setCart((prev) => upsertLine(prev, lineKey, line));
     flashItem(item.id);
@@ -847,7 +848,7 @@ export function PosScreen({
     submissionInFlight.current = true;
     setBusy(true);
     if (!clientRequestIdRef.current) {
-      clientRequestIdRef.current = crypto.randomUUID();
+      clientRequestIdRef.current = safeRandomId();
     }
     const orderBody = {
       type: orderType,

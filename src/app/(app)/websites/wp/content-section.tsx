@@ -60,13 +60,15 @@ interface ContentRow {
   authorName: string;
   mediaUrl: string | null;
   mimeType: string | null;
+  /** Raw post HTML when the mirror carries it; null when it does not. */
+  content: string | null;
   remoteUpdatedAt: string | null;
   syncedAt: string;
 }
 
 interface ContentDetail extends ContentRow {
   editorTitle: string;
-  content: string;
+  content: string | null;
   excerpt: string;
 }
 
@@ -512,6 +514,7 @@ function PostEditor({
       ? { editorTitle: row.title, content: "", excerpt: "", slug: row.slug, status: row.status }
       : { editorTitle: "", content: "", excerpt: "", slug: "", status: "draft" },
   );
+  const [contentEditable, setContentEditable] = useState(!row);
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -521,6 +524,7 @@ function PostEditor({
     if (!row) return;
     const controller = new AbortController();
     setInitial(null);
+    setContentEditable(false);
     setLoadError("");
     const query = new URLSearchParams({ connectionId, type, id: row.remoteId });
     void api<{ row: ContentDetail; error?: string }>(
@@ -544,6 +548,7 @@ function PostEditor({
         slug: detail.slug ?? "",
         status: detail.status ?? "draft",
       };
+      setContentEditable(detail.content !== null);
       setInitial(next);
       setValues(next);
     });
@@ -679,17 +684,21 @@ function PostEditor({
                 </Field>
                 <Field
                   label="محتوا (HTML / بلوک‌های وردپرس)"
-                  hint="کد HTML، شورت‌کدها و نشانه‌های بلوک وردپرس همان‌طور که ذخیره شده‌اند نگه داشته می‌شوند."
+                  hint={
+                    contentEditable
+                      ? "کد HTML، شورت‌کدها و نشانه‌های بلوک وردپرس همان‌طور که ذخیره شده‌اند نگه داشته می‌شوند."
+                      : "متن خام این مورد از وردپرس دریافت نشده است؛ برای جلوگیری از بازنویسی ناخواسته، فقط عنوان، نامک، خلاصه و وضعیت قابل تغییرند."
+                  }
                 >
                   <textarea
                     dir="auto"
                     className={cn(inputClass, "h-auto min-h-[16rem] resize-y py-3 leading-7 sm:min-h-[22rem]")}
                     value={values.content}
                     maxLength={1_500_000}
-                    disabled={busy}
+                    disabled={busy || !contentEditable}
                     spellCheck
                     onChange={(event) => setValue("content", event.target.value)}
-                    placeholder="متن نوشته یا برگه…"
+                    placeholder={contentEditable ? "متن نوشته یا برگه…" : "متن خام در دسترس نیست"}
                   />
                 </Field>
                 <ErrorBox>{error}</ErrorBox>

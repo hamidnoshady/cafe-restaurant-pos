@@ -120,7 +120,7 @@ export async function handleWooCommerceWebhook(
   );
 }
 
-interface WebhookEvent {
+export interface WebhookEvent {
   topic: string;
   deliveryId: string;
   payload: Record<string, unknown>;
@@ -145,7 +145,7 @@ export type IngestOutcome =
  * (connection_id, entity_type, remote_id) means an `order.updated`/`restored`
  * that arrives after `order.created` is a no-op at the order level too.
  */
-async function applyIngestEvent(connection: ConnectionRow, event: WebhookEvent): Promise<IngestOutcome> {
+export async function applyIngestEvent(connection: ConnectionRow, event: WebhookEvent): Promise<IngestOutcome> {
   const businessId = connection.business_id;
   const remoteId = event.payload?.id != null ? String(event.payload.id) : "";
 

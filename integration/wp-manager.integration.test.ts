@@ -544,9 +544,9 @@ describe("the content mirror pulls over the WordPress REST API (rest mode)", () 
 
     const outcome = await content.syncWpContentRest(restConn, client);
     expect(outcome).toEqual({ total: 3, removed: 1 });
-    expect(calls.every((call) => call.query.context === "edit")).toBe(true);
+    expect(calls.filter((call) => call.type !== "media").every((call) => call.query.context === "edit")).toBe(true);
     expect(String(calls.find((call) => call.type === "posts")?.query.status)).toContain("draft");
-    expect(calls.find((call) => call.type === "media")?.query.status).toBe("inherit");
+    expect(calls.find((call) => call.type === "media")?.query.context).toBe("view");
 
     const rows = await content.listWpContent(biz.id, biz.restConnId);
     expect(rows.find((r) => r.remoteId === "3001")?.title).toBe("Ben & Jerry");
@@ -586,5 +586,76 @@ describe("the content mirror pulls over the WordPress REST API (rest mode)", () 
     const rows = await content.listWpContent(biz.id, biz.restConnId, { wpType: "post", limit: 200 });
     expect(rows).toHaveLength(101);
     expect(rows.some((row) => row.remoteId === "4100")).toBe(true);
+  });
+});
+
+describe("the enhanced WP queue summary, filtering, and retries", () => {
+  it("computes accurate summary metrics across outbox and inbox", async () => {
+    const summary = await manager.wpQueueSummary(biz.id, biz.pluginConnId);
+    expect(summary.total).toBeGreaterThanOrEqual(4);
+    expect(summary.pending).toBeGreaterThanOrEqual(1);
+    expect(summary.failed).toBeGreaterThanOrEqual(1);
+    expect(summary.dead).toBeGreaterThanOrEqual(1);
+  });
+
+  it("filters queue by status and direction", async () => {
+    const failedRows = await manager.wpQueue(biz.id, biz.pluginConnId, { status: "failed" });
+    expect(failedRows.every((r) => r.status === "failed" || r.status === "dead")).toBe(true);
+
+    const outRows = await manager.wpQueue(biz.id, biz.pluginConnId, { direction: "out" });
+    expect(outRows.every((r) => r.direction === "out")).toBe(true);
+
+    const inRows = await manager.wpQueue(biz.id, biz.pluginConnId, { direction: "in" });
+    expect(inRows.every((r) => r.direction === "in")).toBe(true);
+  });
+
+  it("filters queue by search query", async () => {
+    const searched = await manager.wpQueue(biz.id, biz.pluginConnId, { search: "5001" });
+    expect(searched.length).toBeGreaterThan(0);
+    expect(searched.every((r) => r.remoteId.includes("5001") || r.kind.includes("5001"))).toBe(true);
+  });
+
+  it("retries a dead outbox row, resetting status to pending and attempts to 0", async () => {
+    const deadRows = await manager.wpQueue(biz.id, biz.pluginConnId, { status: "dead" });
+    expect(deadRows.length).toBeGreaterThan(0);
+    const target = deadRows[0];
+
+    const result = await manager.retryWpQueueRow(biz.id, biz.pluginConnId, target.id, "out");
+    expect(result.ok).toBe(true);
+
+    const refreshed = await manager.wpQueue(biz.id, biz.pluginConnId, { status: "all" });
+    const updated = refreshed.find((r) => r.id === target.id);
+    expect(updated?.status).toBe("pending");
+    expect(updated?.attempts).toBe(0);
+  });
+
+  it("retries all failed and dead events in batch", async () => {
+    // Insert a failed event to test batch retry
+    await db.query(
+      `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload, status, attempts, last_error)
+       VALUES ($1, $2, 'price', '9999', '{}'::jsonb, 'failed', 3, 'temporary error')
+       ON CONFLICT (connection_id, entity_type, remote_id)
+       DO UPDATE SET status = 'failed', attempts = 3, last_error = 'temporary error'`,
+      [biz.id, biz.pluginConnId],
+    );
+
+    const result = await manager.retryAllFailedWpQueue(biz.id, biz.pluginConnId);
+    expect(result.ok).toBe(true);
+    expect(result.outboxRetried).toBeGreaterThanOrEqual(1);
+
+    const all = await manager.wpQueue(biz.id, biz.pluginConnId, { status: "all" });
+    const row = all.find((r) => r.remoteId === "9999");
+    expect(row?.status).toBe("pending");
+    expect(row?.attempts).toBe(0);
+  });
+
+  it("flushes outbox queue reporting mode and status", async () => {
+    const pluginFlush = await manager.flushWpOutbox(biz.id, biz.pluginConnId);
+    expect(pluginFlush.ok).toBe(true);
+    expect(pluginFlush.mode).toBe("plugin");
+
+    const restFlush = await manager.flushWpOutbox(biz.id, biz.restConnId);
+    expect(restFlush.ok).toBe(true);
+    expect(restFlush.mode).toBe("rest_api");
   });
 });

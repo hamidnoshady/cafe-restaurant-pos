@@ -60,6 +60,15 @@ export interface WpContentRow {
   authorName: string;
   mediaUrl: string | null;
   mimeType: string | null;
+  /**
+   * The post's own HTML, when the mirror carries it — the plugin sends the
+   * raw `post_content` and a `context: edit` REST pull would send
+   * `content.raw`. Null when the payload never carried content (a
+   * `context: view` REST pull exposes only `content.rendered`, which this
+   * app deliberately does not round-trip: writing rendered HTML back would
+   * re-wrap paragraphs and expand shortcodes on the live site).
+   */
+  content: string | null;
   altText: string;
   remoteUpdatedAt: string | null;
   syncedAt: string;
@@ -68,7 +77,7 @@ export interface WpContentRow {
 /** The raw editable fields are read only for one row, never every list row. */
 export interface WpContentDetail extends WpContentRow {
   editorTitle: string;
-  content: string;
+  content: string | null;
   excerpt: string;
 }
 
@@ -147,9 +156,9 @@ export function plainTitle(raw: unknown): string {
 }
 
 /**
- * Read the editable value from either the plugin's raw string or wp/v2's
- * `{ raw, rendered }` shape. `raw` is preferred: writing rendered block HTML
- * back to WordPress can discard shortcodes and Gutenberg block comments.
+ * Read an editable text field from either the plugin's raw string or wp/v2's
+ * `{ raw, rendered }` shape. This is suitable for titles/excerpts; post body
+ * content uses the stricter `mirroredContent` boundary below.
  */
 export function editableWpField(raw: unknown): string {
   if (typeof raw === "string") return raw;
@@ -157,6 +166,19 @@ export function editableWpField(raw: unknown): string {
   const value = raw as { raw?: unknown; rendered?: unknown };
   if (typeof value.raw === "string") return value.raw;
   return typeof value.rendered === "string" ? value.rendered : "";
+}
+
+/**
+ * Return only content that can be safely round-tripped to WordPress.
+ * Rendered-only HTML has passed through filters such as shortcode expansion
+ * and wpautop, so writing it back would silently rewrite the live post.
+ */
+export function mirroredContent(raw: unknown): string | null {
+  if (typeof raw === "string") return raw;
+  if (raw && typeof raw === "object" && typeof (raw as { raw?: unknown }).raw === "string") {
+    return (raw as { raw: string }).raw;
+  }
+  return null;
 }
 
 /** Only absolute, credential-free HTTP(S) URLs may leave the API. */
@@ -298,12 +320,14 @@ export async function listWpContent(
     author_name: string;
     media_url: string | null;
     mime_type: string | null;
+    content: unknown;
     alt_text: string;
     remote_updated_at: string | null;
     synced_at: string;
   }>(
     `SELECT remote_id, wp_type, title, slug, status, permalink, author_name,
-            media_url, mime_type, COALESCE(payload->>'alt_text', '') AS alt_text,
+            media_url, mime_type, payload->'content' AS content,
+            COALESCE(payload->>'alt_text', '') AS alt_text,
             remote_updated_at, synced_at
        FROM integration_wp_content
       WHERE business_id = $1 AND connection_id = $2
@@ -339,6 +363,7 @@ export async function listWpContent(
     // cannot retain an executable external href forever.
     mediaUrl: safeWpExternalUrl(r.media_url),
     mimeType: r.mime_type,
+    content: mirroredContent(r.content),
     altText: r.alt_text,
     remoteUpdatedAt: r.remote_updated_at,
     syncedAt: r.synced_at,
@@ -423,7 +448,7 @@ export async function getWpContent(
     remoteUpdatedAt: row.remote_updated_at,
     syncedAt: row.synced_at,
     editorTitle: editableWpField(payload.title) || row.title,
-    content: editableWpField(payload.content),
+    content: mirroredContent(payload.content),
     excerpt: editableWpField(payload.excerpt),
   };
 }
@@ -541,17 +566,36 @@ export async function syncWpContentRest(
 
   for (const collection of collections) {
     const seen = new Set<string>();
+    // Posts and pages are asked for with `context: edit` first: that is the
+    // only context that carries `content.raw`, the round-trippable HTML the
+    // manager's editor needs (a `view` pull exposes only `content.rendered`,
+    // which must never be written back — see `mirroredContent`). A key whose
+    // user cannot edit posts refuses the context, and the pull retries with
+    // `view` so the mirror still arrives, minus the editable content. Media
+    // needs no edit context — `source_url` is the same in both.
+    let context: "edit" | "view" = collection.wpType === "attachment" ? "view" : "edit";
     let page = 1;
     for (;;) {
-      // `edit` retains raw Gutenberg/shortcode text and allows authenticated
-      // sites to return non-public posts. Saving rendered text would otherwise
-      // destroy editor data that the manager never received.
-      const { items, totalPages } = await client.wpListPage(collection.endpoint, {
-        context: "edit",
-        status: collection.status,
-        per_page: 100,
-        page,
-      });
+      let result: { items: Record<string, unknown>[]; totalPages: number };
+      try {
+        result = await client.wpListPage(collection.endpoint, {
+          context,
+          ...(context === "edit" ? { status: collection.status } : {}),
+          per_page: 100,
+          page,
+        });
+      } catch (err) {
+        if (context === "edit" && page === 1) {
+          // Some WooCommerce keys can read public wp/v2 rows but cannot use
+          // edit context. Keep the mirror available while marking body content
+          // non-editable rather than failing the whole synchronization.
+          context = "view";
+          result = await client.wpListPage(collection.endpoint, { context, per_page: 100, page });
+        } else {
+          throw err;
+        }
+      }
+      const { items, totalPages } = result;
       const reportedPages = Number.isFinite(Number(totalPages)) ? Math.max(0, Number(totalPages)) : 0;
 
       for (const item of items) {
@@ -574,7 +618,12 @@ export async function syncWpContentRest(
       if (page >= 500) throw new Error("wp_content_page_limit");
       page += 1;
     }
-    seenByType.set(collection.wpType, [...seen]);
+    // A view-context fallback omits drafts/private rows, so it is useful for
+    // browsing but not an authoritative deletion snapshot. Media's view
+    // collection is complete for its normal `inherit` status.
+    if (context === "edit" || collection.wpType === "attachment") {
+      seenByType.set(collection.wpType, [...seen]);
+    }
   }
 
   // Prune only after every collection completed. A failure halfway through a
