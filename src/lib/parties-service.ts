@@ -714,7 +714,12 @@ const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 function phoneDigitsSql(prefix: string): string {
   return (
     `regexp_replace(translate(${prefix}phone, '${PERSIAN_DIGITS}${ARABIC_DIGITS}', '01234567890123456789'),` +
-    ` '\D', '', 'g')`
+    // `'\\D'`, not `'\D'`: a lone backslash before `D` is not an escape sequence
+    // JavaScript recognises, so the template literal collapsed it to the plain
+    // letter `'D'` and the clause stripped literal Ds from the number instead of
+    // every non-digit. A stored «۰۹۱۲ ۳۴۵ ۶۷۸۹» therefore kept its spaces and no
+    // typed digit run ever matched it — the one search this clause exists for.
+    ` '\\D', '', 'g')`
   );
 }
 interface PhoneSearchKeys {
@@ -738,8 +743,25 @@ function phoneSearchKeys(term: string, dek: Buffer | null): PhoneSearchKeys {
 }
 
 /**
+ * Escapes the two wildcards `LIKE` reads in a user-typed term.
+ *
+ * Without this, «%» typed into the customer search matches every party and «_»
+ * matches any single character, so the directory silently answers a search
+ * nobody made. The escape character is declared with `ESCAPE '\\'` on every
+ * pattern built from `escapeLike`.
+ */
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/**
  * The SQL a name/phone search needs, built once so the directory listing and the
  * picker cannot want different things from the same column.
+ *
+ * Exported as `partySearchClause` below: Growth's customer projection is a
+ * second query over the same `parties` rows, and a screen that hand-rolls
+ * `LOWER(name) LIKE …` answers a typed phone differently from the directory —
+ * and stops answering it at all once `phone` is encrypted away.
  */
 function searchClause(
   term: string,
@@ -756,7 +778,7 @@ function searchClause(
   const termDigits = phoneDigits(term);
   return {
     sql:
-      `(${alias}name ILIKE ${like} OR ${alias}phone ILIKE ${like}` +
+      `(${alias}name ILIKE ${like} ESCAPE '\\' OR ${alias}phone ILIKE ${like} ESCAPE '\\'` +
       ` OR (${bidx}::text IS NOT NULL AND ${alias}phone_bidx = ${bidx})` +
       ` OR (${last4}::text IS NOT NULL AND ${alias}phone_last4 = ${last4})` +
       // Four digits is the shortest thing worth comparing: below that the digit run
@@ -766,13 +788,33 @@ function searchClause(
       `   AND ${phoneDigitsSql(alias)} LIKE '%' || ${digits} || '%')` +
       ` OR (${e164}::text IS NOT NULL AND ${alias}phone_e164 = ${e164}))`,
     params: [
-      `%${term}%`,
+      `%${escapeLike(term)}%`,
       keys.bidx,
       keys.last4,
       termDigits.length >= 4 ? termDigits : null,
       keys.e164,
     ],
   };
+}
+
+/**
+ * The directory's name/phone search, for a query built outside this file.
+ *
+ * Growth's customer projection joins loyalty points and purchase history onto
+ * the same `parties` rows, so it cannot reuse `listParties`; what it must not do
+ * is invent a second definition of "matches what I typed". This hands it the
+ * exact clause the directory and the till picker use — blind index, last four,
+ * Persian digits and all — bound to whatever parameter slot its own query has
+ * reached.
+ */
+export async function partySearchClause(
+  businessId: string,
+  term: string,
+  firstParam: number,
+  alias = "p.",
+): Promise<{ sql: string; params: unknown[] }> {
+  const dek = await getBusinessDek(businessId);
+  return searchClause(term.trim(), dek, firstParam, alias);
 }
 
 /**

@@ -45,6 +45,7 @@ import {
 } from "./crm-shared";
 import { daysBetween, lifetimeValue, scorePopulation, type CustomerRfmInput, type RfmScore } from "./crm-scoring";
 import type { LifecycleStage } from "./crm-scoring";
+import { isUuid } from "./uuid";
 
 // ---------------------------------------------------------------------------
 // The customer file
@@ -486,12 +487,21 @@ export async function findDuplicates(
     a.id AS left_id, a.name AS left_name, a.phone AS left_phone, a.email AS left_email,
     a.created_at AS left_created,
     (SELECT count(*) FROM orders o JOIN locations l ON l.id = o.location_id
-      WHERE o.customer_id = a.id AND l.business_id = $1)::int AS left_orders,
+      WHERE o.customer_id = a.id AND l.business_id = $1
+        AND o.status = 'completed' AND o.closed_at IS NOT NULL)::int AS left_orders,
     b.id AS right_id, b.name AS right_name, b.phone AS right_phone, b.email AS right_email,
     b.created_at AS right_created,
     (SELECT count(*) FROM orders o JOIN locations l ON l.id = o.location_id
-      WHERE o.customer_id = b.id AND l.business_id = $1)::int AS right_orders
+      WHERE o.customer_id = b.id AND l.business_id = $1
+        AND o.status = 'completed' AND o.closed_at IS NOT NULL)::int AS right_orders
   `;
+  // Operators commonly paste addresses with surrounding spaces, and Persian
+  // names arrive with Arabic ي/ك or repeated whitespace. Compare the meaning,
+  // not those input artefacts. These expressions intentionally remain stricter
+  // than fuzzy matching: a name-only suggestion is already the riskiest kind.
+  const emailKey = (alias: string) => `lower(btrim(${alias}.email))`;
+  const nameKey = (alias: string) =>
+    `lower(regexp_replace(translate(btrim(${alias}.name), 'يىك', 'ییک'), '\\s+', ' ', 'g'))`;
 
   // `pg` hands back a JS Date for timestamptz. `String(date)` would emit
   // "Sat Aug 29 2026 …", which every other CRM route avoids by letting JSON
@@ -555,7 +565,7 @@ export async function findDuplicates(
 
   const { rows: byEmail } = await query<Record<string, unknown>>(
     `SELECT ${selectPair} FROM parties a JOIN parties b
-        ON b.business_id = a.business_id AND lower(b.email) = lower(a.email) AND a.id < b.id
+        ON b.business_id = a.business_id AND ${emailKey("b")} = ${emailKey("a")} AND a.id < b.id
       WHERE a.business_id = $1 AND a.email IS NOT NULL AND btrim(a.email) <> ''
         AND a.roles && ARRAY['customer']::text[] AND b.roles && ARRAY['customer']::text[]
         AND a.is_active AND b.is_active
@@ -571,13 +581,13 @@ export async function findDuplicates(
   const { rows: byName } = await query<Record<string, unknown>>(
     `SELECT ${selectPair} FROM parties a JOIN parties b
         ON b.business_id = a.business_id
-       AND lower(btrim(b.name)) = lower(btrim(a.name)) AND a.id < b.id
+       AND ${nameKey("b")} = ${nameKey("a")} AND a.id < b.id
       WHERE a.business_id = $1 AND btrim(a.name) <> ''
         AND a.roles && ARRAY['customer']::text[] AND b.roles && ARRAY['customer']::text[]
         AND a.is_active AND b.is_active
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
         AND (${leftPhone} IS NULL OR ${rightPhone} IS NULL OR ${leftPhone} <> ${rightPhone})
-        AND (a.email IS NULL OR b.email IS NULL OR lower(a.email) <> lower(b.email))
+        AND (a.email IS NULL OR b.email IS NULL OR ${emailKey("a")} <> ${emailKey("b")})
       LIMIT $2`,
     [businessId, limit],
   );
@@ -698,6 +708,10 @@ export async function mergeCustomers(
       name: string;
       phone: string | null;
       phone_e164: string | null;
+      phone_enc: Buffer | null;
+      phone_bidx: string | null;
+      phone_last4: string | null;
+      phone_kind: string | null;
       email: string | null;
       address: string | null;
       birthday: string | null;
@@ -707,12 +721,13 @@ export async function mergeCustomers(
       marketing_consent: boolean;
       merged_into_id: string | null;
     }>(
-      `SELECT id, name, phone, phone_e164, email, address, birthday::text AS birthday,
+      `SELECT id, name, phone, phone_e164, phone_enc, phone_bidx, phone_last4, phone_kind,
+              email, address, birthday::text AS birthday,
               notes, tags, sms_consent, marketing_consent, merged_into_id
          FROM parties
         WHERE business_id = $1 AND id = ANY($2::uuid[])
           AND roles && ARRAY['customer']::text[] AND is_active AND merged_into_id IS NULL
-        FOR UPDATE`,
+        ORDER BY id FOR UPDATE`,
       [businessId, [winnerId, loserId]],
     );
     const winner = rows.find((row) => row.id === winnerId);
@@ -766,10 +781,14 @@ export async function mergeCustomers(
               marketing_consent = $5,
               phone = coalesce(nullif(btrim(phone), ''), $6),
               phone_e164 = coalesce(phone_e164, $7),
-              email = coalesce(nullif(btrim(email), ''), $8),
-              address = coalesce(nullif(btrim(address), ''), $9),
-              birthday = coalesce(birthday, $10::date),
-              notes = coalesce(nullif(btrim(notes), ''), $11),
+              phone_enc = CASE WHEN nullif(btrim(phone), '') IS NULL THEN $8 ELSE phone_enc END,
+              phone_bidx = CASE WHEN nullif(btrim(phone), '') IS NULL THEN $9 ELSE phone_bidx END,
+              phone_last4 = CASE WHEN nullif(btrim(phone), '') IS NULL THEN $10 ELSE phone_last4 END,
+              phone_kind = CASE WHEN nullif(btrim(phone), '') IS NULL THEN $11 ELSE phone_kind END,
+              email = coalesce(nullif(btrim(email), ''), $12),
+              address = coalesce(nullif(btrim(address), ''), $13),
+              birthday = coalesce(birthday, $14::date),
+              notes = coalesce(nullif(btrim(notes), ''), $15),
               updated_at = now()
         WHERE business_id = $1 AND id = $2`,
       [
@@ -780,12 +799,27 @@ export async function mergeCustomers(
         mergeConsent(winner.marketing_consent, loser.marketing_consent),
         loser.phone,
         loser.phone_e164,
+        loser.phone_enc,
+        loser.phone_bidx,
+        loser.phone_last4,
+        loser.phone_kind,
         loser.email,
         loser.address,
         loser.birthday,
         loser.notes,
       ],
     );
+    // On plaintext installs phone_enc is NULL on both records. The stale-data
+    // trigger correctly clears metadata when the phone changes, so restore the
+    // loser's canonical metadata in a second, phone-unchanged statement.
+    if (!winner.phone?.trim() && loser.phone) {
+      await query(
+        `UPDATE parties SET phone_e164 = $3, phone_enc = $4, phone_bidx = $5,
+                            phone_last4 = $6, phone_kind = $7
+          WHERE business_id = $1 AND id = $2`,
+        [businessId, winnerId, loser.phone_e164, loser.phone_enc, loser.phone_bidx, loser.phone_last4, loser.phone_kind],
+      );
+    }
 
     // Archive, never delete: an id that was referenced anywhere must stay
     // resolvable, and the merge record itself points at it.
@@ -1116,6 +1150,10 @@ export async function listActivities(
     caseId?: string;
     openOnly?: boolean;
     assignedTo?: string;
+    /** Free-text over subject/body/assignee — the list's own search box. */
+    q?: string;
+    /** Only rows whose `dueAt` falls on or before this ISO date (overdue + today). */
+    dueOnOrBefore?: string;
     limit?: number;
   } = {},
 ): Promise<CrmActivity[]> {
@@ -1125,19 +1163,47 @@ export async function listActivities(
     params.push(value);
     where += ` AND ${fragment.replace("$n", `$${params.length}`)}`;
   };
-  if (options.customerId) add("a.customer_id = $n", options.customerId);
-  if (options.dealId) add("a.deal_id = $n", options.dealId);
-  if (options.caseId) add("a.case_id = $n", options.caseId);
+  // Ids are `uuid` columns: a non-uuid filter raises a Postgres syntax error
+  // (a 500) rather than returning nothing, so a junk query string must simply
+  // not be applied as a filter.
+  if (options.customerId && isUuid(options.customerId)) add("a.customer_id = $n", options.customerId);
+  if (options.dealId && isUuid(options.dealId)) add("a.deal_id = $n", options.dealId);
+  if (options.caseId && isUuid(options.caseId)) add("a.case_id = $n", options.caseId);
   if (options.assignedTo) add("a.assigned_to = $n", options.assignedTo);
+  const term = options.q?.trim();
+  if (term) {
+    // `%` and `_` in a user's search string are literals, not wildcards.
+    const escaped = term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+    params.push(`%${escaped}%`);
+    const n = `$${params.length}`;
+    where += ` AND (a.subject ILIKE ${n} ESCAPE '\\' OR a.body ILIKE ${n} ESCAPE '\\'`;
+    where += ` OR a.assigned_to ILIKE ${n} ESCAPE '\\' OR c.name ILIKE ${n} ESCAPE '\\')`;
+  }
   if (options.openOnly) where += " AND a.completed_at IS NULL";
-  params.push(options.limit ?? 100);
+  if (options.dueOnOrBefore) {
+    params.push(options.dueOnOrBefore);
+    where += ` AND a.due_at IS NOT NULL AND a.due_at < (($${params.length})::date + 1)`;
+  }
+  // A caller-supplied limit is clamped rather than trusted: `limit=999999` on a
+  // shared endpoint is a way to make one screen read a whole table.
+  const limit = Math.min(Math.max(Math.trunc(options.limit ?? 200) || 200, 1), 500);
+  params.push(limit);
 
   const { rows } = await query<CrmActivity>(
     `SELECT ${ACTIVITY_COLUMNS}
        FROM crm_activities a
        LEFT JOIN parties c ON c.id = a.customer_id
       WHERE ${where}
-      ORDER BY a.completed_at IS NOT NULL, coalesce(a.due_at, a.created_at)
+      ORDER BY a.completed_at IS NOT NULL,
+               -- Open work: soonest commitment first, and rows with no moeed
+               -- after the dated ones rather than interleaved with them by
+               -- their creation time (coalescing due_at with created_at put a
+               -- note typed last week ahead of a call due tomorrow).
+               CASE WHEN a.completed_at IS NULL AND a.due_at IS NULL THEN 1 ELSE 0 END,
+               CASE WHEN a.completed_at IS NULL THEN a.due_at END ASC,
+               -- Done work reads as history: most recently finished first.
+               a.completed_at DESC NULLS LAST,
+               a.created_at DESC
       LIMIT $${params.length}`,
     params,
   );
@@ -1184,6 +1250,9 @@ export async function createActivity(
 
 /** One activity by id — the read every write path returns through. */
 export async function getActivity(businessId: string, activityId: string): Promise<CrmActivity | null> {
+  // `id` is a uuid column: a non-uuid would raise a cast error (a 500) instead
+  // of answering "no such row".
+  if (!isUuid(activityId)) return null;
   const { rows } = await query<CrmActivity>(
     `SELECT ${ACTIVITY_COLUMNS}
        FROM crm_activities a
@@ -1194,11 +1263,62 @@ export async function getActivity(businessId: string, activityId: string): Promi
   return rows[0] ?? null;
 }
 
+export interface UpdateActivityInput {
+  kind?: ActivityKind;
+  subject?: string;
+  body?: string;
+  dueAt?: string | null;
+  assignedTo?: string;
+  customerId?: string | null;
+  completed?: boolean;
+}
+
+/**
+ * Edit an activity in place.
+ *
+ * Only the keys present are written, so the tick-box (`completed` alone) and
+ * the edit dialog share one path. Without this a mistyped moeed or a callback
+ * that moved to Thursday could only be fixed by deleting the row and losing
+ * who logged it and when.
+ */
+export async function updateActivity(
+  businessId: string,
+  activityId: string,
+  input: UpdateActivityInput,
+): Promise<CrmActivity | null> {
+  if (!isUuid(activityId)) return null;
+  const sets: string[] = [];
+  const params: unknown[] = [businessId, activityId];
+  const set = (column: string, value: unknown) => {
+    params.push(value);
+    sets.push(`${column} = $${params.length}`);
+  };
+  if (input.kind !== undefined) set("kind", input.kind);
+  if (input.subject !== undefined) set("subject", input.subject.trim());
+  if (input.body !== undefined) set("body", input.body.trim());
+  if (input.dueAt !== undefined) set("due_at", input.dueAt);
+  if (input.assignedTo !== undefined) set("assigned_to", input.assignedTo.trim());
+  if (input.customerId !== undefined) set("customer_id", input.customerId);
+  if (input.completed !== undefined) {
+    set("completed_at", input.completed ? new Date().toISOString() : null);
+  }
+  if (sets.length === 0) return getActivity(businessId, activityId);
+
+  const { rowCount } = await query(
+    `UPDATE crm_activities SET ${sets.join(", ")}, updated_at = now()
+      WHERE business_id = $1 AND id = $2`,
+    params,
+  );
+  if ((rowCount ?? 0) === 0) return null;
+  return getActivity(businessId, activityId);
+}
+
 export async function completeActivity(
   businessId: string,
   activityId: string,
   completed: boolean,
 ): Promise<boolean> {
+  if (!isUuid(activityId)) return false;
   const { rowCount } = await query(
     `UPDATE crm_activities SET completed_at = $3, updated_at = now()
       WHERE business_id = $1 AND id = $2`,
@@ -1208,6 +1328,7 @@ export async function completeActivity(
 }
 
 export async function deleteActivity(businessId: string, activityId: string): Promise<boolean> {
+  if (!isUuid(activityId)) return false;
   const { rowCount } = await query(`DELETE FROM crm_activities WHERE business_id = $1 AND id = $2`, [
     businessId,
     activityId,
@@ -1462,6 +1583,11 @@ export interface UpsertCaseInput {
   status?: CaseStatus;
   priority?: CasePriority;
   category?: string;
+  /**
+   * The order the complaint is about. On update, `undefined` means "leave it
+   * as it is" while an explicit `null` clears the link — a caller that did not
+   * mention the order must not silently unlink the ticket from it.
+   */
   orderId?: string | null;
   assignedTo?: string;
   resolution?: string;
@@ -1473,10 +1599,13 @@ export async function upsertCase(businessId: string, input: UpsertCaseInput): Pr
   const resolved = status === "resolved" || status === "closed";
 
   if (input.id) {
+    const orderIdProvided = input.orderId !== undefined;
     await query(
       `UPDATE crm_cases
           SET customer_id = $3, subject = $4, body = $5, status = $6, priority = $7,
-              category = $8, order_id = $9, assigned_to = $10, resolution = $11,
+              category = $8,
+              order_id = CASE WHEN $13 THEN $9::uuid ELSE order_id END,
+              assigned_to = $10, resolution = $11,
               resolved_at = CASE WHEN $12 THEN coalesce(resolved_at, now()) ELSE NULL END,
               updated_at = now()
         WHERE business_id = $1 AND id = $2`,
@@ -1493,6 +1622,7 @@ export async function upsertCase(businessId: string, input: UpsertCaseInput): Pr
         input.assignedTo ?? "",
         input.resolution?.trim() ?? "",
         resolved,
+        orderIdProvided,
       ],
     );
     return (await getCase(businessId, input.id))!;

@@ -1,40 +1,51 @@
 import Link from "next/link";
-import { GlobeIcon, PlugZapIcon, WandSparklesIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  ExternalLinkIcon,
+  Globe2Icon,
+  PlugZapIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+  StoreIcon,
+  WandSparklesIcon,
+} from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { PageHeader, PageShell, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
 import { AskAssistant } from "@/components/ai/ask-assistant";
 import { Button } from "@/components/ui/button";
-import { websiteManagersState } from "@/lib/website/managers-service";
-import { completedStepCount, WEBSITE_SETUP_STEP_KEYS } from "@/lib/website/setup";
+import { websiteHomeState } from "@/lib/website/managers-service";
+import {
+  completedStepCount,
+  isStepComplete,
+  WEBSITE_SETUP_STEPS,
+  type WebsiteSetupState,
+} from "@/lib/website/setup";
 import { toPersianDigits } from "@/lib/digits";
-import { getWebsiteSetup } from "@/lib/website/setup-service";
 import { cmsSectionHref, wpSectionHref } from "./website-routes";
 
 /**
- * «مدیریت وب‌سایت» — the app home: the two ways a business can have a website,
- * side by side, each showing whether it is actually set up.
- *
- * Two cards rather than a chooser that disappears once one is picked: a
- * business may well run both (a WordPress shop it already had, and a platform
- * site for the café's menu and reservations), and the one it has not set up
- * is the one it is most likely to be looking for. What each card shows is
- * *observed* — a live connection row, not a flag — so «متصل» here and a
- * working section behind it can never disagree.
+ * «مدیریت وب‌سایت» — a useful status dashboard, not merely a manager chooser.
+ * Both website systems remain visible because a business may use either or both.
  */
 export async function WebsiteAppHome() {
   const session = await getSession();
-  // The layout has already refused anyone who may not be here; this is only
-  // to read the business id.
-  const managers = session ? await websiteManagersState(session.businessId) : null;
-  const setup = session ? await getWebsiteSetup(session.businessId) : null;
-  const built = setup ? completedStepCount(setup) : 0;
+  // The parent layout rejects unauthenticated users. Keeping this guard also
+  // makes the component safe when rendered on its own in a server test.
+  if (!session) return null;
+
+  // One snapshot supplies the manager cards and setup progress. Previously the
+  // setup row was queried twice and could disagree with the manager status when
+  // provisioning completed between the two reads.
+  const { managers, setup } = await websiteHomeState(session.businessId);
+  const built = completedStepCount(setup);
 
   return (
     <PageShell className="space-y-4 sm:space-y-5">
       <PageHeader
         title="مدیریت وب‌سایت"
-        description="سایت کسب‌وکار، از هر دو راه: سایت‌ساز اشوبه یا سایت وردپرسی خودتان. هرکدام بخش مدیریت جدای خودش را دارد."
+        description="وضعیت سایت‌های کسب‌وکار را یک‌جا ببینید و وارد ابزار مدیریت هرکدام شوید. سایت‌ساز اشوبه و وردپرس مستقل‌اند و می‌توانید هم‌زمان از هر دو استفاده کنید."
         actions={
           <>
             <KnowledgeHelpButton section="website" />
@@ -46,80 +57,114 @@ export async function WebsiteAppHome() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
         <SectionCard
-          title="سایت‌ساز اشوبه"
-          description="سایت و فروشگاه اینترنتی روی پلتفرم خودمان: دامنه، CDN آروان، محتوا، فروشگاه و صورت‌حساب — همه از همین‌جا."
+          className="flex h-full flex-col"
+          bodyClassName="flex flex-1 flex-col"
+          title={<ManagerTitle icon={Globe2Icon} eyebrow="سایت میزبانی‌شده" title="سایت‌ساز اشوبه" />}
+          description="دامنه، CDN، محتوا، فروشگاه و هزینه‌های سایت روی پلتفرم اشوبه."
           actions={
-            <StatusBadge tone={managers?.cms.connected ? "positive" : "neutral"}>
-              {managers?.cms.connected ? "متصل" : "راه‌اندازی نشده"}
+            <StatusBadge tone={managers.cms.connected ? "positive" : "neutral"}>
+              {managers.cms.connected ? "متصل و آماده" : "راه‌اندازی نشده"}
             </StatusBadge>
           }
         >
-          {managers?.cms.connected ? (
-            <p className="text-sm leading-6 text-muted-foreground">
-              سایت روی دامنهٔ{" "}
-              <span dir="ltr" className="font-medium text-foreground">
-                {managers.cms.domain}
-              </span>{" "}
-              فعال است.
-            </p>
+          {managers.cms.connected ? (
+            <ConnectedCms domain={managers.cms.domain} />
           ) : (
-            <p className="text-sm leading-6 text-muted-foreground">
-              ساخت سایت چهار گام دارد: دامنه، CDN، نوع سایت و ساخت.{" "}
-              {built > 0
-                ? `${toPersianDigits(built)} گام از ${toPersianDigits(WEBSITE_SETUP_STEP_KEYS.length)} گام انجام شده است.`
-                : "هنوز شروع نشده است."}
-            </p>
+            <CmsSetupProgress setup={setup} completed={built} />
           )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {managers?.cms.connected ? (
-              <Button asChild className="px-4">
+
+          {setup.lastError && !managers.cms.connected ? (
+            <div role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs leading-5 text-destructive">
+              <span className="font-semibold">آخرین تلاش برای ساخت سایت ناموفق بود.</span>{" "}
+              برای دیدن جزئیات و تلاش دوباره، ساخت سایت را ادامه دهید.
+            </div>
+          ) : null}
+
+          <div className="mt-auto grid gap-2 pt-5 sm:flex sm:flex-wrap">
+            {managers.cms.connected ? (
+              <Button asChild size="lg" className="w-full sm:w-auto">
                 <Link href={cmsSectionHref("overview")}>
-                  <GlobeIcon className="size-4" />
                   مدیریت سایت
+                  <ArrowLeftIcon aria-hidden="true" className="size-4" />
                 </Link>
               </Button>
             ) : (
-              <Button asChild className="px-4">
+              <Button asChild size="lg" className="w-full sm:w-auto">
                 <Link href={cmsSectionHref("setup")}>
-                  <WandSparklesIcon className="size-4" />
-                  {built > 0 ? "ادامهٔ ساخت سایت" : "ساخت سایت"}
+                  <WandSparklesIcon aria-hidden="true" className="size-4" />
+                  {built > 0 ? "ادامهٔ ساخت سایت" : "ساخت سایت جدید"}
                 </Link>
               </Button>
             )}
-            <Button asChild variant="outline" className="px-4">
+            {!managers.cms.connected ? (
+              <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
+                <Link href="/settings/connections?tab=website">
+                  <PlugZapIcon aria-hidden="true" className="size-4" />
+                  اتصال سایت موجود
+                </Link>
+              </Button>
+            ) : null}
+            <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
               <Link href={cmsSectionHref("billing")}>اشتراک و صورت‌حساب</Link>
             </Button>
           </div>
         </SectionCard>
 
         <SectionCard
-          title="وردپرس و ووکامرس"
-          description="سایت وردپرسی که خودتان دارید: محصولات، سفارش‌ها، مشتریان، دسته‌بندی‌ها، محتوا و رسانه‌ها."
+          className="flex h-full flex-col"
+          bodyClassName="flex flex-1 flex-col"
+          title={<ManagerTitle icon={StoreIcon} eyebrow="سایت مستقل" title="وردپرس و ووکامرس" />}
+          description="مدیریت سایت وردپرسی خودتان و همگام‌سازی محصولات، سفارش‌ها و مشتریان."
           actions={
-            <StatusBadge tone={managers?.wp.connected ? "positive" : "neutral"}>
-              {managers?.wp.connected ? "متصل" : "وصل نشده"}
+            <StatusBadge tone={managers.wp.connected ? "positive" : "neutral"}>
+              {managers.wp.connected ? "متصل" : "وصل نشده"}
             </StatusBadge>
           }
         >
-          <p className="text-sm leading-6 text-muted-foreground">
-            {managers?.wp.connected
-              ? `${toPersianDigits(managers.wp.storeCount)} فروشگاه به این حساب وصل است.`
-              : "با افزونهٔ وردپرس یا کلیدهای REST ووکامرس وصل می‌شود."}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {managers?.wp.connected ? (
-              <Button asChild className="px-4">
+          {managers.wp.connected ? (
+            <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-3.5 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+              <div className="flex items-start gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
+                  <ShieldCheckIcon aria-hidden="true" className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground">
+                    {toPersianDigits(managers.wp.storeCount)} فروشگاه متصل
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    برای بررسی سلامت هر اتصال و زمان آخرین همگام‌سازی، وارد میز کار فروشگاه شوید.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border p-4">
+              <p className="text-sm font-medium text-foreground">فروشگاه وردپرسی دارید؟</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                با افزونهٔ وردپرس یا کلیدهای REST ووکامرس آن را متصل کنید. اطلاعات ورود فروشگاه در مرورگر نمایش داده نمی‌شود.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-4 flex items-start gap-2 rounded-xl bg-muted/60 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
+            <RefreshCwIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            قیمت و موجودی از صندوق به فروشگاه ارسال می‌شود؛ سفارش‌ها و مشتریان فروشگاه به این سامانه برمی‌گردند.
+          </div>
+
+          <div className="mt-auto grid gap-2 pt-5 sm:flex sm:flex-wrap">
+            {managers.wp.connected ? (
+              <Button asChild size="lg" className="w-full sm:w-auto">
                 <Link href={wpSectionHref("overview")}>
-                  <GlobeIcon className="size-4" />
                   مدیریت فروشگاه
+                  <ArrowLeftIcon aria-hidden="true" className="size-4" />
                 </Link>
               </Button>
             ) : (
-              <Button asChild className="px-4">
+              <Button asChild size="lg" className="w-full sm:w-auto">
                 <Link href="/settings/connections?tab=woocommerce">
-                  <PlugZapIcon className="size-4" />
+                  <PlugZapIcon aria-hidden="true" className="size-4" />
                   اتصال فروشگاه وردپرسی
                 </Link>
               </Button>
@@ -129,24 +174,146 @@ export async function WebsiteAppHome() {
       </div>
 
       <SectionCard
-        title="این دو با هم چه فرقی دارند؟"
-        description="هر دو یک کار می‌کنند — داشتن سایت — ولی از دو راه، و هرکدام جدا مدیریت می‌شود."
+        title="کدام گزینه برای من مناسب است؟"
+        description="هر دو گزینه سایت کسب‌وکار شما را به صندوق متصل می‌کنند، اما مالکیت میزبانی و شیوهٔ مدیریتشان متفاوت است."
       >
-        <ul className="space-y-2 text-sm leading-6 text-muted-foreground">
-          <li>
-            <span className="font-medium text-foreground">سایت‌ساز اشوبه:</span> سایت را پلتفرم می‌سازد و
-            نگه می‌دارد؛ دامنه، CDN و هزینهٔ ماهانه هم از همین‌جا مدیریت و پرداخت می‌شود.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">وردپرس و ووکامرس:</span> سایت مال خودتان است و
-            جای دیگری میزبانی می‌شود؛ این‌جا فقط آن را مدیریت و با صندوق هماهنگ می‌کنید.
-          </li>
-          <li>
-            در هر دو حالت، قیمت و موجودی یک‌طرفه از صندوق به سایت می‌رود — سایت ویترین است، منبع حقیقت
-            همین‌جاست.
-          </li>
-        </ul>
+        <div className="grid gap-4 text-sm sm:grid-cols-2">
+          <ComparisonItem
+            icon={Globe2Icon}
+            title="سایت‌ساز اشوبه"
+            text="برای ساخت سایت تازه بدون درگیری با هاست، نگهداری و زیرساخت. دامنه، CDN و اشتراک را همین‌جا مدیریت می‌کنید."
+          />
+          <ComparisonItem
+            icon={StoreIcon}
+            title="وردپرس و ووکامرس"
+            text="برای سایتی که از قبل دارید و روی هاست خودتان نگهداری می‌کنید. این سامانه فروشگاه را مدیریت و با صندوق همگام می‌کند."
+          />
+        </div>
+        <div className="mt-4 flex items-start gap-2 border-t border-border/80 pt-4 text-xs leading-5 text-muted-foreground">
+          <ShieldCheckIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
+          در هر دو روش، صندوق منبع اصلی قیمت و موجودی است تا فروش حضوری و آنلاین با یکدیگر مغایرت پیدا نکنند.
+        </div>
       </SectionCard>
     </PageShell>
+  );
+}
+
+function ManagerTitle({
+  icon: Icon,
+  eyebrow,
+  title,
+}: {
+  icon: typeof Globe2Icon;
+  eyebrow: string;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Icon aria-hidden="true" className="size-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium text-muted-foreground">{eyebrow}</p>
+        <h2 className="mt-0.5 text-base font-semibold text-foreground sm:text-lg">{title}</h2>
+      </div>
+    </div>
+  );
+}
+
+function ConnectedCms({ domain }: { domain: string | null }) {
+  return (
+    <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-3.5 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+      <div className="flex items-start gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
+          <ShieldCheckIcon aria-hidden="true" className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-foreground">سایت فعال است</p>
+          {domain ? (
+            <a
+              href={`https://${domain}`}
+              target="_blank"
+              rel="noreferrer"
+              dir="ltr"
+              className="mt-1 inline-flex max-w-full items-center gap-1 break-all text-sm text-primary underline-offset-4 hover:underline focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span>{domain}</span>
+              <ExternalLinkIcon aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="sr-only">(در زبانهٔ جدید باز می‌شود)</span>
+            </a>
+          ) : (
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              اتصال برقرار است؛ دامنه در میز کار سایت نمایش داده می‌شود.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CmsSetupProgress({ setup, completed }: { setup: WebsiteSetupState; completed: number }) {
+  const total = WEBSITE_SETUP_STEPS.length;
+  const progress = Math.round((completed / total) * 100);
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="font-medium text-foreground">پیشرفت راه‌اندازی</span>
+        <span className="tabular-nums text-muted-foreground">
+          {toPersianDigits(completed)} از {toPersianDigits(total)} گام
+        </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label="پیشرفت ساخت سایت"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={completed}
+        className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+      >
+        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+      </div>
+      <ol className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {WEBSITE_SETUP_STEPS.map((step, index) => {
+          const done = isStepComplete(setup, step.key);
+          return (
+            <li
+              key={step.key}
+              className={`flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${
+                done ? "border-primary/20 bg-primary/5 text-foreground" : "border-border text-muted-foreground"
+              }`}
+            >
+              <span
+                className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                  done ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {done ? <CheckIcon aria-hidden="true" className="size-3" /> : toPersianDigits(index + 1)}
+              </span>
+              <span className="truncate">{step.title}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {completed === 0 ? (
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          هنوز شروع نشده است؛ اطلاعات هر گام به‌صورت خودکار ذخیره می‌شود.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ComparisonItem({ icon: Icon, title, text }: { icon: typeof Globe2Icon; title: string; text: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+        <Icon aria-hidden="true" className="size-4.5" />
+      </span>
+      <div className="min-w-0">
+        <h3 className="font-semibold text-foreground">{title}</h3>
+        <p className="mt-1 text-xs leading-6 text-muted-foreground">{text}</p>
+      </div>
+    </div>
   );
 }
