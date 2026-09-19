@@ -185,7 +185,11 @@ export type ActionType =
   | "party.customer.create"
   | "party.supplier.create"
   | "messaging.campaign.create"
-  | "ar.receipt.record";
+  | "ar.receipt.record"
+  /** Phase F pt.2 — the assistant records a standing fact for the CURRENT
+   *  project. Offered only on a project-scoped turn; the project id is ambient
+   *  (injected server-side), never named by the model. */
+  | "project.memory.add";
 
 export type AutopilotExecutorKey =
   | "menuItemPatch"
@@ -222,6 +226,15 @@ export interface ActionMeta {
    * to a public website is the one action tagged so far.
    */
   alwaysConfirm?: true;
+  /**
+   * Phase F pt.2 — the action only makes sense inside a PROJECT: its endpoint
+   * is addressed by an ambient project id the model never sees. It is kept out
+   * of the default `propose_action` enum (like `coworkerOnly` keeps waste out)
+   * and offered only when `toolDefinitions` is told the turn is project-scoped.
+   * The chat route injects the resolved `projectId` into the payload before the
+   * proposal is stored, so the model cannot target another project.
+   */
+  projectScoped?: true;
 }
 
 export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
@@ -569,6 +582,19 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
       '{ customerId: string /* از find_customers */, method: "cash"|"bank", amount: number /* ریال صحیح، مثبت */, receiptDate?: string /* ISO؛ پیش‌فرض امروزِ کسب‌وکار */, memo?: string } — پول جابه‌جا می‌کند و همیشه به تأیید انسان نیاز دارد',
     alwaysConfirm: true,
   },
+  "project.memory.add": {
+    type: "project.memory.add",
+    // `{projectId}` is the AMBIENT project of this conversation; the chat route
+    // fills it into the payload before the proposal is stored. The model must
+    // never put an id here — it only supplies `content`.
+    endpoint: "/api/ai/projects/{projectId}/memory",
+    method: "POST",
+    label: "ثبت نکته در حافظهٔ پروژه",
+    payloadHint:
+      '{ content: string } — یک نکتهٔ کوتاه و ماندگار که باید در همهٔ گفت‌وگوهای این پروژه به‌خاطر بماند (مثلاً «مالک تومان را رند می‌کند»). شناسهٔ پروژه را ننویس؛ خودکار افزوده می‌شود. فقط وقتی کاربر خواست چیزی را «به خاطر بسپار»',
+    projectScoped: true,
+    alwaysConfirm: true,
+  },
 };
 
 export interface ProposedAction {
@@ -596,6 +622,23 @@ export function resolveActionEndpoint(meta: ActionMeta, payload: Record<string, 
 }
 
 export const ACTION_TYPES = Object.keys(ACTION_CATALOG) as ActionType[];
+
+/**
+ * The action types a plain dashboard/wizard turn may propose: every action
+ * except the ones addressed by an ambient context the base turn does not have.
+ * A `projectScoped` action (project.memory.add) is added back only when the
+ * turn is inside a project — see `toolDefinitions`. This mirrors how
+ * `coworkerOnly` actions are already absent from the model's own enum.
+ */
+export const BASE_ACTION_TYPES = ACTION_TYPES.filter(
+  (t) => !ACTION_CATALOG[t].projectScoped,
+);
+
+/** The actions available inside a project: the base set plus project-scoped ones. */
+export const PROJECT_ACTION_TYPES = [
+  ...BASE_ACTION_TYPES,
+  ...ACTION_TYPES.filter((t) => ACTION_CATALOG[t].projectScoped),
+];
 
 // ---------------------------------------------------------------------------
 // Chat message shapes + prompts + tool definitions
@@ -638,11 +681,17 @@ export interface PromptContext {
    * Phase F — when a dashboard turn's conversation belongs to a project, the
    * project's standing instruction, note titles and remembered facts are
    * rendered (by ai-projects.buildProjectPromptContext) into this block and
-   * appended to the grounded prompt. It informs the assistant; it never widens
-   * what the assistant may DO — the action catalogue is still gated by mode and
-   * agent scope, unchanged.
+   * appended to the grounded prompt.
    */
   projectContext?: string | null;
+  /**
+   * Phase F pt.2 — the turn is inside a project, so the project-scoped action
+   * (project.memory.add) is named in the propose catalogue. It adds ONE
+   * project-local, always-confirm action; it does not touch the business-wide
+   * catalogue, which stays gated by mode and agent scope. A scoped custom agent
+   * never gets it (its action list is its own).
+   */
+  projectScoped?: boolean;
 }
 
 const WIZARD_STEP_LABELS: Record<string, string> = {
@@ -746,7 +795,11 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         ? ctx.allowedActionTypes ?? []
         : ctx.mode === "dashboard" && ctx.agent
           ? ctx.agent.actionTypes
-          : ACTION_TYPES;
+          : // A plain dashboard/wizard turn sees the base catalogue; inside a
+            // project (never an agent) the project-scoped action is added.
+            ctx.projectScoped && !ctx.agent
+            ? PROJECT_ACTION_TYPES
+            : BASE_ACTION_TYPES;
     if (types.length > 0) {
       const catalog = types
         .map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`)
@@ -824,6 +877,13 @@ export interface ToolDefinitionsOptions {
    * Absent means no agent scoping — the full mode surface, exactly as before.
    */
   toolAllowlist?: string[];
+  /**
+   * Phase F pt.2 — the turn's conversation belongs to a project, so
+   * project-scoped actions (project.memory.add) are added to `propose_action`'s
+   * enum. The ambient project id is supplied server-side, not by the model.
+   * Ignored for a scoped custom agent (an agent's action list is its own).
+   */
+  projectScoped?: boolean;
 }
 
 export const KNOWLEDGE_TOOL_NAME = "search_business_knowledge";
@@ -1203,7 +1263,10 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
       },
     },
   });
-  const proposeTool = proposeToolFor(ACTION_TYPES);
+  // The default enum excludes project-scoped actions (they need an ambient
+  // project the plain turn does not have); a project turn adds them back below.
+  const proposeTool = proposeToolFor(BASE_ACTION_TYPES);
+  const projectProposeTool = proposeToolFor(PROJECT_ACTION_TYPES);
 
   // Phase E — the structured input protocol. When the assistant needs the user
   // to CHOOSE or FILL IN something before it can continue, it asks with a typed
@@ -1365,7 +1428,10 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
         : [...scopedReads, proposeToolFor(actionTypes), requestInputTool];
     }
 
-    return [...base, proposeTool, requestInputTool];
+    // Phase F pt.2 — inside a project the propose enum also carries the
+    // project-scoped actions (the model still never names the project id).
+    const propose = opts.projectScoped ? projectProposeTool : proposeTool;
+    return [...base, propose, requestInputTool];
   }
   if (mode === "floor") return floorReadTools;
   if (mode === "proactive") return [];

@@ -4,6 +4,7 @@
  * human confirmation. Nothing here mutates business data.
  */
 import {
+  ACTION_CATALOG,
   buildSystemPrompt,
   chatCompletionsUrl,
   isKnownAction,
@@ -592,6 +593,12 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
    * (the agent's action allowlist) it fully scopes what the agent may do.
    */
   toolAllowlist?: string[];
+  /**
+   * Phase F pt.2 — the turn's conversation belongs to a project, so
+   * project-scoped actions (project.memory.add) join `propose_action`'s enum.
+   * The ambient project id is injected by the caller, never by the model.
+   */
+  projectScoped?: boolean;
 }): Promise<AgentReply> {
   const { config, mode, businessId, floorScope, promptContext, messages } = opts;
   const allowActions = opts.allowActions ?? true;
@@ -610,6 +617,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
     actionTypes: opts.actionTypes,
     retrieval: retrievalReady,
     toolAllowlist: opts.toolAllowlist,
+    projectScoped: opts.projectScoped,
   }).filter((tool) => allowActions || tool.function.name !== "propose_action");
   const allowedActionTypes = opts.actionTypes ? new Set<string>(opts.actionTypes) : null;
   const canPropose = tools.some((tool) => tool.function.name === "propose_action");
@@ -660,7 +668,12 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
       : undefined;
     if (proposal) {
       const parsed = toProposedAction(parseArgs(proposal.function.arguments));
-      const action = parsed && (!allowedActionTypes || allowedActionTypes.has(parsed.type)) ? parsed : null;
+      const inAllowlist = parsed && (!allowedActionTypes || allowedActionTypes.has(parsed.type));
+      // Phase F pt.2 — a project-scoped action is valid only when the turn is
+      // inside a project. This backstops the enum: a hand-crafted response that
+      // names project.memory.add on a project-less turn is refused, not applied.
+      const projectOk = parsed && (!ACTION_CATALOG[parsed.type]?.projectScoped || opts.projectScoped);
+      const action = parsed && inAllowlist && projectOk ? parsed : null;
       const text = textOf(message.content).trim() || (action ? action.summary : "پیشنهاد آماده است.");
       return { content: text, proposedAction: action, inputRequest: null, usage, costUsd, toolCalls: toolTrace };
     }

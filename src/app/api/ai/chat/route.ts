@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { buildSystemPrompt, type AgentMode, type PromptContext } from "@/lib/ai";
+import { ACTION_CATALOG, buildSystemPrompt, type AgentMode, type PromptContext } from "@/lib/ai";
 import { isPlatformAiConfigured } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import {
@@ -243,6 +243,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   // prompt. Best-effort: a failure here degrades to a project-unaware turn, it
   // never fails the turn. Only dashboard/wizard turns carry a project.
   let projectContext: string | null = null;
+  // The ambient project id for this turn. When set, project-scoped actions are
+  // offered and their resolved id is injected into any proposal payload — the
+  // model never names a project id (Phase F pt.2).
+  let activeProjectId: string | null = null;
   if (conversationId && (mode === "dashboard" || mode === "wizard")) {
     try {
       const projectId = await getConversationProjectId(session.businessId, conversationId);
@@ -253,8 +257,12 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           projectId,
         });
         if (ctx) {
+          activeProjectId = projectId;
           projectContext = buildProjectPromptContext(ctx);
           promptContext.projectContext = projectContext;
+          // Only when there is no scoped agent — an agent's action list is its
+          // own, and a project does not widen it.
+          if (!agentScope) promptContext.projectScoped = true;
         }
       }
     } catch (err) {
@@ -393,11 +401,36 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             // response naming an out-of-scope action is refused, not applied.
             toolAllowlist: agentScope ? agentScope.toolAllowlist : undefined,
             actionTypes: agentScope ? agentScope.actionTypes : undefined,
+            // Phase F pt.2 — a non-agent project turn also offers the
+            // project-scoped action(s); runAgentTurn re-checks the enum.
+            projectScoped: Boolean(activeProjectId) && !agentScope,
             stream: {
               onDelta: (content) => emit("delta", { content }),
               onToolCalls: () => emit("reset", {}),
             },
           });
+
+          // Phase F pt.2 — a project-scoped proposal is addressed by the AMBIENT
+          // project id, which the model never sees. Inject the resolved id into
+          // the payload here so the confirm card, the audit and the apply call
+          // all target this project and no other. The action was only offered
+          // when activeProjectId was set, so this is the id it belongs to.
+          if (
+            reply.proposedAction &&
+            ACTION_CATALOG[reply.proposedAction.type]?.projectScoped &&
+            activeProjectId
+          ) {
+            reply.proposedAction = {
+              ...reply.proposedAction,
+              payload: {
+                ...reply.proposedAction.payload,
+                projectId: activeProjectId,
+                // The memory came from the assistant, tagged so the project page
+                // can show its provenance. A human's own memory posts 'user'.
+                source: "ai",
+              },
+            };
+          }
           // Phase B — settle the REAL cost against the platform wallet. The
           // gateway's reported USD (plus the platform margin) is preferred;
           // the token rates are the fallback when the gateway did not price

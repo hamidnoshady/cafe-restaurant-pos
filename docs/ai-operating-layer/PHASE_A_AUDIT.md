@@ -668,3 +668,49 @@ columns), project tasks, project members, and entity `project_id` FKs on
 agents/coworkers/automations. Part 1 deliberately keeps memory human-curated so
 the write path and the prompt-context path could land, reviewed, without also
 introducing a new catalogue action in the same step.
+
+## 6f (cont.) — Phase F Part 2 DELIVERED (AI-authored project memory)
+
+Part 1 added the `ai_project_memory.source` column ('user' | 'ai') but nothing
+wrote 'ai' — memory was human-curated only. Part 2 closes that loop: the
+assistant can now propose a standing fact for the CURRENT project, and it
+establishes the **ambient project-id injection** pattern that project files and
+tasks will reuse.
+
+**A new, project-scoped action.** `project.memory.add` joins the catalogue
+(`endpoint: /api/ai/projects/{projectId}/memory`, `alwaysConfirm`, no executor /
+category / coworkerOnly — it never runs unattended and is never an MCP write).
+It is the first action tagged `projectScoped`: an action addressed by an ambient
+id the model must never see. The mechanics that keep it safe:
+
+- **Kept out of the default enum.** `BASE_ACTION_TYPES` (every non-project-scoped
+  action) is what `propose_action` offers on a plain dashboard/wizard turn;
+  `PROJECT_ACTION_TYPES` (base + project-scoped) is offered only when
+  `toolDefinitions`/`buildSystemPrompt` are told the turn is `projectScoped`.
+  This mirrors how `coworkerOnly` already keeps waste out of the model's enum.
+- **Offered only inside a project, never to an agent.** The chat route sets
+  `projectScoped` only when it resolved an `activeProjectId` AND there is no
+  scoped custom agent (an agent's action list is its own and a project does not
+  widen it).
+- **The model never names the id.** The payload hint asks for `content` only;
+  the route injects the resolved `activeProjectId` (and `source: "ai"`) into the
+  proposal payload after the turn, so the confirm card, the audit and the apply
+  call all target this project and no other.
+- **Server-side backstop.** `runAgentTurn` refuses a parsed proposal whose
+  action is `projectScoped` when the turn was not project-scoped — a hand-crafted
+  response naming `project.memory.add` on a project-less turn is dropped, not
+  applied, the same shape as the existing agent-allowlist backstop.
+- **Apply path unchanged.** `resolveActionEndpoint` fills `{projectId}` from the
+  injected payload; a proposal missing the id resolves to null and cannot fire.
+
+**Tests.** `ai.test.ts` +9 (catalogue shape, BASE vs PROJECT enums, offered
+only when project-scoped, never to a read-only/scoped agent, prompt-catalogue
+naming, endpoint resolution) and the `alwaysConfirm` set now pins three entries;
+`ai-service.test.ts` +2 (a project turn accepts `project.memory.add` with no id
+in the payload; a non-project turn refuses a crafted one). Full suite **4830
+unit tests / 326 files**; `tsc` clean; project-memory + tenant-isolation
+integration green.
+
+**Still deferred to Phase F Part 3+:** project files (link table to the Media
+Library — waits on Phase G provenance columns), project tasks, project members,
+and entity `project_id` FKs on agents/coworkers/automations.

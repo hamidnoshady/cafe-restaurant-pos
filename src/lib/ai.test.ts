@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ACTION_CATALOG,
   ACTION_TYPES,
+  BASE_ACTION_TYPES,
+  PROJECT_ACTION_TYPES,
   buildSystemPrompt,
   chatCompletionsUrl,
   defaultConfig,
@@ -407,9 +409,10 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
     expect(publish.autopilotCategory).toBeUndefined();
     expect(publish.executor).toBeUndefined();
     // Phase C added the second alwaysConfirm action — recording a receipt moves
-    // money — so this now pins the whole set. A third entry is a decision.
+    // money. Phase F pt.2 added the third — writing to a project's memory. This
+    // pins the whole set; a fourth entry is a decision.
     expect(ACTION_TYPES.filter((t) => ACTION_CATALOG[t].alwaysConfirm).sort()).toEqual(
-      ["ar.receipt.record", "website.post.publish"],
+      ["ar.receipt.record", "project.memory.add", "website.post.publish"],
     );
   });
 
@@ -613,5 +616,97 @@ describe("search_business_knowledge declaration", () => {
     expect(names).toContain("draft_expense_from_receipt");
     expect(names).toContain(KNOWLEDGE_TOOL_NAME);
     expect(names).toContain("propose_action");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase F pt.2 — AI-authored project memory (a project-scoped action).
+// ---------------------------------------------------------------------------
+
+describe("Phase F pt.2 — project.memory.add is a project-scoped action", () => {
+  it("registers the action, addressed by an ambient project id", () => {
+    expect(isKnownAction("project.memory.add")).toBe(true);
+    const meta = ACTION_CATALOG["project.memory.add"];
+    expect(meta.endpoint).toBe("/api/ai/projects/{projectId}/memory");
+    expect(meta.method).toBe("POST");
+    expect(meta.projectScoped).toBe(true);
+    // A memory write is always confirmed and never runs unattended.
+    expect(meta.alwaysConfirm).toBe(true);
+    expect(meta.autopilotCategory).toBeUndefined();
+    expect(meta.executor).toBeUndefined();
+    expect(meta.coworkerOnly).toBeUndefined();
+    // The payload hint must not invite the model to write an id.
+    expect(meta.payloadHint).not.toContain("projectId:");
+  });
+
+  it("keeps the project-scoped action out of the base catalogue but in the project one", () => {
+    expect(BASE_ACTION_TYPES).not.toContain("project.memory.add");
+    expect(PROJECT_ACTION_TYPES).toContain("project.memory.add");
+    // The project set is the base set plus exactly the project-scoped actions.
+    for (const t of BASE_ACTION_TYPES) expect(PROJECT_ACTION_TYPES).toContain(t);
+  });
+
+  it("does not offer the action on a plain dashboard turn", () => {
+    const tools = toolDefinitions("dashboard");
+    const propose = tools.find((t) => t.function.name === "propose_action");
+    const enumTypes = (propose!.function.parameters as { properties: { type: { enum: string[] } } })
+      .properties.type.enum;
+    expect(enumTypes).not.toContain("project.memory.add");
+  });
+
+  it("offers the action only when the turn is project-scoped", () => {
+    const tools = toolDefinitions("dashboard", { projectScoped: true });
+    const propose = tools.find((t) => t.function.name === "propose_action");
+    const enumTypes = (propose!.function.parameters as { properties: { type: { enum: string[] } } })
+      .properties.type.enum;
+    expect(enumTypes).toContain("project.memory.add");
+  });
+
+  it("never offers a project-scoped action to a read-only or scoped custom agent", () => {
+    // A read-only agent (empty action list) proposes nothing, project or not.
+    const readOnly = toolDefinitions("dashboard", {
+      projectScoped: true,
+      toolAllowlist: ["run_report"],
+      actionTypes: [],
+    });
+    expect(readOnly.map((t) => t.function.name)).not.toContain("propose_action");
+
+    // A scoped agent's propose enum is exactly its own action list — a project
+    // does not widen it.
+    const scoped = toolDefinitions("dashboard", {
+      projectScoped: true,
+      toolAllowlist: ["run_report"],
+      actionTypes: ["menu.item.priceUpdate"],
+    });
+    const propose = scoped.find((t) => t.function.name === "propose_action");
+    const enumTypes = (propose!.function.parameters as { properties: { type: { enum: string[] } } })
+      .properties.type.enum;
+    expect(enumTypes).toEqual(["menu.item.priceUpdate"]);
+  });
+
+  it("names the action in the prompt catalogue only on a project turn", () => {
+    const plain = buildSystemPrompt({ mode: "dashboard" });
+    expect(plain).not.toContain("project.memory.add");
+    const inProject = buildSystemPrompt({ mode: "dashboard", projectScoped: true });
+    expect(inProject).toContain("project.memory.add");
+  });
+
+  it("does not name the action for a scoped agent even inside a project", () => {
+    const agentInProject = buildSystemPrompt({
+      mode: "dashboard",
+      projectScoped: true,
+      agent: { name: "گزارش‌گر", instructions: "", actionTypes: ["menu.item.priceUpdate"] },
+    });
+    expect(agentInProject).not.toContain("project.memory.add");
+  });
+
+  it("resolves the endpoint once the ambient project id is in the payload", () => {
+    const meta = ACTION_CATALOG["project.memory.add"];
+    // Without the id (the model's raw proposal) the endpoint cannot be built.
+    expect(resolveActionEndpoint(meta, { content: "به یاد بسپار" })).toBeNull();
+    // With the injected id it resolves.
+    expect(resolveActionEndpoint(meta, { content: "x", projectId: "proj-1" })).toBe(
+      "/api/ai/projects/proj-1/memory",
+    );
   });
 });
