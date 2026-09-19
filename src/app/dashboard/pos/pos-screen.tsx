@@ -9,6 +9,7 @@ import {
   useState,
   useDeferredValue,
 } from "react";
+import { toast } from "sonner";
 import {
   CheckIcon,
   MinusIcon,
@@ -54,7 +55,7 @@ import {
   kickDrawer,
   printKitchenTicket,
   printReceipt,
-} from "@/lib/print-agent-client";
+} from "@/lib/printing/client";
 import {
   cartQuantitiesByItem,
   isGlobalCashierShortcutEligible,
@@ -982,7 +983,7 @@ export function PosScreen({
           note: line.note || null,
         })),
       };
-      void printKitchenTicket(kitchenPrinter.connection, ticket);
+      void printKitchenTicket(kitchenPrinter.id, ticket);
     }
 
     if (paid) {
@@ -1026,11 +1027,20 @@ export function PosScreen({
             money.unit,
           ),
         };
-        void printReceipt(receiptPrinter.connection, receipt);
+        void printReceipt(receiptPrinter.id, receipt).then((result) => {
+          // Printing is best-effort by contract: a failed receipt print never
+          // invalidates the completed sale. Say so, non-destructively, with a
+          // way to try again — the order is safe either way.
+          if (!result.ok && result.error !== "not_in_browser") {
+            toast.warning("چاپ رسید انجام نشد؛ سفارش با موفقیت ثبت شده است.", {
+              action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, receipt) },
+            });
+          }
+        });
         // Any cash in the split opens the drawer — a bill half paid in notes
         // still needs somewhere to put them.
         if (draftOpensDrawer(paymentDraft, paymentMethods))
-          void kickDrawer(receiptPrinter.connection);
+          void kickDrawer(receiptPrinter.id);
       }
     }
 

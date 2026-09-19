@@ -218,7 +218,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     payment_method_not_found: "روش پرداخت پیدا نشد.",
     conflict: "این تغییر با یک عملیات دیگر تداخل دارد و باید دستی بررسی شود.",
     printer_not_found: "چاپگر پیدا نشد.",
-    agent_unreachable: "دستگاه چاپ در دسترس نیست. اتصال چاپگر محلی را بررسی کنید.",
+    printer_inactive: "این چاپگر غیرفعال است.",
+    reconnect_required: "این چاپگر باید دوباره متصل شود.",
     // Phase 7 — ledger
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
     fiscal_period_locked: "دورهٔ مالی این تاریخ بسته شده و ثبت سند در آن ممکن نیست.",

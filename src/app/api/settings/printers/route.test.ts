@@ -1,7 +1,9 @@
 /**
- * Printer settings API regression coverage. Installed Windows queues carry no
- * IP address, and saving a default touches pre-existing JSON rows before the
- * insert; both paths must remain valid and transactional.
+ * Printer settings API regression coverage. A Windows printer carries no IP
+ * address, and saving a default touches pre-existing JSON rows before the
+ * insert; both paths must remain valid and transactional. New writes are
+ * canonical-model only — the parser (printing/printer-input.test.ts) pins
+ * that; these tests pin the route's plumbing around it.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NextRequest } from "next/server";
@@ -36,7 +38,7 @@ const SAVED = {
   id: "printer-1",
   name: "EPSON TM-T20III",
   kind: "receipt",
-  connection: { transport: "system", systemName: "EPSON TM-T20III" },
+  connection: { type: "windows", systemName: "EPSON TM-T20III", paperWidthMm: 80, paper: "thermal80" },
   is_active: true,
 };
 
@@ -83,14 +85,12 @@ describe("GET /api/settings/printers", () => {
 });
 
 describe("POST /api/settings/printers", () => {
-  it("saves an installed Windows USB queue without requiring an IP", async () => {
+  it("saves a Windows printer without requiring an IP, through the canonical model", async () => {
     const response = await POST(
       request({
         name: "EPSON TM-T20III",
         kind: "receipt",
-        transport: "system",
-        systemName: "EPSON TM-T20III",
-        paper: "thermal80",
+        connection: { type: "windows", systemName: "EPSON TM-T20III" },
         paperWidthMm: 80,
         isActive: true,
       }),
@@ -103,12 +103,24 @@ describe("POST /api/settings/printers", () => {
     expect(client.query).not.toHaveBeenCalledWith("ROLLBACK");
     const insert = client.query.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO printers"));
     expect(insert?.[1]?.[0]).toBe("loc-1");
-    expect(JSON.parse(String(insert?.[1]?.[3]))).toMatchObject({
-      transport: "system",
-      systemName: "EPSON TM-T20III",
-      ip: null,
-    });
+    const stored = JSON.parse(String(insert?.[1]?.[3]));
+    expect(stored).toMatchObject({ type: "windows", systemName: "EPSON TM-T20III", paperWidthMm: 80 });
+    expect(stored).not.toHaveProperty("transport");
+    expect(stored).not.toHaveProperty("ip");
     expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a legacy transport outright — no new usb/webusb/browser rows", async () => {
+    for (const legacy of [
+      { name: "x", kind: "receipt", transport: "usb", devicePath: "USB001" },
+      { name: "x", kind: "receipt", transport: "webusb", usbVendorId: 0x04b8 },
+      { name: "x", kind: "receipt", transport: "browser" },
+    ]) {
+      const response = await POST(request(legacy));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "invalid_printer" });
+    }
+    expect(db.getPool).not.toHaveBeenCalled();
   });
 
   it("clears an old default defensively and atomically", async () => {
@@ -116,8 +128,7 @@ describe("POST /api/settings/printers", () => {
       request({
         name: "POS80",
         kind: "receipt",
-        transport: "system",
-        systemName: "POS80",
+        connection: { type: "windows", systemName: "POS80" },
         paperWidthMm: 80,
         isDefault: true,
       }),
@@ -134,7 +145,7 @@ describe("POST /api/settings/printers", () => {
       return { rows: [] };
     });
     const response = await POST(
-      request({ name: "POS80", kind: "receipt", transport: "system", systemName: "POS80", paperWidthMm: 80 }),
+      request({ name: "POS80", kind: "receipt", connection: { type: "windows", systemName: "POS80" }, paperWidthMm: 80 }),
     );
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "printer_save_failed" });

@@ -531,8 +531,10 @@ which is exactly where Phase 23 is heading.
 Bearer-token callers (`/api/server-sync/*`, `/api/rollup/ingest`, `/api/v1/*`, `/api/host/*`)
 are exempt **by construction**, because they carry no cookie. That is what makes the rule safe
 to enforce by default rather than shipping it report-only: there is no allowlist that can go
-stale. Before enabling, confirm that `print-agent/` and `electron/main.js` make no
-cookie-bearing POSTs without an Origin header.
+stale. Before enabling, confirm that `electron/main.js` makes no
+cookie-bearing POSTs without an Origin header. (The former `print-agent/` Node
+service no longer exists — the till-side print connector is loopback PowerShell
+and never talks to this app's server with a cookie.)
 
 ### 9. The development Postgres binds to loopback
 

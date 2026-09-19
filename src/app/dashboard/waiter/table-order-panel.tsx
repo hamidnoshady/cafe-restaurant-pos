@@ -11,7 +11,7 @@ import {
   ORDER_ITEM_STATUS_LABELS,
   type OrderItemStatus,
 } from "@/lib/order-item-status";
-import { printKitchenTicket } from "@/lib/print-agent-client";
+import { printKitchenTicket } from "@/lib/printing/client";
 import {
   modifierNamesLabel,
   type DisplayModifier,
@@ -314,7 +314,7 @@ export function TableOrderPanel({
             note: l.note || null,
           })),
         };
-        void printKitchenTicket(kitchenPrinter.connection, ticket);
+        void printKitchenTicket(kitchenPrinter.id, ticket);
       }
       onChanged();
       loadOrder();

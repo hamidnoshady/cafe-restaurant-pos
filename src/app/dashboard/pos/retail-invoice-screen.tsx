@@ -36,7 +36,7 @@ import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { safeRandomId } from "@/lib/client-id";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
-import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
+import { kickDrawer, printReceipt } from "@/lib/printing/client";
 import type { ReceiptData } from "@/lib/receipt-template";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
 import { usePaymentMethods } from "../payment-ways";
@@ -322,8 +322,17 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       setLastReceipt(receipt);
       const receiptPrinter = firstPrinter(printers, "receipt");
       if (receiptPrinter) {
-        void printReceipt(receiptPrinter.connection, receipt);
-        if (selectedWay?.opensDrawer) void kickDrawer(receiptPrinter.connection);
+        void printReceipt(receiptPrinter.id, receipt).then((result) => {
+          // Printing is best-effort by contract: a failed receipt print never
+          // invalidates the completed sale. Say so, non-destructively, with a
+          // way to try again — the invoice is safe either way.
+          if (!result.ok && result.error !== "not_in_browser") {
+            toast.warning("چاپ رسید انجام نشد؛ فاکتور با موفقیت ثبت شده است.", {
+              action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, receipt) },
+            });
+          }
+        });
+        if (selectedWay?.opensDrawer) void kickDrawer(receiptPrinter.id);
       }
       setLines([]);
       setCustomerId("");
@@ -345,8 +354,15 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       toast.error("چاپگر رسید تنظیم نشده است.");
       return;
     }
-    void printReceipt(receiptPrinter.connection, lastReceipt);
-    toast.success("رسید برای چاپ ارسال شد");
+    void printReceipt(receiptPrinter.id, lastReceipt).then((result) => {
+      if (result.ok) {
+        toast.success("رسید برای چاپ ارسال شد");
+      } else if (result.error !== "not_in_browser") {
+        toast.warning("چاپ رسید انجام نشد.", {
+          action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, lastReceipt) },
+        });
+      }
+    });
   }
 
   return (

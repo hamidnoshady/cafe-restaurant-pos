@@ -3,7 +3,7 @@
  *
  * Receipts and kitchen tickets are Persian/RTL, which ESC/POS printers can't
  * shape or reorder in text mode (no printer we could target ships a correct
- * Farsi codepage + BiDi engine). Instead the print agent (print-agent/)
+ * Farsi codepage + BiDi engine). Instead the app server
  * renders the HTML template with a real browser engine (correct shaping),
  * screenshots it, and this module packs the resulting bitmap into the
  * universal `GS v 0` raster command — supported by virtually every

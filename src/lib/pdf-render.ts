@@ -1,11 +1,11 @@
 /**
  * HTML → PDF rendering for report export. Same reasoning and technique as
- * print-agent/render.ts (a real browser engine via playwright-core, since
- * Persian/RTL text needs real shaping — see src/lib/escpos.ts), but running
- * inside this app's own server process instead of the till-PC print agent,
- * so paths are resolved from `process.cwd()` (the project root under
- * `next start`/the custom server), not `__dirname` (unreliable once Next
- * bundles this route handler for production).
+ * printing/chromium.ts (a real browser engine via playwright-core, since
+ * Persian/RTL text needs real shaping — see src/lib/escpos.ts), running
+ * inside this app's own server process, so paths are resolved from
+ * `process.cwd()` (the project root under `next start`/the custom server),
+ * not `__dirname` (unreliable once Next bundles this route handler for
+ * production).
  */
 import { readFileSync } from "fs";
 import { join } from "path";

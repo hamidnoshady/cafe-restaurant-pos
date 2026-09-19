@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { printLabel } from "@/lib/print-agent-client";
+import { printLabel } from "@/lib/printing/client";
 import { labelFieldsForTrade, type LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { api, Field, inputClass } from "../ui";
@@ -512,9 +512,9 @@ function BarcodesPanel({
         money.unit,
       ),
     };
-    printLabel(printer.connection, label).then((res) => {
+    printLabel(printer.id, label).then((res) => {
       if (res.ok) onDone("لیبل چاپ شد.");
-      else setError(res.error === "agent_unreachable" ? "چاپگر محلی در دسترس نیست." : "چاپ لیبل ناموفق بود.");
+      else setError(res.error === "connector_not_installed" || res.error === "connector_outdated" ? "رابط چاپ روی این کامپیوتر در دسترس نیست؛ از تنظیمات چاپگرها نصب کنید." : "چاپ لیبل ناموفق بود.");
     });
   }
 

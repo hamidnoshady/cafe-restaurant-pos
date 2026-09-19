@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { toPersianDigits } from "@/lib/digits";
 import { barcodeEntryError, normalizeBarcode } from "@/lib/barcode";
-import { printLabel, printViaBrowser } from "@/lib/print-agent-client";
-import { resolvedTransport } from "@/lib/printer-connection";
+import { printLabel, printViaBrowser } from "@/lib/printing/client";
 import { renderLabelSheetHtml, type LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { SectionCard, StatusBadge } from "../page-chrome";
@@ -208,9 +207,9 @@ export function BarcodesSection({
     };
     // No registered printer is not a dead end: printLabel falls back to the
     // browser's own print dialog, the same no-hardware path documents use.
-    const res = await printLabel(printer?.connection ?? null, label);
+    const res = await printLabel(printer?.id ?? null, label);
     if (res.ok) return null;
-    return res.error === "agent_unreachable" ? "چاپگر محلی در دسترس نیست." : "چاپ لیبل ناموفق بود.";
+    return res.error === "connector_not_installed" || res.error === "connector_outdated" ? "رابط چاپ روی این کامپیوتر در دسترس نیست؛ از تنظیمات چاپگرها نصب کنید." : "چاپ لیبل ناموفق بود.";
   }
 
   async function printSelected(code: string, item: { name: string; unit: string }) {
@@ -238,7 +237,7 @@ export function BarcodesSection({
     setPrintingAll(true);
 
     const printer = firstPrinter(printers, "receipt");
-    if (!printer || resolvedTransport(printer.connection) === "browser") {
+    if (!printer) {
       // No hardware path: one sheet, one browser dialog — not one dialog per
       // label. Each label is its own page, so a roll/sticker printer driven
       // through the OS dialog still cuts per label.
@@ -255,10 +254,10 @@ export function BarcodesSection({
 
     let printed = 0;
     for (const row of minted) {
-      const res = await printLabel(printer.connection, mintedLabel(row));
+      const res = await printLabel(printer.id, mintedLabel(row));
       if (!res.ok) {
         const reason =
-          res.error === "agent_unreachable" ? "چاپگر محلی در دسترس نیست." : "چاپ لیبل ناموفق بود.";
+          res.error === "connector_not_installed" || res.error === "connector_outdated" ? "رابط چاپ روی این کامپیوتر در دسترس نیست؛ از تنظیمات چاپگرها نصب کنید." : "چاپ لیبل ناموفق بود.";
         setPrepError(
           printed > 0
             ? `${toPersianDigits(printed)} لیبل چاپ شد؛ سپس چاپ متوقف شد: ${reason}`

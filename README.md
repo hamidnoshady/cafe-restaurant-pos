@@ -41,7 +41,7 @@ wizard (`/setup/*`) — no manual DB edits needed:
 4. **Tax** — default VAT rate + per-category rates
 5. **Roles & users** — Manager (email/password) and Cashier/Waiter/Kitchen (4–12-digit PIN)
 6. **Menu** — manual entry or CSV/Excel import (downloadable template)
-7. **Hardware** — printer pairing + test print (stubbed until Phase 5)
+7. **Hardware** — printer pairing + test print (a Windows-installed or network printer, reached through the one-click local print connector; same screen as Settings)
 8. **Opening balances** — opening inventory count + balanced opening journal entry
 
 A standalone desktop install gets one extra optional step between hardware and opening —

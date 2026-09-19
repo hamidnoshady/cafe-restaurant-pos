@@ -76,7 +76,7 @@ Holoo has two connection surfaces:
 | Scope | **An additive feature, not a redesign.** Holoo is a second provider on the Phase 23 gateway. A business without Holoo sees no change — not in core schema, not in the posting engine, not in the setup wizard. |
 | Write channel into Holoo | **Web service first; guarded direct SQL into SQL Server allowed as fallback.** Reads are always direct SQL. |
 | Reference books in companion mode | **Holoo is the official books.** The app still posts to its own ledger (so reports/BI/assistant work unchanged) and reconciles against Holoo nightly. |
-| Deployment | **On-prem on the local network.** The app installs as-is and opens one outbound TCP connection to SQL Server. A separate Windows bridge agent (like `print-agent/`) for cloud tenants is a follow-up. |
+| Deployment | **On-prem on the local network.** The app installs as-is and opens one outbound TCP connection to SQL Server. A separate Windows bridge agent for cloud tenants (the shape the till-side print connector takes) is a follow-up. |
 | SQL Server transport security | **Secure by default.** Transport encryption is on unless `HOLOO_ENCRYPT=false`, and TLS certificate validation is on unless `HOLOO_TRUST_SERVER_CERT=true` (self-signed on-prem certs). Neither the probe nor the client silently sends SQL credentials in cleartext. |
 | Migration number | `0103` (see Numbering note above), not the issue's `0072`. |
 
@@ -219,8 +219,8 @@ opens one outbound TCP connection to SQL Server on the same network).
 - Running the app itself on SQL Server, or any non-Postgres backend.
 - Adapters for other Iranian accounting packages (Sepidar, Hamkaran, Rahkaran) — the registry
   makes them possible later; not built here.
-- The Windows bridge agent for cloud tenants — an independent artifact in its own folder (like
-  `print-agent/`), a follow-up on real demand.
+- The Windows bridge agent for cloud tenants — an independent artifact in its own
+  folder, a follow-up on real demand.
 
 ## Where each exit criterion is satisfied
 
@@ -262,6 +262,6 @@ PR tracked to merge per `CLAUDE.md`.
 ## Known follow-ups
 
 - Confirm the web-service voucher coverage on a real Holoo install (the probe's web-service half).
-- The Windows bridge agent for cloud tenants (`print-agent/` shape), on real demand.
+- The Windows bridge agent for cloud tenants, on real demand.
 - Electron installer auto-update — independent follow-up.
 - Adapters for other Iranian accounting packages, enabled later by `provider-registry.ts`.

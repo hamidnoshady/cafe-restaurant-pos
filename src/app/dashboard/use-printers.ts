@@ -1,17 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PrinterConnection } from "@/lib/printer-connection";
 import { api } from "./ui";
+import type { PrinterPurpose } from "@/lib/printing/types";
 
+/**
+ * The operational printer row POS/order screens work with. Callers never see
+ * hardware targets — they pass this id to the print client, and the server
+ * resolves it against the caller's branch.
+ */
 export interface PrinterRow {
   id: string;
   name: string;
-  kind: "receipt" | "kitchen";
-  connection: PrinterConnection;
+  kind: PrinterPurpose;
+  isDefault: boolean;
+  /** A legacy pairing the new architecture cannot use; printing through it is refused. */
+  needsReconnect: boolean;
 }
 
-/** Active printers for the location — used to find a target for the print agent (src/lib/print-agent-client.ts). */
+/** Active printers for the location, defaults first — used to pick a target for printing. */
 export function usePrinters(): PrinterRow[] {
   const [printers, setPrinters] = useState<PrinterRow[]>([]);
   useEffect(() => {
@@ -23,7 +30,7 @@ export function usePrinters(): PrinterRow[] {
 }
 
 export function firstPrinter(printers: PrinterRow[], kind: "receipt" | "kitchen"): PrinterRow | null {
-  return printers.find((p) => p.kind === kind) ?? null;
+  return printers.find((p) => p.kind === kind && !p.needsReconnect) ?? null;
 }
 
 export interface BusinessInfo {
