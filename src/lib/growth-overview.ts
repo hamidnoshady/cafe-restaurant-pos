@@ -84,6 +84,8 @@ export interface GrowthActivityRow {
 
 export interface GrowthOverview {
   window: { from: string; to: string };
+  /** Repurchase predictions are per-branch, so no selected branch is not a zero result. */
+  hasLocation: boolean;
   campaigns: {
     counts: Record<CampaignState, number>;
     list: CampaignSummaryRow[];
@@ -199,7 +201,17 @@ export async function growthOverview(
          ) point_balances`,
       [businessId, opts.today],
     ),
-    query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM parties WHERE business_id = $1 AND is_active`, [businessId]),
+    // Compare point holders with actual, live customers — `parties` also holds
+    // suppliers and staff, and a person may hold several roles.
+    query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total
+         FROM parties
+        WHERE business_id = $1
+          AND roles && ARRAY['customer']::text[]
+          AND is_active
+          AND merged_into_id IS NULL`,
+      [businessId],
+    ),
     query<{ programs: number }>(
       `SELECT COUNT(*)::int AS programs FROM loyalty_programs WHERE business_id = $1 AND is_active`,
       [businessId],
@@ -311,6 +323,7 @@ export async function growthOverview(
 
   return {
     window: { from, to },
+    hasLocation: Boolean(opts.locationId),
     campaigns: {
       counts: campaignStateCounts(campaignList.map((c) => c.state)),
       list: campaignList.slice(0, 6),
