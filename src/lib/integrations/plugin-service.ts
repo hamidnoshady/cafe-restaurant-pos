@@ -179,14 +179,15 @@ export async function pluginHandshake(
     // app held only the ~20 accounts created after connect — the rest arrived
     // by no path at all (the orders sweep covered orders; products had a
     // hourly sweep; customers had neither a sweep nor an initial request).
-    // On the very first handshake we queue the three full exports; each is
-    // upserted on a unique key, so the button a later handshake's owner
-    // presses just refreshes the one row.
+    // On the very first handshake queue every historical mirror, including
+    // WordPress content/media. Each is upserted on a unique key, so a later
+    // manual request only refreshes the one outstanding export row.
     const firstContact = !beforeRows[0]?.last_plugin_seen_at;
     if (firstContact) {
       await enqueuePluginExport(connection.business_id, connection.id, "catalogue_export");
       await enqueuePluginExport(connection.business_id, connection.id, "customer_export");
       await enqueuePluginExport(connection.business_id, connection.id, "orders_export");
+      await enqueuePluginExport(connection.business_id, connection.id, "content_export");
       await writeIntegrationAudit({
         businessId: connection.business_id,
         connectionId: connection.id,
@@ -195,6 +196,7 @@ export async function pluginHandshake(
           products: handshakeRows[0]?.sync_products ?? true,
           customers: handshakeRows[0]?.sync_customers ?? true,
           orders: handshakeRows[0]?.sync_orders ?? true,
+          content: true,
         },
       });
     }
@@ -443,7 +445,7 @@ export async function pluginAckJobs(
 export async function enqueuePluginExport(
   businessId: string,
   connectionId: string,
-  entityType: "catalogue_export" | "customer_export" | "orders_export",
+  entityType: "catalogue_export" | "customer_export" | "orders_export" | "content_export",
 ): Promise<void> {
   await query(
     `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload)
