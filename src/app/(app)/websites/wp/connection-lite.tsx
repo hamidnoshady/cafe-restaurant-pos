@@ -19,6 +19,11 @@ export function ConnectionPicker({
   connections: ConnectionLite[];
   value: string;
   onChange: (id: string) => void;
+  /**
+   * Retained for compatibility with hosts that explicitly mark an already
+   * embedded picker. The picker itself never owns card chrome; its host does.
+   */
+  embedded?: boolean;
 }) {
   const id = useId();
 

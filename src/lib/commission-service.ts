@@ -92,6 +92,12 @@ export async function listCommissionRules(
   employeeId?: string,
   includeInactive = false,
   client?: PoolClient,
+  /**
+   * The accrual-time read passes true, so a rule whose active_from/active_to
+   * window does not cover today earns nothing. The admin list passes false —
+   * a manager must still see (and reactivate) an out-of-window rule.
+   */
+  onlyEffective = false,
 ): Promise<CommissionRuleView[]> {
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
@@ -102,6 +108,7 @@ export async function listCommissionRules(
       WHERE r.business_id = $1
         AND ($2::uuid IS NULL OR r.employee_id = $2)
         ${includeInactive ? "" : "AND r.is_active"}
+        ${onlyEffective ? "AND (r.active_from IS NULL OR r.active_from <= CURRENT_DATE) AND (r.active_to IS NULL OR r.active_to >= CURRENT_DATE)" : ""}
       ORDER BY r.employee_id, r.priority DESC, r.created_at`,
     [businessId, employeeId ?? null],
   );
@@ -120,6 +127,11 @@ export async function upsertCommissionRule(
   }
   if (input.kind === "percent" && input.value > 100) {
     throw new Error("درصد پورسانت نمی‌تواند بیش از ۱۰۰ باشد.");
+  }
+  // A fractional priority would fail with a raw SQL error when it meets the
+  // integer column; say so in Persian here instead.
+  if (input.priority !== undefined && !Number.isInteger(input.priority)) {
+    throw new Error("اولویت باید یک عدد صحیح باشد.");
   }
 
   // The FK to users(id) alone would let a rule name another tenant's user id;
@@ -166,6 +178,13 @@ export interface CommissionLineInput {
   cost?: number | null;
   itemId: string;
   brandId?: string | null;
+  /**
+   * The category axis the engine resolves item → brand → category →
+   * everything against. A caller that knows the line's category must pass it;
+   * it was silently dropped before, so a category-scoped rule could never
+   * match even when the caller had the id in hand.
+   */
+  categoryId?: string | null;
 }
 
 /**
@@ -186,7 +205,7 @@ export async function accrueCommissionForLine(
     createdBy?: string | null;
   },
 ): Promise<{ amount: number; ruleId: string | null; entryId: string | null }> {
-  const rules = await listCommissionRules(input.businessId, input.employeeId, false, client);
+  const rules = await listCommissionRules(input.businessId, input.employeeId, false, client, true);
   if (rules.length === 0) return { amount: 0, ruleId: null, entryId: null };
 
   const line: Parameters<typeof computeCommissionAccrual>[0] = {
@@ -194,6 +213,7 @@ export async function accrueCommissionForLine(
     cost: input.line.cost ?? null,
     itemId: input.line.itemId,
     brandId: input.line.brandId ?? null,
+    categoryId: input.line.categoryId ?? null,
   };
   const accrual = computeCommissionAccrual(line, rules);
   if (accrual.amount <= 0) return { amount: 0, ruleId: accrual.ruleId, entryId: null };
@@ -231,7 +251,35 @@ export async function accrueCommissionForLine(
     createdBy: input.createdBy ?? null,
   });
 
+  // Stamp the entry the event posted onto the accrual row, in the same
+  // transaction: commission_accruals.entry_id is the tie-out to the payroll
+  // liability, and it was created for exactly this. Leaving it NULL (as it
+  // was) makes an auditor re-derive the link from the event payload instead
+  // of joining the two tables.
+  if (entryId) {
+    await client.query(`UPDATE commission_accruals SET entry_id = $2 WHERE id = $1`, [rows[0].id, entryId]);
+  }
+
   return { amount: accrual.amount, ruleId: accrual.ruleId, entryId };
+}
+
+/**
+ * Retires (or revives) a rule without deleting history: accrued rows keep
+ * pointing at it, and a mistaken rule stops earning the moment it is
+ * deactivated. Deleting would NULL out the accruals' rule_id, so the editor
+ * toggles instead. The business_id clause is belt-and-braces on top of RLS —
+ * the id alone must never reactivate a rule from another tenant.
+ */
+export async function setCommissionRuleActive(
+  businessId: string,
+  ruleId: string,
+  isActive: boolean,
+): Promise<void> {
+  const { rowCount } = await query(
+    `UPDATE commission_rules SET is_active = $3 WHERE id = $1 AND business_id = $2`,
+    [ruleId, businessId, isActive],
+  );
+  if (!rowCount) throw new Error("قانون پورسانت یافت نشد.");
 }
 
 export interface StaffCommissionRow {

@@ -30,7 +30,7 @@ import {
   type ConsentChannel,
   type ConsentSource,
 } from "@/lib/crm-shared";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import { crmCustomerHref } from "./crm-routes";
 
@@ -58,20 +58,65 @@ export function ConsentSection() {
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [events, setEvents] = useState<ConsentEvent[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(() => {
-    api<{ coverage: Coverage; events: ConsentEvent[] }>("/api/crm/consent").then(({ ok, data }) => {
-      if (ok) {
-        setCoverage(data.coverage);
-        setEvents(data.events);
-      } else setError("بارگذاری سابقهٔ رضایت ناموفق بود.");
-    });
+  const load = useCallback((signal?: AbortSignal) => {
+    setRefreshing(true);
+    return api<{ coverage: Coverage; events: ConsentEvent[] }>("/api/crm/consent", { signal }).then(
+      ({ ok, data, aborted }) => {
+        // A superseded/cancelled request must not clobber fresher state or
+        // flip the busy flags on an unmounted component.
+        if (aborted) return;
+        if (ok) {
+          setCoverage(data.coverage);
+          setEvents(data.events);
+          // Clear a stale error so a recovered reload does not keep showing
+          // the previous failure.
+          setError("");
+        } else {
+          setError("بارگذاری سابقهٔ رضایت ناموفق بود.");
+        }
+        setLoading(false);
+        setRefreshing(false);
+      },
+    );
   }, []);
-  useEffect(load, [load]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+
+  // First load still in flight: a content-shaped skeleton, not a spinner.
+  if (loading) {
+    return <SectionCardSkeleton rows={4} />;
+  }
+
+  // The load finished but failed — show the error and a way back, instead of
+  // leaving the skeleton up forever (a network blip must not strand the page).
   if (!coverage) {
     return (
-      <SectionCardSkeleton rows={4} />
+      <div className="min-w-0 space-y-4">
+        <ErrorBox>{error || "بارگذاری سابقهٔ رضایت ناموفق بود."}</ErrorBox>
+        <SectionCard
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">پوشش رضایت ارتباط</h2>
+            </div>
+          }
+        >
+          <EmptyState>بارگذاری اطلاعات رضایت ناموفق بود.</EmptyState>
+          <div className="mt-3 flex justify-center">
+            <Button type="button" variant="outline" size="sm" onClick={() => load()} disabled={refreshing}>
+              <RefreshCwIcon aria-hidden="true" className="size-4" />
+              {refreshing ? "در حال تلاش…" : "تلاش دوباره"}
+            </Button>
+          </div>
+        </SectionCard>
+      </div>
     );
   }
 
@@ -124,7 +169,15 @@ export function ConsentSection() {
         }
         description="فقط افزودنی است؛ هیچ ردیفی ویرایش یا حذف نمی‌شود."
         actions={
-          <Button type="button" variant="ghost" size="icon-sm" onClick={load} aria-label="بازخوانی">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => load()}
+            disabled={refreshing}
+            aria-label="بازخوانی"
+            aria-busy={refreshing}
+          >
             <RefreshCwIcon aria-hidden="true" className="size-4" />
           </Button>
         }
@@ -152,7 +205,12 @@ export function ConsentSection() {
                       {CONSENT_SOURCE_LABELS[event.source] ?? event.source}
                     </StatusBadge>
                     {event.changedBy ? <span>{event.changedBy}</span> : null}
-                    <span>{toPersianDigits(formatJalali(event.createdAt))}</span>
+                    {/* An audit trail needs the time of day, not just the date:
+                        the whole question this page answers is *when* a flag
+                        flipped. */}
+                    <time dateTime={event.createdAt}>
+                      {toPersianDigits(formatJalali(event.createdAt, { withTime: true }))}
+                    </time>
                   </p>
                 </div>
               </li>
@@ -179,7 +237,11 @@ function CoverageBlock({
   percent: (part: number) => string;
   missingHint: string;
 }) {
-  const unreachable = granted - reachable;
+  // Clamp so a stray count above the base (e.g. reachable > total from a data
+  // race) can never overflow the track or report >100%.
+  const unreachable = Math.max(0, granted - reachable);
+  const ratio = total === 0 ? 0 : Math.min(1, Math.max(0, reachable / total));
+  const percentValue = Math.round(ratio * 100);
   return (
     <div className="min-w-0 rounded-2xl border border-border/80 p-4">
       <p className="text-sm font-semibold text-foreground">{label}</p>
@@ -189,10 +251,18 @@ function CoverageBlock({
       <p className="mt-0.5 text-xs text-muted-foreground">
         قابل ارسال · {percent(reachable)}٪ از {formatPersianNumber(total)} مشتری
       </p>
-      <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-label={`سهم قابل ارسال ${label}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percentValue}
+        aria-valuetext={`${toPersianDigits(String(percentValue))}٪`}
+      >
         <span
           className="block h-full bg-teal-500 dark:bg-teal-500"
-          style={{ width: total === 0 ? "0%" : `${(reachable / total) * 100}%` }}
+          style={{ width: `${ratio * 100}%` }}
         />
       </div>
       <p className="mt-2 text-xs text-muted-foreground">

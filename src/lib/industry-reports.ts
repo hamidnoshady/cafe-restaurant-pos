@@ -190,7 +190,10 @@ export function loyaltyRedemptionSummary(rows: LoyaltyPointsRow[]): LoyaltyRedem
       earnedPoints += row.points;
     } else {
       redeemedPoints += -row.points;
-      if (row.sourceType === "loyalty_points_redemption") redemptionCount += 1;
+      // `redeem` was the source type before the loyalty posting gained a
+      // descriptive source id. Keep historical rows in the event count while
+      // all new redemptions use the explicit current spelling.
+      if (row.sourceType === "loyalty_points_redemption" || row.sourceType === "redeem") redemptionCount += 1;
     }
   }
   return { earnedPoints, redeemedPoints, redemptionCount, netPoints: earnedPoints - redeemedPoints };

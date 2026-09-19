@@ -179,7 +179,24 @@ export function isActivityKind(value: unknown): value is ActivityKind {
  * table that would need its own list, its own permissions and its own
  * notifications.
  */
-export type ActivityState = "done" | "due" | "overdue" | "planned";
+export const ACTIVITY_STATES = ["done", "due", "overdue", "planned"] as const;
+export type ActivityState = (typeof ACTIVITY_STATES)[number];
+
+export function isActivityState(value: unknown): value is ActivityState {
+  return typeof value === "string" && (ACTIVITY_STATES as readonly string[]).includes(value);
+}
+
+/**
+ * Field ceilings for an activity. The `subject`/`body` columns are unbounded
+ * `text`, which is not the same as "any length is sensible": a paste of a whole
+ * chat transcript into the title makes a list nobody can scan, and there is no
+ * way to shorten it from the screen. Enforced on the server (the client only
+ * mirrors it as a `maxLength` hint), because a limit only the browser knows is
+ * not a limit.
+ */
+export const ACTIVITY_SUBJECT_MAX = 200;
+export const ACTIVITY_BODY_MAX = 2000;
+export const ACTIVITY_ASSIGNEE_MAX = 120;
 
 export const ACTIVITY_STATE_LABELS: Record<ActivityState, string> = {
   done: "انجام‌شده",

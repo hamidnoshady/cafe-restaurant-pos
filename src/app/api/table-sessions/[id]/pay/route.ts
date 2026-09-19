@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { closeSession } from "@/lib/table-session-service";
 import { broadcast } from "@/lib/realtime";
 import {
@@ -26,6 +27,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+  const businessDay = await getBusinessDayStatus(location.id);
 
   let body: PaySessionBody;
   try {
@@ -75,6 +77,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
         method,
         reference: body.reference,
         customerId: body.customerId?.trim() || null,
+        businessDate: businessDay?.businessDate,
         receivedBy: session.sub,
       });
       orderIds.push(order.id);

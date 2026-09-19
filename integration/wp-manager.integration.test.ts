@@ -16,7 +16,8 @@
  *      decodes the entities WordPress puts in a title, so the manager's list
  *      never shows a raw `&#8217;`.
  *   3. The queue merges outbound outbox jobs and inbound webhook failures, and
- *      the customer list joins a mapping to its local party.
+ *      the customer list joins a mapping to its local party, counting only
+ *      the orders mirrored from that store — not the party's POS sales.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -376,14 +377,39 @@ describe("the operational queue and the customer list", () => {
     }
   });
 
-  it("lists the store's customers joined to their local party and order count", async () => {
-    const rows = await manager.wpStoreCustomers(biz.id, biz.pluginConnId);
+  it("lists the store's customers joined to their local party and online order count", async () => {
+    const { customers: rows, total } = await manager.wpStoreCustomers(biz.id, biz.pluginConnId);
+    expect(total).toBe(rows.length);
+
     const sara = rows.find((r) => r.remoteId === "7001");
     expect(sara).toBeTruthy();
     expect(sara!.name).toBe("سارا");
     expect(sara!.phone).toBe("09120000000");
-    // She has one order recorded against her local party.
+    // Her one online order: the '9001' order mapping mirrored from this store.
     expect(sara!.ordersCount).toBe(1);
+
+    // A count over `orders.customer_id` alone would confuse the badge
+    // («سفارش آنلاین») with *every* sale the party ever made. Neither her
+    // POS purchase (no order mapping) nor an order mirrored by the *other*
+    // connection may move this store's number.
+    await db.query(
+      `INSERT INTO orders (location_id, order_number, status, customer_id, total)
+       VALUES ($1, 5556, 'completed', $2, 10000)`,
+      [biz.locationId, sara!.localId],
+    );
+    const mirroredElsewhere = await db.query<{ id: string }>(
+      `INSERT INTO orders (location_id, order_number, status, customer_id, total)
+       VALUES ($1, 5557, 'completed', $2, 20000) RETURNING id`,
+      [biz.locationId, sara!.localId],
+    );
+    await db.query(
+      `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
+       VALUES ($1, $2, 'order', '9010', $3)`,
+      [biz.id, biz.restConnId, mirroredElsewhere.rows[0].id],
+    );
+
+    const again = await manager.wpStoreCustomers(biz.id, biz.pluginConnId);
+    expect(again.customers.find((r) => r.remoteId === "7001")!.ordersCount).toBe(1);
   });
 });
 
