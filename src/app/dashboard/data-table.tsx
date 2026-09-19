@@ -34,15 +34,31 @@ export function DataTable({
   children,
   className,
   tableClassName,
+  frame = true,
 }: {
   /** The table's accessible name. Rendered visually hidden. */
   caption: string;
   children: ReactNode;
   className?: string;
   tableClassName?: string;
+  /**
+   * The bordered panel around the table.
+   *
+   * Almost every table wants it — that panel *is* the approved table. Pass
+   * `frame={false}` only when the table already sits directly inside a `flush`
+   * `SectionCard`, which supplies the same edges; drawing both puts a hairline
+   * a few pixels inside another hairline. `ReportTable` is the one case in the
+   * product today.
+   */
+  frame?: boolean;
 }) {
   return (
-    <div className={cn("overflow-hidden rounded-xl border border-border/80", className)}>
+    <div
+      className={cn(
+        frame ? "overflow-hidden rounded-xl border border-border/80" : "min-w-0",
+        className,
+      )}
+    >
       <div className="overflow-x-auto">
         <table className={cn("w-full text-sm", tableClassName)}>
           <caption className="sr-only">{caption}</caption>
@@ -109,15 +125,22 @@ export function Th({
   children,
   className,
   numeric = false,
+  scope = "col",
   ...rest
 }: {
   children?: ReactNode;
   className?: string;
   numeric?: boolean;
+  /**
+   * `col` for the header row — the default, and what nearly every caller
+   * wants. `row` is for a totals row's label cell, where the figures beside it
+   * are named by that label rather than by a column heading.
+   */
+  scope?: "col" | "row";
 } & Omit<ThHTMLAttributes<HTMLTableCellElement>, "className" | "children" | "scope">) {
   return (
     <th
-      scope="col"
+      scope={scope}
       className={cn(
         "px-4 py-3.5 text-xs font-medium sm:text-sm",
         numeric ? "text-end" : "text-start",

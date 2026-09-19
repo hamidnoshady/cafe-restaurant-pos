@@ -15,6 +15,7 @@ import type { ShiftOrder, ShiftOrderLine } from "@/lib/shift-orders";
 import { ModifierBadges } from "../modifier-badges";
 import { Button } from "@/components/ui/button";
 import { api, inputClass } from "../ui";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 /** Mirrors shift-orders-service.ts's ShiftOrdersReport — declared here rather than imported so the client bundle never reaches a module that imports db.ts. */
 interface ShiftOption {
@@ -112,8 +113,8 @@ function LineRow({ line }: { line: ShiftOrderLine }) {
   });
 
   return (
-    <tr className="border-t border-border align-top">
-      <td className="py-2 pe-3">
+    <DataTableRow className="align-top">
+      <Td>
         <span className={line.voided ? "text-muted-foreground line-through" : "text-foreground"}>{line.name}</span>
         {line.voided ? <span className="ms-2 text-[11px] font-bold text-destructive">باطل‌شده</span> : null}
         <ModifierBadges modifiers={line.modifiers} tone="amber" className="mt-1.5" />
@@ -127,32 +128,33 @@ function LineRow({ line }: { line: ShiftOrderLine }) {
         {line.voidReason ? (
           <p className="mt-1 text-xs text-destructive">دلیل ابطال: {line.voidReason}</p>
         ) : null}
-      </td>
-      <td className="py-2 pe-3 tabular-nums text-muted-foreground">×{toPersianDigits(line.quantity)}</td>
-      <td className="py-2 tabular-nums text-muted-foreground">{money.format(line.amount)}</td>
-    </tr>
+      </Td>
+      <Td numeric muted>×{toPersianDigits(line.quantity)}</Td>
+      <Td numeric muted>{money.format(line.amount)}</Td>
+    </DataTableRow>
   );
 }
 
 function LineTable({ lines }: { lines: ShiftOrderLine[] }) {
   if (lines.length === 0) return null;
   return (
-    <div className="-mx-1 overflow-x-auto px-1">
-      <table className="min-w-[28rem] w-full text-sm">
-        <thead>
-          <tr className="text-xs text-muted-foreground">
-            <th className="pb-2 pe-3 text-start font-medium">قلم</th>
-            <th className="pb-2 pe-3 text-start font-medium">تعداد</th>
-            <th className="pb-2 text-start font-medium">مبلغ</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => (
-            <LineRow key={line.itemId} line={line} />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      caption="اقلام این سفارش"
+      frame={false}
+      className="-mx-1 px-1"
+      tableClassName="min-w-[28rem]"
+    >
+      <DataTableHead>
+        <Th>قلم</Th>
+        <Th numeric>تعداد</Th>
+        <Th numeric>مبلغ</Th>
+      </DataTableHead>
+      <DataTableBody>
+        {lines.map((line) => (
+          <LineRow key={line.itemId} line={line} />
+        ))}
+      </DataTableBody>
+    </DataTable>
   );
 }
 
