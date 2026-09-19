@@ -57,8 +57,7 @@ jobs:
           $files = @(
             "electron/main.js",
             "electron/preload.js",
-            "electron/scripts/prepare-wincodesign-cache.js",
-            "windows/usb-printer-bridge.js"
+            "electron/scripts/prepare-wincodesign-cache.js"
           )
           foreach ($f in $files) {
             node --check $f
@@ -230,16 +229,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # These two .ps1 files are downloaded and executed on a cafe PC. Nothing
-      # else in the repo executes them, so a syntax error ships silently and
+      # This .ps1 file is downloaded and executed on a cafe PC. Nothing
+      # else in the repo executes it, so a syntax error ships silently and
       # only shows up when a cashier clicks "install the printer connector".
       # Parsing is done without running a single line.
       - name: PowerShell scripts parse
         run: |
           $ErrorActionPreference = "Stop"
           $files = @(
-            "public/windows/cafe-pos-print-agent.ps1",
-            "windows/Install-CafePOS.ps1"
+            "public/windows/cafe-pos-print-connector.ps1"
           )
           $failed = $false
           foreach ($f in $files) {

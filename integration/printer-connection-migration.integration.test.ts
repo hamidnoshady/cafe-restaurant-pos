@@ -122,9 +122,14 @@ async function connectionOf(name: string): Promise<Record<string, unknown>> {
 describe("migration 0155 — printer connection model", () => {
   it("applies the upgrade step on top of a 0153 database", async () => {
     // Running the FULL history is idempotent — schema_migrations skips every
-    // applied file — so exactly one migration (0155) lands here.
+    // applied file — so every migration from 0155 onward lands here. Keeping
+    // the expectation derived from the migration directory prevents a later
+    // forward migration from breaking this 0155-specific data-shape test.
     const result = await runMigrations({ databaseUrl: urlFor(databaseName), quiet: true });
-    expect(result.applied).toBe(1);
+    const expectedApplied = readdirSync(join(process.cwd(), "migrations"))
+      .filter((name) => /^\d{4}_.+\.sql$/.test(name) && name >= "0155_printer_connection_model.sql")
+      .length;
+    expect(result.applied).toBe(expectedApplied);
   });
 
   it("maps system → windows, keeping the queue name and every behavioural field", async () => {
