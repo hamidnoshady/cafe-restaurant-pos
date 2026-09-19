@@ -268,6 +268,10 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   "ai/projects/[id]": "reads/updates/archives a project — RLS + ownership",
   "ai/projects/[id]/notes": "lists/adds notes to a project — RLS through parent project",
   "ai/projects/[id]/notes/[noteId]": "deletes a note — RLS through parent project",
+  // Phase F — project memory (standing facts fed into project chat context)
+  // reaches tenant scope through its parent project, exactly like notes.
+  "ai/projects/[id]/memory": "lists/adds memory to a project — RLS through parent project",
+  "ai/projects/[id]/memory/[memoryId]": "deletes a memory entry — RLS through parent project",
 };
 
 /** True for the super-admin console's own routes, which use the platform guards. */

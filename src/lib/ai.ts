@@ -634,6 +634,15 @@ export interface PromptContext {
     instructions: string;
     actionTypes: ActionType[];
   };
+  /**
+   * Phase F — when a dashboard turn's conversation belongs to a project, the
+   * project's standing instruction, note titles and remembered facts are
+   * rendered (by ai-projects.buildProjectPromptContext) into this block and
+   * appended to the grounded prompt. It informs the assistant; it never widens
+   * what the assistant may DO — the action catalogue is still gated by mode and
+   * agent scope, unchanged.
+   */
+  projectContext?: string | null;
 }
 
 const WIZARD_STEP_LABELS: Record<string, string> = {
@@ -756,6 +765,13 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       `تو به‌عنوان ایجنت «${ctx.agent.name}» کار می‌کنی. قواعد پایهٔ بالا همیشه برقرارند؛ در همان چارچوب طبق این دستورالعمل رفتار کن:`,
     );
     if (ctx.agent.instructions.trim()) lines.push(ctx.agent.instructions.trim());
+  }
+
+  // Phase F — the project workspace this conversation lives in. Informs the
+  // assistant (standing instruction, notes, remembered facts); it never widens
+  // the action catalogue, which stays gated by mode and agent scope above.
+  if ((ctx.mode === "dashboard" || ctx.mode === "wizard") && ctx.projectContext?.trim()) {
+    lines.push(ctx.projectContext.trim());
   }
 
   return lines.filter(Boolean).join("\n");

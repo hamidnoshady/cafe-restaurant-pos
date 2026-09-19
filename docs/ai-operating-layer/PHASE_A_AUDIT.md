@@ -600,3 +600,71 @@ double submit, dismiss); `tenant-isolation.integration.test.ts` now covers
 
 **Phase E COMPLETE.** Next in the agreed sequence: **Phase F — Projects as
 workspaces (memory / files / project chat).**
+
+## 6f. Phase F — Part 1 DELIVERED (projects become workspaces: live context + memory)
+
+Phase F turns a project from a folder that merely *groups* threads into a
+WORKSPACE that *shapes* them. Part 1 closes the gap the audit named in §1.5 and
+adds the first new workspace surface.
+
+**The dead-code gap, closed.** `buildProjectPromptContext`,
+`getConversationProjectId` and `listConversationsByProject` were all written
+"for prompt injection" at Phase 35 Wave 3 and then never called — a project's
+standing instruction and notes never reached the model, so a project could not
+influence a single reply. Part 1 wires them into the live chat turn:
+
+- `ai-projects.ts` gains `getProjectPromptContext` (loads instruction + notes +
+  memory for a business's project in one tenant-scoped pass) and
+  `buildProjectPromptContext` now renders the whole `ProjectContext` — project
+  NAME, instruction, note titles, and memory — while staying backward
+  compatible with its old `(instructions, notes)` signature (existing
+  tests/callers unchanged).
+- `PromptContext.projectContext` (in `ai.ts`) carries the rendered block;
+  `buildSystemPrompt` appends it on dashboard/wizard turns AFTER the grounding
+  rules and action catalogue. It INFORMS the assistant; it never widens what the
+  assistant may DO — the catalogue is still gated by mode and agent scope.
+- `api/ai/chat/route.ts`: accepts `projectId` (used only when a NEW conversation
+  is created — resuming keeps the conversation's existing project), resolves the
+  conversation's project via `getConversationProjectId`, loads and renders the
+  context, and **excludes project-scoped turns from the shared answer cache**
+  (a project-shaped answer must not be served to a project-less turn, and vice
+  versa) — the same reasoning already applied to agent-scoped turns.
+- UI: `useAiChat({ projectId })` sends it on new conversations only;
+  `ai-workspace.tsx` and the dashboard `ai-chat-hub.tsx` read `?project=<id>`;
+  the project page's Conversations card gains a "چت در این پروژه" link.
+
+**Project memory (new surface).** `migrations/0158_ai_project_memory.sql` adds
+`ai_project_memory` — short, standing FACTS the assistant carries for a project
+("the owner rounds Toman to the nearest thousand", "this campaign targets lapsed
+lunch customers"), distinct from human-authored NOTES. It reaches tenant scope
+through its parent `ai_projects` row (same shape as `ai_project_notes`, 0111) and
+so is automatically covered by the tenant-isolation suite (20/20). It carries a
+`source` column ('user' | 'ai') so AI-authored memory (a Part 2 concern) has a
+home without a schema change. Bounds enforced server-side
+(`PROJECT_MEMORY_CHAR_LIMIT` 500, `PROJECT_MEMORY_MAX_ENTRIES` 50) so the prompt
+context it feeds can never grow without limit. Service:
+`addMemory`/`listMemory`/`deleteMemory`. Routes:
+`api/ai/projects/[id]/memory` (GET/POST) and `.../memory/[memoryId]` (DELETE),
+ownership-as-authorization through the parent project (recorded in the
+api-guards self-guarding list). UI: a memory panel on the project page.
+
+**Incidental fix.** `createProject` bound one placeholder (`$4`) to both a text
+column (`created_by`) and a uuid column (`owner_user_id`), which Postgres
+refuses to type-deduce ("inconsistent types deduced for parameter $4"); the path
+had no test. Split into two placeholders, behaviour preserved (owner defaults to
+the creator).
+
+**Tests.** `ai-projects.test.ts` extended (23/23: the ProjectContext form, the
+memory block, the name line, backward compat, bounds constants); new
+`integration/ai-project-memory.integration.test.ts` (8/8: create/read,
+char-limit + empty + full bounds, delete, and the prompt-context round-trip that
+proves a project finally shapes a turn, plus cross-tenant null);
+`tenant-isolation` covers 0158; `api-guards` extended. Full suite **4820 unit
+tests / 326 files**; `tsc` clean.
+
+**Deferred to Phase F Part 2+:** AI-authored memory through a confirmed action,
+project files (link table to the Media Library — waits on Phase G provenance
+columns), project tasks, project members, and entity `project_id` FKs on
+agents/coworkers/automations. Part 1 deliberately keeps memory human-curated so
+the write path and the prompt-context path could land, reviewed, without also
+introducing a new catalogue action in the same step.

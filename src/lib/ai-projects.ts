@@ -17,12 +17,16 @@
 import { query } from "./db";
 import {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
+  PROJECT_MEMORY_CHAR_LIMIT,
+  PROJECT_MEMORY_MAX_ENTRIES,
   instructionWeight,
   isOverInstructionLimit,
   clampInstructions,
 } from "./ai-projects-shared";
 export {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
+  PROJECT_MEMORY_CHAR_LIMIT,
+  PROJECT_MEMORY_MAX_ENTRIES,
   instructionWeight,
   isOverInstructionLimit,
   clampInstructions,
@@ -67,6 +71,17 @@ export interface AiProjectWithNoteCount extends AiProject {
   conversationCount: number;
 }
 
+export interface AiProjectMemory {
+  id: string;
+  projectId: string;
+  content: string;
+  /** 'user' when a person added it; 'ai' when a confirmed assistant action did. */
+  source: "user" | "ai";
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface Owner {
   businessId: string;
   actorUserId: string;
@@ -108,13 +123,13 @@ export async function createProject(
   const { rows } = await query<ProjectRow>(
     `WITH inserted AS (
        INSERT INTO ai_projects (business_id, name, instructions, created_by, owner_user_id)
-       VALUES ($1, $2, $3, $4, $4)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *
      )
      SELECT i.id, i.name, i.instructions, i.created_by, i.archived_at, i.created_at,
             i.status, i.owner_user_id, u.full_name AS owner_name, i.budget_rial, i.updated_at
        FROM inserted i LEFT JOIN users u ON u.id = i.owner_user_id AND u.business_id = $1`,
-    [owner.businessId, name, instructions, owner.actorUserId],
+    [owner.businessId, name, instructions, owner.actorUserId, owner.actorUserId],
   );
   return toProject(rows[0]);
 }
@@ -382,22 +397,152 @@ export async function deleteNote(
   return (rowCount ?? 0) > 0;
 }
 
+// ---------------------------------------------------------------------------
+// Memory
+// ---------------------------------------------------------------------------
+
+type MemoryRow = {
+  id: string; project_id: string; content: string; source: string;
+  created_by: string; created_at: string; updated_at: string;
+};
+
+function toMemory(row: MemoryRow): AiProjectMemory {
+  return {
+    id: row.id, projectId: row.project_id, content: row.content,
+    source: row.source === "ai" ? "ai" : "user",
+    createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Records a standing fact for a project. `source` distinguishes a human note
+ * added on the project page ('user') from a fact the assistant was asked to
+ * remember through a confirmed action ('ai'). Bounded on both length and count
+ * so the prompt context it feeds can never grow without limit.
+ */
+export async function addMemory(
+  owner: Owner & { projectId: string },
+  input: { content: string; source?: "user" | "ai"; createdBy?: string },
+): Promise<AiProjectMemory> {
+  const content = input.content.trim();
+  if (!content) throw new Error("Memory content is required");
+  if (content.length > PROJECT_MEMORY_CHAR_LIMIT) {
+    throw new Error("Memory exceeds the character limit");
+  }
+
+  const project = await getProject(owner);
+  if (!project) throw new Error("Project not found");
+
+  const { rows: countRows } = await query<{ count: string }>(
+    `SELECT count(*) AS count FROM ai_project_memory WHERE project_id = $1`,
+    [owner.projectId],
+  );
+  if (Number(countRows[0].count) >= PROJECT_MEMORY_MAX_ENTRIES) {
+    throw new Error("Project memory is full");
+  }
+
+  const source = input.source === "ai" ? "ai" : "user";
+  const createdBy = input.createdBy?.trim() || owner.actorUserId;
+  const { rows } = await query<MemoryRow>(
+    `INSERT INTO ai_project_memory (project_id, content, source, created_by)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, project_id, content, source, created_by, created_at, updated_at`,
+    [owner.projectId, content, source, createdBy],
+  );
+  return toMemory(rows[0]);
+}
+
+export async function listMemory(
+  owner: Owner & { projectId: string },
+): Promise<AiProjectMemory[]> {
+  const { rows } = await query<MemoryRow>(
+    `SELECT id, project_id, content, source, created_by, created_at, updated_at
+       FROM ai_project_memory
+      WHERE project_id = $1
+      ORDER BY created_at ASC`,
+    [owner.projectId],
+  );
+  return rows.map(toMemory);
+}
+
+export async function deleteMemory(
+  owner: Owner & { projectId: string; memoryId: string },
+): Promise<boolean> {
+  // Delete only through the parent project this business owns — the same
+  // ownership join deleteNote uses.
+  const { rowCount } = await query(
+    `DELETE FROM ai_project_memory m
+      USING ai_projects p
+      WHERE m.id = $1 AND m.project_id = $2
+        AND p.id = m.project_id AND p.business_id = $3`,
+    [owner.memoryId, owner.projectId, owner.businessId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Prompt context
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything a project contributes to a turn's system prompt, loaded in one
+ * tenant-scoped pass: the standing instruction, the note titles, and the
+ * remembered facts. `getProjectPromptContext` reads it from the DB;
+ * `buildProjectPromptContext` renders it — split so the renderer stays pure and
+ * unit-testable without a database.
+ */
+export interface ProjectContext {
+  name: string;
+  instructions: string;
+  notes: AiProjectNote[];
+  memory: AiProjectMemory[];
+}
+
+/**
+ * Loads the full prompt context for a project the given business owns, or null
+ * if the project does not exist / is not this tenant's. This is the read the
+ * chat route runs for a conversation that belongs to a project.
+ */
+export async function getProjectPromptContext(
+  owner: Owner & { projectId: string },
+): Promise<ProjectContext | null> {
+  const project = await getProject(owner);
+  if (!project) return null;
+  const [notes, memory] = await Promise.all([listNotes(owner), listMemory(owner)]);
+  return { name: project.name, instructions: project.instructions, notes, memory };
+}
+
 /**
  * Builds the project context to inject into the system prompt for a
  * conversation that belongs to this project. Returns empty string if the
- * project has no instructions and no notes.
+ * project has no instructions, no notes and no memory.
+ *
+ * Accepts either the loaded `ProjectContext` (the live path) or the legacy
+ * `(instructions, notes)` pair (kept so existing callers/tests keep working).
  */
 export function buildProjectPromptContext(
-  instructions: string,
-  notes: AiProjectNote[],
+  instructionsOrContext: string | ProjectContext,
+  notes: AiProjectNote[] = [],
 ): string {
+  const ctx: { instructions: string; notes: AiProjectNote[]; memory: AiProjectMemory[]; name?: string } =
+    typeof instructionsOrContext === "string"
+      ? { instructions: instructionsOrContext, notes, memory: [] }
+      : instructionsOrContext;
+
   const parts: string[] = [];
-  if (instructions.trim()) {
-    parts.push(`دستور پروژه:\n${instructions.trim()}`);
+  if (ctx.name) {
+    parts.push(`این گفت‌وگو در پروژهٔ «${ctx.name}» است.`);
   }
-  if (notes.length > 0) {
-    const noteList = notes.map((n) => `- ${n.title}`).join("\n");
+  if (ctx.instructions.trim()) {
+    parts.push(`دستور پروژه:\n${ctx.instructions.trim()}`);
+  }
+  if (ctx.notes.length > 0) {
+    const noteList = ctx.notes.map((n) => `- ${n.title}`).join("\n");
     parts.push(`یادداشت‌های پروژه:\n${noteList}`);
+  }
+  if (ctx.memory.length > 0) {
+    const memoryList = ctx.memory.map((m) => `- ${m.content}`).join("\n");
+    parts.push(`حافظهٔ پروژه (نکاتی که باید به یاد داشته باشی):\n${memoryList}`);
   }
   return parts.join("\n\n");
 }

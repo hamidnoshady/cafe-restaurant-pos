@@ -10,7 +10,12 @@ import {
   settleAiTurn,
 } from "@/lib/ai-wallet-billing";
 import { createAiActionAudit } from "@/lib/ai-action-audit";
-import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
+import {
+  appendMessage,
+  getConversationProjectId,
+  getOrCreateConversation,
+} from "@/lib/ai-conversations";
+import { buildProjectPromptContext, getProjectPromptContext } from "@/lib/ai-projects";
 import { createInputRequest } from "@/lib/ai-input-requests-service";
 import {
   parseChatAttachments,
@@ -72,6 +77,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     messages?: unknown;
     currentStep?: unknown;
     conversationId?: unknown;
+    /** Phase F — start this conversation inside a project workspace. */
+    projectId?: unknown;
     attachment?: unknown;
     /** Wave 5 extension — one or more attachments (image and/or PDF). */
     attachments?: unknown;
@@ -209,6 +216,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     typeof body.conversationId === "string" && body.conversationId.trim()
       ? body.conversationId.trim()
       : null;
+  const requestedProjectId =
+    typeof body.projectId === "string" && body.projectId.trim()
+      ? body.projectId.trim()
+      : null;
   let conversationId: string | null = null;
   try {
     const conversation = await getOrCreateConversation({
@@ -217,11 +228,38 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       mode,
       conversationId: requestedConversationId,
       firstMessageContent: latestPrompt,
+      // A project link is set only when a new conversation is started; resuming
+      // an existing one keeps whatever project it already carries.
+      projectId: requestedProjectId,
     });
     conversationId = conversation.id;
     await appendMessage({ conversationId, role: "user", content: latestPrompt });
   } catch (err) {
     console.error("ai conversation persistence failed", err);
+  }
+
+  // Phase F — if this conversation belongs to a project, load the project's
+  // standing instruction, notes and remembered facts and render them into the
+  // prompt. Best-effort: a failure here degrades to a project-unaware turn, it
+  // never fails the turn. Only dashboard/wizard turns carry a project.
+  let projectContext: string | null = null;
+  if (conversationId && (mode === "dashboard" || mode === "wizard")) {
+    try {
+      const projectId = await getConversationProjectId(session.businessId, conversationId);
+      if (projectId) {
+        const ctx = await getProjectPromptContext({
+          businessId: session.businessId,
+          actorUserId: session.sub,
+          projectId,
+        });
+        if (ctx) {
+          projectContext = buildProjectPromptContext(ctx);
+          promptContext.projectContext = projectContext;
+        }
+      }
+    } catch (err) {
+      console.error("ai project context load failed", err);
+    }
   }
 
   // Phase 36 Wave 7 — the question's embedding, over the shared platform
@@ -234,8 +272,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   // instructions — so it never shares the general assistant's answer cache: a
   // cached full-assistant answer must not surface inside a scoped agent, and a
   // scoped agent's answer must not be served to the full assistant.
+  // Phase F — a project-scoped turn is shaped by the project's instruction,
+  // notes and memory, so it never shares the general answer cache: a generic
+  // cached answer must not surface inside a project, and a project-shaped
+  // answer must not be served to a project-less turn.
   const cacheCandidate =
     !agentScope &&
+    !projectContext &&
     (mode === "dashboard" || mode === "floor") &&
     attachments.length === 0 &&
     latestPrompt.trim();

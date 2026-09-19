@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowRightIcon,
+  BrainIcon,
   MessageSquareIcon,
   PencilIcon,
   PlusIcon,
@@ -20,6 +21,8 @@ import { PageHeader, PageShell, SectionCard, cardClass } from "@/app/dashboard/p
 import { api, inputClass } from "@/app/dashboard/ui";
 import {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
+  PROJECT_MEMORY_CHAR_LIMIT,
+  PROJECT_MEMORY_MAX_ENTRIES,
   instructionWeight,
 } from "@/lib/ai-projects-shared";
 import { formatPersianNumber } from "@/lib/digits";
@@ -58,6 +61,16 @@ interface Conversation {
   projectId: string | null;
 }
 
+interface Memory {
+  id: string;
+  projectId: string;
+  content: string;
+  source: "user" | "ai";
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -69,7 +82,10 @@ export default function ProjectDetailPage() {
   const [ownerDraft, setOwnerDraft] = useState("");
   const [budgetDraft, setBudgetDraft] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
+  const [memory, setMemory] = useState<Memory[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [showAddMemory, setShowAddMemory] = useState(false);
+  const [memoryDraft, setMemoryDraft] = useState("");
   const [editingInstructions, setEditingInstructions] = useState(false);
   const [instructionsDraft, setInstructionsDraft] = useState("");
   const [showAddNote, setShowAddNote] = useState(false);
@@ -78,9 +94,10 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const [projRes, notesRes, convsRes] = await Promise.all([
+    const [projRes, notesRes, memoryRes, convsRes] = await Promise.all([
       api<{ project: Project; cost: Cost; owners: OwnerOption[] }>(`/api/ai/projects/${id}`),
       api<{ notes: Note[] }>(`/api/ai/projects/${id}/notes`),
+      api<{ memory: Memory[] }>(`/api/ai/projects/${id}/memory`),
       api<{ conversations: Conversation[] }>(`/api/ai/conversations?limit=50`),
     ]);
     if (projRes.ok) {
@@ -89,6 +106,7 @@ export default function ProjectDetailPage() {
       setOwners(projRes.data.owners);
     }
     if (notesRes.ok) setNotes(notesRes.data.notes);
+    if (memoryRes.ok) setMemory(memoryRes.data.memory);
     if (convsRes.ok) {
       setConversations(
         convsRes.data.conversations.filter((c: Conversation) => c.projectId === id),
@@ -165,6 +183,32 @@ export default function ProjectDetailPage() {
   async function handleDeleteNote(noteId: string) {
     await api(`/api/ai/projects/${id}/notes/${noteId}`, { method: "DELETE" });
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  }
+
+  async function handleAddMemory() {
+    const content = memoryDraft.trim();
+    if (!content) return;
+    setError("");
+    const { ok, data } = await api<{ memory: Memory }>(
+      `/api/ai/projects/${id}/memory`,
+      {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      },
+    );
+    if (ok) {
+      setMemory((prev) => [...prev, data.memory]);
+      setMemoryDraft("");
+      setShowAddMemory(false);
+    } else {
+      const err = data as unknown as Record<string, string>;
+      setError(err.error ?? "خطا در افزودن حافظه");
+    }
+  }
+
+  async function handleDeleteMemory(memoryId: string) {
+    await api(`/api/ai/projects/${id}/memory/${memoryId}`, { method: "DELETE" });
+    setMemory((prev) => prev.filter((m) => m.id !== memoryId));
   }
 
   if (!project) return <DashboardPageSkeleton />;
@@ -265,7 +309,17 @@ export default function ProjectDetailPage() {
           </SectionCard>
 
           {/* Conversations */}
-          <SectionCard title={`گفت‌وگوها (${conversations.length})`}>
+          <SectionCard
+            title={`گفت‌وگوها (${conversations.length})`}
+            actions={
+              <Link href={`/dashboard?project=${id}`}>
+                <Button variant="outline" size="sm">
+                  <MessageSquareIcon className="size-3" />
+                  چت در این پروژه
+                </Button>
+              </Link>
+            }
+          >
             <div className="p-4">
               {conversations.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
@@ -389,6 +443,91 @@ export default function ProjectDetailPage() {
                     <p className="mt-1.5 line-clamp-3 text-xs text-muted-foreground">
                       {note.content}
                     </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Memory — standing facts the assistant carries into every thread
+              of this project. */}
+          <div className="flex items-center justify-between pt-2">
+            <h2 className="text-sm font-semibold text-foreground">
+              حافظهٔ پروژه ({memory.length})
+            </h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAddMemory(true)}
+              disabled={memory.length >= PROJECT_MEMORY_MAX_ENTRIES}
+            >
+              <PlusIcon className="size-3" />
+              نکته
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            نکاتی که دستیار باید در همهٔ گفت‌وگوهای این پروژه به یاد داشته باشد.
+          </p>
+
+          {showAddMemory && (
+            <div className={`${cardClass} p-3`}>
+              <textarea
+                value={memoryDraft}
+                onChange={(e) => setMemoryDraft(e.target.value.slice(0, PROJECT_MEMORY_CHAR_LIMIT))}
+                rows={2}
+                placeholder="یک نکتهٔ کوتاه که باید به خاطر بماند"
+                className={`${inputClass} mb-1`}
+                autoFocus
+              />
+              <p className="mb-2 text-left text-[11px] text-muted-foreground">
+                {formatPersianNumber(PROJECT_MEMORY_CHAR_LIMIT - memoryDraft.length)}
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleAddMemory} disabled={!memoryDraft.trim()}>
+                  ذخیره
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowAddMemory(false);
+                    setMemoryDraft("");
+                  }}
+                >
+                  انصراف
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {memory.length === 0 && !showAddMemory ? (
+            <p className="text-xs text-muted-foreground">حافظه‌ای ثبت نشده.</p>
+          ) : (
+            <div className="space-y-2">
+              {memory.map((item) => (
+                <div
+                  key={item.id}
+                  className="group rounded-xl border border-border/80 bg-card p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-1.5">
+                      <BrainIcon className="mt-0.5 size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+                      <p className="text-xs text-foreground">{item.content}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMemory(item.id)}
+                      aria-label="حذف نکتهٔ حافظه"
+                      className="rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 outline-none focus-visible:ring focus-visible:ring-ring/50 focus-visible:opacity-100"
+                      title="حذف"
+                    >
+                      <TrashIcon className="size-3.5" />
+                    </button>
+                  </div>
+                  {item.source === "ai" && (
+                    <span className="mt-1 inline-block rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
+                      ثبت‌شده توسط دستیار
+                    </span>
                   )}
                 </div>
               ))}

@@ -11,13 +11,19 @@
  */
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAiChat } from "@/components/ai/use-ai-chat";
 import { AiChatHub } from "./ai-chat-hub";
 import { AiSidebar } from "./ai-sidebar";
 import { overlayPanelClass } from "../page-chrome";
 
 export function AiWorkspace() {
-  const chat = useAiChat({ mode: "dashboard" });
+  const searchParams = useSearchParams();
+  // Phase F — `?project=<id>` (set by the "چت در این پروژه" link on a project
+  // page) starts new conversations inside that project's workspace, so their
+  // turns are shaped by the project's instruction, notes and memory.
+  const projectId = searchParams.get("project");
+  const chat = useAiChat({ mode: "dashboard", projectId });
   const [navOpen, setNavOpen] = useState(false);
 
   // The drawer is a modal layer, so it owes the two things every modal owes:

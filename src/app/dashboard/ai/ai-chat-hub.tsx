@@ -37,10 +37,16 @@ export function AiChatHub({
   onOpenNav?: () => void;
 }) {
   const locked = useFeatureLocked();
-  const internalChat = useAiChat({ mode: "dashboard" });
+  const searchParams = useSearchParams();
+  // Phase F — `?project=<id>` starts new conversations inside that project's
+  // workspace. Only the internal chat needs it; when a parent supplies the chat
+  // state (the /ai workspace) it has already wired its own projectId.
+  const internalChat = useAiChat({
+    mode: "dashboard",
+    projectId: searchParams.get("project"),
+  });
   const chat = externalChat ?? internalChat;
 
-  const searchParams = useSearchParams();
   const money = useMoney();
   const scrollRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);

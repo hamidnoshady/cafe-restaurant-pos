@@ -149,6 +149,13 @@ export interface UseAiChatOptions {
   currentStep?: string | null;
   /** Called whenever the active conversation id changes (new turn, load, reset). */
   onConversationIdChange?: (id: string | null) => void;
+  /**
+   * Phase F — when set, a NEW conversation started from this hook is linked to
+   * this project, so its turns are shaped by the project's instruction, notes
+   * and memory. Ignored once a conversation already exists (resuming keeps the
+   * project the conversation already carries).
+   */
+  projectId?: string | null;
 }
 
 /** The shape returned by `useAiChat` — shared by the chat panel and the assistant's own nav. */
@@ -158,6 +165,7 @@ export function useAiChat({
   mode,
   currentStep,
   onConversationIdChange,
+  projectId = null,
 }: UseAiChatOptions) {
   const router = useRouter();
   const canPropose = mode === "wizard" || mode === "dashboard";
@@ -417,6 +425,9 @@ export function useAiChat({
           mode,
           currentStep: currentStep ?? null,
           conversationId,
+          // Only meaningful when starting a new conversation; the backend
+          // ignores it for an existing one.
+          projectId: conversationId ? undefined : projectId ?? undefined,
           messages: history.map((message) => ({
             role: message.role,
             content: message.content,
