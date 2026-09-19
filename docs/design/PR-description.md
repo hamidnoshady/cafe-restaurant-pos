@@ -135,10 +135,24 @@ recorded in `docs/design/test-results.md` rather than dropped.
 ## Gate
 
 `tsc --noEmit` clean · `npm test` 4760/4760 · `npm run test:db` 1181 passed, 1
-skipped · `npm run build` clean · `npm run test:design` 34/34 ·
+skipped · `npm run build` clean · `npm run test:design` 36/36 ·
 `npm run test:visual` 14/14 · migrated routes verified 200 with an
 authenticated session.
 
-CI cannot corroborate any of this: the workflow is in place and correct, but
-GitHub runners refuse to start on an account-level billing/spending-limit
-failure. Every result above is from local runs.
+CI cannot corroborate any of this, and the reason is not this branch. The
+`type check` job of the most recent run lasted two seconds and carries the
+annotation *"The job was not started because recent account payments have failed
+or your spending limit needs to be increased"*; all six jobs failed identically
+and instantly, and pushes since then schedule no run at all. The same workflow
+**succeeded** earlier that day, so the file itself is executable — this is an
+account-level billing block only the owner can clear in **Billing & plans**.
+`gh run rerun` refuses and `gh workflow run` returns 403 for the available
+token, so it cannot be forced from here.
+
+In its place the workflow was checked statically: all five workflow files parse,
+`required` fans in all six jobs with no dangling `needs` and no job escaping the
+gate, **no job passes `--update`** to the visual harness (so CI can never
+auto-accept a baseline), and `JWT_SECRET` is set to a real value at both
+workflow and job scope — the placeholder-secret failure that broke the local run
+cannot recur there. Every test result above is from a local run; the workflow is
+*unexercised*, not *passing*.
