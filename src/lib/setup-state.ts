@@ -154,6 +154,8 @@ export interface LocationRow extends Record<string, unknown> {
   name: string;
   address: string | null;
   phone: string | null;
+  /** The branch's IANA time zone, used when a screen turns an instant into a local Jalali date. */
+  timezone: string;
   /**
    * The branch's identifying colour (migration 0149). Carried on every
    * location read because the switcher in the shell header paints itself with
@@ -173,7 +175,7 @@ export async function getPrimaryLocation(
   businessId: string,
 ): Promise<LocationRow | null> {
   const { rows } = await query<LocationRow>(
-    `SELECT id, name, address, phone, color FROM locations
+    `SELECT id, name, address, phone, timezone, color FROM locations
       WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1`,
     [businessId],
   );
@@ -185,7 +187,7 @@ export async function businessLocations(
   businessId: string,
 ): Promise<LocationRow[]> {
   const { rows } = await query<LocationRow>(
-    `SELECT id, name, address, phone, color FROM locations
+    `SELECT id, name, address, phone, timezone, color FROM locations
       WHERE business_id = $1 AND is_active ORDER BY created_at`,
     [businessId],
   );

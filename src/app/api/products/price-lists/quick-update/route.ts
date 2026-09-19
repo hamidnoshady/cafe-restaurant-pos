@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { requireProductWorkspaceForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { quickUpdatePrices, type QuickUpdateTarget } from "@/lib/price-lists-service";
+import {
+  isValidQuickUpdateValue,
+  quickUpdatePrices,
+  type QuickUpdateTarget,
+} from "@/lib/price-lists-service";
 
 /** «بروزرسانی سریع»: one percent/amount move over a whole price column. */
 export const POST = withTenantScope(async (request: NextRequest) => {
@@ -31,8 +35,16 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (body.mode !== "percent" && body.mode !== "amount") {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
+  if (target.kind === "list" && typeof target.priceListId !== "string") {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
   const value = Number(body.value);
-  if (!Number.isFinite(value)) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  // A percent below -100 would mean "take more than the whole price away"; the
+  // clamp at zero would turn that into a branch-wide wipe to «unpriced»
+  // without saying so, so it is refused with a message the screen can show.
+  if (!isValidQuickUpdateValue(body.mode, value)) {
+    return NextResponse.json({ error: "invalid_quick_update_value" }, { status: 400 });
+  }
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });

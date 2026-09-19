@@ -95,8 +95,13 @@ export interface CreateRetailInvoiceInput {
   industry: Industry;
   lines: RetailInvoiceLineInput[];
   paymentMethod: SettlementMethod;
+  /** Named payment way and optional operator-entered reference, retained for history. */
+  paymentMethodId?: string | null;
+  paymentReference?: string | null;
   customerId?: string | null;
   note?: string | null;
+  /** Branch business date supplied by the route for loyalty-point expiry. */
+  businessDate?: string;
   createdBy?: string | null;
 }
 
@@ -105,8 +110,11 @@ export interface RetailInvoiceLine {
   itemId: string;
   name: string;
   quantity: string;
-  /** Line total excluding VAT — what `order_items.unit_price` × quantity comes to. */
+  /** Line total excluding VAT after line/promotion discounts. */
   net: RialText;
+  /** Pre-discount line total and discount, retained for the order header totals. */
+  gross?: RialText;
+  discount?: RialText;
   vat: RialText;
   total: RialText;
   /** Gold only: the components the customer is entitled to see on the invoice. */
@@ -249,6 +257,8 @@ export async function createRetailInvoice(
       itemId: settled.itemId,
       name: settled.name,
       quantity: settled.quantity,
+      gross: settled.gross,
+      discount: settled.discount,
       net: settled.net,
       vat: settled.vat,
       total: settled.total,
@@ -281,18 +291,20 @@ export async function createRetailInvoice(
     }
   }
 
-  const subtotal = sum(lines.map((l) => l.net));
+  const subtotal = sum(lines.map((l) => l.gross ?? l.net));
+  const discount = sum(lines.map((l) => l.discount ?? rialText("0")));
   const tax = sum(lines.map((l) => l.vat));
   const total = sum(lines.map((l) => l.total));
 
   await client.query(
     `UPDATE orders
-        SET subtotal = $2, tax = $3, total = $4,
-            status = 'completed', closed_by = $5, closed_at = now()
+        SET subtotal = $2, discount = $3, tax = $4, total = $5,
+            status = 'completed', closed_by = $6, closed_at = now()
       WHERE id = $1`,
     [
       orderId,
       rialBigInt(subtotal).toString(),
+      rialBigInt(discount).toString(),
       rialBigInt(tax).toString(),
       rialBigInt(total).toString(),
       input.createdBy ?? null,
@@ -303,8 +315,8 @@ export async function createRetailInvoice(
   // receipt all read. The ledger side was already posted by the per-line
   // service, so this records *how* it was collected, not a second posting.
   await client.query(
-    `INSERT INTO payments (location_id, order_id, method, amount, received_by)
-     VALUES ($1, $2, $3::payment_method, $4, $5)`,
+    `INSERT INTO payments (location_id, order_id, method, amount, reference, payment_method_id, received_by)
+     VALUES ($1, $2, $3::payment_method, $4, $5, $6, $7)`,
     [
       input.locationId,
       orderId,
@@ -313,6 +325,8 @@ export async function createRetailInvoice(
       // 'bank' is the ledger's name for what the till calls a card payment.
       input.paymentMethod === "bank" ? "card" : input.paymentMethod,
       rialBigInt(total).toString(),
+      input.paymentReference?.trim() || null,
+      input.paymentMethodId ?? null,
       input.createdBy ?? null,
     ],
   );
@@ -328,17 +342,20 @@ export async function createRetailInvoice(
       amountRial: total,
       sourceType: "retail_invoice",
       sourceId: orderId,
+      earnedOn: input.businessDate,
       createdBy: input.createdBy ?? null,
     });
   }
 
-  return { orderId, orderNumber, lines, subtotal, discount: rialText("0"), tax, total };
+  return { orderId, orderNumber, lines, subtotal, discount, tax, total };
 }
 
 interface SettledLine {
   itemId: string;
   name: string;
   quantity: string;
+  gross: RialText;
+  discount: RialText;
   net: RialText;
   vat: RialText;
   total: RialText;
@@ -443,6 +460,8 @@ async function settleLine(
       itemId: line.itemId,
       name: item.name,
       quantity: "1",
+      gross: net,
+      discount: rialText("0"),
       net,
       vat: breakdown.vat,
       total: breakdown.total,
@@ -479,6 +498,8 @@ async function settleLine(
       // The serial is what identifies the unit sold; a reprint has to show it.
       name: `${rows[0].name} — ${rows[0].serial_number}`,
       quantity: "1",
+      gross: breakdown.price,
+      discount: breakdown.discount,
       net: breakdown.net,
       vat: breakdown.vat,
       total: breakdown.total,
@@ -533,6 +554,8 @@ async function settleLine(
       itemId: line.itemId,
       name: item.name,
       quantity: line.quantity,
+      gross: tradeSale.breakdown.gross,
+      discount: tradeSale.breakdown.discount,
       net: tradeSale.breakdown.net,
       vat: tradeSale.breakdown.vat,
       total: tradeSale.breakdown.total,
@@ -558,6 +581,8 @@ async function settleLine(
     itemId: line.itemId,
     name: item.name,
     quantity: line.quantity,
+    gross: breakdown.gross,
+    discount: breakdown.discount,
     net: breakdown.net,
     vat: breakdown.vat,
     total: breakdown.total,

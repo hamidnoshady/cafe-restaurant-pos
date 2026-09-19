@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { PlugIcon } from "lucide-react";
-import { api } from "@/app/dashboard/ui";
+import { api, ErrorBox, errorMessageOrRaw } from "@/app/dashboard/ui";
 import { cardClass, EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { Button } from "@/components/ui/button";
 import { useFeatureLocked } from "@/components/feature-lock";
@@ -61,7 +61,7 @@ function useConnectionHost() {
       const res = await api<T>(path, { method, body: body ? JSON.stringify(body) : undefined });
       setBusy(false);
       if (!res.ok) {
-        setCallResult(String(res.data?.error ?? "خطا در اجرای عملیات"));
+        setCallResult(errorMessageOrRaw(String(res.data?.error ?? "")) || "خطا در اجرای عملیات");
         return null;
       }
       return res.data;
@@ -127,14 +127,7 @@ function HostFrame({
         <>
           <PluginWaitNote connections={connections} selectedId={selectedId} />
           {children}
-          {callResult ? (
-            <p
-              role="alert"
-              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-5 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
-            >
-              {callResult}
-            </p>
-          ) : null}
+          <ErrorBox>{callResult}</ErrorBox>
         </>
       ) : null}
     </div>

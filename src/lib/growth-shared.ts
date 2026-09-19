@@ -56,6 +56,13 @@ export function accountBalance(type: string, debit: number, credit: number): num
   return type === "asset" || type === "expense" ? debit - credit : credit - debit;
 }
 
+/** The same signed balance for PostgreSQL integer aggregates, without a lossy Number conversion. */
+export function accountBalanceText(type: string, debit: string, credit: string): string {
+  const result =
+    type === "asset" || type === "expense" ? BigInt(debit) - BigInt(credit) : BigInt(credit) - BigInt(debit);
+  return result.toString();
+}
+
 /** A rolling N-day window ending on `today`, inclusive on both ends. */
 export function rollingWindow(today: string, days = 30): { from: string; to: string } {
   const to = new Date(`${today}T00:00:00Z`);
