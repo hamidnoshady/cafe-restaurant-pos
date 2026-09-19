@@ -21,6 +21,7 @@ import {
   ActivityIcon,
   BotIcon,
   MessagesSquareIcon,
+  SparklesIcon,
   ZapIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import {
 
 const ICONS: Record<AiWorkspaceIconName, LucideIcon> = {
   chat: MessagesSquareIcon,
+  agents: SparklesIcon,
   coworkers: BotIcon,
   automations: ZapIcon,
   activity: ActivityIcon,

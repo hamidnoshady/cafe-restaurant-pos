@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentToolLabel,
   agentTurnScope,
   customAgentErrorMessage,
   selectableAgentActions,
@@ -87,6 +88,18 @@ describe("Phase D — custom agent validation", () => {
     expect(customAgentErrorMessage("unknown_tool:foo")).toContain("ابزار");
     expect(customAgentErrorMessage("unknown_action:foo")).toContain("عملیات");
     expect(customAgentErrorMessage("name_taken")).toContain("نام");
+  });
+
+  it("labels selectable tools in Persian, and falls back to the raw name", () => {
+    // Every tool the editor can offer has a human label — a bare tool name in
+    // the checkbox list would be an English leak in a Persian UI.
+    for (const tool of selectableAgentTools()) {
+      const label = agentToolLabel(tool);
+      expect(label.length).toBeGreaterThan(0);
+      expect(label).not.toBe(tool);
+    }
+    // An unregistered name falls back to itself rather than throwing.
+    expect(agentToolLabel("some_future_tool")).toBe("some_future_tool");
   });
 });
 

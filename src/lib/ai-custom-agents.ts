@@ -91,6 +91,61 @@ export function selectableAgentActions(): ActionType[] {
   );
 }
 
+/**
+ * Human names for the read tools an agent may allow, so the editor lists
+ * «مشتریان در معرض ریزش» rather than the raw `get_at_risk_customers`. A tool
+ * with no entry here falls back to its own name (harmless, and a visible nudge
+ * to add a label). Kept beside `selectableAgentTools` so the two never drift.
+ */
+export const AGENT_TOOL_LABELS: Record<string, string> = {
+  get_setup_state: "وضعیت راه‌اندازی کسب‌وکار",
+  list_reports: "فهرست گزارش‌های استاندارد",
+  run_report: "اجرای گزارش استاندارد",
+  get_customer_profile: "پروندهٔ یک مشتری",
+  get_at_risk_customers: "مشتریان در معرض ریزش",
+  find_customers: "جست‌وجوی مشتریان",
+  get_customer_timeline: "سابقهٔ فعالیت یک مشتری",
+  preview_customer_segment: "پیش‌نمایش یک بخش از مشتریان",
+  get_ar_aging: "سن‌بندی مطالبات",
+  forecast_demand: "پیش‌بینی تقاضا",
+  run_accounting_review: "بازبینی سلامت حساب‌ها",
+  find_items: "جست‌وجوی کالا و آیتم منو",
+  get_waste_history: "تاریخچهٔ ضایعات",
+  list_website_posts: "فهرست نوشته‌های وب‌سایت",
+  list_website_products: "فهرست محصولات وب‌سایت",
+  list_message_templates: "قالب‌های پیام",
+  get_menu_item_details: "جزئیات یک آیتم منو",
+  get_bill_split_preview: "پیش‌نمایش تقسیم صورت‌حساب",
+  get_backup_health: "سلامت پشتیبان‌گیری",
+  get_menu_performance: "عملکرد فروش منو",
+  get_void_pattern: "الگوی ابطال فاکتورها",
+  get_stock_valuation: "ارزش‌گذاری موجودی انبار",
+  get_supplier_performance: "عملکرد تأمین‌کنندگان",
+  get_reservation_conflicts: "تداخل رزروها",
+  get_table_turnover_rate: "نرخ چرخش میزها",
+  get_courier_performance: "عملکرد پیک‌ها",
+  list_customer_segments: "فهرست بخش‌های مشتریان",
+  get_ap_upcoming: "بدهی‌های سررسیدشونده",
+  get_unreconciled_bank_lines: "تراکنش‌های بانکی مغایرت‌دار",
+  get_payroll_summary: "خلاصهٔ حقوق و دستمزد",
+  get_vat_liability: "بدهی مالیات بر ارزش افزوده",
+  get_branch_comparison: "مقایسهٔ شعبه‌ها",
+  get_near_expiry_items: "کالاهای نزدیک به انقضا",
+  get_staff_commission: "پورسانت کارکنان",
+  get_repurchase_candidates: "مشتریان آمادهٔ خرید دوباره",
+  describe_app: "معرفی امکانات نرم‌افزار",
+  list_coworker_jobs: "فهرست کارهای همکار هوشمند",
+  get_website_status: "وضعیت وب‌سایت",
+  list_message_campaigns: "فهرست کمپین‌های پیام",
+  search_business_knowledge: "جست‌وجو در دانش کسب‌وکار",
+  request_input: "درخواست ورودی ساختارمند از کاربر",
+};
+
+/** The Persian label for a tool name, or the raw name if none is registered. */
+export function agentToolLabel(name: string): string {
+  return AGENT_TOOL_LABELS[name] ?? name;
+}
+
 function normalizeStringArray(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();

@@ -992,8 +992,47 @@ gaps.
 
 **Still to do in Phase I** (later parts): fold the workspace sections into the
 main navigation/rail as a first-class app (they are reachable from the chat rail
-and by URL now, not yet from the global nav); a custom-Agents management surface
-(the engine shipped in Phase D; `/api/ai/agents` exists, no UI yet); a
+and by URL now, not yet from the global nav); a
 Files/Knowledge and Usage section; and the richer structured-card chat polish
 (Parts 25–28). Phases **H** (#682) and **J** (#683) remain blocked on production
 access.
+
+### Phase I Part 2 — custom-Agents management surface (COMPLETE)
+
+The custom-Agents engine shipped in Phase D (`ai_custom_agents` table,
+`ai-custom-agents.ts` / `-service.ts`, `/api/ai/agents` CRUD) had no UI. This
+part gives it a first-class workspace section, built the same way as Part 1 so
+the chrome never drifts.
+
+- **New section, same registry.** Added an `agents` entry to
+  `ai-workspace-nav.ts` (label «ایجنت‌ها», Sparkles icon, owner/manager gate,
+  ordered before coworkers) and its key to `AI_WORKSPACE_SECTION_KEYS` /
+  `AiWorkspaceIconName`; `ai-workspace-subnav.tsx` maps the icon to lucide
+  `SparklesIcon`. So the section strip, active-section rule, and role gate all
+  update from one data change. The chat rail (`ai-sidebar.tsx`) links to
+  `/ai/agents` too.
+- **Management UI.** `agents/agents-manager.tsx` (new client) + `agents/page.tsx`
+  (new server, owner/manager gate + `ai_assistant` FeatureLock + `AiWorkspacePage`
+  chrome): list, create, edit, enable/disable, delete. The form is
+  name + instructions + a tool-allowlist (checkboxes labelled via the new
+  `agentToolLabel()`) + an action-allowlist (checkboxes labelled from
+  `ACTION_CATALOG`). Every write goes through the same `/api/ai/agents` the
+  engine already exposed, so an agent defined by hand and one referenced by the
+  chat route (`agentId`) are one object under one `requireManager` guard.
+- **Tool labels.** `ai-custom-agents.ts` gained `AGENT_TOOL_LABELS` +
+  `agentToolLabel()` covering all ~42 selectable read tools (filled in the ~22
+  that were missing, e.g. `get_menu_performance`, `get_void_pattern`,
+  `get_stock_valuation`), falling back to the raw name; a unit test enforces that
+  every `selectableAgentTools()` entry has a non-raw label.
+- **Scope decisions.** (a) The in-chat agent *picker* is deferred to a later part
+  — the chat route already accepts `agentId`, but no UI sends it yet; the
+  management surface lands first. (b) The classic workspace-shell flat nav is left
+  as-is (single «دستیار هوشمند» → `/ai`); the in-workspace sub-nav + chat rail are
+  the section navigator, so the flat-nav disclosure logic was not touched.
+- **Verification.** `tsc` clean; full suite **4863 unit / 329 files**. Live smoke
+  against embedded PG (migrations through 0162, seeded owner, `ai_assistant`
+  enabled): `/ai/agents` returns 200 and renders the section strip; the agents API
+  round-trips create (201) → update-with-action (200) → list (correct state) →
+  delete (200), and rejects an unknown tool (400). All five workspace routes
+  (`/ai`, `/ai/agents`, `/ai/coworkers`, `/ai/automations`, `/ai/activity`) return
+  200 authenticated with no render errors.

@@ -74,6 +74,7 @@ describe("active-section detection", () => {
 
   it("resolves the active section for a pathname, and null off the workspace", () => {
     expect(activeAiWorkspaceSection("/ai")).toBe("chat");
+    expect(activeAiWorkspaceSection("/ai/agents")).toBe("agents");
     expect(activeAiWorkspaceSection("/ai/coworkers")).toBe("coworkers");
     expect(activeAiWorkspaceSection("/ai/automations")).toBe("automations");
     expect(activeAiWorkspaceSection("/ai/activity")).toBe("activity");

@@ -24,6 +24,7 @@
 
 export const AI_WORKSPACE_SECTION_KEYS = [
   "chat",
+  "agents",
   "coworkers",
   "automations",
   "activity",
@@ -51,6 +52,7 @@ export interface AiWorkspaceSection {
  */
 export type AiWorkspaceIconName =
   | "chat"
+  | "agents"
   | "coworkers"
   | "automations"
   | "activity";
@@ -63,6 +65,13 @@ export const AI_WORKSPACE_SECTIONS: readonly AiWorkspaceSection[] = [
     description: "دستیار هوشمند: بپرس، بسپار، تأیید کن",
     href: "/ai",
     icon: "chat",
+  },
+  {
+    key: "agents",
+    label: "ایجنت‌ها",
+    description: "دستیارهای سفارشی: نقش، ابزارها و اجازهٔ عملیات",
+    href: "/ai/agents",
+    icon: "agents",
   },
   {
     key: "coworkers",

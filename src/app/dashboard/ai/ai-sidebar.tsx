@@ -18,6 +18,7 @@ import {
   BotIcon,
   FolderIcon,
   MessageSquarePlusIcon,
+  SparklesIcon,
   XIcon,
   ZapIcon,
 } from "lucide-react";
@@ -123,6 +124,7 @@ export function AiSidebar({
             one part of. Each is an ordinary page (not the pinned-composer chat),
             so these are plain links out of the rail. */}
         {[
+          { href: "/ai/agents", label: "ایجنت‌ها", icon: SparklesIcon },
           { href: "/ai/coworkers", label: "همکاران هوشمند", icon: BotIcon },
           { href: "/ai/automations", label: "اتوماسیون‌ها", icon: ZapIcon },
           { href: "/ai/activity", label: "فعالیت خودکار", icon: ActivityIcon },
