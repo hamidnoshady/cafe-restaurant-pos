@@ -313,6 +313,63 @@ planting a probe: a component containing a bare `<thead>` was written to
 hand-rolled table in an unlisted file is caught, and `TABLE_MIGRATION_BACKLOG`
 cannot be silently grown. The probe was deleted.
 
+## The merge with main, and the six re-recorded baselines
+
+`main` moved ~90 commits while this branch was open, and GitHub reported the PR
+as `CONFLICTING`: **16 files**. They were resolved by hand rather than by taking
+one side wholesale, because in most of them *both* sides had changed real
+things.
+
+Where main's work was a superset of ours, main won and the restyle was
+re-applied on top:
+
+| File | What main had that we did not |
+| --- | --- |
+| `websites/wp/overview-section.tsx` | locked-preview guard, `errorMessageOrRaw`, a separate stats effect. Our `loadError` fixed the same eternal-skeleton bug less completely, so it was dropped rather than kept as a second error channel |
+| `websites/wp/media-section.tsx` | the section rebuilt with search, type filters and paging |
+| `websites/wp/content-section.tsx` | a refresh control replacing a link |
+| `dashboard/pos/invoice-management-view.tsx` | refreshing pill, retry on failed load, disabled-while-loading, responsive action row |
+| `dashboard/products/products-list-section.tsx` | `PanelShell`, which measures the scroll container so an expanded row panel cannot open off-screen |
+| `dashboard/products/price-lists-section.tsx` | `PriceCell` validation, changed-highlight and per-cell `aria-label` |
+| `crm/activities-section.tsx` | `break-words` on long activity text |
+| `page-chrome.tsx` | `EmptyState` as a `<div>`, not a `<p>` — callers nest block elements inside it, which is invalid HTML in a `<p>` |
+
+Two of those forced follow-up work rather than a straight choice:
+
+- `PanelShell` finds its scroller with `div.overflow-x-auto`. `DataTable`
+  renders exactly that element, so the migration and the fix compose — verified
+  before taking both.
+- main's local `StatCard` carried a `title={value}` tooltip so a truncated Rial
+  figure stays readable. The tile itself is superseded by the shared `KpiCard`,
+  so the *tooltip* was lifted into `KpiCard` and every app now has it.
+
+Ours won only where main's side was an older spelling of the same thing: the
+`DataTable` migrations, `SearchField` (which already implements main's
+hand-rolled clear button and `type="search"`), and the `stone-*` → token sweep,
+which was re-applied to main's markup in `invoice-management-view.tsx`.
+
+`src/lib/system-print/discovery.test.ts` was a modify/delete: main's printer
+rebuild removed `./discovery`, which the test imports. Accepting the deletion is
+the only resolution that builds.
+
+**The lint caught a regression the merge introduced.** main's rebuilt media
+section hand-rolled an amber `aria-pressed` chip; `primitive-lint` failed with
+`(app)/websites/wp/media-section.tsx:415`, and it now composes `FilterChip`.
+That is the rule doing exactly the job it was written for — catching new drift
+arriving from another branch, not just old drift already in the tree.
+
+**Six baselines were then re-recorded, deliberately.** The run failed on five
+screens (`growth-overview` 6.09%, `growth-customers` 1.93%, `crm-deals` 1.34%,
+`websites-wp` 0.67%, `websites-cms` 0.15%); `crm-overview` differed under
+tolerance. Each `.actual.png` was opened and read before anything was rewritten:
+`growth-overview` shows main's #661 audit (refresh button, report-range line,
+reworded hints) with our six tiles in main's three-column grid;
+`growth-customers` shows the migrated `DataTable` intact under main's new count
+line; `websites-wp` shows main's locked-preview guard; `crm-deals` and
+`crm-overview` show main's KPI strip and refresh control. None was a regression
+from a conflict resolution, so the re-record is an approval of main's work
+arriving in these screens — not a way to clear a red run.
+
 ## Remaining deviations
 
 **The table migration is finished.** Every hand-rolled table in the four tenant
