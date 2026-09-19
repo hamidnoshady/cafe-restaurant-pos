@@ -71,6 +71,8 @@ export function AiChatHub({
     setTask,
     customTask,
     setCustomTask,
+    agentId,
+    setAgentId,
     ensureGreeting,
     startNewConversation,
     loadConversation,
@@ -256,6 +258,8 @@ export function AiChatHub({
             onTaskChange={setTask}
             customTask={customTask}
             onCustomTaskChange={setCustomTask}
+            agentId={agentId}
+            onAgentChange={setAgentId}
             actionsAllowed={actionsAllowed}
             setActionsAllowed={setActionsAllowed}
             loadConversation={loadConversation}

@@ -17,6 +17,7 @@ import {
   MAX_ATTACHMENTS,
 } from "@/lib/ai-attachment-limits";
 import type { AiTaskId } from "@/lib/ai-tasks";
+import { agentIdForTurn } from "@/lib/ai-custom-agents";
 import { applyProposalRequest } from "./apply-proposal";
 import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 
@@ -179,6 +180,12 @@ export function useAiChat({
   const [actionsAllowed, setActionsAllowed] = useState(true);
   const [task, setTask] = useState<AiTaskId>("general");
   const [customTask, setCustomTask] = useState("");
+  // Phase I — the business-defined custom agent this dashboard turn runs as.
+  // null = the full dashboard assistant (or, inside a project, its pinned
+  // default). The backend resolves a request-level agentId every turn and it
+  // always wins, so the picker can change the lens mid-conversation. Only
+  // dashboard mode runs as an agent; the value is ignored otherwise.
+  const [agentId, setAgentId] = useState<string | null>(null);
 
   /** Removes one attachment, or all of them when no id is given. */
   function clearAttachment(id?: string) {
@@ -438,6 +445,9 @@ export function useAiChat({
           })),
           task,
           customTask: customTask.trim() || undefined,
+          // Only dashboard mode runs as a custom agent; the backend refuses a
+          // disabled/unknown id rather than silently widening the turn.
+          agentId: agentIdForTurn(mode, agentId),
           allowActions: actionsAllowed,
           bypassCache: bypassCache === true,
         }),
@@ -674,6 +684,8 @@ export function useAiChat({
     setTask,
     customTask,
     setCustomTask,
+    agentId,
+    setAgentId,
     ensureGreeting,
     startNewConversation,
     loadConversation,

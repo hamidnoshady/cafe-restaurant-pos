@@ -226,6 +226,23 @@ export function agentTurnScope(agent: CustomAgent): AgentTurnScope {
   };
 }
 
+/**
+ * The request-level agent id a chat turn should carry, given the surface mode
+ * and the composer's current pick. Only the dashboard assistant runs as a
+ * custom agent (the floor and wizard surfaces are their own realms), so any
+ * pick is dropped outside dashboard mode; an empty/whitespace id resolves to
+ * null (the full assistant). Kept pure so the composer and its test share one
+ * rule.
+ */
+export function agentIdForTurn(
+  mode: "wizard" | "dashboard" | "floor",
+  agentId: string | null | undefined,
+): string | undefined {
+  if (mode !== "dashboard") return undefined;
+  const trimmed = typeof agentId === "string" ? agentId.trim() : "";
+  return trimmed ? trimmed : undefined;
+}
+
 const AGENT_ERROR_MESSAGES: Record<string, string> = {
   name_required: "نام ایجنت را وارد کنید.",
   name_too_long: "نام ایجنت بیش از حد بلند است.",

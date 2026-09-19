@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentIdForTurn,
   agentToolLabel,
   agentTurnScope,
   customAgentErrorMessage,
@@ -182,5 +183,24 @@ describe("Phase D — agent scoping actually narrows the turn", () => {
     expect(tools).toContain("get_vat_liability");
     const prompt = buildSystemPrompt({ mode: "dashboard" });
     expect(prompt).not.toContain("تو به‌عنوان ایجنت");
+  });
+});
+
+describe("Phase I — agentIdForTurn (composer → request rule)", () => {
+  it("sends the picked agent id only in dashboard mode", () => {
+    expect(agentIdForTurn("dashboard", "agent-1")).toBe("agent-1");
+    expect(agentIdForTurn("floor", "agent-1")).toBeUndefined();
+    expect(agentIdForTurn("wizard", "agent-1")).toBeUndefined();
+  });
+
+  it("resolves an empty, whitespace or null pick to the full assistant", () => {
+    expect(agentIdForTurn("dashboard", null)).toBeUndefined();
+    expect(agentIdForTurn("dashboard", undefined)).toBeUndefined();
+    expect(agentIdForTurn("dashboard", "")).toBeUndefined();
+    expect(agentIdForTurn("dashboard", "   ")).toBeUndefined();
+  });
+
+  it("trims a padded id so the backend gets the bare id it stored", () => {
+    expect(agentIdForTurn("dashboard", "  agent-2  ")).toBe("agent-2");
   });
 });

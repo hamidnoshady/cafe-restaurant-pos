@@ -71,6 +71,8 @@ export function AiAssistant({ mode, currentStep }: Props) {
     setTask,
     customTask,
     setCustomTask,
+    agentId,
+    setAgentId,
     ensureGreeting,
     startNewConversation,
     loadConversation,
@@ -290,6 +292,8 @@ export function AiAssistant({ mode, currentStep }: Props) {
               onTaskChange={setTask}
               customTask={customTask}
               onCustomTaskChange={setCustomTask}
+              agentId={agentId}
+              onAgentChange={setAgentId}
               actionsAllowed={actionsAllowed}
               setActionsAllowed={setActionsAllowed}
               loadConversation={loadConversation}

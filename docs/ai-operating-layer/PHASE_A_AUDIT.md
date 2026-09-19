@@ -1024,11 +1024,11 @@ the chrome never drifts.
   that were missing, e.g. `get_menu_performance`, `get_void_pattern`,
   `get_stock_valuation`), falling back to the raw name; a unit test enforces that
   every `selectableAgentTools()` entry has a non-raw label.
-- **Scope decisions.** (a) The in-chat agent *picker* is deferred to a later part
-  — the chat route already accepts `agentId`, but no UI sends it yet; the
-  management surface lands first. (b) The classic workspace-shell flat nav is left
-  as-is (single «دستیار هوشمند» → `/ai`); the in-workspace sub-nav + chat rail are
-  the section navigator, so the flat-nav disclosure logic was not touched.
+- **Scope decisions.** (a) The in-chat agent *picker* is deferred to Part 3 (it
+  landed there — see below); the management surface lands first. (b) The classic
+  workspace-shell flat nav is left as-is (single «دستیار هوشمند» → `/ai`); the
+  in-workspace sub-nav + chat rail are the section navigator, so the flat-nav
+  disclosure logic was not touched.
 - **Verification.** `tsc` clean; full suite **4863 unit / 329 files**. Live smoke
   against embedded PG (migrations through 0162, seeded owner, `ai_assistant`
   enabled): `/ai/agents` returns 200 and renders the section strip; the agents API
@@ -1036,3 +1036,36 @@ the chrome never drifts.
   delete (200), and rejects an unknown tool (400). All five workspace routes
   (`/ai`, `/ai/agents`, `/ai/coworkers`, `/ai/automations`, `/ai/activity`) return
   200 authenticated with no render errors.
+
+### Phase I Part 3 — in-chat agent picker (COMPLETE)
+
+Part 2 gave agents a management surface but nothing in chat *selected* one — the
+chat route resolved a request-level `agentId` (and a project's pinned default),
+but no UI sent one. This part closes that loop: a composer picker so an owner can
+run any turn as a chosen agent, changing the lens mid-conversation.
+
+- **One state, both surfaces.** `useAiChat` gains `agentId`/`setAgentId`; the send
+  path attaches it through the new pure `agentIdForTurn(mode, agentId)` helper in
+  `ai-custom-agents.ts` — which sends the id **only in dashboard mode** (the floor
+  and wizard surfaces never run as a custom agent, matching the route's own scope)
+  and resolves an empty/whitespace/null pick to the full assistant. So the same
+  rule governs the /dashboard/ai hub and the floating launcher, and it is
+  unit-tested rather than re-implemented per composer.
+- **The picker.** `ai-agent-selector.tsx` (new) sits in the shared `ChatComposer`
+  next to the task lens: a rounded pill (Bot icon + name when scoped, Sparkles +
+  «دستیار کامل» when not), a dropdown listing the business's **enabled** agents
+  plus a «دستیار کامل» reset. It fetches once from the same `/api/ai/agents` the
+  management UI uses, renders a `Skeleton` while loading (so the composer row never
+  jumps), and hides itself entirely when the business has no enabled agents or the
+  surface isn't dashboard mode. Threaded through `chat-composer.tsx`,
+  `ai-chat-input.tsx` (launcher) and both callers.
+- **The backend was already right.** No route change: a request-level `agentId`
+  always wins over a project's pinned default and can only NARROW a turn; a
+  disabled/unknown id is refused (`agent_unavailable`, 404) rather than silently
+  widening. The picker only ever *narrows* what it sends.
+- **Verification.** `tsc` clean; full suite **4866 unit / 329 files** (+3
+  `agentIdForTurn` tests). Live smoke against embedded PG: `/ai` renders (200); a
+  chat turn scoped to a valid enabled agent passes the agent gate (reaching the
+  provider check — the sandbox has no AI provider, so 503, which proves the gate
+  admitted it), while an unknown agent id is refused at the gate (404
+  `agent_unavailable`); the picker's data source lists only enabled agents.
