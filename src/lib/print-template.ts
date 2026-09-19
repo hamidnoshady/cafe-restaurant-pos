@@ -34,9 +34,9 @@ export interface PaperSpec {
   /** Cut sheets and labels have a fixed height; a roll does not. */
   heightMm: number | null;
   /**
-   * Raster width for the ESC/POS path (print-agent/render.ts screenshots at
+   * Raster width for the ESC/POS path (printing/chromium.ts screenshots at
    * this pixel width). Only thermal/label rolls take that path; a sheet goes
-   * to the OS spooler or the browser's own print dialog at real mm.
+   * to the browser's own print dialog at real mm.
    */
   rasterPx?: number;
   /** Default page margin, in mm. */

@@ -1,24 +1,22 @@
 "use client";
 
 /**
- * «چاپ و فاکتور» — the whole printing section, in four tabs.
+ * «چاپ و فاکتور» — the whole printing section, in three tabs with cleanly
+ * separated concerns:
  *
- *   قالب‌ها   — the five ready templates and the shop's own, as real previews.
- *   طراحی قالب — the block designer (opens from a card, not from the tab bar).
- *   چاپگرها   — pairing hardware, with discovery instead of typed IPs.
- *   لوگو      — the logo every template prints.
+ *   چاپگرها    — hardware connection (the printers panel; connection
+ *                mechanics live in its add/edit dialog).
+ *   قالب‌ها     — template design (opens the designer from a card).
+ *   لوگو       — the logo every template prints.
  *
- * The section also states, at the top and always, whether the local print
- * agent is running — because that single fact decides whether hardware
- * printing is possible at all, and the alternative (a failed print at the
- * counter with a customer waiting) is the worst place to learn it. When the
- * agent is down the section stays fully usable: designing, previewing and
- * printing through the browser's own dialog need nothing installed.
+ * Template design never mixes with hardware connection: a user adding a
+ * printer never sees template-management complexity unless they deliberately
+ * open Advanced settings inside the add-printer dialog.
  */
 import { useCallback, useMemo, useState } from "react";
-import { FileTextIcon, ImageIcon, PrinterIcon, WifiOffIcon } from "lucide-react";
+import { FileTextIcon, ImageIcon, PrinterIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { printDocument, printViaBrowser } from "@/lib/print-agent-client";
+import { printDocument, printViaBrowser } from "@/lib/printing/client";
 import {
   PAPERS,
   builtInTemplate,
@@ -27,20 +25,13 @@ import {
   type PrintTemplate,
 } from "@/lib/print-template";
 import { samplePrintDocument } from "@/lib/print-sample";
-import { resolvedTransport } from "@/lib/printer-connection";
-import { LoadingSkeleton, SectionCard, TabBar, cardClass } from "@/app/dashboard/page-chrome";
+import { LoadingSkeleton, TabBar, cardClass } from "@/app/dashboard/page-chrome";
 import { ErrorBox, InfoBox, api, errorMessage } from "@/app/dashboard/ui";
 import { LogoPanel } from "./logo-panel";
-import { PrinterHardware } from "./printer-hardware";
+import { PrintersPanel } from "./printers-panel";
 import { TemplateDesigner } from "./template-designer";
 import { TemplateGallery } from "./template-gallery";
-import {
-  useAgentStatus,
-  usePrintIdentity,
-  usePrinterList,
-  useSavedTemplates,
-  type SavedTemplateRow,
-} from "./use-printing";
+import { usePrintIdentity, useSavedTemplates, type SavedTemplateRow } from "./use-printing";
 
 type Tab = "templates" | "printers" | "logo";
 
@@ -63,10 +54,8 @@ export function PrintingManager() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const printers = usePrinterList();
   const saved = useSavedTemplates();
   const identity = usePrintIdentity();
-  const agent = useAgentStatus();
 
   // The preview document: the sample sale, wearing this business's identity
   // and logo, so what the gallery shows is what this shop will print.
@@ -81,39 +70,40 @@ export function PrintingManager() {
       setNotice("");
       const html = renderPrintTemplate(template, sample);
       const paper = PAPERS[template.paper];
-      // The printer whose paper matches, else the default for the kind, else
-      // the browser — a preview print should never need a decision first.
+      // Sheets (A4/A5 invoices) are a browser-dialog job by design — they
+      // never ride the thermal connector. Thermal papers print through the
+      // branch's default printer for the document's kind; with no printer
+      // paired, the browser dialog is the no-hardware path.
+      if (paper.kind === "sheet") {
+        const result = await printViaBrowser(html);
+        if (!result.ok) setError("باز کردن پنجرهٔ چاپ ممکن نشد.");
+        else setNotice(`سند روی ${paper.label} در پنجرهٔ چاپ مرورگر باز شد.`);
+        return;
+      }
       const kind = template.docType === "kitchen" ? "kitchen" : "receipt";
+      const { ok, data } = await api<{ printers?: { id: string; name: string; kind: string; isDefault: boolean; needsReconnect: boolean }[] }>("/api/printers");
+      const printers = data.printers ?? [];
       const match =
-        printers.printers.find((p) => p.is_active && p.connection?.paper === template.paper) ??
-        printers.printers.find((p) => p.is_active && p.kind === kind && p.connection?.isDefault) ??
-        printers.printers.find((p) => p.is_active && p.kind === kind);
-
-      // A webusb printer needs no backend to be "online" — this browser is
-      // the delivery path and printDocument routes it itself.
-      const canUseAgent =
-        match &&
-        resolvedTransport(match.connection) !== "browser" &&
-        (agent.online || resolvedTransport(match.connection) === "webusb");
-      const result = canUseAgent
-        ? await printDocument(match!.connection, html, template.paper)
-        : await printViaBrowser(html);
-
+        printers.find((p) => p.kind === kind && p.isDefault && !p.needsReconnect) ??
+        printers.find((p) => p.kind === kind && !p.needsReconnect);
+      if (!ok || !match) {
+        const result = await printViaBrowser(html);
+        if (!result.ok) setError("باز کردن پنجرهٔ چاپ ممکن نشد.");
+        else setNotice(`سند روی ${paper.label} در پنجرهٔ چاپ مرورگر باز شد.`);
+        return;
+      }
+      const result = await printDocument(match.id, html, template.paper);
       if (!result.ok) {
         setError(
-          result.unreachable
-            ? "هیچ مسیر چاپ سخت‌افزاری پاسخ نداد (نه عامل چاپ محلی و نه سرور برنامه)."
+          result.error === "connector_not_installed" || result.error === "connector_outdated"
+            ? "چاپ سخت‌افزاری نیاز به رابط چاپ دارد؛ از تب «چاپگرها» آن را نصب کنید."
             : "چاپ نمونه انجام نشد.",
         );
         return;
       }
-      setNotice(
-        canUseAgent
-          ? `نمونه روی «${match!.name}» فرستاده شد.`
-          : `سند روی ${paper.label} در پنجرهٔ چاپ مرورگر باز شد.`,
-      );
+      setNotice(`نمونه روی «${match.name ?? "چاپگر"}» فرستاده شد.`);
     },
-    [agent.online, printers.printers, sample],
+    [sample],
   );
 
   async function saveTemplate(isDefault: boolean) {
@@ -178,10 +168,8 @@ export function PrintingManager() {
 
   return (
     <div className="space-y-4">
-      <ErrorBox>{error || (printers.error ? errorMessage(printers.error) : "")}</ErrorBox>
+      <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
-
-      <AgentBanner online={agent.online} via={agent.via} checking={agent.checking} onRecheck={() => void agent.recheck(true)} />
 
       <TabBar idPrefix="printing" label="بخش‌های چاپ" tabs={TABS} active={tab} onChange={setTab} />
 
@@ -212,71 +200,18 @@ export function PrintingManager() {
         )
       ) : null}
 
-      {tab === "printers" ? (
-        <PrinterHardware
-          printers={printers.printers}
-          loading={printers.loading}
-          templates={saved.templates}
-          localAgentOnline={agent.localAgentOnline}
-          onChanged={printers.reload}
-        />
-      ) : null}
+      {tab === "printers" ? <PrintersPanel templates={saved.templates} /> : null}
 
       {tab === "logo" ? <LogoPanel logo={identity.logo} onChanged={identity.reload} /> : null}
     </div>
   );
 }
 
-/**
- * The agent's state, said once and plainly. Not an error: printing through the
- * browser is a supported way to run this section, and a shop with a laser
- * printer and a tablet may never install the agent at all.
- */
-function AgentBanner({
-  online,
-  via,
-  checking,
-  onRecheck,
-}: {
-  online: boolean;
-  via: "agent" | "server" | null;
-  checking: boolean;
-  onRecheck: () => void;
-}) {
-  if (checking) return <LoadingSkeleton rows={1} label="در حال بررسی عامل چاپ" />;
-
-  return (
-    <SectionCard>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          {online ? (
-            <PrinterIcon className="mt-0.5 size-5 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
-          ) : (
-            <WifiOffIcon className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
-          )}
-          <div className="min-w-0">
-            <p className="font-semibold text-foreground">
-              {online
-                ? via === "server"
-                  ? "سرور چاپ فعال است؛ عامل ویندوز اجرا نیست"
-                  : "عامل چاپ محلی فعال است"
-                : "چاپ سخت‌افزاری در دسترس نیست"}
-            </p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {online
-                ? via === "server"
-                  ? "فقط چاپگرهایی که خودِ سرور می‌بیند در دسترس‌اند. برای چاپگر USB نصب‌شده روی این Windows، از تب «چاپگرها» رابط چاپ ویندوز را دانلود و یک‌بار نصب کنید؛ سپس «بررسی دوباره» را بزنید و درخواست Apps on device / Local network access مرورگر را Allow کنید."
-                  : "چاپگرهای حرارتی، کشوی پول و چاپگرهای نصب‌شدهٔ ویندوز در دسترس‌اند."
-                : "بدون رابط هم می‌توانید قالب طراحی کنید و با پنجرهٔ چاپ مرورگر چاپ بگیرید؛ برای چاپگر نصب‌شده روی Windows، در تب «چاپگرها» دکمهٔ دانلود و نصب خودکار رابط چاپ را بزنید."}
-            </p>
-          </div>
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={onRecheck}>
-          بررسی دوباره
-        </Button>
-      </div>
-    </SectionCard>
-  );
+function TabBarMemo({ active, onChange }: { active: Tab; onChange: (tab: Tab) => void }) {
+  // The section's own TabBar (page-chrome) — kept behind a tiny wrapper so
+  // the tab list stays the single source of truth above.
+  const { TabBar } = require("@/app/dashboard/page-chrome") as typeof import("@/app/dashboard/page-chrome");
+  return <TabBar idPrefix="printing" label="بخش‌های چاپ" tabs={TABS} active={active} onChange={onChange} />;
 }
 
 /** Icons the settings nav uses for this section's tabs. Exported for the nav. */

@@ -59,7 +59,7 @@ import { PaymentWays, usePaymentMethods } from "../payment-ways";
 import { LoadingSkeleton } from "../page-chrome";
 import { formatQueueLabel } from "@/lib/orders";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
-import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
+import { kickDrawer, printReceipt } from "@/lib/printing/client";
 import type { ReceiptData } from "@/lib/receipt-template";
 import {
   formatModifierDelta,
@@ -737,7 +737,7 @@ export function OrderDetailModal({
       draftReceiptPayments(paymentDraft, paymentMethods, Number(order?.total ?? 0), money.unit),
     );
     if (!receipt) return;
-    void printReceipt(receiptPrinter.connection, receipt);
+    void printReceipt(receiptPrinter.id, receipt);
     toast.success("رسید برای چاپ ارسال شد");
   }
 
@@ -789,9 +789,16 @@ export function OrderDetailModal({
     if (receiptPrinter) {
       const receipt = buildReceipt(tipAmount, draftReceiptPayments(paymentDraft, paymentMethods, total, money.unit));
       if (receipt) {
-        void printReceipt(receiptPrinter.connection, receipt);
+        void printReceipt(receiptPrinter.id, receipt).then((result) => {
+          // Best-effort by contract: a failed print never undoes the payment.
+          if (!result.ok && result.error !== "not_in_browser") {
+            toast.warning("چاپ رسید انجام نشد؛ پرداخت با موفقیت ثبت شده است.", {
+              action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, receipt) },
+            });
+          }
+        });
         // Any cash slice opens the drawer, not just an all-cash bill.
-        if (draftOpensDrawer(paymentDraft, paymentMethods)) void kickDrawer(receiptPrinter.connection);
+        if (draftOpensDrawer(paymentDraft, paymentMethods)) void kickDrawer(receiptPrinter.id);
       }
     }
     setTipInput("");

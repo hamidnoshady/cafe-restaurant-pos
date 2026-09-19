@@ -22,17 +22,18 @@ printer's IP, and which machine has to be able to reach it.
    ┌────┴───────────────────────┐                        ┌──────────────┐
    │ Till PC                    │                        │ Cash drawer  │
    │  browser  → 127.0.0.1:9123 │                        └──────────────┘
-   │  print agent ──────────────┼──── TCP :9100 ─────────────────▲
+   │  print connector ──────────┼──── TCP :9100 ─────────────────▲
    └────────────────────────────┘   (over the LAN, to the printer)
 ```
 
 Two things follow from this picture, and both are load-bearing:
 
-- **The print agent opens the socket, not the app server.** The browser calls
-  the agent on `127.0.0.1:9123` (`src/lib/print-agent-client.ts`), and the agent
-  connects to the printer (`print-agent/transport.ts`). So the machine that must
-  reach the printer's IP is the **till PC running the agent** — not the server
-  hosting the app, which may be somewhere else entirely.
+- **The print connector opens the socket, not the app server.** The browser
+  calls the connector on `127.0.0.1:9123` (`src/lib/printing/client.ts`), and
+  the connector connects to the printer (raw TCP in
+  `public/windows/cafe-pos-print-connector.ps1`). So the machine that must
+  reach the printer's IP is the **till PC running the connector** — not the
+  server hosting the app, which may be somewhere else entirely.
 - **In Range Extender mode the RE200 is a bridge.** The device on its LAN port
   joins the *main router's* network and gets its address from the router's DHCP.
   It is not behind a second NAT, so no port forwarding is involved.
@@ -50,7 +51,7 @@ Set it up (Tether app, WPS, or `http://tplinkrepeater.net` in a browser),
 join it to the cafe's WiFi, then plug the printer into its LAN port. Place the
 extender where it still has a solid signal to the router — a receipt is a few
 tens of KB, so bandwidth is irrelevant, but a marginal link shows up as a print
-that times out (the agent gives the socket 8 seconds).
+that times out (the connector gives the socket 8 seconds).
 
 If the router has **AP/client isolation** ("guest mode", "AP isolation") enabled
 on the SSID the extender joins, wireless clients can't talk to each other and
@@ -116,12 +117,13 @@ Either way the point is the same: **the IP must not move.** The app stores the
 address you type; a printer that picks up a different lease next week stops
 printing with no other symptom.
 
-Leave the port at **9100** — that is the raw-print port the agent writes to
-(`resolvedPort()` defaults to it).
+Leave the port at **9100** — that is the raw-print port the connector writes
+to (`resolvedPort()` defaults to it), and the one the connector's network
+discovery looks for.
 
 ## 3. Verify from the till PC before touching the app
 
-Run these on the machine that will run the print agent:
+Run these on the machine that will run the print connector (the till PC):
 
 ```bash
 ping 192.168.1.50                      # the printer's IP
@@ -152,23 +154,24 @@ network — see [`docs/deployment-local-network.md`](deployment-local-network.md
 
 ## 5. Register the printer in the app
 
-**تنظیمات ← چاپگر و کشوی پول** (`/dashboard/settings`, `printers` tab; needs the
-settings-manage permission), or the **Hardware** step of the setup wizard on a
-fresh install. The printer belongs to the **active branch**, so switch branches
-first if the business has several.
+**تنظیمات ← چاپ و فاکتور ← چاپگرها** (`/dashboard/settings`, printers tab; needs
+the settings-manage permission) — or the **Hardware** step of the setup wizard
+on a fresh install, which is the same screen. The printer belongs to the
+**active branch**, so switch branches first if the business has several.
 
-| Field | Value for this setup |
-|---|---|
-| نام چاپگر | e.g. `چاپگر صندوق` |
-| نوع چاپگر | `رسید مشتری` (or `آشپزخانه` for a kitchen printer) |
-| IP شبکه | the fixed address from step 2, e.g. `192.168.1.50` |
-| پورت | `9100` |
-| عرض کاغذ | `۸۰ میلی‌متر` — the TY-3018's label says `Paper Width: 80mm` |
-| فعال / پیش‌فرض این نوع | tick both, so the POS prints to it automatically |
+Add a printer («افزودن چاپگر») and pick **«چاپگر شبکه»** in the first step. In the
+second step the connector sweeps the local subnets; a printer with a fixed IP
+that answers on 9100 appears in the list with its address. If it does not,
+«چاپگرتان پیدا نشد؟» opens «اتصال پیشرفته» where the address from step 2 and
+port `9100` can be typed by hand.
 
-Then press **چاپ آزمایشی**, and **آزمایش کشوی پول** if a drawer is wired into the
-printer's RJ11 socket (the drawer is kicked through the printer, so it rides the
-same connection).
+Then: name it (e.g. `چاپگر صندوق`), set its job to `رسید مشتری` (or `آشپزخانه`
+for a kitchen printer), paper width `۸۰ میلی‌متر` (the TY-3018's label says
+`Paper Width: 80mm`), and make it the default for that job. Finish with
+**«چاپ آزمایشی و ذخیره»** — the wizard prints before it saves, so a wrong
+address is caught here. If a drawer is wired into the printer's RJ11 socket,
+enable «بازکردن کشوی پول» in the same dialog (the drawer is kicked through the
+printer, so it rides the same connection).
 
 ## Reading the two failure messages
 
@@ -177,19 +180,20 @@ the whole diagnostic:
 
 | Message | Meaning | Fix |
 |---|---|---|
-| «عامل چاپ محلی در دسترس نیست…» | the browser never reached the agent | the agent isn't running on *this* machine, or is on another port |
-| «فرمان چاپگر با خطا روبه‌رو شد.» | the agent ran, but its socket to `ip:9100` failed | wrong/changed IP, printer asleep or off, weak extender link, AP isolation |
+| «رابط چاپ روی این کامپیوتر نصب نیست…» | the browser never reached the connector | the connector isn't running on *this* machine (reinstall from the «چاپگرها» tab) |
+| «به چاپگر شبکه دسترسی نیست…» | the connector ran, but its socket to `ip:9100` failed | wrong/changed IP, printer asleep or off, weak extender link, AP isolation |
 
 A useful consequence: the first message never implicates the extender, and the
 second one always points at the network between the till PC and the printer.
 
 ## Notes
 
-- **USB is not an alternative here.** The agent's transport is a TCP socket only
-  (Phase 5 decision — `print-agent/transport.ts` is the one place that would
-  change), so a printer must be reachable by IP. Going through the extender's
-  LAN port is exactly the supported shape.
-- **One agent per till.** Each till PC runs its own agent and prints to whatever
-  IPs its branch's printers carry; nothing about the printer config is per-PC.
+- **USB is not an alternative here.** A network printer must be reachable by
+  IP — the connector opens a TCP socket to it. Going through the extender's
+  LAN port is exactly the supported shape. (A USB-only thermal printer is
+  instead installed as a Windows queue and registered as «چاپگر ویندوز».)
+- **One connector per till.** Each till PC runs its own connector and prints to
+  whatever IPs its branch's printers carry; nothing about the printer config is
+  per-PC.
 - **Kitchen printers work the same way** — a second extender or a cabled run to
   the kitchen printer, its own fixed IP, `kind: آشپزخانه`.

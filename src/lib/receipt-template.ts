@@ -1,7 +1,7 @@
 /**
  * Customer-facing receipt template — pure HTML string builder, no DB/I/O.
  *
- * The print agent (print-agent/) screenshots this HTML with a real browser
+ * The app server (src/lib/printing/chromium.ts) screenshots this HTML with a real browser
  * engine and sends the result to the printer as a raster image (see
  * src/lib/escpos.ts's header comment for why: no ESC/POS printer we can
  * target reliably shapes/reorders Persian text on its own). Keeping the

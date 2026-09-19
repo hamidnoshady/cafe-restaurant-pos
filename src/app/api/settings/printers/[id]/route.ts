@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
-import type { PrinterConnection } from "@/lib/printer-connection";
-import { parsePrinterInput } from "@/lib/printer-input";
+import { normalizeStoredConnection, type StoredPrinterConnection, type PrinterPurpose } from "@/lib/printing/types";
+import { connectionJsonFor, parsePrinterInput } from "@/lib/printing/printer-input";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 interface StoredPrinter extends Record<string, unknown> {
   id: string;
   name: string;
-  kind: "receipt" | "kitchen";
-  connection: PrinterConnection;
+  kind: PrinterPurpose;
+  connection: StoredPrinterConnection;
   is_active: boolean;
 }
 
@@ -36,7 +36,15 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  const input = parsePrinterInput(body, existing);
+  // A legacy row that needs reconnection has no canonical hardware target to
+  // merge onto — re-pairing (a fresh `connection`) is the only valid edit,
+  // which the UI's reconnect flow sends.
+  const input = parsePrinterInput(body, {
+    name: existing.name,
+    kind: existing.kind,
+    connection: existing.connection as Record<string, unknown>,
+    is_active: existing.is_active,
+  });
   if (!input) return NextResponse.json({ error: "invalid_printer" }, { status: 400 });
 
   const client = await getPool().connect();
@@ -57,7 +65,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
           SET name = $1, kind = $2, connection = $3, is_active = $4
         WHERE id = $5 AND location_id = $6
         RETURNING id, name, kind, connection, is_active`,
-      [input.name, input.kind, JSON.stringify(input.connection), input.isActive, id, location.id],
+      [input.name, input.kind, JSON.stringify(connectionJsonFor(input)), input.isActive, id, location.id],
     );
     await client.query("COMMIT");
     return NextResponse.json({ printer: rows[0] });

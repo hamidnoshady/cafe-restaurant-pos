@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
-import { parsePrinterInput } from "@/lib/printer-input";
+import { connectionJsonFor, parsePrinterInput } from "@/lib/printing/printer-input";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** All hardware for the active branch, including inactive printers. */
@@ -61,7 +61,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       `INSERT INTO printers (location_id, name, kind, connection, is_active)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, name, kind, connection, is_active`,
-      [location.id, input.name, input.kind, JSON.stringify(input.connection), input.isActive],
+      [location.id, input.name, input.kind, JSON.stringify(connectionJsonFor(input)), input.isActive],
     );
     await client.query("COMMIT");
     return NextResponse.json({ printer: rows[0] }, { status: 201 });

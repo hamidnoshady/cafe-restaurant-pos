@@ -48,14 +48,14 @@ describe("security-headers", () => {
     expect(reportOnly).not.toContain("upgrade-insecure-requests");
   });
 
-  it("allows only the loopback print-agent origins in connect-src", () => {
-    process.env.NEXT_PUBLIC_PRINT_AGENT_URL = "http://localhost:9555";
+  it("allows only the loopback print-connector origins in connect-src", () => {
+    process.env.NEXT_PUBLIC_PRINT_CONNECTOR_URL = "http://localhost:9555";
     const csp = contentSecurityPolicy("test-nonce", { https: true });
     expect(csp).toContain("http://127.0.0.1:9123");
     expect(csp).toContain("http://localhost:9123");
     expect(csp).toContain("http://localhost:9555");
 
-    process.env.NEXT_PUBLIC_PRINT_AGENT_URL = "https://attacker.example";
+    process.env.NEXT_PUBLIC_PRINT_CONNECTOR_URL = "https://attacker.example";
     expect(contentSecurityPolicy("test-nonce", { https: true })).not.toContain("attacker.example");
   });
 

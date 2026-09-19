@@ -3,21 +3,21 @@
 /**
  * Everything the printing section reads: the branch's printers, its saved
  * templates, the business header/logo a preview needs, and the local print
- * agent's status. One hook per concern, all of them refetchable, because the
- * section's four tabs edit each other's data — pairing a printer changes what
+ * connector's status. One hook per concern, all of them refetchable, because
+ * the section's tabs edit each other's data — pairing a printer changes what
  * the template gallery can print to, uploading a logo changes every preview.
  */
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/app/dashboard/ui";
-import { allowPrintAgentRetry, checkAgent, type AgentHealth } from "@/lib/print-agent-client";
-import type { PrinterConnection } from "@/lib/printer-connection";
+import { allowConnectorRetry, connectorHealth, type ConnectorHealth } from "@/lib/printing/client";
+import type { StoredPrinterConnection, PrinterPurpose } from "@/lib/printing/types";
 import type { PrintBusinessInfo, PrintTemplate } from "@/lib/print-template";
 
 export interface PrinterRow {
   id: string;
   name: string;
-  kind: "receipt" | "kitchen";
-  connection: PrinterConnection;
+  kind: PrinterPurpose;
+  connection: StoredPrinterConnection;
   is_active: boolean;
 }
 
@@ -122,24 +122,21 @@ export function usePrintIdentity() {
 }
 
 /**
- * Is hardware printing available? Polled once on mount and on demand — the
- * answer decides whether the section offers hardware printing or only the
- * browser dialog, and saying so plainly is better than a failed print later.
- * Two backends can say yes: the loopback print agent on this device, or the
- * app server's own /api/print routes (`via: "server"`) — the client tries
- * the agent first and falls back to the server (print-agent-client.ts).
+ * Is the local Cafe POS Print Connector installed, running and current? It
+ * is the one hardware gateway — Windows queues and network printers both —
+ * so its state decides whether hardware printing is possible at all. Checked
+ * once on mount and on demand; an explicit recheck clears the client's
+ * short backoff so it fires immediately after the operator installs.
  */
-export function useAgentStatus() {
-  const [health, setHealth] = useState<AgentHealth | null>(null);
-  const [via, setVia] = useState<"agent" | "server" | null>(null);
+export function useConnectorStatus() {
+  const [health, setHealth] = useState<ConnectorHealth | null>(null);
   const [checking, setChecking] = useState(true);
 
-  const recheck = useCallback(async (forceAgentProbe = false) => {
+  const recheck = useCallback(async (force = true) => {
     setChecking(true);
-    if (forceAgentProbe) allowPrintAgentRetry();
-    const result = await checkAgent({ forceAgentProbe });
+    if (force) allowConnectorRetry();
+    const result = await connectorHealth({ force });
     setHealth(result.ok ? (result.data ?? { ok: true }) : null);
-    setVia(result.ok ? (result.via ?? "agent") : null);
     setChecking(false);
   }, []);
 
@@ -147,12 +144,5 @@ export function useAgentStatus() {
     void recheck(false);
   }, [recheck]);
 
-  return {
-    health,
-    online: health?.ok === true,
-    localAgentOnline: health?.ok === true && via === "agent",
-    via,
-    checking,
-    recheck,
-  };
+  return { health, online: health?.ok === true, checking, recheck };
 }
