@@ -15,6 +15,8 @@ import { useGSAP } from "@gsap/react";
 import { cn } from "@/lib/utils";
 import { AiMarkdown } from "./ai-markdown";
 import { AiProposalCard } from "./ai-proposal-card";
+import { AiInputRequestCard } from "./ai-input-request-card";
+import type { InputResponse } from "@/lib/ai-input-protocol";
 import {
   animateBubbleIn,
   animateTypingDots,
@@ -72,6 +74,9 @@ interface ChatBubbleProps {
   formatCost?: (rial: number) => string;
   applyProposal: (message: AiChatMessage) => void;
   dismissProposal: (message: AiChatMessage) => void;
+  /** Phase E — the structured input protocol's answer + dismiss handlers. */
+  submitInputRequest?: (message: AiChatMessage, response: InputResponse) => void;
+  dismissInputRequest?: (message: AiChatMessage) => void;
   /**
    * Phase 36 Wave 7 — «دوباره بپرس» on a cached answer. The parent builds
    * this from the user question that preceded the reply.
@@ -87,6 +92,8 @@ export function ChatBubble({
   formatCost,
   applyProposal,
   dismissProposal,
+  submitInputRequest,
+  dismissInputRequest,
   onAskAgain,
 }: ChatBubbleProps) {
   const rowRef = useRef<HTMLDivElement>(null);
@@ -259,6 +266,17 @@ export function ChatBubble({
             applying={applyingId === message.id}
             onApply={() => void applyProposal(message)}
             onDismiss={() => dismissProposal(message)}
+          />
+        ) : null}
+
+        {!isUser && message.inputRequest ? (
+          <AiInputRequestCard
+            spec={message.inputRequest.spec}
+            answered={message.inputRequest.answered}
+            dismissed={message.inputRequest.dismissed}
+            busy={busy}
+            onSubmit={(response) => submitInputRequest?.(message, response)}
+            onDismiss={() => dismissInputRequest?.(message)}
           />
         ) : null}
       </div>

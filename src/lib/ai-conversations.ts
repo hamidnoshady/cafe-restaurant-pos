@@ -46,6 +46,8 @@ export interface AiConversationMessage {
   toolCalls: unknown;
   proposal: ProposedAction | null;
   createdAt: string;
+  /** Phase E — the input request attached to this turn, when there was one. */
+  inputRequest?: { id: string; spec: unknown; status: string | null } | null;
 }
 
 interface Owner {
@@ -92,10 +94,11 @@ export async function appendMessage(input: {
   content: string;
   toolCalls?: unknown;
   proposal?: ProposedAction | null;
-}): Promise<void> {
-  await query(
+}): Promise<string> {
+  const { rows } = await query<{ id: string }>(
     `INSERT INTO ai_messages (conversation_id, role, content, tool_calls, proposal)
-     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)`,
+     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)
+     RETURNING id`,
     [
       input.conversationId,
       input.role,
@@ -105,6 +108,7 @@ export async function appendMessage(input: {
     ],
   );
   await query(`UPDATE ai_conversations SET last_message_at = now() WHERE id = $1`, [input.conversationId]);
+  return rows[0].id;
 }
 
 export async function listConversations(
@@ -138,6 +142,23 @@ export async function listConversations(
   }));
 }
 
+/**
+ * True when this actor owns this conversation within this business. The cheap
+ * ownership check the input-protocol routes reuse before touching a request that
+ * belongs to a conversation, since a request reaches tenant scope only through
+ * its parent conversation (migration 0157).
+ */
+export async function ownsConversation(
+  owner: Owner & { conversationId: string },
+): Promise<boolean> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM ai_conversations
+      WHERE id = $1 AND business_id = $2 AND actor_user_id = $3`,
+    [owner.conversationId, owner.businessId, owner.actorUserId],
+  );
+  return rows.length > 0;
+}
+
 export async function getConversationMessages(
   owner: Owner & { conversationId: string },
 ): Promise<{ conversation: AiConversationSummary; messages: AiConversationMessage[] } | null> {
@@ -164,11 +185,19 @@ export async function getConversationMessages(
     tool_calls: unknown;
     proposal: ProposedAction | null;
     created_at: string;
+    input_request_id: string | null;
+    input_request_spec: unknown;
+    input_request_status: string | null;
   }>(
-    `SELECT id, role, content, tool_calls, proposal, created_at
-       FROM ai_messages
-      WHERE conversation_id = $1
-      ORDER BY created_at ASC`,
+    // Phase E — left-join the input request attached to each assistant turn, so
+    // a reloaded transcript can re-render a still-open card (and lock an
+    // already-answered one). At most one request per message by construction.
+    `SELECT m.id, m.role, m.content, m.tool_calls, m.proposal, m.created_at,
+            r.id AS input_request_id, r.spec AS input_request_spec, r.status AS input_request_status
+       FROM ai_messages m
+       LEFT JOIN ai_input_requests r ON r.message_id = m.id
+      WHERE m.conversation_id = $1
+      ORDER BY m.created_at ASC`,
     [owner.conversationId],
   );
 
@@ -188,6 +217,13 @@ export async function getConversationMessages(
       toolCalls: row.tool_calls,
       proposal: row.proposal,
       createdAt: row.created_at,
+      inputRequest: row.input_request_id
+        ? {
+            id: row.input_request_id,
+            spec: row.input_request_spec,
+            status: row.input_request_status,
+          }
+        : null,
     })),
   };
 }

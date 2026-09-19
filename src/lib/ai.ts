@@ -1189,6 +1189,84 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
   });
   const proposeTool = proposeToolFor(ACTION_TYPES);
 
+  // Phase E — the structured input protocol. When the assistant needs the user
+  // to CHOOSE or FILL IN something before it can continue, it asks with a typed
+  // form instead of a prose question it would then have to parse. The turn ends
+  // on this call exactly like propose_action; the UI renders the card, and the
+  // user's structured answer (validated against this very spec) becomes the next
+  // turn. Never used to state facts — only to ask a bounded question.
+  const requestInputTool: OpenAiTool = {
+    type: "function",
+    function: {
+      name: "request_input",
+      description:
+        "درخواست یک ورودی ساختاریافته از کاربر وقتی برای ادامه به انتخاب یا اطلاعات مشخصی نیاز داری (مثلاً «کدام تأمین‌کننده؟» یا «مبلغ و تاریخ هزینه؟»). به جای پرسش متنی، یک فرم تایپ‌شده بساز تا پاسخ کاربر دقیق و بدون حدس برگردد. این ابزار فقط برای پرسیدن است، نه برای بیان اطلاعات یا اجرای تغییر.",
+      parameters: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["choice", "multi_choice", "form"],
+            description: "choice=انتخاب یک گزینه، multi_choice=چند گزینه، form=چند فیلد تایپ‌شده",
+          },
+          prompt: { type: "string", description: "پرسشی که بالای کارت نشان داده می‌شود" },
+          options: {
+            type: "array",
+            description: "برای choice/multi_choice: گزینه‌ها. هر گزینه id یکتا و label فارسی دارد.",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "شناسهٔ یکتای گزینه" },
+                label: { type: "string", description: "متن نمایشی گزینه" },
+              },
+              required: ["id", "label"],
+              additionalProperties: false,
+            },
+          },
+          fields: {
+            type: "array",
+            description: "برای form: فیلدها. هر فیلد key یکتا، label، و type دارد.",
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string", description: "کلید یکتای فیلد" },
+                label: { type: "string", description: "برچسب فارسی فیلد" },
+                type: {
+                  type: "string",
+                  enum: ["text", "number", "date", "boolean", "select"],
+                  description: "نوع فیلد؛ date به‌صورت YYYY-MM-DD",
+                },
+                required: { type: "boolean", description: "آیا پر کردن این فیلد الزامی است" },
+                options: {
+                  type: "array",
+                  description: "فقط برای type=select: گزینه‌های مجاز",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      label: { type: "string" },
+                    },
+                    required: ["id", "label"],
+                    additionalProperties: false,
+                  },
+                },
+                placeholder: { type: "string", description: "متن راهنمای داخل فیلد، اختیاری" },
+              },
+              required: ["key", "label", "type"],
+              additionalProperties: false,
+            },
+          },
+          allowOther: {
+            type: "boolean",
+            description: "فقط choice/multi_choice: اجازهٔ پاسخ متنی «سایر» علاوه بر گزینه‌ها",
+          },
+        },
+        required: ["kind", "prompt"],
+        additionalProperties: false,
+      },
+    },
+  };
+
   const floorReadTools: OpenAiTool[] = [
     {
       type: "function",
@@ -1245,7 +1323,7 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
     },
   ];
 
-  if (mode === "wizard") return [readTools[0], proposeTool];
+  if (mode === "wizard") return [readTools[0], proposeTool, requestInputTool];
   if (mode === "dashboard") {
     const base = opts.hasAttachment
       ? [...readTools, receiptTool]
@@ -1257,16 +1335,21 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
     // what it was granted), and `propose_action` is scoped to the agent's own
     // action list — empty means a read-only agent that proposes nothing. With
     // no allowlist present the full surface stands, exactly as before.
+    //
+    // Phase E — `request_input` is offered to every dashboard turn, including a
+    // scoped custom agent: asking the user a typed question is a read-shaped,
+    // never-mutating act (it opens no new write path), so even a read-only agent
+    // may clarify what it was asked before answering.
     if (opts.toolAllowlist) {
       const allowed = new Set(opts.toolAllowlist);
       const scopedReads = base.filter((tool) => allowed.has(tool.function.name));
       const actionTypes = opts.actionTypes ?? [];
       return actionTypes.length === 0
-        ? scopedReads
-        : [...scopedReads, proposeToolFor(actionTypes)];
+        ? [...scopedReads, requestInputTool]
+        : [...scopedReads, proposeToolFor(actionTypes), requestInputTool];
     }
 
-    return [...base, proposeTool];
+    return [...base, proposeTool, requestInputTool];
   }
   if (mode === "floor") return floorReadTools;
   if (mode === "proactive") return [];

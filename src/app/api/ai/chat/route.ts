@@ -11,6 +11,7 @@ import {
 } from "@/lib/ai-wallet-billing";
 import { createAiActionAudit } from "@/lib/ai-action-audit";
 import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
+import { createInputRequest } from "@/lib/ai-input-requests-service";
 import {
   parseChatAttachments,
   prepareAttachments,
@@ -384,27 +385,48 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               })
             : null;
 
+          // Phase E — persist the assistant turn, then attach a typed input
+          // request to it when the model raised one. The request row links back
+          // to this message so the transcript and the still-open card stay in
+          // one join.
+          let inputRequestId: string | null = null;
           if (conversationId) {
-            await appendMessage({
+            const messageId = await appendMessage({
               conversationId,
               role: "assistant",
               content: reply.content,
               proposal: reply.proposedAction,
-            }).catch((err) => console.error("ai conversation persistence failed", err));
+            }).catch((err) => {
+              console.error("ai conversation persistence failed", err);
+              return null;
+            });
+            if (reply.inputRequest && messageId) {
+              const created = await createInputRequest({
+                conversationId,
+                messageId,
+                spec: reply.inputRequest,
+              }).catch((err) => {
+                console.error("ai input request persistence failed", err);
+                return null;
+              });
+              inputRequestId = created?.id ?? null;
+            }
           }
 
           // Wave 7 — cache the answer only when the turn was provably
           // read-only: no proposal and nothing outside the mode's read tools.
           // `storeCachedAnswer` re-checks the same gate, so a future edit to
-          // this route cannot forget it.
+          // this route cannot forget it. Phase E — an input-request turn is
+          // interactive and per-user, never cached: it is treated like a
+          // proposal for the cache gate.
           const readToolNames = toolDefinitions(mode, { hasAttachment: false })
-            .filter((tool) => tool.function.name !== "propose_action")
+            .filter((tool) => tool.function.name !== "propose_action" && tool.function.name !== "request_input")
             .map((tool) => tool.function.name);
           const toolsUsed = reply.toolCalls.map((call) => call.name);
           const turnShape = {
             mode,
             toolsUsed,
-            proposedAction: Boolean(reply.proposedAction),
+            proposedAction: Boolean(reply.proposedAction) || Boolean(reply.inputRequest),
             readToolNames,
           };
           if (questionEmbedding && isCacheableTurn(turnShape)) {
@@ -434,6 +456,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           emit("done", {
             content: reply.content,
             proposedAction: reply.proposedAction,
+            // Phase E — the typed input request (spec + its persisted id), so
+            // the client can render the card and submit an answer against it.
+            inputRequest: reply.inputRequest
+              ? { id: inputRequestId, spec: reply.inputRequest }
+              : null,
             auditId,
             conversationId,
             // What this turn actually cost, so the client can say so under the

@@ -527,3 +527,76 @@ autopilot 10/10, tenant-isolation 20/20 — the last covers 0156); `tsc` clean.
 **Phase D COMPLETE** (Parts 1–3: custom Agents, Automation engine,
 autopilot-as-policy). UI for all three deferred to Phase I. Next in the agreed
 sequence: **Phase E — structured chat input protocol**.
+
+## 6e. Phase E — COMPLETE (structured chat input protocol)
+
+Phase E turns "the AI asks a question" from a free-text guessing game into a
+typed round-trip. Instead of the model writing "which supplier — Aram Coffee or
+Pak Dairy?" and hoping the human types one back verbatim, it emits a
+`request_input` tool call carrying a **spec**, the turn ends (exactly like
+`propose_action`), the UI renders a card, and the human's answer is
+re-validated server-side against the *stored* spec before it re-enters the
+model as plain text.
+
+**Three input kinds** (`src/lib/ai-input-protocol.ts`, the pure validation
+core, 15 unit tests):
+
+- `choice` — pick exactly one of N labelled options (optionally an "other"
+  free-text escape hatch).
+- `multi_choice` — pick zero-or-more, with optional `min`/`max`.
+- `form` — a small set of typed fields (`text` / `number`), each
+  required-or-not.
+
+`InputRequestSpec` is what the model emits; `InputResponse` is what the human
+sends back; `validateInputRequest(spec, response)` is the single gate both the
+client (to enable Submit) and the server (as the real authority) run.
+
+**Why `request_input` is read-shaped.** Asking a typed question opens no write
+path, so the tool is declared on **every** dashboard turn — including scoped
+and read-only custom agents. It is declared LAST in `toolDefinitions`, after
+`propose_action`, and the service loop short-circuits on it the same way
+(`AgentReply.inputRequest`, `src/lib/ai-service.ts`). Over **MCP** it is
+excluded (`EXCLUDED_READ_TOOLS` in `src/lib/mcp/tools.ts`): there is no card
+and no human to answer it, so it has no meaning for an external client.
+
+**The answer path never trusts the client.** The card sends back ids
+(`{ choice: "s1" }`), but the model is fed **labels**, never ids — the id
+"s1" is an implementation detail the model never sees. The answer is
+re-validated against the spec that was stored when the request was created, so
+a hand-crafted POST naming an option that was never offered is refused
+(`invalid_response`). Answering is idempotent: a second submit reports
+`already_answered` and does not overwrite the recorded response. A pending
+request can be dismissed (`cancelled`).
+
+**Storage & isolation.** `migrations/0157_ai_input_requests.sql` adds
+`ai_input_requests`, which reaches tenant scope only through its parent
+`ai_conversations` row (the same shape as `ai_messages`) and carries RLS from
+it. `src/lib/ai-input-requests-service.ts` is the tenant-scoped DB half
+(`createInputRequest`, `answerInputRequest` → returns the model message,
+`cancelInputRequest`, plus read helpers). The route
+`api/ai/conversations/[id]/input-requests/[requestId]` (POST answer / DELETE
+cancel) re-checks `ownsConversation` before doing anything — ownership is the
+authorization, the same pattern as the conversation routes (recorded in
+`api-guards.test.ts`'s self-guarding list).
+
+**Wiring.** `getConversationMessages` LEFT JOINs the request so a reloaded
+conversation shows a still-pending card; `chat/route.ts` creates the row and
+includes `inputRequest:{id,spec}|null` on the `done` event, and treats a turn
+that asks for input as non-cacheable. Client:
+`src/components/ai/use-ai-chat.ts` (`AiInputRequestState`,
+`AiChatMessage.inputRequest`, `submitInputRequest`, `dismissInputRequest`),
+the new `ai-input-request-card.tsx` (choice / multi_choice / form, with the
+"other" escape hatch and client-side `canSubmit`), rendered by
+`chat-bubble.tsx` and threaded through `ai-chat-messages.tsx`,
+`ai-assistant.tsx`, and `ai-chat-hub.tsx`.
+
+**Tests.** `ai-input-protocol.test.ts` 15/15; the AI unit files that enumerate
+tools updated (`request_input` present on dashboard + scoped agents, absent
+from MCP read tools, `propose_action` still present); new
+`integration/ai-input-requests.integration.test.ts` (create/read pending,
+valid answer → label-based model message, refused unknown option, idempotent
+double submit, dismiss); `tenant-isolation.integration.test.ts` now covers
+0157 (20/20). Full suite **4812 unit tests / 326 files**; `tsc` clean.
+
+**Phase E COMPLETE.** Next in the agreed sequence: **Phase F — Projects as
+workspaces (memory / files / project chat).**

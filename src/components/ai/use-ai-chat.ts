@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ACTION_CATALOG, type ProposedAction } from "@/lib/ai";
+import type { InputRequestSpec, InputResponse } from "@/lib/ai-input-protocol";
 import {
   MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_PDF_BYTES,
@@ -21,11 +22,24 @@ import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 
 export type AssistantMode = "wizard" | "dashboard" | "floor";
 
+/** Phase E — a typed input request attached to an assistant turn. */
+export interface AiInputRequestState {
+  /** The persisted request id; null when the turn was not persisted. */
+  id: string | null;
+  spec: InputRequestSpec;
+  /** Set once the user answered, so the card locks and shows the answer. */
+  answered?: boolean;
+  /** Set once the user dismissed the card without answering. */
+  dismissed?: boolean;
+}
+
 export interface AiChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   proposal?: ProposedAction | null;
+  /** Phase E — a structured input request the assistant raised this turn. */
+  inputRequest?: AiInputRequestState | null;
   auditId?: string | null;
   applied?: boolean;
   /** Actual Rial charged for this turn, shown quietly once it finishes. */
@@ -113,6 +127,21 @@ interface ConversationMessagePayload {
   role: "user" | "assistant";
   content: string;
   proposal: ProposedAction | null;
+  inputRequest?: { id: string; spec: InputRequestSpec; status: string } | null;
+}
+
+/** Reads the `inputRequest` block off a done event or a loaded message. */
+function parseInputRequestPayload(raw: unknown): AiInputRequestState | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const spec = obj.spec as InputRequestSpec | undefined;
+  if (!spec || typeof spec !== "object" || typeof spec.kind !== "string") return null;
+  return {
+    id: typeof obj.id === "string" ? obj.id : null,
+    spec,
+    answered: obj.status === "answered",
+    dismissed: obj.status === "cancelled",
+  };
 }
 
 export interface UseAiChatOptions {
@@ -252,6 +281,7 @@ export function useAiChat({
           role: message.role,
           content: message.content,
           proposal: canPropose ? message.proposal : null,
+          inputRequest: parseInputRequestPayload(message.inputRequest),
         })),
       );
       setConversation(id);
@@ -356,6 +386,7 @@ export function useAiChat({
             ? ((payload.proposedAction as ProposedAction | null | undefined) ??
               null)
             : null,
+          inputRequest: parseInputRequestPayload(payload.inputRequest),
           auditId: typeof payload.auditId === "string" ? payload.auditId : null,
           costRial: typeof payload.costRial === "number" ? payload.costRial : null,
           cacheNotice:
@@ -539,6 +570,80 @@ export function useAiChat({
     );
   }
 
+  /**
+   * Phase E — the user answered a structured input card. The response is
+   * submitted to be re-validated against the stored spec; on success the card
+   * locks and the returned plain-text message (labels, not ids) is sent as the
+   * next chat turn, so the model reads exactly what the user saw. The card is
+   * marked answered optimistically and rolled back if the submit fails.
+   */
+  async function submitInputRequest(message: AiChatMessage, response: InputResponse) {
+    const request = message.inputRequest;
+    if (!request || request.answered || request.dismissed || busy) return;
+    if (!request.id || !conversationId) {
+      toast.error("این درخواست دیگر در دسترس نیست.");
+      return;
+    }
+    setMessages((current) =>
+      current.map((item) =>
+        item.id === message.id && item.inputRequest
+          ? { ...item, inputRequest: { ...item.inputRequest, answered: true } }
+          : item,
+      ),
+    );
+    try {
+      const res = await fetch(
+        `/api/ai/conversations/${conversationId}/input-requests/${request.id}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ response }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        modelMessage?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.modelMessage) {
+        throw new Error(data.error ?? "submit_failed");
+      }
+      await startStream(data.modelMessage);
+    } catch (error) {
+      // Roll the card back so the user can try again.
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === message.id && item.inputRequest
+            ? { ...item, inputRequest: { ...item.inputRequest, answered: false } }
+            : item,
+        ),
+      );
+      toast.error(
+        error instanceof Error && error.message === "already_answered"
+          ? "به این پرسش قبلاً پاسخ داده شده است."
+          : "ثبت پاسخ ممکن نشد. دوباره تلاش کنید.",
+      );
+    }
+  }
+
+  /** Dismiss an input card without answering it. */
+  function dismissInputRequest(message: AiChatMessage) {
+    const request = message.inputRequest;
+    if (!request) return;
+    if (request.id && conversationId) {
+      void fetch(
+        `/api/ai/conversations/${conversationId}/input-requests/${request.id}`,
+        { method: "DELETE" },
+      ).catch(() => {});
+    }
+    setMessages((current) =>
+      current.map((item) =>
+        item.id === message.id && item.inputRequest
+          ? { ...item, inputRequest: { ...item.inputRequest, dismissed: true } }
+          : item,
+      ),
+    );
+  }
+
   return {
     canPropose,
     messages,
@@ -566,5 +671,7 @@ export function useAiChat({
     askAgain,
     applyProposal,
     dismissProposal,
+    submitInputRequest,
+    dismissInputRequest,
   };
 }

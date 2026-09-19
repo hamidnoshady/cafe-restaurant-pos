@@ -579,8 +579,10 @@ describe("search_business_knowledge declaration", () => {
   it("is declared for dashboard mode only when retrieval is up", () => {
     const names = toolDefinitions("dashboard", { retrieval: true }).map((tool) => tool.function.name);
     expect(names).toContain(KNOWLEDGE_TOOL_NAME);
-    // propose_action stays last of the declared set — it is the confirm gate.
-    expect(names[names.length - 1]).toBe("propose_action");
+    // propose_action is the confirm gate; request_input (Phase E) is declared
+    // last of the interactive pair, after it.
+    expect(names).toContain("propose_action");
+    expect(names[names.length - 1]).toBe("request_input");
   });
 
   it("is never declared for wizard, floor or platform modes", () => {

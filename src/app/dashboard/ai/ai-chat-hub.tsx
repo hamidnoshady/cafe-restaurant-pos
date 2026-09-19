@@ -72,6 +72,8 @@ export function AiChatHub({
     askAgain,
     applyProposal,
     dismissProposal,
+    submitInputRequest,
+    dismissInputRequest,
   } = chat;
 
   useEffect(() => {
@@ -212,6 +214,8 @@ export function AiChatHub({
                   formatCost={(rial) => money.format(rial)}
                   applyProposal={applyProposal}
                   dismissProposal={dismissProposal}
+                  submitInputRequest={submitInputRequest}
+                  dismissInputRequest={dismissInputRequest}
                   onAskAgain={
                     message.cacheNotice
                       ? () => {

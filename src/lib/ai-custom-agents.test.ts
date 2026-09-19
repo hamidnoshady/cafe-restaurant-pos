@@ -111,7 +111,11 @@ describe("Phase D — agent scoping actually narrows the turn", () => {
       actionTypes: scope.actionTypes,
     });
     const names = tools.map((t) => t.function.name);
-    expect(names.sort()).toEqual(["find_items", "get_stock_valuation", "propose_action"].sort());
+    // Phase E — request_input rides every dashboard turn, scoped agents
+    // included: asking a typed question opens no write path.
+    expect(names.sort()).toEqual(
+      ["find_items", "get_stock_valuation", "propose_action", "request_input"].sort(),
+    );
     // and no other dashboard read leaked through
     expect(names).not.toContain("get_vat_liability");
 
@@ -126,7 +130,11 @@ describe("Phase D — agent scoping actually narrows the turn", () => {
       toolAllowlist: readerScope.toolAllowlist,
       actionTypes: readerScope.actionTypes,
     });
-    expect(tools.map((t) => t.function.name)).not.toContain("propose_action");
+    const names = tools.map((t) => t.function.name);
+    expect(names).not.toContain("propose_action");
+    // Phase E — but it may still ASK the user a typed question: request_input
+    // is read-shaped and never a write path.
+    expect(names).toContain("request_input");
   });
 
   it("the prompt appends the agent's instructions and scopes the catalogue dump", () => {

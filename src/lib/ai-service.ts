@@ -16,6 +16,7 @@ import {
   type PromptContext,
 } from "./ai";
 import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
+import { validateInputRequest, type InputRequestSpec } from "./ai-input-protocol";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
 import { parseResponseCostHeader } from "./ai-gateway";
 import { clampRetrievalLimit, formatRetrievalForPrompt, isRetrievalAvailable, retrieveKnowledge } from "./ai-rag";
@@ -32,6 +33,13 @@ export type { ProposedAction };
 export interface AgentReply {
   content: string;
   proposedAction: ProposedAction | null;
+  /**
+   * Phase E — a typed input request the model raised this turn (a choice, a
+   * multi-choice or a form). Mutually exclusive with `proposedAction`: a turn
+   * either asks the user for input or proposes a write, never both. Null when
+   * the turn neither asked nor proposed.
+   */
+  inputRequest: InputRequestSpec | null;
   usage: AiTokenUsage;
   /**
    * Phase 38b — the gateway's own cost figure for this turn, summed across
@@ -605,10 +613,11 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   }).filter((tool) => allowActions || tool.function.name !== "propose_action");
   const allowedActionTypes = opts.actionTypes ? new Set<string>(opts.actionTypes) : null;
   const canPropose = tools.some((tool) => tool.function.name === "propose_action");
+  const canRequestInput = tools.some((tool) => tool.function.name === "request_input");
   const allowedReadToolNames = new Set(
     tools
       .map((tool) => tool.function.name)
-      .filter((name) => name !== "propose_action"),
+      .filter((name) => name !== "propose_action" && name !== "request_input"),
   );
   const toolRunner: ReadToolRunner | null =
     opts.executeReadTool ??
@@ -638,6 +647,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
       return {
         content: textOf(message.content).trim() || "متوجه نشدم؛ لطفاً دوباره بپرسید.",
         proposedAction: null,
+        inputRequest: null,
         usage,
         costUsd,
         toolCalls: toolTrace,
@@ -652,7 +662,39 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
       const parsed = toProposedAction(parseArgs(proposal.function.arguments));
       const action = parsed && (!allowedActionTypes || allowedActionTypes.has(parsed.type)) ? parsed : null;
       const text = textOf(message.content).trim() || (action ? action.summary : "پیشنهاد آماده است.");
-      return { content: text, proposedAction: action, usage, costUsd, toolCalls: toolTrace };
+      return { content: text, proposedAction: action, inputRequest: null, usage, costUsd, toolCalls: toolTrace };
+    }
+
+    // Phase E — a structured input request also ends the turn: the model is
+    // waiting on the user, so there is nothing more to generate. A malformed
+    // spec (the model got the shape wrong) is dropped and the loop continues,
+    // so a bad request_input degrades to an ordinary answer rather than a dead
+    // turn.
+    const inputCall = canRequestInput
+      ? toolCalls.find((c) => c.function.name === "request_input")
+      : undefined;
+    if (inputCall) {
+      const validation = validateInputRequest(parseArgs(inputCall.function.arguments));
+      if (validation.ok) {
+        const text = textOf(message.content).trim() || validation.spec.prompt;
+        return {
+          content: text,
+          proposedAction: null,
+          inputRequest: validation.spec,
+          usage,
+          costUsd,
+          toolCalls: toolTrace,
+        };
+      }
+      // Fall through: feed the tool an error so the model can ask again in
+      // prose or fix the spec, rather than silently ending the turn.
+      convo.push({ role: "assistant", content: textOf(message.content), tool_calls: toolCalls });
+      convo.push({
+        role: "tool",
+        tool_call_id: inputCall.id,
+        content: JSON.stringify({ ok: false, error: "invalid_input_request", details: validation.errors }),
+      });
+      continue;
     }
 
     // Otherwise every call must be a read tool — run them and feed results back.
@@ -729,6 +771,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   return {
     content: "برای پاسخ به این درخواست به مراحل زیادی نیاز بود. لطفاً سؤال را ساده‌تر بپرسید.",
     proposedAction: null,
+    inputRequest: null,
     usage,
     costUsd,
     toolCalls: toolTrace,

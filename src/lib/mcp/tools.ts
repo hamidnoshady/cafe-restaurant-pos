@@ -71,8 +71,15 @@ export interface McpTool {
  *   * `draft_expense_from_receipt` — reads an image the caller attached to the
  *     current chat turn. There is no such attachment over MCP; the tool would
  *     always answer "no image".
+ *   * `request_input` — the in-app structured-input protocol (Phase E). It asks
+ *     the human a typed question and waits for a card to be answered; over MCP
+ *     there is no card and no user to answer it, so it has no meaning.
  */
-const EXCLUDED_READ_TOOLS = new Set(["propose_action", "draft_expense_from_receipt"]);
+const EXCLUDED_READ_TOOLS = new Set([
+  "propose_action",
+  "draft_expense_from_receipt",
+  "request_input",
+]);
 
 /**
  * One English sentence per read tool.
