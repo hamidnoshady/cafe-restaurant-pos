@@ -378,6 +378,11 @@ const crmCustomerNote: AutopilotExecutor = async (ctx) => {
     isPinned: ctx.payload.isPinned === true,
     createdBy: `${AUTOPILOT_NOTE_PREFIX}دستیار`,
   });
+  // `addCustomerNote` now also refuses a customer already merged into
+  // another one (the pre-check above only confirmed the row exists, not that
+  // it's still the live one) — same `not_found`-shaped failure as the row
+  // never existing, since from here the two are indistinguishable in effect.
+  if (!note) return fail("not_found");
   return { ok: true, result: { customerId, noteId: note.id } };
 };
 

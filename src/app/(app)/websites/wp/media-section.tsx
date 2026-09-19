@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { EmptyState, SectionCard, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -211,7 +212,15 @@ export function WpMediaSection() {
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
 
+  const locked = useFeatureLocked();
+
   const loadConnections = useCallback(async () => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only light the console with 403s behind the grayed-out preview.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     setConnections(null);
     setConnectionsError("");
     const response = await api<{ connections: ConnectionLite[]; error?: string }>(
@@ -228,7 +237,7 @@ export function WpMediaSection() {
         ? current
         : response.data.connections[0]?.id ?? "",
     );
-  }, []);
+  }, [locked]);
 
   useEffect(() => {
     void loadConnections();

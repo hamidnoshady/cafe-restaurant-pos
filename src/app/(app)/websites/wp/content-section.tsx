@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useFeatureLocked } from "@/components/feature-lock";
 import {
   api,
   ErrorBox,
@@ -109,8 +110,16 @@ export function WpContentSection() {
   const [notice, setNotice] = useState("");
   const [actionError, setActionError] = useState("");
   const [editing, setEditing] = useState<ContentRow | "new" | null>(null);
+  const locked = useFeatureLocked();
 
   useEffect(() => {
+    // Locked previews cannot call integration APIs; suppress the otherwise
+    // guaranteed 403 and let the feature-lock overlay explain availability.
+    if (locked) {
+      setConnections([]);
+      setSelectedId("");
+      return;
+    }
     const controller = new AbortController();
     setConnections(null);
     setConnectionError("");
@@ -129,7 +138,7 @@ export function WpContentSection() {
       setSelectedId((current) => (next.some((connection) => connection.id === current) ? current : (next[0]?.id ?? "")));
     });
     return () => controller.abort();
-  }, [connectionAttempt]);
+  }, [connectionAttempt, locked]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

@@ -21,6 +21,7 @@ import {
   AlertTriangleIcon,
 } from "lucide-react";
 import { api, errorMessageOrRaw } from "@/app/dashboard/ui";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -126,8 +127,15 @@ export function WpOverviewSection() {
   const [busy, setBusy] = useState<SyncKind | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const locked = useFeatureLocked();
 
   const load = useCallback(async () => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only light the console with 403s behind the grayed-out preview.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     setError("");
     const connRes = await api<{ connections: Connection[]; error?: string }>(
       "/api/integrations/connections?provider=woocommerce",
@@ -142,7 +150,7 @@ export function WpOverviewSection() {
       setConnections([]);
       setError(errorMessageOrRaw(String(connRes.data?.error ?? "")) || "خطا در خواندن اتصال‌ها");
     }
-  }, []);
+  }, [locked]);
 
   useEffect(() => {
     load();
@@ -217,18 +225,21 @@ export function WpOverviewSection() {
 
   if (connections.length === 0) {
     return (
-      <EmptyState>
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <PlugIcon className="size-10 text-muted-foreground/60" />
-          <p className="font-semibold text-foreground">هنوز فروشگاهی متصل نیست</p>
-          <p className="max-w-md text-sm text-muted-foreground">
-            برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید.
-          </p>
-          <Link href="/settings/connections?tab=woocommerce">
-            <Button>اتصال فروشگاه</Button>
-          </Link>
-        </div>
-      </EmptyState>
+      <div className="space-y-4">
+        {error && !locked ? <EmptyState>{error}</EmptyState> : null}
+        <EmptyState>
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <PlugIcon className="size-10 text-muted-foreground/60" />
+            <p className="font-semibold text-foreground">هنوز فروشگاهی متصل نیست</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید.
+            </p>
+            <Link href="/settings/connections?tab=woocommerce">
+              <Button>اتصال فروشگاه</Button>
+            </Link>
+          </div>
+        </EmptyState>
+      </div>
     );
   }
 

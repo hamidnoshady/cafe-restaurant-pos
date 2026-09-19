@@ -262,7 +262,14 @@ export function WpConnectionPanel() {
     if (data?.linkToken) setLinkToken(data.linkToken);
   }
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  // The origin is shown to copy into the WordPress plugin settings, so it must
+  // be the browser's own — but reading it while rendering would answer one
+  // value on the server and another on the client, and React hydrates the
+  // difference into a full client re-render. Fill it in after mount instead.
+  const [origin, setOrigin] = useState("");
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
 
   return (
     <div className="space-y-6">

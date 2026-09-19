@@ -337,6 +337,19 @@ export const TIMELINE_KINDS = [
 ] as const;
 export type TimelineKind = (typeof TIMELINE_KINDS)[number];
 
+/**
+ * The kinds worth offering in *one customer's* filter chip.
+ *
+ * `service_reminder` is a shop-facing nudge with no `customer_id` at all
+ * (migration 0087 made the column nullable precisely because these rows
+ * point at a serial, not a person) — `customerTimeline` can never return one,
+ * so a per-customer filter that lists it anyway is an option that always
+ * yields an empty page. Every other kind is genuinely one customer's history.
+ */
+export const CUSTOMER_TIMELINE_KINDS: readonly TimelineKind[] = TIMELINE_KINDS.filter(
+  (kind) => kind !== "service_reminder",
+);
+
 export const TIMELINE_KIND_LABELS: Record<TimelineKind, string> = {
   order: "خرید",
   payment: "پرداخت",

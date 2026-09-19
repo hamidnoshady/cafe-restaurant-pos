@@ -10,8 +10,8 @@
  * the «افزایش اعتبار» link go to the one billing page the business already
  * knows.
  *
- * Every date here is Shamsi, through `formatJalali`; every amount is Toman,
- * from integer-Rial storage.
+ * Every date here is Shamsi, through `formatJalali`; every amount follows the
+ * business's chosen display unit (`useMoney`), from integer-Rial storage.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -20,7 +20,7 @@ import { CreditCardIcon, RefreshCwIcon, WalletIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   isRenewalDue,
   totalChargedRial,
@@ -51,6 +51,7 @@ export function CmsBillingSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [planKey, setPlanKey] = useState("");
+  const money = useMoney();
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -128,7 +129,7 @@ export function CmsBillingSection() {
             <div>
               <dt className="text-xs text-muted-foreground">هزینهٔ ماهانه</dt>
               <dd className="mt-0.5 text-sm font-medium text-foreground">
-                {formatToman(subscription.monthlyPriceRial)}
+                {money.format(subscription.monthlyPriceRial)}
               </dd>
             </div>
             <div>
@@ -161,7 +162,7 @@ export function CmsBillingSection() {
               <option value="">— طرحی انتخاب نشده —</option>
               {activePlans.map((plan) => (
                 <option key={plan.key} value={plan.key}>
-                  {plan.name} — ماهانه {formatToman(plan.monthlyPriceRial)}
+                  {plan.name} — ماهانه {money.format(plan.monthlyPriceRial)}
                 </option>
               ))}
             </select>
@@ -218,13 +219,13 @@ export function CmsBillingSection() {
         }
       >
         <p className="text-sm text-foreground">
-          موجودی فعلی: <span className="font-bold">{formatToman(balanceRial)}</span>
+          موجودی فعلی: <span className="font-bold">{money.format(balanceRial)}</span>
         </p>
       </SectionCard>
 
       <SectionCard
         title="هزینه‌های سایت"
-        description={`مجموع ثبت‌شده تا امروز: ${formatToman(totalChargedRial(charges))}`}
+        description={`مجموع ثبت‌شده تا امروز: ${money.format(totalChargedRial(charges))}`}
       >
         {charges.length === 0 ? (
           <EmptyState>هنوز هزینه‌ای برای این سایت ثبت نشده است.</EmptyState>
@@ -245,7 +246,7 @@ export function CmsBillingSection() {
                     <td className="px-3 py-2 text-muted-foreground">{formatJalali(charge.occurredAt)}</td>
                     <td className="px-3 py-2">{WEBSITE_CHARGE_LABELS[charge.kind] ?? charge.kind}</td>
                     <td className="px-3 py-2 text-muted-foreground">{charge.description}</td>
-                    <td className="px-3 py-2 font-medium tabular-nums">{formatToman(charge.amountRial)}</td>
+                    <td className="px-3 py-2 font-medium tabular-nums">{money.format(charge.amountRial)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -30,6 +30,7 @@ import {
   SlidersHorizontalIcon,
 } from "lucide-react";
 import { api } from "@/app/dashboard/ui";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
@@ -120,8 +121,15 @@ export function WpQueueSection() {
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [bannerMessage, setBannerMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const locked = useFeatureLocked();
 
   useEffect(() => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only light the console with 403s behind the grayed-out preview.
+    if (locked) {
+      setConnections([]);
+      return;
+    }
     api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok && res.data.connections.length > 0) {
         setConnections(res.data.connections);
@@ -130,7 +138,7 @@ export function WpQueueSection() {
         setConnections([]);
       }
     });
-  }, []);
+  }, [locked]);
 
   const load = useCallback(
     async (connectionId: string, status = statusFilter, direction = directionFilter, search = searchQuery) => {

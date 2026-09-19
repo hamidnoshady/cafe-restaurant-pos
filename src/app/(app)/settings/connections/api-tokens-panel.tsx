@@ -72,6 +72,13 @@ export function ApiTokensPanel() {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>(["orders.read", "menu.read"]);
   const [expiresInDays, setExpiresInDays] = useState("");
+  // The example's base URL is the browser's own origin. Reading it while
+  // rendering answers "" on the server and the real origin on the client — a
+  // hydration text mismatch — so it is filled in after mount instead.
+  const [origin, setOrigin] = useState("");
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
 
   const load = useCallback(async () => {
     if (locked) {
@@ -282,7 +289,7 @@ export function ApiTokensPanel() {
         </p>
         <pre dir="ltr" className="overflow-x-auto rounded-lg bg-primary p-3 text-xs text-primary-foreground/90">
 {`curl -H "Authorization: Bearer posk_live_..." \\
-     ${typeof window !== "undefined" ? window.location.origin : "https://your-domain"}/api/v1/orders`}
+     ${origin || "https://your-domain"}/api/v1/orders`}
         </pre>
       </SectionCard>
     </div>
