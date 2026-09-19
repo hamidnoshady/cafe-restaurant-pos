@@ -109,6 +109,10 @@ export interface CoworkerJobInput {
   templateKey: string;
   title: string;
   locationId: string | null;
+  /** The project workspace this job serves, if any. NULL = a business-wide job.
+   * Shape only here; that the id names a real project of this business is
+   * checked in the service layer where the tenant scope lives. */
+  projectId: string | null;
   triggerKind: CoworkerTriggerKind;
   eventKind: CoworkerEventKind | null;
   scheduleHour: number | null;
@@ -183,6 +187,7 @@ export const COWORKER_ERROR_MESSAGES: Record<string, string> = {
   coworker_run_not_found: "این اجرا پیدا نشد.",
   coworker_run_already_decided: "برای این اجرا قبلاً تصمیم گرفته شده است.",
   coworker_module_unavailable: "این قالب برای صنف شما در دسترس نیست.",
+  coworker_project_not_found: "پروژهٔ انتخاب‌شده پیدا نشد.",
 };
 
 export function coworkerErrorMessage(code: string): string {

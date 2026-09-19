@@ -192,6 +192,25 @@ export async function getProject(
   return rows[0] ? toProject(rows[0]) : null;
 }
 
+/**
+ * Cheap existence check for "does this business own a project with this id".
+ * Used by the entities that may carry a project_id label (coworker jobs,
+ * automations) to refuse a cross-tenant or made-up id before the write. RLS
+ * would already stop a cross-tenant read; this turns a silent null-label into a
+ * clear, catchable outcome. Returns false for a null/blank id (no project).
+ */
+export async function projectExistsForBusiness(
+  businessId: string,
+  projectId: string | null | undefined,
+): Promise<boolean> {
+  if (!projectId) return false;
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM ai_projects WHERE id = $1 AND business_id = $2`,
+    [projectId, businessId],
+  );
+  return rows.length > 0;
+}
+
 export async function updateProject(
   owner: Owner & { projectId: string },
   input: {

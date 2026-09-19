@@ -11,6 +11,7 @@
  * and firing it (later) reuses the same guarded executor the chat does.
  */
 import { query } from "./db";
+import { projectExistsForBusiness } from "./ai-projects";
 import {
   localBusinessClock,
   DEFAULT_PROACTIVE_TIMEZONE,
@@ -47,6 +48,7 @@ export interface Automation {
   id: string;
   businessId: string;
   locationId: string | null;
+  projectId: string | null;
   name: string;
   triggerKind: AutomationTriggerKind;
   eventKind: AutomationEventKind | null;
@@ -68,6 +70,7 @@ interface AutomationRow extends Record<string, unknown> {
   id: string;
   business_id: string;
   location_id: string | null;
+  project_id: string | null;
   name: string;
   trigger_kind: string;
   event_kind: string | null;
@@ -90,6 +93,7 @@ function toAutomation(row: AutomationRow): Automation {
     id: row.id,
     businessId: row.business_id,
     locationId: row.location_id,
+    projectId: row.project_id,
     name: row.name,
     triggerKind: row.trigger_kind as AutomationTriggerKind,
     eventKind: row.event_kind as AutomationEventKind | null,
@@ -109,7 +113,7 @@ function toAutomation(row: AutomationRow): Automation {
 }
 
 const COLUMNS =
-  "id, business_id, location_id, name, trigger_kind, event_kind, schedule_hour, schedule_weekday, conditions, action_type, action_payload, approval_mode, enabled, created_by, authorized_by, created_at, updated_at, last_run_at";
+  "id, business_id, location_id, project_id, name, trigger_kind, event_kind, schedule_hour, schedule_weekday, conditions, action_type, action_payload, approval_mode, enabled, created_by, authorized_by, created_at, updated_at, last_run_at";
 
 export type AutomationResult =
   | { ok: true; automation: Automation }
@@ -149,16 +153,22 @@ export async function createAutomation(
   if (!validation.ok) return validation;
   const v = validation.value;
 
+  // A project label, if given, must name a real project of THIS business.
+  if (v.projectId && !(await projectExistsForBusiness(businessId, v.projectId))) {
+    return { ok: false, errors: ["project_not_found"] };
+  }
+
   try {
     const { rows } = await query<AutomationRow>(
       `INSERT INTO ai_automations
-         (business_id, location_id, name, trigger_kind, event_kind, schedule_hour, schedule_weekday,
+         (business_id, location_id, project_id, name, trigger_kind, event_kind, schedule_hour, schedule_weekday,
           conditions, action_type, action_payload, approval_mode, enabled, created_by, authorized_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11::jsonb,$12,$13,$14,$15)
        RETURNING ${COLUMNS}`,
       [
         businessId,
         v.locationId,
+        v.projectId,
         v.name,
         v.triggerKind,
         v.eventKind,
@@ -190,21 +200,27 @@ export async function updateAutomation(
   if (!validation.ok) return validation;
   const v = validation.value;
 
+  // A project label, if given, must name a real project of THIS business.
+  if (v.projectId && !(await projectExistsForBusiness(businessId, v.projectId))) {
+    return { ok: false, errors: ["project_not_found"] };
+  }
+
   try {
     const { rows } = await query<AutomationRow>(
       `UPDATE ai_automations
           SET location_id = $3,
-              name = $4,
-              trigger_kind = $5,
-              event_kind = $6,
-              schedule_hour = $7,
-              schedule_weekday = $8,
-              conditions = $9::jsonb,
-              action_type = $10,
-              action_payload = $11::jsonb,
-              approval_mode = $12,
-              enabled = $13,
-              authorized_by = $14,
+              project_id = $4,
+              name = $5,
+              trigger_kind = $6,
+              event_kind = $7,
+              schedule_hour = $8,
+              schedule_weekday = $9,
+              conditions = $10::jsonb,
+              action_type = $11,
+              action_payload = $12::jsonb,
+              approval_mode = $13,
+              enabled = $14,
+              authorized_by = $15,
               updated_at = now()
         WHERE business_id = $1 AND id = $2
         RETURNING ${COLUMNS}`,
@@ -212,6 +228,7 @@ export async function updateAutomation(
         businessId,
         id,
         v.locationId,
+        v.projectId,
         v.name,
         v.triggerKind,
         v.eventKind,

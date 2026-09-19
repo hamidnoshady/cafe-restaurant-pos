@@ -22,6 +22,7 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let service: typeof import("../src/lib/ai-automations-service");
+let projects: typeof import("../src/lib/ai-projects");
 
 const alpha = { businessId: "", userId: "", locationId: "", menuItemId: "" };
 const beta = { businessId: "" };
@@ -54,6 +55,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   dbLib = await import("../src/lib/db");
   service = await import("../src/lib/ai-automations-service");
+  projects = await import("../src/lib/ai-projects");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -277,6 +279,67 @@ describe("automation engine service", () => {
       service.deleteAutomation(alpha.businessId, first.automation.id),
     );
     expect(alphaDelete).toBe(true);
+  });
+
+  it("labels an automation with a project it owns, refuses a foreign one, and clears the label when the project is deleted", async () => {
+    // A project of Alpha's, created through the real service.
+    const project = await dbLib.withTenant(alpha.businessId, () =>
+      projects.createProject(
+        { businessId: alpha.businessId, actorUserId: alpha.userId },
+        { name: `راه‌اندازی ونک ${randomUUID().slice(0, 6)}` },
+      ),
+    );
+    // Beta's own project — a foreign id Alpha must not be able to point at.
+    const betaProjectRow = await db.query<{ id: string }>(
+      `INSERT INTO ai_projects (business_id, name, instructions, created_by)
+       VALUES ($1, $2, '', 'seed') RETURNING id`,
+      [beta.businessId, `پروژهٔ بتا ${randomUUID().slice(0, 6)}`],
+    );
+    const betaProject = { id: betaProjectRow.rows[0].id };
+
+    // Creating with Alpha's own project id sticks.
+    const created = await dbLib.withTenant(alpha.businessId, () =>
+      service.createAutomation(
+        alpha.businessId,
+        {
+          name: `اتوماسیون پروژه ${randomUUID().slice(0, 6)}`,
+          projectId: project.id,
+          triggerKind: "manual",
+          actionType: "journal.manual.propose",
+        },
+        { userId: alpha.userId, authorizedBy: null },
+      ),
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.automation.projectId).toBe(project.id);
+
+    // Pointing at Beta's project is refused, not silently nulled.
+    const foreign = await dbLib.withTenant(alpha.businessId, () =>
+      service.createAutomation(
+        alpha.businessId,
+        {
+          name: `اتوماسیون خارجی ${randomUUID().slice(0, 6)}`,
+          projectId: betaProject.id,
+          triggerKind: "manual",
+          actionType: "journal.manual.propose",
+        },
+        { userId: alpha.userId, authorizedBy: null },
+      ),
+    );
+    expect(foreign.ok).toBe(false);
+    if (!foreign.ok) expect(foreign.errors).toContain("project_not_found");
+
+    // Deleting the project SET NULLs the label but keeps the automation.
+    await dbLib.withTenant(alpha.businessId, () =>
+      projects.archiveProject({ businessId: alpha.businessId, actorUserId: alpha.userId, projectId: project.id }),
+    );
+    await db.query(`DELETE FROM ai_projects WHERE id = $1`, [project.id]);
+    const afterDelete = await dbLib.withTenant(alpha.businessId, () =>
+      service.getAutomation(alpha.businessId, created.automation.id),
+    );
+    expect(afterDelete).not.toBeNull();
+    expect(afterDelete?.projectId).toBeNull();
   });
 });
 

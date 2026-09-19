@@ -136,6 +136,7 @@ export function evaluateConditions(doc: AutomationConditionDoc, facts: Automatio
 export interface AutomationInput {
   name?: unknown;
   locationId?: unknown;
+  projectId?: unknown;
   triggerKind?: unknown;
   eventKind?: unknown;
   scheduleHour?: unknown;
@@ -150,6 +151,7 @@ export interface AutomationInput {
 export interface NormalizedAutomation {
   name: string;
   locationId: string | null;
+  projectId: string | null;
   triggerKind: AutomationTriggerKind;
   eventKind: AutomationEventKind | null;
   scheduleHour: number | null;
@@ -235,6 +237,12 @@ export function validateAutomation(input: AutomationInput): AutomationValidation
   const locationId =
     typeof input.locationId === "string" && input.locationId.trim() ? input.locationId.trim() : null;
 
+  // The project this automation serves, if any. Shape-validated here (a string
+  // id or nothing); that the id names a real project of THIS business is
+  // checked against the DB in the service layer, where the tenant scope lives.
+  const projectId =
+    typeof input.projectId === "string" && input.projectId.trim() ? input.projectId.trim() : null;
+
   // Conditions
   const conditionsRaw = (input.conditions ?? {}) as Record<string, unknown>;
   const all = normalizeConditionList(conditionsRaw.all, errors, "all");
@@ -264,6 +272,7 @@ export function validateAutomation(input: AutomationInput): AutomationValidation
     value: {
       name,
       locationId,
+      projectId,
       triggerKind: triggerKind as AutomationTriggerKind,
       eventKind,
       scheduleHour,
@@ -289,6 +298,7 @@ const AUTOMATION_ERROR_MESSAGES: Record<string, string> = {
   conditions_any_invalid: "ساختار شرط‌ها معتبر نیست.",
   name_taken: "اتوماسیونی با این نام از قبل وجود دارد.",
   not_found: "اتوماسیون پیدا نشد.",
+  project_not_found: "پروژهٔ انتخاب‌شده پیدا نشد.",
   owner_required: "فقط مالک می‌تواند اجرای خودکار را فعال کند.",
 };
 

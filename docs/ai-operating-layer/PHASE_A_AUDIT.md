@@ -893,3 +893,54 @@ on the main library page. **Deferred, blocked:** Phase H (cache/RAG → LiteLLM)
 still requires empirical verification against the deployed
 `ghcr.io/berriai/litellm:main-stable` image before any local removal — no prod
 access in this environment, so it stays untouched per the standing rule.
+
+## 6h. Phase G Part 3 + M4 remainder — project labels on background entities
+
+**Phase G Part 3 (media provenance badge, `df919d6`).** The main Media Library
+page (`dashboard/media/media-manager.tsx`) now shows the provenance the columns
+record: an «ساختهٔ دستیار» / «از گفت‌وگو» badge on AI-originated assets, using the
+`neutral` StatusBadge tone. The project files panel already carried the same
+badges (Phase F capstone); this brings the parity to the library's own view.
+
+**M4 remainder — `project_id` on ai_automations and ai_coworker_jobs (`0162`).**
+The migration map (§5, M4) named "entity project_id FKs on
+agents/coworkers/automations" as part of Projects owning long-running context.
+Phase F already gave a project its instruction/notes/memory/tasks, its
+conversation list, a pinned default agent, and its files. This closes the last
+two: the scheduled/event **coworker jobs** (0100) and the WHEN/IF/THEN
+**automations** (0155) can now belong to a project.
+
+- **Schema (`migrations/0162`).** Both tables gain a nullable `project_id`
+  → `ai_projects(id)` **ON DELETE SET NULL** — identical to the media-library
+  shape (0161): archiving/deleting a project never deletes the rule that
+  referenced it, the rule simply loses its project label. A partial (non-null)
+  index on each serves the "the automations/jobs in this project" read.
+  Backfill-safe: every existing row keeps NULL (a business-wide rule). No RLS
+  change — both tables already carry `business_id` with a tenant_isolation
+  policy covering every column.
+- **Ownership check.** New `projectExistsForBusiness(businessId, projectId)` in
+  `ai-projects.ts` (cheap existence probe). `createAutomation`/`updateAutomation`
+  and the coworker `validateForTemplate` refuse a project id that is null-shaped-
+  OK but foreign or made-up — `project_not_found` / `coworker_project_not_found`
+  — rather than writing a silently-null label. Same reasoning the pinned default
+  agent already uses in `updateProject`.
+- **Plumbing.** `AutomationInput`/`NormalizedAutomation` + `CoworkerJobInput`
+  gain `projectId`; the service `Automation`/`CoworkerJob` records, row types,
+  `toX` mappers, `COLUMNS`/`JOB_COLUMNS`, and every INSERT/UPDATE carry it. The
+  dashboard and v1 API routes pass their bodies through unchanged, so the field
+  flows without route edits (validation lives in the service, where the tenant
+  scope is).
+- **Tests.** `ai-coworker.test.ts` fixture carries `projectId: null`; both
+  integration suites gain a project-scoping case (label with an owned project
+  sticks; a foreign project id is refused with the right error; deleting the
+  project SET-NULLs the label but keeps the entity). Full suite **4848 unit /
+  327 files**; AI automations + coworker integration **27 tests**; `tsc` clean.
+
+**Program status after this turn.** Phases B–G done (G Parts 1–3 + this M4
+remainder). **Phase H** (cache/RAG → LiteLLM) and **Phase J** (drop legacy AI
+billing schema, M10) both remain **blocked on production access** and are filed
+as GitHub issues **#682** and **#683** with verification checklists — neither is
+safe to do from the sandbox under the standing "verify against the deployed
+image / prove the cutover before removing" rule. The remaining sandbox-doable
+work is **Phase I** (UI redesign / IA, Parts 11/24–28) plus the optional Phase G
+AI-generated-image persistence (waits on an image-generation call site in chat).
