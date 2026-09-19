@@ -93,12 +93,20 @@ export function WebsiteSetupWizard() {
     ]).then(([setupRes, stateRes]) => {
       setLoading(false);
       if (setupRes.ok) {
+        setError("");
         setSetup(setupRes.data.setup);
         setPlans(setupRes.data.plans);
       } else {
         setError(errorMessageOrRaw((setupRes.data as { error?: string }).error));
       }
-      if (stateRes.ok) setConnected(stateRes.data.connected);
+      if (stateRes.ok) {
+        setConnected(stateRes.data.connected);
+      } else if (setupRes.ok) {
+        // Do not silently render a completed wizard as disconnected when the
+        // second request failed. Keeping the previous value is safer than
+        // replacing it with false during a transient network error.
+        setError((stateRes.data as { error?: string }).error ?? "وضعیت اتصال سایت خوانده نشد.");
+      }
     });
   }, []);
 
@@ -297,6 +305,11 @@ function DomainStep({
             variant={mode === value ? "default" : "outline"}
             onClick={() => {
               setMode(value);
+              // A quote is specific to the purchase flow. Keeping it while
+              // switching to an owned domain (then back) can show a stale
+              // price for a different domain or registration period.
+              setQuote(null);
+              setError("");
               void save({ domainMode: value });
             }}
           >

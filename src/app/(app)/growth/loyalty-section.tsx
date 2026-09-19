@@ -1,31 +1,21 @@
 "use client";
 
 /**
- * The Growth app's loyalty section (Phase 36b) — the old /dashboard/loyalty
- * page, moved into the app it always belonged to. Unchanged in substance:
- * programs define the earn rate and the point's Rial value, points redeem into
- * store credit, and store credit is a real liability (۲۴۱۰) whose balance is
- * reconstructed from the ledger, never stored in a column. A cashier lands
- * here directly — this is the one growth surface the sell-side of the business
- * works with, so the management-only actions (defining programs, redeeming,
- * issuing/spending credit) are hidden for them rather than failing with a 403
- * after the form is filled.
- *
- * The customer picker is server-backed: the directory can hold thousands of
- * customers and the list endpoint caps a page at 100, so the picker refetches
- * on each keystroke (like the checkout picker) instead of pretending one page
- * is the whole directory.
+ * Growth → loyalty and store credit. The panel is deliberately split between
+ * programme configuration (owner/manager) and customer lookup (also cashier):
+ * a cashier can never be offered a button that the API will only reject.
  */
 
+import { CheckIcon, PencilIcon, RotateCcwIcon } from "lucide-react";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
-import { EmptyState, LoadingSkeleton, SectionCard, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
-import { api, ErrorBox, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
+import { EmptyState, LoadingSkeleton, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
+import { api, ErrorBox, errorMessage, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 interface Program {
   id: string;
@@ -49,132 +39,119 @@ interface RepurchaseRow {
   productId: string;
   productName: string;
   predictedDate: string;
+  avgIntervalDays: number;
 }
 
-export function LoyaltySection({ role }: { role?: string }) {
-  // The write APIs (programs, redeem, store credit) are owner/manager-only;
-  // a cashier gets the read surfaces: balances and the repurchase list.
-  const canManage = ["owner", "manager"].includes(role ?? "");
+const CUSTOMER_SEARCH_DELAY_MS = 180;
 
+export function LoyaltySection({ canManage = true }: { canManage?: boolean }) {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [customersLoading, setCustomersLoading] = useState(true);
-  const [customerQuery, setCustomerQuery] = useState("");
   const [customerId, setCustomerId] = useState("");
-  // Kept beside the search results: a refetch for a new query may not contain
-  // the already-selected customer, and the picker must keep showing their name.
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | undefined>();
+  const selectedCustomerRef = useRef<Customer | undefined>(undefined);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const customerSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customerSearchAbort = useRef<AbortController | null>(null);
+  const customerSearchVersion = useRef(0);
   const [balance, setBalance] = useState<{ points: number; storeCredit: number } | null>(null);
   const [balanceLoaded, setBalanceLoaded] = useState(true);
-  // Bumped after a redeem/credit action so the effect refetches the balance
-  // for the *same* customer — deselecting them just to force a refresh made
-  // the operator re-find the person to see the result of their own action.
-  const [balanceVersion, setBalanceVersion] = useState(0);
+  const [balanceError, setBalanceError] = useState("");
   const [due, setDue] = useState<RepurchaseRow[]>([]);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const [loaded, setLoaded] = useState(false);
 
-  // One box speaks at a time: a fresh error retires a stale success note and
-  // a fresh success retires a stale error, so the screen never shows both.
-  const showError = useCallback((message: string) => {
-    setError(message);
-    if (message) setDone("");
-  }, []);
-  const showDone = useCallback((message: string) => {
-    setDone(message);
-    if (message) setError("");
-  }, []);
+  useEffect(() => {
+    selectedCustomerRef.current = selectedCustomer;
+  }, [selectedCustomer]);
 
   const load = useCallback(async () => {
-    const [programResult, repurchaseResult] = await Promise.allSettled([
-      api<{ programs: Program[] }>("/api/loyalty/programs"),
-      api<{ customers: RepurchaseRow[] }>("/api/loyalty/repurchase"),
+    const [programResult, customerResult, repurchaseResult] = await Promise.all([
+      api<{ programs?: Program[] }>("/api/loyalty/programs"),
+      // Do not load a silent, arbitrary first 500 customers. The combobox uses
+      // this small recent seed then asks the server as the operator types.
+      api<{ customers?: Customer[] }>("/api/parties?roles=Customer&limit=20"),
+      api<{ customers?: RepurchaseRow[] }>("/api/loyalty/repurchase"),
     ]);
-    let failed = false;
-    if (programResult.status === "fulfilled" && programResult.value.ok) {
-      setPrograms(programResult.value.data.programs);
-    } else failed = true;
-    if (repurchaseResult.status === "fulfilled" && repurchaseResult.value.ok) {
-      setDue(repurchaseResult.value.data.customers);
-    } else failed = true;
-    if (failed) {
-      // Without this, a dropped connection rendered an empty-but-healthy page.
-      setError((current) => current || "بارگذاری اطلاعات کامل نشد؛ اتصال اینترنت را بررسی کنید و صفحه را دوباره باز کنید.");
+    const failures: string[] = [];
+    if (programResult.ok) setPrograms(programResult.data.programs ?? []);
+    else failures.push("برنامه‌های وفاداری");
+    if (customerResult.ok) setCustomers(customerResult.data.customers ?? []);
+    else failures.push("فهرست مشتریان");
+    if (repurchaseResult.ok) setDue(repurchaseResult.data.customers ?? []);
+    else failures.push("فهرست خرید مجدد");
+    if (failures.length > 0) {
+      setError(`بارگذاری ${failures.join("، ")} ناموفق بود. دوباره تلاش کنید.`);
     }
     setLoaded(true);
   }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Server-backed customer search, debounced. The list endpoint caps a page at
-  // 100 rows, so fetching "everything" silently hid the rest of the directory;
-  // asking the search endpoint per keystroke finds any customer.
-  useEffect(() => {
-    let cancelled = false;
-    setCustomersLoading(true);
-    const timer = setTimeout(
-      () => {
-        void api<{ customers?: Customer[] }>(
-          `/api/parties?q=${encodeURIComponent(customerQuery)}&roles=Customer&limit=50`,
-        )
-          .then(({ ok, data }) => {
-            if (!cancelled && ok) setCustomers(data.customers ?? []);
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            if (!cancelled) setCustomersLoading(false);
-          });
-      },
-      customerQuery.trim() ? 200 : 0,
-    );
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [customerQuery]);
+  useEffect(
+    () => () => {
+      if (customerSearchTimer.current) clearTimeout(customerSearchTimer.current);
+      customerSearchAbort.current?.abort();
+    },
+    [],
+  );
+
+  const searchCustomers = useCallback((term: string) => {
+    if (customerSearchTimer.current) clearTimeout(customerSearchTimer.current);
+    customerSearchAbort.current?.abort();
+    const version = ++customerSearchVersion.current;
+    customerSearchTimer.current = setTimeout(() => {
+      const controller = new AbortController();
+      customerSearchAbort.current = controller;
+      setCustomersLoading(true);
+      void api<{ customers?: Customer[] }>(
+        `/api/parties?roles=Customer&limit=50&q=${encodeURIComponent(term.trim())}`,
+        { signal: controller.signal },
+      ).then(({ ok, data, aborted }) => {
+        if (version !== customerSearchVersion.current || aborted) return;
+        if (!ok) {
+          setError("جست‌وجوی مشتریان ناموفق بود. دوباره تلاش کنید.");
+          return;
+        }
+        const selected = selectedCustomerRef.current;
+        const results = data.customers ?? [];
+        setCustomers(selected && !results.some((customer) => customer.id === selected.id) ? [selected, ...results] : results);
+      }).finally(() => {
+        if (version === customerSearchVersion.current) setCustomersLoading(false);
+      });
+    }, CUSTOMER_SEARCH_DELAY_MS);
+  }, []);
 
   useEffect(() => {
     setBalance(null);
+    setBalanceError("");
     if (!customerId) {
       setBalanceLoaded(true);
       return;
     }
     let cancelled = false;
     setBalanceLoaded(false);
-    void api<{ points: number; storeCredit: number }>(`/api/loyalty/customers/${customerId}`)
-      .then(({ ok, data }) => {
-        if (!cancelled && ok) setBalance(data);
+    void api<{ points: number; storeCredit: number; error?: string }>(`/api/loyalty/customers/${customerId}`)
+      .then(({ ok, data, aborted }) => {
+        if (cancelled || aborted) return;
+        if (ok) setBalance(data);
+        else setBalanceError(errorMessage(data.error));
       })
-      .catch(() => undefined)
       .finally(() => {
         if (!cancelled) setBalanceLoaded(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [customerId, balanceVersion]);
+  }, [customerId]);
 
-  // The search results, with the selected customer kept present even when the
-  // current query's results no longer include them.
-  const pickerCustomers = useMemo(() => {
-    if (selectedCustomer && !customers.some((c) => c.id === selectedCustomer.id)) {
-      return [selectedCustomer, ...customers];
-    }
-    return customers;
-  }, [customers, selectedCustomer]);
-
-  const selectCustomer = useCallback(
-    (id: string) => {
-      setCustomerId(id);
-      setSelectedCustomer(id ? (pickerCustomers.find((c) => c.id === id) ?? null) : null);
-    },
-    [pickerCustomers],
-  );
-
-  const customer = pickerCustomers.find((c) => c.id === customerId);
-  const defaultProgram = programs.find((p) => p.isDefault && p.isActive) ?? programs.find((p) => p.isActive) ?? null;
+  function selectCustomer(id: string) {
+    setCustomerId(id);
+    setSelectedCustomer(id ? customers.find((customer) => customer.id === id) : undefined);
+  }
 
   if (!loaded) {
     return (
@@ -185,6 +162,8 @@ export function LoyaltySection({ role }: { role?: string }) {
     );
   }
 
+  const activeProgram = programs.find((program) => program.isActive && program.isDefault) ?? null;
+
   return (
     <div className="space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
@@ -194,31 +173,31 @@ export function LoyaltySection({ role }: { role?: string }) {
         <ProgramsPanel
           programs={programs}
           canManage={canManage}
-          onSaved={(m) => {
-            showDone(m);
-            load();
+          onSaved={(message) => {
+            setDone(message);
+            void load();
           }}
-          onError={showError}
+          onError={setError}
         />
         <CustomerPanel
-          customers={pickerCustomers}
-          customersLoading={customersLoading}
-          onCustomerQueryChange={setCustomerQuery}
-          customer={customer}
+          customers={customers}
+          customer={selectedCustomer}
           customerId={customerId}
-          setCustomerId={selectCustomer}
+          onSelectCustomer={selectCustomer}
+          onCustomerQuery={searchCustomers}
+          customersLoading={customersLoading}
           balance={balance}
           balanceLoaded={balanceLoaded}
+          balanceError={balanceError}
           canManage={canManage}
-          defaultProgram={defaultProgram}
-          onChanged={(m) => {
-            showDone(m);
-            load();
-            // Refresh the same customer's balance in place — the operator
-            // needs to see the result, not re-find the person.
-            setBalanceVersion((v) => v + 1);
+          canRedeem={Boolean(activeProgram)}
+          onChanged={(message) => {
+            setDone(message);
+            setCustomerId("");
+            setSelectedCustomer(undefined);
+            void load();
           }}
-          onError={showError}
+          onError={setError}
         />
       </div>
 
@@ -226,23 +205,26 @@ export function LoyaltySection({ role }: { role?: string }) {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">بازگشت مشتری</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان آمادهٔ خرید مجدد</h2>
+            <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">مشتریان آمادهٔ خرید مجدد</h2>
           </div>
         }
-        description="پیش‌بینی از تاریخچهٔ خرید خود مشتری؛ موعدِ گذشته یعنی وقت تماس یا پیام"
+        description="پیش‌بینی از تاریخچهٔ خرید همان مشتری در شعبهٔ فعال؛ موعد گذشته یعنی زمان تماس یا پیام"
       >
         {due.length === 0 ? (
           <EmptyState>هنوز مشتری‌ای در موعد خرید مجدد نیست.</EmptyState>
         ) : (
           <ul className="divide-y divide-border/80 text-sm">
-            {due.map((r) => (
-              <li key={`${r.customerId}-${r.productId}`} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-foreground">{r.customerName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{r.productName}</p>
+            {due.map((row) => (
+              <li key={`${row.customerId}-${row.productId}`} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <div className="min-w-0">
+                  <span className="font-medium text-foreground">{row.customerName}</span>
+                  <span className="me-2 text-xs text-muted-foreground">{row.productName}</span>
+                  <span className="me-2 text-xs text-muted-foreground">
+                    چرخهٔ میانگین {formatPersianNumber(row.avgIntervalDays)} روز
+                  </span>
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  موعد {toPersianDigits(formatJalali(r.predictedDate))}
+                  موعد {toPersianDigits(formatJalali(row.predictedDate))}
                 </span>
               </li>
             ))}
@@ -261,69 +243,97 @@ function ProgramsPanel({
 }: {
   programs: Program[];
   canManage: boolean;
-  onSaved: (m: string) => void;
-  onError: (m: string) => void;
+  onSaved: (message: string) => void;
+  onError: (message: string) => void;
 }) {
   const money = useMoney();
+  const [editing, setEditing] = useState<Program | null>(null);
   const [name, setName] = useState("");
   const [earn, setEarn] = useState("1");
-  const [value, setValue] = useState("100");
+  const [value, setValue] = useState(() => String(money.toInput(1000)));
   const [expiry, setExpiry] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [isDefault, setIsDefault] = useState(false);
   const [busy, setBusy] = useState(false);
+  const spendUnit = money.format(100_000);
 
-  // The earn rate's basis is 100,000 Rial; say it in the unit the business
-  // displays, so a Rial-mode business is not told a Toman number.
-  const earnBasisLabel = money.unit === "rial" ? "۱۰۰ هزار ریال" : "۱۰ هزار تومان";
+  function resetForm() {
+    setEditing(null);
+    setName("");
+    setEarn("1");
+    setValue(String(money.toInput(1000)));
+    setExpiry("");
+    setIsActive(true);
+    setIsDefault(false);
+  }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
+  function startEdit(program: Program) {
+    setEditing(program);
+    setName(program.name);
+    setEarn(String(program.earnPointsPer100000));
+    setValue(String(money.toInput(program.pointValueRial)));
+    setExpiry(program.pointsExpiryDays === null ? "" : String(program.pointsExpiryDays));
+    setIsActive(program.isActive);
+    setIsDefault(program.isDefault);
+  }
 
-    // Validate before flipping `busy`, and send what the user typed instead of
-    // silently rewriting it: `Number(earn) || 1` turned an intentional 0 (no
-    // earning) into 1, and `… || 1000` turned a 0 point value into 1000 Rial.
-    const earnRate = earn.trim() === "" ? 1 : Number(earn);
-    if (!Number.isInteger(earnRate) || earnRate < 0) {
-      onError("نرخ کسب امتیاز باید یک عدد صحیح صفر یا بیشتر باشد.");
-      return;
-    }
-    let pointValueRial: number | undefined;
-    if (value.trim() !== "") {
-      pointValueRial = money.fromInput(Number(value));
-      if (!Number.isInteger(pointValueRial) || pointValueRial <= 0) {
-        onError("ارزش هر امتیاز باید یک عدد بزرگ‌تر از صفر باشد.");
-        return;
-      }
-    }
-    const expiryDays = expiry.trim() ? Number(expiry) : null;
-    if (expiryDays !== null && (!Number.isInteger(expiryDays) || expiryDays <= 0)) {
-      onError("روزهای انقضای امتیاز باید عدد صحیح مثبت باشد یا خالی بماند.");
-      return;
-    }
-
-    // Saving over an existing program must not silently demote the default:
-    // the upsert overwrites `is_default` with whatever we send.
-    const existing = programs.find((p) => p.name === name.trim());
-    const isDefault = existing ? existing.isDefault : programs.length === 0;
-
+  async function save(input: Record<string, unknown>, successMessage: string) {
     setBusy(true);
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string }>("/api/loyalty/programs", {
       method: "POST",
-      body: JSON.stringify({
-        name,
-        earnPointsPer100000: earnRate,
-        pointValueRial,
-        pointsExpiryDays: expiryDays,
-        isDefault,
-      }),
+      body: JSON.stringify(input),
     });
     setBusy(false);
-    if (!ok) onError(data.message ?? "ثبت برنامه ناموفق بود.");
-    else {
-      setName("");
-      onSaved("برنامه وفاداری ذخیره شد.");
+    if (!ok) {
+      onError(data.message ?? errorMessage(data.error) ?? "ذخیرهٔ برنامه ناموفق بود.");
+      return false;
     }
+    onSaved(successMessage);
+    return true;
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const earnPointsPer100000 = Number(earn);
+    const inputValue = Number(value);
+    let pointValueRial: number;
+    try {
+      pointValueRial = money.fromInput(inputValue);
+    } catch {
+      onError("ارزش هر امتیاز معتبر نیست.");
+      return;
+    }
+    const pointsExpiryDays = expiry.trim() ? Number(expiry) : null;
+    if (!name.trim() || !Number.isSafeInteger(earnPointsPer100000) || earnPointsPer100000 < 0) {
+      onError("نرخ کسب امتیاز باید عدد صحیح نامنفی باشد.");
+      return;
+    }
+    if (!Number.isSafeInteger(pointValueRial) || pointValueRial <= 0) {
+      onError("ارزش هر امتیاز باید مبلغ صحیح و مثبت باشد.");
+      return;
+    }
+    if (pointsExpiryDays !== null && (!Number.isSafeInteger(pointsExpiryDays) || pointsExpiryDays <= 0)) {
+      onError("انقضای امتیاز باید عدد صحیح مثبت باشد یا خالی بماند.");
+      return;
+    }
+    if (isDefault && !isActive) {
+      onError("برنامهٔ پیش‌فرض باید فعال باشد.");
+      return;
+    }
+    const saved = await save(
+      {
+        name: name.trim(),
+        earnPointsPer100000,
+        pointValueRial,
+        pointsExpiryDays,
+        isActive,
+        // First active programme is selected automatically as a safety net.
+        isDefault: isDefault || (!editing && isActive && !programs.some((program) => program.isActive && program.isDefault)),
+      },
+      editing ? "تغییرات برنامهٔ وفاداری ذخیره شد." : "برنامهٔ وفاداری ذخیره شد.",
+    );
+    if (saved) resetForm();
   }
 
   return (
@@ -331,142 +341,176 @@ function ProgramsPanel({
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">طرح‌های امتیازدهی</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">برنامهٔ وفاداری</h2>
+          <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">برنامهٔ وفاداری</h2>
         </div>
       }
-      bodyClassName="space-y-3 p-4 sm:p-5"
+      description={canManage ? "نرخ کسب، ارزش بازخرید و انقضای امتیازها را اینجا مدیریت کنید." : "تنظیم برنامه‌ها فقط برای مدیر و مالک مجاز است."}
+      bodyClassName="space-y-4 p-4 sm:p-5"
     >
-      <ul className="divide-y divide-border/80 text-sm">
-        {programs.map((p) => (
-          <li key={p.id} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 py-2">
-            <span className="min-w-0 font-medium text-foreground">
-              {p.name}
-              {p.isDefault ? <span className="mr-2 text-xs text-amber-700 dark:text-amber-300">(پیش‌فرض)</span> : null}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {formatPersianNumber(p.earnPointsPer100000)} امتیاز / {earnBasisLabel} · هر امتیاز {money.format(p.pointValueRial)}
-            </span>
-          </li>
-        ))}
-        {programs.length === 0 ? <li className="py-2 text-xs text-muted-foreground">هنوز برنامه‌ای تعریف نشده است.</li> : null}
-      </ul>
+      {programs.length === 0 ? (
+        <EmptyState>هنوز برنامه‌ای تعریف نشده است.</EmptyState>
+      ) : (
+        <ul className="divide-y divide-border/80 text-sm">
+          {programs.map((program) => (
+            <li key={program.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-medium text-foreground">{program.name}</span>
+                  {program.isDefault ? <StatusBadge tone="active">پیش‌فرض</StatusBadge> : null}
+                  {!program.isActive ? <StatusBadge tone="neutral">غیرفعال</StatusBadge> : null}
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {formatPersianNumber(program.earnPointsPer100000)} امتیاز به‌ازای هر {spendUnit} · هر امتیاز {money.format(program.pointValueRial)}
+                  {program.pointsExpiryDays === null ? " · بدون انقضا" : ` · انقضا پس از ${formatPersianNumber(program.pointsExpiryDays)} روز`}
+                </p>
+              </div>
+              {canManage ? (
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {!program.isDefault && program.isActive ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      disabled={busy}
+                      onClick={() => void save({ ...program, isDefault: true }, `«${program.name}» برنامهٔ پیش‌فرض شد.`)}
+                    >
+                      <CheckIcon aria-hidden="true" className="size-3.5" />
+                      پیش‌فرض
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => startEdit(program)}>
+                    <PencilIcon aria-hidden="true" className="size-3.5" />
+                    ویرایش
+                  </Button>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {canManage ? (
-        <form onSubmit={submit} className="grid gap-3">
-          <Field label="نام برنامه" hint="نامِ تکراری همان برنامه را ویرایش می‌کند.">
-            <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
-          </Field>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <Field label={`امتیاز / ${earnBasisLabel}`}>
+        <form onSubmit={submit} className="border-t border-border/80 pt-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-foreground">{editing ? `ویرایش «${editing.name}»` : "افزودن برنامه"}</h3>
+            {editing ? (
+              <Button type="button" variant="ghost" size="xs" onClick={resetForm} disabled={busy}>
+                <RotateCcwIcon aria-hidden="true" className="size-3.5" />
+                انصراف
+              </Button>
+            ) : null}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="sm:col-span-3">
+              <Field label="نام برنامه">
+                <input className={inputClass} value={name} maxLength={120} onChange={(event) => setName(event.target.value)} required />
+              </Field>
+            </div>
+            <Field label={`امتیاز به‌ازای هر ${spendUnit}`}>
               <PersianNumberInput
                 inputMode="numeric"
+                allowDecimal={false}
                 allowNegative={false}
                 className={inputClass}
                 dir="ltr"
                 value={earn}
-                onChange={(e) => setEarn(e.target.value)}
+                onChange={(event) => setEarn(event.target.value)}
               />
             </Field>
             <Field label={`ارزش هر امتیاز (${money.unitLabel})`}>
               <PersianNumberInput
                 inputMode="numeric"
+                allowDecimal={false}
                 allowNegative={false}
                 className={inputClass}
                 dir="ltr"
                 value={value}
-                onChange={(e) => setValue(e.target.value)}
+                onChange={(event) => setValue(event.target.value)}
               />
             </Field>
             <Field label="انقضای امتیاز (روز)">
               <PersianNumberInput
                 inputMode="numeric"
+                allowDecimal={false}
                 allowNegative={false}
                 className={inputClass}
                 dir="ltr"
                 value={expiry}
-                onChange={(e) => setExpiry(e.target.value)}
+                onChange={(event) => setExpiry(event.target.value)}
                 placeholder="خالی = بدون انقضا"
               />
             </Field>
           </div>
-          <Button type="submit" disabled={busy} className="min-h-11 w-full">
-            ذخیره برنامه
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            <label className="flex min-h-11 items-center gap-2 text-foreground">
+              <input type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} />
+              برنامه فعال است
+            </label>
+            <label className="flex min-h-11 items-center gap-2 text-foreground">
+              <input type="checkbox" checked={isDefault} disabled={!isActive} onChange={(event) => setIsDefault(event.target.checked)} />
+              برنامهٔ پیش‌فرض
+            </label>
+          </div>
+          <Button type="submit" disabled={busy} className="mt-3 min-h-11 w-full">
+            {busy ? "در حال ذخیره…" : editing ? "ذخیرهٔ تغییرات" : "ذخیرهٔ برنامه"}
           </Button>
         </form>
-      ) : (
-        <p className="text-xs leading-5 text-muted-foreground">
-          تعریف و ویرایش برنامه‌های وفاداری با مدیر یا مالک کسب‌وکار است.
-        </p>
-      )}
+      ) : null}
     </SectionCard>
   );
 }
 
 function CustomerPanel({
   customers,
-  customersLoading,
-  onCustomerQueryChange,
   customer,
   customerId,
-  setCustomerId,
+  onSelectCustomer,
+  onCustomerQuery,
+  customersLoading,
   balance,
   balanceLoaded,
+  balanceError,
   canManage,
-  defaultProgram,
+  canRedeem,
   onChanged,
   onError,
 }: {
   customers: Customer[];
-  customersLoading: boolean;
-  onCustomerQueryChange: (q: string) => void;
   customer: Customer | undefined;
   customerId: string;
-  setCustomerId: (v: string) => void;
+  onSelectCustomer: (value: string) => void;
+  onCustomerQuery: (value: string) => void;
+  customersLoading: boolean;
   balance: { points: number; storeCredit: number } | null;
   balanceLoaded: boolean;
+  balanceError: string;
   canManage: boolean;
-  defaultProgram: Program | null;
-  onChanged: (m: string) => void;
-  onError: (m: string) => void;
+  canRedeem: boolean;
+  onChanged: (message: string) => void;
+  onError: (message: string) => void;
 }) {
   const money = useMoney();
   const [points, setPoints] = useState("");
   const [credit, setCredit] = useState("");
-  const [creditAction, setCreditAction] = useState<"issue" | "use-cash" | "use-bank">("issue");
+  const [reason, setReason] = useState("");
+  const [creditAction, setCreditAction] = useState<"issue" | "payout">("issue");
+  const [payoutMethod, setPayoutMethod] = useState<"cash" | "bank">("cash");
   const [busy, setBusy] = useState(false);
 
-  const customerOptions = useMemo(
-    () => [
-      ...customers.map((c) => ({
-        value: c.id,
-        label: c.phone ? `${c.name} — ${toPersianDigits(c.phone)}` : c.name,
-        searchString: `${c.name} ${c.phone ?? ""}`,
-      })),
-    ],
-    [customers],
-  );
-
-  const pointsCount = Number(points);
-  const pointsValid = Number.isInteger(pointsCount) && pointsCount > 0;
-  const redeemHint = defaultProgram
-    ? pointsValid
-      ? `هر امتیاز ${money.format(defaultProgram.pointValueRial)} — معادل ${money.format(pointsCount * defaultProgram.pointValueRial)}`
-      : `هر امتیاز ${money.format(defaultProgram.pointValueRial)}`
-    : null;
-
   async function redeem() {
-    if (!customerId || !points.trim()) return;
-    if (!pointsValid) {
-      onError("تعداد امتیاز باید یک عدد صحیح مثبت باشد.");
+    const count = Number(points);
+    if (!customerId || !Number.isSafeInteger(count) || count <= 0) {
+      onError("تعداد امتیاز باید عدد صحیح مثبت باشد.");
       return;
     }
     setBusy(true);
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string }>(`/api/loyalty/customers/${customerId}/redeem`, {
       method: "POST",
-      body: JSON.stringify({ points: pointsCount }),
+      body: JSON.stringify({ points: count }),
     });
     setBusy(false);
-    if (!ok) onError(data.message ?? "تبدیل امتیاز ناموفق بود.");
+    if (!ok) onError(data.message ?? errorMessage(data.error) ?? "تبدیل امتیاز ناموفق بود.");
     else {
       setPoints("");
       onChanged("امتیاز به اعتبار فروشگاهی تبدیل شد.");
@@ -474,36 +518,39 @@ function CustomerPanel({
   }
 
   async function storeCredit() {
-    if (!customerId || !credit.trim()) return;
-    // Parse *before* flipping `busy`: `money.parse` throws on non-numeric
-    // input, and a throw after setBusy(true) left every button disabled.
+    if (!customerId) return;
     let amount: number;
     try {
       amount = money.parse(credit);
     } catch {
-      onError("مبلغ واردشده معتبر نیست.");
+      onError(`مبلغ اعتبار را به ${money.unitLabel} و به‌صورت عدد صحیح وارد کنید.`);
       return;
     }
-    if (amount <= 0) {
-      onError("مبلغ اعتبار باید بزرگ‌تر از صفر باشد.");
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      onError("مبلغ اعتبار باید مثبت باشد.");
       return;
     }
-    const action = creditAction === "issue" ? "issue" : "use";
+    if (creditAction === "issue" && reason.trim().length > 500) {
+      onError("دلیل صدور اعتبار نباید بیش از ۵۰۰ نویسه باشد.");
+      return;
+    }
     setBusy(true);
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string }>(`/api/loyalty/customers/${customerId}/store-credit`, {
       method: "POST",
       body: JSON.stringify({
-        action,
+        action: creditAction === "payout" ? "use" : "issue",
         amount,
-        ...(action === "use" ? { paymentMethod: creditAction === "use-bank" ? "bank" : "cash" } : {}),
+        reason: creditAction === "issue" ? reason.trim() || null : undefined,
+        paymentMethod: creditAction === "payout" ? payoutMethod : undefined,
       }),
     });
     setBusy(false);
-    if (!ok) onError(data.message ?? "عملیات اعتبار ناموفق بود.");
+    if (!ok) onError(data.message ?? errorMessage(data.error) ?? "عملیات اعتبار ناموفق بود.");
     else {
       setCredit("");
-      onChanged(action === "issue" ? "اعتبار فروشگاهی صادر شد." : "اعتبار فروشگاهی مصرف شد.");
+      setReason("");
+      onChanged(creditAction === "issue" ? "اعتبار فروشگاهی صادر شد." : "بازپرداخت اعتبار فروشگاهی ثبت شد.");
     }
   }
 
@@ -512,105 +559,129 @@ function CustomerPanel({
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امور مالی مشتریان</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتری و اعتبار</h2>
+          <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">مشتری و اعتبار</h2>
         </div>
       }
-      bodyClassName="space-y-3 p-4 sm:p-5"
+      description="مانده‌ها از دفتر امتیاز و رویدادهای حسابداری خوانده می‌شوند، نه از یک ستون قابل ویرایش."
+      bodyClassName="space-y-4 p-4 sm:p-5"
     >
       <Field label="مشتری">
         <SearchableSelect
           value={customerId}
-          onChange={setCustomerId}
-          options={customerOptions}
+          onChange={onSelectCustomer}
+          onQueryChange={onCustomerQuery}
           loading={customersLoading}
-          onQueryChange={onCustomerQueryChange}
-          placeholder="انتخاب مشتری"
-          searchPlaceholder="جستجوی نام یا شماره…"
+          options={customers.map((candidate) => ({
+            value: candidate.id,
+            label: candidate.phone ? `${candidate.name} — ${candidate.phone}` : candidate.name,
+          }))}
+          placeholder="نام یا شمارهٔ مشتری را جست‌وجو کنید"
+          searchPlaceholder="نام یا شمارهٔ مشتری…"
+          emptyText="مشتری فعالی یافت نشد."
+          ariaLabel="انتخاب مشتری"
         />
       </Field>
 
-      {customer && !balanceLoaded ? (
-        <LoadingSkeleton rows={1} compact label="در حال بارگذاری مانده مشتری" />
-      ) : customer && balance ? (
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-border/80 p-3 text-sm">
+      {customer && !balanceLoaded ? <LoadingSkeleton rows={1} compact label="در حال بارگذاری ماندهٔ مشتری" /> : null}
+      {balanceError ? <ErrorBox>{balanceError}</ErrorBox> : null}
+      {customer && balance && balanceLoaded ? (
+        <div className="grid gap-2 rounded-xl border border-border/80 p-3 text-sm sm:grid-cols-2">
           <div>
-            <span className="text-muted-foreground">امتیاز:</span> <b>{formatPersianNumber(balance.points)}</b>
+            <span className="text-muted-foreground">امتیاز قابل استفاده:</span> <b>{formatPersianNumber(balance.points)}</b>
           </div>
           <div>
-            <span className="text-muted-foreground">اعتبار:</span> <b>{money.format(balance.storeCredit)}</b>
+            <span className="text-muted-foreground">اعتبار فروشگاهی:</span> <b>{money.format(balance.storeCredit)}</b>
           </div>
         </div>
       ) : null}
 
-      {canManage ? (
+      {!canManage ? (
+        <InfoBox>برای مشاهدهٔ مانده، مشتری را انتخاب کنید. تبدیل امتیاز و صدور یا بازپرداخت اعتبار به تأیید مدیر یا مالک نیاز دارد.</InfoBox>
+      ) : (
         <>
+          {!canRedeem ? <InfoBox>برای تبدیل امتیاز، ابتدا یک برنامهٔ فعال و پیش‌فرض وفاداری تعریف کنید.</InfoBox> : null}
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-foreground">تبدیل امتیاز به اعتبار</span>
+            <Field label="تبدیل امتیاز به اعتبار">
               <PersianNumberInput
                 inputMode="numeric"
+                allowDecimal={false}
                 allowNegative={false}
                 className={inputClass}
                 dir="ltr"
                 value={points}
-                onChange={(e) => setPoints(e.target.value)}
+                onChange={(event) => setPoints(event.target.value)}
                 placeholder="تعداد امتیاز"
               />
-            </label>
-            <Button
-              type="button"
-              disabled={busy || !customerId || !points.trim()}
-              onClick={() => void redeem()}
-              className="min-h-11 w-full sm:w-auto"
-            >
-              تبدیل
+            </Field>
+            <Button type="button" disabled={busy || !customerId || !points.trim() || !canRedeem} onClick={() => void redeem()} className="min-h-11">
+              تبدیل به اعتبار
             </Button>
           </div>
-          {redeemHint ? <p className="text-xs text-muted-foreground">{redeemHint}</p> : null}
 
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-foreground">{`اعتبار فروشگاهی (${money.unitLabel})`}</span>
-              <PersianNumberInput
-                inputMode="numeric"
-                allowNegative={false}
-                className={inputClass}
-                dir="ltr"
-                value={credit}
-                onChange={(e) => setCredit(e.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-foreground">عملیات</span>
-              <select
-                className={`${inputClass} sm:w-40`}
-                value={creditAction}
-                onChange={(e) => setCreditAction(e.target.value as "issue" | "use-cash" | "use-bank")}
+          <div className="rounded-xl border border-border/80 p-3">
+            <div className="mb-3 grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="outline"
+                className={`min-h-11 ${creditAction === "issue" ? "border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : ""}`}
+                aria-pressed={creditAction === "issue"}
+                disabled={busy}
+                onClick={() => setCreditAction("issue")}
               >
-                <option value="issue">صدور</option>
-                <option value="use-cash">مصرف (نقدی)</option>
-                <option value="use-bank">مصرف (بانکی)</option>
-              </select>
-            </label>
-            <Button
-              type="button"
-              disabled={busy || !customerId || !credit.trim()}
-              onClick={() => void storeCredit()}
-              className="min-h-11 w-full sm:w-auto"
-            >
-              انجام
+                صدور اعتبار
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className={`min-h-11 ${creditAction === "payout" ? "border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : ""}`}
+                aria-pressed={creditAction === "payout"}
+                disabled={busy}
+                onClick={() => setCreditAction("payout")}
+              >
+                بازپرداخت اعتبار
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem] sm:items-end">
+              <Field label={`مبلغ (${money.unitLabel})`}>
+                <PersianNumberInput
+                  inputMode="numeric"
+                  allowDecimal={false}
+                  allowNegative={false}
+                  className={inputClass}
+                  dir="ltr"
+                  value={credit}
+                  onChange={(event) => setCredit(event.target.value)}
+                />
+              </Field>
+              {creditAction === "payout" ? (
+                <Field label="روش بازپرداخت">
+                  <select className={inputClass} value={payoutMethod} onChange={(event) => setPayoutMethod(event.target.value as "cash" | "bank")}>
+                    <option value="cash">نقدی</option>
+                    <option value="bank">بانکی</option>
+                  </select>
+                </Field>
+              ) : (
+                <Field label="دلیل صدور">
+                  <input
+                    className={inputClass}
+                    value={reason}
+                    maxLength={500}
+                    onChange={(event) => setReason(event.target.value)}
+                    placeholder="مثلاً اصلاح یا بازگشت فروش"
+                  />
+                </Field>
+              )}
+            </div>
+            <Button type="button" disabled={busy || !customerId || !credit.trim()} onClick={() => void storeCredit()} className="mt-3 min-h-11 w-full">
+              {creditAction === "issue" ? "ثبت صدور اعتبار" : "ثبت بازپرداخت اعتبار"}
             </Button>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              {creditAction === "issue"
+                ? "صدور اعتبار، بدهی «اعتبار فروشگاهی» را ثبت می‌کند؛ دلیل آن در سند حسابداری نگهداری می‌شود."
+                : "بازپرداخت، ماندهٔ اعتبار را کم و وجه را نقدی یا بانکی به مشتری پرداخت می‌کند."}
+            </p>
           </div>
-          <p className="text-xs leading-5 text-muted-foreground">
-            اعتبار فروشگاهی یک بدهی واقعی (حساب ۲۴۱۰) است که در تراز آزمایشی دیده می‌شود؛ ماندهٔ آن از دفتر کل بازسازی
-            می‌شود، نه از یک ستون.
-          </p>
         </>
-      ) : (
-        <p className="text-xs leading-5 text-muted-foreground">
-          تبدیل امتیاز و صدور یا مصرف اعتبار فروشگاهی با مدیر یا مالک کسب‌وکار است؛ از این‌جا می‌توانید ماندهٔ امتیاز و
-          اعتبار هر مشتری را ببینید.
-        </p>
       )}
     </SectionCard>
   );

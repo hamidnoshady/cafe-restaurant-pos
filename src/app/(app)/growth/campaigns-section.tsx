@@ -267,7 +267,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
         <Field label="نام کمپین">
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
         </Field>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="نوع">
             <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value)}>
               {Object.entries(KIND_LABELS).map(([k, label]) => (
@@ -298,7 +298,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
             />
           </Field>
         ) : null}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="اولویت (بیشتر = زودتر)">
             <PersianNumberInput
               inputMode="numeric"
@@ -315,7 +315,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
             </select>
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="از تاریخ (شمسی)">
             <JalaliDatePicker className={inputClass} value={activeFrom} onChange={setActiveFrom} />
           </Field>
@@ -323,7 +323,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
             <JalaliDatePicker className={inputClass} value={activeTo} onChange={setActiveTo} />
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="از ساعت">
             <input className={inputClass} dir="ltr" type="time" value={timeFrom} onChange={(e) => setTimeFrom(e.target.value)} />
           </Field>

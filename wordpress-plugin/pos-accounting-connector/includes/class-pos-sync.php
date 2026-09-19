@@ -122,11 +122,14 @@ class POS_Connector_Sync {
 		// app. It rides the products toggle (the catalogue the owner already
 		// chose to mirror), keeping one «what do we send?» decision rather
 		// than a fourth switch nobody knew to flip. Transitions cover create,
-		// edit, trash and restore in one hook; 'add_attachment' is separate
-		// because attachments transition 'new' -> 'inherit'.
+		// edit, trash and restore in one hook; attachments need their own
+		// lifecycle hooks because they transition 'new' -> 'inherit' once and
+		// later edits/deletions do not reliably transition status.
 		if ( ! empty( $settings['sync_products'] ) ) {
 			add_action( 'transition_post_status', array( __CLASS__, 'on_post_status_changed' ), 20, 3 );
 			add_action( 'add_attachment', array( __CLASS__, 'on_attachment_added' ), 20, 1 );
+			add_action( 'edit_attachment', array( __CLASS__, 'on_attachment_added' ), 20, 1 );
+			add_action( 'delete_attachment', array( __CLASS__, 'on_attachment_deleted' ), 20, 1 );
 		}
 	}
 
@@ -252,7 +255,7 @@ class POS_Connector_Sync {
 		POS_Connector_Queue::enqueue( 'content.updated', $post->post_type . ':' . $post->ID, self::content_payload( $post ) );
 	}
 
-	/** A media attachment was uploaded. */
+	/** A media attachment was uploaded or edited. */
 	public static function on_attachment_added( $attachment_id ) {
 		if ( self::already_seen( 'content:attachment', $attachment_id ) ) {
 			return;
@@ -262,6 +265,21 @@ class POS_Connector_Sync {
 			return;
 		}
 		POS_Connector_Queue::enqueue( 'content.updated', 'attachment:' . $attachment_id, self::content_payload( $post ) );
+	}
+
+	/** Remove a deleted attachment from the app's mirror. */
+	public static function on_attachment_deleted( $attachment_id ) {
+		if ( self::already_seen( 'content:attachment:deleted', $attachment_id ) ) {
+			return;
+		}
+		POS_Connector_Queue::enqueue(
+			'content.deleted',
+			'attachment:' . $attachment_id,
+			array(
+				'id'   => (int) $attachment_id,
+				'type' => 'attachment',
+			)
+		);
 	}
 
 	/**
@@ -1400,6 +1418,19 @@ class POS_Connector_Sync {
 				++$paged;
 			} while ( count( $posts ) === 100 && $paged <= 500 );
 		}
+		// This marker is queued after every exported row. The outbound queue is
+		// FIFO, so the app only advances its content watermark after the whole
+		// snapshot in front of this marker has been accepted.
+		$sync_id = wp_generate_uuid4();
+		POS_Connector_Queue::enqueue(
+			'content.sync_completed',
+			$sync_id,
+			array(
+				'id'    => $sync_id,
+				'type'  => 'content',
+				'count' => $count,
+			)
+		);
 		POS_Connector_Log::info( 'export', sprintf( '%d محتوای وردپرس در صف ارسال قرار گرفت.', $count ) );
 	}
 
