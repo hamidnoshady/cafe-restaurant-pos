@@ -87,6 +87,24 @@ filesystem, so they could not be committed or diffed. The reference table in
 the filenames listed there makes that checkable; the baselines now committed
 give something concrete to compare them against.
 
+That gap is now **guarded rather than merely disclosed**:
+`src/app/reference-screenshots.test.ts` (part of `npm run test:design`, so it
+runs in the CI `design-checks` job) asserts that the availability note in
+`docs/design-system.md` and the actual contents of `docs/design/reference/`
+agree in *both* directions. It fails if the images land and the "they are
+missing" note survives — the canon would then be misinforming every future
+reader — and it fails if the note is deleted while the images are still absent,
+which would imply a pixel-comparison nobody performed.
+
+Both failure directions were verified by probe rather than assumed. Copying a
+single PNG into `docs/design/reference/` turned it red with *"1 of 6 approved
+screenshots are now present"*; blanking the note turned it red with *"Restore
+the note, or add the files"*. `docs/design-system.md` was restored
+byte-identical afterwards. When the six originals arrive the test states the
+follow-up work: compare each against its baseline in `docs/design/visual/`,
+record the outcome and any accepted deviation here, then retire the note and the
+test together.
+
 ## Bugs the screenshots found
 
 Looking at the rendered output caught two defects that every text-based test in
@@ -106,6 +124,56 @@ the repo had passed over:
    harness flagged it on its own ("still loading when photographed") before a
    human noticed. It now ends the loading state and renders an `EmptyState`
    with the reason and a retry button.
+
+## CI status: blocked by account billing, not by this branch
+
+**No CI run exists for the current head, and none can be produced from here.**
+This was re-checked rather than assumed, and the evidence is specific:
+
+- The last four `test` runs (`35401522160`, `35402509339`, `35403441324`,
+  `35403573105`) all report `failure`. Pulling the annotation for the `type
+  check` job of the newest one gives the actual reason, which the run summary
+  does not show:
+
+  > The job was not started because recent account payments have failed or your
+  > spending limit needs to be increased. Please check the 'Billing & plans'
+  > section in your settings
+
+  The job lasted **2 seconds** (22:54:49 → 22:54:51) — it never started. All six
+  jobs failed identically and simultaneously.
+- The same workflow **succeeded** earlier the same day (run `35358960754`,
+  14:52), so the workflow file itself is executable. The block began between
+  14:52 and 22:26 and is account-wide, not branch-specific.
+- Pushes after `7500402` produced **no run at all**, and `gh pr view
+  --json statusCheckRollup` returns empty for head `85490d1`: GitHub has stopped
+  scheduling runs entirely.
+- `gh run rerun` → "cannot be rerun"; `gh workflow run` → **HTTP 403 Resource
+  not accessible by integration**. The available token cannot dispatch
+  workflows, so it cannot force the question either.
+
+Only the repository owner can clear this, in **Billing & plans**. Until then
+every result in this document is from a local run, and the workflow is
+*unexercised* rather than *passing* — those are not the same claim.
+
+### What was verified instead, statically
+
+Since the jobs cannot run, the parts most likely to fail on the first real run
+were checked by parsing the workflow rather than by trusting it:
+
+- All five workflow files parse as YAML; `test.yml` defines **7 jobs**.
+- `required` fans in all six real jobs, there are **no dangling `needs`**, and
+  **no job escapes the gate**.
+- **No job anywhere passes `--update`** to the visual harness, so CI can never
+  auto-accept a baseline — the standing rule is enforced by the file, not by
+  convention.
+- `JWT_SECRET` is set at both workflow and job scope to a real 56-character
+  value. This matters: the one failure that broke the *local* run was a
+  placeholder `JWT_SECRET`, which makes `/api/auth/login` return 500 and the
+  harness abort with a message blaming the database. CI is already immune.
+- The `visual-regression` job's steps mirror the locally validated recipe
+  (`db:dev:start` → migrate → seed → `seed:visual` → `db:app-role` → build →
+  start on `BIND_ADDR` → `test:visual`), including the health-poll loop and the
+  diff-artifact upload.
 
 ## The first real CI run — both failures, and what caused them
 

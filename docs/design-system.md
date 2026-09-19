@@ -36,6 +36,14 @@ six images define the target appearance of every tenant-facing screen.
 > stored copy, and no such copy is claimed to exist in this repo. If you have
 > the originals, add them under `docs/design/reference/` with the filenames in
 > the table below and delete this note.
+>
+> This note is enforced, not merely written down:
+> `src/app/reference-screenshots.test.ts` fails if the files appear and the note
+> stays (the canon would be claiming they are missing), and also if the note is
+> removed while the files are still absent (the canon would be implying a
+> pixel-comparison that never happened). When you add the images it will tell
+> you to do the comparison, record it in `docs/design/test-results.md`, and then
+> retire both the note and itself.
 
 | Expected filename | App / screen | What it establishes |
 | --- | --- | --- |

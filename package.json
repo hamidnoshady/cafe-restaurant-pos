@@ -13,7 +13,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
-    "test:design": "vitest run src/app/dashboard/design-lint.test.ts src/app/design-lint.test.ts src/app/dashboard/primitive-lint.test.ts src/app/loading-coverage.test.ts",
+    "test:design": "vitest run src/app/dashboard/design-lint.test.ts src/app/design-lint.test.ts src/app/dashboard/primitive-lint.test.ts src/app/loading-coverage.test.ts src/app/reference-screenshots.test.ts",
     "test:visual": "node scripts/visual-regression.mjs",
     "test:visual:update": "node scripts/visual-regression.mjs --update",
     "db:dev": "node scripts/dev-postgres.mjs",
