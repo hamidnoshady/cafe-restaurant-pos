@@ -577,6 +577,13 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
    * treated as executable.
    */
   actionTypes?: ActionType[];
+  /**
+   * Phase D — a custom agent's read-tool allowlist. When present, the dashboard
+   * read surface is intersected with it (see `toolDefinitions`), so the turn can
+   * call only the read tools this agent was granted. Paired with `actionTypes`
+   * (the agent's action allowlist) it fully scopes what the agent may do.
+   */
+  toolAllowlist?: string[];
 }): Promise<AgentReply> {
   const { config, mode, businessId, floorScope, promptContext, messages } = opts;
   const allowActions = opts.allowActions ?? true;
@@ -590,9 +597,12 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   // is exactly the pre-wave behaviour. Desktop installs keep the assistant.
   const retrievalReady = await retrievalReadyForMode(config, mode, businessId);
 
-  const tools = toolDefinitions(mode, { hasAttachment, actionTypes: opts.actionTypes, retrieval: retrievalReady }).filter(
-    (tool) => allowActions || tool.function.name !== "propose_action",
-  );
+  const tools = toolDefinitions(mode, {
+    hasAttachment,
+    actionTypes: opts.actionTypes,
+    retrieval: retrievalReady,
+    toolAllowlist: opts.toolAllowlist,
+  }).filter((tool) => allowActions || tool.function.name !== "propose_action");
   const allowedActionTypes = opts.actionTypes ? new Set<string>(opts.actionTypes) : null;
   const canPropose = tools.some((tool) => tool.function.name === "propose_action");
   const allowedReadToolNames = new Set(

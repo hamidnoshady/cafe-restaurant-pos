@@ -363,3 +363,62 @@ green; `tsc` clean.
 Deliberately **not** added: `crm.customer.consent`, `crm.customer.merge`,
 campaign launch/send — the Phase 36 hard lines still hold (irreversible
 promises/judgements about a real person stay a named human's action).
+
+## 6d. Phase D — IN PROGRESS (unified entity model)
+
+Phase D is a three-part program (Parts 7–10): **custom Agents**, a generic
+**Automation engine**, and turning **autopilot into a reusable policy**.
+Delivered depth-first, one part per turn.
+
+### Part 1 of 3 — Custom Agents — DELIVERED (test-backed)
+
+The sharpest documented gap: until now an "agent" was one of five hard-coded
+keys (`ai_agent_settings`, migration 0047) a business could only enable and
+reschedule — no custom agents, no per-agent prompt, no per-agent tool
+allowlist. This adds a business-defined agent that is a **lens over the same
+dashboard assistant**, not a new brain or a new mutation path.
+
+What changed:
+- **Migration `0154_ai_custom_agents.sql`** (additive): `ai_custom_agents`
+  (name, instructions, `tool_allowlist text[]`, `action_allowlist text[]`,
+  enabled, created_by) — FORCE-RLS tenant-isolated, unique name per business,
+  auto-verified by the generated tenant-isolation suite. Also widens
+  `ai_action_audit.source` to include `'agent'` (joins manual/autopilot/
+  coworker) so an agent-produced proposal's later apply is attributable.
+- **`ai-custom-agents.ts`** (pure, framework-free): `validateCustomAgent`
+  (rejects — never silently drops — an unknown tool/action; a coworker-only
+  action is not allowlistable), `selectableAgentTools` (the dashboard read
+  surface minus `propose_action`, derived from `toolDefinitions` so it can't
+  drift), `selectableAgentActions` (`ACTION_CATALOG` minus coworker-only),
+  `agentTurnScope`, `customAgentErrorMessage`.
+- **`ai-custom-agents-service.ts`**: CRUD over the table, tenant-scoped,
+  unique-name (`23505` → `name_taken`).
+- **Runtime wiring — the agent genuinely narrows a turn**:
+  - `toolDefinitions("dashboard", { toolAllowlist, actionTypes })` intersects
+    the read tools with the allowlist and scopes `propose_action` to the
+    agent's action list (empty ⇒ no propose tool at all — a read-only agent).
+  - `buildSystemPrompt` appends the agent's instructions **on top of** the
+    grounding rules (Persian/Toman/Jalali/never-invent-a-number always stand)
+    and scopes the catalogue dump to the agent's actions.
+  - `runAgentTurn` accepts `toolAllowlist` and re-checks proposals against the
+    scoped action set, so a hand-crafted out-of-scope proposal is refused.
+  - `POST /api/ai/chat` accepts `agentId` (dashboard only); a disabled/unknown
+    id is a 404, never a silent fallback. An agent turn never shares the
+    general assistant's answer cache.
+- **Routes**: `GET/POST /api/ai/agents`, `GET/PUT/DELETE /api/ai/agents/[id]`
+  (manager-guarded; GET also returns `selectableTools`/`selectableActions` so a
+  future editor renders from the live catalogue).
+
+Tests: `src/lib/ai-custom-agents.test.ts` (13 — validation + that scoping
+actually narrows tools/actions/prompt and leaves an un-agented turn unchanged);
+`integration/ai-custom-agents.integration.test.ts` (4 — CRUD, unknown-tool
+rejection, duplicate-name, cross-tenant not_found). All 4775 unit tests and the
+AI integration suites green; `tsc` clean; tenant-isolation suite covers 0154.
+
+A management **UI** is deliberately deferred to Phase I (UI redesign); the REST
+API is complete and usable now.
+
+Still to do in Phase D: **Automation engine** (generic trigger→condition→action
+entity, `ai_automations`) and **autopilot-as-policy** (make the guardrail engine
+a named, reusable execution/approval policy rather than a fixed per-category
+table). Neither drops or rewrites the existing coworker/autopilot schema.

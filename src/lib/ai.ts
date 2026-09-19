@@ -622,6 +622,18 @@ export interface PromptContext {
   autopilotCategory?: AutopilotCategory;
   allowedActionTypes?: ActionType[];
   retrieval?: boolean;
+  /**
+   * Phase D — when a dashboard turn runs as a custom agent, its instructions
+   * are appended to the grounding prompt and the propose_action catalogue dump
+   * is scoped to the agent's own action list (empty = a read-only agent). The
+   * base grounding rules (Persian, Toman, Jalali, never invent a number) always
+   * stand — an agent narrows, it never replaces them.
+   */
+  agent?: {
+    name: string;
+    instructions: string;
+    actionTypes: ActionType[];
+  };
 }
 
 const WIZARD_STEP_LABELS: Record<string, string> = {
@@ -718,11 +730,32 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   }
 
   if (ctx.mode === "wizard" || ctx.mode === "dashboard" || ctx.mode === "autopilot") {
-    const types = ctx.mode === "autopilot" ? ctx.allowedActionTypes ?? [] : ACTION_TYPES;
-    const catalog = types
-      .map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`)
-      .join("\n");
-    lines.push("انواع عملیات مجاز برای propose_action و ساختار payload آن‌ها:\n" + catalog);
+    // Autopilot scopes to the run's category; a dashboard agent scopes to its
+    // own action allowlist; an ordinary dashboard/wizard turn sees them all.
+    const types =
+      ctx.mode === "autopilot"
+        ? ctx.allowedActionTypes ?? []
+        : ctx.mode === "dashboard" && ctx.agent
+          ? ctx.agent.actionTypes
+          : ACTION_TYPES;
+    if (types.length > 0) {
+      const catalog = types
+        .map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`)
+        .join("\n");
+      lines.push("انواع عملیات مجاز برای propose_action و ساختار payload آن‌ها:\n" + catalog);
+    } else if (ctx.mode === "dashboard" && ctx.agent) {
+      // A read-only agent proposes nothing — say so, rather than leaving the
+      // model to infer a silence.
+      lines.push("این ایجنت اجازهٔ هیچ عملیات اجرایی (propose_action) ندارد و فقط برای پاسخ و تحلیل است.");
+    }
+  }
+
+  // Phase D — the agent's own instructions ride on top of the grounded prompt.
+  if (ctx.mode === "dashboard" && ctx.agent) {
+    lines.push(
+      `تو به‌عنوان ایجنت «${ctx.agent.name}» کار می‌کنی. قواعد پایهٔ بالا همیشه برقرارند؛ در همان چارچوب طبق این دستورالعمل رفتار کن:`,
+    );
+    if (ctx.agent.instructions.trim()) lines.push(ctx.agent.instructions.trim());
   }
 
   return lines.filter(Boolean).join("\n");
@@ -767,6 +800,14 @@ export interface ToolDefinitionsOptions {
   hasAttachment?: boolean;
   actionTypes?: ActionType[];
   retrieval?: boolean;
+  /**
+   * Phase D — a custom agent's read-tool allowlist. When present, the dashboard
+   * read tools are intersected with it: the turn keeps only the read tools this
+   * agent was granted. `propose_action` is governed separately by `actionTypes`
+   * (a custom agent always supplies a concrete, possibly empty, action list).
+   * Absent means no agent scoping — the full mode surface, exactly as before.
+   */
+  toolAllowlist?: string[];
 }
 
 export const KNOWLEDGE_TOOL_NAME = "search_business_knowledge";
@@ -1210,6 +1251,21 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
       ? [...readTools, receiptTool]
       : [...readTools];
     if (opts.retrieval) base.push(knowledgeTool());
+
+    // Phase D — a custom agent narrows the dashboard surface. The read tools
+    // are intersected with the agent's allowlist (so the agent can only call
+    // what it was granted), and `propose_action` is scoped to the agent's own
+    // action list — empty means a read-only agent that proposes nothing. With
+    // no allowlist present the full surface stands, exactly as before.
+    if (opts.toolAllowlist) {
+      const allowed = new Set(opts.toolAllowlist);
+      const scopedReads = base.filter((tool) => allowed.has(tool.function.name));
+      const actionTypes = opts.actionTypes ?? [];
+      return actionTypes.length === 0
+        ? scopedReads
+        : [...scopedReads, proposeToolFor(actionTypes)];
+    }
+
     return [...base, proposeTool];
   }
   if (mode === "floor") return floorReadTools;

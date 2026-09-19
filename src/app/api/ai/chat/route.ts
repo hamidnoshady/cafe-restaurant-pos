@@ -17,6 +17,8 @@ import {
   withAttachmentContext,
 } from "@/lib/ai-attachment";
 import { taskDirectiveFor } from "@/lib/ai-tasks";
+import { agentTurnScope, type AgentTurnScope } from "@/lib/ai-custom-agents";
+import { getCustomAgent } from "@/lib/ai-custom-agents-service";
 import {
   AiError,
   retrievalReadyForMode,
@@ -73,6 +75,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     /** Wave 5 extension — one or more attachments (image and/or PDF). */
     attachments?: unknown;
     allowActions?: unknown;
+    /** Phase D — run this dashboard turn as a business-defined custom agent. */
+    agentId?: unknown;
     /** Phase 36c — the selected task lens (see ai-tasks.ts). */
     task?: unknown;
     /** Phase 36c — a free-form custom task description, wins over `task`. */
@@ -107,6 +111,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const messages = sanitizeMessages(body.messages);
   if (messages.length === 0) {
     return NextResponse.json({ error: "empty_messages" }, { status: 400 });
+  }
+
+  // Phase D — an optional custom agent scopes this turn. Only dashboard mode
+  // runs as an agent (the floor and wizard surfaces are their own realms). A
+  // disabled or unknown agent id is refused rather than silently falling back
+  // to the full assistant, so the caller can never think it is scoped when it
+  // is not.
+  let agentScope: AgentTurnScope | null = null;
+  if (mode === "dashboard" && typeof body.agentId === "string" && body.agentId.trim()) {
+    const agent = await getCustomAgent(session.businessId, body.agentId.trim());
+    if (!agent || !agent.enabled) {
+      return NextResponse.json({ error: "agent_unavailable" }, { status: 404 });
+    }
+    agentScope = agentTurnScope(agent);
   }
 
   // Wave 5 (issue #145, extended) — only dashboard mode (owner/manager) may
@@ -173,6 +191,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     currentStep: typeof body.currentStep === "string" ? body.currentStep : null,
     userName: session.fullName,
     role: session.role,
+    agent: agentScope
+      ? {
+          name: agentScope.name,
+          instructions: agentScope.instructions,
+          actionTypes: agentScope.actionTypes,
+        }
+      : undefined,
   };
   const latestPrompt = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
 
@@ -204,8 +229,15 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   // caching). Failed embedding turns the cache off for this turn, never the
   // assistant.
   const bypassCache = body.bypassCache === true;
+  // An agent turn is a different assistant — narrower tools, its own
+  // instructions — so it never shares the general assistant's answer cache: a
+  // cached full-assistant answer must not surface inside a scoped agent, and a
+  // scoped agent's answer must not be served to the full assistant.
   const cacheCandidate =
-    (mode === "dashboard" || mode === "floor") && attachments.length === 0 && latestPrompt.trim();
+    !agentScope &&
+    (mode === "dashboard" || mode === "floor") &&
+    attachments.length === 0 &&
+    latestPrompt.trim();
   let questionEmbedding: number[] | null = null;
   let questionEmbeddingTokens = 0;
   if (cacheCandidate && (await isEmbeddingAvailable(config))) {
@@ -311,6 +343,12 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             messages: withAttachmentContext(messages, preparedAttachments),
             attachments: preparedAttachments,
             allowActions,
+            // Phase D — when the turn runs as a custom agent, restrict the read
+            // tools to its allowlist and the proposable actions to its action
+            // list. Both are re-checked in runAgentTurn, so a hand-crafted
+            // response naming an out-of-scope action is refused, not applied.
+            toolAllowlist: agentScope ? agentScope.toolAllowlist : undefined,
+            actionTypes: agentScope ? agentScope.actionTypes : undefined,
             stream: {
               onDelta: (content) => emit("delta", { content }),
               onToolCalls: () => emit("reset", {}),
