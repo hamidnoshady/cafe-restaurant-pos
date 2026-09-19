@@ -67,7 +67,7 @@ const ERRORS: Record<string, string> = {
 
 export function MediaConsoleManager() {
   const can = useCan();
-  const canManage = can("backup.manage");
+  const canManage = can("media.manage");
 
   const [config, setConfig] = useState<MaskedConfig | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);

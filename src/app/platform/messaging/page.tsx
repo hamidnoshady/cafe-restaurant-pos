@@ -42,7 +42,7 @@ const date = (value: string) => new Intl.DateTimeFormat("fa-IR", { dateStyle: "m
 
 /** The platform-owned provider credentials, credit packages and manual approvals. */
 export default function PlatformMessagingPage() {
-  const canManage = useCan()("billing.manage");
+  const canManage = useCan()("messaging.manage");
   const [data, setData] = useState<MessagingData | null>(null);
   const [draft, setDraft] = useState<PublicConfig | null>(null);
   const [key, setKey] = useState("");

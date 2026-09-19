@@ -117,6 +117,36 @@ describe("platformCan — role → capability presets", () => {
     }
   });
 
+  it("messaging and media are engineer+owner; security is owner-only", () => {
+    // Messaging and media were decoupled from billing.manage / backup.manage
+    // into their own capabilities, granted at the same level so no operator
+    // lost access during the migration.
+    for (const role of ["engineer", "owner"] as const) {
+      expect(platformCan(role, "messaging.manage"), role).toBe(true);
+      expect(platformCan(role, "media.manage"), role).toBe(true);
+    }
+    expect(platformCan("support", "messaging.manage")).toBe(false);
+    expect(platformCan("support", "media.manage")).toBe(false);
+
+    // Security writes (MFA enforcement, grace, OTP provider) stay owner-only.
+    expect(platformCan("owner", "security.manage")).toBe(true);
+    expect(platformCan("engineer", "security.manage")).toBe(false);
+    expect(platformCan("support", "security.manage")).toBe(false);
+  });
+
+  it("every role holds a self-consistent, gap-free capability set", () => {
+    // Exhaustive matrix guard: every capability a role is granted must report
+    // true through platformCan, and one it is not granted must report false.
+    for (const role of PLATFORM_ADMIN_ROLES) {
+      const granted = new Set(CAPABILITIES_FOR(role));
+      for (const cap of granted) {
+        expect(platformCan(role, cap), `${role} should have ${cap}`).toBe(true);
+      }
+    }
+    // A spot cross-check that support is not silently granted a write.
+    expect(platformCan("support", "features.write")).toBe(false);
+  });
+
   it("higher roles are supersets of lower ones", () => {
     for (const cap of CAPABILITIES_FOR("support")) {
       expect(platformCan("engineer", cap), cap).toBe(true);

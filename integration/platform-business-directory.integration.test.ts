@@ -209,6 +209,43 @@ describe("queryBusinesses", () => {
   });
 });
 
+describe("queryAudit", () => {
+  it("paginates and filters the audit log server-side", async () => {
+    // Seed a handful of audit rows against a known business.
+    const biz = await db.query<{ id: string }>(`SELECT id FROM businesses WHERE slug = 'alpha'`);
+    const businessId = biz.rows[0].id;
+    const other = await db.query<{ id: string }>(`SELECT id FROM businesses WHERE slug = 'beta'`);
+    const otherId = other.rows[0].id;
+
+    for (let i = 0; i < 5; i++) {
+      await db.query(
+        `INSERT INTO platform_audit_log (business_id, action, entity, entity_id, payload)
+         VALUES ($1, 'business.edit', 'business', $2, '{"field":"name"}')`,
+        [businessId, businessId],
+      );
+    }
+    await db.query(
+      `INSERT INTO platform_audit_log (business_id, action, entity, entity_id, payload)
+       VALUES ($1, 'business.suspended', 'business', $2, '{}')`,
+      [otherId, otherId],
+    );
+
+    const all = await platformService.queryAudit({ pageSize: 3 });
+    expect(all.total).toBeGreaterThanOrEqual(6);
+    expect(all.entries).toHaveLength(3);
+
+    const scoped = await platformService.queryAudit({ businessId });
+    expect(scoped.total).toBe(5);
+    expect(scoped.entries.every((e) => e.businessId === businessId)).toBe(true);
+
+    const byFamily = await platformService.queryAudit({ actionFamily: "business.suspended" });
+    expect(byFamily.total).toBe(1);
+
+    const clamped = await platformService.queryAudit({ pageSize: 100_000 });
+    expect(clamped.pageSize).toBeLessThanOrEqual(100);
+  });
+});
+
 describe("getPlatformOverview", () => {
   it("aggregates business counts and growth in one call", async () => {
     const o = await overviewService.getPlatformOverview(0);

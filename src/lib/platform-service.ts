@@ -1913,10 +1913,74 @@ export interface AuditEntry {
   createdAt: string;
 }
 
-/** The platform audit log, newest first, optionally scoped to one business. */
-export async function listAudit(businessId?: string, limit = 200): Promise<AuditEntry[]> {
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<{
+/** Filters + pagination for the console's audit investigation surface. */
+export interface AuditQuery {
+  businessId?: string;
+  /** Exact platform admin (operator) id. */
+  adminId?: string;
+  /** Action-family prefix, e.g. "business" matches "business.provision". */
+  actionFamily?: string;
+  entity?: string;
+  /** Free-text over action, admin name, business name, entity id. */
+  search?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AuditListResult {
+  entries: AuditEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Distinct action families present (for the filter dropdown), unfiltered. */
+  actionFamilies?: string[];
+}
+
+/**
+ * The audit log as an investigation tool (task section 12): filtered, searched
+ * and paginated in the database rather than fetched in one 500-row page and
+ * sliced in the browser. Read-only; the table is immutable. `pageSize` is
+ * clamped server-side so a caller can never pull the whole log at once.
+ */
+export async function queryAudit(q: AuditQuery = {}): Promise<AuditListResult> {
+  const page = Math.max(1, Math.floor(q.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(q.pageSize ?? 40)));
+  const offset = (page - 1) * pageSize;
+
+  return withoutTenantScope("platform", async () => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    const bind = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (q.businessId) where.push(`al.business_id = ${bind(q.businessId)}::uuid`);
+    if (q.adminId) where.push(`al.platform_admin_id = ${bind(q.adminId)}::uuid`);
+    if (q.actionFamily) where.push(`al.action LIKE ${bind(`${q.actionFamily}%`)}`);
+    if (q.entity) where.push(`al.entity = ${bind(q.entity)}`);
+    if (q.createdFrom) where.push(`al.created_at >= ${bind(q.createdFrom)}`);
+    if (q.createdTo) where.push(`al.created_at <= ${bind(`${q.createdTo}T23:59:59.999Z`)}`);
+    if (q.search && q.search.trim()) {
+      const p = bind(`%${q.search.trim()}%`);
+      where.push(
+        `(al.action ILIKE ${p} OR pa.full_name ILIKE ${p} OR b.name ILIKE ${p} OR al.entity_id ILIKE ${p})`,
+      );
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const joins = `LEFT JOIN platform_admins pa ON pa.id = al.platform_admin_id
+                   LEFT JOIN businesses b ON b.id = al.business_id`;
+
+    const { rows: countRows } = await query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM platform_audit_log al ${joins} ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const { rows } = await query<{
       id: string;
       platform_admin_id: string | null;
       admin_name: string | null;
@@ -1932,26 +1996,31 @@ export async function listAudit(businessId?: string, limit = 200): Promise<Audit
               al.business_id, b.name AS business_name, al.action, al.entity,
               al.entity_id, al.payload, al.created_at
          FROM platform_audit_log al
-         LEFT JOIN platform_admins pa ON pa.id = al.platform_admin_id
-         LEFT JOIN businesses b ON b.id = al.business_id
-        WHERE ($1::uuid IS NULL OR al.business_id = $1)
+         ${joins}
+        ${whereSql}
         ORDER BY al.created_at DESC
-        LIMIT $2`,
-      [businessId ?? null, limit],
-    ),
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    platformAdminId: r.platform_admin_id,
-    adminName: r.admin_name,
-    businessId: r.business_id,
-    businessName: r.business_name,
-    action: r.action,
-    entity: r.entity,
-    entityId: r.entity_id,
-    payload: r.payload,
-    createdAt: r.created_at,
-  }));
+        LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    );
+
+    return {
+      entries: rows.map((r) => ({
+        id: r.id,
+        platformAdminId: r.platform_admin_id,
+        adminName: r.admin_name,
+        businessId: r.business_id,
+        businessName: r.business_name,
+        action: r.action,
+        entity: r.entity,
+        entityId: r.entity_id,
+        payload: r.payload,
+        createdAt: r.created_at,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
