@@ -79,16 +79,28 @@ not work from my sandbox; the check-run annotations API does), is in
 They were visible in the conversation but never present on the filesystem, so
 they could not be committed or diffed. The reference table in
 `docs/design-system.md` is a transcription and says so. Placing the six PNGs at
-the listed filenames makes it checkable — and the 11 committed baselines now
+the listed filenames makes it checkable — and the 14 committed baselines now
 give something concrete to compare them against.
 
-**The visual check runs and its baselines are committed.** All 11 were recorded
+**The visual check runs and its baselines are committed.** All 14 were recorded
 against a production build with a deterministic fixture, opened and reviewed one
 by one. Running it end to end is what found the two bugs below, and forced four
 fixes to the harness itself: a 5-run loop went from two failures (diffs up to
 42%) to 8/8 clean, and 6/6 clean again after the re-record on Chromium 141. The check was also proven able to *fail* — after the Jalali
 fix it went red on exactly the one affected screen (0.24%) and stayed green on
 the other ten.
+
+**Three of the fourteen exist because the first eleven proved nothing here.**
+The table migration in this PR left all eleven then-existing baselines
+byte-identical, and reading that as a pass would have been wrong: not one of
+them rendered a migrated table, so the green run was over untouched code.
+`accounting-chart-of-accounts`, `accounting-expenses` and
+`accounting-receivables` were added to cover it; two of those then photographed
+**empty states**, which would have frozen nothing either, so the fixture grew
+three expenses and two receivable-raising cheques (A/R balances are derived from
+journal lines on account `1200` via the originating cheque, not stored on the
+party). The new accounts add one reviewed row to the two trial-balance
+baselines. Both re-records were opened and read before being approved.
 
 ## Two bugs the pixels found
 
@@ -124,5 +136,9 @@ recorded in `docs/design/test-results.md` rather than dropped.
 
 `tsc --noEmit` clean · `npm test` 4760/4760 · `npm run test:db` 1181 passed, 1
 skipped · `npm run build` clean · `npm run test:design` 34/34 ·
-`npm run test:visual` 11/11, clean on 8 consecutive runs · migrated routes
-verified 200 with an authenticated session.
+`npm run test:visual` 14/14 · migrated routes verified 200 with an
+authenticated session.
+
+CI cannot corroborate any of this: the workflow is in place and correct, but
+GitHub runners refuse to start on an account-level billing/spending-limit
+failure. Every result above is from local runs.
