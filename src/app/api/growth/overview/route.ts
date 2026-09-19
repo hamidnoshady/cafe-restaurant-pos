@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { businessToday, getBusinessDayStatus } from "@/lib/business-day-service";
 import { growthOverview } from "@/lib/growth-overview";
 
 /**
@@ -17,9 +18,10 @@ export const GET = withTenantScope(async () => {
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
+  const businessDay = location ? await getBusinessDayStatus(location.id) : null;
   const overview = await growthOverview(session.businessId, {
     locationId: location?.id ?? null,
-    today: new Date().toISOString().slice(0, 10),
+    today: businessDay?.businessDate ?? (await businessToday(session.businessId)),
   });
   return NextResponse.json({ overview });
 });

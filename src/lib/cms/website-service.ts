@@ -508,6 +508,12 @@ export interface CmsDnsStatus {
   domainVerified: boolean | null;
   /** `https://{domain}/` — what the live site (and the iframe) loads on. */
   previewUrl: string;
+  /**
+   * The CMS admin for this site — where «تأیید دامنه» is ticked and content is
+   * edited. Built here, from the stored `baseUrl`, so the browser never
+   * concatenates an admin URL out of a connection field it half understands.
+   */
+  adminUrl: string;
 }
 
 /**
@@ -531,6 +537,7 @@ export async function cmsWebsiteDns(businessId: string): Promise<WebsiteResult<C
     resolveAddresses(cmsHost),
   ]);
   const dnsCheck: DnsCheck = {
+    domain: siteDomain,
     resolved: domainAddresses.length > 0,
     pointingToCms: ipsOverlap(domainAddresses, cmsAddresses),
     cmsHost,
@@ -552,7 +559,11 @@ export async function cmsWebsiteDns(businessId: string): Promise<WebsiteResult<C
     data: {
       dns: dnsCheck,
       domainVerified,
+      // The site is served over TLS on its own domain once the checklist is
+      // green; the CMS control plane may be plain http in a local/staging
+      // deployment, which is the `adminUrl` below, not this.
       previewUrl: `https://${siteDomain}/`,
+      adminUrl: `${config.baseUrl.replace(/\/+$/, "")}/admin`,
     },
   };
 }

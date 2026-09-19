@@ -105,7 +105,7 @@ rows with an address) → `network`. Everything else (`usb`, `webusb`,
 `browser`, and the setup wizard's pre-transport stubs) is flagged
 `needsReconnect` with its identity preserved, so the settings screen shows
 «این چاپگر باید دوباره متصل شود» and the operator re-pairs in one pass.
-Migration 0154 performs the same mapping in the database; new writes go
+Migration 0155 performs the same mapping in the database; new writes go
 through a parser (`src/lib/printing/printer-input.ts`) that accepts only the
 canonical model.
 
@@ -243,7 +243,7 @@ and `printing/printer-input.test.ts` the model and its write boundary;
 `printing/render-service.test.ts` the render pipeline; `printing/client.test.ts`
 the browser client; `windows-print-connector*.test.ts` the connector/installer
 contract; `api/printing/**` the route security model; and
-`integration/printer-connection-migration.integration.test.ts` migration 0154
+`integration/printer-connection-migration.integration.test.ts` migration 0155
 on a real database.
 
 ## Adding to the model

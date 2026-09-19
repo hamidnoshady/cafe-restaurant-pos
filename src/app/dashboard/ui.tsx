@@ -72,6 +72,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     missing_fields: "فیلدهای الزامی را پر کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
+    campaign_audience_limit_exceeded:
+      "این بخش بیش از سقف ارسال یک‌باره مخاطب دارد. برای ارسال کامل، بخش مشتریان را کوچک‌تر کنید.",
+    campaign_has_no_recipients:
+      "در این بخش، مشتریِ دارای رضایت و راه ارتباطیِ قابل‌ارسال وجود ندارد.",
     // لیست قیمت‌ها
     duplicate_name: "لیستی با همین نام وجود دارد.",
     invalid_quick_update_value:
@@ -116,6 +120,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     device_already_paired: "این مرورگر هم‌اکنون به‌عنوان یک دستگاه ثبت‌شده شناخته می‌شود.",
     device_not_found: "دستگاه پیدا نشد یا ثبت آن قبلاً لغو شده است.",
     employee_not_found: "کارمند پیدا نشد.",
+    // کارت هدیه (gift cards) — Growth › Gift Cards
+    gift_card_not_found: "کارت هدیه‌ای با این کد پیدا نشد.",
+    gift_card_failed: "صدور کارت هدیه ناموفق بود.",
+    redeem_failed: "مصرف کارت هدیه ناموفق بود.",
     session_required: "برای شروع شیفت باید دوباره وارد شوید.",
     shift_already_open: "شیفتی از قبل باز است.",
     no_active_shift: "شیفت بازی برای پایان دادن پیدا نشد.",
@@ -359,6 +367,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_base_url: "آدرس فروشگاه معتبر نیست.",
     missing_credentials: "کلیدهای REST ووکامرس را وارد کنید.",
     invalid_currency_unit: "واحد قیمت فروشگاه معتبر نیست.",
+    invalid_order_status: "وضعیت انتخاب‌شده برای سفارش ووکامرس معتبر نیست.",
+    invalid_refund_amount: "مبلغ برگشت وجه باید عددی مثبت در واحد فروشگاه باشد.",
     invalid_web_service_url: "آدرس وب‌سرویس هلو معتبر نیست.",
     missing_web_service_credentials: "برای نوشتن از وب‌سرویس، آدرس و نام کاربری و رمز وب‌سرویس هلو را وارد کنید.",
     no_web_service_credentials: "اطلاعات وب‌سرویس هلو برای این اتصال ثبت نشده است.",
@@ -385,6 +395,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     segment_not_found: "بخش پیدا نشد.",
     segment_name_required: "برای بخش یک نام بنویسید.",
     segment_definition_invalid: "قاعده‌های این بخش کامل نیستند؛ فیلد و شرط هر ردیف را بررسی کنید.",
+    segment_purpose_invalid: "هدف برآورد بخش نامعتبر است؛ مشاهده، پیامک یا ایمیل را انتخاب کنید.",
     campaign_channel_invalid: "کانال ارسال نامعتبر است؛ پیامک یا ایمیل را انتخاب کنید.",
     segment_or_definition_required: "برای محاسبهٔ مخاطبان، یک بخش مشتریان یا مجموعه قاعده انتخاب کنید.",
     note_body_required: "متن یادداشت را بنویسید.",
@@ -403,6 +414,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     activity_not_found: "کار یا پیگیری پیدا نشد.",
     activity_subject_required: "برای این کار یک عنوان بنویسید.",
     activity_kind_invalid: "نوع کار معتبر نیست.",
+    activity_subject_too_long: "عنوان کار بیش از حد طولانی است؛ کوتاه‌ترش کنید.",
+    activity_body_too_long: "توضیح کار بیش از حد طولانی است؛ کوتاه‌ترش کنید.",
+    activity_assignee_too_long: "نام مسئول بیش از حد طولانی است.",
+    activity_due_invalid: "تاریخ موعد معتبر نیست.",
     case_not_found: "تیکت پیدا نشد.",
     case_subject_required: "موضوع تیکت را بنویسید.",
     case_status_invalid: "وضعیت تیکت معتبر نیست.",
@@ -428,12 +443,35 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_price: "قیمت باید عدد صحیح و غیرمنفی باشد.",
     invalid_inventory: "موجودی باید عدد صحیح و غیرمنفی باشد.",
     domain_taken: "این دامنه قبلاً برای سایت دیگری ثبت شده است.",
+    // «ساخت سایت» (the four-step wizard) and the site services behind it.
+    // Without these, a refused build or a rejected quote rendered the generic
+    // «خطای غیرمنتظره», which tells an owner nothing about which step to fix.
+    not_ready: "گام‌های قبلی کامل نیست؛ دامنه، CDN و نوع سایت را تمام کنید.",
+    already_connected: "این حساب از قبل به یک سایت وصل است؛ برای ساخت سایت تازه، اول اتصال فعلی را قطع کنید.",
+    already_built: "سایت قبلاً ساخته شده است؛ تغییرها را از «میز کار سایت» انجام دهید.",
+    invalid_domain_mode: "نوع تأمین دامنه معتبر نیست.",
+    invalid_cdn_provider: "ارائه‌دهندهٔ CDN معتبر نیست.",
+    invalid_cdn_status: "وضعیت CDN معتبر نیست.",
+    invalid_period: "مدت ثبت دامنه باید بین ۱ تا ۵ سال باشد.",
+    invalid_operation: "نوع عملیات دامنه معتبر نیست.",
+    // `invalid_status` is already mapped above (the floor-plan's table status)
+    // and the CMS order select only ever submits one of its four options, so
+    // that code stays a server-side guard rather than a second message here.
+    tld_not_sold: "پسوند این دامنه از طریق پلتفرم فروخته نمی‌شود.",
+    quote_failed: "استعلام قیمت دامنه ناموفق بود؛ بعداً دوباره تلاش کنید.",
+    registrar_disabled: "خرید دامنه از طریق پلتفرم فعلاً فعال نیست.",
+    unsupported_currency: "قیمت این دامنه به ارز دیگری اعلام شده و از این‌جا قابل خرید نیست.",
+    insufficient_credit: "اعتبار پلتفرم برای این خرید کافی نیست؛ ابتدا اعتبار را افزایش دهید.",
+    cdn_purge_failed: "خالی‌کردن حافظهٔ CDN ناموفق بود؛ بعداً دوباره تلاش کنید.",
     // Parties (the shared «اشخاص» record every app reads) — src/app/api/parties.
     // `validation_failed` is the collection's answer to a body the form rules
     // reject; the message per field comes from `partyFieldErrorMessage` in
     // src/lib/parties.ts, which is why this one stays general.
     validation_failed: "اطلاعات شخص کامل یا معتبر نیست؛ فیلدهای مشخص‌شده را بررسی کنید.",
     party_not_found: "این شخص پیدا نشد یا در همین کسب‌وکار نیست.",
+    // Promotions/campaigns — src/app/api/promotions. Returned when a pause or
+    // resume names a campaign that was deleted, or belongs to another business.
+    promotion_not_found: "این کمپین پیدا نشد؛ ممکن است حذف شده باشد. فهرست را تازه کنید.",
     display_name_required: "نام نمایشی شخص الزامی است.",
     // `invalid_role` and `category_not_found` above already cover the party
     // routes' versions of those two codes; only the party-specific ones are added.

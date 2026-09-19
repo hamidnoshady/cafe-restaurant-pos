@@ -15,6 +15,7 @@ import {
   wooProductRemoteIds,
   wooProductShape,
   wooTaxonomyLabel,
+  wooTermDepth,
   wooTermPath,
   wooUpdatePath,
   wooVariationAttributes,
@@ -245,6 +246,17 @@ describe("taxonomies", () => {
     expect(wooTaxonomyLabel("brand")).toBe("brand");
   });
 
+  it("labels an attribute the same way it badges one, whatever the slug's case", () => {
+    // isWooAttributeTaxonomy is case-insensitive; the label used to be
+    // case-sensitive, so `PA_Colour` was badged «ویژگی» and labelled with its
+    // raw slug in the same row.
+    expect(wooTaxonomyLabel("PA_Colour")).toBe("ویژگی: Colour");
+  });
+
+  it("humanises a hyphenated attribute slug instead of showing the URL fragment", () => {
+    expect(wooTaxonomyLabel("pa_shoe-size")).toBe("ویژگی: shoe size");
+  });
+
   it("recognises an attribute taxonomy by its pa_ prefix", () => {
     expect(isWooAttributeTaxonomy("pa_colour")).toBe(true);
     expect(isWooAttributeTaxonomy("product_cat")).toBe(false);
@@ -288,6 +300,73 @@ describe("taxonomies", () => {
       { remoteId: "1", parentRemoteId: null, name: "الف", menuOrder: 0 },
     ];
     expect(sortWooTerms(terms).map((t) => t.remoteId)).toEqual(["1", "2"]);
+  });
+
+  it("keeps each parent immediately followed by its own subtree", () => {
+    // The bug this replaces: sorting purely by depth put both roots first and
+    // both children after them, so «کتانی» was drawn under «پوشاک» with a
+    // tree marker that claimed a parent it does not have.
+    const terms = [
+      { remoteId: "20", parentRemoteId: "2", name: "کتانی", menuOrder: 0 },
+      { remoteId: "1", parentRemoteId: null, name: "پوشاک", menuOrder: 0 },
+      { remoteId: "10", parentRemoteId: "1", name: "تی‌شرت", menuOrder: 0 },
+      { remoteId: "2", parentRemoteId: null, name: "کفش", menuOrder: 1 },
+      { remoteId: "100", parentRemoteId: "10", name: "یقه‌دار", menuOrder: 0 },
+    ];
+    expect(sortWooTerms(terms).map((t) => t.remoteId)).toEqual(["1", "10", "100", "2", "20"]);
+  });
+
+  it("treats a term whose parent is missing from the list as a root, and keeps it", () => {
+    const terms = [
+      { remoteId: "5", parentRemoteId: "999", name: "یتیم", menuOrder: 0 },
+      { remoteId: "1", parentRemoteId: null, name: "الف", menuOrder: 0 },
+    ];
+    expect(sortWooTerms(terms).map((t) => t.remoteId)).toEqual(["1", "5"]);
+  });
+
+  it("returns every term even when the store has built a parent cycle", () => {
+    // A bad import can do this; losing rows off the screen would be worse
+    // than drawing them at the wrong level.
+    const terms = [
+      { remoteId: "1", parentRemoteId: "2", name: "الف", menuOrder: 0 },
+      { remoteId: "2", parentRemoteId: "1", name: "ب", menuOrder: 0 },
+      { remoteId: "3", parentRemoteId: null, name: "ج", menuOrder: 0 },
+    ];
+    const sorted = sortWooTerms(terms);
+    expect(sorted).toHaveLength(3);
+    expect(sorted.map((t) => t.remoteId).sort()).toEqual(["1", "2", "3"]);
+  });
+
+  it("does not let a term that claims itself as its parent disappear", () => {
+    const terms = [{ remoteId: "1", parentRemoteId: "1", name: "الف", menuOrder: 0 }];
+    expect(sortWooTerms(terms).map((t) => t.remoteId)).toEqual(["1"]);
+  });
+});
+
+describe("wooTermDepth", () => {
+  const byId = new Map([
+    ["1", { remoteId: "1", parentRemoteId: null, name: "پوشاک" }],
+    ["2", { remoteId: "2", parentRemoteId: "1", name: "تی‌شرت" }],
+    ["3", { remoteId: "3", parentRemoteId: "2", name: "یقه‌دار" }],
+    ["9", { remoteId: "9", parentRemoteId: "404", name: "یتیم" }],
+  ]);
+
+  it("counts levels from the root, so a grandchild indents twice", () => {
+    expect(wooTermDepth(byId.get("1")!, byId)).toBe(0);
+    expect(wooTermDepth(byId.get("2")!, byId)).toBe(1);
+    expect(wooTermDepth(byId.get("3")!, byId)).toBe(2);
+  });
+
+  it("treats an unknown parent as a root rather than as depth 1", () => {
+    expect(wooTermDepth(byId.get("9")!, byId)).toBe(0);
+  });
+
+  it("terminates on a cycle", () => {
+    const looped = new Map([
+      ["1", { remoteId: "1", parentRemoteId: "2", name: "الف" }],
+      ["2", { remoteId: "2", parentRemoteId: "1", name: "ب" }],
+    ]);
+    expect(wooTermDepth(looped.get("1")!, looped)).toBe(1);
   });
 });
 

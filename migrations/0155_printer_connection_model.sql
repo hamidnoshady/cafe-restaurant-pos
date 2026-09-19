@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0154_printer_connection_model.sql — the canonical printer hardware model.
+-- 0155_printer_connection_model.sql — the canonical printer hardware model.
 --
 -- A printer is reached one of exactly two ways, and which one it is is the
 -- only hardware question the product asks:

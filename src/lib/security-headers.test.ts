@@ -48,6 +48,13 @@ describe("security-headers", () => {
     expect(reportOnly).not.toContain("upgrade-insecure-requests");
   });
 
+  it("allows connected website media over HTTP(S) without widening scripts or connections", () => {
+    const csp = contentSecurityPolicy("test-nonce", { https: false });
+    expect(csp).toContain("img-src 'self' data: blob: http: https:");
+    expect(csp).not.toContain("script-src http:");
+    expect(csp).not.toContain("connect-src http: https:");
+  });
+
   it("allows only the loopback print-connector origins in connect-src", () => {
     process.env.NEXT_PUBLIC_PRINT_CONNECTOR_URL = "http://localhost:9555";
     const csp = contentSecurityPolicy("test-nonce", { https: true });

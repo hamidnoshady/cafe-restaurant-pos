@@ -1,7 +1,7 @@
 /**
- * Migration 0154 — the printer connection model. Real-database coverage of
+ * Migration 0155 — the printer connection model. Real-database coverage of
  * the legacy → canonical mapping, on the actual upgrade path: a database at
- * 0153 with legacy printer rows, then 0154 applied on top.
+ * the pre-printer state with legacy printer rows, then 0155 applied on top.
  *
  *   system     → {type: 'windows', systemName}   (behaviour fields kept)
  *   network    → {type: 'network', ip, port}
@@ -48,17 +48,17 @@ async function createDatabase(): Promise<string> {
   return name;
 }
 
-/** A migrations directory holding everything up to (but not including) 0154. */
+/** A migrations directory holding everything up to (but not including) 0155. */
 async function preMigrationDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "pos-printer-mig-"));
   const all = readdirSync(join(process.cwd(), "migrations")).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
-  for (const file of all.filter((name) => name < "0154_printer_connection_model.sql")) {
+  for (const file of all.filter((name) => name < "0155_printer_connection_model.sql")) {
     await copyFile(join(process.cwd(), "migrations", file), join(dir, file));
   }
   return dir;
 }
 
-/** A directory holding only 0154 — the upgrade step under test. */
+/** A directory holding only 0155 — the upgrade step under test. */
 async function upgradeDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "pos-printer-upg-"));
   // The runner needs migration 0001 too (it drives the baseline when the
@@ -119,10 +119,10 @@ async function connectionOf(name: string): Promise<Record<string, unknown>> {
   return rows[0].connection as Record<string, unknown>;
 }
 
-describe("migration 0154 — printer connection model", () => {
+describe("migration 0155 — printer connection model", () => {
   it("applies the upgrade step on top of a 0153 database", async () => {
     // Running the FULL history is idempotent — schema_migrations skips every
-    // applied file — so exactly one migration (0154) lands here.
+    // applied file — so exactly one migration (0155) lands here.
     const result = await runMigrations({ databaseUrl: urlFor(databaseName), quiet: true });
     expect(result.applied).toBe(1);
   });

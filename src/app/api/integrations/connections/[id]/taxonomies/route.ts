@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { listTerms } from "@/lib/integrations/woo-taxonomy-service";
-import { isWooAttributeTaxonomy, sortWooTerms, wooTaxonomyLabel } from "@/lib/integrations/woo-catalogue";
+import {
+  isWooAttributeTaxonomy,
+  sortWooTerms,
+  wooTaxonomyLabel,
+  wooTermDepth,
+  wooTermPath,
+} from "@/lib/integrations/woo-catalogue";
 
 /**
  * The store's taxonomy tree: categories, tags, attribute terms, and whatever
@@ -33,21 +39,33 @@ export const GET = withTenantScope(async (request: Request, context: { params: P
   }
 
   const groups = [...byTaxonomy.entries()]
-    .map(([slug, group]) => ({
-      taxonomy: slug,
-      label: wooTaxonomyLabel(slug),
-      isAttribute: isWooAttributeTaxonomy(slug),
-      termCount: group.length,
-      // Tree order: parents before children, siblings by menu_order.
-      terms: sortWooTerms(group).map((t) => ({
-        remoteId: t.remoteId,
-        parentRemoteId: t.parentRemoteId,
-        name: t.name,
-        slug: t.slug,
-        remoteCount: t.remoteCount,
-        mappedCount: t.mappedCount,
-      })),
-    }))
+    .map(([slug, group]) => {
+      const byId = new Map(group.map((t) => [t.remoteId, t]));
+      return {
+        taxonomy: slug,
+        label: wooTaxonomyLabel(slug),
+        isAttribute: isWooAttributeTaxonomy(slug),
+        termCount: group.length,
+        // How many products in the store carry *any* term of this taxonomy,
+        // so a collapsed group says something more useful than its size.
+        remoteCount: group.reduce((sum, t) => sum + t.remoteCount, 0),
+        mappedCount: group.reduce((sum, t) => sum + t.mappedCount, 0),
+        // Tree order: each parent immediately followed by its own subtree.
+        terms: sortWooTerms(group).map((t) => ({
+          remoteId: t.remoteId,
+          parentRemoteId: t.parentRemoteId,
+          name: t.name,
+          slug: t.slug,
+          // Indentation is a server fact here, not a guess the browser makes
+          // from `parentRemoteId` alone: a grandchild is two levels in, and
+          // the old single «└» could not say so.
+          depth: wooTermDepth(t, byId),
+          path: wooTermPath(t, byId),
+          remoteCount: t.remoteCount,
+          mappedCount: t.mappedCount,
+        })),
+      };
+    })
     .sort((a, b) => {
       if (a.isAttribute !== b.isAttribute) return a.isAttribute ? -1 : 1;
       const rank = (slug: string) => (slug === "product_cat" ? 0 : slug === "product_tag" ? 1 : 2);
