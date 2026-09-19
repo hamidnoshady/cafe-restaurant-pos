@@ -123,6 +123,28 @@ const SCREENS = [
   { id: "settings-business", path: "/settings", theme: "light" },
 ];
 
+function channelsClose(data, offset, r, g, bl) {
+  return (
+    Math.abs(data[offset] - r) <= PIXEL_CHANNEL_TOLERANCE &&
+    Math.abs(data[offset + 1] - g) <= PIXEL_CHANNEL_TOLERANCE &&
+    Math.abs(data[offset + 2] - bl) <= PIXEL_CHANNEL_TOLERANCE
+  );
+}
+
+function neighbourhoodHasColour(image, x, y, r, g, bl) {
+  for (let dy = -1; dy <= 1; dy++) {
+    const yy = y + dy;
+    if (yy < 0 || yy >= image.height) continue;
+    for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx;
+      if (xx < 0 || xx >= image.width) continue;
+      const offset = (yy * image.width + xx) * 4;
+      if (channelsClose(image.data, offset, r, g, bl)) return true;
+    }
+  }
+  return false;
+}
+
 function comparePng(actualBuf, expectedBuf) {
   const a = PNG.sync.read(actualBuf);
   const b = PNG.sync.read(expectedBuf);
@@ -136,16 +158,21 @@ function comparePng(actualBuf, expectedBuf) {
   let maxX = -1;
   let maxY = -1;
   for (let i = 0; i < a.data.length; i += 4) {
-    const dr = Math.abs(a.data[i] - b.data[i]);
-    const dg = Math.abs(a.data[i + 1] - b.data[i + 1]);
-    const db = Math.abs(a.data[i + 2] - b.data[i + 2]);
-    // A small per-channel delta is antialiasing, not a design change.
-    const differs = dr > PIXEL_CHANNEL_TOLERANCE || dg > PIXEL_CHANNEL_TOLERANCE || db > PIXEL_CHANNEL_TOLERANCE;
+    const pixel = i / 4;
+    const x = pixel % a.width;
+    const y = Math.floor(pixel / a.width);
+    const directMatch = channelsClose(a.data, i, b.data[i], b.data[i + 1], b.data[i + 2]);
+    // CI runner font libraries can move glyph edges by a pixel even with the
+    // same Chromium major. Treat only symmetric one-pixel colour matches as
+    // equivalent: a shifted glyph is ignored, but removed/new text still lacks
+    // the opposite-colour neighbour and is counted.
+    const shiftedMatch =
+      !directMatch &&
+      neighbourhoodHasColour(b, x, y, a.data[i], a.data[i + 1], a.data[i + 2]) &&
+      neighbourhoodHasColour(a, x, y, b.data[i], b.data[i + 1], b.data[i + 2]);
+    const differs = !directMatch && !shiftedMatch;
     if (differs) {
       changed++;
-      const pixel = i / 4;
-      const x = pixel % a.width;
-      const y = Math.floor(pixel / a.width);
       if (x < minX) minX = x;
       if (x > maxX) maxX = x;
       if (y < minY) minY = y;
