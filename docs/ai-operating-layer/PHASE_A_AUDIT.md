@@ -780,3 +780,53 @@ remains.** Commit `ef9be91`.
 **Still deferred to Phase F Part 5+:** project files (Media Library link — waits
 on Phase G provenance columns), project members, and entity `project_id` FKs on
 agents/coworkers/automations.
+
+## 6f (cont.) — Phase F Part 5 DELIVERED (a project pins a default agent)
+
+Parts 1–4 let a project INFORM a turn (instruction, notes, memory, tasks, its
+own thread list). Part 5 lets it SCOPE one — closing the "attached agents" gap
+§1.5 named. A project can pin a Phase-D custom agent (0154) as its default, and
+every conversation opened in the project runs as that agent (its tone, and only
+the actions it may propose) without the caller re-selecting it.
+
+**Safety inherited, not re-invented.** Pinning can only NARROW a turn — an
+agent's tool/action allowlists are a validated subset of the catalogue
+(ai-custom-agents.ts). A request-level `agentId` still wins over the project
+default; a project-scoped turn that runs as an agent does NOT also gain the
+project-scoped write actions (an agent's action list is its own — the existing
+"`projectScoped` only when there is no agent" rule in the chat route). So it
+never widens anyone's authority.
+
+**Schema.** `migrations/0160_ai_project_default_agent.sql` — one nullable column
+`ai_projects.default_agent_id` → `ai_custom_agents(id)` **ON DELETE SET NULL**:
+deleting or disabling the agent falls back to the full assistant, never orphans
+the project. No new table, no default → every existing project behaves exactly
+as before.
+
+**Service (`ai-projects.ts`).** `defaultAgentId` on `AiProject` and
+`ProjectContext`; `updateProject` validates the pin is a real, ENABLED agent of
+this business (else `project_default_agent_not_found`; clearing with null is
+always allowed) and threads it through every project SELECT.
+`getProjectPromptContext` carries the pin so the chat route resolves the agent
+in the same pass it loads the rest.
+
+**Chat route.** In the project-context block, when the project pins an agent and
+the request named none, the turn is run as the pinned agent
+(`getCustomAgent` + `agentTurnScope`, both already tested) and
+`promptContext.agent` is set; `projectScoped` stays false in that case, as
+before.
+
+**Routes + UI.** Project PATCH accepts `defaultAgentId`; project GET returns the
+pinnable (enabled) agents; the project page's operations card gains an agent
+picker ("دستیار کامل" = none) and a read-mode line.
+
+**Tests.** `ai-projects.test.ts` fixtures extended for the new field; new
+`ai-project-default-agent.integration.test.ts` (7: pin/read/clear,
+omit-preserves-pin, disabled + cross-tenant refused, ON DELETE SET NULL,
+ProjectContext carries the pin). Full suite **4837 unit / 326 files**; `tsc`
+clean; default-agent + tenant-isolation + project-memory integration green.
+Commit `f1cc000`.
+
+**Still deferred to Phase F Part 6+:** project files (Media Library link — waits
+on Phase G provenance columns), project members, and `project_id` FKs on
+coworkers/automations (agents are now reachable from a project via the pin).
