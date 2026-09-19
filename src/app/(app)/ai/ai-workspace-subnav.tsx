@@ -20,6 +20,7 @@ import { usePathname } from "next/navigation";
 import {
   ActivityIcon,
   BotIcon,
+  LibraryBigIcon,
   MessagesSquareIcon,
   SparklesIcon,
   WalletIcon,
@@ -39,6 +40,7 @@ const ICONS: Record<AiWorkspaceIconName, LucideIcon> = {
   coworkers: BotIcon,
   automations: ZapIcon,
   activity: ActivityIcon,
+  knowledge: LibraryBigIcon,
   usage: WalletIcon,
 };
 

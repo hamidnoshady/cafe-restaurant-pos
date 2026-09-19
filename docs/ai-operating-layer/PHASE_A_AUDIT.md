@@ -1112,3 +1112,49 @@ drifts.
   (200); `GET /api/ai/usage?days=30` returns the right totals/breakdown/recent
   turns, and `?days=999` clamps to 7; all six workspace routes return 200
   authenticated with no render errors.
+
+### Phase I Part 5 — Knowledge section (COMPLETE)
+
+The north-star IA (§4) names *Files/Knowledge* as a workspace surface. The
+retrieval engine was already there — the assistant recalls over a business's own
+slow-moving text via pgvector embeddings (`ai_embeddings`, migration 0113;
+menu/item descriptions, item/customer names, project notes, help/policy/
+procedure), and numbers are deliberately NEVER embedded (they stay live behind
+tools) — but nothing made that index visible to the business. This part adds the
+Knowledge section: what the assistant can recall, by kind, whether retrieval
+infra is even available, and a manual reindex. Built the same registry-driven
+way as the other sections.
+
+- **Framework-free core (`ai-knowledge-shared.ts`).** The embeddable-kind Persian
+  labels + hints, `knowledgeKind` (resolves a stored kind, rejecting the
+  numbers-bearing kinds that are never embeddable), `knowledgeKindLabel`
+  (raw-name fallback), and the `AiKnowledgeStatus`/`AiKnowledgeKindCount` shapes.
+  Pure, shared by the service, route, client and tests. **3 unit tests.**
+- **Service (`ai-knowledge-service.ts`).** `getAiKnowledgeStatus(businessId,
+  aiConfigured)` reads `ai_embeddings` grouped by kind into a per-kind breakdown
+  (every embeddable kind present, count 0 when empty), a total, and the latest
+  index time. Gated by `isRetrievalAvailable()`: when pgvector is absent it
+  returns a truthful `retrievalAvailable:false` empty state and touches no table
+  (RAG is optional infra — a café desktop may not have the extension at all).
+  An unknown/legacy kind is dropped rather than shown. **3 unit tests** (mocked
+  db) cover the unavailable path, the folded/totalled available path, and
+  unknown-kind coalescing.
+- **Read-only route (`/api/ai/knowledge`).** `requireManager`, resolves the AI
+  config to report `aiConfigured`, returns `{ status }`. The manual reindex
+  reuses the existing `/api/ai/rag/reindex` (the same bounded tick the platform
+  schedules) — no new mutation path. The section adds no migration.
+- **Section UI.** New `knowledge` registry entry (label «دانش دستیار»,
+  `LibraryBigIcon`, owner/manager gate); `knowledge/page.tsx` +
+  `knowledge-manager.tsx` (client): a retrieval-unavailable banner when pgvector
+  is absent, a headline card (total chunks + last-indexed + «به‌روزرسانی نمایه»
+  button, disabled when infra/AI is unavailable), a per-kind breakdown with
+  proportional bars, and an explicit note that numbers are never embedded and are
+  always read live through tools. Renders `LoadingSkeleton`, composes `cardClass`,
+  no `animate-spin` (busy label instead). Linked from the sub-nav strip and chat
+  rail.
+- **Verification.** `tsc` clean; full unit suite **4879 / 332 files**. Live smoke
+  against embedded PG (which has NO pgvector, exercising the real
+  retrieval-unavailable path): `/ai/knowledge` renders (200); `GET
+  /api/ai/knowledge` returns `retrievalAvailable:false`, `aiConfigured:false`,
+  7 kinds listed at 0; all seven workspace routes return 200 authenticated with
+  no render errors.
