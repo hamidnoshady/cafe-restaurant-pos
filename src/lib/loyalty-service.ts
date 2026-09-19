@@ -86,8 +86,14 @@ export async function upsertProgram(
 ): Promise<LoyaltyProgram> {
   const name = input.name?.trim();
   if (!name) throw new Error("نام برنامه وفاداری نمی‌تواند خالی باشد.");
-  if ((input.earnPointsPer100000 ?? 1) < 0) throw new Error("نرخ کسب امتیاز نمی‌تواند منفی باشد.");
-  if ((input.pointValueRial ?? 1000) <= 0) throw new Error("ارزش ریالی هر امتیاز باید مثبت باشد.");
+  const earnRate = input.earnPointsPer100000 ?? 1;
+  // Integer checks, not just sign checks: both columns are `integer`, and a
+  // fractional value otherwise surfaced as an opaque database error.
+  if (!Number.isInteger(earnRate) || earnRate < 0) {
+    throw new Error("نرخ کسب امتیاز باید یک عدد صحیح صفر یا بیشتر باشد.");
+  }
+  const pointValue = input.pointValueRial ?? 1000;
+  if (!Number.isInteger(pointValue) || pointValue <= 0) throw new Error("ارزش ریالی هر امتیاز باید یک عدد صحیح مثبت باشد.");
   if (
     input.pointsExpiryDays !== undefined &&
     input.pointsExpiryDays !== null &&
@@ -103,25 +109,32 @@ export async function upsertProgram(
     if (input.isDefault) {
       await client.query(`UPDATE loyalty_programs SET is_default = false WHERE business_id = $1`, [businessId]);
     }
+    // A field the caller did not send keeps its stored value on conflict —
+    // `EXCLUDED.…` would overwrite an existing program with the *defaults*
+    // (and, worst of all, silently demote the business's default program when
+    // an edit arrived without `isDefault: true`). `pointsExpiryDays` needs its
+    // own "was it provided?" flag because null is a real value (no expiry).
+    const expiryProvided = input.pointsExpiryDays !== undefined;
     const { rows } = await client.query<ProgramRow>(
       `INSERT INTO loyalty_programs
          (business_id, name, earn_points_per_100000, point_value_rial, points_expiry_days, is_active, is_default)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES ($1, $2, COALESCE($3, 1), COALESCE($4, 1000), $6, COALESCE($7, true), COALESCE($8, false))
        ON CONFLICT (business_id, name) DO UPDATE
-         SET earn_points_per_100000 = EXCLUDED.earn_points_per_100000,
-             point_value_rial = EXCLUDED.point_value_rial,
-             points_expiry_days = EXCLUDED.points_expiry_days,
-             is_active = EXCLUDED.is_active,
-             is_default = EXCLUDED.is_default
+         SET earn_points_per_100000 = COALESCE($3, loyalty_programs.earn_points_per_100000),
+             point_value_rial = COALESCE($4, loyalty_programs.point_value_rial),
+             points_expiry_days = CASE WHEN $5 THEN $6 ELSE loyalty_programs.points_expiry_days END,
+             is_active = COALESCE($7, loyalty_programs.is_active),
+             is_default = COALESCE($8, loyalty_programs.is_default)
        RETURNING *`,
       [
         businessId,
         name,
-        input.earnPointsPer100000 ?? 1,
-        input.pointValueRial ?? 1000,
+        input.earnPointsPer100000 ?? null,
+        input.pointValueRial ?? null,
+        expiryProvided,
         input.pointsExpiryDays ?? null,
-        input.isActive ?? true,
-        input.isDefault ?? false,
+        input.isActive ?? null,
+        input.isDefault ?? null,
       ],
     );
     await client.query("COMMIT");
@@ -144,17 +157,62 @@ function addDaysIso(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Signed balance = Σ earned − Σ redeemed. Never a stored column. */
+/**
+ * Balance = Σ earned − Σ redeemed, honouring expiry. Never a stored column.
+ *
+ * `expires_at` is written on every earn and the program screen advertises
+ * «انقضای امتیاز», so lapsed points must actually lapse — a plain SUM never
+ * enforced it. The ledger is replayed as earn *lots*: each redemption (at its
+ * own date) consumes from the lots that were still valid on that day,
+ * soonest-expiring first, and the balance is what remains in the lots that
+ * are still valid today. This way an expired lot forfeits only the part of it
+ * that was never spent in time, a redemption made before expiry keeps
+ * counting against the lot it actually drew from, and the result can never go
+ * negative through expiry alone.
+ */
 export async function pointsBalance(businessId: string, customerId: string, client?: PoolClient): Promise<number> {
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
-  const { rows } = await run<{ balance: string | null }>(
-    `SELECT COALESCE(SUM(points), 0)::text AS balance
+  const { rows } = await run<{ points: number; expires_at: string | null; created_on: string }>(
+    `SELECT points, expires_at::text AS expires_at, (created_at AT TIME ZONE 'UTC')::date::text AS created_on
        FROM customer_points
-      WHERE business_id = $1 AND customer_id = $2`,
+      WHERE business_id = $1 AND customer_id = $2
+      ORDER BY created_at, id`,
     [businessId, customerId],
   );
-  return Number(rows[0]?.balance ?? 0);
+
+  const lots: { remaining: number; expiresAt: string | null }[] = [];
+  for (const row of rows) {
+    if (row.points > 0) {
+      lots.push({ remaining: row.points, expiresAt: row.expires_at });
+      continue;
+    }
+    let toConsume = -row.points;
+    // Lots valid on the redemption's own day, soonest-expiring first — the
+    // order any loyalty scheme spends in, and the one that forfeits least.
+    const usable = lots
+      .filter((lot) => lot.remaining > 0 && (lot.expiresAt === null || lot.expiresAt >= row.created_on))
+      .sort((a, b) => (a.expiresAt ?? "9999-12-31").localeCompare(b.expiresAt ?? "9999-12-31"));
+    for (const lot of usable) {
+      if (toConsume <= 0) break;
+      const take = Math.min(lot.remaining, toConsume);
+      lot.remaining -= take;
+      toConsume -= take;
+    }
+    // Historical over-redemption (recorded before the balance check existed):
+    // absorb it against whatever is left rather than resurrecting points.
+    for (const lot of lots) {
+      if (toConsume <= 0) break;
+      const take = Math.min(lot.remaining, toConsume);
+      lot.remaining -= take;
+      toConsume -= take;
+    }
+  }
+
+  const today = todayIso();
+  return lots
+    .filter((lot) => lot.expiresAt === null || lot.expiresAt >= today)
+    .reduce((sum, lot) => sum + lot.remaining, 0);
 }
 
 export interface EarnPointsResult {

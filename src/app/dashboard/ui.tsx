@@ -72,6 +72,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     missing_fields: "فیلدهای الزامی را پر کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
+    // لیست قیمت‌ها
+    duplicate_name: "لیستی با همین نام وجود دارد.",
+    invalid_quick_update_value:
+      "مقدار تغییر معتبر نیست؛ درصد باید بین ‎−۱۰۰ تا ۱۰٬۰۰۰ باشد.",
     invalid_range: "بازهٔ تاریخ نامعتبر است؛ «از تاریخ» باید پیش از «تا تاریخ» باشد.",
     invalid_margin: "درصد حاشیه سود باید از ۰ تا کمتر از ۱۰۰ باشد.",
     invalid_overhead: "درصد سربار برآوردی باید از ۰ تا کمتر از ۱۰۰۰ باشد.",
@@ -195,6 +199,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     payment_total_mismatch: "مجموع مبالغ روش‌های پرداخت باید دقیقاً برابر مبلغ فاکتور باشد.",
     too_many_tenders: "تعداد روش‌های پرداخت یک فاکتور بیش از حد مجاز است.",
     payment_reference_required: "برای این روش پرداخت، شمارهٔ پیگیری الزامی است.",
+    payment_reference_too_long: "شمارهٔ پیگیری بیش از حد طولانی است.",
     invalid_settlement: "نحوهٔ تسویه نامعتبر است.",
     invalid_payment_method_order: "ترتیب روش‌های پرداخت معتبر نیست؛ فهرست را تازه‌سازی و دوباره تلاش کنید.",
     builtin_payment_method: "روش‌های پیش‌فرض حذف نمی‌شوند؛ می‌توانید آن‌ها را غیرفعال کنید.",

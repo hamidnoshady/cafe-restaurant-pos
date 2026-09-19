@@ -23,7 +23,8 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
  *   trusting a marketing screen's arithmetic.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ArrowLeftIcon, RefreshCwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
@@ -88,32 +89,67 @@ export function CrmOverviewSection({
   const money = useMoney();
   const [overview, setOverview] = useState<CrmOverview | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const requestRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(() => {
-    api<{ overview: CrmOverview }>("/api/crm/overview").then(({ ok, data }) => {
-      if (ok) setOverview(data.overview);
-      else setError("بارگذاری میز کار ارتباط با مشتری ناموفق بود.");
+  const load = useCallback(async () => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setRefreshing(true);
+    setError("");
+    const result = await api<{ overview?: CrmOverview }>("/api/crm/overview", {
+      signal: controller.signal,
     });
+    if (result.aborted) return;
+    if (result.ok && result.data.overview) {
+      setOverview(result.data.overview);
+    } else {
+      setError("بارگذاری میز کار ارتباط با مشتری ناموفق بود.");
+    }
+    setLoading(false);
+    setRefreshing(false);
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    void load();
+    return () => requestRef.current?.abort();
+  }, [load]);
 
   /** Recomputing RFM is a whole-population job, so it is a button, not a page load. */
   const recompute = async () => {
+    if (scoring) return;
     setScoring(true);
+    setError("");
     const { ok } = await api("/api/crm/rfm", { method: "POST" });
     setScoring(false);
-    if (ok) load();
+    if (ok) void load();
     else setError("محاسبهٔ امتیاز مشتریان ناموفق بود.");
   };
 
+  if (loading && !overview) {
+    return <SectionCardSkeleton rows={4} />;
+  }
+
   if (!overview) {
     return (
-      <SectionCardSkeleton rows={4} />
+      <div className="space-y-4">
+        <ErrorBox>{error || "بارگذاری میز کار ارتباط با مشتری ناموفق بود."}</ErrorBox>
+        <SectionCard
+          title="بارگذاری میز کار"
+          description="اطلاعات میز کار دریافت نشد. اتصال را بررسی کنید و دوباره تلاش کنید."
+        >
+          <Button type="button" variant="outline" className="min-h-11 w-full sm:w-auto" onClick={() => void load()} disabled={refreshing}>
+            <RefreshCwIcon aria-hidden="true" className="size-4" />
+            {refreshing ? "در حال تلاش…" : "تلاش دوباره"}
+          </Button>
+        </SectionCard>
+      </div>
     );
   }
 
-  const { customers, consent, value, pipeline, cases, tasks, retention } = overview;
+  const { customers, consent, value, pipeline, cases, tasks, retention, segments } = overview;
   const firstRun = customers.total === 0;
   const newTrend = customers.new30d - customers.newPrevious30d;
 
@@ -132,13 +168,13 @@ export function CrmOverviewSection({
           description="هنوز مشتری‌ای ثبت نشده است. سه قدم اول برنامهٔ ارتباط با مشتری:"
         >
           <div className="grid gap-3 sm:grid-cols-3">
-            <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToSection("directory")}>
+            <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => onGoToSection("directory")}>
               ۱. اولین مشتری را ثبت کن
             </Button>
-            <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToSection("segments")}>
+            <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => onGoToSection("segments")}>
               ۲. یک بخش‌بندی بساز
             </Button>
-            <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToSection("activities")}>
+            <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => onGoToSection("activities")}>
               ۳. اولین پیگیری را یادداشت کن
             </Button>
           </div>
@@ -147,9 +183,9 @@ export function CrmOverviewSection({
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard
-          label="مشتریان"
+          label="مشتریان فعال"
           value={formatPersianNumber(customers.total)}
-          hint={`${formatPersianNumber(customers.active)} فعال · ${formatPersianNumber(customers.neverPurchased)} هنوز خرید نکرده‌اند`}
+          hint={`${formatPersianNumber(customers.neverPurchased)} هنوز خرید نکرده‌اند`}
         />
         <StatCard
           label="مشتری تازه · ۳۰ روز گذشته"
@@ -169,18 +205,27 @@ export function CrmOverviewSection({
         />
         <StatCard
           label="ارزش تحقق‌یافتهٔ مشتریان"
-          value={money.format(value.totalHistoricRial)}
-          hint={`میانگین هر مشتری ${money.format(value.averageCustomerRial)}`}
+          value={money.formatText(value.totalHistoricRial)}
+          hint={`میانگین هر مشتری ${money.formatText(value.averageCustomerRial)}`}
         />
         <StatCard
           label="نگه‌داشت مشتری · دوره به دوره"
-          value={`${toPersianDigits(String(retention.retentionRate))}٪`}
-          hint={`${formatPersianNumber(retention.retainedCount)} از ${formatPersianNumber(retention.priorCount)} مشتری دورهٔ قبل برگشتند`}
+          value={retention.priorCount === 0 ? "—" : `${toPersianDigits(String(retention.retentionRate))}٪`}
+          hint={
+            retention.priorCount === 0
+              ? "برای مقایسه هنوز مشتری‌ای در دورهٔ قبل ثبت نشده است"
+              : `${formatPersianNumber(retention.retainedCount)} از ${formatPersianNumber(retention.priorCount)} مشتری دورهٔ قبل برگشتند`
+          }
         />
         <StatCard
           label="کارهای عقب‌افتاده"
           value={formatPersianNumber(tasks.overdue)}
           hint={`${formatPersianNumber(tasks.dueToday)} کار امروز · ${formatPersianNumber(tasks.open)} کار باز`}
+        />
+        <StatCard
+          label="بخش‌بندی‌های فعال"
+          value={formatPersianNumber(segments.total)}
+          hint={segments.total > 0 ? segments.names.slice(0, 2).join(" · ") : "برای هدف‌گیری مشتریان یک بخش بسازید"}
         />
       </div>
 
@@ -194,7 +239,8 @@ export function CrmOverviewSection({
           }
           description="بر پایهٔ تازگی، تکرار و مبلغ خرید (RFM)"
           actions={
-            <Button variant="ghost" size="xs" onClick={recompute} disabled={scoring}>
+            <Button type="button" variant="ghost" onClick={recompute} disabled={scoring} aria-busy={scoring} className="min-h-11">
+              <RefreshCwIcon aria-hidden="true" className="size-3.5" />
               {scoring ? "در حال محاسبه…" : "محاسبهٔ دوباره"}
             </Button>
           }
@@ -250,7 +296,7 @@ export function CrmOverviewSection({
           }
           description="معامله‌های باز و ارزش وزنی آن‌ها"
           actions={
-            <Button variant="ghost" size="xs" onClick={() => onGoToSection("deals")}>
+            <Button type="button" variant="ghost" onClick={() => onGoToSection("deals")} className="min-h-11">
               قیف کامل
               <ArrowLeftIcon aria-hidden="true" className="size-3.5" />
             </Button>
@@ -263,11 +309,11 @@ export function CrmOverviewSection({
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-muted-foreground">ارزش خام</p>
-                  <p className="mt-1 font-semibold text-foreground">{money.format(pipeline.openValueRial)}</p>
+                  <p className="mt-1 font-semibold text-foreground">{money.formatText(pipeline.openValueRial)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">ارزش وزنی (بر پایهٔ احتمال)</p>
-                  <p className="mt-1 font-semibold text-teal-700 dark:text-teal-300">{money.format(pipeline.weightedValueRial)}</p>
+                  <p className="mt-1 font-semibold text-teal-700 dark:text-teal-300">{money.formatText(pipeline.weightedValueRial)}</p>
                 </div>
               </div>
               <ul className="divide-y divide-border/80 text-sm">
@@ -276,18 +322,18 @@ export function CrmOverviewSection({
                     <span className="min-w-0 font-medium text-foreground">
                       {DEAL_STAGE_META[row.stage]?.label ?? row.stage}
                     </span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {formatPersianNumber(row.count)} معامله · {money.format(row.valueRial)}
+                    <span className="min-w-0 text-end tabular-nums text-muted-foreground">
+                      {formatPersianNumber(row.count)} معامله · {money.formatText(row.valueRial)}
                     </span>
                   </li>
                 ))}
               </ul>
-              <p className="text-xs text-muted-foreground">
-                نرخ موفقیت {toPersianDigits(String(pipeline.winRatePercent))}٪ از معامله‌های تعیین‌تکلیف‌شده.
-                درآمد از مسیر فاکتور ثبت می‌شود، نه از قیف فروش.
-              </p>
             </div>
           )}
+          <p className="mt-3 text-xs text-muted-foreground">
+            نرخ موفقیت {toPersianDigits(String(pipeline.winRatePercent))}٪ از معامله‌های تعیین‌تکلیف‌شده.
+            درآمد از مسیر فاکتور ثبت می‌شود، نه از قیف فروش.
+          </p>
         </SectionCard>
       </div>
 
@@ -301,7 +347,7 @@ export function CrmOverviewSection({
           }
           description="بیشترین خرید تحقق‌یافته"
           actions={
-            <Button variant="ghost" size="icon-sm" onClick={load} aria-label="بازخوانی">
+            <Button type="button" variant="ghost" size="icon-lg" onClick={() => void load()} aria-label="بازخوانی" disabled={refreshing} aria-busy={refreshing}>
               <RefreshCwIcon aria-hidden="true" className="size-4" />
             </Button>
           }
@@ -313,14 +359,14 @@ export function CrmOverviewSection({
               {overview.topCustomers.map((row) => (
                 <li key={row.id} className="flex items-center justify-between gap-3 py-2.5">
                   <div className="min-w-0">
-                    <a href={crmCustomerHref(row.id)} className="font-medium text-foreground hover:underline">
+                    <Link href={crmCustomerHref(row.id)} className="block truncate font-medium text-foreground hover:underline">
                       {row.name}
-                    </a>
+                    </Link>
                     <span className="mr-2 text-xs text-muted-foreground">
                       {formatPersianNumber(row.orderCount)} خرید
                     </span>
                   </div>
-                  <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">{money.format(row.totalSpentRial)}</span>
+                  <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">{money.formatText(row.totalSpentRial)}</span>
                 </li>
               ))}
             </ul>
@@ -336,7 +382,7 @@ export function CrmOverviewSection({
           }
           description="تیکت‌های باز و زمان رسیدگی"
           actions={
-            <Button variant="ghost" size="xs" onClick={() => onGoToSection("cases")}>
+            <Button type="button" variant="ghost" onClick={() => onGoToSection("cases")} className="min-h-11">
               همهٔ تیکت‌ها
               <ArrowLeftIcon aria-hidden="true" className="size-3.5" />
             </Button>
@@ -374,7 +420,7 @@ export function CrmOverviewSection({
           }
           description="چه سهمی از مشتریان واقعاً قابل پیام دادن‌اند"
           actions={
-            <Button variant="ghost" size="xs" onClick={() => onGoToSection("consent")}>
+            <Button type="button" variant="ghost" onClick={() => onGoToSection("consent")} className="min-h-11">
               سابقهٔ رضایت
               <ArrowLeftIcon aria-hidden="true" className="size-3.5" />
             </Button>
@@ -383,13 +429,13 @@ export function CrmOverviewSection({
           <ul className="divide-y divide-border/80 text-sm">
             <li className="flex items-center justify-between gap-3 py-2.5">
               <span className="text-foreground">پیامک</span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
+              <span className="min-w-0 text-end tabular-nums text-muted-foreground">
                 {formatPersianNumber(consent.smsReachable)} قابل ارسال از {formatPersianNumber(consent.smsGranted)} رضایت
               </span>
             </li>
             <li className="flex items-center justify-between gap-3 py-2.5">
               <span className="text-foreground">ایمیل</span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
+              <span className="min-w-0 text-end tabular-nums text-muted-foreground">
                 {formatPersianNumber(consent.emailReachable)} قابل ارسال از {formatPersianNumber(consent.emailGranted)} رضایت
               </span>
             </li>
@@ -408,6 +454,14 @@ export function CrmOverviewSection({
             </div>
           }
           description="اعدادی که این برنامه با دفتر حساب‌ها مشترک دارد"
+          actions={
+            <Button type="button" variant="ghost" asChild className="min-h-11">
+              <Link href="/accounting/overview">
+                مشاهدهٔ دفتر
+                <ArrowLeftIcon aria-hidden="true" className="size-3.5" />
+              </Link>
+            </Button>
+          }
         >
           <ul className="divide-y divide-border/80 text-sm">
             <li className="flex items-center justify-between gap-3 py-2.5">
@@ -415,7 +469,7 @@ export function CrmOverviewSection({
                 <span className="font-medium text-foreground">اعتبار فروشگاهی مشتریان</span>
                 <span className="mr-2 text-xs text-muted-foreground">حساب ۲۴۱۰</span>
               </div>
-              <span className="shrink-0 font-semibold text-foreground">{money.format(value.storeCreditRial)}</span>
+              <span className="shrink-0 font-semibold text-foreground">{money.formatText(value.storeCreditRial)}</span>
             </li>
           </ul>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
@@ -436,7 +490,7 @@ export function CrmOverviewSection({
           }
           description="پرونده‌هایی که احتمالاً یک نفرند"
           actions={
-            <Button variant="ghost" size="xs" onClick={() => onGoToSection("duplicates")}>
+            <Button type="button" variant="ghost" onClick={() => onGoToSection("duplicates")} className="min-h-11">
               بررسی و ادغام
               <ArrowLeftIcon aria-hidden="true" className="size-3.5" />
             </Button>

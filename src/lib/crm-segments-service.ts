@@ -149,6 +149,8 @@ function segmentSourceSql(): string {
       LEFT JOIN point_stats ps ON ps.customer_id = c.id
       LEFT JOIN ar_stats ars ON ars.customer_id = c.id
      WHERE c.business_id = $1
+       AND c.roles && ARRAY['customer']::text[]
+       AND c.is_active
        AND c.merged_into_id IS NULL
   `;
 }
