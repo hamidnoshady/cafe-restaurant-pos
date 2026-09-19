@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { decodeWpEntities, plainTitle } from "./wp-content-service";
+import {
+  decodeWpEntities,
+  editableWpField,
+  mirroredContent,
+  plainTitle,
+  safeWpUrl,
+} from "./wp-content-service";
 
 /**
  * The title/entity normalisation is the one part of the WordPress content
@@ -50,6 +56,23 @@ describe("decodeWpEntities", () => {
   });
 });
 
+describe("editableWpField and safeWpUrl", () => {
+  it("prefers raw editor text and falls back to rendered text", () => {
+    expect(editableWpField("plugin body")).toBe("plugin body");
+    expect(editableWpField({ raw: "raw body", rendered: "rendered body" })).toBe("raw body");
+    expect(editableWpField({ rendered: "rendered body" })).toBe("rendered body");
+    expect(editableWpField({ raw: 42, rendered: null })).toBe("");
+  });
+
+  it("allows only absolute HTTP(S) links", () => {
+    expect(safeWpUrl("https://example.com/post?q=1")).toBe("https://example.com/post?q=1");
+    expect(safeWpUrl("http://example.com/media.jpg")).toBe("http://example.com/media.jpg");
+    expect(safeWpUrl("javascript:alert(1)")).toBe("");
+    expect(safeWpUrl("data:text/html,test")).toBe("");
+    expect(safeWpUrl("/relative-link")).toBe("");
+  });
+});
+
 describe("plainTitle", () => {
   it("reads a bare string and a WordPress { rendered } object alike", () => {
     expect(plainTitle("Hello")).toBe("Hello");
@@ -70,5 +93,29 @@ describe("plainTitle", () => {
     expect(plainTitle(null)).toBe("");
     expect(plainTitle(42)).toBe("");
     expect(plainTitle({})).toBe("");
+  });
+});
+
+describe("mirroredContent", () => {
+  it("returns the plugin's raw string content untouched", () => {
+    expect(mirroredContent("<p>متن کامل نوشته.</p>")).toBe("<p>متن کامل نوشته.</p>");
+  });
+
+  it("prefers content.raw when the payload carries the REST edit-context shape", () => {
+    expect(mirroredContent({ raw: "<p>raw</p>", rendered: "<p>rendered</p>", protected: false })).toBe(
+      "<p>raw</p>",
+    );
+  });
+
+  it("refuses rendered-only content — writing it back would rewrite the live HTML", () => {
+    expect(mirroredContent({ rendered: "<p>wpautop wrapped</p>", protected: false })).toBeNull();
+  });
+
+  it("is null for missing or wrong-shaped payloads, never throws", () => {
+    expect(mirroredContent(undefined)).toBeNull();
+    expect(mirroredContent(null)).toBeNull();
+    expect(mirroredContent(42)).toBeNull();
+    expect(mirroredContent({ raw: 7 })).toBeNull();
+    expect(mirroredContent("")).toBe("");
   });
 });

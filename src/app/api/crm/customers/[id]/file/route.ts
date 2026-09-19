@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getCustomerFile, listCustomerNotes } from "@/lib/crm-service";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * The 360° customer file (Phase 36) — the record plus its aggregates.
@@ -21,6 +22,12 @@ export const GET = withTenantScope(
     if (error) return error;
 
     const { id } = await params;
+    // A non-uuid id (a stray path segment, a bookmark to a since-changed
+    // route) would otherwise reach `WHERE c.id = $2` against a `uuid` column
+    // and raise `invalid input syntax for type uuid` — a 500 with the generic
+    // «خطای غیرمنتظره» — for what is simply a customer that cannot exist.
+    if (!isUuid(id)) return NextResponse.json({ error: "customer_not_found" }, { status: 404 });
+
     const file = await getCustomerFile(session.businessId, id);
     if (!file) return NextResponse.json({ error: "customer_not_found" }, { status: 404 });
 

@@ -26,6 +26,7 @@ import { formatTomanText } from "./money";
 import { toPersianDigits } from "./digits";
 import { getPublicMessageConfig } from "./messaging-billing";
 import { messageCostRial } from "./messaging-billing-pure";
+import { storeCreditBalance } from "./loyalty-service";
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested)
@@ -173,9 +174,11 @@ export async function saveMessageTemplate(
 ): Promise<MessageTemplateRecord> {
   const body = input.body.trim();
   if (!body) throw new Error("invalid_template_body");
-  const unknown = validateTemplateBody(body);
-  if (unknown.length > 0) throw new Error(`unknown_template_variable:${unknown.join(",")}`);
   const subject = input.channel === "email" ? (input.subject ?? "").trim() : "";
+  // Email subjects are delivered text too. Validating only the body let an
+  // unknown placeholder survive in a subject and reach customers literally.
+  const unknown = validateTemplateBody(`${body}\n${subject}`);
+  if (unknown.length > 0) throw new Error(`unknown_template_variable:${unknown.join(",")}`);
   const name = input.name.trim();
   if (!name) throw new Error("invalid_template_name");
 
@@ -348,8 +351,16 @@ export async function launchMessageCampaign(
 
   const template = await getMessageTemplate(businessId, campaign.templateId ?? "");
   if (!template) throw new Error("template_not_found");
+  const messageConfig = await getPublicMessageConfig();
+  if (!messageConfig.enabled || !messageConfig.configured) throw new Error("messaging_not_configured");
 
   const audience = await audienceForSegment(businessId, campaign.segmentId, campaign.channel);
+  // `members` is intentionally capped so an accidental broad segment cannot
+  // pull an entire customer base into one request. A campaign must never turn
+  // that safety cap into a silent partial send: ask the operator to narrow the
+  // segment instead of snapshotting only the first `AUDIENCE_LIMIT` people.
+  if (audience.truncated) throw new Error("campaign_audience_limit_exceeded");
+
   const businessRow = await query<{ name: string }>(
     "SELECT name FROM businesses WHERE id = $1",
     [businessId],
@@ -358,18 +369,26 @@ export async function launchMessageCampaign(
 
   // Every used variable must have a data path before we write a single row: a
   // template that names a variable no one can resolve is a blocked launch, not
-  // a body with holes. `credit`/`discount` only exist when the launcher said so.
-  const used = templateVariableTokens(template.body);
-  const blocked: string[] = [];
-  if (used.includes("اعتبار") && options.creditRial === undefined) blocked.push("اعتبار");
-  if (used.includes("کد_تخفیف") && !options.discountCode) blocked.push("کد_تخفیف");
-  if (blocked.length > 0) throw new Error(`message_variable_missing:${blocked.join(",")}`);
+  // a body with holes. Store credit is a real per-customer balance, so it is
+  // loaded below; a discount code has no customer-level source and must be
+  // supplied explicitly by the person launching this campaign.
+  const templateText = `${template.subject}\n${template.body}`;
+  const unknown = validateTemplateBody(templateText);
+  if (unknown.length > 0) throw new Error(`unknown_template_variable:${unknown.join(",")}`);
+  const used = templateVariableTokens(templateText);
+  if (used.includes("کد_تخفیف") && !options.discountCode) {
+    throw new Error("message_variable_missing:کد_تخفیف");
+  }
 
-  // Points are read once for the whole audience (only when actually used).
+  const customerIds = audience.members.map((member) => member.id);
+  // Values that differ by recipient are read once per audience, rather than
+  // doing an N+1 query while the launch transaction is being assembled.
   const needsPoints = used.includes("امتیاز");
-  const pointsByCustomer = needsPoints
-    ? await loadPointsMap(businessId, audience.members.map((m) => m.id))
-    : new Map<string, number>();
+  const needsCredit = used.includes("اعتبار");
+  const [pointsByCustomer, creditByCustomer] = await Promise.all([
+    needsPoints ? loadPointsMap(businessId, customerIds) : Promise.resolve(new Map<string, number>()),
+    needsCredit ? loadStoreCreditMap(businessId, customerIds) : Promise.resolve(new Map<string, number>()),
+  ]);
 
   const recipients: MessageRecipientInput[] = [];
   let skippedForAddress = 0;
@@ -383,7 +402,7 @@ export async function launchMessageCampaign(
       name: member.name,
       shopName,
       points: pointsByCustomer.get(member.id) ?? 0,
-      creditRial: options.creditRial,
+      creditRial: needsCredit ? creditByCustomer.get(member.id) ?? 0 : options.creditRial,
       discountCode: options.discountCode,
     });
     recipients.push({
@@ -396,6 +415,11 @@ export async function launchMessageCampaign(
       body: renderRecipientBody(template.body, values),
     });
   }
+
+  // A consented segment can still have no usable addresses. Do not change the
+  // campaign to «در حال ارسال» with an empty outbox: the drain has no row to
+  // reconcile, so that state would be permanent and misleading.
+  if (recipients.length === 0) throw new Error("campaign_has_no_recipients");
 
   const client = await getPool().connect();
   try {
@@ -476,10 +500,22 @@ async function prepareTriggeredMessage(input: TriggeredMessageInput): Promise<Pr
   const address = recipientAddressFor(member, input.channel);
   if (!address) throw new Error("customer_contact_missing");
   const business = await query<{ name: string }>("SELECT name FROM businesses WHERE id = $1", [input.businessId]);
-  const points = templateVariableTokens(template.body).includes("امتیاز")
+  const templateText = `${template.subject}\n${template.body}`;
+  const unknown = validateTemplateBody(templateText);
+  if (unknown.length > 0) throw new Error(`unknown_template_variable:${unknown.join(",")}`);
+  const used = templateVariableTokens(templateText);
+  const points = used.includes("امتیاز")
     ? (await loadPointsMap(input.businessId, [customer.id])).get(customer.id) ?? 0
     : 0;
-  const values = buildMessageVariables({ name: customer.name, shopName: business.rows[0]?.name ?? "", points });
+  const creditRial = used.includes("اعتبار")
+    ? await storeCreditBalance(input.businessId, customer.id)
+    : undefined;
+  const values = buildMessageVariables({
+    name: customer.name,
+    shopName: business.rows[0]?.name ?? "",
+    points,
+    creditRial,
+  });
   return {
     template,
     subject: template.channel === "email" ? renderRecipientBody(template.subject, values) : "",
@@ -548,10 +584,33 @@ async function loadPointsMap(businessId: string, customerIds: string[]): Promise
     `SELECT customer_id, coalesce(sum(points), 0) AS points
        FROM customer_points
       WHERE business_id = $1 AND customer_id = ANY($2::uuid[])
+        AND (expires_at IS NULL OR expires_at >= current_date)
       GROUP BY customer_id`,
     [businessId, customerIds],
   );
-  for (const r of rows) map.set(r.customer_id, Number(r.points));
+  for (const r of rows) map.set(r.customer_id, Math.max(0, Number(r.points)));
+  return map;
+}
+
+/** The store-credit equivalent of `loadPointsMap`, reconstructed from its event ledger in one query. */
+async function loadStoreCreditMap(businessId: string, customerIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (customerIds.length === 0) return map;
+  const { rows } = await query<{ customer_id: string; balance: string | number }>(
+    `SELECT payload->>'customerId' AS customer_id,
+            coalesce(sum(CASE WHEN event_type = 'loyalty.store_credit_issued'
+                              THEN (payload->>'amount')::bigint
+                              WHEN event_type = 'loyalty.store_credit_used'
+                              THEN -(payload->>'amount')::bigint
+                              ELSE 0 END), 0)::text AS balance
+       FROM domain_events
+      WHERE business_id = $1
+        AND payload->>'customerId' = ANY($2::text[])
+        AND event_type IN ('loyalty.store_credit_issued', 'loyalty.store_credit_used')
+      GROUP BY payload->>'customerId'`,
+    [businessId, customerIds],
+  );
+  for (const row of rows) map.set(row.customer_id, Math.max(0, Number(row.balance)));
   return map;
 }
 

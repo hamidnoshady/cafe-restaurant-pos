@@ -17,16 +17,16 @@ export function generateNonce(): string {
 }
 
 /**
- * The browser-side print agent is deliberately loopback-only. It is the one
- * cross-origin connection the app itself makes: an HTTPS cloud dashboard has
- * to reach the Windows helper on the cashier's own PC. Keep these origins in
- * CSP or an enforced policy blocks printer discovery before CORS/LNA can even
- * ask the user for permission.
+ * The Cafe POS Windows Print Connector is deliberately loopback-only. It is
+ * the one cross-origin connection the app itself makes: an HTTPS cloud
+ * dashboard has to reach the connector on the cashier's own PC. Keep these
+ * origins in CSP or an enforced policy blocks printer discovery and printing
+ * before CORS/LNA can even ask the user for permission.
  *
- * A custom URL is accepted only when it is still loopback. The print agent is
+ * A custom URL is accepted only when it is still loopback. The connector is
  * not authenticated and must never be exposed to a LAN or public host.
  */
-function printAgentConnectSources(rawUrl = process.env.NEXT_PUBLIC_PRINT_AGENT_URL): string[] {
+function connectorConnectSources(rawUrl = process.env.NEXT_PUBLIC_PRINT_CONNECTOR_URL): string[] {
   const sources = new Set(["http://127.0.0.1:9123", "http://localhost:9123"]);
   if (!rawUrl) return [...sources];
   try {
@@ -36,7 +36,7 @@ function printAgentConnectSources(rawUrl = process.env.NEXT_PUBLIC_PRINT_AGENT_U
     if (loopback && (url.protocol === "http:" || url.protocol === "https:")) sources.add(url.origin);
   } catch {
     // A malformed override is ignored here. The fetch will fail with the
-    // ordinary agent_unreachable result rather than weakening CSP.
+    // ordinary connector_not_installed result rather than weakening CSP.
   }
   return [...sources];
 }
@@ -53,9 +53,14 @@ export function contentSecurityPolicy(
     "form-action 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // Website managers render image URLs owned by the business's connected
+    // CMS/WordPress host. Restricting img-src to self made every remote media
+    // thumbnail fail as soon as CSP moved from report-only to enforcement.
+    // Images may load over HTTP on a local HTTP deployment; enforced HTTPS
+    // deployments upgrade them through `upgrade-insecure-requests` below.
+    "img-src 'self' data: blob: http: https:",
     "font-src 'self'",
-    `connect-src 'self' ws: wss: ${printAgentConnectSources().join(" ")}`,
+    `connect-src 'self' ws: wss: ${connectorConnectSources().join(" ")}`,
     "worker-src 'self'",
     "manifest-src 'self'",
   ];

@@ -59,7 +59,7 @@ import { PaymentWays, usePaymentMethods } from "../payment-ways";
 import { LoadingSkeleton } from "../page-chrome";
 import { formatQueueLabel } from "@/lib/orders";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
-import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
+import { kickDrawer, printReceipt } from "@/lib/printing/client";
 import type { ReceiptData } from "@/lib/receipt-template";
 import {
   formatModifierDelta,
@@ -120,7 +120,23 @@ const TYPE_LABELS: Record<string, string> = {
   dine_in: "حضوری",
   takeaway: "بیرون‌بر",
   delivery: "ارسالی",
+  retail: "فروشگاهی",
 };
+
+const PAYMENT_LABELS: Record<string, string> = {
+  cash: "نقدی",
+  card: "کارت‌خوان",
+  card_to_card: "کارت‌به‌کارت",
+  online: "پرداخت آنلاین",
+  credit: "نسیه",
+  cheque: "چک",
+};
+
+function orderLabel(order: Pick<OrderRow, "type" | "order_number">): string {
+  return order.type === "retail"
+    ? `فاکتور ${order.order_number}`
+    : formatQueueLabel(order.type, order.order_number);
+}
 
 interface Customer {
   id: string;
@@ -131,7 +147,7 @@ interface Customer {
 interface OrderRow {
   id: string;
   order_number: number;
-  type: "dine_in" | "takeaway" | "delivery";
+  type: "dine_in" | "takeaway" | "delivery" | "retail";
   status: "open" | "held" | "completed" | "voided";
   table_id: string | null;
   table_name: string | null;
@@ -172,6 +188,14 @@ interface ModifierRow {
   modifier_id: string | null;
   name_snapshot: string;
   price_delta: string | number;
+}
+
+interface PaymentRow {
+  id: string;
+  method: string;
+  amount: string | number;
+  reference: string | null;
+  payment_method_name: string | null;
 }
 
 interface MenuItem {
@@ -245,6 +269,7 @@ export function OrderDetailModal({
   const loadRequest = useRef(0);
   const [items, setItems] = useState<OrderItemRow[]>([]);
   const [modifiers, setModifiers] = useState<ModifierRow[]>([]);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [menu, setMenu] = useState<MenuData | null>(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -301,6 +326,7 @@ export function OrderDetailModal({
         order: OrderRow;
         items: OrderItemRow[];
         modifiers: ModifierRow[];
+        payments: PaymentRow[];
         error?: string;
       }>(`/api/orders/${orderId}`);
       if (requestId !== loadRequest.current) return;
@@ -312,6 +338,7 @@ export function OrderDetailModal({
       setSelectedTableId(data.order.table_id ?? "");
       setItems(data.items);
       setModifiers(data.modifiers);
+      setPayments(data.payments ?? []);
       // An order that already names a customer keeps naming them: the credit
       // checkout below re-uses this selection instead of making the cashier
       // search the directory again for a customer the order already has.
@@ -360,6 +387,7 @@ export function OrderDetailModal({
     setOrderLoaded(false);
     setItems([]);
     setModifiers([]);
+    setPayments([]);
     setError("");
     setInfo("");
     setEditingNote(false);
@@ -648,8 +676,15 @@ export function OrderDetailModal({
     );
   }
 
+  function paymentsFromOrderRows(): { label: string; amount: number }[] {
+    return payments.map((payment) => ({
+      label: payment.payment_method_name ?? PAYMENT_LABELS[payment.method] ?? payment.method,
+      amount: Number(payment.amount),
+    }));
+  }
+
   /** The receipt for this order as it stands — shared by checkout and reprint. */
-  function buildReceipt(tipAmount: number, payments: { label: string; amount: number }[]): ReceiptData | null {
+  function buildReceipt(tipAmount: number, receiptPayments: { label: string; amount: number }[]): ReceiptData | null {
     if (!order) return null;
     return {
       business: {
@@ -657,7 +692,7 @@ export function OrderDetailModal({
         address: business.address,
         phone: business.phone,
       },
-      orderLabel: formatQueueLabel(order.type, order.order_number),
+      orderLabel: orderLabel(order),
       orderTypeLabel:
         order.type === "dine_in"
           ? `حضوری${order.table_name ? ` — ${order.table_name}` : ""}`
@@ -683,7 +718,10 @@ export function OrderDetailModal({
       tax: Number(order.tax),
       total: Number(order.total),
       tip: tipAmount,
-      payments,
+      payments:
+        payments.length > 0
+          ? paymentsFromOrderRows()
+          : receiptPayments,
     };
   }
 
@@ -699,7 +737,7 @@ export function OrderDetailModal({
       draftReceiptPayments(paymentDraft, paymentMethods, Number(order?.total ?? 0), money.unit),
     );
     if (!receipt) return;
-    void printReceipt(receiptPrinter.connection, receipt);
+    void printReceipt(receiptPrinter.id, receipt);
     toast.success("رسید برای چاپ ارسال شد");
   }
 
@@ -751,9 +789,16 @@ export function OrderDetailModal({
     if (receiptPrinter) {
       const receipt = buildReceipt(tipAmount, draftReceiptPayments(paymentDraft, paymentMethods, total, money.unit));
       if (receipt) {
-        void printReceipt(receiptPrinter.connection, receipt);
+        void printReceipt(receiptPrinter.id, receipt).then((result) => {
+          // Best-effort by contract: a failed print never undoes the payment.
+          if (!result.ok && result.error !== "not_in_browser") {
+            toast.warning("چاپ رسید انجام نشد؛ پرداخت با موفقیت ثبت شده است.", {
+              action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, receipt) },
+            });
+          }
+        });
         // Any cash slice opens the drawer, not just an all-cash bill.
-        if (draftOpensDrawer(paymentDraft, paymentMethods)) void kickDrawer(receiptPrinter.connection);
+        if (draftOpensDrawer(paymentDraft, paymentMethods)) void kickDrawer(receiptPrinter.id);
       }
     }
     setTipInput("");
@@ -942,7 +987,7 @@ export function OrderDetailModal({
                   <DialogTitle className="font-sans text-lg font-bold text-foreground sm:text-xl">
                     {order
                       ? toPersianDigits(
-                          formatQueueLabel(order.type, order.order_number),
+                          orderLabel(order),
                         )
                       : "جزئیات سفارش"}
                   </DialogTitle>

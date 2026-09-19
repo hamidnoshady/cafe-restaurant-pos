@@ -1,7 +1,5 @@
 "use client";
 
-import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
-
 /**
  * The Growth app's campaigns section (Phase 36b).
  *
@@ -12,18 +10,63 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
  * life («در حال اجرا» / «زمان‌بندی‌شده» / «پایان‌یافته» / «متوقف»), one-tap
  * pause/resume, and the effectiveness report — how often each campaign fired
  * and what it cost — sitting next to the form that creates the next one.
+ *
+ * ## What this screen has to get right
+ *
+ * The form writes rows that decide money on every sale, so its rules are not
+ * cosmetic. They live in `src/lib/campaign-rules.ts` and are enforced again in
+ * `promotions-service.ts` — the screen shows them early, the service is the
+ * line of defence. Three failures that shaped the current shape:
+ *
+ *   - an empty «مبلغ» used to reach `money.parse("")`, which throws: the
+ *     submit handler died before clearing `busy`, so the button stayed
+ *     disabled with no message and the campaign was silently not saved;
+ *   - the amount field was labelled «مبلغ» for every kind, but for a
+ *     `bundle_price` the number is the set *price* of the bundle, not the
+ *     discount — the same digits mean opposite things;
+ *   - pause/resume POSTed the entire row back with `isActive` flipped, so a
+ *     one-tap toggle rewrote every column from a possibly-stale list. It is a
+ *     `PATCH` of one boolean now.
+ *
+ * Dates are Shamsi everywhere (`JalaliDatePicker`, `formatJalali`); only the
+ * wire and storage stay Gregorian ISO.
  */
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { classifyCampaign, rollingWindow, type CampaignState } from "@/lib/growth-shared";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import {
+  CAMPAIGN_KIND_LABELS,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STACKING_LABELS,
+  CAMPAIGN_WEEKDAYS,
+  campaignValueHint,
+  campaignValueLabel,
+  campaignWarnings,
+  formatWeekdays,
+  isPercentKind,
+  needsMinQuantity,
+  validateCampaignDraft,
+} from "@/lib/campaign-rules";
+import {
+  EmptyState,
+  SectionCard,
+  SectionCardSkeleton,
+  StatusBadge,
+} from "@/app/dashboard/page-chrome";
 import { CampaignAudiencePanel } from "./campaign-audience-panel";
-import { api, ErrorBox, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
+import {
+  api,
+  ErrorBox,
+  errorMessage,
+  Field,
+  InfoBox,
+  inputClass,
+} from "@/app/dashboard/ui";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 
 interface PromotionRow {
@@ -52,13 +95,6 @@ interface EffectivenessRow {
   totalDiscountRial: number;
 }
 
-const KIND_LABELS: Record<PromotionRow["kind"], string> = {
-  percent: "درصدی",
-  amount: "مبلغ ثابت",
-  bundle_price: "ست هدیه (قیمت کل)",
-  buy_x_get_y: "تعداد مشخص با قیمت ثابت",
-};
-
 const STATE_LABELS: Record<CampaignState, string> = {
   live: "در حال اجرا",
   scheduled: "زمان‌بندی‌شده",
@@ -72,49 +108,102 @@ function stateTone(state: CampaignState): "active" | "positive" | "neutral" | "d
   return "neutral";
 }
 
+/** The filters the list offers, in the order an owner scans them. */
+const STATE_FILTERS = ["all", "live", "scheduled", "paused", "ended"] as const;
+type StateFilter = (typeof STATE_FILTERS)[number];
+
+const STATE_FILTER_LABELS: Record<StateFilter, string> = {
+  all: "همه",
+  ...STATE_LABELS,
+};
+
+/**
+ * The pressed-chip recipe from the design system (amber = selection), stated
+ * once here rather than per button.
+ */
+const chipClass = (active: boolean) =>
+  `min-h-11 rounded-xl border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 ${
+    active
+      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
+      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+  }`;
+
 export function CampaignsSection() {
   const money = useMoney();
   const [promotions, setPromotions] = useState<PromotionRow[] | null>(null);
   const [effect, setEffect] = useState<EffectivenessRow[] | null>(null);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const [filter, setFilter] = useState<StateFilter>("all");
+  /** The campaign whose toggle is in flight, so only that row's button is busy. */
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  const load = useCallback(() => {
-    api<{ promotions: PromotionRow[] }>("/api/promotions").then(({ ok, data }) => ok && setPromotions(data.promotions));
-    // The effectiveness report over the same rolling window the dashboard's
-    // KPIs use, so the two screens never disagree about "last month".
-    const { from, to } = rollingWindow(new Date().toISOString().slice(0, 10));
-    api<{ rows: EffectivenessRow[] }>(`/api/promotions/reports?from=${from}&to=${to}`).then(({ ok, data }) => {
-      if (ok) setEffect(data.rows);
-    });
+  const load = useCallback(async () => {
+    setLoadFailed(false);
+    const [list, report] = await Promise.all([
+      api<{ promotions: PromotionRow[] }>("/api/promotions"),
+      // The effectiveness report over the same rolling window the dashboard's
+      // KPIs use, so the two screens never disagree about "last month".
+      (() => {
+        const { from, to } = rollingWindow(new Date().toISOString().slice(0, 10));
+        return api<{ rows: EffectivenessRow[] }>(`/api/promotions/reports?from=${from}&to=${to}`);
+      })(),
+    ]);
+
+    // A failed list is a real failure state: leaving `promotions` null left the
+    // screen on its skeleton for ever, with no message and nothing to retry.
+    if (list.ok) setPromotions(list.data.promotions ?? []);
+    else {
+      setPromotions([]);
+      setLoadFailed(true);
+      setError(errorMessage((list.data as { error?: string })?.error));
+    }
+    setEffect(report.ok ? (report.data.rows ?? []) : []);
   }, []);
-  useEffect(load, [load]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const today = new Date().toISOString().slice(0, 10);
 
   async function toggle(promotion: PromotionRow) {
     setError("");
+    setDone("");
+    setTogglingId(promotion.id);
+    const nextActive = !promotion.isActive;
+
+    // One boolean, not the whole row: a full re-POST would overwrite any change
+    // made since this list was read, and a row stored before today's validation
+    // rules could no longer be switched off at all.
     const { ok, data } = await api<{ error?: string; message?: string }>("/api/promotions", {
-      method: "POST",
-      body: JSON.stringify({ ...promotion, isActive: !promotion.isActive }),
+      method: "PATCH",
+      body: JSON.stringify({ id: promotion.id, isActive: nextActive }),
     });
+    setTogglingId(null);
+
     if (!ok) {
-      setError(data.message ?? "تغییر وضعیت کمپین ناموفق بود.");
+      setError(data.message ?? errorMessage(data.error) ?? "تغییر وضعیت کمپین ناموفق بود.");
       return;
     }
-    setDone(promotion.isActive ? "کمپین متوقف شد." : "کمپین فعال شد.");
-    load();
+    setDone(nextActive ? "کمپین فعال شد." : "کمپین متوقف شد.");
+    await load();
   }
 
-  if (!promotions) {
-    return (
-      <SectionCardSkeleton rows={4} />
-    );
-  }
+  const states = useMemo(
+    () => (promotions ?? []).map((p) => classifyCampaign(p, today)),
+    [promotions, today],
+  );
 
-  const states = promotions.map((p) => classifyCampaign(p, today));
+  if (!promotions) return <SectionCardSkeleton rows={4} />;
+
   const counts: Record<CampaignState, number> = { live: 0, scheduled: 0, ended: 0, paused: 0 };
   for (const state of states) counts[state] += 1;
+
+  const rows = promotions
+    .map((promotion, index) => ({ promotion, state: states[index] }))
+    .filter(({ state }) => filter === "all" || state === filter);
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -132,9 +221,13 @@ export function CampaignsSection() {
         <PromotionForm
           onSaved={(m) => {
             setDone(m);
-            load();
+            setError("");
+            void load();
           }}
-          onError={setError}
+          onError={(m) => {
+            setError(m);
+            setDone("");
+          }}
         />
         <SectionCard
           title={
@@ -150,14 +243,22 @@ export function CampaignsSection() {
           ) : (
             <ul className="divide-y divide-border/80 text-sm">
               {effect.map((row) => (
-                <li key={row.promotionId} className="flex items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
+                <li
+                  key={row.promotionId}
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5"
+                >
+                  <div className="min-w-0 flex-1">
                     <span className="font-medium text-foreground">{row.promotionName}</span>
-                    <span className="mr-2 text-xs text-muted-foreground">
+                    {/* `ms-2` (logical) rather than `mr-2`: the two render
+                        identically under this RTL page, but the logical form
+                        stays correct if the subtree is ever rendered LTR. */}
+                    <span className="ms-2 text-xs text-muted-foreground">
                       {formatPersianNumber(row.applications)} بار اعمال
                     </span>
                   </div>
-                  <span className="shrink-0 font-semibold text-amber-700 dark:text-amber-300">{money.format(row.totalDiscountRial)}</span>
+                  <span className="shrink-0 font-semibold text-amber-700 dark:text-amber-300">
+                    {money.format(row.totalDiscountRial)}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -177,35 +278,103 @@ export function CampaignsSection() {
           </div>
         }
         description={`${formatPersianNumber(counts.live)} در حال اجرا · ${formatPersianNumber(counts.scheduled)} زمان‌بندی‌شده · ${formatPersianNumber(counts.paused)} متوقف · ${formatPersianNumber(counts.ended)} پایان‌یافته`}
+        actions={
+          promotions.length > 0 ? (
+            /*
+              `w-full sm:w-auto` matters: SectionCard wraps its actions in a
+              `shrink-0` box and clips its own overflow, so five chips at their
+              max-content width would be cut off the side of the card on a
+              phone. Full width below `sm` gives them a row of their own to
+              wrap inside.
+            */
+            <div
+              role="group"
+              aria-label="فیلتر وضعیت کمپین"
+              className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto"
+            >
+              {STATE_FILTERS.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={filter === key}
+                  onClick={() => setFilter(key)}
+                  className={chipClass(filter === key)}
+                >
+                  {STATE_FILTER_LABELS[key]}
+                  {key === "all" ? "" : ` (${formatPersianNumber(counts[key])})`}
+                </button>
+              ))}
+            </div>
+          ) : null
+        }
       >
-        {promotions.length === 0 ? (
+        {loadFailed ? (
+          <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            <p>خواندن فهرست کمپین‌ها ممکن نشد.</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => void load()}>
+              تلاش دوباره
+            </Button>
+          </div>
+        ) : promotions.length === 0 ? (
           <EmptyState>هنوز کمپینی تعریف نشده است.</EmptyState>
+        ) : rows.length === 0 ? (
+          <EmptyState>در این وضعیت کمپینی نیست.</EmptyState>
         ) : (
           <ul className="divide-y divide-border/80 text-sm">
-            {promotions.map((p, i) => {
-              const state = states[i];
+            {rows.map(({ promotion: p, state }) => {
+              const weekdays = formatWeekdays(p.daysOfWeek);
               return (
-                <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <p className="leading-6">
-                      <span className="font-medium text-foreground">{p.name}</span>{" "}
+                <li
+                  key={p.id}
+                  className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 py-3"
+                >
+                  <div className="min-w-0 flex-1 basis-56">
+                    <p className="flex flex-wrap items-center gap-2 leading-6">
+                      <span className="font-medium text-foreground break-words">{p.name}</span>
                       <StatusBadge tone={stateTone(state)}>{STATE_LABELS[state]}</StatusBadge>
                     </p>
                     <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                      {KIND_LABELS[p.kind]} · {p.kind === "percent" ? `${formatPersianNumber(p.value)}٪` : money.format(p.value)} ·
-                      اولویت {formatPersianNumber(p.priority)} · {p.stacking === "exclusive" ? "انحصاری" : "ترکیب‌پذیر"}
-                      {(p.activeFrom || p.activeTo) && (
+                      {CAMPAIGN_KIND_LABELS[p.kind]} ·{" "}
+                      {isPercentKind(p.kind)
+                        ? `${formatPersianNumber(p.value)}٪`
+                        : money.format(p.value)}
+                      {needsMinQuantity(p.kind) && p.minQuantity
+                        ? ` · از ${formatPersianNumber(p.minQuantity)} عدد`
+                        : ""}{" "}
+                      · اولویت {formatPersianNumber(p.priority)} ·{" "}
+                      {CAMPAIGN_STACKING_LABELS[p.stacking]}
+                      {p.activeFrom || p.activeTo ? (
                         <>
                           {" · "}
                           {p.activeFrom ? toPersianDigits(formatJalali(p.activeFrom)) : "…"} تا{" "}
                           {p.activeTo ? toPersianDigits(formatJalali(p.activeTo)) : "…"}
                         </>
-                      )}
-                      {(p.timeFrom || p.timeTo) && <> · {toPersianDigits(p.timeFrom ?? "…")} تا {toPersianDigits(p.timeTo ?? "…")}</>}
+                      ) : null}
+                      {p.timeFrom || p.timeTo ? (
+                        <>
+                          {" · "}
+                          {toPersianDigits(p.timeFrom ?? "…")} تا {toPersianDigits(p.timeTo ?? "…")}
+                        </>
+                      ) : null}
+                      {weekdays ? ` · ${weekdays}` : ""}
                     </p>
                   </div>
-                  <Button variant="outline" size="sm" disabled={state === "ended"} onClick={() => void toggle(p)}>
-                    {p.isActive ? "توقف" : "فعال‌سازی"}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="min-h-9 shrink-0"
+                    /*
+                      An ended campaign can still be switched off, and a paused
+                      one can still be resumed: `ended` describes the date
+                      window, not the switch. Disabling the button here left a
+                      campaign whose window has closed permanently marked
+                      «فعال» with no way to change it.
+                    */
+                    disabled={togglingId === p.id}
+                    aria-label={`${p.isActive ? "توقف" : "فعال‌سازی"} کمپین ${p.name}`}
+                    onClick={() => void toggle(p)}
+                  >
+                    {togglingId === p.id ? "در حال ثبت…" : p.isActive ? "توقف" : "فعال‌سازی"}
                   </Button>
                 </li>
               );
@@ -220,66 +389,161 @@ export function CampaignsSection() {
 function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onError: (m: string) => void }) {
   const money = useMoney();
   const [name, setName] = useState("");
-  const [kind, setKind] = useState("percent");
+  const [kind, setKind] = useState<PromotionRow["kind"]>("percent");
   const [value, setValue] = useState("");
   const [minQuantity, setMinQuantity] = useState("");
   const [priority, setPriority] = useState("0");
-  const [stacking, setStacking] = useState("exclusive");
+  const [stacking, setStacking] = useState<PromotionRow["stacking"]>("exclusive");
   const [activeFrom, setActiveFrom] = useState("");
   const [activeTo, setActiveTo] = useState("");
   const [timeFrom, setTimeFrom] = useState("");
   const [timeTo, setTimeTo] = useState("");
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
+  /** Problems are shown only after a submit attempt, not while first typing. */
+  const [showProblems, setShowProblems] = useState(false);
+  const problemRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The amount is entered in the business's display unit (Toman or Rial) and
+   * stored as integer Rial. Percent is not money and must never go through the
+   * money parser — «۲۰» would become 200 Rial.
+   */
+  const valueForApi = (): number | null => {
+    const raw = value.trim();
+    if (raw === "") return null;
+    if (isPercentKind(kind)) {
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    try {
+      return money.parse(raw);
+    } catch {
+      // Unparseable input is reported by the shared rules below as "enter an
+      // amount", instead of throwing out of the submit handler.
+      return null;
+    }
+  };
+
+  const draft = {
+    name,
+    kind,
+    value: valueForApi(),
+    minQuantity: minQuantity.trim() === "" ? null : Number(minQuantity),
+    priority: priority.trim() === "" ? 0 : Number(priority),
+    stacking,
+    activeFrom: activeFrom || null,
+    activeTo: activeTo || null,
+    timeFrom: timeFrom || null,
+    timeTo: timeTo || null,
+    daysOfWeek,
+    itemIds: [],
+  };
+
+  const problems = validateCampaignDraft(draft);
+  const warnings = campaignWarnings(draft);
+
+  function toggleDay(day: number) {
+    setDaysOfWeek((current) =>
+      current.includes(day) ? current.filter((d) => d !== day) : [...current, day],
+    );
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    setShowProblems(true);
+
+    // Checked before anything else: the old form only tested `name`, so an
+    // empty amount reached `money.parse("")`, which throws — the handler died
+    // with `busy` still true and the button stuck disabled.
+    if (problems.length > 0 || warnings.length > 0) {
+      problemRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return;
+    }
+
     setBusy(true);
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string }>("/api/promotions", {
       method: "POST",
       body: JSON.stringify({
-        name,
-        kind,
-        value: kind === "percent" ? Number(value) : money.parse(value),
-        minQuantity: minQuantity.trim() ? Number(minQuantity) : null,
-        priority: Number(priority) || 0,
-        stacking,
-        activeFrom: activeFrom || null,
-        activeTo: activeTo || null,
-        timeFrom: timeFrom || null,
-        timeTo: timeTo || null,
+        ...draft,
+        // The engine reads an empty scope as "everything"; the form does not
+        // pick items yet, so it says so rather than sending nulls.
+        itemIds: [],
+        brandIds: [],
+        categoryIds: [],
       }),
     });
     setBusy(false);
-    if (!ok) onError(data.message ?? "ثبت کمپین ناموفق بود.");
-    else {
-      setName("");
-      setValue("");
-      setMinQuantity("");
-      onSaved("کمپین ذخیره شد.");
+
+    if (!ok) {
+      onError(data.message ?? errorMessage(data.error));
+      return;
     }
+    setName("");
+    setValue("");
+    setMinQuantity("");
+    setDaysOfWeek([]);
+    setActiveFrom("");
+    setActiveTo("");
+    setTimeFrom("");
+    setTimeTo("");
+    setShowProblems(false);
+    onSaved("کمپین ذخیره شد.");
   }
+
+  const showBlockers = showProblems && (problems.length > 0 || warnings.length > 0);
 
   return (
     <SectionCard title="کمپین جدید" bodyClassName="space-y-3 p-4 sm:p-5">
-      <form onSubmit={submit} className="grid gap-3">
+      <form onSubmit={submit} className="grid gap-3" noValidate>
+        <div ref={problemRef} aria-live="polite">
+          {showBlockers ? (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs leading-6 text-destructive">
+              <ul className="list-inside list-disc">
+                {[...problems, ...warnings].map((problem) => (
+                  <li key={problem}>{problem}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+
         <Field label="نام کمپین">
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            className={inputClass}
+            value={name}
+            maxLength={120}
+            onChange={(e) => setName(e.target.value)}
+          />
         </Field>
-        <div className="grid grid-cols-2 gap-2">
+
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="نوع">
-            <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value)}>
-              {Object.entries(KIND_LABELS).map(([k, label]) => (
+            <select
+              className={inputClass}
+              value={kind}
+              onChange={(e) => {
+                setKind(e.target.value as PromotionRow["kind"]);
+                // The amount means a different quantity per kind (a discount
+                // vs. a set price), so keeping the old number would silently
+                // change what it does.
+                setValue("");
+                setMinQuantity("");
+              }}
+            >
+              {CAMPAIGN_KINDS.map((k) => (
                 <option key={k} value={k}>
-                  {label}
+                  {CAMPAIGN_KIND_LABELS[k]}
                 </option>
               ))}
             </select>
           </Field>
-          <Field label={kind === "percent" ? "درصد" : `مبلغ (${money.unitLabel})`}>
+          <Field label={campaignValueLabel(kind, money.unitLabel)} hint={campaignValueHint(kind)}>
             <PersianNumberInput
-              inputMode={kind === "percent" ? "decimal" : "numeric"}
+              inputMode="numeric"
+              allowDecimal={false}
+              allowNegative={false}
               className={inputClass}
               dir="ltr"
               value={value}
@@ -287,10 +551,16 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
             />
           </Field>
         </div>
-        {kind === "buy_x_get_y" ? (
-          <Field label="حداقل تعداد برای قیمت ثابت">
+
+        {needsMinQuantity(kind) ? (
+          <Field
+            label="حداقل تعداد برای قیمت ثابت"
+            hint="بدون این عدد، کمپین هرگز روی سبد خرید اعمال نمی‌شود."
+          >
             <PersianNumberInput
-              inputMode="decimal"
+              inputMode="numeric"
+              allowDecimal={false}
+              allowNegative={false}
               className={inputClass}
               dir="ltr"
               value={minQuantity}
@@ -298,10 +568,12 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
             />
           </Field>
         ) : null}
-        <div className="grid grid-cols-2 gap-2">
+
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="اولویت (بیشتر = زودتر)">
             <PersianNumberInput
               inputMode="numeric"
+              allowDecimal={false}
               className={inputClass}
               dir="ltr"
               value={priority}
@@ -309,30 +581,81 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
             />
           </Field>
           <Field label="قانون ترکیب">
-            <select className={inputClass} value={stacking} onChange={(e) => setStacking(e.target.value)}>
-              <option value="exclusive">انحصاری</option>
-              <option value="stackable">ترکیب‌پذیر</option>
+            <select
+              className={inputClass}
+              value={stacking}
+              onChange={(e) => setStacking(e.target.value as PromotionRow["stacking"])}
+            >
+              <option value="exclusive">{CAMPAIGN_STACKING_LABELS.exclusive}</option>
+              <option value="stackable">{CAMPAIGN_STACKING_LABELS.stackable}</option>
             </select>
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="از تاریخ (شمسی)">
-            <JalaliDatePicker className={inputClass} value={activeFrom} onChange={setActiveFrom} />
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Field label="از تاریخ (شمسی)" hint="خالی یعنی از همین حالا">
+            <JalaliDatePicker
+              className={inputClass}
+              value={activeFrom}
+              onChange={setActiveFrom}
+              ariaLabel="از تاریخ"
+              placeholder="بدون محدودیت"
+            />
           </Field>
-          <Field label="تا تاریخ (شمسی)">
-            <JalaliDatePicker className={inputClass} value={activeTo} onChange={setActiveTo} />
+          <Field label="تا تاریخ (شمسی)" hint="خالی یعنی بدون تاریخ پایان">
+            <JalaliDatePicker
+              className={inputClass}
+              value={activeTo}
+              onChange={setActiveTo}
+              ariaLabel="تا تاریخ"
+              placeholder="بدون محدودیت"
+            />
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="از ساعت">
-            <input className={inputClass} dir="ltr" type="time" value={timeFrom} onChange={(e) => setTimeFrom(e.target.value)} />
+            <input
+              className={inputClass}
+              dir="ltr"
+              type="time"
+              value={timeFrom}
+              onChange={(e) => setTimeFrom(e.target.value)}
+            />
           </Field>
           <Field label="تا ساعت">
-            <input className={inputClass} dir="ltr" type="time" value={timeTo} onChange={(e) => setTimeTo(e.target.value)} />
+            <input
+              className={inputClass}
+              dir="ltr"
+              type="time"
+              value={timeTo}
+              onChange={(e) => setTimeTo(e.target.value)}
+            />
           </Field>
         </div>
+
+        {/*
+          `as="div"`: a <label> forwards a click on its text to its first
+          labelable descendant, which would press شنبه. The group names itself.
+        */}
+        <Field label="روزهای هفته" as="div" hint="هیچ‌کدام انتخاب نشود یعنی همهٔ روزها.">
+          <div role="group" aria-label="روزهای هفته" className="flex flex-wrap gap-1.5">
+            {CAMPAIGN_WEEKDAYS.map((day) => (
+              <button
+                key={day.value}
+                type="button"
+                aria-pressed={daysOfWeek.includes(day.value)}
+                onClick={() => toggleDay(day.value)}
+                className={`${chipClass(daysOfWeek.includes(day.value))} min-w-11`}
+              >
+                {day.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+
         <Button type="submit" disabled={busy} className="min-h-11 w-full">
-          ذخیره کمپین
+          {busy ? "در حال ذخیره…" : "ذخیره کمپین"}
         </Button>
       </form>
     </SectionCard>

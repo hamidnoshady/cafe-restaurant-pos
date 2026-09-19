@@ -9,6 +9,7 @@ import { getOnlinePlatformsConfig } from "./online-platforms-service";
 import { commissionAmountFor } from "./online-platforms-calculation";
 import { lockOpenOrder } from "./order-lock";
 import { rialBigInt, rialText, type RialText } from "./inventory-exact";
+import { earnPoints } from "./loyalty-service";
 
 export const PAYMENT_METHODS = [
   "cash",
@@ -29,6 +30,8 @@ export interface CompleteOrderPaymentInput {
   reference?: string | null;
   customerId?: string | null;
   tipAmount?: number;
+  /** The branch's business date, supplied by the route that resolved the branch. */
+  businessDate?: string;
   receivedBy: string | null;
 }
 
@@ -54,6 +57,7 @@ export async function completeOrderPayment(
     reference,
     customerId = null,
     tipAmount = 0,
+    businessDate,
     receivedBy,
   } = input;
   const locked = await lockOpenOrder(client, locationId, orderId);
@@ -63,7 +67,8 @@ export async function completeOrderPayment(
 
   if (customerId) {
     const { rowCount } = await client.query(
-      `SELECT 1 FROM parties WHERE id = $1 AND business_id = $2`,
+      `SELECT 1 FROM parties
+        WHERE id = $1 AND business_id = $2 AND roles && ARRAY['customer']::text[]`,
       [customerId, businessId],
     );
     if (rowCount !== 1) {
@@ -141,6 +146,25 @@ export async function completeOrderPayment(
     totalCost,
     inventoryEventId,
   });
+  const loyaltyCustomerId = customerId || locked.order.customer_id;
+  if (loyaltyCustomerId) {
+    const { rowCount: isCustomer } = await client.query(
+      `SELECT 1 FROM parties
+        WHERE id = $1 AND business_id = $2 AND roles && ARRAY['customer']::text[]`,
+      [loyaltyCustomerId, businessId],
+    );
+    if (isCustomer === 1) {
+      await earnPoints(client, {
+        businessId,
+        customerId: loyaltyCustomerId,
+        amountRial: amount,
+        sourceType: "order",
+        sourceId: orderId,
+        earnedOn: businessDate,
+        createdBy: receivedBy,
+      });
+    }
+  }
   await client.query(`UPDATE inventory_events SET posting_status = 'posted' WHERE id = $1`, [inventoryEventId]);
 
   return { amount, tipAmount };

@@ -20,9 +20,11 @@
  * stock and snapshot the change.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CircleCheckIcon,
+  CopyIcon,
+  EraserIcon,
   ExternalLinkIcon,
   GlobeIcon,
   PencilIcon,
@@ -56,8 +58,10 @@ import {
   inputClass,
   SecondaryButton,
   ErrorBox,
+  InfoBox,
 } from "@/app/dashboard/ui";
-import { cmsDnsHint } from "@/lib/cms/dns";
+import { cmsDnsHint, isSiteLive } from "@/lib/cms/dns";
+import type { SiteCdnStatus } from "@/lib/cms/client";
 import type { CmsDnsStatus, WebsiteOverview } from "@/lib/cms/website-service";
 import { cmsSectionHref } from "../website-routes";
 import { CmsSyncSettings } from "./cms-sync-settings";
@@ -85,6 +89,11 @@ const CURRENCY_LABELS: Record<string, string> = {
   USD: "$",
 };
 
+const CDN_PROVIDER_LABELS: Record<string, string> = {
+  arvancloud: "ابر آروان",
+  cloudflare: "Cloudflare",
+};
+
 const ORDER_STATUS_LABELS: Record<string, string> = {
   pending: "در انتظار پرداخت",
   paid: "پرداخت‌شده",
@@ -106,10 +115,15 @@ const ORDER_STATUS_TONE: Record<string, "active" | "positive" | "neutral" | "dan
 interface CmsSite {
   loading: boolean;
   connection: CmsConnectionSummary | null;
+  /** The `/state` read itself failed — a different screen from "no site yet". */
+  stateError: string;
   overview: WebsiteOverview | null;
+  /** The overview is still in flight; the cards show their skeletons. */
+  overviewLoading: boolean;
   overviewError: string;
   dnsStatus: CmsDnsStatus | null;
   dnsLoading: boolean;
+  dnsError: string;
   reload: () => void;
   loadOverview: () => void;
   checkDns: () => void;
@@ -119,45 +133,100 @@ interface CmsSite {
 function useCmsSite({ withDns = false }: { withDns?: boolean } = {}): CmsSite {
   const [connection, setConnection] = useState<CmsConnectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stateError, setStateError] = useState("");
   const [overview, setOverview] = useState<WebsiteOverview | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState("");
   const [dnsStatus, setDnsStatus] = useState<CmsDnsStatus | null>(null);
   const [dnsLoading, setDnsLoading] = useState(false);
+  const [dnsError, setDnsError] = useState("");
+
+  /**
+   * Every async setState below is guarded by these.
+   *
+   * These cards are on a screen a member opens and leaves quickly (the
+   * sidebar's «محتوا» is one click away), and the CMS is a remote system with
+   * an 8s deadline, so a reply landing after unmount is the normal case, not
+   * an edge one. The counters also serialise overlapping «به‌روزرسانی»
+   * presses: a second press bumps its stream's token and the first reply is
+   * discarded, so a slow first answer can no longer overwrite a fresh one.
+   *
+   * One counter per stream, not one shared counter: `reload` fires the state
+   * read, the overview and the DNS check together, and a single token would
+   * have each of them cancel the previous one on every refresh.
+   */
+  const stateRun = useRef(0);
+  const overviewRun = useRef(0);
+  const dnsRun = useRef(0);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const loadOverview = useCallback(() => {
+    const token = ++overviewRun.current;
+    setOverviewLoading(true);
     api<{ overview: WebsiteOverview }>("/api/cms/website/overview").then(({ ok, data }) => {
+      if (!alive.current || token !== overviewRun.current) return;
+      setOverviewLoading(false);
       if (ok) {
         setOverview(data.overview);
         setOverviewError("");
       } else {
-        setOverview(null);
+        // The previous content is deliberately kept on screen: a CMS that
+        // timed out once is not a site that lost its pages, and blanking the
+        // cards under an error message reads as data loss.
         setOverviewError(errorMessageOrRaw((data as { error?: string }).error));
       }
     });
   }, []);
 
   const checkDns = useCallback(() => {
+    const token = ++dnsRun.current;
     setDnsLoading(true);
+    setDnsError("");
     api<{ status: CmsDnsStatus }>("/api/cms/website/dns").then(({ ok, data }) => {
+      if (!alive.current || token !== dnsRun.current) return;
       setDnsLoading(false);
-      if (ok) setDnsStatus(data.status);
-      else toast.error("بررسی DNS ناموفق بود.");
+      if (ok) {
+        setDnsStatus(data.status);
+        setDnsError("");
+      } else {
+        // An inline message on the card, not only a toast: a toast is gone in
+        // four seconds and the checklist would sit there looking unchecked
+        // with no explanation of why.
+        setDnsError(errorMessageOrRaw((data as { error?: string }).error));
+      }
     });
   }, []);
 
   const reload = useCallback(() => {
+    const token = ++stateRun.current;
     setLoading(true);
     api<{ connected: boolean; connection: CmsConnectionSummary | null }>("/api/cms/website/state").then(
       ({ ok, data }) => {
+        if (!alive.current || token !== stateRun.current) return;
         setLoading(false);
-        if (!ok) return;
+        if (!ok) {
+          // Without this the screen silently kept the old «هنوز سایتی ندارید»
+          // empty state on a failed read, inviting an owner to build a second
+          // site over one they already have.
+          setStateError(errorMessageOrRaw((data as { error?: string }).error));
+          return;
+        }
+        setStateError("");
         setConnection(data.connection);
         if (data.connection) {
           loadOverview();
           if (withDns) checkDns();
         } else {
           setOverview(null);
+          setOverviewError("");
           setDnsStatus(null);
+          setDnsError("");
         }
       },
     );
@@ -168,10 +237,13 @@ function useCmsSite({ withDns = false }: { withDns?: boolean } = {}): CmsSite {
   return {
     loading,
     connection,
+    stateError,
     overview,
+    overviewLoading,
     overviewError,
     dnsStatus,
     dnsLoading,
+    dnsError,
     reload,
     loadOverview,
     checkDns,
@@ -220,6 +292,21 @@ export function CmsOverviewSection() {
 
   if (site.loading) return <SectionCardSkeleton rows={4} />;
 
+  // A failed `/state` read is not «no site yet». Showing the build prompt here
+  // invites an owner to provision a second site over the one they already
+  // have, so the read is reported and retried instead.
+  if (site.stateError) {
+    return (
+      <SectionCard title="وضعیت سایت خوانده نشد" description="اتصال به سرور برقرار نشد؛ وضعیت سایت نامشخص است.">
+        <ErrorBox>{site.stateError}</ErrorBox>
+        <SecondaryButton onClick={site.reload}>
+          <RefreshCwIcon className="size-4" />
+          تلاش دوباره
+        </SecondaryButton>
+      </SectionCard>
+    );
+  }
+
   if (!site.connection) {
     return (
       <SectionCard
@@ -227,11 +314,19 @@ export function CmsOverviewSection() {
         description="سایت اینترنتی کسب‌وکار را روی سایت‌ساز پلتفرم بسازید، یا سایتی که قبلاً ساخته‌اید را وصل کنید."
       >
         <EmptyState>ساخت سایت چهار گام دارد: دامنه، CDN، نوع سایت و ساخت.</EmptyState>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap gap-2">
           <Button asChild className="px-4">
             <Link href={cmsSectionHref("setup")}>
               <GlobeIcon className="size-4" />
               شروع ساخت سایت
+            </Link>
+          </Button>
+          {/* The other half of the answer. Without it, an owner whose site was
+              built last month has no way from this screen to say so. */}
+          <Button asChild variant="outline" className="px-4">
+            <Link href="/settings/connections?tab=website">
+              <PlugZapIcon className="size-4" />
+              اتصال سایت موجود
             </Link>
           </Button>
         </div>
@@ -239,45 +334,60 @@ export function CmsOverviewSection() {
     );
   }
 
+  const adminUrl = site.dnsStatus?.adminUrl ?? `${site.connection.baseUrl.replace(/\/+$/, "")}/admin`;
+
   return (
     <div className="space-y-4 sm:space-y-5">
       <SectionCard
         title="اتصال به سایت"
-        description={`${site.connection.siteDomain} — محتوای سایت و فروشگاه از سایت‌ساز پلتفرم خوانده می‌شود.`}
+        description="محتوای سایت و فروشگاه از سایت‌ساز پلتفرم خوانده می‌شود."
         actions={
           <div className="flex flex-wrap gap-2">
-            <SecondaryButton onClick={site.reload}>
+            <SecondaryButton onClick={site.reload} disabled={site.overviewLoading || site.dnsLoading}>
               <RefreshCwIcon className="size-4" />
-              بروزرسانی
+              {site.overviewLoading || site.dnsLoading ? "در حال به‌روزرسانی…" : "به‌روزرسانی"}
             </SecondaryButton>
-            <Button
-              type="button"
-              variant="outline"
-              className="px-4"
-              onClick={() => window.open(`${site.connection!.baseUrl}/admin`, "_blank", "noopener")}
-            >
-              <ExternalLinkIcon className="size-4" />
-              مدیریت محتوا در سایت‌ساز
+            {/* An anchor, not window.open: middle-click and "open in new tab"
+                work, and a popup blocker cannot swallow it. */}
+            <Button asChild variant="outline" className="px-4">
+              <a href={adminUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLinkIcon className="size-4" />
+                مدیریت محتوا در سایت‌ساز
+              </a>
             </Button>
           </div>
         }
       >
         <ErrorBox>{site.overviewError}</ErrorBox>
-        {site.overview ? (
+        {/* The domain belongs in the body, LTR and truncating. In the card's
+            description it was interpolated into a Persian sentence, where an
+            RTL paragraph reorders the dots of a latin host. */}
+        <p className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          <span>دامنهٔ متصل:</span>
+          <span dir="ltr" className="min-w-0 truncate font-medium text-foreground">
+            {site.connection.siteDomain}
+          </span>
+        </p>
+        {site.overviewLoading && !site.overview ? (
+          <LoadingSkeleton rows={2} compact label="در حال بارگذاری مشخصات سایت" />
+        ) : site.overview ? (
           <SiteSummary site={site.overview.site} />
         ) : (
-          <p className="text-sm text-muted-foreground">اتصال برقرار است؛ برای بارگذاری محتوا بروزرسانی را بزنید.</p>
+          <EmptyState>مشخصات سایت خوانده نشد؛ «به‌روزرسانی» را بزنید.</EmptyState>
         )}
       </SectionCard>
 
       <DnsChecklistCard
         status={site.dnsStatus}
         loading={site.dnsLoading}
+        error={site.dnsError}
         onCheck={site.checkDns}
-        baseUrl={site.connection.baseUrl}
+        adminUrl={adminUrl}
         currentDomain={site.connection.siteDomain}
         onEditDomain={() => setEditingDomain(true)}
       />
+
+      <CdnCard />
 
       <PreviewCard
         status={site.dnsStatus}
@@ -593,7 +703,11 @@ export function SiteSummary({ site }: { site: SiteDescriptor }) {
       <div>
         <p className="text-xs text-muted-foreground">زبان‌ها و ارز</p>
         <p className="mt-0.5 text-sm font-medium text-foreground">
-          {site.availableLocales.map((locale) => LOCALE_LABELS[locale] ?? locale).join("، ")}
+          {/* A descriptor with no locales rendered a leading « · » with
+              nothing before it; an em dash reads as "not set". */}
+          {site.availableLocales.length > 0
+            ? site.availableLocales.map((locale) => LOCALE_LABELS[locale] ?? locale).join("، ")
+            : "—"}
           <span className="text-muted-foreground"> · </span>
           {CURRENCY_LABELS[site.store.currency] ?? site.store.currency}
         </p>
@@ -662,18 +776,60 @@ function OrdersCard({
 /* DNS checklist + live preview                                        */
 /* ------------------------------------------------------------------ */
 
+/**
+ * One address an owner has to retype into their registrar's panel, with a
+ * button that copies it. Typing an IPv6 literal by hand is how a checklist
+ * stays amber all afternoon.
+ */
+function CopyableValue({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      // `navigator.clipboard` is absent on insecure origins and can be
+      // refused outright; the value stays selectable either way, which is why
+      // it is rendered as text rather than hidden behind the button.
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("کپی نشد؛ متن را دستی انتخاب کنید.");
+    }
+  }
+
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 align-middle">
+      <code dir="ltr" className="min-w-0 select-all truncate rounded bg-card px-1.5 py-0.5 text-xs">
+        {value}
+      </code>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        onClick={copy}
+        aria-label={`کپی ${label}`}
+        title={copied ? "کپی شد" : `کپی ${label}`}
+      >
+        {copied ? <CircleCheckIcon className="text-emerald-600 dark:text-emerald-400" /> : <CopyIcon />}
+      </Button>
+    </span>
+  );
+}
+
 function DnsChecklistCard({
   status,
   loading,
+  error,
   onCheck,
-  baseUrl,
+  adminUrl,
   currentDomain,
   onEditDomain,
 }: {
   status: CmsDnsStatus | null;
   loading: boolean;
+  error: string;
   onCheck: () => void;
-  baseUrl: string;
+  adminUrl: string;
   currentDomain: string;
   onEditDomain: () => void;
 }) {
@@ -690,41 +846,93 @@ function DnsChecklistCard({
     </div>
   );
 
+  // The domain is latin text inside a Persian card, so it is its own LTR line
+  // rather than a value interpolated into an RTL sentence.
+  const domainLine = (
+    <span className="flex flex-wrap items-baseline gap-x-2">
+      <span>دامنهٔ فعلی:</span>
+      <span dir="ltr" className="font-medium">
+        {currentDomain}
+      </span>
+    </span>
+  );
+
   if (!status) {
     return (
-      <SectionCard title="دامنه و انتشار سایت" description={`دامنهٔ فعلی: ${currentDomain}`}>
+      <SectionCard title="دامنه و انتشار سایت" description={domainLine} actions={domainActions}>
+        <ErrorBox>{error}</ErrorBox>
         {loading ? (
           <LoadingSkeleton rows={3} compact label="در حال بررسی وضعیت DNS" />
         ) : (
-          <EmptyState>برای بررسی، «بررسی DNS» را بزنید.</EmptyState>
+          <EmptyState>{error ? "بررسی انجام نشد؛ دوباره تلاش کنید." : "برای بررسی، «بررسی DNS» را بزنید."}</EmptyState>
         )}
-        <div className="mt-3">{domainActions}</div>
       </SectionCard>
     );
   }
 
+  const target = status.dns.cmsAddresses[0] ?? null;
   const steps = [
-    { done: status.dns.resolved, label: `رکورد DNS برای «${status.dns.cmsHost}» ساخته شود (A/CNAME)` },
-    { done: status.dns.pointingToCms, label: `دامنه به سرور CMS اشاره کند (${status.dns.cmsHost})` },
-    { done: Boolean(status.domainVerified), label: "در پنل CMS مدیریت سایت → تأیید دامنه روشن شود" },
+    {
+      key: "resolved",
+      // Step one is about the *owner's* domain, not the CMS host. The old copy
+      // named cms.eshobe.com here, which reads as "add a record for our host".
+      done: status.dns.resolved,
+      label: (
+        <>
+          برای <span dir="ltr" className="font-medium">{currentDomain}</span> رکورد A یا CNAME ساخته شود
+        </>
+      ),
+    },
+    {
+      key: "pointing",
+      done: status.dns.pointingToCms,
+      label: (
+        <>
+          دامنه به سرور سایت‌ساز اشاره کند{" "}
+          {target ? <CopyableValue value={target} label="آدرس سرور" /> : <span dir="ltr">{status.dns.cmsHost}</span>}
+        </>
+      ),
+    },
+    {
+      key: "verified",
+      // `null` (descriptor unreadable) is not «done», and it is not the
+      // owner's unfinished task either — the pill below says which it is.
+      done: status.domainVerified === true,
+      unknown: status.domainVerified === null,
+      label: <>در پنل سایت‌ساز: مدیریت سایت ← تأیید دامنه روشن شود</>,
+    },
   ];
+
+  const doneCount = steps.filter((step) => step.done).length;
 
   return (
     <SectionCard
       title="دامنه و انتشار سایت"
-      description={`دامنهٔ فعلی: ${currentDomain} — هر گام سبز شده یعنی آن بخش انجام شده است.`}
+      description={domainLine}
       actions={domainActions}
     >
-      <ol className="space-y-2">
+      <ErrorBox>{error}</ErrorBox>
+      <p className="mb-3 text-xs text-muted-foreground">
+        {toPersianDigits(doneCount)} از {toPersianDigits(steps.length)} گام انجام شده است.
+      </p>
+      {/* aria-busy so a re-check announces itself rather than silently
+          swapping the ticks under a screen reader. */}
+      <ol className="space-y-2" aria-busy={loading}>
         {steps.map((step) => (
-          <li key={step.label} className="flex items-start gap-2.5 text-sm">
+          <li key={step.key} className="flex items-start gap-2.5 text-sm">
             {step.done ? (
-              <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <CircleCheckIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <span className="mt-1 size-2 shrink-0 rounded-full bg-amber-400 dark:bg-amber-400" />
+              <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full bg-amber-400 dark:bg-amber-400" />
             )}
-            <span className={step.done ? "text-muted-foreground line-through decoration-muted-foreground/50" : "text-foreground"}>
-              {step.label}
+            <span className="min-w-0">
+              {/* The state is spoken, not inferred from a colour or from a
+                  strike-through — both are invisible to a screen reader. */}
+              <span className="sr-only">{step.done ? "انجام شده: " : "در انتظار: "}</span>
+              <span className={step.done ? "text-muted-foreground" : "text-foreground"}>{step.label}</span>
+              {step.unknown ? (
+                <span className="ms-2 text-xs text-muted-foreground">(وضعیت خوانده نشد)</span>
+              ) : null}
             </span>
           </li>
         ))}
@@ -733,11 +941,150 @@ function DnsChecklistCard({
         {cmsDnsHint(status)}
       </p>
       <div className="mt-3">
-        <Button type="button" variant="outline" className="px-4" onClick={() => window.open(`${baseUrl}/admin`, "_blank", "noopener")}>
-          <ExternalLinkIcon className="size-4" />
-          باز کردن مدیریت CMS
+        <Button asChild variant="outline" className="px-4">
+          <a href={adminUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLinkIcon className="size-4" />
+            باز کردن مدیریت سایت‌ساز
+          </a>
         </Button>
       </div>
+    </SectionCard>
+  );
+}
+
+/**
+ * The CDN zone, and the one button on it that is safely the business's own:
+ * emptying their edge cache.
+ *
+ * Both endpoints existed with no caller, so an owner who changed a price and
+ * saw the old one cached had no way to clear it from here. Creating or syncing
+ * a zone stays platform-staff work on the CMS, so this card reads and purges,
+ * nothing more.
+ */
+function CdnCard() {
+  const [cdn, setCdn] = useState<SiteCdnStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState("");
+  const [purging, setPurging] = useState(false);
+  const run = useRef(0);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const load = useCallback(() => {
+    const token = ++run.current;
+    setLoading(true);
+    api<{ cdn: SiteCdnStatus; error?: string }>("/api/cms/website/cdn").then(({ ok, data }) => {
+      if (!alive.current || token !== run.current) return;
+      setLoading(false);
+      if (ok) {
+        setCdn(data.cdn);
+        setError("");
+        setErrorCode("");
+      } else {
+        setError(errorMessageOrRaw(data.error));
+        setErrorCode(data.error ?? "");
+      }
+    });
+  }, []);
+  useEffect(load, [load]);
+
+  async function purge() {
+    setPurging(true);
+    const { ok, data } = await api<{ error?: string }>("/api/cms/website/cdn/purge", { method: "POST" });
+    if (!alive.current) return;
+    setPurging(false);
+    if (!ok) {
+      toast.error(errorMessageOrRaw(data.error));
+      return;
+    }
+    toast.success("کش لبه خالی شد؛ نسخهٔ تازه تا چند لحظه دیگر سرو می‌شود.");
+    load();
+  }
+
+  if (loading) return <SectionCardSkeleton rows={3} />;
+
+  // A CMS too old to know about CDN zones is not an error worth a red box on
+  // this screen — the rest of the workbench works fine without it, so the card
+  // removes itself rather than accusing the owner of a misconfiguration.
+  if (errorCode === "cms_old_version") return null;
+
+  const actions = (
+    <div className="flex flex-wrap gap-2">
+      <SecondaryButton onClick={load} disabled={loading}>
+        <RefreshCwIcon className="size-4" />
+        بررسی دوباره
+      </SecondaryButton>
+      {cdn?.configured ? (
+        <Button type="button" variant="outline" className="px-4" onClick={purge} disabled={purging}>
+          <EraserIcon className="size-4" />
+          {purging ? "در حال خالی کردن…" : "خالی کردن کش"}
+        </Button>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <SectionCard
+      title="شبکهٔ توزیع محتوا (CDN)"
+      description="سایت از سرورهای لبه سرو می‌شود تا سریع‌تر باز شود."
+      actions={actions}
+    >
+      <ErrorBox>{error}</ErrorBox>
+      {!cdn ? (
+        <EmptyState>وضعیت CDN خوانده نشد.</EmptyState>
+      ) : !cdn.configured ? (
+        <EmptyState>برای این سایت CDN تنظیم نشده است؛ سایت مستقیم از سرور سرو می‌شود.</EmptyState>
+      ) : (
+        <dl className="grid gap-x-4 gap-y-2.5 text-sm sm:grid-cols-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 sm:block">
+            <dt className="text-xs text-muted-foreground">وضعیت</dt>
+            <dd className="mt-0.5">
+              <StatusBadge tone={cdn.active ? "positive" : "active"}>
+                {cdn.active ? "فعال" : "غیرفعال"}
+              </StatusBadge>
+            </dd>
+          </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-2 sm:block">
+            <dt className="text-xs text-muted-foreground">ارائه‌دهنده</dt>
+            <dd className="mt-0.5 text-foreground">{cdn.provider ? CDN_PROVIDER_LABELS[cdn.provider] : "—"}</dd>
+          </div>
+          {cdn.zoneName ? (
+            <div className="flex flex-wrap items-baseline justify-between gap-2 sm:block">
+              <dt className="text-xs text-muted-foreground">زون</dt>
+              <dd dir="ltr" className="mt-0.5 min-w-0 truncate text-start text-foreground">{cdn.zoneName}</dd>
+            </div>
+          ) : null}
+          {cdn.lastPurgeAt ? (
+            <div className="flex flex-wrap items-baseline justify-between gap-2 sm:block">
+              <dt className="text-xs text-muted-foreground">آخرین خالی‌سازی کش</dt>
+              <dd className="mt-0.5 text-foreground">{toPersianDigits(formatJalali(cdn.lastPurgeAt))}</dd>
+            </div>
+          ) : null}
+        </dl>
+      )}
+      {cdn?.configured && cdn.nameservers.length > 0 ? (
+        <div className="mt-3 rounded-xl bg-muted px-3 py-2.5">
+          <p className="text-xs text-muted-foreground">
+            نِیم‌سرورهای دامنه باید در پنل ثبت‌کنندهٔ دامنه روی این مقادیر تنظیم باشند:
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {cdn.nameservers.map((ns) => (
+              <li key={ns}>
+                <CopyableValue value={ns} label="نیم‌سرور" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {cdn?.configured && cdn.lastSyncOk === false && cdn.lastSyncDetail ? (
+        <InfoBox>آخرین همگام‌سازی با ارائه‌دهنده ناموفق بود: {cdn.lastSyncDetail}</InfoBox>
+      ) : null}
     </SectionCard>
   );
 }
@@ -755,30 +1102,34 @@ function PreviewCard({
   onLoad: () => void;
   onRefresh: () => void;
 }) {
-  const live = Boolean(status?.dns.resolved && status?.dns.pointingToCms && status?.domainVerified);
-  const url = status?.previewUrl ?? "#";
+  // One definition of "live", shared with the checklist card through the pure
+  // module — two spellings of it is how the two cards end up disagreeing about
+  // whether the site is on the internet.
+  const live = status ? isSiteLive(status) : false;
+  const url = status?.previewUrl ?? "";
 
   return (
     <SectionCard
       title="پیش‌نمایش سایت"
       description="سایت واقعی، همان‌طور که بازدیدکننده می‌بیند."
       actions={
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {live ? (
             <SecondaryButton onClick={onRefresh}>
               <RefreshCwIcon className="size-4" />
               بارگذاری مجدد
             </SecondaryButton>
           ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            className="px-4"
-            onClick={() => window.open(url, "_blank", "noopener")}
-          >
-            <ExternalLinkIcon className="size-4" />
-            باز کردن سایت
-          </Button>
+          {/* Was a window.open onto "#" before DNS resolved, which opened a
+              blank tab onto this very page. No address, no button. */}
+          {url ? (
+            <Button asChild variant="outline" className="px-4">
+              <a href={url} target="_blank" rel="noopener noreferrer">
+                <ExternalLinkIcon className="size-4" />
+                باز کردن سایت
+              </a>
+            </Button>
+          ) : null}
         </div>
       }
     >
@@ -787,21 +1138,23 @@ function PreviewCard({
           <EmptyState>
             {status
               ? "برای فعال‌شدن پیش‌نمایش، مراحل «دامنه و انتشار سایت» را کامل کنید (DNS + تأیید دامنه)."
-              : "برای فعال‌شدن پیش‌نمایش، اتصال را بررسی کنید."}
+              : "برای فعال‌شدن پیش‌نمایش، «بررسی DNS» را بزنید."}
           </EmptyState>
           <p className="text-xs leading-5 text-muted-foreground">
             پیش‌نمایش از همان دامنهٔ سایت بارگذاری می‌شود، پس تا وقتی DNS و تأیید کامل نشده‌اند باز نمی‌شود. برای
-            اجازهٔ جاسازی، خاستگاه این پنل باید در متغیر <code dir="ltr">SITE_PREVIEW_ORIGINS</code> سرور CMS باشد.
+            اجازهٔ جاسازی، خاستگاه این پنل باید در متغیر <code dir="ltr">SITE_PREVIEW_ORIGINS</code> سرور سایت‌ساز باشد.
           </p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border">
           <div dir="ltr" className="flex items-center gap-2 border-b border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-            <ShieldCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span className="truncate">{url}</span>
+            <ShieldCheckIcon aria-hidden="true" className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="min-w-0 truncate">{url}</span>
           </div>
-          {/* key remounts the frame on refresh so the page reloads cleanly */}
-          <div className="relative h-[560px]">
+          {/* key remounts the frame on refresh so the page reloads cleanly.
+              The height is viewport-relative with a floor: a fixed 560px left
+              a phone scrolling a letterbox and wasted half a desktop screen. */}
+          <div className="relative h-[60vh] min-h-80 sm:h-[560px]">
             {!ready ? (
               <div
                 role="status"
@@ -817,6 +1170,12 @@ function PreviewCard({
               key={frameKey}
               src={url}
               title="پیش‌نمایش سایت"
+              /* The site is the business's own, but it is still a third-party
+                 origin rendering inside the dashboard: keep it from steering
+                 the parent frame or opening dialogs over it. */
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              referrerPolicy="strict-origin-when-cross-origin"
+              loading="lazy"
               className={`h-full w-full bg-card transition-opacity motion-reduce:transition-none ${ready ? "opacity-100" : "opacity-0"}`}
               onLoad={onLoad}
             />

@@ -118,16 +118,18 @@ class POS_Connector_Sync {
 			add_action( 'woocommerce_update_customer', array( __CLASS__, 'on_customer_changed' ), 20, 1 );
 		}
 
-		// WordPress core content (posts, pages, media) for the WP Manager
-		// app. It rides the products toggle (the catalogue the owner already
-		// chose to mirror), keeping one «what do we send?» decision rather
-		// than a fourth switch nobody knew to flip. Transitions cover create,
-		// edit, trash and restore in one hook; 'add_attachment' is separate
-		// because attachments transition 'new' -> 'inherit'.
-		if ( ! empty( $settings['sync_products'] ) ) {
-			add_action( 'transition_post_status', array( __CLASS__, 'on_post_status_changed' ), 20, 3 );
-			add_action( 'add_attachment', array( __CLASS__, 'on_attachment_added' ), 20, 1 );
-		}
+		// WordPress core content (posts, pages, media) belongs to the WP
+		// Manager itself, not the WooCommerce «sync products» switch. Keeping
+		// these hooks behind that commerce toggle made page edits silently
+		// stop arriving whenever a store intentionally disabled catalogue
+		// sync. Transitions cover posts/pages; attachments have their own add,
+		// edit and delete hooks. Permanent deletion is distinct from trash:
+		// trash remains visible with status=trash, deletion removes the mirror.
+		add_action( 'transition_post_status', array( __CLASS__, 'on_post_status_changed' ), 20, 3 );
+		add_action( 'add_attachment', array( __CLASS__, 'on_attachment_changed' ), 20, 1 );
+		add_action( 'edit_attachment', array( __CLASS__, 'on_attachment_changed' ), 20, 1 );
+		add_action( 'before_delete_post', array( __CLASS__, 'on_post_deleted' ), 20, 2 );
+		add_action( 'delete_attachment', array( __CLASS__, 'on_attachment_deleted' ), 20, 2 );
 	}
 
 	// -----------------------------------------------------------------------
@@ -252,8 +254,8 @@ class POS_Connector_Sync {
 		POS_Connector_Queue::enqueue( 'content.updated', $post->post_type . ':' . $post->ID, self::content_payload( $post ) );
 	}
 
-	/** A media attachment was uploaded. */
-	public static function on_attachment_added( $attachment_id ) {
+	/** A media attachment was uploaded or its title/metadata was edited. */
+	public static function on_attachment_changed( $attachment_id ) {
 		if ( self::already_seen( 'content:attachment', $attachment_id ) ) {
 			return;
 		}
@@ -262,6 +264,43 @@ class POS_Connector_Sync {
 			return;
 		}
 		POS_Connector_Queue::enqueue( 'content.updated', 'attachment:' . $attachment_id, self::content_payload( $post ) );
+	}
+
+	/** A post/page is about to be permanently deleted (trash is an update). */
+	public static function on_post_deleted( $post_id, $post ) {
+		if ( ! $post || ! in_array( $post->post_type, self::mirrored_post_types(), true ) ) {
+			return;
+		}
+		if ( self::already_seen( 'content:deleted:' . $post->post_type, $post_id ) ) {
+			return;
+		}
+		POS_Connector_Queue::enqueue(
+			'content.deleted',
+			$post->post_type . ':' . $post_id,
+			array(
+				'id'   => (int) $post_id,
+				'type' => $post->post_type,
+			)
+		);
+	}
+
+	/** An attachment is about to be permanently deleted. */
+	public static function on_attachment_deleted( $attachment_id, $post = null ) {
+		$post = $post ? $post : get_post( $attachment_id );
+		if ( ! $post || 'attachment' !== $post->post_type ) {
+			return;
+		}
+		if ( self::already_seen( 'content:deleted:attachment', $attachment_id ) ) {
+			return;
+		}
+		POS_Connector_Queue::enqueue(
+			'content.deleted',
+			'attachment:' . $attachment_id,
+			array(
+				'id'   => (int) $attachment_id,
+				'type' => 'attachment',
+			)
+		);
 	}
 
 	/**
@@ -1400,6 +1439,19 @@ class POS_Connector_Sync {
 				++$paged;
 			} while ( count( $posts ) === 100 && $paged <= 500 );
 		}
+		// This marker is queued after every exported row. The outbound queue is
+		// FIFO, so the app only advances its content watermark after the whole
+		// snapshot in front of this marker has been accepted.
+		$sync_id = wp_generate_uuid4();
+		POS_Connector_Queue::enqueue(
+			'content.sync_completed',
+			$sync_id,
+			array(
+				'id'    => $sync_id,
+				'type'  => 'content',
+				'count' => $count,
+			)
+		);
 		POS_Connector_Log::info( 'export', sprintf( '%d محتوای وردپرس در صف ارسال قرار گرفت.', $count ) );
 	}
 

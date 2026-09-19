@@ -24,8 +24,8 @@ import Link from "next/link";
 import { PlugZapIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatJalali } from "@/lib/jalali";
-import { formatRial } from "@/lib/money";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
+import { useMoney } from "@/components/money/money-context";
 import { WEBSITE_ERROR_LABELS } from "@/lib/website/adapter";
 import { WEBSITE_OUTBOX_KIND_LABELS, WEBSITE_OUTBOX_STATUS_LABELS } from "@/lib/website/sync";
 import {
@@ -87,9 +87,19 @@ interface QueueRow {
 
 const LOCAL_KIND_LABELS = { menu_item: "منو", item: "کالا" } as const;
 
-function describeError(code: string | undefined): string {
-  if (!code) return "";
-  return (WEBSITE_ERROR_LABELS as Record<string, string>)[code] ?? errorMessageOrRaw(code);
+/**
+ * An outbox row's `error` is the adapter's `"<code>: <detail>"` (or a bare
+ * code). The code half has a Persian label; the detail half is context for
+ * the owner (which remote id, which field) — show the label, keep the detail,
+ * and never paste an English code raw onto a Persian screen.
+ */
+function describeError(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const separator = raw.indexOf(":");
+  const code = separator === -1 ? raw : raw.slice(0, separator).trim();
+  const detail = separator === -1 ? "" : raw.slice(separator + 1).trim();
+  const label = (WEBSITE_ERROR_LABELS as Record<string, string>)[code] ?? errorMessageOrRaw(code);
+  return detail ? `${label} (${detail})` : label;
 }
 
 function statusTone(status: QueueRow["status"]): "active" | "positive" | "neutral" | "danger" {
@@ -105,6 +115,8 @@ export function CmsSyncSettings() {
   const [connection, setConnection] = useState<ConnectionSummary | null>(null);
   const [queue, setQueue] = useState<QueueSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Bumped when something outside the queue's own controls may have changed it. */
+  const [queueRefresh, setQueueRefresh] = useState(0);
 
   const load = useCallback(async () => {
     const res = await api<{ enabled: boolean; connection: ConnectionSummary | null; queue: QueueSummary | null }>(
@@ -123,6 +135,16 @@ export function CmsSyncSettings() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  /**
+   * A product's mark changes the queue (the mark enqueues an upsert), so the
+   * products list, the queue's counts and its rows must all move together —
+   * the queue must never still say «صف خالی است» under a «در صف» badge.
+   */
+  const refreshAfterMark = useCallback(async () => {
+    await load();
+    setQueueRefresh((n) => n + 1);
   }, [load]);
 
   if (loading) return <LoadingSkeleton label="در حال بارگذاری همگام‌سازی وب‌سایت…" />;
@@ -145,8 +167,8 @@ export function CmsSyncSettings() {
       ) : (
         <>
           <SyncSettingsCard connection={connection} onChange={load} />
-          <ProductsCard />
-          <QueueCard summary={queue} onChange={load} />
+          <ProductsCard onChange={refreshAfterMark} />
+          <QueueCard summary={queue} onChange={load} refreshKey={queueRefresh} />
         </>
       )}
     </div>
@@ -159,11 +181,18 @@ export function CmsSyncSettings() {
 
 function SyncSettingsCard({ connection, onChange }: { connection: ConnectionSummary; onChange: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
-    await api("/api/connections/website/settings", { method: "PATCH", body: JSON.stringify(body) });
+    setError(null);
+    const res = await api("/api/connections/website/settings", { method: "PATCH", body: JSON.stringify(body) });
     setBusy(false);
+    if (!res.ok) {
+      // The switch is controlled by the reloaded connection, so it snaps back
+      // on failure — the owner needs to be told why it refused.
+      setError(errorMessageOrRaw((res.data as { error?: string }).error));
+    }
     await onChange();
   }
 
@@ -172,6 +201,7 @@ function SyncSettingsCard({ connection, onChange }: { connection: ConnectionSumm
       title="چه چیزی به سایت می‌رود"
       description="یک‌طرفه: از این برنامه به سایت. سایت ویترین است؛ منبع حقیقت قیمت و موجودی همین‌جاست."
     >
+      <ErrorBox>{error}</ErrorBox>
       <div className="space-y-3 text-sm">
         <label className="flex items-center gap-3">
           <input
@@ -214,7 +244,8 @@ function SyncSettingsCard({ connection, onChange }: { connection: ConnectionSumm
 // Products
 // ---------------------------------------------------------------------------
 
-function ProductsCard() {
+function ProductsCard({ onChange }: { onChange: () => Promise<void> }) {
+  const money = useMoney();
   const [rows, setRows] = useState<CatalogRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -242,7 +273,8 @@ function ProductsCard() {
     });
     setBusyId(null);
     if (!res.ok) setError(errorMessageOrRaw((res.data as { error?: string }).error));
-    await load();
+    // The mark also enqueues (or stops) an outbox row, so both lists refresh.
+    await Promise.all([load(), onChange()]);
   }
 
   const visible = (rows ?? []).filter((r) => !filter || r.name.includes(filter) || (r.sku ?? "").includes(filter));
@@ -256,6 +288,7 @@ function ProductsCard() {
         <input
           className={`${inputClass} h-9 w-48`}
           placeholder="جستجو…"
+          aria-label="جستجوی محصول"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
@@ -269,7 +302,7 @@ function ProductsCard() {
           {error ? <div className="px-4 pt-4"><ErrorBox>{error}</ErrorBox></div> : null}
           {visible.length === 0 ? (
             <div className="p-4">
-              <EmptyState>محصولی برای نمایش نیست.</EmptyState>
+              <EmptyState>{filter ? "محصولی با این نام پیدا نشد." : "محصولی برای نمایش نیست."}</EmptyState>
             </div>
           ) : (
             <DataTable caption="محصولات قابل ارسال به سایت">
@@ -298,13 +331,13 @@ function ProductsCard() {
                       {row.sku ? <div dir="ltr" className="text-start text-xs text-muted-foreground">{row.sku}</div> : null}
                     </Td>
                     <Td muted>{LOCAL_KIND_LABELS[row.localKind]}</Td>
-                    <Td numeric>{row.priceRial === null ? "—" : formatRial(row.priceRial, { withUnit: false })}</Td>
+                    <Td numeric>{row.priceRial === null ? "—" : money.format(row.priceRial)}</Td>
                     <Td muted className="text-xs">
                       {row.lastPushedAt ? (
                         <>
                           <div>{formatJalali(row.lastPushedAt, { withTime: true })}</div>
                           <div>
-                            {row.lastPushedPriceRial !== null ? `قیمت ${formatRial(row.lastPushedPriceRial)}` : ""}
+                            {row.lastPushedPriceRial !== null ? `قیمت ${money.format(row.lastPushedPriceRial)}` : ""}
                             {row.lastPushedStock !== null ? ` · موجودی ${formatPersianNumber(row.lastPushedStock)}` : ""}
                           </div>
                         </>
@@ -329,11 +362,21 @@ function ProductsCard() {
 // Queue
 // ---------------------------------------------------------------------------
 
-function QueueCard({ summary, onChange }: { summary: QueueSummary | null; onChange: () => Promise<void> }) {
+function QueueCard({
+  summary,
+  onChange,
+  refreshKey,
+}: {
+  summary: QueueSummary | null;
+  onChange: () => Promise<void>;
+  /** Changes when something outside this card (a product mark) touched the queue. */
+  refreshKey: number;
+}) {
   const [rows, setRows] = useState<QueueRow[] | null>(null);
   const [view, setView] = useState<"open" | "sent">("open");
   const [busy, setBusy] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await api<{ rows: QueueRow[] }>(`/api/connections/website/queue?status=${view}`);
@@ -342,24 +385,29 @@ function QueueCard({ summary, onChange }: { summary: QueueSummary | null; onChan
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   async function retry(id: string) {
     setBusy(id);
-    await api(`/api/connections/website/queue/${id}/retry`, { method: "POST" });
+    setError(null);
+    const res = await api(`/api/connections/website/queue/${id}/retry`, { method: "POST" });
     setBusy(null);
+    if (!res.ok) setError(errorMessageOrRaw((res.data as { error?: string }).error));
     await Promise.all([load(), onChange()]);
   }
 
   async function syncNow() {
     setBusy("sync");
     setSyncResult(null);
+    setError(null);
     const res = await api<{ queued: number; sent: number; failed: number }>("/api/connections/website/sync", { method: "POST" });
     setBusy(null);
     if (res.ok) {
       setSyncResult(
         `${toPersianDigits(String(res.data.queued))} در صف، ${toPersianDigits(String(res.data.sent))} ارسال شد، ${toPersianDigits(String(res.data.failed))} ناموفق.`,
       );
+    } else {
+      setError(errorMessageOrRaw((res.data as { error?: string }).error));
     }
     await Promise.all([load(), onChange()]);
   }
@@ -374,7 +422,12 @@ function QueueCard({ summary, onChange }: { summary: QueueSummary | null; onChan
       }
       actions={
         <>
-          <select className={`${inputClass} h-9 w-auto`} value={view} onChange={(e) => setView(e.target.value as "open" | "sent")}>
+          <select
+            className={`${inputClass} h-9 w-auto`}
+            aria-label="نمایش کدام ردیف‌های صف"
+            value={view}
+            onChange={(e) => setView(e.target.value as "open" | "sent")}
+          >
             <option value="open">باز</option>
             <option value="sent">ارسال‌شده</option>
           </select>
@@ -386,6 +439,7 @@ function QueueCard({ summary, onChange }: { summary: QueueSummary | null; onChan
       flush
     >
       {syncResult ? <div className="px-4 pt-4"><InfoBox>{syncResult}</InfoBox></div> : null}
+      {error ? <div className="px-4 pt-4"><ErrorBox>{error}</ErrorBox></div> : null}
       {rows === null ? (
         <LoadingSkeleton label="در حال بارگذاری صف…" />
       ) : rows.length === 0 ? (
@@ -403,9 +457,17 @@ function QueueCard({ summary, onChange }: { summary: QueueSummary | null; onChan
                   <StatusBadge tone={statusTone(row.status)}>{WEBSITE_OUTBOX_STATUS_LABELS[row.status]}</StatusBadge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {row.status === "sent" && row.sentAt
-                    ? formatJalali(row.sentAt, { withTime: true })
-                    : `تلاش ${toPersianDigits(String(row.attempts))} · نوبت بعد ${formatJalali(row.nextAttemptAt, { withTime: true })}`}
+                  {row.status === "sent" && row.sentAt ? (
+                    formatJalali(row.sentAt, { withTime: true })
+                  ) : (
+                    <>
+                      {/* A dead row is not going to try again on its own — its
+                          only future is the «تلاش مجدد» button — so "next
+                          attempt" would be a promise this row cannot keep. */}
+                      {row.attempts > 0 ? `تلاش ${toPersianDigits(String(row.attempts))}` : "در صف"}
+                      {row.status !== "dead" ? ` · نوبت بعد ${formatJalali(row.nextAttemptAt, { withTime: true })}` : ""}
+                    </>
+                  )}
                   {row.error ? <span className="ms-2 text-destructive">{describeError(row.error)}</span> : null}
                 </div>
               </div>

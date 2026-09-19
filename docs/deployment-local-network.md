@@ -121,7 +121,7 @@ scanners» and sends jobs through the native spooler.
 
 On Chrome/Edge 142+, allow the site's Local network access prompt (labelled
 **Apps on device** for loopback on newer versions), return to the settings page,
-and click «بررسی دوباره». `NEXT_PUBLIC_PRINT_AGENT_URL` is only for managed
+and click «بررسی دوباره». `NEXT_PUBLIC_PRINT_CONNECTOR_URL` is only for
 nonstandard development setups; ordinary Windows users leave it unset.
 
 A printer with an Ethernet port but no WiFi (plugged into a WiFi extender's LAN

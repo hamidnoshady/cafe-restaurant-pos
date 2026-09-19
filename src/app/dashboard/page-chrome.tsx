@@ -102,6 +102,7 @@ export function SectionCard({
   flush,
   className,
   bodyClassName,
+  actionsClassName,
 }: {
   title?: ReactNode;
   description?: ReactNode;
@@ -113,6 +114,13 @@ export function SectionCard({
   flush?: boolean;
   className?: string;
   bodyClassName?: string;
+  /**
+   * Tuning for the actions strip (same escape hatch as `className`/`bodyClassName`).
+   * Toolbars with a search box + a couple of controls pass `max-sm:w-full` so
+   * they take their own full-width row under the title on phones instead of
+   * squeezing beside it.
+   */
+  actionsClassName?: string;
 }) {
   return (
     <section
@@ -133,10 +141,22 @@ export function SectionCard({
               <div className="font-semibold text-foreground">{title}</div>
             )}
             {description ? (
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+              // A <div>, not a <p>: descriptions are often a plain string, but
+              // SectionCardSkeleton hands over block-level <Skeleton> bars and a
+              // <div> inside a <p> is invalid HTML — the parser hoists it out,
+              // the server/client trees disagree and React throws the whole
+              // section tree away as a hydration failure.
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">{description}</div>
             ) : null}
           </div>
-          {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+          {actions ? (
+            // The strip used to be `shrink-0`: sized to its widest content, it
+            // crossed the edge on narrow screens and the card's overflow-hidden
+            // clipped whatever stuck out (the leftmost button went off-screen).
+            // min-w-0 lets it give way and wrap gracefully instead — same look
+            // whenever there *is* room, never off-screen when there isn't.
+            <div className={cn("flex min-w-0 flex-wrap items-center gap-2", actionsClassName)}>{actions}</div>
+          ) : null}
         </div>
       ) : null}
       {children ? (
@@ -252,6 +272,10 @@ export function TabPanel<K extends string>({
  *
  * `icon` is decorative: the title carries the meaning, so the chip is
  * `aria-hidden` and the region announces only the text.
+ *
+ * Both shapes render a `<div>`, never a `<p>`: callers routinely centre a small
+ * stack inside the quiet shape (icon, line, button), and a `<div>` inside a
+ * `<p>` is invalid HTML that browsers re-flow unpredictably.
  */
 export function EmptyState({
   children,
@@ -272,14 +296,14 @@ export function EmptyState({
 }) {
   if (!title) {
     return (
-      <p
+      <div
         className={cn(
           "rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground",
           className,
         )}
       >
         {children}
-      </p>
+      </div>
     );
   }
 
@@ -346,7 +370,15 @@ export function KpiCard({
           </span>
         ) : null}
       </div>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
+      {/*
+        `truncate` on a long Rial figure hides the digits that matter, so the
+        full value stays reachable as the element's own title. Only when the
+        value is a plain string — a ReactNode has no sensible title text.
+      */}
+      <p
+        title={typeof value === "string" ? value : undefined}
+        className="mt-2 truncate text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl"
+      >
         {value}
       </p>
       {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}

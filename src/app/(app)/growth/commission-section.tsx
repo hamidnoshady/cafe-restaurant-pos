@@ -4,22 +4,28 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
  * The Growth app's commission section (Phase 36b) — the old
- * /dashboard/commission page as a section. Unchanged in substance: each line
- * accrues to the employee whose rule is most specific (item beats brand beats
- * category beats everything), a margin-basis rule uses the same cost the COGS
- * posting used so commission can never disagree with the ledger, and the
- * moment a line accrues, «پورسانت فروش» (۵۲۱۰) is debited and «حقوق پرداختنی»
- * (۲۳۰۰) credited through the same domain-event engine every other
- * auto-posting uses.
+ * /dashboard/commission page as a section. Each sale line accrues to the
+ * employee whose rule is most specific (item beats brand beats category beats
+ * everything), a margin-basis rule uses the same cost the COGS posting used so
+ * commission can never disagree with the ledger, and the moment a line
+ * accrues, «پورسانت فروش» (۵۲۱۰) is debited and «حقوق پرداختنی» (۲۳۰۰)
+ * credited through the same domain-event engine every other auto-posting uses.
+ *
+ * The owner manages the rules here (a rule is retired, never deleted, so the
+ * accrual rows that pointed at it keep their history) and reads the per-staff
+ * leaderboard over an optional Jalali date range — the same Σ of signed
+ * accruals the payroll liability ties back to.
  */
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatPersianNumber } from "@/lib/digits";
+import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
-import { api, ErrorBox, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
+import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
+import { api, ErrorBox, errorMessage, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 interface CommissionRuleRow {
   id: string;
@@ -31,6 +37,8 @@ interface CommissionRuleRow {
   itemIds: string[] | null;
   brandIds: string[] | null;
   categoryIds: string[] | null;
+  activeFrom: string | null;
+  activeTo: string | null;
   priority: number;
   isActive: boolean;
 }
@@ -53,29 +61,104 @@ const BASIS_LABELS: Record<string, string> = {
   margin: "روی سود (مبلغ خط منهای بهای تمام‌شده)",
 };
 
+/** One phrase for a rule's scope axis — the editor creates catch-all rules, but seeded/service-created rules can scope. */
+function scopeLabel(rule: Pick<CommissionRuleRow, "itemIds" | "brandIds" | "categoryIds">): string {
+  if (rule.itemIds?.length) return `${formatPersianNumber(rule.itemIds.length)} کالا`;
+  if (rule.brandIds?.length) return `${formatPersianNumber(rule.brandIds.length)} برند`;
+  if (rule.categoryIds?.length) return `${formatPersianNumber(rule.categoryIds.length)} دسته`;
+  return "همهٔ کالاها";
+}
+
 export function CommissionSection() {
   const money = useMoney();
   const [rules, setRules] = useState<CommissionRuleRow[] | null>(null);
   const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [report, setReport] = useState<ReportRow[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const [report, setReport] = useState<ReportRow[] | null>(null);
+  const [reportError, setReportError] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    api<{ rules: CommissionRuleRow[]; staff: StaffMember[] }>("/api/commission/rules").then(({ ok, data }) => {
-      if (ok) {
-        setRules(data.rules);
-        setStaff(data.staff);
-      }
-    });
-    api<{ report: ReportRow[] }>("/api/commission/report").then(({ ok, data }) => ok && setReport(data.report));
-  }, []);
-  useEffect(load, [load]);
-
-  if (!rules) {
-    return (
-      <SectionCardSkeleton rows={4} />
+  const load = useCallback(async () => {
+    setLoadError("");
+    // `api` never rejects: a dropped connection comes back ok:false with error
+    // "network_error", which errorMessage renders in Persian.
+    const { ok, data } = await api<{ rules?: CommissionRuleRow[]; staff?: StaffMember[]; error?: string }>(
+      "/api/commission/rules",
     );
+    if (ok && data.rules) {
+      setRules(data.rules);
+      setStaff(data.staff ?? []);
+    } else {
+      // The old code never surfaced this: a failed GET left `rules` null, so
+      // the section showed its skeleton forever with no message and no way to
+      // retry.
+      setLoadError(errorMessage(data.error));
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const rangeInvalid = Boolean(from && to && from > to);
+  const loadReport = useCallback(async () => {
+    setReportError("");
+    if (from && to && from > to) {
+      // Don't fire a query the API would (rightly) refuse with invalid_range;
+      // say so beside the filters instead.
+      setReport(null);
+      return;
+    }
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const qs = params.toString();
+    const { ok, data } = await api<{ report?: ReportRow[]; error?: string }>(
+      `/api/commission/report${qs ? `?${qs}` : ""}`,
+    );
+    // A failed report read previously rendered as «هنوز پورسانتی ثبت نشده
+    // است» — indistinguishable from a true empty leaderboard.
+    if (ok && data.report) setReport(data.report);
+    else setReportError(errorMessage(data.error));
+  }, [from, to]);
+  useEffect(() => {
+    void loadReport();
+  }, [loadReport]);
+
+  async function toggleRule(rule: CommissionRuleRow) {
+    setTogglingId(rule.id);
+    setError("");
+    setDone("");
+    const { ok, data } = await api<{ error?: string; message?: string }>("/api/commission/rules", {
+      method: "PATCH",
+      body: JSON.stringify({ ruleId: rule.id, isActive: !rule.isActive }),
+    });
+    setTogglingId(null);
+    if (!ok) {
+      setError(data.message ?? errorMessage(data.error));
+    } else {
+      setDone(rule.isActive ? "قانون غیرفعال شد و از این پس پورسانتی نمی‌سازد." : "قانون دوباره فعال شد.");
+      void load();
+    }
+  }
+
+  if (loadError) {
+    return (
+      <div className="space-y-4">
+        <ErrorBox>{loadError}</ErrorBox>
+        <div>
+          <Button variant="outline" className="min-h-11" onClick={() => void load()}>
+            تلاش دوباره
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (!rules) {
+    return <SectionCardSkeleton rows={4} />;
   }
 
   return (
@@ -88,9 +171,13 @@ export function CommissionSection() {
           staff={staff}
           onSaved={(m) => {
             setDone(m);
-            load();
+            setError("");
+            void load();
           }}
-          onError={setError}
+          onError={(m) => {
+            setError(m);
+            setDone("");
+          }}
         />
         <SectionCard
           title={
@@ -101,13 +188,41 @@ export function CommissionSection() {
           }
           description="مجموع پورسانت انباشته — همان عددی که به‌عنوان بدهی حقوق ثبت شده است"
         >
-          {report.length === 0 ? (
-            <EmptyState>هنوز پورسانتی ثبت نشده است.</EmptyState>
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end">
+            <Field label="از تاریخ">
+              <JalaliDatePicker value={from} onChange={setFrom} ariaLabel="از تاریخ" />
+            </Field>
+            <Field label="تا تاریخ">
+              <JalaliDatePicker value={to} onChange={setTo} ariaLabel="تا تاریخ" />
+            </Field>
+            {from || to ? (
+              <Button variant="ghost" size="sm" className="col-span-2 justify-self-start sm:col-span-1" onClick={() => { setFrom(""); setTo(""); }}>
+                همهٔ دوره‌ها
+              </Button>
+            ) : null}
+          </div>
+          {rangeInvalid ? (
+            <ErrorBox>{errorMessage("invalid_range")}</ErrorBox>
+          ) : reportError ? (
+            <div className="space-y-2">
+              <ErrorBox>{reportError}</ErrorBox>
+              <Button variant="ghost" size="sm" onClick={() => void loadReport()}>
+                تلاش دوباره
+              </Button>
+            </div>
+          ) : report === null ? (
+            // Bare rows, not SectionCardSkeleton — a card-in-card placeholder
+            // inside this card would read as a nested panel, not as loading.
+            <LoadingSkeleton rows={3} compact />
+          ) : report.length === 0 ? (
+            <EmptyState>
+              {from || to ? "در این بازه پورسانتی ثبت نشده است." : "هنوز پورسانتی ثبت نشده است."}
+            </EmptyState>
           ) : (
             <ul className="divide-y divide-border/80 text-sm">
               {report.map((r, i) => (
-                <li key={r.employeeId} className="flex items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
+                <li key={r.employeeId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
+                  <div className="min-w-0 flex-1 basis-48">
                     <span className="font-medium text-foreground">
                       {formatPersianNumber(i + 1)}. {r.employeeName}
                     </span>
@@ -130,21 +245,35 @@ export function CommissionSection() {
             <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">قوانین پورسانت</h2>
           </div>
         }
+        description="هر خط فروش به خاص‌ترین قانون می‌رسد: کالا، بعد برند، بعد دسته و در پایان قانون کلی؛ میان قوانین هم‌سطح، اولویت بزرگ‌تر برنده است. قانون حذف نمی‌شود — غیرفعالش کنید تا تاریخچهٔ تسویه حفظ شود."
       >
         {rules.length === 0 ? (
-          <EmptyState>هنوز قانونی تعریف نشده است.</EmptyState>
+          <EmptyState>هنوز قانونی تعریف نشده است؛ از فرم «قانون جدید» اولین قانون را بسازید.</EmptyState>
         ) : (
           <ul className="divide-y divide-border/80 text-sm">
             {rules.map((r) => (
-              <li key={r.id} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5">
+                <div className="min-w-0 flex-1 basis-56">
                   <span className="font-medium text-foreground">{r.employeeName ?? "نامشخص"}</span>
                   <span className="mr-2 text-xs text-muted-foreground">
                     {r.kind === "percent" ? `${formatPersianNumber(r.value)}٪` : money.format(r.value)} ·{" "}
-                    {BASIS_LABELS[r.basis]} · اولویت {formatPersianNumber(r.priority)}
+                    {BASIS_LABELS[r.basis]} · {scopeLabel(r)} · اولویت {formatPersianNumber(r.priority)}
+                    {r.activeFrom || r.activeTo
+                      ? ` · ${r.activeFrom ? `از ${toPersianDigits(formatJalali(r.activeFrom.slice(0, 10)))}` : ""} ${r.activeTo ? `تا ${toPersianDigits(formatJalali(r.activeTo.slice(0, 10)))}` : ""}`
+                      : ""}
                   </span>
                 </div>
-                <StatusBadge tone={r.isActive ? "positive" : "neutral"}>{r.isActive ? "فعال" : "غیرفعال"}</StatusBadge>
+                <div className="flex shrink-0 items-center gap-2">
+                  <StatusBadge tone={r.isActive ? "positive" : "neutral"}>{r.isActive ? "فعال" : "غیرفعال"}</StatusBadge>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    disabled={togglingId === r.id}
+                    onClick={() => void toggleRule(r)}
+                  >
+                    {r.isActive ? "غیرفعال کردن" : "فعال کردن"}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
@@ -173,7 +302,29 @@ function RuleForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!employeeId || !value.trim()) return;
+    const trimmed = value.trim();
+    if (!employeeId || !trimmed) return;
+
+    // Validate before the server has to: the old form let a decimal percent
+    // through (the input even hinted at it) and the owner only learned that
+    // percentages must be whole from the server's refusal. `money.parse`
+    // throws on unparseable input — catch it rather than crash the submit.
+    let parsed: number;
+    try {
+      parsed = kind === "percent" ? Number(trimmed) : money.parse(trimmed);
+    } catch {
+      onError(kind === "percent" ? "درصد پورسانت باید یک عدد صحیح بین ۰ تا ۱۰۰ باشد." : "مبلغ پورسانت نامعتبر است.");
+      return;
+    }
+    if (kind === "percent" && (!Number.isInteger(parsed) || parsed < 0 || parsed > 100)) {
+      onError("درصد پورسانت باید یک عدد صحیح بین ۰ تا ۱۰۰ باشد.");
+      return;
+    }
+    if (kind === "fixed" && (!Number.isInteger(parsed) || parsed < 0)) {
+      onError("مبلغ پورسانت باید یک عدد صحیح غیرمنفی باشد.");
+      return;
+    }
+
     setBusy(true);
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string }>("/api/commission/rules", {
@@ -182,12 +333,12 @@ function RuleForm({
         employeeId,
         kind,
         basis,
-        value: kind === "percent" ? Number(value) : money.parse(value),
+        value: parsed,
         priority: Number(priority) || 0,
       }),
     });
     setBusy(false);
-    if (!ok) onError(data.message ?? "ثبت قانون پورسانت ناموفق بود.");
+    if (!ok) onError(data.message ?? errorMessage(data.error));
     else {
       setValue("");
       onSaved("قانون پورسانت ذخیره شد.");
@@ -207,16 +358,17 @@ function RuleForm({
             ))}
           </select>
         </Field>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <Field label="نوع">
             <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as "percent" | "fixed")}>
               <option value="percent">درصدی</option>
               <option value="fixed">مبلغ ثابت ({money.unitLabel})</option>
             </select>
           </Field>
-          <Field label={kind === "percent" ? "درصد" : `مبلغ (${money.unitLabel})`}>
+          <Field label={kind === "percent" ? "درصد (عدد صحیح ۰ تا ۱۰۰)" : `مبلغ (${money.unitLabel})`}>
             <PersianNumberInput
-              inputMode={kind === "percent" ? "decimal" : "numeric"}
+              inputMode="numeric"
+              allowNegative={false}
               className={inputClass}
               dir="ltr"
               value={value}
@@ -234,6 +386,8 @@ function RuleForm({
         <Field label="اولویت (بیشتر = زودتر)">
           <PersianNumberInput
             inputMode="numeric"
+            allowNegative={false}
+            grouping={false}
             className={inputClass}
             dir="ltr"
             value={priority}

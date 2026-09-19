@@ -7,6 +7,10 @@
  * The public origin is baked into the install so the connector can reject every
  * website except the tenant origin from which the authenticated operator
  * downloaded it. There are no credentials in this file.
+ *
+ * Reinstalling is also the upgrade path: the installer stops any connector
+ * already running (including the pre-v3 "print agent" spelling), replaces the
+ * script, and starts the new one.
  */
 
 const PAYLOAD_MARKER = "# CAFE_POS_INSTALLER_PAYLOAD";
@@ -22,106 +26,9 @@ export function buildWindowsPrintConnectorInstaller(origin: string): string {
   }
 
   const normalizedOrigin = parsed.origin;
-  const scriptUrl = new URL("/windows/cafe-pos-print-agent.ps1", normalizedOrigin).toString();
+  const scriptUrl = new URL("/windows/cafe-pos-print-connector.ps1", normalizedOrigin).toString();
   const originLiteral = powerShellLiteral(normalizedOrigin);
   const scriptUrlLiteral = powerShellLiteral(scriptUrl);
 
-  return `@echo off\r
-setlocal\r
-title Cafe POS Print Connector\r
-set "CAFE_POS_INSTALLER=%~f0"\r
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$p=[IO.File]::ReadAllText([Environment]::GetEnvironmentVariable('CAFE_POS_INSTALLER'));$m='# CAFE_'+'POS_INSTALLER_PAYLOAD';Invoke-Expression ($p.Substring($p.IndexOf($m)+$m.Length))"\r
-set "CAFE_POS_RESULT=%ERRORLEVEL%"\r
-endlocal & exit /b %CAFE_POS_RESULT%\r
-${PAYLOAD_MARKER}\r
-$ErrorActionPreference = "Stop"
-
-function Show-Result {
-    param([string]$Message, [string]$Title, [int]$Icon)
-    try {
-        Add-Type -AssemblyName System.Windows.Forms
-        [System.Windows.Forms.MessageBox]::Show($Message, $Title, "OK", $Icon) | Out-Null
-    } catch {
-        Write-Host $Message
-    }
-}
-
-try {
-    $origin = ${originLiteral}
-    $scriptUrl = ${scriptUrlLiteral}
-    $installDirectory = Join-Path $env:LOCALAPPDATA "CafePOS\\PrintConnector"
-    $agentPath = Join-Path $installDirectory "cafe-pos-print-agent.ps1"
-    $temporaryPath = Join-Path $env:TEMP ("cafe-pos-print-agent-" + [Guid]::NewGuid().ToString("N") + ".ps1")
-    $pidPath = Join-Path $installDirectory "agent.pid"
-
-    New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -UseBasicParsing -Uri $scriptUrl -OutFile $temporaryPath
-    if ((Get-Item -LiteralPath $temporaryPath).Length -lt 1000) {
-        throw "The downloaded connector file is incomplete."
-    }
-
-    if (Test-Path -LiteralPath $pidPath) {
-        $runningPid = 0
-        [int]::TryParse((Get-Content -LiteralPath $pidPath -Raw).Trim(), [ref]$runningPid) | Out-Null
-        if ($runningPid -gt 0) {
-            $running = Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId = " + $runningPid) -ErrorAction SilentlyContinue
-            if ($null -ne $running -and [string]$running.CommandLine -like "*cafe-pos-print-agent.ps1*") {
-                Stop-Process -Id $runningPid -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Milliseconds 500
-            }
-        }
-    }
-
-    Move-Item -LiteralPath $temporaryPath -Destination $agentPath -Force
-
-    $powershell = Join-Path $env:SystemRoot "System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-    $arguments = '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $agentPath + '" -AllowedOrigin "' + $origin + '"'
-    $shell = New-Object -ComObject WScript.Shell
-
-    $startupDirectory = $shell.SpecialFolders.Item("Startup")
-    $startupShortcut = $shell.CreateShortcut((Join-Path $startupDirectory "Cafe POS Print Connector.lnk"))
-    $startupShortcut.TargetPath = $powershell
-    $startupShortcut.Arguments = $arguments
-    $startupShortcut.WorkingDirectory = $installDirectory
-    $startupShortcut.Description = "Cafe POS Windows printer connector"
-    $startupShortcut.Save()
-
-    $programsDirectory = $shell.SpecialFolders.Item("Programs")
-    if ($programsDirectory) {
-        $menuShortcut = $shell.CreateShortcut((Join-Path $programsDirectory "Cafe POS Print Connector.lnk"))
-        $menuShortcut.TargetPath = $powershell
-        $menuShortcut.Arguments = $arguments
-        $menuShortcut.WorkingDirectory = $installDirectory
-        $menuShortcut.Description = "Start the Cafe POS Windows printer connector"
-        $menuShortcut.Save()
-    }
-
-    Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden
-
-    $healthy = $false
-    for ($attempt = 0; $attempt -lt 20; $attempt++) {
-        Start-Sleep -Milliseconds 250
-        try {
-            $health = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:9123/health" -TimeoutSec 2
-            if ($health.ok -and $health.allowedOrigin -eq $origin) {
-                $healthy = $true
-                break
-            }
-        } catch {}
-    }
-    if (-not $healthy) {
-        throw "The connector was installed but could not start on port 9123. Close any older print connector and run this installer again."
-    }
-
-    Show-Result -Title "Cafe POS" -Icon 64 -Message "The Windows printer connector is installed and running. Return to Cafe POS and click Check connection. It will start automatically whenever you sign in to Windows."
-    exit 0
-} catch {
-    if ($temporaryPath -and (Test-Path -LiteralPath $temporaryPath)) {
-        Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
-    }
-    Show-Result -Title "Cafe POS - Installation failed" -Icon 16 -Message ("The printer connector could not be installed. Please try again or contact support.\r\n\r\n" + $_.Exception.Message)
-    exit 1
-}
-`;
+  return `@echo off\r\nsetlocal\r\ntitle Cafe POS Print Connector\r\nset "CAFE_POS_INSTALLER=%~f0"\r\npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$p=[IO.File]::ReadAllText([Environment]::GetEnvironmentVariable('CAFE_POS_INSTALLER'));$m='# CAFE_'+'POS_INSTALLER_PAYLOAD';Invoke-Expression ($p.Substring($p.IndexOf($m)+$m.Length))"\r\nset "CAFE_POS_RESULT=%ERRORLEVEL%"\r\nendlocal & exit /b %CAFE_POS_RESULT%\r\n${PAYLOAD_MARKER}\r\n$ErrorActionPreference = "Stop"\r\n\r\nfunction Show-Result {\r\n    param([string]$Message, [string]$Title, [int]$Icon)\r\n    try {\r\n        Add-Type -AssemblyName System.Windows.Forms\r\n        [System.Windows.Forms.MessageBox]::Show($Message, $Title, "OK", $Icon) | Out-Null\r\n    } catch {\r\n        Write-Host $Message\r\n    }\r\n}\r\n\r\nfunction Stop-RunningConnector {\r\n    # Stop whatever connector generation is currently running so the new one\r\n    # can bind port 9123: today's connector (connector.pid / cafe-pos-print-connector.ps1)\r\n    # and the older print agent (agent.pid / cafe-pos-print-agent.ps1).\r\n    param([string]$Directory)\r\n    foreach ($pidFile in @((Join-Path $Directory "connector.pid"), (Join-Path $Directory "agent.pid"))) {\r\n        if (-not (Test-Path -LiteralPath $pidFile)) { continue }\r\n        $runningPid = 0\r\n        [int]::TryParse((Get-Content -LiteralPath $pidFile -Raw).Trim(), [ref]$runningPid) | Out-Null\r\n        if ($runningPid -gt 0) {\r\n            $running = Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId = " + $runningPid) -ErrorAction SilentlyContinue\r\n            if ($null -ne $running -and [string]$running.CommandLine -like "*cafe-pos-print-*") {\r\n                Stop-Process -Id $runningPid -Force -ErrorAction SilentlyContinue\r\n                Start-Sleep -Milliseconds 500\r\n            }\r\n        }\r\n    }\r\n    foreach ($name in @("cafe-pos-print-connector.ps1", "cafe-pos-print-agent.ps1")) {\r\n        Get-CimInstance -ClassName Win32_Process -Filter ("Name = 'powershell.exe'") -ErrorAction SilentlyContinue |\r\n            Where-Object { [string]$_.CommandLine -like ("*" + $name + "*") } |\r\n            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }\r\n    }\r\n}\r\n\r\ntry {\r\n    $origin = ${originLiteral}\r\n    $scriptUrl = ${scriptUrlLiteral}\r\n    $installDirectory = Join-Path $env:LOCALAPPDATA "CafePOS\\PrintConnector"\r\n    $connectorPath = Join-Path $installDirectory "cafe-pos-print-connector.ps1"\r\n    $temporaryPath = Join-Path $env:TEMP ("cafe-pos-print-connector-" + [Guid]::NewGuid().ToString("N") + ".ps1")\r\n    $pidPath = Join-Path $installDirectory "connector.pid"\r\n\r\n    New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null\r\n    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\r\n    Invoke-WebRequest -UseBasicParsing -Uri $scriptUrl -OutFile $temporaryPath\r\n    if ((Get-Item -LiteralPath $temporaryPath).Length -lt 1000) {\r\n        throw "The downloaded connector file is incomplete."\r\n    }\r\n\r\n    Stop-RunningConnector -Directory $installDirectory\r\n\r\n    Move-Item -LiteralPath $temporaryPath -Destination $connectorPath -Force\r\n    Remove-Item -LiteralPath (Join-Path $installDirectory "cafe-pos-print-agent.ps1") -Force -ErrorAction SilentlyContinue\r\n\r\n    $powershell = Join-Path $env:SystemRoot "System32\\WindowsPowerShell\\v1.0\\powershell.exe"\r\n    $arguments = '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $connectorPath + '" -AllowedOrigin "' + $origin + '"'\r\n    $shell = New-Object -ComObject WScript.Shell\r\n\r\n    $startupDirectory = $shell.SpecialFolders.Item("Startup")\r\n    $startupShortcut = $shell.CreateShortcut((Join-Path $startupDirectory "Cafe POS Print Connector.lnk"))\r\n    $startupShortcut.TargetPath = $powershell\r\n    $startupShortcut.Arguments = $arguments\r\n    $startupShortcut.WorkingDirectory = $installDirectory\r\n    $startupShortcut.Description = "Cafe POS Windows printer connector"\r\n    $startupShortcut.Save()\r\n\r\n    $programsDirectory = $shell.SpecialFolders.Item("Programs")\r\n    if ($programsDirectory) {\r\n        $menuShortcut = $shell.CreateShortcut((Join-Path $programsDirectory "Cafe POS Print Connector.lnk"))\r\n        $menuShortcut.TargetPath = $powershell\r\n        $menuShortcut.Arguments = $arguments\r\n        $menuShortcut.WorkingDirectory = $installDirectory\r\n        $menuShortcut.Description = "Start the Cafe POS Windows printer connector"\r\n        $menuShortcut.Save()\r\n    }\r\n\r\n    Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden\r\n\r\n    $healthy = $false\r\n    for ($attempt = 0; $attempt -lt 20; $attempt++) {\r\n        Start-Sleep -Milliseconds 250\r\n        try {\r\n            $health = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:9123/health" -TimeoutSec 2\r\n            if ($health.ok -and $health.allowedOrigin -eq $origin -and [int]$health.version -ge 3) {\r\n                $healthy = $true\r\n                break\r\n            }\r\n        } catch {}\r\n    }\r\n    if (-not $healthy) {\r\n        throw "The connector was installed but could not start on port 9123. Close any older print connector and run this installer again."\r\n    }\r\n\r\n    Show-Result -Title "Cafe POS" -Icon 64 -Message "The Windows printer connector is installed and running. Return to Cafe POS and click Check connection. It will start automatically whenever you sign in to Windows."\r\n    exit 0\r\n} catch {\r\n    if ($temporaryPath -and (Test-Path -LiteralPath $temporaryPath)) {\r\n        Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue\r\n    }\r\n    Show-Result -Title "Cafe POS - Installation failed" -Icon 16 -Message ("The printer connector could not be installed. Please try again or contact support.\\r\\n\\r\\n" + $_.Exception.Message)\r\n    exit 1\r\n}\r\n`;
 }

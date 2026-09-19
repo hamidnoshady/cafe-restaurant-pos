@@ -10,10 +10,104 @@ A **template is data**, not code: a paper, a handful of options, and an ordered
 list of blocks. `src/lib/print-template.ts` defines that model, ships five
 built-in templates written in it, and holds the one pure function
 (`renderPrintTemplate`) that turns a template + a document into a complete HTML
-page. Everything else — the gallery, the designer's live preview, the print
-agent's raster, the browser's print dialog, the A4 PDF — consumes that one
+page. Everything else — the gallery, the designer's live preview, the server's
+ESC/POS raster, the browser's print dialog, the A4 print — consumes that one
 string. There is no second implementation of the layout anywhere, which is why
 "it looked right in the preview" is a true statement about what prints.
+
+## Hardware: one question, two answers
+
+A printer is reached one of exactly two ways, and which one it is is the only
+hardware question the product ever asks («چاپگر کجاست؟»):
+
+| Connection | Reached by | Needs |
+| --- | --- | --- |
+| `windows` | the Cafe POS Windows connector → the Windows spooler (RAW), by queue name | the printer installed in Windows' «Printers & scanners» |
+| `network` | the same local connector → raw TCP to the printer's address (port 9100) | the printer on the café LAN |
+
+That is the whole list. USB thermal printers install in Windows and are
+`windows`; LAN/Wi-Fi ESC/POS printers are `network`. There is no WebUSB, no
+raw device path, no driver-mode picker, no «چاپ با مرورگر» transport, and no
+Node.js anywhere on the cashier's machine — those were implementation details
+a restaurant employee should never have to understand, and they are gone.
+
+### The delivery flow
+
+```
+POS / Order / Kitchen
+   │ printerId
+   ▼
+authenticated app server  (POST /api/printing/print)
+   │ loads the printer for the caller's branch from the DB
+   │ renders the canonical document (Persian shaping, template, paper width)
+   │ packs it into ESC/POS bytes
+   ▼
+browser  (src/lib/printing/client.ts)
+   │ forwards the bytes + the resolved target
+   ▼
+Cafe POS Windows connector  (127.0.0.1:9123, exact-origin)
+   │
+   ├── windows  → native winspool.drv, RAW
+   └── network  → TCP, port 9100
+   ▼
+physical printer
+```
+
+The split follows what each side actually has. The **app server** owns
+authorization, the saved printer, templates and the Chromium raster pipeline
+(Persian/RTL text needs a real browser engine — see `src/lib/escpos.ts`; it is
+never rendered as ESC/POS text-mode). The **cashier's machine** owns the
+hardware: the local connector is the only thing that enumerates Windows
+queues, sweeps the café LAN for printers, and sends bytes to a device.
+
+Because of that split the server never accepts a hardware address from a
+browser: a print job carries only a `printerId`, and the server resolves it
+against the authenticated business + active location. A hand-edited request
+can neither aim the server at an arbitrary IP or queue, nor print through
+another branch's printer. The server does not scan the café LAN, ever —
+network discovery runs inside the connector.
+
+### The Windows connector
+
+`public/windows/cafe-pos-print-connector.ps1` — protocol v3, dependency-free
+Windows PowerShell, installed per-user from «چاپگرها → افزودن چاپگر» with one
+click (the authenticated installer is built by `src/lib/windows-print-connector.ts`
+and served from `/api/printing/connector/installer`). It:
+
+- binds only to `127.0.0.1:9123` — never exposed to the LAN;
+- accepts browser requests only from the exact tenant origin baked into the
+  installer;
+- enumerates installed queues via `Win32_Printer` (`GET /printers/windows`);
+- discovers network printers by scanning its own IPv4 /24 subnets for an open
+  9100, windowed and deduplicated (`POST /printers/network/discover`);
+- probes a target (`POST /printers/probe`);
+- delivers raw bytes through the native `winspool.drv` `WritePrinter` API or a
+  TCP socket (`POST /print/raw`), returning canonical error codes
+  (`printer_not_found`, `network_unreachable`, …) — never raw exceptions.
+
+Reinstalling is also the upgrade path: the installer stops the previous
+connector (including the pre-v3 «print agent» spelling), replaces the script,
+and only reports success for a v3+ health answer. It starts now and at every
+Windows login; no Node.js, no admin account, no command line.
+
+### Browser printing is an output, not a connection
+
+`printViaBrowser` (a hidden iframe, not a popup) opens the browser's own print
+dialog. It is the right output for A4/A5 invoices, label sheets, and tills
+with no configured hardware printer — and it is never saved as a printer
+connection type. Sheets never ride the thermal connector at all.
+
+### Legacy printers
+
+Rows written by the old five-transport model are normalised in
+`src/lib/printing/types.ts`: `system` → `windows`, `network` (and pre-transport
+rows with an address) → `network`. Everything else (`usb`, `webusb`,
+`browser`, and the setup wizard's pre-transport stubs) is flagged
+`needsReconnect` with its identity preserved, so the settings screen shows
+«این چاپگر باید دوباره متصل شود» and the operator re-pairs in one pass.
+Migration 0155 performs the same mapping in the database; new writes go
+through a parser (`src/lib/printing/printer-input.ts`) that accepts only the
+canonical model.
 
 ## The pieces
 
@@ -23,23 +117,26 @@ string. There is no second implementation of the layout anywhere, which is why
 | `src/lib/print-sample.ts` | The sample document every preview and test print uses. Pure. |
 | `src/lib/print-templates-service.ts` | The branch's own saved templates (`print_templates`, migration 0145). |
 | `src/lib/business-logo.ts` | Logo validation + the stored record. Pure. |
-| `src/lib/printer-connection.ts` | The four transports and how a `printers.connection` row is read. Pure. |
-| `src/lib/printer-input.ts` | The one parser both printer routes write through. Pure. |
-| `src/lib/print-agent-client.ts` | The browser's print client: local agent first, `/api/print/*` on the app server second, **and** the browser-dialog fallback. |
-| `src/lib/system-print/**` | The shared printing machinery: discovery (Windows/CUPS queues + the LAN sweep), the spooler, Chromium rendering, and `service.ts` — one implementation used by both the agent and the app server. Server-only. |
-| `src/app/api/print/**` | The app server's own print endpoints — the agent's twin, for deployments where the server can see the printers. |
-| `print-agent/server.ts` | The full Node-based loopback agent, retained for development and managed installations. |
-| `public/windows/cafe-pos-print-agent.ps1` | The dependency-free one-click Windows connector: queue discovery, exact-origin loopback HTTP, and native RAW spooler delivery. |
-| `src/app/api/print/windows-agent-installer/route.ts` | Authenticated per-origin Windows installer download. |
-| `src/app/(app)/settings/printing/**` | The section: gallery, designer, hardware, logo, and the connector install button. |
+| `src/lib/printing/types.ts` | The canonical connection model, the legacy normalisation and target validation. Pure. |
+| `src/lib/printing/printer-input.ts` | The one parser both printer routes write through (canonical model only). Pure. |
+| `src/lib/printing/errors.ts` | The canonical error codes and their Persian sentences. Pure. |
+| `src/lib/printing/render-service.ts` | The server half: load the saved printer for the branch, render a job to ESC/POS bytes. Server-only. |
+| `src/lib/printing/chromium.ts` | HTML → PNG with the embedded Vazirmatn font (server-side). Server-only. |
+| `src/lib/printing/raster.ts` | PNG → grayscale decode. Pure. |
+| `src/lib/printing/client.ts` | The browser's printing client: connector calls, printerId-scoped jobs, the browser-dialog fallback. |
+| `src/app/api/printing/print` | The one hardware job endpoint: printerId in, canonical bytes + target out. |
+| `src/app/api/printing/test-draft` | The add-printer wizard's test print before the printer is saved. |
+| `src/app/api/printing/connector/installer` | Authenticated per-origin Windows connector installer download. |
+| `public/windows/cafe-pos-print-connector.ps1` | The one Windows hardware gateway: queue discovery, LAN discovery, probe, RAW/TCP delivery. |
+| `src/app/(app)/settings/printing/**` | The section: gallery, designer, printers panel (shared with the setup wizard), logo. |
 
 ## Papers
 
 `thermal58`, `thermal80`, `a4`, `a5`, `label57x40`. A paper knows its width in
 millimetres, whether it is a roll / a cut sheet / a label, its default margin,
 and — for the roll kinds — the pixel width the ESC/POS raster is screenshotted
-at. Adding a sixth paper is one entry in `PAPERS`; nothing else has a paper
-list.
+at (58mm → 372px, 80mm → 512px; unchanged). Adding a sixth paper is one entry
+in `PAPERS`; nothing else has a paper list.
 
 ## The five built-in templates
 
@@ -72,129 +169,67 @@ text truncated.
 
 Uploaded in the section's «لوگو» tab, stored in `settings` under
 `business.logo` as a **data URL** (`src/lib/business-logo.ts`). Inline rather
-than a file path because the print agent renders in a headless browser with no
-session and often no route back to the app server — anything the page needs has
-to travel inside the HTML. Hard 256 KB cap, four allowed types, byte-signature
-checked, and an SVG carrying `<script>` is refused outright.
+than a file path because the server renders receipts in a headless browser —
+anything the page needs has to travel inside the HTML. Hard 256 KB cap, four
+allowed types, byte-signature checked, and an SVG carrying `<script>` is
+refused outright.
 
-## Printers: four transports
+## Pairing a printer (the operator's path)
 
-| Transport | Reached by | Needs |
-| --- | --- | --- |
-| `network` | raw TCP to port 9100 | an IP |
-| `system` | the OS spooler, by queue name | the agent **or** the app server on the printer's machine |
-| `usb` | a raw device path (`USB001`, `/dev/usb/lp0`) | the agent **or** the app server on the printer's machine |
-| `webusb` | the browser itself, over WebUSB | Chrome/Edge on HTTPS, one pairing click |
-| `browser` | the browser's own print dialog | nothing |
+The «چاپگرها» tab lists the branch's printers as cards — name, purpose,
+connection, target, status (probed through the connector when the page opens,
+never on an interval), default badge — with **Test print** and **Edit**. All
+configuration lives inside the add/edit dialog:
 
-Rows written before transports existed read as `network`, unchanged.
+1. **چاپگر کجاست؟** — «چاپگر ویندوز» (on this computer; recommended for USB)
+   or «چاپگر شبکه» (LAN/Wi-Fi).
+2. **انتخاب چاپگر** — Windows: the connector lists the installed queues.
+   Network: it sweeps the local subnets; manual IP/port appears only behind
+   «چاپگرتان پیدا نشد؟». If the connector is missing, the same step installs
+   it with one click («اتصال این کامپیوتر»).
+3. **این چاپگر چه کاری انجام می‌دهد؟** — name, receipts vs kitchen tickets,
+   80/58mm paper, cash drawer (receipt printers only), default for the
+   purpose; the template picker sits under «تنظیمات پیشرفته».
 
-**Two hardware backends, one fallback order.** Every hardware operation in
-`print-agent-client.ts` tries the loopback print agent (`127.0.0.1:9123`)
-first, and when it does not answer, the same operation against the app
-server's `/api/print/*` twin routes. The server fallback sees only hardware
-visible to the server process. That includes the standalone Electron install
-(the server is a native Windows process) and printers configured on an
-on-prem Linux/CUPS server. It does **not** include a Windows host's queues when
-the app server is inside a Linux Docker container, and a cloud server can
-never see the cashier PC's USB cable. Those two shapes need the local agent or
-WebUSB. A *reachable* backend's error is final — it is never retried against
-the other backend, because the two may be different machines.
+A test print runs before or during save («چاپ آزمایشی و ذخیره»), so a wrong
+pairing is caught here — never discovered as a failed print at the counter.
+The first-run setup wizard's hardware step embeds the *same* panel
+(`printers-panel.tsx`); there is exactly one way to pair a printer.
 
-**Discovery.** The section leads with two buttons instead of an IP field:
-«چاپگرهای ویندوز» reads the installed queues (PowerShell `Get-Printer`
-on Windows, `lpstat` on macOS/Linux) — from the till PC when the agent is
-running, otherwise from the app server's machine, and the list says which —
-and «جست‌وجوی شبکه» sweeps the local /24 for an open 9100. Pairing is picking
-a row. Typing an address by hand is still there for a printer on another
-subnet. A cloud deployment no longer describes a healthy server fallback as
-proof that the cashier's Windows printers are available; the UI explicitly
-asks for the local helper instead.
+Printing is best-effort by contract: a failed receipt print never invalidates
+a completed sale. The POS shows a non-destructive warning with «چاپ دوباره».
 
-**Sheets vs rolls.** A thermal roll takes the raster path (screenshot → ESC/POS
-`GS v 0`). A sheet on an installed queue is rendered to a real PDF
-(`renderHtmlToPdf`, `preferCSSPageSize`) and spooled, because a laser driver
-wants a page, not a bitmap.
+## Cash drawer
 
-**The browser as delivery middleman (`webusb`).** A *server* installation —
-the app in a container or another building — can see neither the till's
-Windows queues nor its USB cable, and the local agent may simply not be
-installed. But the browser at the counter can: WebUSB gives a secure-context
-Chromium page a direct pipe to a USB device the user paired once («اتصال USB
-از مرورگر» in the printers tab). The job splits by who has what: the server
-renders the ESC/POS bytes (`/api/print/render`, on the same
-`system-print/service.ts` raster pipeline — Persian shaping needs a real
-browser engine), and the page pushes them down the cable
-(`src/lib/webusb-print.ts`). No print dialog anywhere, drawer kick included.
-Limits stated in the UI: Chromium-only, HTTPS/localhost-only, raster papers
-only (a sheet PDF has no meaning on a raw ESC/POS device), and on Windows a
-printer whose vendor driver has claimed the interface refuses
-`claimInterface` (`usb_claim_failed`) — install it as a plain USB device or
-use `windows/usb-printer-bridge.js` instead.
+The drawer hangs off the receipt printer, exactly as the ESC/POS `ESC p`
+command expects: a printer configured with «بازکردن کشوی پول» kicks it after
+a receipt (the POS kicks it whenever a payment includes cash). Drawer test
+lives in the printer's Edit dialog. There is deliberately no separate
+"cash drawer connection" architecture.
 
-## Windows-installed USB printers with a cloud server
+## Defaults
 
-A browser cannot enumerate or silently spool to Windows queues, so each cashier
-PC that owns a Windows-installed printer needs the small local connector. The
-operator installs it directly from «تنظیمات → چاپ و فاکتور → چاپگرها», where
-the «رابط چاپ ویندوز» card is **always** the first thing in the tab — it is not
-conditional on the agent being down. That condition was the bug: on a cloud
-deployment the app server answers the health probe, the section reads
-"printing is available", and the download disappeared from the one screen that
-needed it. Now the card states the current state (running here / not installed)
-and always carries the button, which doubles as the reinstall path after an
-update or a change of tenant origin.
+One default printer per purpose (receipt / kitchen) per branch, enforced
+transactionally in `/api/settings/printers` when a default is saved. The POS
+picks the default for the kind automatically; nobody configures routing
+tables.
 
-Click **«دانلود و نصب رابط چاپ ویندوز»**, open the downloaded file once, and accept
-the Windows confirmation. There is no repository copy, Node.js, npm command,
-PowerShell command, administrator account, or manual configuration. The
-installer places the dependency-free connector in the current user's
-`LocalAppData`, starts it immediately, and creates the current user's Windows
-Startup shortcut so it runs after every login.
+## Errors
 
-The authenticated download route (`/api/print/windows-agent-installer`) builds
-the installer for the tenant origin serving the request. The installer fetches
-`public/windows/cafe-pos-print-agent.ps1`; that connector is built only from
-Windows PowerShell and .NET, listens only on `127.0.0.1:9123`, and accepts
-browser requests only from the exact baked-in origin. It reads ordinary
-unshared queues through `Win32_Printer` and submits RAW jobs by installed display
-name through Windows' native `OpenPrinter` / `WritePrinter` API.
+Every failure maps to one canonical code (`connector_not_installed`,
+`connector_outdated`, `printer_not_found`, `printer_inactive`,
+`printer_offline`, `network_unreachable`, `print_failed`, `render_failed`,
+`reconnect_required`, …) defined in `src/lib/printing/errors.ts`, each with
+its Persian sentence. Screens show the sentence, never the raw exception —
+technical detail goes to the server log and the connector's own log file
+(`%LOCALAPPDATA%\CafePOS\PrintConnector\connector.log`: startup, version,
+print attempts, spooler/TCP failures, probe failures — never receipt
+content).
 
-Rich Persian receipts still use the server's canonical renderer. The lightweight
-connector answers `render_required`; `print-agent-client.ts` calls the
-authenticated `/api/print/render`, Base64-encodes those ESC/POS bytes, and posts
-them to the connector's `/print/raw` endpoint for local spooler delivery. A
-claimed local job is never retried on the cloud server, avoiding both duplicate
-prints and attempts to use a Windows queue name on Linux.
-
-The cloud page must be HTTPS. Chrome/Edge 142+ asks once whether the site may
-access the local network; allow it. In Chrome/Edge 145+ the loopback permission
-is labelled **Apps on device** (older versions say **Local network access**).
-If it was previously blocked, open the site's permissions from the icon beside
-the address bar, change that permission to Allow, reload, and press «بررسی
-dوباره». The CSP explicitly permits only the loopback agent origins; the
-connector itself remains bound to `127.0.0.1` and is never exposed to the LAN.
-
-## Printing without the agent
-
-When the app server process can genuinely see the printers, hardware printing
-works with no agent — the client falls back to `/api/print/*` automatically,
-and receipts/invoices go straight to the paired printer with no browser
-dialog. This is true for the native Electron install and configured server-side
-CUPS queues, not for a cloud server or a Linux container trying to see its
-Windows host. With neither backend able to reach the hardware, the section is
-still fully usable: design, preview, and print through the browser dialog
-(`printViaBrowser` — a hidden iframe, not a popup, so nothing is blocked and
-focus stays in the POS). The printing state (agent / server / browser-only) is
-stated plainly at the top of the section rather than discovered as a failed
-print at the counter. A shop with a laser printer and a tablet may never
-install anything.
-
-**Chromium for rendering.** Both backends render with `playwright-core`
-against an existing browser: `PRINT_AGENT_CHROMIUM_PATH` (or
-`PDF_CHROMIUM_PATH`) if set, otherwise the machine's own Chrome/Edge/Chromium
-is auto-detected (`src/lib/system-print/render.ts`) — on a Windows till, the
-very browser the dashboard is open in.
+**Chromium for rendering.** The server renders with `playwright-core` against
+an existing browser: `PRINT_CHROMIUM_PATH` (or `PDF_CHROMIUM_PATH`) if set,
+otherwise the machine's own Chrome/Edge/Chromium is auto-detected
+(`src/lib/printing/chromium.ts`).
 
 ## Testing
 
@@ -202,8 +237,14 @@ very browser the dashboard is open in.
 output string: Persian digits, Toman amounts, no Gregorian dates, escaped item
 names, the ruled table's columns, two-copy pages on a sheet but never on a
 roll, and that `starterTemplate` cannot alias the preset it copied.
-`business-logo.test.ts` and `printer-input.test.ts` cover the two write
-boundaries.
+`escpos.test.ts` pins the byte stream (raster packing, cut, drawer kick,
+58/80mm widths); `printing/raster.test.ts` the PNG decode; `printing/types.test.ts`
+and `printing/printer-input.test.ts` the model and its write boundary;
+`printing/render-service.test.ts` the render pipeline; `printing/client.test.ts`
+the browser client; `windows-print-connector*.test.ts` the connector/installer
+contract; `api/printing/**` the route security model; and
+`integration/printer-connection-migration.integration.test.ts` migration 0155
+on a real database.
 
 ## Adding to the model
 

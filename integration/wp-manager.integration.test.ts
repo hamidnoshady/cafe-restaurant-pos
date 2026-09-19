@@ -16,7 +16,8 @@
  *      decodes the entities WordPress puts in a title, so the manager's list
  *      never shows a raw `&#8217;`.
  *   3. The queue merges outbound outbox jobs and inbound webhook failures, and
- *      the customer list joins a mapping to its local party.
+ *      the customer list joins a mapping to its local party, counting only
+ *      the orders mirrored from that store — not the party's POS sales.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -35,6 +36,8 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db") | undefined;
 let manager: typeof import("../src/lib/integrations/wp-manager-service");
 let content: typeof import("../src/lib/integrations/wp-content-service");
+let ingest: typeof import("../src/lib/integrations/webhook-ingest-service");
+let plugin: typeof import("../src/lib/integrations/plugin-service");
 let taxonomy: typeof import("../src/lib/integrations/woo-taxonomy-service");
 let connections: typeof import("../src/lib/integrations/connections-service");
 
@@ -91,6 +94,8 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   manager = await import("../src/lib/integrations/wp-manager-service");
   content = await import("../src/lib/integrations/wp-content-service");
+  ingest = await import("../src/lib/integrations/webhook-ingest-service");
+  plugin = await import("../src/lib/integrations/plugin-service");
   taxonomy = await import("../src/lib/integrations/woo-taxonomy-service");
   connections = await import("../src/lib/integrations/connections-service");
 
@@ -135,17 +140,23 @@ afterAll(async () => {
 const conn = () => ({ id: biz.pluginConnId, business_id: biz.id }) as never;
 
 describe("the content mirror upserts and decodes what WordPress sends", () => {
-  it("creates a row from a pushed post and decodes the entities in its title", async () => {
-    await content.upsertWpContent(conn(), {
+  it("creates a row, decodes its list title and retains raw editable fields", async () => {
+    const outcome = await content.upsertWpContent(conn(), {
       id: 101,
       type: "post",
       // wptexturize output: apostrophe + curly quotes + ellipsis, plus a tag.
-      title: { rendered: "<b>Caf&#233;</b>&#8217;s &#8220;News&#8221;&#8230;" },
+      title: {
+        rendered: "<b>Caf&#233;</b>&#8217;s &#8220;News&#8221;&#8230;",
+        raw: "Café's News",
+      },
+      content: { rendered: "<p>Rendered</p>", raw: "<!-- wp:paragraph --><p>Raw</p><!-- /wp:paragraph -->" },
+      excerpt: { rendered: "<p>Rendered summary</p>", raw: "Raw summary" },
       status: "publish",
       slug: "cafe-news",
       link: "https://shop.example.com/cafe-news",
       date_modified: "2026-02-01T10:00:00Z",
     });
+    expect(outcome).toBe("created");
 
     const rows = await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "post" });
     const row = rows.find((r) => r.remoteId === "101");
@@ -154,6 +165,11 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
     expect(row!.title).toBe("Café’s “News”…");
     expect(row!.slug).toBe("cafe-news");
     expect(row!.status).toBe("publish");
+
+    const detail = await content.getWpContent(biz.id, biz.pluginConnId, "post", "101");
+    expect(detail?.editorTitle).toBe("Café's News");
+    expect(detail?.content).toBe("<!-- wp:paragraph --><p>Raw</p><!-- /wp:paragraph -->");
+    expect(detail?.excerpt).toBe("Raw summary");
   });
 
   it("updates one row on a re-send rather than duplicating it", async () => {
@@ -165,25 +181,49 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
     expect(matching[0].status).toBe("draft");
   });
 
-  it("keeps a media attachment's source url and mime type", async () => {
+  it("keeps a media attachment's safe source url, mime type and alt text", async () => {
     await content.upsertWpContent(conn(), {
       id: 900,
       type: "attachment",
       title: "Logo",
       source_url: "https://shop.example.com/logo.png",
       mime_type: "image/png",
+      alt_text: "نشان فروشگاه",
     });
     const rows = await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "attachment" });
     const media = rows.find((r) => r.remoteId === "900");
     expect(media?.mediaUrl).toBe("https://shop.example.com/logo.png");
     expect(media?.mimeType).toBe("image/png");
+    expect(media?.altText).toBe("نشان فروشگاه");
+
+    await content.upsertWpContent(conn(), {
+      id: 901,
+      type: "attachment",
+      title: "Unsafe",
+      source_url: "javascript:alert(1)",
+      mime_type: "image/svg+xml",
+    });
+    const unsafe = (await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "attachment" }))
+      .find((row) => row.remoteId === "901");
+    expect(unsafe?.mediaUrl).toBeNull();
+    expect(await content.deleteWpContent(biz.id, biz.pluginConnId, { id: 901, type: "attachment" })).toBe(true);
   });
 
-  it("ignores a payload with no usable id instead of writing a junk row", async () => {
+  it("ignores invalid ids, unsafe links and malformed remote dates", async () => {
     await content.upsertWpContent(conn(), { id: 0, type: "post", title: "nope" });
     await content.upsertWpContent(conn(), { id: "", type: "post", title: "nope" });
+    await content.upsertWpContent(conn(), {
+      id: 102,
+      type: "post",
+      title: "Safe row",
+      link: "javascript:alert(1)",
+      date_modified: "not-a-date",
+    });
     const rows = await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "post" });
     expect(rows.some((r) => r.title === "nope")).toBe(false);
+    const safe = rows.find((r) => r.remoteId === "102");
+    expect(safe?.permalink).toBe("");
+    expect(safe?.remoteUpdatedAt).toBeNull();
   });
 
   it("counts posts, pages and media by type", async () => {
@@ -194,10 +234,112 @@ describe("the content mirror upserts and decodes what WordPress sends", () => {
     expect(counts.media).toBe(1);
   });
 
-  it("filters the content list by a title search", async () => {
+  it("filters and pages media without hiding attachments after the first result page", async () => {
+    await content.upsertWpContent(conn(), {
+      id: 902,
+      type: "attachment",
+      title: "Launch video",
+      source_url: "https://shop.example.com/launch.mp4",
+      mime_type: "video/mp4",
+    });
+    await content.upsertWpContent(conn(), {
+      id: 903,
+      type: "attachment",
+      title: "Price list",
+      source_url: "https://shop.example.com/prices.pdf",
+      mime_type: "application/pdf",
+    });
+
+    const videos = await content.listWpContent(biz.id, biz.pluginConnId, {
+      wpType: "attachment",
+      mediaKind: "video",
+    });
+    expect(videos.map((row) => row.remoteId)).toEqual(["902"]);
+    expect(await content.countWpContent(biz.id, biz.pluginConnId, {
+      wpType: "attachment",
+      mediaKind: "document",
+    })).toBe(1);
+
+    const first = await content.listWpContent(biz.id, biz.pluginConnId, {
+      wpType: "attachment",
+      limit: 1,
+      offset: 0,
+    });
+    const second = await content.listWpContent(biz.id, biz.pluginConnId, {
+      wpType: "attachment",
+      limit: 1,
+      offset: 1,
+    });
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(second[0].remoteId).not.toBe(first[0].remoteId);
+
+    await content.deleteWpContent(biz.id, biz.pluginConnId, { id: 902, type: "attachment" });
+    await content.deleteWpContent(biz.id, biz.pluginConnId, { id: 903, type: "attachment" });
+  });
+
+  it("applies plugin deletion and full-sync watermark events", async () => {
+    await content.upsertWpContent(conn(), {
+      id: 990,
+      type: "attachment",
+      title: "Delete me",
+      source_url: "https://shop.example.com/delete-me.jpg",
+      mime_type: "image/jpeg",
+    });
+    const connection = await connections.getConnection(biz.id, biz.pluginConnId);
+    expect(connection).toBeTruthy();
+
+    const deleted = await ingest.ingestPluginEvent(connection!, {
+      topic: "content.deleted",
+      deliveryId: randomUUID(),
+      payload: { id: 990, type: "attachment" },
+    });
+    expect(deleted.status).toBe("processed");
+    expect((await content.listWpContent(biz.id, biz.pluginConnId, { wpType: "attachment" }))
+      .some((row) => row.remoteId === "990")).toBe(false);
+
+    const completed = await ingest.ingestPluginEvent(connection!, {
+      topic: "content.sync_completed",
+      deliveryId: randomUUID(),
+      payload: { id: "content:all", type: "content", count: 1 },
+    });
+    expect(completed.status).toBe("processed");
+    expect((await connections.getConnection(biz.id, biz.pluginConnId))?.last_content_sync_at).toBeTruthy();
+
+    await content.upsertWpContent(conn(), { id: 104, type: "page", title: "Delete me too" });
+    await db.query(`UPDATE integration_connections SET last_content_sync_at = NULL WHERE id = $1`, [biz.pluginConnId]);
+    const response = await plugin.pluginPushEvents(conn(), {
+      events: [
+        {
+          topic: "content.deleted",
+          deliveryId: randomUUID(),
+          payload: { id: 104, type: "page" },
+        },
+      ],
+    });
+    const answer = (await response.json()) as { results: { status: string }[] };
+    expect(answer.results[0]?.status).toBe("processed");
+    expect(await content.getWpContent(biz.id, biz.pluginConnId, "page", "104")).toBeNull();
+    expect((await connections.getConnection(biz.id, biz.pluginConnId))?.last_content_sync_at).toBeTruthy();
+  });
+
+  it("filters by title or slug, counts matches and removes permanent deletions", async () => {
     const hits = await content.listWpContent(biz.id, biz.pluginConnId, { search: "About" });
     expect(hits.every((r) => r.title.includes("About"))).toBe(true);
     expect(hits.length).toBeGreaterThanOrEqual(1);
+
+    await content.upsertWpContent(conn(), { id: 103, type: "post", title: "Different", slug: "needle-slug" });
+    const slugHits = await content.listWpContent(biz.id, biz.pluginConnId, {
+      wpType: "post",
+      search: "needle-slug",
+      limit: 1,
+      offset: 0,
+    });
+    expect(slugHits.map((row) => row.remoteId)).toEqual(["103"]);
+    expect(await content.countWpContent(biz.id, biz.pluginConnId, { wpType: "post", search: "needle-slug" })).toBe(1);
+
+    expect(await content.deleteWpContent(biz.id, biz.pluginConnId, "post", "103")).toBe(true);
+    expect(await content.getWpContent(biz.id, biz.pluginConnId, "post", "103")).toBeNull();
   });
 });
 
@@ -287,14 +429,39 @@ describe("the operational queue and the customer list", () => {
     }
   });
 
-  it("lists the store's customers joined to their local party and order count", async () => {
-    const rows = await manager.wpStoreCustomers(biz.id, biz.pluginConnId);
+  it("lists the store's customers joined to their local party and online order count", async () => {
+    const { customers: rows, total } = await manager.wpStoreCustomers(biz.id, biz.pluginConnId);
+    expect(total).toBe(rows.length);
+
     const sara = rows.find((r) => r.remoteId === "7001");
     expect(sara).toBeTruthy();
     expect(sara!.name).toBe("سارا");
     expect(sara!.phone).toBe("09120000000");
-    // She has one order recorded against her local party.
+    // Her one online order: the '9001' order mapping mirrored from this store.
     expect(sara!.ordersCount).toBe(1);
+
+    // A count over `orders.customer_id` alone would confuse the badge
+    // («سفارش آنلاین») with *every* sale the party ever made. Neither her
+    // POS purchase (no order mapping) nor an order mirrored by the *other*
+    // connection may move this store's number.
+    await db.query(
+      `INSERT INTO orders (location_id, order_number, status, customer_id, total)
+       VALUES ($1, 5556, 'completed', $2, 10000)`,
+      [biz.locationId, sara!.localId],
+    );
+    const mirroredElsewhere = await db.query<{ id: string }>(
+      `INSERT INTO orders (location_id, order_number, status, customer_id, total)
+       VALUES ($1, 5557, 'completed', $2, 20000) RETURNING id`,
+      [biz.locationId, sara!.localId],
+    );
+    await db.query(
+      `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
+       VALUES ($1, $2, 'order', '9010', $3)`,
+      [biz.id, biz.restConnId, mirroredElsewhere.rows[0].id],
+    );
+
+    const again = await manager.wpStoreCustomers(biz.id, biz.pluginConnId);
+    expect(again.customers.find((r) => r.remoteId === "7001")!.ordersCount).toBe(1);
   });
 });
 
@@ -342,26 +509,153 @@ describe("the taxonomy mirror learns terms from a product payload (plugin mode)"
 });
 
 describe("the content mirror pulls over the WordPress REST API (rest mode)", () => {
-  it("walks every content type and upserts each row from a fake wp/v2 client", async () => {
+  it("walks every content type, upserts each row and prunes deleted remote media", async () => {
     const restConn = { id: biz.restConnId, business_id: biz.id } as never;
+    await content.upsertWpContent(restConn, {
+      id: 3999,
+      type: "attachment",
+      title: "Deleted remotely",
+      source_url: "https://x/deleted.png",
+      mime_type: "image/png",
+    });
     // A fake wp/v2 client: one page each of posts, pages, media.
     const pagesByType: Record<string, Record<string, unknown>[]> = {
-      posts: [{ id: 3001, type: "post", title: { rendered: "Ben &amp; Jerry" }, status: "publish" }],
-      pages: [{ id: 3002, type: "page", title: { rendered: "درباره&#8230;" }, status: "publish" }],
+      posts: [
+        {
+          id: 3001,
+          type: "post",
+          title: { rendered: "Ben &amp; Jerry", raw: "Ben & Jerry" },
+          content: { raw: "<!-- wp:paragraph --><p>body</p><!-- /wp:paragraph -->" },
+          status: "draft",
+        },
+      ],
+      pages: [{ id: 3002, type: "page", title: { rendered: "درباره&#8230;" }, status: "private" }],
       media: [
         { id: 3003, type: "attachment", title: { rendered: "Logo" }, source_url: "https://x/y.png", mime_type: "image/png" },
       ],
     };
+    const calls: { type: string; query: Record<string, unknown> }[] = [];
     const client = {
-      wpListPage: async (type: string) => ({ items: pagesByType[type] ?? [], totalPages: 1 }),
+      wpListPage: async (type: string, query: Record<string, unknown>) => {
+        calls.push({ type, query });
+        return { items: pagesByType[type] ?? [], totalPages: 1 };
+      },
     };
 
     const outcome = await content.syncWpContentRest(restConn, client);
-    expect(outcome.total).toBe(3);
+    expect(outcome).toEqual({ total: 3, removed: 1 });
+    expect(calls.filter((call) => call.type !== "media").every((call) => call.query.context === "edit")).toBe(true);
+    expect(String(calls.find((call) => call.type === "posts")?.query.status)).toContain("draft");
+    expect(calls.find((call) => call.type === "media")?.query.context).toBe("view");
 
     const rows = await content.listWpContent(biz.id, biz.restConnId);
     expect(rows.find((r) => r.remoteId === "3001")?.title).toBe("Ben & Jerry");
     expect(rows.find((r) => r.remoteId === "3002")?.title).toBe("درباره…");
     expect(rows.find((r) => r.remoteId === "3003")?.mimeType).toBe("image/png");
+    expect(rows.some((r) => r.remoteId === "3999")).toBe(false);
+    expect((await content.getWpContent(biz.id, biz.restConnId, "post", "3001"))?.content).toContain("wp:paragraph");
+  });
+
+  it("keeps paging when a WordPress host omits X-WP-TotalPages", async () => {
+    const restConn = { id: biz.restConnId, business_id: biz.id } as never;
+    const calls: string[] = [];
+    const client = {
+      wpListPage: async (type: string, query: { page: number }) => {
+        calls.push(`${type}:${query.page}`);
+        if (type !== "posts") return { items: [], totalPages: 0 };
+        if (query.page === 1) {
+          return {
+            items: Array.from({ length: 100 }, (_, index) => ({
+              id: 4000 + index,
+              title: { rendered: `Post ${index}` },
+              status: "publish",
+            })),
+            totalPages: 0,
+          };
+        }
+        if (query.page === 2) {
+          return { items: [{ id: 4100, title: { rendered: "Last post" }, status: "publish" }], totalPages: 0 };
+        }
+        return { items: [], totalPages: 0 };
+      },
+    };
+
+    const outcome = await content.syncWpContentRest(restConn, client);
+    expect(outcome.total).toBe(101);
+    expect(calls).toContain("posts:2");
+    const rows = await content.listWpContent(biz.id, biz.restConnId, { wpType: "post", limit: 200 });
+    expect(rows).toHaveLength(101);
+    expect(rows.some((row) => row.remoteId === "4100")).toBe(true);
+  });
+});
+
+describe("the enhanced WP queue summary, filtering, and retries", () => {
+  it("computes accurate summary metrics across outbox and inbox", async () => {
+    const summary = await manager.wpQueueSummary(biz.id, biz.pluginConnId);
+    expect(summary.total).toBeGreaterThanOrEqual(4);
+    expect(summary.pending).toBeGreaterThanOrEqual(1);
+    expect(summary.failed).toBeGreaterThanOrEqual(1);
+    expect(summary.dead).toBeGreaterThanOrEqual(1);
+  });
+
+  it("filters queue by status and direction", async () => {
+    const failedRows = await manager.wpQueue(biz.id, biz.pluginConnId, { status: "failed" });
+    expect(failedRows.every((r) => r.status === "failed" || r.status === "dead")).toBe(true);
+
+    const outRows = await manager.wpQueue(biz.id, biz.pluginConnId, { direction: "out" });
+    expect(outRows.every((r) => r.direction === "out")).toBe(true);
+
+    const inRows = await manager.wpQueue(biz.id, biz.pluginConnId, { direction: "in" });
+    expect(inRows.every((r) => r.direction === "in")).toBe(true);
+  });
+
+  it("filters queue by search query", async () => {
+    const searched = await manager.wpQueue(biz.id, biz.pluginConnId, { search: "5001" });
+    expect(searched.length).toBeGreaterThan(0);
+    expect(searched.every((r) => r.remoteId.includes("5001") || r.kind.includes("5001"))).toBe(true);
+  });
+
+  it("retries a dead outbox row, resetting status to pending and attempts to 0", async () => {
+    const deadRows = await manager.wpQueue(biz.id, biz.pluginConnId, { status: "dead" });
+    expect(deadRows.length).toBeGreaterThan(0);
+    const target = deadRows[0];
+
+    const result = await manager.retryWpQueueRow(biz.id, biz.pluginConnId, target.id, "out");
+    expect(result.ok).toBe(true);
+
+    const refreshed = await manager.wpQueue(biz.id, biz.pluginConnId, { status: "all" });
+    const updated = refreshed.find((r) => r.id === target.id);
+    expect(updated?.status).toBe("pending");
+    expect(updated?.attempts).toBe(0);
+  });
+
+  it("retries all failed and dead events in batch", async () => {
+    // Insert a failed event to test batch retry
+    await db.query(
+      `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload, status, attempts, last_error)
+       VALUES ($1, $2, 'price', '9999', '{}'::jsonb, 'failed', 3, 'temporary error')
+       ON CONFLICT (connection_id, entity_type, remote_id)
+       DO UPDATE SET status = 'failed', attempts = 3, last_error = 'temporary error'`,
+      [biz.id, biz.pluginConnId],
+    );
+
+    const result = await manager.retryAllFailedWpQueue(biz.id, biz.pluginConnId);
+    expect(result.ok).toBe(true);
+    expect(result.outboxRetried).toBeGreaterThanOrEqual(1);
+
+    const all = await manager.wpQueue(biz.id, biz.pluginConnId, { status: "all" });
+    const row = all.find((r) => r.remoteId === "9999");
+    expect(row?.status).toBe("pending");
+    expect(row?.attempts).toBe(0);
+  });
+
+  it("flushes outbox queue reporting mode and status", async () => {
+    const pluginFlush = await manager.flushWpOutbox(biz.id, biz.pluginConnId);
+    expect(pluginFlush.ok).toBe(true);
+    expect(pluginFlush.mode).toBe("plugin");
+
+    const restFlush = await manager.flushWpOutbox(biz.id, biz.restConnId);
+    expect(restFlush.ok).toBe(true);
+    expect(restFlush.mode).toBe("rest_api");
   });
 });

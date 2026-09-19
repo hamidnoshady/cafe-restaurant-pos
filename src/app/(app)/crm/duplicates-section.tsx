@@ -80,21 +80,33 @@ const MOVE_LABELS: Record<string, string> = {
 
 export function DuplicatesSection() {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [target, setTarget] = useState<{ winner: Side; loser: Side } | null>(null);
 
-  const load = useCallback(() => {
-    api<{ duplicates: Candidate[] }>("/api/crm/customers/duplicates").then(({ ok, data }) => {
-      if (ok) setCandidates(data.duplicates);
-      else setError("بارگذاری فهرست تکراری‌ها ناموفق بود.");
-    });
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { ok, data } = await api<{ duplicates?: Candidate[] }>("/api/crm/customers/duplicates");
+      if (ok && Array.isArray(data.duplicates)) setCandidates(data.duplicates);
+      else setError("بارگذاری فهرست تکراری‌ها ناموفق بود. دوباره تلاش کنید.");
+    } catch {
+      setError("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => { void load(); }, [load]);
 
+  if (loading && !candidates) return <SectionCardSkeleton rows={4} />;
   if (!candidates) {
     return (
-      <SectionCardSkeleton rows={4} />
+      <div className="space-y-3">
+        <ErrorBox>{error}</ErrorBox>
+        <Button type="button" variant="outline" onClick={() => void load()}>تلاش دوباره</Button>
+      </div>
     );
   }
 
@@ -112,7 +124,7 @@ export function DuplicatesSection() {
         }
         description="پرونده‌هایی که احتمالاً یک نفرند. هیچ‌کدام خودکار ادغام نمی‌شوند."
         actions={
-          <Button type="button" variant="ghost" size="icon-sm" onClick={load} aria-label="بازخوانی">
+          <Button type="button" variant="ghost" size="icon-sm" onClick={() => void load()} disabled={loading} aria-label={loading ? "در حال بازخوانی" : "بازخوانی"}>
             <RefreshCwIcon aria-hidden="true" className="size-4" />
           </Button>
         }
@@ -124,22 +136,23 @@ export function DuplicatesSection() {
             {candidates.map((candidate) => (
               <li
                 key={`${candidate.left.id}-${candidate.right.id}-${candidate.reason}`}
-                className="flex flex-wrap items-center justify-between gap-3 py-3"
+                className="grid min-w-0 gap-3 py-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
               >
-                <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                   <SideCard side={candidate.left} />
                   <SideCard side={candidate.right} />
                 </div>
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <div className="flex min-w-0 flex-col items-stretch gap-2 lg:items-end">
                   <StatusBadge tone={candidate.confidence >= 80 ? "danger" : "neutral"}>
                     {DUPLICATE_REASON_LABELS[candidate.reason]} ·{" "}
                     {toPersianDigits(String(candidate.confidence))}٪
                   </StatusBadge>
-                  <div className="flex gap-1.5">
+                  <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:flex">
                     <Button
                       type="button"
                       variant="outline"
                       size="xs"
+                      className="h-auto min-h-8 w-full whitespace-normal text-center"
                       onClick={() => setTarget({ winner: candidate.left, loser: candidate.right })}
                     >
                       نگه‌داشتن «{candidate.left.name}»
@@ -148,6 +161,7 @@ export function DuplicatesSection() {
                       type="button"
                       variant="outline"
                       size="xs"
+                      className="h-auto min-h-8 w-full whitespace-normal text-center"
                       onClick={() => setTarget({ winner: candidate.right, loser: candidate.left })}
                     >
                       نگه‌داشتن «{candidate.right.name}»
@@ -213,11 +227,12 @@ function MergeDialog({
   const [preview, setPreview] = useState<MergePreview | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void api<{ preview: MergePreview; error?: string }>(
-      `/api/crm/customers/merge?winner=${winner.id}&loser=${loser.id}`,
+      `/api/crm/customers/merge?winner=${encodeURIComponent(winner.id)}&loser=${encodeURIComponent(loser.id)}`,
     )
       .then(({ ok, data }) => {
         if (cancelled) return;
@@ -261,8 +276,8 @@ function MergeDialog({
 
         <p className="text-sm leading-6 text-foreground/80">
           همه‌چیزِ «<span className="font-semibold">{loser.name}</span>» به «
-          <span className="font-semibold">{winner.name}</span>» منتقل می‌شود و پروندهٔ اول بایگانی
-          خواهد شد.
+          <span className="font-semibold">{winner.name}</span>» منتقل می‌شود و پروندهٔ «
+          <span className="font-semibold">{loser.name}</span>» بایگانی خواهد شد.
         </p>
 
         {!preview && !error ? (
@@ -325,12 +340,24 @@ function MergeDialog({
           </div>
         ) : null}
 
-        <DialogFooter>
+        {preview ? (
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-300/70 bg-amber-50/60 p-3 text-sm leading-6 dark:border-amber-800 dark:bg-amber-950/20">
+            <input
+              type="checkbox"
+              className="mt-1 size-4 shrink-0 accent-amber-700"
+              checked={acknowledged}
+              onChange={(event) => setAcknowledged(event.target.checked)}
+            />
+            <span>بررسی کردم: «{winner.name}» باقی می‌ماند و «{loser.name}» بایگانی می‌شود. این کار برگشت‌پذیر نیست.</span>
+          </label>
+        ) : null}
+
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             انصراف
           </Button>
-          <Button type="button" onClick={confirm} disabled={busy || !preview}>
-            ادغام کن
+          <Button type="button" onClick={confirm} disabled={busy || !preview || !acknowledged}>
+            {busy ? "در حال ادغام…" : "ادغام نهایی"}
           </Button>
         </DialogFooter>
       </DialogContent>
