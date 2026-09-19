@@ -11,6 +11,7 @@ import { UNKNOWN_CUSTOMER_KEY } from "@/lib/aging";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
+import { DataTable, DataTableBody, DataTableFoot, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 import { FilterChip } from "@/app/dashboard/filters";
 import { ArStatementPanel } from "./ar-statement-panel";
 import { useOverlayEscape } from "./use-overlay-escape";
@@ -194,23 +195,24 @@ export function ArSection() {
               <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هیچ حساب دریافتنی بازی وجود ندارد.</p>
             ) : (
               <>
-                <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/60 text-muted-foreground"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مشتری</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تلفن</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مانده</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">اقدام</th></tr></thead>
-                      <tbody>
-                        {customers.map((c) => (
-                          <tr key={c.customerId} className="border-b border-border last:border-b-0">
-                            <td className="px-4 py-3"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="font-semibold text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{c.customerName}</button></td>
-                            <td className="px-4 py-3 text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "—"}</td>
-                            <td className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(c.balance)}{c.balance < 0 ? <CreditBadge /> : null}</td>
-                            <td className="px-4 py-3">{c.customerId !== UNKNOWN_CUSTOMER_KEY ? <button type="button" onClick={() => setReceiveTarget(c)} className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20">دریافت وجه</button> : null}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <DataTable caption="مانده حساب‌های دریافتنی به تفکیک مشتری" className="hidden lg:block">
+                  <DataTableHead>
+                    <Th>مشتری</Th>
+                    <Th>تلفن</Th>
+                    <Th numeric>مانده</Th>
+                    <Th>اقدام</Th>
+                  </DataTableHead>
+                  <DataTableBody>
+                    {customers.map((c) => (
+                      <DataTableRow key={c.customerId}>
+                        <Td><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="font-semibold text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{c.customerName}</button></Td>
+                        <Td muted>{c.customerPhone ? toPersianDigits(c.customerPhone) : "—"}</Td>
+                        <Td numeric nowrap className="font-bold">{money.format(c.balance)}{c.balance < 0 ? <CreditBadge /> : null}</Td>
+                        <Td>{c.customerId !== UNKNOWN_CUSTOMER_KEY ? <button type="button" onClick={() => setReceiveTarget(c)} className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20">دریافت وجه</button> : null}</Td>
+                      </DataTableRow>
+                    ))}
+                  </DataTableBody>
+                </DataTable>
                 <div className="space-y-3 lg:hidden">
                   {customers.map((c) => (
                     <article key={c.customerId} className="rounded-xl border border-border/80 bg-muted/60 p-4">
@@ -247,15 +249,28 @@ export function ArSection() {
               <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هیچ بدهی بازی (تا تاریخ انتخابی) وجود ندارد.</p>
             ) : (
               <>
-                <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/60 text-muted-foreground"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مشتری</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="px-4 py-3 text-start text-xs font-medium sm:text-sm">{col.label}</th>)}</tr></thead>
-                      <tbody>{aging.rows.map((r) => <tr key={r.customerId} className="border-b border-border last:border-b-0"><td className="px-4 py-3"><button type="button" onClick={() => setStatementTarget({ id: r.customerId, name: r.customerName })} className="font-medium text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{r.customerName}</button></td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap px-4 py-3 ${col.key === "total" ? "font-bold text-foreground" : "text-foreground"}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
-                      <tfoot><tr className="border-t border-border bg-muted/60 font-semibold"><td className="px-4 py-3 text-foreground">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
-                    </table>
-                  </div>
-                </div>
+                <DataTable caption="نمای سنی بدهی مشتریان" className="hidden lg:block">
+                  <DataTableHead>
+                    <Th>مشتری</Th>
+                    {AGING_COLUMNS.map((col) => <Th key={col.key} numeric>{col.label}</Th>)}
+                  </DataTableHead>
+                  <DataTableBody>
+                    {aging.rows.map((r) => (
+                      <DataTableRow key={r.customerId}>
+                        <Td><button type="button" onClick={() => setStatementTarget({ id: r.customerId, name: r.customerName })} className="font-medium text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{r.customerName}</button></Td>
+                        {AGING_COLUMNS.map((col) => (
+                          <Td key={col.key} numeric nowrap className={col.key === "total" ? "font-bold" : undefined}>{r[col.key] ? money.format(r[col.key]) : "—"}</Td>
+                        ))}
+                      </DataTableRow>
+                    ))}
+                  </DataTableBody>
+                  <DataTableFoot>
+                    <tr>
+                      <Td>جمع کل</Td>
+                      {AGING_COLUMNS.map((col) => <Td key={col.key} numeric nowrap className="font-bold">{money.format(aging.totals[col.key])}</Td>)}
+                    </tr>
+                  </DataTableFoot>
+                </DataTable>
                 <div className="space-y-3 lg:hidden">
                   {aging.rows.map((r) => (
                     <article key={r.customerId} className="rounded-xl border border-border/80 bg-muted/60 p-4">

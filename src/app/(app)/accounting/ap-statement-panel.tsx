@@ -10,6 +10,7 @@ import { useMoney } from "@/components/money/money-context";
 import { api } from "@/app/dashboard/ui";
 import { accountingSupplierHref } from "./accounting-routes";
 import { overlayPanelClass } from "@/app/dashboard/page-chrome";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 import { useOverlayEscape } from "./use-overlay-escape";
 
 interface ApStatementLine {
@@ -123,32 +124,32 @@ export function ApStatementPanel({
           </p>
         ) : (
           <>
-            <div className="hidden overflow-x-auto rounded-xl border border-border/80 lg:block">
-              <table className="min-w-[700px] w-full text-sm">
-                <thead className="bg-muted/60 text-muted-foreground">
-                  <tr className="border-b border-border">
-                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
-                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">نوع</th>
-                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">شرح</th>
-                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">بدهکار</th>
-                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">بستانکار</th>
-                    <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">مانده</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((l, i) => (
-                    <tr key={i} className="border-b border-border last:border-b-0">
-                      <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{TYPE_LABELS[l.type]}</td>
-                      <td className="px-3 py-3 text-foreground">{l.description}</td>
-                      <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.debit ? money.format(l.debit) : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.credit ? money.format(l.credit) : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums text-foreground">{money.format(l.balance)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              caption="گردش حساب این تأمین‌کننده"
+              className="hidden lg:block"
+              tableClassName="min-w-[700px]"
+            >
+              <DataTableHead>
+                <Th>تاریخ</Th>
+                <Th>نوع</Th>
+                <Th>شرح</Th>
+                <Th numeric>بدهکار</Th>
+                <Th numeric>بستانکار</Th>
+                <Th numeric>مانده</Th>
+              </DataTableHead>
+              <DataTableBody>
+                {lines.map((l, i) => (
+                  <DataTableRow key={i}>
+                    <Td muted nowrap>{toPersianDigits(formatJalali(l.date))}</Td>
+                    <Td muted>{TYPE_LABELS[l.type]}</Td>
+                    <Td>{l.description}</Td>
+                    <Td numeric nowrap>{l.debit ? money.format(l.debit) : "—"}</Td>
+                    <Td numeric nowrap>{l.credit ? money.format(l.credit) : "—"}</Td>
+                    <Td numeric nowrap className="font-semibold">{money.format(l.balance)}</Td>
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
 
             <div className="space-y-3 lg:hidden">
               {lines.map((l, i) => (

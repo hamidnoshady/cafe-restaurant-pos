@@ -10,6 +10,7 @@ import { formatJalali } from "@/lib/jalali";
 import { UNKNOWN_SUPPLIER_KEY } from "@/lib/aging";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
+import { DataTable, DataTableBody, DataTableFoot, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import { FilterChip } from "@/app/dashboard/filters";
 import { accountingSuppliersHref } from "./accounting-routes";
@@ -178,23 +179,24 @@ export function ApSection() {
               <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هیچ حساب پرداختنی بازی وجود ندارد.</p>
             ) : (
               <>
-                <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/60 text-muted-foreground"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تأمین‌کننده</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تلفن</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مانده</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">اقدام</th></tr></thead>
-                      <tbody>
-                        {suppliers.map((s) => (
-                          <tr key={s.supplierId} className="border-b border-border last:border-b-0">
-                            <td className="px-4 py-3"><button type="button" onClick={() => setStatementTarget({ id: s.supplierId, name: s.supplierName, partyId: s.supplierPartyId })} className="font-semibold text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{s.supplierName}</button></td>
-                            <td className="px-4 py-3 text-muted-foreground">{s.supplierPhone ? toPersianDigits(s.supplierPhone) : "—"}</td>
-                            <td className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(s.balance)}</td>
-                            <td className="px-4 py-3">{s.supplierId !== UNKNOWN_SUPPLIER_KEY ? <button type="button" onClick={() => setPayTarget(s)} className="rounded-lg px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20">ثبت پرداخت</button> : null}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <DataTable caption="مانده حساب‌های پرداختنی به تفکیک تأمین‌کننده" className="hidden lg:block">
+                  <DataTableHead>
+                    <Th>تأمین‌کننده</Th>
+                    <Th>تلفن</Th>
+                    <Th numeric>مانده</Th>
+                    <Th>اقدام</Th>
+                  </DataTableHead>
+                  <DataTableBody>
+                    {suppliers.map((s) => (
+                      <DataTableRow key={s.supplierId}>
+                        <Td><button type="button" onClick={() => setStatementTarget({ id: s.supplierId, name: s.supplierName, partyId: s.supplierPartyId })} className="font-semibold text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{s.supplierName}</button></Td>
+                        <Td muted>{s.supplierPhone ? toPersianDigits(s.supplierPhone) : "—"}</Td>
+                        <Td numeric nowrap className="font-bold">{money.format(s.balance)}</Td>
+                        <Td>{s.supplierId !== UNKNOWN_SUPPLIER_KEY ? <button type="button" onClick={() => setPayTarget(s)} className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20">ثبت پرداخت</button> : null}</Td>
+                      </DataTableRow>
+                    ))}
+                  </DataTableBody>
+                </DataTable>
                 <div className="space-y-3 lg:hidden">
                   {suppliers.map((s) => (
                     <article key={s.supplierId} className="rounded-xl border border-border/80 bg-muted/60 p-4">
@@ -230,15 +232,28 @@ export function ApSection() {
               <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هیچ بدهی بازی (تا تاریخ انتخابی) وجود ندارد.</p>
             ) : (
               <>
-                <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/60 text-muted-foreground"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تأمین‌کننده</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="px-4 py-3 text-start text-xs font-medium sm:text-sm">{col.label}</th>)}</tr></thead>
-                      <tbody>{aging.rows.map((r) => <tr key={r.supplierId} className="border-b border-border last:border-b-0"><td className="px-4 py-3 font-medium text-foreground">{r.supplierName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap px-4 py-3 ${col.key === "total" ? "font-bold text-foreground" : "text-foreground"}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
-                      <tfoot><tr className="border-t border-border bg-muted/60 font-semibold"><td className="px-4 py-3 text-foreground">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
-                    </table>
-                  </div>
-                </div>
+                <DataTable caption="نمای سنی بدهی به تأمین‌کنندگان" className="hidden lg:block">
+                  <DataTableHead>
+                    <Th>تأمین‌کننده</Th>
+                    {AGING_COLUMNS.map((col) => <Th key={col.key} numeric>{col.label}</Th>)}
+                  </DataTableHead>
+                  <DataTableBody>
+                    {aging.rows.map((r) => (
+                      <DataTableRow key={r.supplierId}>
+                        <Td className="font-medium">{r.supplierName}</Td>
+                        {AGING_COLUMNS.map((col) => (
+                          <Td key={col.key} numeric nowrap className={col.key === "total" ? "font-bold" : undefined}>{r[col.key] ? money.format(r[col.key]) : "—"}</Td>
+                        ))}
+                      </DataTableRow>
+                    ))}
+                  </DataTableBody>
+                  <DataTableFoot>
+                    <tr>
+                      <Td>جمع کل</Td>
+                      {AGING_COLUMNS.map((col) => <Td key={col.key} numeric nowrap className="font-bold">{money.format(aging.totals[col.key])}</Td>)}
+                    </tr>
+                  </DataTableFoot>
+                </DataTable>
                 <div className="space-y-3 lg:hidden">
                   {aging.rows.map((r) => (
                     <article key={r.supplierId} className="rounded-xl border border-border/80 bg-muted/60 p-4">
