@@ -119,7 +119,7 @@ export default function ProjectDetailPage() {
       api<{ notes: Note[] }>(`/api/ai/projects/${id}/notes`),
       api<{ memory: Memory[] }>(`/api/ai/projects/${id}/memory`),
       api<{ tasks: Task[] }>(`/api/ai/projects/${id}/tasks`),
-      api<{ conversations: Conversation[] }>(`/api/ai/conversations?limit=50`),
+      api<{ conversations: Conversation[] }>(`/api/ai/conversations?project=${id}&limit=100`),
     ]);
     if (projRes.ok) {
       setProject(projRes.data.project);
@@ -129,11 +129,8 @@ export default function ProjectDetailPage() {
     if (notesRes.ok) setNotes(notesRes.data.notes);
     if (memoryRes.ok) setMemory(memoryRes.data.memory);
     if (tasksRes.ok) setTasks(tasksRes.data.tasks);
-    if (convsRes.ok) {
-      setConversations(
-        convsRes.data.conversations.filter((c: Conversation) => c.projectId === id),
-      );
-    }
+    // The API already scopes to this project (?project=), so no client filter.
+    if (convsRes.ok) setConversations(convsRes.data.conversations);
   }, [id]);
 
   useEffect(() => {
