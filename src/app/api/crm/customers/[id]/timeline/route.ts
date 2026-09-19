@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { customerTimeline } from "@/lib/customer-timeline-service";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * One customer's history, merged from every app that touched them (Phase 36).
@@ -20,6 +21,11 @@ export const GET = withTenantScope(
     if (error) return error;
 
     const { id } = await params;
+    // Same guard as the file route: a non-uuid id would otherwise hit
+    // `WHERE o.customer_id = $2` (etc.) against `uuid` columns and raise a
+    // 500 for what is simply a customer that cannot exist.
+    if (!isUuid(id)) return NextResponse.json({ events: [] });
+
     const search = request.nextUrl.searchParams;
     const limitParam = Number(search.get("limit"));
     const kinds = search.get("kinds");

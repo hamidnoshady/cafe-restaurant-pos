@@ -398,6 +398,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     campaign_channel_invalid: "کانال ارسال نامعتبر است؛ پیامک یا ایمیل را انتخاب کنید.",
     segment_or_definition_required: "برای محاسبهٔ مخاطبان، یک بخش مشتریان یا مجموعه قاعده انتخاب کنید.",
     note_body_required: "متن یادداشت را بنویسید.",
+    note_body_too_long: "متن یادداشت خیلی طولانی است؛ آن را کوتاه‌تر کنید.",
     tag_required: "برچسب را بنویسید.",
     tag_action_invalid: "عملیات برچسب باید افزودن یا برداشتن باشد.",
     note_not_found: "یادداشت پیدا نشد.",
