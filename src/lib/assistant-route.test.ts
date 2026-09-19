@@ -15,7 +15,7 @@ describe("isAssistantSurface", () => {
   it("does NOT treat the AI Workspace management sections as chat surfaces", () => {
     // These are ordinary scrolling pages with the normal chrome, not the
     // pinned-composer chat — the Phase I regression this guards.
-    for (const path of ["/ai/agents", "/ai/coworkers", "/ai/automations", "/ai/activity", "/ai/coworkers/x"]) {
+    for (const path of ["/ai/agents", "/ai/coworkers", "/ai/automations", "/ai/activity", "/ai/usage", "/ai/coworkers/x"]) {
       expect(isAssistantSurface(path, false)).toBe(false);
       expect(isAssistantSurface(path, true)).toBe(false);
     }

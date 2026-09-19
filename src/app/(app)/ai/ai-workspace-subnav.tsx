@@ -22,6 +22,7 @@ import {
   BotIcon,
   MessagesSquareIcon,
   SparklesIcon,
+  WalletIcon,
   ZapIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -38,6 +39,7 @@ const ICONS: Record<AiWorkspaceIconName, LucideIcon> = {
   coworkers: BotIcon,
   automations: ZapIcon,
   activity: ActivityIcon,
+  usage: WalletIcon,
 };
 
 export function AiWorkspaceSubnav() {

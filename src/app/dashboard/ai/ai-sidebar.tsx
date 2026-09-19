@@ -19,6 +19,7 @@ import {
   FolderIcon,
   MessageSquarePlusIcon,
   SparklesIcon,
+  WalletIcon,
   XIcon,
   ZapIcon,
 } from "lucide-react";
@@ -128,6 +129,7 @@ export function AiSidebar({
           { href: "/ai/coworkers", label: "همکاران هوشمند", icon: BotIcon },
           { href: "/ai/automations", label: "اتوماسیون‌ها", icon: ZapIcon },
           { href: "/ai/activity", label: "فعالیت خودکار", icon: ActivityIcon },
+          { href: "/ai/usage", label: "مصرف و هزینه", icon: WalletIcon },
           { href: "/projects", label: "پروژه‌ها", icon: FolderIcon },
         ].map((item) => (
           <Link

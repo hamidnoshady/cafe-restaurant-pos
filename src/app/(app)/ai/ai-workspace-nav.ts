@@ -28,6 +28,7 @@ export const AI_WORKSPACE_SECTION_KEYS = [
   "coworkers",
   "automations",
   "activity",
+  "usage",
 ] as const;
 
 export type AiWorkspaceSectionKey = (typeof AI_WORKSPACE_SECTION_KEYS)[number];
@@ -55,7 +56,8 @@ export type AiWorkspaceIconName =
   | "agents"
   | "coworkers"
   | "automations"
-  | "activity";
+  | "activity"
+  | "usage";
 
 /** The workspace's sections, in menu order. Chat is the workspace home. */
 export const AI_WORKSPACE_SECTIONS: readonly AiWorkspaceSection[] = [
@@ -93,6 +95,13 @@ export const AI_WORKSPACE_SECTIONS: readonly AiWorkspaceSection[] = [
     description: "آنچه دستیار خودکار انجام داده یا برای تأیید گذاشته",
     href: "/ai/activity",
     icon: "activity",
+  },
+  {
+    key: "usage",
+    label: "مصرف و هزینه",
+    description: "هزینهٔ هوش مصنوعی: چقدر، کجا و با چه مدلی خرج شده",
+    href: "/ai/usage",
+    icon: "usage",
   },
 ];
 

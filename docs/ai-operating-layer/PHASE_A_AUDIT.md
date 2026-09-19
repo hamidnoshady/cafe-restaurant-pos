@@ -1069,3 +1069,46 @@ run any turn as a chosen agent, changing the lens mid-conversation.
   provider check — the sandbox has no AI provider, so 503, which proves the gate
   admitted it), while an unknown agent id is refused at the gate (404
   `agent_unavailable`); the picker's data source lists only enabled agents.
+
+### Phase I Part 4 — Usage section (COMPLETE)
+
+The north-star IA (§4) names *Usage* as a workspace surface: "what is AI costing
+us, and where is it going." The billing was already there — every AI turn writes
+an `ai_wallet_settlements` row (migration 0153) with charged/provider Rial, the
+origin (`request_type`), model, token counts, cache-hit flag and correlation ids
+— but nothing read it back to the business. This part adds that read-only lens,
+built the same registry-driven way as the other sections so the chrome never
+drifts.
+
+- **Framework-free core (`ai-usage-shared.ts`).** The settled `request_type`
+  values and their Persian labels, `normalizeRequestType` (coalesces an unknown/
+  legacy type into `other` so a settlement is always counted), the offered
+  windows (۷/۳۰/۹۰ روز) with `normalizeWindowDays` (clamps a hand-typed
+  `?days=` so the API can't run an unbounded scan), and `cacheHitRate` (guards
+  the zero-turn divide). Pure, so the service, the API route, the client and the
+  unit tests share one source of truth. **5 unit tests.**
+- **Service (`ai-usage-service.ts`).** `getAiUsageSummary(businessId, windowDays)`
+  runs one window predicate across three reads — totals, per-origin breakdown,
+  recent-turns list — so the cards, the chart and the table always describe the
+  exact same window. Wallet balance and outstanding AI debt come from the wallet
+  service (the one owner of that truth), not recomputed. Tenant-scoped through
+  `query` (RLS + explicit `business_id`). No write path, no provider call.
+- **Read-only route (`/api/ai/usage`).** `requireManager`, `?days=` clamped;
+  returns `{ summary }`. Registers no mutation and passes the api-guards scan
+  automatically (manager guard). The section adds no migration.
+- **Section UI.** New `usage` entry in the registry (label «مصرف و هزینه»,
+  `WalletIcon`, owner/manager gate); `usage/page.tsx` + `usage-dashboard.tsx`
+  (client): a window switch, four headline cards (spend · turns · cache-hit rate
+  · balance/debt), a per-origin breakdown with proportional bars, and a recent-
+  turns table (origin · model · tokens · cost · pricing tone · time). The debt
+  line is the same affordability backstop the pre-request gate enforces, surfaced
+  rather than hidden. Renders `LoadingSkeleton` (loading-coverage) and composes
+  `cardClass` (design-lint). Linked from the sub-nav strip and the chat rail.
+- **Verification.** `tsc` clean; full unit suite **4872 / 330 files**; a new DB
+  integration test (`integration/ai-usage.integration.test.ts`, **6 tests**)
+  proves totals, richest-first breakdown, newest-first recent turns, the trailing
+  window, unknown-type coalescing, and tenant isolation against a real database.
+  Live smoke against embedded PG (four seeded settlements): `/ai/usage` renders
+  (200); `GET /api/ai/usage?days=30` returns the right totals/breakdown/recent
+  turns, and `?days=999` clamps to 7; all six workspace routes return 200
+  authenticated with no render errors.

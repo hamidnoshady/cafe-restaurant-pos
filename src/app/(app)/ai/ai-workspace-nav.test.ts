@@ -78,6 +78,7 @@ describe("active-section detection", () => {
     expect(activeAiWorkspaceSection("/ai/coworkers")).toBe("coworkers");
     expect(activeAiWorkspaceSection("/ai/automations")).toBe("automations");
     expect(activeAiWorkspaceSection("/ai/activity")).toBe("activity");
+    expect(activeAiWorkspaceSection("/ai/usage")).toBe("usage");
     expect(activeAiWorkspaceSection("/media")).toBeNull();
     expect(activeAiWorkspaceSection("/dashboard")).toBeNull();
   });
