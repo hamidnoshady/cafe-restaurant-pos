@@ -309,5 +309,57 @@ the cutover is proven, together with the dead platform AI-subscription code.
 - Do not create generic `execute_sql`/`update_table`/`run_javascript` tools.
 - Keep both money systems reconciled during the cutover window; never
   double-charge.
-</content>
-</invoke>
+
+## 6c. Phase C — DELIVERED (capability gaps)
+
+Four write actions the assistant was missing, each wired to an **existing**
+role-guarded route — no new business logic, no new endpoints — plus the two
+read tools that make the campaign write usable.
+
+**New `ACTION_CATALOG` entries** (`src/lib/ai.ts`):
+
+| Action | Endpoint (existing) | Guard | Safety |
+| --- | --- | --- | --- |
+| `party.customer.create` | `POST /api/parties` (`roles:["Customer"]`) | `parties.view` + `parties.manage` | payload avoids accounting fields, so no `ledger.view` gate |
+| `party.supplier.create` | `POST /api/parties` (`roles:["Supplier"]`) | same | same |
+| `messaging.campaign.create` | `POST /api/messaging` (`action:"campaign"`) | `requireRole(owner,manager)` | draft only — never launches/sends |
+| `ar.receipt.record` | `POST /api/ledger/ar/receipts` | `requireRole(owner,manager,accountant)` | `alwaysConfirm` (moves money) |
+
+- `/api/parties` is the only party write door (migration 0137 removed
+  `/api/customers`); customer vs supplier differ only in `roles`, so one
+  endpoint serves both catalogue entries. The payload hints deliberately steer
+  the model away from accounting fields (`accountingCode`, `taxPercentage`,
+  `financial_info`) so the write never trips the route's extra `ledger.view`
+  gate — a person's name and phone is the CRM's half, not the ledger's.
+- Campaign **create** materialises a draft only. **Launch/send** is
+  deliberately *absent* from the catalogue — a message that reaches a real
+  person stays a human's click on the growth screen, the same line
+  `messaging.campaign.trigger` (coworker-only) already draws.
+- None of the four carries an `autopilotCategory` or `executor`: creating a
+  person or moving money is a human-confirmed decision, never an unattended
+  tick's. They flow through the browser apply path
+  (`src/components/ai/apply-proposal.ts`) with the user's own session cookie.
+- `ar.receipt.record` is the second `alwaysConfirm` action (after
+  `website.post.publish`).
+
+**New read tools** (`src/lib/ai-tools.ts`, `runReadTool` + `READ_TOOL_NAMES`,
+MCP summaries in `src/lib/mcp/tools.ts`):
+
+- `list_message_templates` (optional `channel` filter) → `listMessageTemplates`.
+- `list_message_campaigns` → `listMessageCampaigns`.
+  These give the model a `templateId` (and `segmentId` from the existing
+  `list_customer_segments`) before it proposes `messaging.campaign.create`, and
+  campaign status for "how did my campaign do" questions.
+
+**Tests**: `src/lib/ai.test.ts` gains a Phase C block (four actions present,
+both party creates share `/api/parties`, campaign create is a draft with no
+send action, receipt is `alwaysConfirm`, all four out of every unattended
+path, both read tools offered in dashboard mode). The `alwaysConfirm` invariant
+now pins the two-entry set. `integration/ai-phase-c-tools.integration.test.ts`
+exercises both read tools against real rows and asserts per-business scoping.
+All 4760 unit tests + AI integration suites (wallet-billing, wave13, phase-c)
+green; `tsc` clean.
+
+Deliberately **not** added: `crm.customer.consent`, `crm.customer.merge`,
+campaign launch/send — the Phase 36 hard lines still hold (irreversible
+promises/judgements about a real person stay a named human's action).

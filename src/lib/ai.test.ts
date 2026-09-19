@@ -406,8 +406,11 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
     expect(publish.alwaysConfirm).toBe(true);
     expect(publish.autopilotCategory).toBeUndefined();
     expect(publish.executor).toBeUndefined();
-    // And the only alwaysConfirm action so far is that one — a second entry is a decision.
-    expect(ACTION_TYPES.filter((t) => ACTION_CATALOG[t].alwaysConfirm)).toEqual(["website.post.publish"]);
+    // Phase C added the second alwaysConfirm action — recording a receipt moves
+    // money — so this now pins the whole set. A third entry is a decision.
+    expect(ACTION_TYPES.filter((t) => ACTION_CATALOG[t].alwaysConfirm).sort()).toEqual(
+      ["ar.receipt.record", "website.post.publish"],
+    );
   });
 
   it("gives the assistant no way to change consent or merge a customer", () => {
@@ -483,6 +486,83 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
     expect(prompt).toContain("menu.item.priceUpdate");
     expect(prompt).not.toContain("expense.categorize");
     expect(prompt).toContain("هیچ کانال ارسالی وجود ندارد");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase C — the capability gaps closed against existing role-guarded routes.
+// ---------------------------------------------------------------------------
+
+describe("Phase C — party, campaign and receipt writes", () => {
+  it("adds exactly the four gap actions and no more", () => {
+    for (const type of [
+      "party.customer.create",
+      "party.supplier.create",
+      "messaging.campaign.create",
+      "ar.receipt.record",
+    ] as const) {
+      expect(isKnownAction(type), type).toBe(true);
+      expect(ACTION_TYPES).toContain(type);
+    }
+  });
+
+  it("routes both party creates through the one party write door", () => {
+    // Migration 0137 made /api/parties the only place a party is written; a
+    // customer and a supplier differ only in `roles`, never in the endpoint.
+    for (const type of ["party.customer.create", "party.supplier.create"] as const) {
+      expect(ACTION_CATALOG[type].endpoint).toBe("/api/parties");
+      expect(ACTION_CATALOG[type].method).toBe("POST");
+    }
+    expect(ACTION_CATALOG["party.customer.create"].payloadHint).toContain('"Customer"');
+    expect(ACTION_CATALOG["party.supplier.create"].payloadHint).toContain('"Supplier"');
+  });
+
+  it("keeps campaign create a draft — no send action reaches the catalogue", () => {
+    const create = ACTION_CATALOG["messaging.campaign.create"];
+    expect(create.endpoint).toBe("/api/messaging");
+    // The discriminator the /api/messaging route reads. The launch/send action
+    // is deliberately absent: a message that reaches a real person stays a
+    // human's click, the same line messaging.campaign.trigger draws.
+    expect(create.payloadHint).toContain('"campaign"');
+    for (const forbidden of ["messaging.campaign.launch", "messaging.campaign.send"]) {
+      expect(isKnownAction(forbidden), forbidden).toBe(false);
+    }
+  });
+
+  it("makes recording a receipt an always-confirm, never-unattended write", () => {
+    const receipt = ACTION_CATALOG["ar.receipt.record"];
+    expect(receipt.endpoint).toBe("/api/ledger/ar/receipts");
+    expect(receipt.alwaysConfirm).toBe(true);
+    expect(receipt.autopilotCategory).toBeUndefined();
+    expect(receipt.executor).toBeUndefined();
+  });
+
+  it("leaves all four gap actions out of every unattended path", () => {
+    // No autopilot category, no executor, not coworker-only: none can be applied
+    // by a tick. They exist only to be proposed to a human who clicks apply.
+    for (const type of [
+      "party.customer.create",
+      "party.supplier.create",
+      "messaging.campaign.create",
+      "ar.receipt.record",
+    ] as const) {
+      const meta = ACTION_CATALOG[type];
+      expect(meta.autopilotCategory, type).toBeUndefined();
+      expect(meta.executor, type).toBeUndefined();
+      expect(meta.coworkerOnly, type).toBeFalsy();
+    }
+  });
+
+  it("offers the two messaging reads in dashboard mode and names them in the prompt", () => {
+    const names = toolDefinitions("dashboard").map((tool) => tool.function.name);
+    expect(names).toContain("list_message_templates");
+    expect(names).toContain("list_message_campaigns");
+
+    const prompt = buildSystemPrompt({ mode: "dashboard" });
+    expect(prompt).toContain("list_message_templates");
+    expect(prompt).toContain("messaging.campaign.create");
+    expect(prompt).toContain("party.customer.create");
+    expect(prompt).toContain("ar.receipt.record");
   });
 });
 

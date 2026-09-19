@@ -178,7 +178,14 @@ export type ActionType =
   | "website.product.upsert"
   | "website.post.publish"
   /** A deterministic coworker-only action that queues, never sends, one message. */
-  | "messaging.campaign.trigger";
+  | "messaging.campaign.trigger"
+  // Phase C — the party directory's two creates and the two money-shaped writes
+  // the assistant was missing. Each maps to an existing role-guarded route; none
+  // is eligible for an unattended run.
+  | "party.customer.create"
+  | "party.supplier.create"
+  | "messaging.campaign.create"
+  | "ar.receipt.record";
 
 export type AutopilotExecutorKey =
   | "menuItemPatch"
@@ -508,6 +515,60 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     payloadHint: "{ postId: string } — متن را عمومی می‌کند؛ همیشه به تأیید انسان نیاز دارد",
     alwaysConfirm: true,
   },
+  // Phase C — capability gaps closed against the party directory and the ledger.
+  //
+  // All four point at endpoints the app already role-guards; the catalogue adds
+  // no business logic, it only names the door and its payload so a human can
+  // apply the proposal from the chat with their own session. None is tagged
+  // with an autopilot category or executor: creating a person or moving money
+  // is a decision a human confirms, never an unattended tick's.
+  //
+  // `/api/parties` is the *only* write door for a party (migration 0137 removed
+  // `/api/customers`), and the same route serves a customer and a supplier —
+  // the difference is entirely in `roles`. Two catalogue entries, one endpoint,
+  // so the model proposes the right kind of record and the route decides the
+  // permission (`parties.view` + `parties.manage`, and `ledger.view` on top
+  // when the body carries accounting fields — which these payloads avoid).
+  "party.customer.create": {
+    type: "party.customer.create",
+    endpoint: "/api/parties",
+    method: "POST",
+    label: "افزودن مشتری جدید",
+    payloadHint:
+      '{ role: "Customer", roles: ["Customer"], personType: "Real"|"Legal", displayName: string, contactInfo?: { mobile?: string, phone?: string, email?: string } } — فقط اطلاعات هویتی و تماس؛ فیلدهای حسابداری (کد حسابداری، درصد مالیات، اطلاعات بانکی) را اینجا نگذار',
+  },
+  "party.supplier.create": {
+    type: "party.supplier.create",
+    endpoint: "/api/parties",
+    method: "POST",
+    label: "افزودن تأمین‌کننده جدید",
+    payloadHint:
+      '{ role: "Supplier", roles: ["Supplier"], personType: "Real"|"Legal", displayName: string, contactInfo?: { mobile?: string, phone?: string, email?: string } } — فقط اطلاعات هویتی و تماس؛ فیلدهای حسابداری را اینجا نگذار',
+  },
+  // Creating a campaign only materialises a *draft* — nothing is sent. Launching
+  // (`action: "launch"`) is deliberately not a catalogue action: a send that
+  // reaches real people stays a human's click on the growth screen, the same
+  // line `messaging.campaign.trigger` draws for the coworker path.
+  "messaging.campaign.create": {
+    type: "messaging.campaign.create",
+    endpoint: "/api/messaging",
+    method: "POST",
+    label: "ساخت پیش‌نویس کمپین پیام",
+    payloadHint:
+      '{ action: "campaign", channel: "sms"|"email", name: string, templateId: string /* از list_message_templates */, segmentId: string /* از list_customer_segments */, promotionId?: string } — فقط پیش‌نویس می‌سازد؛ هیچ پیامی ارسال نمی‌شود',
+  },
+  // Recording an AR receipt moves money, so it is `alwaysConfirm`: a human sees
+  // the amount and the customer on the card and clicks. No executor, no
+  // category — an unattended tick never records a payment.
+  "ar.receipt.record": {
+    type: "ar.receipt.record",
+    endpoint: "/api/ledger/ar/receipts",
+    method: "POST",
+    label: "ثبت دریافت از مشتری",
+    payloadHint:
+      '{ customerId: string /* از find_customers */, method: "cash"|"bank", amount: number /* ریال صحیح، مثبت */, receiptDate?: string /* ISO؛ پیش‌فرض امروزِ کسب‌وکار */, memo?: string } — پول جابه‌جا می‌کند و همیشه به تأیید انسان نیاز دارد',
+    alwaysConfirm: true,
+  },
 };
 
 export interface ProposedAction {
@@ -619,6 +680,8 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "برای هر سؤالی دربارهٔ ضایعات («چقدر نان دور ریختیم؟»، «ضایعات این ماه چقدر بود؟») از get_waste_history استفاده کن؛ این ابزار تفکیک کالا و دلیل و هزینه را یک‌جا می‌دهد. get_stock_valuation فقط موجودی همین لحظه را می‌گوید و به سؤال «چه چیزی از انبار خارج شد» جواب نمی‌دهد.",
       "برای سؤال‌هایی مثل «حساب‌هایم را بررسی کن»، «اشتباهی هست؟» یا «چه چیزی جا افتاده؟» حتماً run_accounting_review را صدا بزن و دقیقاً همان یافته‌ها را با درجهٔ اهمیت و پیشنهاد اصلاحشان گزارش کن. هرگز از خودت مورد اضافه نکن و هرگز نگو حسابی مشکل دارد مگر این ابزار گفته باشد.",
       "کاربر می‌تواند کارهای تکرارشونده را به «همکار هوشمند» بسپارد (مثلاً «هر شب با بستن شیفت، ماندهٔ نان را ضایعات بزن» یا «هر روز صبح حساب‌ها را بررسی کن»). با list_coworker_jobs می‌توانی کارهای فعلی و تعداد اجراهای منتظر تأیید را ببینی؛ برای ساختن کار جدید کاربر را به بخش «همکار هوشمند» در صفحهٔ هوش مصنوعی راهنمایی کن.",
+      "برای پیام‌رسانی به مشتریان: با list_message_templates قالب‌ها و با list_message_campaigns وضعیت کمپین‌ها را می‌بینی. برای ساختن کمپین جدید، اول templateId را از list_message_templates و segmentId را از list_customer_segments بگیر، سپس propose_action از نوع messaging.campaign.create بساز؛ این کار فقط یک پیش‌نویس می‌سازد و هیچ پیامی نمی‌فرستد — ارسال را خود کاربر از صفحهٔ رشد انجام می‌دهد.",
+      "برای افزودن مشتری یا تأمین‌کننده از party.customer.create یا party.supplier.create استفاده کن و فقط نام و اطلاعات تماس را پر کن؛ کد حسابداری، درصد مالیات و اطلاعات بانکی را نگذار. برای ثبت دریافت وجه از مشتری، اول با find_customers شناسهٔ مشتری را پیدا کن و سپس ar.receipt.record را با مبلغ ریالی و روش (نقد/بانک) پیشنهاد بده.",
       "برای هر تغییر در داده‌ها هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
       "قبل از پیشنهاد، اطلاعات لازم را با پرسیدن سؤال از کاربر کامل کن؛ فیلدها را با حدس‌های نامطمئن پر نکن.",
       ctx.hasAttachment
@@ -1022,6 +1085,29 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
     noArgsTool(
       "get_website_status",
       "وضعیت اتصال وب‌سایت: متصل است یا نه، دامنه، آخرین آزمایش، کلیدهای ارسال قیمت و موجودی، و صف ارسال (در انتظار/ناموفق/متوقف).",
+    ),
+    // Phase C — the messaging reads that make the two new campaign writes
+    // usable: the assistant needs a template id and a segment id before it can
+    // propose `messaging.campaign.create`, and campaign status to answer «کمپینم
+    // به کجا رسید». Both are read-only lists scoped to the business.
+    {
+      type: "function",
+      function: {
+        name: "list_message_templates",
+        description:
+          "قالب‌های پیام ذخیره‌شدهٔ کسب‌وکار با شناسه، کانال (پیامک/ایمیل)، نام و متن. برای ساختن کمپین، templateId را از همین‌جا بگیر.",
+        parameters: {
+          type: "object",
+          properties: {
+            channel: { type: "string", enum: ["sms", "email"], description: "فقط قالب‌های یک کانال؛ خالی یعنی همه" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    noArgsTool(
+      "list_message_campaigns",
+      "کمپین‌های پیام کسب‌وکار (پیش‌نویس، در حال ارسال، پایان‌یافته) با شناسه، نام، کانال، وضعیت و شمارش گیرنده/ارسال/تحویل/ناموفق.",
     ),
   ];
 
