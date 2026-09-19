@@ -63,6 +63,7 @@ const KIND_LABELS: Record<string, { label: string; desc: string; link?: string }
   "customer.updated": { label: "رویداد: ویرایش مشتری", desc: "به‌روزرسانی اطلاعات حساب کاربری مشتری", link: "/websites/wp/customers" },
   "content.created": { label: "رویداد: ایجاد محتوای تازه", desc: "دریافت نوشته یا برگه جدید از وردپرس", link: "/websites/wp/content" },
   "content.updated": { label: "رویداد: ویرایش محتوا", desc: "دریافت تغییرات نوشته یا برگه از وردپرس", link: "/websites/wp/content" },
+  "content.deleted": { label: "رویداد: حذف دائمی محتوا", desc: "حذف نوشته، برگه یا رسانه از آینهٔ محلی", link: "/websites/wp/content" },
 };
 
 const STATUS_CONFIG: Record<string, { label: string; tone: "positive" | "active" | "danger" | "neutral"; desc: string }> = {

@@ -59,7 +59,7 @@ export interface ConnectionRow extends Record<string, unknown> {
   order_lookback_days: number;
   status: "active" | "paused" | "error";
   last_sync_at: string | null;
-  /** Phase 38 — split from last_sync_at: the two jobs fail independently. */
+  /** Phase 38/40 — split from last_sync_at: these jobs fail independently. */
   last_catalogue_sync_at: string | null;
   last_order_sync_at: string | null;
   last_customer_sync_at: string | null;

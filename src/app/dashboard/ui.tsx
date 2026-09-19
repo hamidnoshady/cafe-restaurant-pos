@@ -381,6 +381,19 @@ const ERROR_MESSAGES: Record<string, string> = {
     missing_manifest: "فایل/مانیفست مهاجرت ارسال نشده است.",
     not_plugin_mode: "این اتصال از نوع «افزونهٔ وردپرس» نیست، پس توکن افزونه ندارد.",
     plugin_never_connected: "افزونهٔ وردپرس هنوز به این سامانه وصل نشده است.",
+    missing_connection: "فروشگاه انتخاب نشده است.",
+    invalid_json: "درخواست ناقص یا نامعتبر است؛ صفحه را تازه‌سازی و دوباره تلاش کنید.",
+    invalid_content_type: "نوع محتوای وردپرس معتبر نیست.",
+    invalid_id: "شناسهٔ محتوای وردپرس معتبر نیست.",
+    invalid_field: "مقدار یکی از فیلدهای محتوا معتبر نیست.",
+    empty_patch: "تغییری برای ذخیره ارسال نشده است.",
+    post_not_found: "نوشته یا برگه در نسخهٔ همگام‌شده پیدا نشد.",
+    title_too_long: "عنوان بیش از ۵۰۰ نویسه است.",
+    slug_too_long: "نامک بیش از ۲۰۰ نویسه است.",
+    excerpt_too_long: "خلاصه بیش از حد طولانی است.",
+    content_too_long: "متن محتوا بیش از حد طولانی است.",
+    wordpress_content_page_limit: "تعداد محتوای سایت از سقف یک همگام‌سازی بیشتر است؛ با پشتیبانی تماس بگیرید.",
+    invalid_wordpress_response: "پاسخ وردپرس پس از ذخیره کامل نبود؛ پیش از تلاش دوباره، نتیجه را در خود سایت بررسی کنید.",
     // Errors the connection routes and the auth/isolation middleware can
     // return but that had no Persian string, so they fell through to the
     // generic «خطای غیرمنتظره» instead of naming what actually failed.

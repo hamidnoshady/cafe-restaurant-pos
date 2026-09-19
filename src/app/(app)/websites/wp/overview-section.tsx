@@ -42,6 +42,7 @@ interface Connection {
   lastCatalogueSyncAt: string | null;
   lastOrderSyncAt: string | null;
   lastCustomerSyncAt: string | null;
+  lastContentSyncAt: string | null;
   lastPluginSeenAt: string | null;
   lastError: string | null;
   pluginVersion: string | null;
@@ -299,11 +300,12 @@ export function WpOverviewSection() {
           </p>
         ) : null}
         <PluginWaitNote connections={connections} selectedId={selected?.id ?? ""} />
-        <div className="mt-4 grid gap-x-8 gap-y-2 border-t border-border/80 pt-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-4 grid gap-x-8 gap-y-2 border-t border-border/80 pt-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <SyncRow label="آخرین ارتباط کلی" value={selected?.lastSyncAt ?? null} />
           <SyncRow label="آخرین همگام‌سازی کاتالوگ" value={selected?.lastCatalogueSyncAt ?? null} />
           <SyncRow label="آخرین همگام‌سازی سفارش‌ها" value={selected?.lastOrderSyncAt ?? null} />
           <SyncRow label="آخرین همگام‌سازی مشتریان" value={selected?.lastCustomerSyncAt ?? null} />
+          <SyncRow label="آخرین همگام‌سازی محتوا" value={selected?.lastContentSyncAt ?? null} />
           <SyncRow
             label="آخرین مشاهدهٔ افزونه"
             value={selected?.linkMode === "plugin" ? selected?.lastPluginSeenAt ?? null : null}

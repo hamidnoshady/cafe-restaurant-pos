@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { decodeWpEntities, mirroredContent, plainTitle } from "./wp-content-service";
+import {
+  decodeWpEntities,
+  editableWpField,
+  mirroredContent,
+  plainTitle,
+  safeWpUrl,
+} from "./wp-content-service";
 
 /**
  * The title/entity normalisation is the one part of the WordPress content
@@ -47,6 +53,23 @@ describe("decodeWpEntities", () => {
     // 0x110000 is past the Unicode ceiling; String.fromCodePoint would throw.
     expect(decodeWpEntities("&#1114112;")).toBe("");
     expect(decodeWpEntities("&#xFFFFFFFF;")).toBe("");
+  });
+});
+
+describe("editableWpField and safeWpUrl", () => {
+  it("prefers raw editor text and falls back to rendered text", () => {
+    expect(editableWpField("plugin body")).toBe("plugin body");
+    expect(editableWpField({ raw: "raw body", rendered: "rendered body" })).toBe("raw body");
+    expect(editableWpField({ rendered: "rendered body" })).toBe("rendered body");
+    expect(editableWpField({ raw: 42, rendered: null })).toBe("");
+  });
+
+  it("allows only absolute HTTP(S) links", () => {
+    expect(safeWpUrl("https://example.com/post?q=1")).toBe("https://example.com/post?q=1");
+    expect(safeWpUrl("http://example.com/media.jpg")).toBe("http://example.com/media.jpg");
+    expect(safeWpUrl("javascript:alert(1)")).toBe("");
+    expect(safeWpUrl("data:text/html,test")).toBe("");
+    expect(safeWpUrl("/relative-link")).toBe("");
   });
 });
 

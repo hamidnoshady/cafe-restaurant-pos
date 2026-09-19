@@ -228,10 +228,12 @@ export async function applyIngestEvent(connection: ConnectionRow, event: Webhook
       // pages it would be harmless to see.
       await upsertWpContent(connection, event.payload as never);
     } else if (event.topic.endsWith("content.deleted")) {
-      // Deletion is a first-class mirror event. Without this, removing an
-      // attachment in WordPress left a broken, undeletable tile in the media
-      // section forever.
-      await deleteWpContent(businessId, connection.id, event.payload as never);
+      // Trash is an ordinary update carrying status=trash; only a permanent
+      // deletion removes the mirror row. Validate the plugin payload before
+      // it reaches the tenant-scoped delete query.
+      const contentType = typeof event.payload.type === "string" ? event.payload.type.trim() : "";
+      if (!contentType || !/^[1-9]\d*$/.test(remoteId)) throw new Error("invalid_content_delete");
+      await deleteWpContent(businessId, connection.id, { id: remoteId, type: contentType });
     } else if (event.topic.endsWith("content.sync_completed")) {
       // The plugin enqueues this marker *after* every row in a full export.
       // Queue ordering therefore makes this an honest watermark: all content
