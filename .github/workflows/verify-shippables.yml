@@ -148,12 +148,12 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $bad = @()
-          # `-Include` is only honoured when -Path ends in a wildcard; with a
-          # bare directory it silently matches nothing and this check would
-          # "pass" without reading a single file. The count assertion below is
-          # the backstop for that whole class of mistake.
+          # Filter the extension after a LiteralPath traversal. PowerShell's
+          # `-Include` has surprising wildcard rules and once matched nothing
+          # here; the count assertion below is the backstop for that whole
+          # class of mistake.
           $scanned = 0
-          foreach ($f in Get-ChildItem -Path wordpress-plugin\* -Recurse -File -Include *.php, *.txt) {
+          foreach ($f in Get-ChildItem -LiteralPath "wordpress-plugin" -Recurse -File | Where-Object { $_.Extension -in @(".php", ".txt") }) {
             $scanned++
             $bytes = [IO.File]::ReadAllBytes($f.FullName)
             if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
