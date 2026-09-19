@@ -21,6 +21,10 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let itemsService: typeof import("../src/lib/items-service");
+let productCreation: typeof import("../src/lib/product-creation-service");
+let productInput: typeof import("../src/lib/product-input");
+let barcodes: typeof import("../src/lib/item-barcodes-service");
+let accessories: typeof import("../src/lib/accessories-service");
 
 const biz = { id: "", locationId: "" };
 
@@ -52,6 +56,10 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   dbLib = await import("../src/lib/db");
   itemsService = await import("../src/lib/items-service");
+  productCreation = await import("../src/lib/product-creation-service");
+  productInput = await import("../src/lib/product-input");
+  barcodes = await import("../src/lib/item-barcodes-service");
+  accessories = await import("../src/lib/accessories-service");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -173,6 +181,88 @@ describe("items-service: variant parent/child", () => {
     // Nothing partially committed: the failed attempt left no orphan item row.
     const children = await itemsService.listVariantChildren(parent.id);
     expect(children).toHaveLength(0);
+  });
+});
+
+describe("products workspace: atomic creation", () => {
+  it("keeps a purchase price without inventing a zero-quantity receipt and registers the barcode for scanning", async () => {
+    const code = "4006381333931";
+    const parsed = productInput.parseProductCreateInput({
+      name: "محصول ساده",
+      barcode: code,
+      purchasePrice: 850_000,
+      sellPrice: 1_200_000,
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const created = await productCreation.createProductRecord(biz.locationId, parsed.data);
+    const stock = await accessories.getStock(created.item.id);
+    expect(stock).toMatchObject({ quantity: "0.000000000", unitCost: 850_000, unitPrice: 1_200_000 });
+
+    const matches = await barcodes.lookupBarcode(biz.locationId, code);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].itemId).toBe(created.item.id);
+  });
+
+  it("inherits common metadata on sellable variants and rolls the whole family back on a barcode conflict", async () => {
+    const existing = await itemsService.createItem({ locationId: biz.locationId, name: "کالای موجود" });
+    await barcodes.assignBarcode(existing.id, { code: "036000291452" });
+
+    const parsed = productInput.parseProductCreateInput({
+      name: "پیراهن",
+      unit: "عدد",
+      taxSalePercent: 10,
+      sellPrice: 1_000_000,
+      variants: [
+        {
+          barcode: "4006381333931",
+          quantity: "2",
+          attributes: [{ name: "رنگ", value: "مشکی" }],
+        },
+        {
+          barcode: "036000291452",
+          attributes: [{ name: "رنگ", value: "سفید" }],
+        },
+      ],
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    await expect(productCreation.createProductRecord(biz.locationId, parsed.data)).rejects.toBeInstanceOf(
+      barcodes.BarcodeConflictError,
+    );
+
+    const leaked = await db.query<{ count: string }>("SELECT count(*)::text AS count FROM items WHERE name LIKE 'پیراهن%'");
+    expect(leaked.rows[0].count).toBe("0");
+  });
+
+  it("writes common units and tax metadata onto each sellable variant", async () => {
+    const parsed = productInput.parseProductCreateInput({
+      name: "پیراهن",
+      unit: "عدد",
+      taxSalePercent: 10,
+      variants: [
+        {
+          quantity: "2",
+          purchasePrice: 500_000,
+          attributes: [{ name: "رنگ", value: "مشکی" }],
+        },
+      ],
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const created = await productCreation.createProductRecord(biz.locationId, parsed.data);
+    const row = await db.query<{ unit: string | null; tax_sale_percent: string | null }>(
+      "SELECT unit, tax_sale_percent::text FROM items WHERE id = $1",
+      [created.variants[0].id],
+    );
+    expect(row.rows[0]).toEqual({ unit: "عدد", tax_sale_percent: "10.00" });
+    expect(await accessories.getStock(created.variants[0].id)).toMatchObject({
+      quantity: "2.000000000",
+      unitCost: 500_000,
+    });
   });
 });
 
