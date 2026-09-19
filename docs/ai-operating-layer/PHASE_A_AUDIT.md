@@ -1158,3 +1158,33 @@ way as the other sections.
   /api/ai/knowledge` returns `retrievalAvailable:false`, `aiConfigured:false`,
   7 kinds listed at 0; all seven workspace routes return 200 authenticated with
   no render errors.
+
+### Phase I — global-nav first-class integration
+
+The Phase I section work (Parts 1–5) gave the AI Workspace its own shell and
+sub-nav under `/ai`, but the workspace was still reachable only from inside
+`/ai` and by typing the address bar. In the workspace shell the flat business
+nav deliberately drops the `ai` module (`item.module !== "ai"`) — the AI
+Workspace is a *product launched from the rail*, like Growth, not a page of the
+accounting suite — but no rail launcher had ever replaced that dropped entry.
+The engines and the shell existed; the front door did not.
+
+- **The fix.** One data entry: an `ai` launcher in `WORKSPACE_APP_LAUNCHERS`
+  (`dashboard-sidebar.tsx`), label «دستیار هوشمند», `SparklesIcon`, `hrefs:
+  ["/ai"]`. It mirrors the existing non-app `connections` launcher — `ai` is not
+  an `AppKey` (its module is unassigned in `apps.ts`, so it is never gated or
+  badged by app availability), so the key union carries it explicitly. The
+  launcher resolves its href by matching `/ai` against the flat nav's hrefs, and
+  the `دستیار هوشمند` door survives there because `ai_assistant` is a lockable
+  feature (a business without it sees the launcher and the FeatureLock page, not
+  a dead end). No new route, no migration, no change to the sub-nav or sections.
+- **Regression test.** `workspace-rail-ai-launcher.test.ts` greps the two source
+  files (the source-of-truth approach `app-shell-nav-doors.test.ts` uses, so it
+  never imports the DB-backed component): the launcher lists `key: "ai"` with
+  `hrefs: ["/ai"]`, and the flat nav still carries `href: "/ai"` for it to
+  resolve against. If either half ever drifts, the workspace vanishes from the
+  rail and this fails.
+- **Verification.** `tsc` clean; full unit suite **4881 tests / 333 files**
+  (+2 / +1 file). Live smoke against embedded PG: authenticated `/dashboard`
+  renders the rail with «دستیار هوشمند» as the first «برنامه‌ها» launcher (href
+  `/ai`), ahead of حسابداری; all seven `/ai/*` routes return 200.

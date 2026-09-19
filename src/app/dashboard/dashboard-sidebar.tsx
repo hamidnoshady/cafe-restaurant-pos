@@ -149,11 +149,27 @@ const SIDEBAR_KEYBOARD_STEP = 16;
  * never gated.
  */
 const WORKSPACE_APP_LAUNCHERS: readonly {
-  key: AppKey | "connections";
+  key: AppKey | "connections" | "ai";
   label: string;
   icon: LucideIcon;
   hrefs: readonly string[];
 }[] = [
+  {
+    // Phase I — the AI Workspace is a first-class launcher, not a URL-only
+    // surface. The flat nav deliberately drops the `ai` entry in the workspace
+    // shell (it is a product launched from the rail, like Growth), but until
+    // now no rail launcher replaced it, so `/ai` was reachable only by typing
+    // the address. This entry closes that gap: «دستیار هوشمند» sits beside
+    // حسابداری in «برنامه‌ها» and opens the workspace's own shell (chat plus the
+    // section sub-nav: ایجنت‌ها، همکاران، اتوماسیون‌ها، فعالیت، دانش، مصرف).
+    // `ai` is not an `AppKey` (its module is unassigned in apps.ts, so it is
+    // never gated or badged by app availability), which is why the key union
+    // carries it explicitly alongside «اتصال‌های فنی».
+    key: "ai",
+    label: "دستیار هوشمند",
+    icon: SparklesIcon,
+    hrefs: ["/ai"],
+  },
   {
     key: "accounting",
     label: "حسابداری",
