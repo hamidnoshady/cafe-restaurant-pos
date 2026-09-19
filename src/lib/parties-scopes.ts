@@ -1,5 +1,5 @@
 /**
- * Party scopes — how one shared record looks different in each app.
+ * Party scopes — how one shared record looks different in each work area.
  *
  * The rule this encodes: **the data is one thing, the screens are many.** Every
  * app that lists «اشخاص» mounts the same section component over the same
@@ -75,8 +75,8 @@ export const PARTY_COLUMN_LABELS: Record<PartyColumn, string> = {
 
 export interface PartyScopeDef {
   key: PartyScope;
-  /** The app whose shell hosts this view (`src/lib/apps.ts`). */
-  app: AppKey;
+  /** Standalone app hosting this view, or null for a shared utility. */
+  app: AppKey | null;
   /** The roles this app lists — the `WHERE role = ANY(...)` of the section. */
   roles: PartyRole[];
   /** The role preselected when this app creates a party. */
@@ -144,7 +144,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
   },
   {
     key: "operations",
-    app: "operations",
+    app: "accounting",
     roles: ["Supplier"],
     defaultRole: "Supplier",
     label: "تأمین‌کنندگان",
@@ -156,7 +156,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
   },
   {
     key: "team",
-    app: "settings",
+    app: null,
     roles: ["Employee"],
     defaultRole: "Employee",
     label: "کارکنان",
@@ -184,7 +184,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
   },
   {
     key: "sales",
-    app: "sales",
+    app: "accounting",
     roles: ["Customer"],
     defaultRole: "Customer",
     label: "مشتریان",
