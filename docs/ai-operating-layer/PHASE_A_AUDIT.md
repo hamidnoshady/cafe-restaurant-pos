@@ -755,3 +755,28 @@ tenant-isolation integration green. Commit `503dca9`.
 **Still deferred to Phase F Part 4+:** project files (Media Library link — waits
 on Phase G), project members, and entity `project_id` FKs on
 agents/coworkers/automations.
+
+## 6f (cont.) — Phase F Part 4 DELIVERED (a project's conversation list, scoped in SQL)
+
+`listConversationsByProject` (ai-conversations.ts) was written at Phase 35 Wave 3
+and never called — the **last** piece of the projects-are-workspaces dead code
+§1.5 named. The project page instead pulled the caller's most recent 50
+conversations across ALL projects and filtered client-side by `projectId`, so a
+project with more threads than that page limit silently lost its older ones.
+
+- `/api/ai/conversations` now accepts `?project=<id>`, routing to
+  `listConversationsByProject` (ownership-scoped in SQL, same ownership rule as
+  the unfiltered list) instead of fetch-then-filter.
+- The project page requests `?project=<id>&limit=100` and drops the client
+  filter.
+- `ai-conversations.integration.test.ts` +2 (only the caller's own threads for
+  that project, newest-active first — not other projects, not project-less
+  threads, not another member's; and the limit is honoured). 6/6 in that file.
+
+Only `getConversationProjectId` and `buildProjectPromptContext` remained live
+from that Wave; both are wired (Part 1). **No Phase-35 project dead code
+remains.** Commit `ef9be91`.
+
+**Still deferred to Phase F Part 5+:** project files (Media Library link — waits
+on Phase G provenance columns), project members, and entity `project_id` FKs on
+agents/coworkers/automations.
