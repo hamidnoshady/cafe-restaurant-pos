@@ -1583,6 +1583,11 @@ export interface UpsertCaseInput {
   status?: CaseStatus;
   priority?: CasePriority;
   category?: string;
+  /**
+   * The order the complaint is about. On update, `undefined` means "leave it
+   * as it is" while an explicit `null` clears the link — a caller that did not
+   * mention the order must not silently unlink the ticket from it.
+   */
   orderId?: string | null;
   assignedTo?: string;
   resolution?: string;
@@ -1594,10 +1599,13 @@ export async function upsertCase(businessId: string, input: UpsertCaseInput): Pr
   const resolved = status === "resolved" || status === "closed";
 
   if (input.id) {
+    const orderIdProvided = input.orderId !== undefined;
     await query(
       `UPDATE crm_cases
           SET customer_id = $3, subject = $4, body = $5, status = $6, priority = $7,
-              category = $8, order_id = $9, assigned_to = $10, resolution = $11,
+              category = $8,
+              order_id = CASE WHEN $13 THEN $9::uuid ELSE order_id END,
+              assigned_to = $10, resolution = $11,
               resolved_at = CASE WHEN $12 THEN coalesce(resolved_at, now()) ELSE NULL END,
               updated_at = now()
         WHERE business_id = $1 AND id = $2`,
@@ -1614,6 +1622,7 @@ export async function upsertCase(businessId: string, input: UpsertCaseInput): Pr
         input.assignedTo ?? "",
         input.resolution?.trim() ?? "",
         resolved,
+        orderIdProvided,
       ],
     );
     return (await getCase(businessId, input.id))!;
