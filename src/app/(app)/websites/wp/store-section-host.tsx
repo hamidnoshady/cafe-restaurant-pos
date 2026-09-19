@@ -8,8 +8,8 @@
  * the same selected store; the connection is chosen once here.
  */
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/app/dashboard/ui";
-import { cardClass, EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { api, ErrorBox, errorMessageOrRaw } from "@/app/dashboard/ui";
+import { EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { CatalogueSection, StoreOrdersSection, TaxonomiesSection } from "./woo-store-sections";
 import { PluginWaitNote } from "./plugin-wait-note";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
@@ -40,7 +40,7 @@ function useConnectionHost() {
       const res = await api<T>(path, { method, body: body ? JSON.stringify(body) : undefined });
       setBusy(false);
       if (!res.ok) {
-        setCallResult(String(res.data?.error ?? "خطا در اجرای عملیات"));
+        setCallResult(errorMessageOrRaw(String(res.data?.error ?? "")) || "خطا در اجرای عملیات");
         return null;
       }
       return res.data;
@@ -77,7 +77,7 @@ function HostFrame({
         <>
           <PluginWaitNote connections={connections} selectedId={selectedId} />
           {children}
-          {callResult ? <p className="text-xs text-red-600 dark:text-red-400">{callResult}</p> : null}
+          <ErrorBox>{callResult}</ErrorBox>
         </>
       ) : null}
     </div>
