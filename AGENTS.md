@@ -121,7 +121,8 @@ The short form:
 - Hovers are quiet washes (`hover:bg-muted`); motion is 150–650 ms ease-out, skeletons
   instead of spinners, and `prefers-reduced-motion` is respected.
 - **Before calling a screen done:** `npm run test:design` (design + primitive lint + loading
-  coverage), plus the usual `npx tsc --noEmit`, `npm test`, `npm run build`. Then look at the
+  coverage + reference-screenshot guard), plus the usual `npx tsc --noEmit`, `npm test`,
+  `npm run build`. Then look at the
   screen in both themes, both widths, and in its hover / focus / selected / disabled /
   loading / empty / error states. `npm run test:visual` diffs representative screens of all
   four apps against committed baselines — **never re-record a baseline to clear a failure**

@@ -10,7 +10,7 @@ so rather than implying it passed.
 | --- | --- | --- |
 | `npx tsc --noEmit` | **clean** | Run after every migration step, not just at the end. |
 | `npm test` | **324 files / 4759 tests passed** | Includes the four design tests below. |
-| `npm run test:design` | **4 files / 34 tests passed** | `design-lint` (14) + app `design-lint` (9) + `primitive-lint` (5) + `loading-coverage` (6). |
+| `npm run test:design` | **5 files / 36 tests passed** | `design-lint` (14) + app `design-lint` (9) + `primitive-lint` (5) + `loading-coverage` (6) + `reference-screenshots` (2). |
 | `npm run test:db` | **110 files / 1181 passed, 1 skipped** | Integration suite against the embedded Postgres. |
 | `npm run build` | **clean** | Full production build; every route compiled. |
 | `npm run test:visual` | **14/14 screens match** | Baselines recorded, reviewed and committed. |
@@ -238,7 +238,8 @@ Three things changed as a result:
    under `--update`**, so a wrong-browser baseline cannot be recorded in the
    first place. The guard was tested by pointing the harness at the 153 binary;
    it refused.
-3. All 11 baselines were re-recorded against Chromium **141.0.7390.0**
+3. All 11 baselines *as they existed then* were re-recorded against Chromium
+   **141.0.7390.0**
    (`@sparticuz/chromium@141.0.0`, same major as CI) on a fresh production
    build, then verified with a **6-run loop: 6 pass, 0 fail**. The re-recorded
    images were opened and compared with the old ones — the content is

@@ -46,7 +46,7 @@ pattern, not drift — a per-section header would double up.
 | Conflict | Resolution |
 | --- | --- |
 | `docs/design-system.md` described the table header wash as `bg-stone-50`; the screenshots show the warm token wash, and the code had **three** spellings (`bg-stone-50 text-stone-500 …`, `bg-muted/60`, bare `text-xs text-muted-foreground`) | One spelling, `bg-muted/60 text-muted-foreground`, stated once in `DataTable`. 79 files normalised off hardcoded `stone-*` pairs onto the tokens. |
-| Doc said "no baseline anywhere" for design lint, but there was no structural check at all, so duplicated chrome passed | Added `primitive-lint.test.ts`. Its one list (`TABLE_MIGRATION_BACKLOG`) is an explicit, ordered, shrinking work list that cannot grow silently. |
+| Doc said "no baseline anywhere" for design lint, but there was no structural check at all, so duplicated chrome passed | Added `primitive-lint.test.ts`. Its one exception list (`TABLE_MIGRATION_BACKLOG`) was an ordered, shrinking work list that could not grow silently — and it has since been **deleted entirely**, because the work it tracked is finished. The table rule is now unconditional. |
 | Three files defined an identical `StatCard`; `KpiRowSkeleton` already shared the *loading* shape | `KpiCard`/`KpiRow` in `page-chrome.tsx`. Two other local tiles were genuinely different and were renamed (`ChequeToneTile`, `OpsKpiTile`) rather than forced onto the shared one. |
 | The old reference set has no Orders, Inventory or menu-import image; `pos-sell-screen.png` was the only operational reference | See "Reference images" below. |
 

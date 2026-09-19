@@ -597,20 +597,26 @@ must pass every rule:
   and fails a screen that hand-builds a table (`<thead>` without `DataTable`), a filter
   chip (an `aria-pressed` button carrying the amber fill), a KPI tile (a local `StatCard`)
   or a rich empty state (an amber icon chip in a centred column). Operational surfaces are
-  exempt **by path**, listed once with the reason; the unmigrated tables are an explicit,
-  ordered, shrinking list (`TABLE_MIGRATION_BACKLOG`) that a *new* violation cannot join.
+  exempt **by path**, listed once with the reason. The table rule is now
+  **unconditional**: the `TABLE_MIGRATION_BACKLOG` exception list was deleted when the last
+  hand-rolled table was migrated, so there is no longer any way to exempt a file — a new
+  `<thead>` in a non-operational tenant file fails immediately.
 - `src/app/loading-coverage.test.ts` requires a skeleton boundary above every layout realm,
   and that every client component which starts a fetch also renders a `*Skeleton`.
+- `src/app/reference-screenshots.test.ts` keeps this document honest about the approved
+  screenshots: it fails if the six images are added and the availability note above still
+  says they are missing, and equally if that note is deleted while they are still absent.
 
 Run the lints with:
 
 ```bash
 npm run test:design
 # = vitest run src/app/dashboard/design-lint.test.ts src/app/design-lint.test.ts \
-#              src/app/dashboard/primitive-lint.test.ts src/app/loading-coverage.test.ts
+#              src/app/dashboard/primitive-lint.test.ts src/app/loading-coverage.test.ts \
+#              src/app/reference-screenshots.test.ts
 ```
 
-Those four files are also a required job on every pull request
+Those five files are also a required job on every pull request
 (`.github/workflows/test.yml` → `design-checks`), together with the
 `visual-regression` job described in
 [`docs/design/visual-regression.md`](design/visual-regression.md).
@@ -624,7 +630,12 @@ grep -rnE -- '-\[#[0-9a-fA-F]{3,8}\]' src/app/dashboard/ && echo "raw hex drifte
 grep -rn 'animate-spin' src/app/dashboard/ src/app/login src/app/welcome src/app/components && echo "spinner drifted"
 grep -rnE '(bg|text|border)-stone-[0-9]|(?<!/)bg-white\b' src/app/dashboard/ src/app/login src/app/welcome src/app/setup src/app/components | grep -v 'dark:' && echo "light-only colour drifted (dark mode)"
 grep -rn 'mx-auto w-full max-w-\[' src/app/dashboard/ --include='*.tsx' | grep -v page-chrome && echo "PageShell bypassed"
-grep -rn '<thead' src/app --include='*.tsx' | grep -v data-table && echo "hand-rolled table (see TABLE_MIGRATION_BACKLOG)"
+# `platform/` is a separate identity and the POS-family paths are approved operational
+# surfaces, so both are excluded here exactly as primitive-lint.test.ts excludes them.
+grep -rn '<thead' src/app --include='*.tsx' \
+  | grep -v data-table \
+  | grep -vE 'src/app/platform/|src/app/dashboard/(pos|kitchen|floor|waiter|delivery|watch)/' \
+  && echo "hand-rolled table in a tenant file (no exceptions remain)"
 grep -rn '<h1' src/app/dashboard/ --include='page.tsx' && echo "PageHeader bypassed"
 ```
 

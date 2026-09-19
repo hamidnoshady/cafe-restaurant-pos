@@ -379,7 +379,7 @@ archived under `docs/design/reference/archive-2026-09/` and is historical, not n
 Read it before building or restyling any page or panel; the approved screenshots are ground
 truth, and its "old look" list is a set of regressions, not style choices.
 
-Enforcement is four tests — `npm run test:design` — and a pixel diff, `npm run test:visual`,
+Enforcement is five tests — `npm run test:design` — and a pixel diff, `npm run test:visual`,
 both required on every pull request (`.github/workflows/test.yml`). **Never re-record a
 visual baseline to make a red run green** (see `docs/design/visual-regression.md`). The
 per-page audit and the ordered remaining work are in `docs/design/coverage-matrix.md`.

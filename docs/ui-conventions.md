@@ -55,6 +55,12 @@ Notes that are easy to get wrong:
   cell padding and the hairlines; `<Td numeric>` end-aligns with `tabular-nums` for money and
   counts, `<Td muted>` dims a secondary column. Keep the `lg:hidden` card list beside it for
   phones, and set the minimum width on `tableClassName`, never on a wrapper you invent.
+  Two narrower props exist, each added for exactly one real caller rather than speculatively:
+  `<DataTable frame={false}>` drops the panel border for a table already sitting inside a
+  `flush` `SectionCard` (double borders otherwise), and `<Th scope="row">` marks a row header
+  where the first cell labels the row instead of a column. `numeric` is about *alignment*,
+  so it is wrong for a Jalali date or an end-aligned action column even though both may look
+  numeric — use plain `text-end` there.
 - **Density is a prop, not a fork.** `FilterChip dense` gives operational surfaces their
   taller touch target without a second chip. If you find yourself writing `bg-amber-100
   … aria-pressed`, you are re-deriving `FilterChip`.
@@ -172,12 +178,15 @@ two tests that keep no baseline**:
 - [`src/app/dashboard/primitive-lint.test.ts`](../src/app/dashboard/primitive-lint.test.ts) —
   the **structural** half, which walks the JSX instead of grepping text: a hand-built table,
   filter chip, KPI tile or rich empty state fails, wherever it is in the tenant app.
-  Operational paths are exempt by path with the reason written down, and the tables that are
-  still unmigrated are an explicit ordered list (`TABLE_MIGRATION_BACKLOG`) that a *new*
-  violation cannot join — the list only shrinks.
+  Operational paths are exempt by path with the reason written down. There is no longer a
+  table exception list: `TABLE_MIGRATION_BACKLOG` was **deleted** once the last hand-rolled
+  table was migrated, so the rule is unconditional and a new `<thead>` cannot be excused.
 - [`src/app/loading-coverage.test.ts`](../src/app/loading-coverage.test.ts) — every layout
   realm sits under a skeleton boundary, and every client component that fetches on mount
   renders a `*Skeleton`.
+- [`src/app/reference-screenshots.test.ts`](../src/app/reference-screenshots.test.ts) — the
+  approved-screenshot availability note in `design-system.md` must match what is actually in
+  `docs/design/reference/`, in both directions.
 
 They run with `npm test`, as `npm run test:design`, and as the `design-checks` job on every
 pull request. The pixel half is separate: `npm run test:visual` (the `visual-regression` job)
