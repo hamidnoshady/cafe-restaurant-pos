@@ -1,8 +1,14 @@
-# Builds and publishes the production GHCR image — manually, never on a push.
-# Dispatch it from the main branch to publish `sha-<short>` + `latest` and have
-# Coolify pull the new image (the production rollout is then verified); dispatch
-# it from a v* tag to publish that immutable release tag without restarting
-# production.
+# Builds and publishes the production GHCR image, and deploys it.
+#
+# Triggers: automatically on every push to `main` (publishes `sha-<short>` +
+# `latest` and triggers a Coolify redeploy of production), on every pushed
+# `v*` tag (publishes that immutable release tag without restarting
+# production), and still `workflow_dispatch` for a manual re-run of either of
+# those (e.g. re-publish the current `main` after a Coolify hiccup).
+#
+# Because this now runs unattended on every merge to `main`, the `gates` job
+# below is the only thing standing between a bad merge and a live production
+# redeploy — do not weaken it to make this trigger "less noisy".
 #
 # Tag shape is load-bearing: main publishes `sha-<short>` plus `latest`,
 # matching imageRefFor() in src/lib/app-update-status.ts; a v* ref additionally
@@ -20,9 +26,13 @@
 # runners.
 name: publish
 
-# Manual only: dispatch from main to publish and redeploy production, from a v*
-# tag to publish the release tag without a redeploy.
+# Automatic on push to main (publish + redeploy production) and on pushed v*
+# tags (publish the release tag only). `workflow_dispatch` is kept for a
+# manual re-run of either case.
 on:
+  push:
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 # Never cancel: a half-published image is worse than a slow queue, and two runs

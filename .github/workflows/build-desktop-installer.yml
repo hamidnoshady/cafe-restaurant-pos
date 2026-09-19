@@ -1,11 +1,14 @@
-# Builds the standalone Windows desktop installer (the Business Suite `.exe`) —
-# manually, never on a push.
+# Builds the standalone Windows desktop installer (the Business Suite `.exe`).
 #
-# This is deliberately separate from `test.yml` and manual-only, for the same
-# reason `build-plugin-zip.yml` is: producing an installer is a release
-# decision, it is slow (electron-builder downloads Electron, packs a ~1 GB
-# payload and compresses an NSIS archive), and nothing about a pull request
-# needs it.
+# This is deliberately separate from `test.yml`: producing an installer is
+# slow (electron-builder downloads Electron, packs a ~1 GB payload and
+# compresses an NSIS archive), and nothing about an unrelated pull request
+# needs it. It now runs automatically, but only when the desktop shell is
+# actually being worked on — `pull_request` and `push` to `main` are scoped
+# with `paths:` to `electron/**` and `windows/**`, so a PR that never touches
+# those folders never pays this cost. `workflow_dispatch` still exists for a
+# manual, versioned release build (the `version` input below only applies
+# there — the automatic runs never bump `electron/package.json`'s version).
 #
 # It can only run on Windows: electron-builder produces the NSIS installer with
 # Windows-only tooling (`rcedit` stamps the icon and version onto the exe), so
@@ -28,12 +31,24 @@ on:
         description: 'Installer version (X.Y.Z). Leave empty to keep electron/package.json as-is.'
         type: string
         required: false
+  pull_request:
+    paths:
+      - 'electron/**'
+      - 'windows/**'
+  push:
+    branches: [main]
+    paths:
+      - 'electron/**'
+      - 'windows/**'
 
-# One installer at a time: an installer is a release artifact, so a queued run
-# is cheaper than sorting out which of two concurrent ones to ship.
+# Manual (`workflow_dispatch`) runs are a release action and queue on a single
+# global group — an installer is a release artifact, so a queued run is
+# cheaper than sorting out which of two concurrent ones to ship. Automatic PR
+# builds get their own per-ref group instead, so two unrelated PRs (or a new
+# push superseding an old one on the same PR) don't queue behind each other.
 concurrency:
-  group: build-desktop-installer
-  cancel-in-progress: false
+  group: build-desktop-installer-${{ github.event_name == 'workflow_dispatch' && 'release' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read

@@ -1,11 +1,14 @@
 # Runs the local checklist CLAUDE.md documents (tsc, unit tests, integration
 # tests, build), plus the design checks.
 #
-# Triggers: `workflow_dispatch` (start it from the Actions tab, as before) and
-# `pull_request`. The PR trigger exists so the *design* checks cannot be
-# skipped — a restyle that drifts the visual language is exactly the kind of
-# change a human reviewer waves through, so `design-checks` runs on every PR
-# and is one of the jobs `required` fans in.
+# Triggers: `workflow_dispatch` (start it from the Actions tab, as before),
+# `pull_request`, and `push` to `main`. The PR trigger exists so the *design*
+# checks cannot be skipped — a restyle that drifts the visual language is
+# exactly the kind of change a human reviewer waves through, so
+# `design-checks` runs on every PR and is one of the jobs `required` fans in.
+# The `push` trigger re-runs the same suite once a PR lands on `main`, so a
+# bad merge (e.g. two PRs that pass individually but conflict once combined)
+# is caught right after merge instead of only at the next manual run.
 #
 # Everything runs on GitHub-hosted **Windows** runners (`windows-latest`). Two
 # consequences of that are baked into this file and should not be "tidied"
@@ -28,6 +31,8 @@ name: test
 on:
   workflow_dispatch:
   pull_request:
+  push:
+    branches: [main]
 
 # A newer manual run on the same ref supersedes one still in flight.
 concurrency:
