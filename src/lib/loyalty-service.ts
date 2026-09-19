@@ -242,7 +242,7 @@ export async function pointsBalance(
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
   const { rows } = await run<{ balance: string | null }>(
-    `SELECT COALESCE(SUM(points) FILTER (WHERE expires_at IS NULL OR expires_at > $3::date), 0)::text AS balance
+    `SELECT COALESCE(SUM(points) FILTER (WHERE expires_at IS NULL OR expires_at >= $3::date), 0)::text AS balance
        FROM customer_points
       WHERE business_id = $1 AND customer_id = $2`,
     [businessId, customerId, asOfDate],
@@ -266,7 +266,7 @@ async function spendablePointLots(
     `SELECT expires_at::text, SUM(points)::text AS points
        FROM customer_points
       WHERE business_id = $1 AND customer_id = $2
-        AND (expires_at IS NULL OR expires_at > $3::date)
+        AND (expires_at IS NULL OR expires_at >= $3::date)
       GROUP BY expires_at
       HAVING SUM(points) > 0
       ORDER BY expires_at NULLS LAST`,

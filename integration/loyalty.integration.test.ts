@@ -384,7 +384,7 @@ describe("points", () => {
       }),
     );
     expect(await loyaltyService.pointsBalance(biz.id, customerId, undefined, "2026-01-01")).toBe(6);
-    expect(await loyaltyService.pointsBalance(biz.id, customerId, undefined, "2026-01-02")).toBe(0);
+    expect(await loyaltyService.pointsBalance(biz.id, customerId, undefined, "2026-01-02")).toBe(6);
     await expect(
       withClient((client) =>
         loyaltyService.redeemPoints(client, {
@@ -392,7 +392,7 @@ describe("points", () => {
           locationId: biz.locationId,
           customerId,
           points: 1,
-          businessDate: "2026-01-02",
+          businessDate: "2026-01-03",
         }),
       ),
     ).rejects.toThrow(/امتیاز/);

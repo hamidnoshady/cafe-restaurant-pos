@@ -42,12 +42,12 @@ describe("pointsBalance", () => {
     vi.mocked(db.getPool).mockReset();
   });
 
-  it("uses the requested business date and excludes point lots on their expiry date", async () => {
+  it("uses the requested business date and keeps point lots spendable through their expiry date", async () => {
     vi.mocked(db.query).mockResolvedValue({ rows: [{ balance: "70" }] } as never);
 
     expect(await pointsBalance(BUSINESS, CUSTOMER, undefined, "2026-01-02")).toBe(70);
     expect(vi.mocked(db.query)).toHaveBeenCalledWith(
-      expect.stringContaining("expires_at IS NULL OR expires_at > $3::date"),
+      expect.stringContaining("expires_at IS NULL OR expires_at >= $3::date"),
       [BUSINESS, CUSTOMER, "2026-01-02"],
     );
   });

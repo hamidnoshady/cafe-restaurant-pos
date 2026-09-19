@@ -194,7 +194,7 @@ export async function growthOverview(
               COUNT(*) FILTER (WHERE balance > 0)::int AS customers_with_points
          FROM (
            SELECT customer_id,
-                  COALESCE(SUM(points) FILTER (WHERE expires_at IS NULL OR expires_at > $2::date), 0) AS balance
+                  COALESCE(SUM(points) FILTER (WHERE expires_at IS NULL OR expires_at >= $2::date), 0) AS balance
              FROM customer_points
             WHERE business_id = $1
             GROUP BY customer_id

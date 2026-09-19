@@ -116,7 +116,7 @@ function HostFrame({
           control that cannot do anything. Name the store instead. */}
       <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
         {connections.length > 1 ? (
-          <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
+          <ConnectionPicker embedded connections={connections} value={selectedId} onChange={setSelectedId} />
         ) : (
           <p className="min-w-0 text-sm text-muted-foreground">
             فروشگاه: <span className="font-medium text-foreground">{connections[0].name}</span>

@@ -3,14 +3,15 @@
 /**
  * Shared store picker for WP Manager sections.
  *
- * It renders the label and the select and *nothing else*: every caller
- * already places it inside its own toolbar card (`${cardClass} flex … p-4`),
- * so drawing a second card here nested one bordered, padded surface inside
- * another — a doubled border with 2rem of dead space around the select, on
- * every WP Manager screen at once. The card belongs to the toolbar that owns
- * the row, not to a control that is only ever a part of one.
+ * Two forms. `embedded` is the common one: the caller already owns a toolbar
+ * card (`${cardClass} flex … p-4`) holding the picker next to its own
+ * actions, so the picker contributes the label and the select and no chrome
+ * of its own — nesting one bordered, padded surface inside another drew a
+ * doubled border with dead space around the select. The standalone form
+ * keeps the card for a host that renders the picker on its own.
  */
 import { useId } from "react";
+import { cardClass } from "@/app/dashboard/page-chrome";
 import { inputClass } from "@/app/dashboard/ui";
 
 export interface ConnectionLite {
@@ -24,24 +25,38 @@ export function ConnectionPicker({
   connections,
   value,
   onChange,
+  embedded = false,
   disabled,
 }: {
   connections: ConnectionLite[];
   value: string;
   onChange: (id: string) => void;
+  /**
+   * Drop the card chrome when the picker sits inside another surface (a
+   * toolbar card with the section's actions). The default standalone form
+   * keeps the chrome so hosts that render it on its own are unchanged.
+   */
+  embedded?: boolean;
   disabled?: boolean;
 }) {
-  // A page can host two pickers (a section plus a dialog); a hardcoded id
-  // would tie both labels to whichever select mounted first.
+  // A page can host two pickers (a section plus a dialog); the hardcoded id
+  // this replaces tied both labels — and both click targets — to whichever
+  // select mounted first.
   const id = useId();
   return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-nowrap">
+    <div
+      className={
+        embedded
+          ? "flex min-w-0 flex-1 flex-wrap items-center gap-2"
+          : `${cardClass} flex flex-wrap items-center gap-3 p-4`
+      }
+    >
       <label className="shrink-0 text-sm font-medium text-foreground" htmlFor={id}>
         فروشگاه:
       </label>
       <select
         id={id}
-        className={`${inputClass} w-full sm:w-auto sm:min-w-[16rem] sm:flex-1`}
+        className={`${inputClass} min-w-0 flex-1 basis-40 sm:min-w-56`}
         value={value}
         disabled={disabled || connections.length === 0}
         onChange={(e) => onChange(e.target.value)}
