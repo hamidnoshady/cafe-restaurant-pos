@@ -19,8 +19,8 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * confirm back.
  */
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
-import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
-import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
+import { PlusIcon, PrinterIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { normalizePosSearchText } from "@/lib/pos-selection";
 import { computeGoldSalePrice, type MakingChargeType } from "@/lib/gold-pricing";
@@ -34,10 +34,15 @@ import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
+import { safeRandomId } from "@/lib/client-id";
+import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
+import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
+import type { ReceiptData } from "@/lib/receipt-template";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { usePaymentMethods } from "../payment-ways";
 import { PageHeader, PageShell, TabBar, TabPanel, cardClass } from "../page-chrome";
 import { KnowledgeHelpButton } from "../knowledge-help";
+import { toast } from "sonner";
 import { InvoiceManagementView } from "./invoice-management-view";
 
 type Purity = "18" | "21" | "24";
@@ -128,7 +133,7 @@ function variantApiFor(industry: Industry): string | null {
 }
 
 function newKey(): string {
-  return crypto.randomUUID();
+  return safeRandomId();
 }
 
 export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
@@ -152,13 +157,21 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   const settlementWays = paymentWays.filter((way) => ledgerSettlementFor(way.settlement) !== null);
   const [paymentWayId, setPaymentWayId] = useState("");
   const selectedWay = settlementWays.find((way) => way.id === paymentWayId) ?? settlementWays[0];
-  const paymentMethod = selectedWay ? (ledgerSettlementFor(selectedWay.settlement) ?? "cash") : "cash";
+  // No fallback to "cash": when the business has no settlement-eligible
+  // payment way configured (or none has loaded yet), there is nothing correct
+  // to post — silently defaulting to cash would misattribute the sale to a
+  // tender the cashier never picked. `submit` (and the button below) refuses
+  // to run without a real selection.
+  const paymentMethod = selectedWay ? ledgerSettlementFor(selectedWay.settlement) : null;
   const [note, setNote] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ orderNumber: number; total: number } | null>(null);
+  const printers = usePrinters();
+  const business = useBusinessInfo();
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,10 +234,29 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
   async function submit() {
     if (lines.length === 0) return;
+    if (!paymentMethod) {
+      setError("روش پرداخت را انتخاب کنید.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const { ok, data } = await api<{
-      invoice?: { orderNumber: number; total: string };
+      invoice?: {
+        orderNumber: number;
+        total: string;
+        lines?: {
+          name: string;
+          quantity: string;
+          total: string;
+          metalValue?: string;
+          makingCharge?: string;
+          profit?: string;
+          batchNumbers?: string[];
+          expiryDate?: string | null;
+        }[];
+        subtotal?: string;
+        tax?: string;
+      };
       error?: string;
       message?: string;
     }>("/api/sales/invoices", {
@@ -238,7 +270,41 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
     });
     setBusy(false);
     if (ok && data.invoice) {
-      setDone({ orderNumber: data.invoice.orderNumber, total: Number(data.invoice.total) });
+      const invoice = data.invoice;
+      setDone({ orderNumber: invoice.orderNumber, total: Number(invoice.total) });
+      const customerName = customers.find((c) => c.id === customerId)?.name ?? null;
+      const receipt: ReceiptData = {
+        business: { name: business.name, address: business.address, phone: business.phone },
+        orderLabel: `فاکتور ${toPersianDigits(invoice.orderNumber)}`,
+        orderTypeLabel: "فاکتور فروش",
+        customerName,
+        issuedAt: new Date().toISOString(),
+        lines: (invoice.lines ?? []).map((l) => ({
+          name: l.name,
+          quantity: Number(l.quantity),
+          lineTotal: Number(l.total),
+          goldBreakdown:
+            l.metalValue != null && l.makingCharge != null && l.profit != null
+              ? { metalValue: Number(l.metalValue), makingCharge: Number(l.makingCharge), profit: Number(l.profit) }
+              : null,
+          batch: l.batchNumbers?.length
+            ? { batchNumber: l.batchNumbers.join("، "), expiryDate: l.expiryDate ?? null }
+            : null,
+        })),
+        subtotal: Number(invoice.subtotal ?? totals.net),
+        discount: 0,
+        tax: Number(invoice.tax ?? totals.vat),
+        total: Number(invoice.total),
+        paymentMethod: selectedWay?.settlement ?? paymentMethod,
+        payments: selectedWay ? [{ label: selectedWay.name, amount: Number(invoice.total) }] : null,
+        unit: money.unit,
+      };
+      setLastReceipt(receipt);
+      const receiptPrinter = firstPrinter(printers, "receipt");
+      if (receiptPrinter) {
+        void printReceipt(receiptPrinter.connection, receipt);
+        if (selectedWay?.opensDrawer) void kickDrawer(receiptPrinter.connection);
+      }
       setLines([]);
       setCustomerId("");
       setNote("");
@@ -249,6 +315,17 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       // is far more useful than a generic failure.
       setError(data.message ?? "ثبت فاکتور ناموفق بود.");
     }
+  }
+
+  function reprintLast() {
+    if (!lastReceipt) return;
+    const receiptPrinter = firstPrinter(printers, "receipt");
+    if (!receiptPrinter) {
+      toast.error("چاپگر رسید تنظیم نشده است.");
+      return;
+    }
+    void printReceipt(receiptPrinter.connection, lastReceipt);
+    toast.success("رسید برای چاپ ارسال شد");
   }
 
   return (
@@ -269,8 +346,16 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
       <ErrorBox>{error}</ErrorBox>
       {done ? (
-        <div className="mb-4 rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-500/15 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
-          فاکتور شمارهٔ {toPersianDigits(done.orderNumber)} به مبلغ {money.format(done.total)} ثبت شد.
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-500/15 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+          <span>
+            فاکتور شمارهٔ {toPersianDigits(done.orderNumber)} به مبلغ {money.format(done.total)} ثبت شد.
+          </span>
+          {lastReceipt ? (
+            <Button variant="outline" size="sm" onClick={reprintLast}>
+              <PrinterIcon aria-hidden="true" className="size-4" />
+              چاپ رسید
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -310,7 +395,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
         </div>
 
         <aside className="min-w-0">
-          <div className={`${cardClass} p-4lg:sticky lg:top-4 sm:p-5`}>
+          <div className={`${cardClass} p-4 lg:sticky lg:top-4 sm:p-5`}>
             <h2 className="font-semibold text-foreground">فاکتور جاری</h2>
 
             {lines.length === 0 ? (
@@ -372,17 +457,28 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
                   ]}
                 />
               </Field>
-              <Field label="روش پرداخت">
+              {/* `as="div"`, not a label: this wraps a *group* of buttons, and a
+                  <label> forwards a click on its own whitespace (or the hint
+                  text) to the first labelable descendant — silently switching
+                  the payment way to whichever button happens to be first. The
+                  group names itself via `role="radiogroup"`/`aria-label` below. */}
+              <Field label="روش پرداخت" as="div">
                 {!paymentWaysLoaded ? (
                   <LoadingSkeleton rows={3} compact label="در حال بارگذاری روش‌های پرداخت" />
+                ) : settlementWays.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                    روشی برای دریافت وجه تعریف نشده است؛ از تنظیمات یک روش پرداخت اضافه کنید.
+                  </p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="روش پرداخت">
                     {settlementWays.map((way) => (
                       <button
                         key={way.id}
                         type="button"
+                        role="radio"
+                        aria-checked={selectedWay?.id === way.id}
                         onClick={() => setPaymentWayId(way.id)}
-                        className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors ${
+                        className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 ${
                           selectedWay?.id === way.id
                             ? "border-amber-500 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 font-medium text-amber-900 dark:text-amber-200"
                             : "border-border text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40"
@@ -401,7 +497,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
             <Button
               onClick={() => void submit()}
-              disabled={busy || lines.length === 0}
+              disabled={busy || lines.length === 0 || !paymentMethod}
               className="min-h-12 w-full"
             >
               {busy ? "در حال ثبت…" : "ثبت فاکتور"}
@@ -821,6 +917,7 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
   const discountRial = discount.trim() ? money.parse(discount) : 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
+  let previewError: string | null = null;
   if (unit && priceRial > 0) {
     try {
       const breakdown = computeWatchSalePrice({
@@ -833,8 +930,8 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
         vat: Number(breakdown.vat),
         total: Number(breakdown.total),
       };
-    } catch {
-      preview = null;
+    } catch (err) {
+      previewError = err instanceof Error ? err.message : "محاسبهٔ قیمت ممکن نیست.";
     }
   }
 
@@ -862,6 +959,9 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
           <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
         </Field>
       </div>
+      {previewError ? (
+        <p className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
+      ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
           خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}
@@ -930,6 +1030,7 @@ function AccessoryLineForm({
   const discountRial = discount.trim() ? money.parse(discount) : 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
+  let previewError: string | null = null;
   if (variant && effectivePrice > 0 && quantity.trim()) {
     try {
       const breakdown = computeAccessorySalePrice({
@@ -943,8 +1044,8 @@ function AccessoryLineForm({
         vat: Number(breakdown.vat),
         total: Number(breakdown.total),
       };
-    } catch {
-      preview = null;
+    } catch (err) {
+      previewError = err instanceof Error ? err.message : "محاسبهٔ قیمت ممکن نیست.";
     }
   }
 
@@ -987,6 +1088,9 @@ function AccessoryLineForm({
           <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
         </Field>
       </div>
+      {previewError ? (
+        <p className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
+      ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
           خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}
@@ -1047,6 +1151,7 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
   const discountRial = discount.trim() ? money.parse(discount) : 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
+  let previewError: string | null = null;
   if (variant && effectivePrice > 0 && quantity.trim()) {
     try {
       const breakdown = computeCosmeticSalePrice({
@@ -1060,8 +1165,8 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
         vat: Number(breakdown.vat),
         total: Number(breakdown.total),
       };
-    } catch {
-      preview = null;
+    } catch (err) {
+      previewError = err instanceof Error ? err.message : "محاسبهٔ قیمت ممکن نیست.";
     }
   }
 
@@ -1104,6 +1209,9 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
           <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
         </Field>
       </div>
+      {previewError ? (
+        <p className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
+      ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
           خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}

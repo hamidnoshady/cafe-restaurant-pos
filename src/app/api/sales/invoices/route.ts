@@ -12,6 +12,7 @@ import {
 } from "@/lib/retail-invoice-service";
 import type { SettlementMethod } from "@/lib/ledger";
 import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-producer";
+import { isPaymentSettlement, ledgerSettlementFor } from "@/lib/payment-methods";
 
 const PAYMENT_METHODS: SettlementMethod[] = ["cash", "bank", "credit"];
 
@@ -154,7 +155,13 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     closedAt: r.closed_at,
     customerName: r.customer_name,
     lineCount: Number(r.line_count),
-    paymentMethod: r.pay_method,
+    // `payments.method` is the wider `payment_method` enum (card,
+    // card_to_card, online, cheque, snappfood, ...); the invoice list only
+    // ever means one of the three settlements a retail sale can post to
+    // (cash/bank/credit), so it is narrowed here rather than leaking the
+    // raw enum value to a UI that only knows how to label those three.
+    paymentMethod:
+      r.pay_method && isPaymentSettlement(r.pay_method) ? ledgerSettlementFor(r.pay_method) : null,
     creditTotal: Number(r.credit_total),
     hasInstallmentPlan: r.has_installment_plan,
   }));
