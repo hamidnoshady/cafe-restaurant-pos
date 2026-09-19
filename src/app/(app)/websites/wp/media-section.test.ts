@@ -64,10 +64,11 @@ describe("WordPress media browsing", () => {
 });
 
 describe("the shared connection picker", () => {
-  it("uses a unique label target, shared input chrome and no nested card skin", () => {
+  it("uses a unique label target, shared input chrome and the chrome-free embedded form", () => {
     expect(picker).toMatch(/const id = useId\(\)/);
-    expect(picker).toMatch(/className=\{inputClass\}/);
-    expect(picker).not.toContain("cardClass");
+    expect(picker).toMatch(/className=\{`\$\{inputClass\}/);
+    expect(picker).toMatch(/embedded\s*\?\s*"flex min-w-0/);
+    expect(media).toMatch(/<ConnectionPicker embedded/);
   });
 });
 

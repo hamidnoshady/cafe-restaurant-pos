@@ -379,7 +379,7 @@ export function WpMediaSection() {
           </div>
         }
       >
-        <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
+        <ConnectionPicker embedded connections={connections} value={selectedId} onChange={setSelectedId} />
         <div className="mt-4 grid gap-4 border-t border-border/80 pt-4 lg:grid-cols-[minmax(16rem,1fr)_minmax(0,2fr)] lg:items-end">
           <div>
             <label htmlFor="wp-media-search" className="mb-1.5 block text-sm font-medium text-foreground">

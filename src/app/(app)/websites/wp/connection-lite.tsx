@@ -1,7 +1,17 @@
 "use client";
 
-/** Shared, responsive store picker for WP Manager sections. */
+/**
+ * Shared store picker for WP Manager sections.
+ *
+ * Two forms. `embedded` is the common one: the caller already owns a toolbar
+ * card (`${cardClass} flex … p-4`) holding the picker next to its own
+ * actions, so the picker contributes the label and the select and no chrome
+ * of its own — nesting one bordered, padded surface inside another drew a
+ * doubled border with dead space around the select. The standalone form
+ * keeps the card for a host that renders the picker on its own.
+ */
 import { useId } from "react";
+import { cardClass } from "@/app/dashboard/page-chrome";
 import { inputClass } from "@/app/dashboard/ui";
 
 export interface ConnectionLite {
@@ -15,27 +25,45 @@ export function ConnectionPicker({
   connections,
   value,
   onChange,
+  embedded = false,
+  disabled,
 }: {
   connections: ConnectionLite[];
   value: string;
   onChange: (id: string) => void;
   /**
-   * Retained for compatibility with hosts that explicitly mark an already
-   * embedded picker. The picker itself never owns card chrome; its host does.
+   * Drop the card chrome when the picker sits inside another surface (a
+   * toolbar card with the section's actions). The default standalone form
+   * keeps the chrome so hosts that render it on its own are unchanged.
    */
   embedded?: boolean;
+  disabled?: boolean;
 }) {
+  // A page can host two pickers (a section plus a dialog); the hardcoded id
+  // this replaces tied both labels — and both click targets — to whichever
+  // select mounted first.
   const id = useId();
-
   return (
-    <div className="grid w-full min-w-0 gap-1.5 sm:w-auto sm:min-w-[20rem] sm:grid-cols-[auto_minmax(14rem,1fr)] sm:items-center sm:gap-3">
-      <label className="text-sm font-medium text-foreground" htmlFor={id}>
-        فروشگاه
+    <div
+      className={
+        embedded
+          ? "flex min-w-0 flex-1 flex-wrap items-center gap-2"
+          : `${cardClass} flex flex-wrap items-center gap-3 p-4`
+      }
+    >
+      <label className="shrink-0 text-sm font-medium text-foreground" htmlFor={id}>
+        فروشگاه:
       </label>
-      <select id={id} className={inputClass} value={value} onChange={(event) => onChange(event.target.value)}>
-        {connections.map((connection) => (
-          <option key={connection.id} value={connection.id}>
-            {connection.name} ({connection.linkMode === "plugin" ? "افزونه" : "REST"})
+      <select
+        id={id}
+        className={`${inputClass} min-w-0 flex-1 basis-40 sm:min-w-56`}
+        value={value}
+        disabled={disabled || connections.length === 0}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {connections.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name} ({c.linkMode === "plugin" ? "افزونه" : "REST"})
           </option>
         ))}
       </select>
