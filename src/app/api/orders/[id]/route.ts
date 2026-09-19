@@ -14,7 +14,7 @@ import { tomanText } from "@/lib/ai-labels";
 import { toPersianDigits } from "@/lib/digits";
 
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "accountant");
   if (error) return error;
   const { id } = await context.params;
 
