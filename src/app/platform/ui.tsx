@@ -8,122 +8,38 @@
  * own error vocabulary and its own visual identity (a darker chrome, so an
  * operator never mistakes it for a tenant screen). Persian RTL throughout.
  */
-import { createContext, useContext } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { PlatformCapability } from "@/lib/platform-admin";
-import { toPersianDigits } from "@/lib/digits";
-import { gatewayErrorText } from "@/lib/ai-gateway";
+import { platformErrorText } from "@/lib/platform-errors";
+import { fmtDate as fmtDateShared } from "@/lib/platform-format";
+import { platformFetch } from "@/lib/platform-client";
 
+// Capability context now lives in one place (`_lib/capability-context`); these
+// re-exports keep the historical `./ui` import path working during migration.
+export { CapabilityContext, useCapabilities, useCan } from "./_lib/capability-context";
+
+/**
+ * Legacy console fetch helper. New code should use `platformFetch` /
+ * `usePlatformQuery` / `usePlatformMutation`, which return a typed
+ * success/error union; this thin adapter keeps the old `{ ok, status, data }`
+ * shape working for pages not yet migrated.
+ */
 export async function api<T = Record<string, unknown>>(
   url: string,
   init?: RequestInit,
 ): Promise<{ ok: boolean; status: number; data: T }> {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
+  const { body, ...rest } = init ?? {};
+  const result = await platformFetch<T>(url, {
+    ...(rest as Record<string, unknown>),
+    body: typeof body === "string" ? (JSON.parse(body || "null") as unknown) : (body as unknown),
   });
-  let data: T;
-  try {
-    data = (await res.json()) as T;
-  } catch {
-    data = {} as T;
-  }
-  return { ok: res.ok, status: res.status, data };
+  if (result.ok) return { ok: true, status: result.status, data: (result.data ?? {}) as T };
+  return { ok: false, status: result.status, data: { error: result.code } as unknown as T };
 }
 
-/** Persian messages for the console's error codes. */
+/** Persian text for a console error code — delegates to the shared dictionary. */
 export function errorMessage(code: string | undefined): string {
-  const map: Record<string, string> = {
-    unauthorized: "وارد نشده‌اید.",
-    forbidden: "این عملیات در سطح دسترسی شما نیست.",
-    bad_request: "درخواست نامعتبر بود.",
-    invalid_credentials: "ایمیل یا رمز عبور نادرست است.",
-    missing_credentials: "ایمیل و رمز عبور را وارد کنید.",
-    missing_fields: "فیلدهای الزامی را پر کنید.",
-    invalid_email: "ایمیل معتبر نیست.",
-    weak_password: "رمز عبور باید حداقل ۸ نویسه باشد.",
-    email_password_mismatch: "این ایمیل قبلاً ثبت شده و رمز عبور واردشده با آن هم‌خوانی ندارد.",
-    invalid_status: "وضعیت نامعتبر است.",
-    not_found: "پیدا نشد.",
-    nothing_to_change: "تغییری برای ذخیره وجود ندارد.",
-    business_archived: "کسب‌وکار بایگانی‌شده قابل ورود نیست.",
-    business_not_found: "کسب‌وکار پیدا نشد.",
-    no_owner: "این کسب‌وکار مالک فعالی برای ورود ندارد.",
-    impersonation_read_only: "این نشست فقط‌خواندنی است و امکان تغییر ندارد.",
-    invalid_plan: "این پلن در فهرست پلن‌ها وجود ندارد.",
-    invalid_timezone: "منطقهٔ زمانی معتبر نیست.",
-    reset_confirmation_required: "برای ریست، عبارت تأیید را دقیق وارد کنید.",
-    reset_not_possible: "ریست ممکن نیست؛ این کسب‌وکار مالک فعال و قابل ورود ندارد.",
-    reset_failed: "ریست انجام نشد و هیچ داده‌ای تغییر نکرد. دوباره تلاش کنید.",
-    delete_confirmation_required: "برای حذف، عبارت تأیید را دقیق وارد کنید.",
-    delete_failed: "حذف انجام نشد و هیچ داده‌ای تغییر نکرد. دوباره تلاش کنید.",
-    no_location: "این کسب‌وکار هنوز شعبه‌ای ندارد؛ ابتدا یک شعبه بسازید.",
-    code_not_found: "کد اتصال پیدا نشد.",
-    code_expired: "این کد منقضی شده است.",
-    code_already_redeemed: "این کد قبلاً استفاده شده است.",
-    code_revoked: "این کد لغو شده است.",
-    // Phase 23 Wave 3 — per-business subdomains
-    invalid_subdomain:
-      "زیردامنه باید بین ۳ تا ۶۳ نویسه و فقط شامل حروف انگلیسی کوچک، رقم و خط تیره باشد؛ " +
-      "نباید با خط تیره شروع یا تمام شود.",
-    reserved_subdomain: "این زیردامنه رزرو شده است و قابل استفاده نیست.",
-    missing_subdomain: "زیردامنهٔ کسب‌وکار را به انگلیسی وارد کنید.",
-    subdomain_taken: "این زیردامنه قبلاً به کسب‌وکار دیگری اختصاص یافته است.",
-    invalid_industry: "نوع کسب‌وکار نامعتبر است.",
-    industry_not_available: "این نوع کسب‌وکار هنوز در دسترس نیست.",
-    unchanged: "زیردامنه تغییری نکرده است.",
-    // OpenObserve (پایش)
-    observability_not_configured: "پایش هنوز تنظیم نشده است؛ متغیرهای OPENOBSERVE را در سرور وارد کنید.",
-    observability_unreachable: "سرویس پایش در دسترس نیست. آخرین داده‌های موفق نمایش داده می‌شود.",
-    invalid_level: "سطح لاگ نامعتبر است.",
-    // App availability (migration 0128) — «به‌زودی»، «در حال تعمیر» و…
-    invalid_app_state: "وضعیت برنامه نامعتبر است.",
-    // Knowledge base content (migration 0131)
-    invalid_slug: "نامک باید حروف کوچک انگلیسی، رقم و خط تیره باشد (مثل pos-basics).",
-    missing_title: "عنوان را وارد کنید.",
-    missing_label: "نام برچسب را وارد کنید.",
-    slug_taken: "این نامک قبلاً استفاده شده است.",
-    category_has_children: "این دسته زیردسته دارد؛ اول زیردسته‌ها را منتقل یا حذف کنید.",
-    category_has_articles: "این دسته راهنما دارد؛ اول راهنماها را به دستهٔ دیگری منتقل کنید.",
-    category_cycle: "دستهٔ والد نامعتبر است.",
-    parent_not_found: "دستهٔ والد پیدا نشد.",
-    invalid_video_url: "آدرس ویدیو باید با http:// یا https:// شروع شود.",
-    // Migration 0132 — the whole-system backup and the peer restore by address.
-    // The page's own `text()` covers the long backup vocabulary; these are the
-    // shapes that can also arrive through a generic console error path.
-    backup_failed: "پشتیبان‌گیری کامل سیستم ناموفق بود.",
-    backup_busy: "یک پشتیبان‌گیری دیگر همین حالا در حال اجراست.",
-    restore_busy: "یک بازگردانی دیگر در حال اجراست؛ کمی بعد دوباره تلاش کنید.",
-    confirmation_required: "برای بازگردانی کامل، عبارت تأیید را دقیق وارد کنید.",
-    passphrase_required: "عبارت عبور رمزنگاری لازم است؛ آن را وارد کنید.",
-    checksum_mismatch: "فایل دانلودشده با نسخهٔ اعلام‌شده هم‌خوانی ندارد؛ بازگردانی متوقف شد.",
-    newer_schema: "آن پشتیبان از نسخهٔ جدیدتری گرفته شده و این سرور هنوز آن مهاجرت‌ها را ندارد.",
-    newer_postgres: "نسخهٔ PostgreSQL سرور مقابل جدیدتر است و با pg_restore این سرور بازگردانی نمی‌شود.",
-    https_required: "آدرس باید https باشد، یا «اجازهٔ اتصال ناامن» را در تنظیمات روشن کنید.",
-    peer_unreachable: "سرور مقابل در دسترس نیست.",
-    peer_auth_failed: "کلید این سرور در آن سمت پذیرفته نشد (لغو یا منقضی شده است؟).",
-    bad_manifest: "پاسخ سرور مقابل معتبر نیست.",
-    invalid_cover_url: "آدرس تصویر باید با http:// یا https:// شروع شود.",
-  };
-  // The LiteLLM gateway's own vocabulary (`ai_gateway_*`) lives beside the
-  // codes it describes in src/lib/ai-gateway.ts, so the service's stored
-  // sync errors and the console's translations cannot drift apart. A raw code
-  // must never reach an operator: an unmapped one falls back to the generic
-  // message below rather than being shown as-is.
-  return map[code ?? ""] ?? gatewayErrorText(code) ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
-}
-
-/** The signed-in admin's capabilities, provided by the layout to every page. */
-export const CapabilityContext = createContext<PlatformCapability[]>([]);
-
-export function useCapabilities(): PlatformCapability[] {
-  return useContext(CapabilityContext);
-}
-
-export function useCan(): (cap: PlatformCapability) => boolean {
-  const caps = useCapabilities();
-  return (cap) => caps.includes(cap);
+  return platformErrorText(code);
 }
 
 export function ErrorBox({ children }: { children: React.ReactNode }) {
@@ -406,17 +322,11 @@ export function StatCard({
   );
 }
 
-/** Persian-digit date+time for every page; `dateOnly` drops the clock. */
+/**
+ * Persian-digit Jalali date for every page; `dateOnly` drops the clock.
+ * Delegates to the shared `platform-format` helper so the whole console formats
+ * dates identically (Jalali calendar, Persian digits).
+ */
 export function fmtDate(iso: string | null | undefined, dateOnly = false): string {
-  if (!iso) return "—";
-  try {
-    return toPersianDigits(
-      new Intl.DateTimeFormat("fa-IR", {
-        dateStyle: "medium",
-        ...(dateOnly ? {} : { timeStyle: "short" as const }),
-      }).format(new Date(iso)),
-    );
-  } catch {
-    return iso;
-  }
+  return fmtDateShared(iso, { withTime: !dateOnly });
 }

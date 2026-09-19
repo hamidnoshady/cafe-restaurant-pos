@@ -116,6 +116,113 @@ export async function listBusinesses(): Promise<BusinessSummary[]> {
   });
 }
 
+/** Filters/sort/pagination for the console's server-backed business directory. */
+export interface BusinessQuery {
+  /** Free-text over name, slug and subdomain. */
+  search?: string;
+  status?: BusinessStatus;
+  plan?: string;
+  industry?: Industry;
+  /** ISO date (inclusive) lower bound on created_at. */
+  createdFrom?: string;
+  /** ISO date (inclusive) upper bound on created_at. */
+  createdTo?: string;
+  /** "active" = has any orders; "idle" = none. */
+  activity?: "active" | "idle";
+  sort?: "newest" | "oldest" | "name" | "orders" | "members" | "activity";
+  page?: number;
+  pageSize?: number;
+}
+
+export interface BusinessListResult {
+  businesses: BusinessSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+const BUSINESS_SORT_SQL: Record<NonNullable<BusinessQuery["sort"]>, string> = {
+  newest: "b.created_at DESC",
+  oldest: "b.created_at ASC",
+  name: "b.name ASC",
+  orders: "order_count DESC",
+  members: "member_count DESC",
+  activity: "last_activity_at DESC NULLS LAST",
+};
+
+/**
+ * The console's business directory — filtered, sorted and paginated in the
+ * database rather than fetched whole and sliced in the browser (task section
+ * 6). Every filter is an optional WHERE clause; the counters used for the
+ * `orders`/`members`/`activity` sorts are computed as sub-selects so a big
+ * deployment stays a single indexed round-trip. `pageSize` is clamped so a
+ * caller can never ask for an unbounded page.
+ */
+export async function queryBusinesses(q: BusinessQuery = {}): Promise<BusinessListResult> {
+  const page = Math.max(1, Math.floor(q.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(q.pageSize ?? 20)));
+  const offset = (page - 1) * pageSize;
+  const sort = BUSINESS_SORT_SQL[q.sort ?? "newest"] ?? BUSINESS_SORT_SQL.newest;
+
+  return withoutTenantScope("platform", async () => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    /** Push a bound value and return its `$n` placeholder. */
+    const bind = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (q.search && q.search.trim()) {
+      const p = bind(`%${q.search.trim()}%`);
+      where.push(`(b.name ILIKE ${p} OR b.slug::text ILIKE ${p} OR b.subdomain::text ILIKE ${p})`);
+    }
+    if (q.status) where.push(`b.status = ${bind(q.status)}`);
+    if (q.plan) where.push(`b.plan = ${bind(q.plan)}`);
+    if (q.industry) where.push(`b.industry = ${bind(q.industry)}`);
+    if (q.createdFrom) where.push(`b.created_at >= ${bind(q.createdFrom)}`);
+    if (q.createdTo) where.push(`b.created_at <= ${bind(`${q.createdTo}T23:59:59.999Z`)}`);
+
+    // Activity filter needs the correlated existence of an order.
+    if (q.activity === "active") {
+      where.push(
+        "EXISTS (SELECT 1 FROM orders o JOIN locations l ON l.id = o.location_id WHERE l.business_id = b.id)",
+      );
+    } else if (q.activity === "idle") {
+      where.push(
+        "NOT EXISTS (SELECT 1 FROM orders o JOIN locations l ON l.id = o.location_id WHERE l.business_id = b.id)",
+      );
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const { rows: countRows } = await query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM businesses b ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const { rows } = await query<BusinessRow>(
+      `SELECT b.id, b.name, b.slug::text AS slug, b.subdomain::text AS subdomain,
+              b.status::text AS status, b.plan,
+              b.timezone, b.industry, b.created_at, b.suspended_at, b.archived_at,
+              (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
+              (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count,
+              (SELECT count(*) FROM orders o JOIN locations l ON l.id = o.location_id
+                WHERE l.business_id = b.id) AS order_count,
+              (SELECT max(o.opened_at) FROM orders o JOIN locations l ON l.id = o.location_id
+                WHERE l.business_id = b.id) AS last_activity_at
+         FROM businesses b
+        ${whereSql}
+        ORDER BY ${sort}
+        LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    );
+
+    return { businesses: rows.map(toSummary), total, page, pageSize };
+  });
+}
+
 /** One business by id, or null. */
 export async function getBusiness(businessId: string): Promise<BusinessSummary | null> {
   return withoutTenantScope("platform", async () => {
