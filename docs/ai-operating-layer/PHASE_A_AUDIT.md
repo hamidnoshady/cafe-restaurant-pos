@@ -1,0 +1,313 @@
+# Phase A — AI Operating Layer: Real Codebase Audit & Migration Map
+
+> Source of truth: the code and migrations in this repository as of branch
+> `arena/01a0b6ab-cafe-restaurant-pos` (base `6ba5931`). This document is
+> grounded in the actual files, not the README or phase docs.
+
+## 0. Executive reality check
+
+This is **not** a greenfield or a thin AI subsystem. The platform already has a
+large, mature AI stack that has itself been through ~15 documented "phases"
+(18 → 39). Concretely, `src/lib` alone has **640 files**, of which ~70 are
+`ai-*`, and there are **182 SQL migrations**, ~30 AI/wallet/media related.
+
+Much of what the brief asks for as "new" is **already partially built**:
+
+- **LiteLLM is already integrated** as a first-class provider and increasingly
+  as a control plane (migrations `0121`, `0123`, `0124`, `0125`; the app already
+  reads `x-litellm-response-cost` and can price a turn from the gateway's real
+  USD cost — see `ai-service.ts:155 responseCostUsd`, `ai-gateway-service.ts:878
+  resolveGatewayTurnPricing`).
+- Virtual keys, per-business/branch gateway rows, spend refresh, model routing,
+  fallbacks, RAG-on-gateway-embeddings, and prompt-management scaffolding all
+  exist to varying degrees.
+
+So the work is genuinely an **evolution/consolidation**, exactly as the brief's
+"IMPORTANT ENGINEERING PRINCIPLE" states — not a rebuild.
+
+The brief (42 parts, 21 done-criteria) is, realistically, a **multi-month,
+multi-engineer program**. It touches billing correctness, tenant isolation,
+accounting invariants, a full UI redesign, and destructive schema migration.
+Doing it as one blind mega-commit would be reckless. This document defines the
+target architecture and a safe, phased, test-backed sequence, and the
+implementation proceeds in reviewable increments on this branch.
+
+---
+
+## 1. What actually exists today (component inventory)
+
+### 1.1 AI runtime & gateway
+| File | Role | LiteLLM-aware? |
+|---|---|---|
+| `src/lib/ai.ts` (57k) | `ACTION_CATALOG`, `ActionType`, prompt assembly, agent modes | — |
+| `src/lib/ai-service.ts` (28k) | chat/vision/extract calls, reads `x-litellm-response-cost` | **yes** |
+| `src/lib/ai-gateway.ts` (38k) | pure gateway math: `rialFromGatewayUsd`, `gatewayTurnPricing` | **yes** |
+| `src/lib/ai-gateway-service.ts` (36k) | LiteLLM mgmt API: `provisionVirtualKey`, `refreshKeySpend`, `probeGateway`, `readProxyRouterSettings`, `listGatewayModels`, `resolveGatewayTurnPricing` | **yes** |
+| `src/lib/ai-tools.ts` (61k) | 36 read tools (`READ_TOOL_NAMES`), `runReadTool` | — |
+| `src/lib/ai-tool-routing.ts` | which tools a surface may call | — |
+| `src/lib/ai-prompts.ts` (19k) | prompt templates (DB-backed, migration `0112`/`0115`) | partial |
+| `src/lib/ai-config.ts` | model/temperature config | — |
+
+### 1.2 Billing (the central conflict — Parts 2/3)
+Two parallel money systems currently coexist:
+
+1. **AI-specific credit ledger** (`ai_business_billing.balance_rial`,
+   `ai_credit_ledger`), driven by **reserve→settle→cancel**:
+   - `reserveAiTurn` / `settleAiTurn` / `cancelAiTurnReservation`
+     (`ai-billing-service.ts:292/363/444`).
+   - Callers: `api/ai/chat/route.ts`, `api/ai/inventory-vision/route.ts`,
+     `api/ai/invoice-ocr/route.ts`, `api/media/[id]/detect/route.ts`,
+     `ai-autopilot-service.ts`, `ai-proactive-service.ts`.
+   - Reservation debits the AI balance up-front (`max_turn_rial`), settles to
+     real cost, refunds the remainder. This is exactly the "reserve the maximum
+     turn" pattern Part 2 says to retire.
+2. **Canonical platform wallet** (`business_wallets`, `wallet_ledger`,
+   `wallet-service.ts`), with row-locked `writeLedger`, `chargeFeatureUse`,
+   `getWallet`, top-ups & Zarinpal (migration `0130`). Used by media, website,
+   billing-service. `featureKey`/`feature_key` column already exists.
+
+**Gap:** AI does **not** debit the canonical wallet. It debits a second balance.
+`business_wallets` is referenced by 2 files; `ai_business_billing` by 1
+(the AI billing service). This is the duplicate-money-system the brief targets.
+
+### 1.3 Local AI infra that duplicates LiteLLM (Parts 4/5)
+| Concern | Local impl | Migration | LiteLLM replacement status |
+|---|---|---|---|
+| Semantic answer cache | `ai-answer-cache.ts`, `ai_answer_cache` | `0114` | Not yet on gateway; app-owned embedding match |
+| Embeddings / RAG | `ai-embeddings.ts`, `ai-rag.ts`, `ai-rag-indexer.ts`, `ai_embeddings` (pgvector) | `0113` | Embeddings already go **through** the gateway alias `pos-embed`; vectors stored locally |
+| Per-token pricing | `ai-billing.ts calculateAiUsageCostRial` + `platform_ai_gateway.*_cost_rial_per_million` | `0116`,`0124` | Gateway real cost already available; token rates are the **fallback** |
+
+### 1.4 Entity model (Parts 7–10) — overlap confirmed
+- **Automation:** *No dedicated generic automation engine.* The closest is
+  `ai_proactive_jobs` (`0040`) + `ai-agents.ts` (5 hard-coded background agent
+  keys) + `ai-proactive-service.ts`. Triggers are schedule-only.
+- **Coworker:** real subsystem — `ai_coworker_jobs`/`_events`/`_runs` (`0100`),
+  `ai-coworker-service.ts` (47k), templates (`ai-coworker-templates.ts` 28k),
+  triggers: schedule/event/manual.
+- **Agent:** `ai-agents.ts` = 5 fixed keys (`financial_report_builder`,
+  `sales_analyzer`, `receivables_follow_up`, `reconciliation_assistant`,
+  `service_reminders`) with only `enabled`+`scheduleHour` (migration `0047`).
+  **No custom agents, no tool allowlist per agent, no per-agent prompt.**
+- **Autopilot:** `ai-autopilot.ts` (guardrail engine — categories, per-category
+  Rial limits, `alwaysConfirm`, revertibility), `ai-autopilot-executors.ts`
+  (30k), `ai-autopilot-service.ts` (26k). Migration `0097`. **This is the
+  valuable safety engine** the brief says to preserve and turn into an
+  execution/approval policy.
+
+### 1.5 Projects (Parts 17–20)
+`ai_projects` + `ai_project_notes` (`0111`) + `ai_conversations.project_id`.
+Columns today: id, business_id, name, instructions, created_by, archived_at.
+UI: `(app)/projects/page.tsx`, `(app)/projects/[id]/page.tsx`. This matches the
+brief's "too simple" description exactly: name + instructions + notes +
+conversation list. **No project memory table, no files, no tasks, no attached
+agents/coworkers/automations, no project-native chat.**
+
+### 1.6 Media (Parts 21–23)
+`media_assets`/`media_folders` (`0149`), `media-service.ts`, object storage,
+`storeMediaAsset`/`readMediaObject`/`deleteMediaAsset`, `ai_status`,
+`source_asset_id`/`variant` for AI-refined images. **But AI chat attachments
+are deliberately non-persistent** (`ai-attachment.ts`: "nothing here touches a
+table or object storage"). So AI uploads/generated files do **not** land in the
+Media Library yet — the Part 21 gap.
+`media_assets` has no `source`/`conversation_id`/`project_id`/`created_by_ai`
+provenance columns yet.
+
+### 1.7 Chat UI (Parts 12–13, 25–28)
+- `(app)/ai/page.tsx` → `dashboard/ai/ai-workspace.tsx` (rail + thread +
+  composer). Components in `src/components/ai/` (~14). No structured interactive
+  cards (single/multi choice, form, entity picker, approval card) as a typed
+  protocol — proposals exist via `ai-proposal-card.tsx` but input requests do
+  not.
+
+### 1.8 Platform AI admin (Part 33)
+`src/app/platform/ai/page.tsx` (805 lines) — super-admin AI console (pricing,
+gateway, costing, routing). Candidate for trimming once LiteLLM owns pricing.
+
+### 1.9 Test harness (Part 37) — VERIFIED WORKING
+- Unit: `vitest run` (no DB). ✅ ran `ai-billing`+`ai-autopilot` (46 tests pass).
+- DB integration: `vitest run --config vitest.db.config.ts`, needs
+  `DATABASE_URL`. Embedded Postgres via `scripts/dev-postgres.mjs`
+  (`@embedded-postgres/linux-x64`). ✅ verified: `ai-agent-settings.integration`
+  passes against local PG on :5433. Existing AI integration tests:
+  `ai-gateway`, `ai-coworker`, `ai-conversations`, `ai-autopilot`,
+  `ai-virtual-key-provisioning`, `ai-orientation-tools`, `ai-tools-wave13`, etc.
+
+---
+
+## 2. Capability / gap matrix (business ops vs AI)
+
+Legend: R=read tool exists, A=write action exists (`ACTION_CATALOG`),
+C=needs confirm, Auto=can autopilot. Write actions from `ai.ts ActionType`.
+
+| Capability | Manual UI | AI read | AI act (action) | Confirm | Autopilot | Gap / missing tool |
+|---|---|---|---|---|---|---|
+| Accounting: reports | ✅ | `list_reports`,`run_report`,`run_accounting_review` | `journal.manual.propose`,`expense.categorize` | ✅ | money | No P&L-explain tool; no reconcile action |
+| Accounting: AR/AP | ✅ | `get_ar_aging`,`get_ap_upcoming`,`get_unreconciled_bank_lines` | — | — | — | **No "record payment/allocate receipt" action** |
+| Accounting: tax/VAT | ✅ | `get_vat_liability` | `setup.tax` | ✅ | — | No VAT filing prep |
+| Sales/POS | ✅ | `get_menu_performance`,`get_void_pattern`,`get_bill_split_preview` | `order.discount.apply` | ✅ | — | No create-order draft |
+| Menu/catalog | ✅ | `get_menu_item_details` | `menu.item.*`,`setup.menu.*` | ✅ | pricing | Good coverage |
+| Inventory | ✅ | `get_stock_valuation`,`get_near_expiry_items`,`get_waste_history`,`forecast_demand`,`find_items` | `inventory.reorder.draftPO`,`inventory.adjustment.propose`,`inventory.waste.log`,`inventory.production.run` | ✅ | inventory | Good coverage |
+| Suppliers | ✅ | `get_supplier_performance` | — | — | — | **No create/update supplier action** |
+| Customers/CRM | ✅ | `find_customers`,`get_customer_profile`,`get_customer_timeline`,`get_at_risk_customers`,`list/preview_customer_segment`,`get_repurchase_candidates` | `customer.note.add`,`crm.customer.tag`,`crm.customer.note` | some | customer | **No create/update customer action** |
+| Growth/Marketing | ✅ | — | `messaging.campaign.trigger`(coworker-only) | ✅ | messaging | **No campaign create/schedule action; no read tool for campaigns** |
+| Website CMS | ✅ | `list_website_posts`,`list_website_products`,`get_website_status` | `website.post.draft/update/publish`,`website.product.upsert` | publish=alwaysConfirm | website | Good coverage |
+| WooCommerce | partial | via website tools | website.product.upsert | ✅ | website | Depends on Woo sync; verify |
+| Reservations/Tables | ✅ | `get_reservation_conflicts`,`get_table_turnover_rate` | `reservation.create/reschedule`,`table.merge/split`,`courier.assign` | ✅ | — | Good coverage |
+| Payroll | ✅ | `get_payroll_summary`,`get_staff_commission` | — | — | — | Read-only (appropriate) |
+| Projects | ✅(basic) | — | — | — | — | **No AI tool to create/attach project objects** |
+| Media | ✅ | — | — | — | — | **No AI media tools; uploads not persisted** |
+| Team/users | ✅ | — | — | — | — | Intentionally excluded (safety) |
+
+**Highest-value genuine gaps** (Part 16): supplier create/update, customer
+create/update, AR receipt/payment allocation, campaign create/schedule +
+campaign read tool, project object management, media persistence + media tools.
+
+---
+
+## 3. LiteLLM capability verification (Part 1 CRITICAL RULE)
+
+Deployed image: `ghcr.io/berriai/litellm:main-stable` (docker-compose.yml).
+Config: `docker/litellm/config.yaml`. Before deleting any local impl, each
+LiteLLM capability must be verified **against this image's API**, with an
+integration test, per the brief. Status of what the app already relies on:
+
+| LiteLLM feature | Used by app today | Verified in tests | Safe to lean on |
+|---|---|---|---|
+| Virtual keys (`/key/generate`,`/key/info`) | `provisionVirtualKey`,`refreshKeySpend` | `ai-virtual-key-provisioning.integration` | yes |
+| Per-response cost header `x-litellm-response-cost` | `responseCostUsd` | `ai-gateway` tests | yes |
+| `/spend/logs` rollup | `ai_gateway_usage` | partial | verify before relying for billing |
+| Routing/fallbacks/`router_settings` | config + `readProxyRouterSettings` (read-only) | `ai-gateway` | yes (config-owned) |
+| Prompt management (dotprompt/`prompt_id`) | scaffolding only, **not wired** | no | **must verify before migrating prompts** |
+| Caching (proxy-side) | not used | no | **must verify before deleting `ai_answer_cache`** |
+| Managed vector store / RAG | not used (app owns pgvector) | no | **must verify support in this image before moving RAG** |
+
+**Conclusion for Parts 4/5:** The brief's own CRITICAL RULE forbids deleting the
+local cache/RAG until the LiteLLM replacement is verified *in this image* and
+tested. `main-stable` moves fast; proxy-side caching (Redis) exists, but a
+managed vector-store RAG that fully replaces app-owned pgvector + tenant
+permission-scoped indexing is **not** something to assume. The safe path:
+verify empirically (integration test against a real proxy) first; keep the app
+as the owner of *what* content is retrievable (it owns permissions), and only
+delegate execution where proven.
+
+---
+
+## 4. Target architecture (the north star)
+
+```
+                 ┌──────────────── AI Workspace (UI) ───────────────┐
+User ─┬─ AI ─────┤ Chat · Projects · Agents · Coworkers · Automations │
+      │          │ Approvals/Activity · Files/Knowledge · Usage       │
+      │          └───────────────┬───────────────────────────────────┘
+      │                          │  structured input protocol / proposals
+      │                          ▼
+      │            Agent orchestration  ──►  LiteLLM (control plane)
+      │                          │            providers·models·routing·cost·
+      │                          │            cache·prompts·virtual keys·spend
+      │                          ▼
+      │            Typed tools / ACTION_CATALOG  (risk-classified)
+      │                          │
+      └─ Manual App UI ──────────┤
+                                 ▼
+                     Existing application services  (validation, RLS, audit)
+                                 ▼
+                              PostgreSQL
+                                 ▲
+     wallet-service (money) ─────┘   media-service (files)   projects (context)
+```
+
+Ownership contract: **LiteLLM owns AI infra · platform owns business truth ·
+wallet owns money · Media Library owns files · Projects own long-running
+context · typed tools/actions connect AI to the business.**
+
+---
+
+## 5. Migration map (safe, additive-first — Part 34)
+
+Every destructive step follows: deploy replacement → migrate data → verify →
+stop reads/writes → later drop schema. Nothing is dropped in the same migration
+that introduces its replacement.
+
+| # | Change | Type | Depends on |
+|---|---|---|---|
+| M1 | `wallet_ledger.feature_key='ai'` settlement path; `ai_wallet_settlements` metadata table (LiteLLM call id, model, tokens, conv/project/agent ids, cost usd/rial) | additive | wallet-service |
+| M2 | Backfill: reconcile `ai_business_billing` → freeze; route all new AI debits to `business_wallets` | data | M1 |
+| M3 | `media_assets` provenance columns (`source`, `conversation_id`, `project_id`, `run_id`, `created_by_ai`, `model`) | additive | media |
+| M4 | Project workspace tables: `ai_project_memory`, `ai_project_files`(link table), `ai_project_tasks`, `ai_project_members`, entity `project_id` FKs on agents/coworkers/automations | additive | projects |
+| M5 | Unified AI entity model: `ai_automations` (trigger/action/conditions), extend agents to custom (`ai_agent_defs` with prompt ref + tool allowlist), coworker prompt refs | additive | — |
+| M6 | Prompt bindings: `ai_prompt_bindings` (surface/entity → prompt id + version + scope) | additive | LiteLLM prompt verify |
+| M7 | Structured input protocol: `ai_input_requests` (id, run/conv id, type, schema, response, status) | additive | — |
+| M8 | (LATE) drop `ai_answer_cache` after LiteLLM cache verified+tested | destructive | Part 4 verify |
+| M9 | (LATE) migrate/retire `ai_embeddings` local RAG if/after LiteLLM RAG verified | destructive | Part 5 verify |
+| M10 | (LATE) drop `ai_business_billing`/`ai_credit_ledger` after wallet cutover proven | destructive | M2 |
+
+---
+
+## 6. Recommended implementation sequence (matches brief Part 39)
+
+- **B — Wallet cutover (Parts 2/3):** highest correctness value, self-contained,
+  testable. Make AI debit the canonical wallet from real LiteLLM cost; retire
+  reserve/settle. *Start here.*
+- **C — Capability gaps (Part 16):** add supplier/customer/AR/campaign write
+  actions + campaign read tool through existing services.
+- **D — Unified entity model (Parts 7–10):** Automation engine + custom Agents +
+  autopilot-as-policy, preserving the guardrail engine.
+- **E — Structured chat protocol (Parts 13/14):** typed input requests + UI cards.
+- **F — Projects as workspaces (Parts 17–20):** memory, files, project chat,
+  attached objects.
+- **G — Media persistence (Parts 21–23).**
+- **H — Cache/RAG to LiteLLM (Parts 4/5):** *only after empirical verification.*
+- **I — UI redesign + IA (Parts 11/24–28).**
+- **J — Cleanup + drop legacy schema (Parts 33/35).**
+
+---
+
+## 6b. Phase B — DELIVERED (wallet billing cutover)
+
+Status: **done, test-backed.** AI turns now bill the canonical
+`business_wallets` and the reserve/settle/cancel dance is retired at every live
+call site.
+
+What changed:
+- **Migration `0153_ai_wallet_billing.sql`** (additive): `feature_flags('ai')`,
+  `ai_wallet_settlements` (AI detail + idempotency behind each wallet debit,
+  unique on `(business_id, request_id)`), `ai_wallet_debt` (affordability
+  backstop). Both new tables are FORCE-RLS tenant-isolated and are
+  auto-verified by the generated tenant-isolation suite.
+- **`wallet-service.ts`**: `checkAiAffordability` (pre-request gate, pays down
+  debt opportunistically), `settleAiWalletCharge` (post-request debit,
+  idempotent, partial-debit-into-debt when a real cost can't be covered — never
+  negative balance), `getAiDebtRial`, `AI_FEATURE_KEY`. Reuses the existing
+  row-locked `withWalletTx`/`writeLedger`, so the no-negative-balance and
+  no-double-spend guarantees are unchanged.
+- **`ai-wallet-billing.ts`** (new orchestration): `gateAiTurn`,
+  `newAiRequestId`, `settleAiTurn`. Prefers LiteLLM's reported USD cost
+  (`resolveGatewayTurnPricing`) and falls back to the token rates only when the
+  gateway didn't price the turn. Emits `AiWalletInsufficientError`.
+- **6 call sites migrated**: `api/ai/chat`, `api/ai/inventory-vision`,
+  `api/ai/invoice-ocr`, `api/media/[id]/detect`, `ai-proactive-service`,
+  `ai-autopilot-service`. All now gate → run → settle against the wallet; no
+  reservation, no refund path (a turn that never reached the provider costs
+  nothing).
+- **Tests**: `integration/ai-wallet-billing.integration.test.ts` (7 cases:
+  real-cost debit, affordability block, idempotency, zero-cost/cache,
+  partial→debt→unblock, project attribution, tenant isolation). Existing AI
+  suites (autopilot, coworker, conversations, gateway, billing, estimate) still
+  green. Full `tsc` clean.
+
+Deliberately **not** done yet (safe migration window, Part 34): the legacy
+`ai_business_billing` / `ai_credit_ledger` tables and the now-dead
+reserve/settle/cancel functions in `ai-billing-service.ts` remain in place for
+reconciliation. They are removed in a later destructive migration (M10) once
+the cutover is proven, together with the dead platform AI-subscription code.
+
+## 7. Risks / non-negotiables
+
+- Do not weaken `business_wallets` row-locking / no-negative-balance.
+- Do not break accounting posting invariants, RLS, or action audit.
+- Do not delete local cache/RAG on faith — verify against `main-stable` first.
+- Do not create generic `execute_sql`/`update_table`/`run_javascript` tools.
+- Keep both money systems reconciled during the cutover window; never
+  double-charge.
+</content>
+</invoke>

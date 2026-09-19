@@ -3,14 +3,12 @@ import { query } from "@/lib/db";
 import { buildSystemPrompt, type AgentMode, type PromptContext } from "@/lib/ai";
 import { isPlatformAiConfigured } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
-import { resolveGatewayTurnPricing } from "@/lib/ai-gateway-service";
 import {
-  AiInsufficientCreditError,
-  cancelAiTurnReservation,
-  reserveAiTurn,
+  AiWalletInsufficientError,
+  gateAiTurn,
+  newAiRequestId,
   settleAiTurn,
-  type AiTurnReservation,
-} from "@/lib/ai-billing-service";
+} from "@/lib/ai-wallet-billing";
 import { createAiActionAudit } from "@/lib/ai-action-audit";
 import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
 import {
@@ -150,17 +148,16 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     );
   }
 
-  let reservation: AiTurnReservation;
+  // Phase B — the pre-request affordability gate replaces the credit
+  // reservation. It refuses when the business is in AI debt or its wallet is
+  // below the per-turn ceiling; it never holds money up front.
+  const requestId = newAiRequestId();
   try {
-    reservation = await reserveAiTurn({
-      businessId: session.businessId,
-      reservedRial: config.maxTurnRial,
-      userId: session.sub,
-    });
+    await gateAiTurn(session.businessId, config);
   } catch (err) {
-    if (err instanceof AiInsufficientCreditError) {
+    if (err instanceof AiWalletInsufficientError) {
       return NextResponse.json(
-        { error: "ai_credit_required", message: "اعتبار هوش مصنوعی شما برای یک پاسخ جدید کافی نیست." },
+        { error: "ai_credit_required", message: "اعتبار کیف پول شما برای استفاده از هوش مصنوعی کافی نیست." },
         { status: 402 },
       );
     }
@@ -223,7 +220,6 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      let settled = false;
       const emit = (event: string, data: unknown) => controller.enqueue(sse(event, data));
 
       void (async () => {
@@ -263,12 +259,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           if (cachedHit) {
             const settlement = await settleAiTurn({
               businessId: session.businessId,
-              reservation,
+              requestId,
+              config,
               usage: { inputTokens: questionEmbeddingTokens, outputTokens: 0 },
-              inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-              outputTokenRialPerMillion: config.outputTokenRialPerMillion,
+              costUsd: null,
+              cacheHit: true,
+              attribution: {
+                requestType: "chat",
+                model: config.model,
+                conversationId,
+                locationId,
+                userId: session.sub,
+                metadata: { mode, cached: true },
+              },
             });
-            settled = true;
 
             if (conversationId) {
               await appendMessage({
@@ -283,7 +287,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               proposedAction: null,
               auditId: null,
               conversationId,
-              costRial: settlement.chargedRial + settlement.overageRial,
+              costRial: settlement.chargedRial,
               cached: true,
               cacheNotice: cachedHit.notice,
             });
@@ -312,23 +316,25 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               onToolCalls: () => emit("reset", {}),
             },
           });
-          // Phase 38b — when the platform prices turns from the gateway and
-          // the gateway reported this turn's cost, that figure (plus the
-          // platform margin) is the settlement. Null — direct vendor, costing
-          // off, no figure reported — falls back to the token rates below.
-          const gatewayPricing = await resolveGatewayTurnPricing(
-            reply.costUsd,
-            config.revenueMarginPercent,
-          );
+          // Phase B — settle the REAL cost against the platform wallet. The
+          // gateway's reported USD (plus the platform margin) is preferred;
+          // the token rates are the fallback when the gateway did not price
+          // the turn. No reservation was held, so this is the only debit.
           const settlement = await settleAiTurn({
             businessId: session.businessId,
-            reservation,
+            requestId,
+            config,
             usage: reply.usage,
-            inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-            outputTokenRialPerMillion: config.outputTokenRialPerMillion,
-            gatewayPricing,
+            costUsd: reply.costUsd,
+            attribution: {
+              requestType: "chat",
+              model: config.model,
+              conversationId,
+              locationId,
+              userId: session.sub,
+              metadata: { mode },
+            },
           });
-          settled = true;
 
           const auditId = reply.proposedAction
             ? await createAiActionAudit({
@@ -395,17 +401,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             // What this turn actually cost, so the client can say so under the
             // reply. It replaces the pre-send estimate card, which charged the
             // user an extra round trip and a tap to show a *guess*.
-            costRial: settlement.chargedRial + settlement.overageRial,
+            costRial: settlement.chargedRial,
           });
         } catch (err) {
-          if (!settled) {
-            await cancelAiTurnReservation({
-              businessId: session.businessId,
-              reservation,
-              reason: err instanceof Error ? err.message : "unknown_error",
-            }).catch((cancelError) => console.error("AI credit reservation refund failed", cancelError));
-          }
-
+          // Phase B — no reservation to refund. A turn that failed before the
+          // provider answered cost nothing, so nothing is settled; a turn that
+          // failed after already paying upstream has (in the happy path) been
+          // settled above. Nothing to undo here.
           if (err instanceof AiError) {
             emit("error", { error: err.code, message: err.message });
           } else {

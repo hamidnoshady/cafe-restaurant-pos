@@ -67,7 +67,7 @@ export const uid = (): string => crypto.randomUUID();
 
 export const CHAT_ERROR: Record<string, string> = {
   ai_credit_required:
-    "اعتبار هوش مصنوعی برای یک پاسخ جدید کافی نیست. از صفحهٔ اعتبار درخواست شارژ ثبت کنید.",
+    "اعتبار کیف پول برای استفاده از هوش مصنوعی کافی نیست. از صفحهٔ اعتبار و شارژ، کیف پول را شارژ کنید.",
   ai_unavailable: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است.",
   feature_disabled: "دستیار هوشمند برای این کسب‌وکار فعال نیست.",
   ai_auth: "اتصال سراسری سرویس هوش مصنوعی نیاز به بررسی مدیر پلتفرم دارد.",
@@ -269,9 +269,9 @@ export function useAiChat({
    * "برآورد هزینه … شروع پاسخ" card, so every single message — including
    * "سلام" — cost the user an extra round trip and an extra tap before the
    * assistant would say anything. That is not how a chat behaves, and the card
-   * was not buying the safety it looked like it was: `/api/ai/chat` does its
-   * own credit reservation against `config.maxTurnRial` and refuses when there
-   * is no credit, entirely independently of this call.
+   * was not buying the safety it looked like it was: `/api/ai/chat` runs its
+   * own wallet affordability gate against `config.maxTurnRial` and refuses
+   * when the wallet cannot afford AI, entirely independently of this call.
    *
    * So the estimate is gone from the send path and the *actual* charge is shown
    * under the reply once the turn settles, which is both truthful and free.

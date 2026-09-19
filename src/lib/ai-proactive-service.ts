@@ -26,12 +26,11 @@ import { getPlatformAiConfig, isPlatformAiConfigured, type PlatformAiConfig } fr
 import { decorateAiConfig } from "./ai-runtime";
 import { runBusinessAutopilot } from "./ai-autopilot-service";
 import {
-  AiInsufficientCreditError,
-  cancelAiTurnReservation,
-  reserveAiTurn,
+  AiWalletInsufficientError,
+  gateAiTurn,
+  newAiRequestId,
   settleAiTurn,
-  type AiTurnReservation,
-} from "./ai-billing-service";
+} from "./ai-wallet-billing";
 import { runAgentTurn } from "./ai-service";
 import { runReadTool } from "./ai-tools";
 import { listCustomerBalances, UNKNOWN_CUSTOMER_KEY } from "./ar-service";
@@ -533,19 +532,16 @@ async function runDigest(input: {
   const claim = await claimRun(input.businessId, input.kind, proactivePeriodKey(input.kind, input.clock));
   if (!claim) return false;
 
-  let reservation: AiTurnReservation | null = null;
+  const requestId = newAiRequestId();
   let facts: unknown;
   try {
     facts = await collectDigestFacts(input.businessId, input.clock, input.kind, input.inclusion);
+    // Phase B — gate on the wallet before doing background work; a business
+    // that cannot afford AI has its digest skipped, not reserved against.
     try {
-      reservation = await reserveAiTurn({
-        businessId: input.businessId,
-        reservedRial: input.config.maxTurnRial,
-        userId: null,
-        metadata: { source: "proactive", kind: input.kind, periodKey: claim.periodKey },
-      });
+      await gateAiTurn(input.businessId, input.config);
     } catch (error) {
-      if (error instanceof AiInsufficientCreditError) {
+      if (error instanceof AiWalletInsufficientError) {
         await finishRun({
           businessId: input.businessId,
           runId: claim.id,
@@ -565,14 +561,18 @@ async function runDigest(input: {
       promptContext: { mode: "proactive", businessName: await businessName(input.businessId) },
       messages: [{ role: "user", content: digestPrompt(input.kind, input.clock, facts) }],
     });
-    const activeReservation = reservation;
-    if (!activeReservation) throw new Error("ai_reservation_not_created");
     await settleAiTurn({
       businessId: input.businessId,
-      reservation: activeReservation,
+      requestId,
+      config: input.config,
       usage: reply.usage,
-      inputTokenRialPerMillion: input.config.inputTokenRialPerMillion,
-      outputTokenRialPerMillion: input.config.outputTokenRialPerMillion,
+      costUsd: reply.costUsd,
+      attribution: {
+        requestType: "proactive",
+        model: input.config.model,
+        userId: null,
+        metadata: { source: "proactive", kind: input.kind, periodKey: claim.periodKey },
+      },
     });
     await finishRun({
       businessId: input.businessId,
@@ -580,17 +580,12 @@ async function runDigest(input: {
       status: "completed",
       content: reply.content,
       facts,
-      creditRequestId: activeReservation.requestId,
+      creditRequestId: requestId,
     });
     return true;
   } catch (error) {
-    if (reservation) {
-      await cancelAiTurnReservation({
-        businessId: input.businessId,
-        reservation,
-        reason: errorText(error),
-      }).catch((cancelError) => console.error("proactive AI credit reservation refund failed", cancelError));
-    }
+    // Phase B — no reservation to cancel; a failed digest that never reached
+    // the provider settled nothing.
     await finishRun({
       businessId: input.businessId,
       runId: claim.id,

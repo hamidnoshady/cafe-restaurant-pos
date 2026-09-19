@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isPlatformAiConfigured } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
-import { resolveGatewayTurnPricing } from "@/lib/ai-gateway-service";
 import {
-  AiInsufficientCreditError,
-  cancelAiTurnReservation,
-  reserveAiTurn,
+  AiWalletInsufficientError,
+  gateAiTurn,
+  newAiRequestId,
   settleAiTurn,
-  type AiTurnReservation,
-} from "@/lib/ai-billing-service";
+} from "@/lib/ai-wallet-billing";
 import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 import { InventoryVisionError, runInventoryVisionCount } from "@/lib/ai-inventory-vision-service";
 import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
@@ -71,18 +69,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     );
   }
 
-  let reservation: AiTurnReservation;
+  const requestId = newAiRequestId();
   try {
-    reservation = await reserveAiTurn({
-      businessId: session.businessId,
-      reservedRial: config.maxTurnRial,
-      userId: session.sub,
-      metadata: { kind: "inventory_vision", locationId: location.id },
-    });
+    await gateAiTurn(session.businessId, config);
   } catch (err) {
-    if (err instanceof AiInsufficientCreditError) {
+    if (err instanceof AiWalletInsufficientError) {
       return NextResponse.json(
-        { error: "ai_credit_required", message: "اعتبار هوش مصنوعی کافی نیست." },
+        { error: "ai_credit_required", message: "اعتبار کیف پول برای استفاده از هوش مصنوعی کافی نیست." },
         { status: 402 },
       );
     }
@@ -97,17 +90,19 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       unit: item.unit,
     });
 
-    const gatewayPricing = await resolveGatewayTurnPricing(
-      result.costUsd,
-      config.revenueMarginPercent,
-    );
     const settlement = await settleAiTurn({
       businessId: session.businessId,
-      reservation,
+      requestId,
+      config,
       usage: result.usage,
-      inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-      outputTokenRialPerMillion: config.outputTokenRialPerMillion,
-      gatewayPricing,
+      costUsd: result.costUsd,
+      attribution: {
+        requestType: "vision",
+        model: config.model,
+        locationId: location.id,
+        userId: session.sub,
+        metadata: { kind: "inventory_vision" },
+      },
     });
 
     return NextResponse.json({
@@ -117,17 +112,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       box: result.box,
       comment: result.comment,
       usage: result.usage,
-      costRial: settlement.chargedRial + settlement.overageRial,
+      costRial: settlement.chargedRial,
     });
   } catch (err) {
-    await cancelAiTurnReservation({
-      businessId: session.businessId,
-      reservation,
-      reason: err instanceof InventoryVisionError ? err.code : "inventory_vision_failed",
-    }).catch(() => {
-      // Best-effort refund; the reserved row is still the source of truth.
-    });
-
+    // Phase B — no reservation to refund. A failed turn that never reached the
+    // provider costs nothing and settles nothing.
     if (err instanceof InventoryVisionError) {
       const status =
         err.code === "ai_auth" ? 502 : err.code === "ai_timeout" || err.code === "ai_network" ? 504 : 422;

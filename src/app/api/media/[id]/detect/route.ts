@@ -3,14 +3,12 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { isPlatformAiConfigured } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
-import { resolveGatewayTurnPricing } from "@/lib/ai-gateway-service";
 import {
-  AiInsufficientCreditError,
-  cancelAiTurnReservation,
-  reserveAiTurn,
+  AiWalletInsufficientError,
+  gateAiTurn,
+  newAiRequestId,
   settleAiTurn,
-  type AiTurnReservation,
-} from "@/lib/ai-billing-service";
+} from "@/lib/ai-wallet-billing";
 import { MediaAiError, runMediaLabelDetection } from "@/lib/ai-media-service";
 import { getMediaConfig, isMediaStorageReady, readMediaObject } from "@/lib/media-service";
 
@@ -49,18 +47,13 @@ export const POST = withTenantScope(async (_request: NextRequest, context: { par
     );
   }
 
-  let reservation: AiTurnReservation;
+  const requestId = newAiRequestId();
   try {
-    reservation = await reserveAiTurn({
-      businessId: session.businessId,
-      reservedRial: config.maxTurnRial,
-      userId: session.sub,
-      metadata: { kind: "media_label", assetId: id },
-    });
+    await gateAiTurn(session.businessId, config);
   } catch (err) {
-    if (err instanceof AiInsufficientCreditError) {
+    if (err instanceof AiWalletInsufficientError) {
       return NextResponse.json(
-        { error: "ai_credit_required", message: "اعتبار هوش مصنوعی کافی نیست." },
+        { error: "ai_credit_required", message: "اعتبار کیف پول برای استفاده از هوش مصنوعی کافی نیست." },
         { status: 402 },
       );
     }
@@ -75,14 +68,18 @@ export const POST = withTenantScope(async (_request: NextRequest, context: { par
       fileName: stored.asset.fileName,
     });
 
-    const gatewayPricing = await resolveGatewayTurnPricing(result.costUsd, config.revenueMarginPercent);
     await settleAiTurn({
       businessId: session.businessId,
-      reservation,
+      requestId,
+      config,
       usage: result.usage,
-      inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-      outputTokenRialPerMillion: config.outputTokenRialPerMillion,
-      gatewayPricing,
+      costUsd: result.costUsd,
+      attribution: {
+        requestType: "media_detect",
+        model: config.model,
+        userId: session.sub,
+        metadata: { kind: "media_label", assetId: id },
+      },
     });
 
     // The proposal, pending the operator's decision.
@@ -98,14 +95,7 @@ export const POST = withTenantScope(async (_request: NextRequest, context: { par
       proposal: { category: result.category, tags: result.tags, description: result.description },
     });
   } catch (err) {
-    await cancelAiTurnReservation({
-      businessId: session.businessId,
-      reservation,
-      reason: err instanceof MediaAiError ? err.code : "media_label_failed",
-    }).catch(() => {
-      // Best-effort refund; the reserved row is still the source of truth.
-    });
-
+    // Phase B — no reservation to refund; a failed turn settles nothing.
     if (err instanceof MediaAiError) {
       const status =
         err.code === "ai_auth" ? 502 : err.code === "ai_timeout" || err.code === "ai_network" ? 504 : 422;
