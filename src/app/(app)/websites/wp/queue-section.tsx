@@ -96,7 +96,7 @@ export function WpQueueSection() {
   return (
     <div className="space-y-4">
       <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-        <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
+        <ConnectionPicker embedded connections={connections} value={selectedId} onChange={setSelectedId} />
         <Button
           variant="outline"
           size="sm"

@@ -218,8 +218,8 @@ export function LoyaltySection({ canManage = true }: { canManage?: boolean }) {
               <li key={`${row.customerId}-${row.productId}`} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 <div className="min-w-0">
                   <span className="font-medium text-foreground">{row.customerName}</span>
-                  <span className="mr-2 text-xs text-muted-foreground">{row.productName}</span>
-                  <span className="mr-2 text-xs text-muted-foreground">
+                  <span className="me-2 text-xs text-muted-foreground">{row.productName}</span>
+                  <span className="me-2 text-xs text-muted-foreground">
                     چرخهٔ میانگین {formatPersianNumber(row.avgIntervalDays)} روز
                   </span>
                 </div>
@@ -619,7 +619,7 @@ function CustomerPanel({
           </div>
 
           <div className="rounded-xl border border-border/80 p-3">
-            <div className="mb-3 grid grid-cols-2 gap-2">
+            <div className="mb-3 grid gap-2 sm:grid-cols-2">
               <Button
                 type="button"
                 variant="outline"

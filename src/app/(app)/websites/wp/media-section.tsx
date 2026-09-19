@@ -80,8 +80,8 @@ export function WpMediaSection() {
   return (
     <div className="space-y-4">
       <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-        <ConnectionPicker bare connections={connections} value={selectedId} onChange={setSelectedId} />
-        <Button variant="outline" size="sm" disabled={busy} onClick={syncContent}>
+        <ConnectionPicker embedded connections={connections} value={selectedId} onChange={setSelectedId} />
+        <Button variant="outline" size="sm" disabled={busy} onClick={syncContent} className="ms-auto">
           <RefreshCwIcon className="size-4" />
           {busy ? "در حال همگام‌سازی…" : "همگام‌سازی رسانه‌ها"}
         </Button>

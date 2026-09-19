@@ -1,7 +1,18 @@
 "use client";
 
-/** Shared store picker for WP Manager sections. */
+/**
+ * Shared store picker for WP Manager sections.
+ *
+ * Two forms. `embedded` is the common one: the caller already owns a toolbar
+ * card (`${cardClass} flex … p-4`) holding the picker next to its own
+ * actions, so the picker contributes the label and the select and no chrome
+ * of its own — nesting one bordered, padded surface inside another drew a
+ * doubled border with dead space around the select. The standalone form
+ * keeps the card for a host that renders the picker on its own.
+ */
+import { useId } from "react";
 import { cardClass } from "@/app/dashboard/page-chrome";
+import { inputClass } from "@/app/dashboard/ui";
 
 export interface ConnectionLite {
   id: string;
@@ -14,38 +25,40 @@ export function ConnectionPicker({
   connections,
   value,
   onChange,
-  /**
-   * True when the picker sits inside a toolbar that is already a card. The
-   * default false keeps the standalone shape the store-section host uses;
-   * true drops the card skin so the two never nest — a border inside a
-   * border with double padding, which is what every section that wrapped
-   * this in its own card used to render.
-   */
-  bare = false,
+  embedded = false,
+  disabled,
 }: {
   connections: ConnectionLite[];
   value: string;
   onChange: (id: string) => void;
-  bare?: boolean;
+  /**
+   * Drop the card chrome when the picker sits inside another surface (a
+   * toolbar card with the section's actions). The default standalone form
+   * keeps the chrome so hosts that render it on its own are unchanged.
+   */
+  embedded?: boolean;
+  disabled?: boolean;
 }) {
+  // A page can host two pickers (a section plus a dialog); the hardcoded id
+  // this replaces tied both labels — and both click targets — to whichever
+  // select mounted first.
+  const id = useId();
   return (
     <div
       className={
-        bare
-          ? "flex min-w-[12rem] flex-1 flex-wrap items-center gap-2"
+        embedded
+          ? "flex min-w-0 flex-1 flex-wrap items-center gap-2"
           : `${cardClass} flex flex-wrap items-center gap-3 p-4`
       }
     >
-      {!bare ? (
-        <label className="text-sm font-medium text-foreground" htmlFor="wp-connection-picker-shared">
-          فروشگاه:
-        </label>
-      ) : null}
+      <label className="shrink-0 text-sm font-medium text-foreground" htmlFor={id}>
+        فروشگاه:
+      </label>
       <select
-        id="wp-connection-picker-shared"
-        aria-label="انتخاب فروشگاه"
-        className="min-w-[12rem] flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:border-teal-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/30"
+        id={id}
+        className={`${inputClass} min-w-0 flex-1 basis-40 sm:min-w-56`}
         value={value}
+        disabled={disabled || connections.length === 0}
         onChange={(e) => onChange(e.target.value)}
       >
         {connections.map((c) => (
