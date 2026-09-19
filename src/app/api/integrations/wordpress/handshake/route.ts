@@ -12,5 +12,11 @@ export const POST = pluginRoute(async (connection, body) =>
   pluginHandshake(connection, {
     siteUrl: typeof body.siteUrl === "string" ? body.siteUrl : undefined,
     pluginVersion: typeof body.pluginVersion === "string" ? body.pluginVersion : undefined,
+    protocolVersion: typeof body.protocolVersion === "number" ? body.protocolVersion : undefined,
+    capabilities:
+      body.capabilities && typeof body.capabilities === "object"
+        ? (body.capabilities as { eventTypes?: string[]; jobTypes?: string[] })
+        : undefined,
+    telemetry: body.telemetry && typeof body.telemetry === "object" ? (body.telemetry as Record<string, unknown>) : undefined,
   }),
 );

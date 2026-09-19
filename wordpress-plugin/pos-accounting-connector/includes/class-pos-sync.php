@@ -487,7 +487,72 @@ class POS_Connector_Sync {
 	 * variable parent only carries the parent-level fields (name, sku,
 	 * attributes) the app already needs to create `variant_parent` items.
 	 */
-	public static function product_payload( $product ) {
+		private static function product_taxonomies() {
+			$taxonomies = array();
+			foreach ( get_object_taxonomies( 'product', 'objects' ) as $taxonomy => $object ) {
+				if ( in_array( $taxonomy, array( 'category', 'post_tag' ), true ) ) {
+					continue;
+				}
+				if ( 'product_cat' === $taxonomy || 'product_tag' === $taxonomy || 0 === strpos( $taxonomy, 'pa_' ) || in_array( 'product', (array) $object->object_type, true ) ) {
+					$taxonomies[ $taxonomy ] = $object;
+				}
+			}
+			return $taxonomies;
+		}
+
+		private static function term_payload( $term ) {
+			return array(
+				'id'          => (int) $term->term_id,
+				'taxonomy'    => $term->taxonomy,
+				'parent'      => (int) $term->parent,
+				'name'        => $term->name,
+				'slug'        => $term->slug,
+				'description' => $term->description,
+				'count'       => (int) $term->count,
+				'menu_order'  => (int) get_term_meta( $term->term_id, 'order', true ),
+			);
+		}
+
+		private static function product_terms_payload( $post_id ) {
+			$terms_by_taxonomy = array();
+			foreach ( array_keys( self::product_taxonomies() ) as $taxonomy ) {
+				$terms = wp_get_post_terms( $post_id, $taxonomy );
+				if ( is_wp_error( $terms ) || empty( $terms ) ) {
+					continue;
+				}
+				$terms_by_taxonomy[ $taxonomy ] = array_map( array( __CLASS__, 'term_payload' ), $terms );
+			}
+			return $terms_by_taxonomy;
+		}
+
+		private static function enqueue_taxonomy_snapshot() {
+			$total = 0;
+			foreach ( array_keys( self::product_taxonomies() ) as $taxonomy ) {
+				$terms = get_terms(
+					array(
+						'taxonomy'   => $taxonomy,
+						'hide_empty' => false,
+					)
+				);
+				if ( is_wp_error( $terms ) ) {
+					continue;
+				}
+				$payload_terms = array_map( array( __CLASS__, 'term_payload' ), $terms );
+				$total += count( $payload_terms );
+				POS_Connector_Queue::enqueue(
+					'catalogue.taxonomy_terms',
+					$taxonomy,
+					array(
+						'id'       => $taxonomy,
+						'taxonomy' => $taxonomy,
+						'terms'    => $payload_terms,
+					)
+				);
+			}
+			return $total;
+		}
+
+		public static function product_payload( $product ) {
 		$type         = $product->get_type();
 		$parent_id    = (int) $product->get_parent_id();
 		$description  = $product->get_description();
@@ -552,8 +617,10 @@ class POS_Connector_Sync {
 			);
 		}
 
-		// Images: the main image plus gallery, each as {id, src, alt}.
-		$images   = array();
+			$all_terms = self::product_terms_payload( $term_post_id );
+
+			// Images: the main image plus gallery, each as {id, src, alt}.
+			$images   = array();
 		$image_id = $product->get_image_id();
 		if ( $image_id ) {
 			$src      = wp_get_attachment_url( $image_id );
@@ -598,9 +665,10 @@ class POS_Connector_Sync {
 			'menu_order'       => (int) $product->get_menu_order(),
 			'date_modified'    => $product->get_date_modified() ? $product->get_date_modified()->date( DATE_ATOM ) : null,
 			'attributes'       => $attributes,
-			'categories'       => $categories,
-			'tags'             => $tags,
-			'images'           => $images,
+				'categories'       => $categories,
+				'tags'             => $tags,
+				'terms'            => $all_terms,
+				'images'           => $images,
 		);
 
 		if ( $parent_id ) {
@@ -654,6 +722,41 @@ class POS_Connector_Sync {
 	 * wait for the next tick is what turned a five-minute initial sync into a
 	 * day-long drip.
 	 */
+	private static function record_server_paused() {
+		pos_connector_update_settings(
+			array(
+				'last_ok_at'     => current_time( 'mysql', true ),
+				'last_error'     => __( 'همگام‌سازی از سمت پنل متوقف شده است', 'pos-accounting-connector' ),
+				'last_run_stats' => array( 'paused' => true, 'at' => current_time( 'mysql', true ) ),
+			)
+		);
+		POS_Connector_Log::info( 'paused', 'همگام‌سازی از سمت پنل متوقف شده است' );
+	}
+
+	/**
+	 * Freshly ask the app whether data movement is allowed. Used by the scheduled
+	 * backfills and manual export buttons before they read a large local data set
+	 * into the plugin queue; handshake/ping/health still works while paused.
+	 */
+	public static function server_allows_data_movement() {
+		$client = POS_Connector_Client::from_settings();
+		if ( ! $client ) {
+			POS_Connector_Log::error( 'handshake', 'not_configured' );
+			return false;
+		}
+		$handshake = self::handshake( $client );
+		if ( ! $handshake['ok'] ) {
+			pos_connector_update_settings( array( 'last_error' => POS_Connector_Client::explain( $handshake['error'] ) ) );
+			POS_Connector_Log::error( 'handshake', $handshake['error'] );
+			return false;
+		}
+		if ( isset( $handshake['data']['serverStatus'] ) && 'paused' === $handshake['data']['serverStatus'] ) {
+			self::record_server_paused();
+			return 'paused';
+		}
+		return true;
+	}
+
 	public static function run() {
 		$settings = pos_connector_settings();
 		if ( empty( $settings['enabled'] ) ) {
@@ -673,8 +776,13 @@ class POS_Connector_Sync {
 			return;
 		}
 
-		$started = microtime( true );
-		$pushed  = self::push_queue_until( $client, $started );
+			if ( isset( $handshake['data']['serverStatus'] ) && 'paused' === $handshake['data']['serverStatus'] ) {
+				self::record_server_paused();
+				return array( 'paused' => true, 'pushed' => 0, 'applied' => 0 );
+			}
+
+			$started = microtime( true );
+			$pushed  = self::push_queue_until( $client, $started );
 		$applied = self::pull_jobs( $client );
 		// Whatever budget is left ships the events a just-applied export job
 		// queued, so «همگام‌سازی محصولات» starts producing rows in the same
@@ -732,6 +840,14 @@ class POS_Connector_Sync {
 		if ( empty( $settings['enabled'] ) || empty( $settings['sync_products'] ) ) {
 			return;
 		}
+		$movement = self::server_allows_data_movement();
+		if ( true !== $movement ) {
+			return;
+		}
+		$settings = pos_connector_settings();
+		if ( empty( $settings['sync_products'] ) ) {
+			return;
+		}
 		self::export_products();
 		pos_connector_update_settings( array( 'last_products_sweep_at' => current_time( 'mysql', true ) ) );
 		self::run();
@@ -750,6 +866,14 @@ class POS_Connector_Sync {
 		if ( empty( $settings['enabled'] ) || empty( $settings['sync_orders'] ) ) {
 			return;
 		}
+		$movement = self::server_allows_data_movement();
+		if ( true !== $movement ) {
+			return;
+		}
+		$settings = pos_connector_settings();
+		if ( empty( $settings['sync_orders'] ) ) {
+			return;
+		}
 		self::export_orders( (int) $settings['resync_orders_days'] );
 		pos_connector_update_settings( array( 'last_orders_sweep_at' => current_time( 'mysql', true ) ) );
 		self::run();
@@ -763,14 +887,82 @@ class POS_Connector_Sync {
 	 * switch twice, and the two sides cannot disagree about what is being
 	 * synced.
 	 */
-	public static function handshake( POS_Connector_Client $client ) {
-		$response = $client->post(
-			'/api/integrations/wordpress/handshake',
-			array(
-				'siteUrl'       => home_url(),
-				'pluginVersion' => POS_CONNECTOR_VERSION,
-			)
-		);
+		private static function capabilities() {
+			return array(
+				'eventTypes' => array(
+					'order.created',
+					'order.updated',
+					'refund.created',
+					'product.updated',
+					'customer.updated',
+					'content.updated',
+					'content.deleted',
+					'catalogue.taxonomy_terms',
+					'catalogue.sync_completed',
+					'orders.sync_completed',
+					'customers.sync_completed',
+					'content.sync_completed',
+				),
+				'jobTypes'   => array(
+					'stock',
+					'price',
+					'product_update',
+					'order_status',
+					'refund_create',
+					'catalogue_export',
+					'customer_export',
+					'orders_export',
+					'content_export',
+					'post_upsert',
+					'media_create',
+				),
+			);
+		}
+
+		private static function telemetry() {
+			$settings = pos_connector_settings();
+			$counts   = POS_Connector_Queue::counts();
+			return array(
+				'pluginVersion'       => POS_CONNECTOR_VERSION,
+				'siteUrl'             => home_url(),
+				'wordpressVersion'    => get_bloginfo( 'version' ),
+				'woocommerceVersion'  => defined( 'WC_VERSION' ) ? WC_VERSION : null,
+				'phpVersion'          => PHP_VERSION,
+				'lastSuccessfulRun'   => $settings['last_ok_at'],
+				'lastLocalError'      => $settings['last_error'],
+				'localQueuePending'   => (int) $counts['pending'],
+				'localQueueDeferred'  => (int) POS_Connector_Queue::deferred_count(),
+				'localQueueFailed'    => (int) $counts['failed'],
+				'lastProductsSweep'   => $settings['last_products_sweep_at'],
+				'lastOrdersSweep'     => $settings['last_orders_sweep_at'],
+				'lastCustomersSweep'  => $settings['last_customers_sweep_at'],
+				'lastContentSweep'    => $settings['last_content_sweep_at'],
+				'nextCron'            => array(
+					'fast'      => wp_next_scheduled( POS_CONNECTOR_CRON_HOOK ),
+					'orders'    => wp_next_scheduled( POS_CONNECTOR_CRON_RESYNC_ORDERS ),
+					'catalogue' => wp_next_scheduled( POS_CONNECTOR_CRON_RESYNC_PRODUCTS ),
+					'customers' => wp_next_scheduled( POS_CONNECTOR_CRON_RESYNC_CUSTOMERS ),
+					'content'   => wp_next_scheduled( POS_CONNECTOR_CRON_RESYNC_CONTENT ),
+				),
+				'schedules'          => array(
+					'orders'    => $settings['resync_orders_schedule'],
+					'catalogue' => $settings['resync_products_schedule'],
+					'lookback'  => (int) $settings['resync_orders_days'],
+				),
+			);
+		}
+
+		public static function handshake( POS_Connector_Client $client ) {
+			$response = $client->post(
+				'/api/integrations/wordpress/handshake',
+				array(
+					'siteUrl'         => home_url(),
+					'pluginVersion'   => POS_CONNECTOR_VERSION,
+					'protocolVersion' => 2,
+					'capabilities'    => self::capabilities(),
+					'telemetry'       => self::telemetry(),
+				)
+			);
 		if ( ! $response['ok'] ) {
 			return $response;
 		}
@@ -846,7 +1038,7 @@ class POS_Connector_Sync {
 			}
 			// "duplicate" is a success: the app already has this event, which is
 			// exactly what a retry after a timeout is supposed to discover.
-			if ( isset( $result['status'] ) && in_array( $result['status'], array( 'processed', 'duplicate' ), true ) ) {
+				if ( isset( $result['status'] ) && in_array( $result['status'], array( 'processed', 'duplicate', 'deferred' ), true ) ) {
 				$sent[] = $by_id[ $delivery_id ];
 			} else {
 				++$failed;
@@ -1027,30 +1219,46 @@ class POS_Connector_Sync {
 				$order->save();
 				return;
 
-			case 'refund_create':
-				$order = wc_get_order( $remote );
-				if ( ! $order ) {
-					throw new Exception( 'order_not_found' );
-				}
-				if ( ! isset( $payload['amount'] ) ) {
-					throw new Exception( 'missing_amount' );
-				}
-				// `api_refund` is deliberately forced false: this app records
-				// that a refund was agreed, it does not move money through a
-				// payment gateway. Crediting a card is the store's business.
-				$refund = wc_create_refund(
+				case 'refund_create':
+					$order_remote = isset( $payload['__orderRemoteId'] ) ? (int) $payload['__orderRemoteId'] : $remote;
+					$order = wc_get_order( $order_remote );
+					if ( ! $order ) {
+						throw new Exception( 'order_not_found' );
+					}
+					if ( ! isset( $payload['amount'] ) ) {
+						throw new Exception( 'missing_amount' );
+					}
+					$operation_id = isset( $payload['__operationId'] ) ? (string) $payload['__operationId'] : '';
+					if ( '' === $operation_id ) {
+						throw new Exception( 'operation_id_missing_for_non_idempotent_refund' );
+					}
+					if ( '' !== $operation_id ) {
+						foreach ( $order->get_refunds() as $existing_refund ) {
+							if ( $existing_refund && $existing_refund->get_meta( '_pos_operation_id', true ) === $operation_id ) {
+								return;
+							}
+						}
+					}
+					// `api_refund` is deliberately forced false: this app records
+					// that a refund was agreed, it does not move money through a
+					// payment gateway. Crediting a card is the store's business.
+					$refund = wc_create_refund(
 					array(
 						'amount'     => (string) $payload['amount'],
 						'reason'     => isset( $payload['reason'] ) ? (string) $payload['reason'] : '',
-						'order_id'   => $remote,
+							'order_id'   => $order_remote,
 						'refund_id'  => 0,
 						'restock_items' => true,
 					)
 				);
-				if ( is_wp_error( $refund ) ) {
-					throw new Exception( $refund->get_error_message() );
-				}
-				return;
+					if ( is_wp_error( $refund ) ) {
+						throw new Exception( $refund->get_error_message() );
+					}
+					if ( '' !== $operation_id && $refund ) {
+						$refund->update_meta_data( '_pos_operation_id', $operation_id );
+						$refund->save();
+					}
+					return;
 
 			case 'catalogue_export':
 				self::export_products();
@@ -1076,13 +1284,13 @@ class POS_Connector_Sync {
 				self::apply_media_create( $remote, $payload );
 				return;
 
-			default:
-				// An unknown job type from a newer server. Acking it as done
-				// rather than failing keeps an older plugin from dead-lettering
-				// work it simply does not understand yet.
-				POS_Connector_Log::info( 'job:unknown', $type );
+				default:
+					// Capability negotiation should prevent this. If it still happens,
+					// fail the job loudly rather than ACK/drop an operation the plugin
+					// does not understand.
+					throw new Exception( 'plugin_version_unsupported:' . $type );
+			}
 		}
-	}
 
 	/**
 	 * Apply a create/update to a WordPress post or page.
@@ -1092,11 +1300,38 @@ class POS_Connector_Sync {
 	 * The status is validated against WordPress's own set so a mis-sent value
 	 * cannot push a page into an unknown state.
 	 */
-	private static function apply_post_upsert( array $payload ) {
-		$type = isset( $payload['post_type'] ) && 'page' === $payload['post_type'] ? 'page' : 'post';
-		$id   = isset( $payload['id'] ) ? (int) $payload['id'] : 0;
+		private static function post_id_by_operation( $operation_id, $type ) {
+			if ( '' === $operation_id ) {
+				return 0;
+			}
+			$found = get_posts(
+				array(
+					'post_type'      => $type,
+					'post_status'    => 'attachment' === $type ? 'inherit' : array( 'publish', 'draft', 'pending', 'private', 'future', 'trash' ),
+					'posts_per_page' => 1,
+					'fields'         => 'ids',
+					'meta_key'       => '_pos_operation_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+					'meta_value'     => $operation_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				)
+			);
+			return empty( $found ) ? 0 : (int) $found[0];
+		}
 
-		$allowed_status = array( 'publish', 'draft', 'pending', 'private', 'future' );
+		private static function apply_post_upsert( array $payload ) {
+			$type         = isset( $payload['post_type'] ) && 'page' === $payload['post_type'] ? 'page' : 'post';
+			$id           = isset( $payload['id'] ) ? (int) $payload['id'] : 0;
+			$operation_id = isset( $payload['__operationId'] ) ? sanitize_text_field( (string) $payload['__operationId'] ) : '';
+			if ( $id <= 0 && '' === $operation_id ) {
+				throw new Exception( 'operation_id_missing_for_non_idempotent_post_create' );
+			}
+			if ( $id <= 0 && '' !== $operation_id ) {
+				$existing_by_operation = self::post_id_by_operation( $operation_id, $type );
+				if ( $existing_by_operation > 0 ) {
+					return;
+				}
+			}
+
+			$allowed_status = array( 'publish', 'draft', 'pending', 'private', 'future' );
 		$data           = array();
 		if ( isset( $payload['title'] ) ) {
 			$data['post_title'] = wp_kses_post( (string) $payload['title'] );
@@ -1136,19 +1371,32 @@ class POS_Connector_Sync {
 			$data['post_status'] = isset( $data['post_status'] ) ? $data['post_status'] : 'draft';
 			$result              = wp_insert_post( $data, true );
 		}
-		if ( is_wp_error( $result ) ) {
-			throw new Exception( $result->get_error_message() );
+			if ( is_wp_error( $result ) ) {
+				throw new Exception( $result->get_error_message() );
+			}
+			if ( '' !== $operation_id ) {
+				update_post_meta( (int) $result, '_pos_operation_id', $operation_id );
+			}
 		}
-	}
 
-	/**
-	 * Create a media attachment from a URL the manager supplied (the image
+		/**
+		 * Create a media attachment from a URL the manager supplied (the image
 	 * picker references files already on the store or on a public URL).
 	 */
-	private static function apply_media_create( $remote_id, array $payload ) {
-		if ( empty( $payload['url'] ) ) {
-			throw new Exception( 'missing_media_url' );
-		}
+		private static function apply_media_create( $remote_id, array $payload ) {
+			if ( empty( $payload['url'] ) ) {
+				throw new Exception( 'missing_media_url' );
+			}
+			$operation_id = isset( $payload['__operationId'] ) ? sanitize_text_field( (string) $payload['__operationId'] ) : '';
+			if ( '' === $operation_id ) {
+				throw new Exception( 'operation_id_missing_for_non_idempotent_media_create' );
+			}
+			if ( '' !== $operation_id ) {
+				$existing = self::post_id_by_operation( $operation_id, 'attachment' );
+				if ( $existing > 0 ) {
+					return;
+				}
+			}
 		if ( ! function_exists( 'media_sideload_image' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/media.php';
 			require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -1157,10 +1405,13 @@ class POS_Connector_Sync {
 		$parent_id = ! empty( $payload['parent'] ) ? (int) $payload['parent'] : 0;
 		$desc      = isset( $payload['title'] ) ? (string) $payload['title'] : '';
 		$attachment_id = media_sideload_image( esc_url_raw( (string) $payload['url'] ), $parent_id, $desc, 'id' );
-		if ( is_wp_error( $attachment_id ) ) {
-			throw new Exception( $attachment_id->get_error_message() );
+			if ( is_wp_error( $attachment_id ) ) {
+				throw new Exception( $attachment_id->get_error_message() );
+			}
+			if ( '' !== $operation_id ) {
+				update_post_meta( (int) $attachment_id, '_pos_operation_id', $operation_id );
+			}
 		}
-	}
 
 	/**
 	 * The product a job targets, resolving a variation through its parent.
@@ -1285,15 +1536,30 @@ class POS_Connector_Sync {
 		foreach ( $parents as $product ) {
 			POS_Connector_Queue::enqueue( 'product.updated', $product->get_id(), self::product_payload( $product ) );
 		}
-		foreach ( $variations as $product ) {
-			POS_Connector_Queue::enqueue( 'product.updated', $product->get_id(), self::product_payload( $product ) );
-		}
+			foreach ( $variations as $product ) {
+				POS_Connector_Queue::enqueue( 'product.updated', $product->get_id(), self::product_payload( $product ) );
+			}
 
-		POS_Connector_Log::info(
-			'export',
-			sprintf( '%d محصول و %d تنوع در صف ارسال قرار گرفت.', count( $parents ), count( $variations ) )
-		);
-	}
+			$taxonomy_terms = self::enqueue_taxonomy_snapshot();
+			$sync_id        = wp_generate_uuid4();
+			POS_Connector_Queue::enqueue(
+				'catalogue.sync_completed',
+				$sync_id,
+				array(
+					'id'             => $sync_id,
+					'type'           => 'catalogue',
+					'products'       => count( $parents ),
+					'variations'     => count( $variations ),
+					'taxonomy_terms' => $taxonomy_terms,
+				)
+			);
+
+			POS_Connector_Log::info(
+				'export',
+				sprintf( '%d محصول و %d تنوع در صف ارسال قرار گرفت.', count( $parents ), count( $variations ) )
+			);
+			return count( $parents ) + count( $variations );
+		}
 
 	/**
 	 * Re-send orders changed in the last `$days` days, oldest changed first.
@@ -1335,11 +1601,22 @@ class POS_Connector_Sync {
 			// cron run finite on a runaway backlog; the next sweep drains more.
 		} while ( count( $orders ) === self::ORDER_SWEEP_LIMIT && $page <= 100 );
 
-		POS_Connector_Log::info(
-			'export',
-			sprintf( '%d سفارشِ %d روز گذشته در صف ارسال قرار گرفت.', $enqueued, $days )
-		);
-		return $enqueued;
+			$sync_id = wp_generate_uuid4();
+			POS_Connector_Queue::enqueue(
+				'orders.sync_completed',
+				$sync_id,
+				array(
+					'id'    => $sync_id,
+					'type'  => 'orders',
+					'count' => $enqueued,
+					'days'  => $days,
+				)
+			);
+			POS_Connector_Log::info(
+				'export',
+				sprintf( '%d سفارشِ %d روز گذشته در صف ارسال قرار گرفت.', $enqueued, $days )
+			);
+			return $enqueued;
 	}
 
 	public static function export_customers() {
@@ -1399,8 +1676,19 @@ class POS_Connector_Sync {
 			}
 		}
 
-		POS_Connector_Log::info( 'export', sprintf( '%d مشتری در صف ارسال قرار گرفت.', count( $customer_ids ) ) );
-	}
+			$sync_id = wp_generate_uuid4();
+			POS_Connector_Queue::enqueue(
+				'customers.sync_completed',
+				$sync_id,
+				array(
+					'id'    => $sync_id,
+					'type'  => 'customers',
+					'count' => count( $customer_ids ),
+				)
+			);
+			POS_Connector_Log::info( 'export', sprintf( '%d مشتری در صف ارسال قرار گرفت.', count( $customer_ids ) ) );
+			return count( $customer_ids );
+		}
 
 	/**
 	 * Queue every post, page and media attachment as a content event — the
@@ -1452,13 +1740,22 @@ class POS_Connector_Sync {
 				'count' => $count,
 			)
 		);
-		POS_Connector_Log::info( 'export', sprintf( '%d محتوای وردپرس در صف ارسال قرار گرفت.', $count ) );
-	}
+			POS_Connector_Log::info( 'export', sprintf( '%d محتوای وردپرس در صف ارسال قرار گرفت.', $count ) );
+			return $count;
+		}
 
 	/** The customer sweep: re-queue the whole customer book. */
 	public static function run_resync_customers() {
 		$settings = pos_connector_settings();
 		if ( empty( $settings['enabled'] ) || empty( $settings['sync_customers'] ) ) {
+			return;
+		}
+		$movement = self::server_allows_data_movement();
+		if ( true !== $movement ) {
+			return;
+		}
+		$settings = pos_connector_settings();
+		if ( empty( $settings['sync_customers'] ) ) {
 			return;
 		}
 		self::export_customers();
@@ -1470,6 +1767,10 @@ class POS_Connector_Sync {
 	public static function run_resync_content() {
 		$settings = pos_connector_settings();
 		if ( empty( $settings['enabled'] ) ) {
+			return;
+		}
+		$movement = self::server_allows_data_movement();
+		if ( true !== $movement ) {
 			return;
 		}
 		self::export_content();

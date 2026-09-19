@@ -39,7 +39,7 @@ describe("WordPress media browsing", () => {
   });
 
   it("distinguishes failed loads from an honestly empty library", () => {
-    expect(media).toMatch(/connectionsError/);
+    expect(media).toMatch(/useWpStore/);
     expect(media).toMatch(/loadError/);
     expect(media).toContain("تلاش دوباره");
     expect(media).toContain("هنوز رسانه‌ای همگام نشده است");

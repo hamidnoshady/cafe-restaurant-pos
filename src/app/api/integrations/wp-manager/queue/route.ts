@@ -30,7 +30,12 @@ export const GET = withTenantScope(async (request: Request) => {
   const direction = url.searchParams.get("direction") as WpQueueFilterOptions["direction"] | null;
   const search = url.searchParams.get("search") || undefined;
   const rawLimit = url.searchParams.get("limit");
-  const limit = rawLimit ? Number(rawLimit) : undefined;
+  const parsedLimit = rawLimit ? Number.parseInt(rawLimit, 10) : undefined;
+  const limit = parsedLimit && Number.isFinite(parsedLimit) ? Math.min(500, Math.max(1, parsedLimit)) : undefined;
+  const parsedPage = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+  const page = Number.isFinite(parsedPage) ? Math.max(1, parsedPage) : 1;
+  const parsedPageSize = Number.parseInt(url.searchParams.get("pageSize") ?? String(limit ?? 25), 10);
+  const pageSize = Number.isFinite(parsedPageSize) ? Math.min(100, Math.max(10, parsedPageSize)) : limit ?? 25;
 
   const [rows, summary] = await Promise.all([
     wpQueue(session.businessId, connectionId, {
@@ -38,11 +43,13 @@ export const GET = withTenantScope(async (request: Request) => {
       direction: direction || undefined,
       search,
       limit,
+      page,
+      pageSize,
     }),
     wpQueueSummary(session.businessId, connectionId),
   ]);
 
-  return NextResponse.json({ rows, summary });
+  return NextResponse.json({ rows, summary, page, pageSize });
 });
 
 /** Action handler: retry single, retry all failed, flush outbox queue. */
@@ -69,6 +76,9 @@ export const POST = withTenantScope(async (request: Request) => {
   const connection = await getConnection(session.businessId, connectionId);
   if (!connection || connection.provider !== "woocommerce") {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+  if (connection.status === "paused") {
+    return NextResponse.json({ error: "connection_paused" }, { status: 409 });
   }
 
   if (action === "retry") {

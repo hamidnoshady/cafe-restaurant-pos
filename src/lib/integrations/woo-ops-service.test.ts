@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { query } from "../db";
 import {
   PRODUCT_UPDATE_FIELDS,
+  enqueueOperation,
   sanitizeOrderStatus,
   sanitizeProductPatch,
   sanitizeRefund,
@@ -18,6 +19,9 @@ vi.mock("../db", () => ({
   rlsEffective: vi.fn(),
   assertRlsEffective: vi.fn(),
 }));
+
+vi.mock("./audit", () => ({ writeIntegrationAudit: vi.fn() }));
+vi.mock("./sync-service", () => ({ parentRemoteIdFor: vi.fn() }));
 
 beforeEach(() => {
   vi.mocked(query).mockReset();
@@ -161,6 +165,24 @@ describe("sanitizeRefund", () => {
   });
 });
 
+describe("enqueueOperation", () => {
+  it("does not collapse separate refunds for the same order", async () => {
+    vi.mocked(query).mockResolvedValue({ rows: [] } as never);
+
+    await enqueueOperation("biz", "conn", "refund_create", "7001", { amount: "10", reason: "first" });
+    await enqueueOperation("biz", "conn", "refund_create", "7001", { amount: "11", reason: "second" });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    const firstParams = vi.mocked(query).mock.calls[0][1] as unknown[];
+    const secondParams = vi.mocked(query).mock.calls[1][1] as unknown[];
+    expect(firstParams[3]).toMatch(/^7001:woo-refund:conn:7001:/);
+    expect(secondParams[3]).toMatch(/^7001:woo-refund:conn:7001:/);
+    expect(secondParams[3]).not.toBe(firstParams[3]);
+    expect(JSON.parse(String(firstParams[4]))).toMatchObject({ amount: "10", __orderRemoteId: "7001" });
+    expect(JSON.parse(String(secondParams[4]))).toMatchObject({ amount: "11", __orderRemoteId: "7001" });
+  });
+});
+
 describe("storeOrdersFor", () => {
   it("reads orders from the inbox as well as imported mappings", async () => {
     vi.mocked(query).mockResolvedValue({
@@ -230,6 +252,6 @@ describe("storeOrdersFor", () => {
     const [sql, params] = vi.mocked(query).mock.calls[0];
     expect(String(sql)).toContain("latest_events");
     expect(String(sql)).toContain("integration_webhook_events w");
-    expect(params).toEqual(["biz", "conn", 200]);
+    expect(params).toEqual(["biz", "conn", 200, 0]);
   });
 });

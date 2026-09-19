@@ -118,17 +118,21 @@ export const POST = withTenantScope(async (request: Request) => {
   if (!connection || connection.provider !== "woocommerce") {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+  if (connection.status === "paused") {
+    return NextResponse.json({ error: "connection_paused" }, { status: 409 });
+  }
 
   if (connection.link_mode === "plugin") {
     const outboxRemoteId = remoteId ?? `new-${randomUUID()}`;
-    const jobPayload = { ...patch, post_type: postType, ...(remoteId ? { id: remoteId } : {}) };
+    const operationId = remoteId ? null : `wp-post:${connectionId}:${outboxRemoteId}`;
+    const jobPayload = { ...patch, post_type: postType, ...(remoteId ? { id: remoteId } : {}), ...(operationId ? { __operationId: operationId } : {}) };
     await query(
-      `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload)
-       VALUES ($1, $2, 'post_upsert', $3, $4::jsonb)
+      `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload, operation_id)
+       VALUES ($1, $2, 'post_upsert', $3, $4::jsonb, $5)
        ON CONFLICT (connection_id, entity_type, remote_id)
-       DO UPDATE SET payload = EXCLUDED.payload, status = 'pending', attempts = 0,
+       DO UPDATE SET payload = EXCLUDED.payload, operation_id = COALESCE(integration_outbox_events.operation_id, EXCLUDED.operation_id), status = 'pending', attempts = 0,
                      next_attempt_at = now(), last_error = NULL, leased_until = NULL, updated_at = now()`,
-      [session.businessId, connectionId, outboxRemoteId, JSON.stringify(jobPayload)],
+      [session.businessId, connectionId, outboxRemoteId, JSON.stringify(jobPayload), operationId],
     );
     await writeIntegrationAudit({
       businessId: session.businessId,

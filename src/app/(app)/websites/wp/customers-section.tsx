@@ -11,7 +11,7 @@ import Link from "next/link";
 import { ContactIcon, RefreshCwIcon, ExternalLinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, inputClass } from "@/app/dashboard/ui";
-import { useFeatureLocked } from "@/components/feature-lock";
+
 import {
   cardClass,
   EmptyState,
@@ -21,9 +21,10 @@ import {
 } from "@/app/dashboard/page-chrome";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
+import { ConnectionPicker } from "./connection-lite";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import { PluginWaitNote } from "./plugin-wait-note";
+import { useWpStore } from "./wp-store-context";
 
 interface StoreCustomer {
   remoteId: string;
@@ -42,15 +43,15 @@ interface Notice {
 }
 
 export function WpCustomersSection() {
-  const [connections, setConnections] = useState<ConnectionLite[] | null>(null);
-  const [connectionsError, setConnectionsError] = useState(false);
-  const [selectedId, setSelectedId] = useState("");
+  const { connections, selectedId, setSelectedId } = useWpStore();
   const [customers, setCustomers] = useState<StoreCustomer[] | null>(null);
   const [total, setTotal] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Guards against the two async races this page can hit: late load()
   // responses landing after a newer request (or after unmount) and the
@@ -59,51 +60,35 @@ export function WpCustomersSection() {
   const loadSeqRef = useRef(0);
   const selectedRef = useRef("");
   const syncTimerRef = useRef<number | null>(null);
-  const locked = useFeatureLocked();
-
-  const fetchConnections = useCallback(async () => {
-    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
-    // would only light the console with 403s behind the grayed-out preview.
-    if (locked) {
-      setConnections([]);
-      return;
-    }
-    setConnections(null);
-    setConnectionsError(false);
-    const res = await api<{ connections: ConnectionLite[] }>(
-      "/api/integrations/connections?provider=woocommerce",
-    );
-    if (!mountedRef.current) return;
-    if (res.ok) {
-      setConnections(res.data.connections);
-      // Keep a connection already chosen (a retry must not steal it back).
-      setSelectedId((prev) => prev || res.data.connections[0]?.id || "");
-    } else {
-      setConnectionsError(true);
-    }
-  }, [locked]);
 
   useEffect(() => {
     mountedRef.current = true;
-    void fetchConnections();
     return () => {
       mountedRef.current = false;
       if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
     };
-  }, [fetchConnections]);
+  }, []);
 
-  const load = useCallback(async (connectionId: string) => {
+  const load = useCallback(async (connectionId: string, nextPage = page, nextPageSize = pageSize, nextQuery = query) => {
     const seq = ++loadSeqRef.current;
     setCustomers(null);
     setLoadError(false);
-    const res = await api<{ customers: StoreCustomer[]; total?: number }>(
-      `/api/integrations/wp-manager/customers?connectionId=${encodeURIComponent(connectionId)}`,
+    const params = new URLSearchParams({
+      connectionId,
+      page: String(nextPage),
+      pageSize: String(nextPageSize),
+    });
+    if (nextQuery.trim()) params.set("search", nextQuery.trim());
+    const res = await api<{ customers: StoreCustomer[]; total?: number; page?: number; pageSize?: number }>(
+      `/api/integrations/wp-manager/customers?${params.toString()}`,
     );
     // A newer selection (or unmount) supersedes this response.
     if (!mountedRef.current || seq !== loadSeqRef.current) return;
     if (res.ok) {
       setCustomers(res.data.customers);
       setTotal(typeof res.data.total === "number" ? res.data.total : res.data.customers.length);
+      setPage(typeof res.data.page === "number" ? res.data.page : nextPage);
+      setPageSize(typeof res.data.pageSize === "number" ? res.data.pageSize : nextPageSize);
     } else {
       // Not an empty list — a failed read. Reported as such, with a retry,
       // rather than the «nothing synced yet» copy that would send the owner
@@ -117,8 +102,12 @@ export function WpCustomersSection() {
     selectedRef.current = selectedId;
     setNotice(null);
     setQuery("");
-    if (selectedId) void load(selectedId);
-  }, [selectedId, load]);
+    setPage(1);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedId) void load(selectedId, page, pageSize, query);
+  }, [selectedId, page, pageSize, query, load]);
 
   async function syncCustomers() {
     const connectionId = selectedId;
@@ -153,7 +142,7 @@ export function WpCustomersSection() {
       // store by then, in which case refetching this one would only repaint
       // the wrong list under the new selection.
       syncTimerRef.current = window.setTimeout(() => {
-        if (mountedRef.current && selectedRef.current === connectionId) void load(connectionId);
+        if (mountedRef.current && selectedRef.current === connectionId) void load(connectionId, page, pageSize, query);
       }, 3000);
     } else {
       setNotice({
@@ -163,7 +152,7 @@ export function WpCustomersSection() {
         )} به‌روزرسانی).`,
       });
       // REST pulls apply inside the request, so the fresh list is ready now.
-      void load(connectionId);
+      void load(connectionId, page, pageSize, query);
     }
   }
 
@@ -177,18 +166,8 @@ export function WpCustomersSection() {
     return haystack.includes(needle) || (latinNeedle !== needle && haystack.includes(latinNeedle));
   });
 
-  const truncated = customers !== null && total > customers.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  if (connectionsError) {
-    return (
-      <div className={`${cardClass} px-4 py-8 text-center sm:px-5`}>
-        <p className="text-sm text-red-700 dark:text-red-300">فهرست فروشگاه‌های متصل خوانده نشد.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => void fetchConnections()}>
-          تلاش دوباره
-        </Button>
-      </div>
-    );
-  }
   if (connections === null) return <SectionCardSkeleton rows={6} />;
   if (connections.length === 0) {
     return (
@@ -242,11 +221,7 @@ export function WpCustomersSection() {
               ? "در حال بارگیری…"
               : loadError
                 ? "فهرست مشتریان خوانده نشد."
-                : `${toPersianDigits(total)} مشتری از فروشگاه به پروندهٔ مشتریان سیستم متصل است.${
-                    truncated
-                      ? ` نمایش ${toPersianDigits(customers?.length ?? 0)} نخست — جست‌وجو در همین فهرست اعمال می‌شود.`
-                      : ""
-                  }`}
+                : `${toPersianDigits(total)} مشتری از فروشگاه به پروندهٔ مشتریان سیستم متصل است. صفحه ${toPersianDigits(page)} از ${toPersianDigits(totalPages)}.`}
           </p>
         </div>
 
@@ -258,7 +233,10 @@ export function WpCustomersSection() {
                 placeholder="جست‌وجو در نام، تلفن یا ایمیل…"
                 aria-label="جست‌وجو در مشتریان"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setPage(1);
+                }}
               />
               {needle ? (
                 <span className="text-xs text-muted-foreground">
@@ -276,7 +254,7 @@ export function WpCustomersSection() {
               variant="outline"
               size="sm"
               className="mt-3"
-              onClick={() => selectedId && void load(selectedId)}
+              onClick={() => selectedId && void load(selectedId, page, pageSize, query)}
             >
               تلاش دوباره
             </Button>
@@ -329,6 +307,21 @@ export function WpCustomersSection() {
             ))}
           </ul>
         )}
+        {customers !== null && totalPages > 1 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/80 px-4 py-3 text-xs text-muted-foreground sm:px-5">
+            <span>
+              صفحه {toPersianDigits(page)} از {toPersianDigits(totalPages)} — نمایش {toPersianDigits(customers.length)} ردیف
+            </span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                قبلی
+              </Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>
+                بعدی
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );

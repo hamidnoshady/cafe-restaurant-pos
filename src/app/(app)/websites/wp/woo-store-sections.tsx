@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorBox, InfoBox, errorMessageOrRaw, inputClass } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { formatPersianNumber, formatPersianNumericText, normalizeNumericText, toLatinDigits } from "@/lib/digits";
+import { formatPersianNumber, formatPersianNumericText, normalizeNumericText } from "@/lib/digits";
 import { formatDateTime } from "./format";
 
 export { formatDateTime } from "./format";
@@ -110,6 +110,9 @@ interface CatalogueProduct {
 export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<CatalogueProduct[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [summary, setSummary] = useState<Record<string, number> | null>(null);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -120,13 +123,22 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError("");
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (query.trim()) params.set("search", query.trim());
+    if (typeFilter) params.set("type", typeFilter);
     const { ok, data } = await api<{
       products?: CatalogueProduct[];
       summary?: Record<string, number>;
+      total?: number;
+      page?: number;
+      pageSize?: number;
       error?: string;
-    }>(`/api/integrations/connections/${connectionId}/catalogue`);
+    }>(`/api/integrations/connections/${connectionId}/catalogue?${params.toString()}`);
     if (ok) {
       setProducts(data.products ?? []);
+      setTotal(Number(data.total ?? data.products?.length ?? 0));
+      setPage(Number(data.page ?? page));
+      setPageSize(Number(data.pageSize ?? pageSize));
       setSummary(data.summary ?? null);
     } else {
       setProducts([]);
@@ -134,7 +146,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
       setLoadError(String(data?.error ?? "دریافت محصولات ناموفق بود."));
     }
     setLoading(false);
-  }, [connectionId]);
+  }, [connectionId, page, pageSize, query, typeFilter]);
 
   useEffect(() => {
     void load();
@@ -228,12 +240,22 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
               className={`${inputClass} w-full`}
               placeholder="نام، SKU، دسته یا ویژگی…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
             />
           </label>
           <label className="grid gap-1">
             <span className="text-xs font-medium">نوع محصول</span>
-            <select className={`${inputClass} w-full`} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <select
+              className={`${inputClass} w-full`}
+              value={typeFilter}
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setPage(1);
+              }}
+            >
             <option value="">همهٔ نوع‌ها</option>
             {types.map((type) => (
               <option key={type} value={type}>
@@ -242,11 +264,11 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
             ))}
             </select>
           </label>
-          <Button type="button" variant="outline" className="w-full sm:w-auto" disabled={!query && !typeFilter} onClick={() => { setQuery(""); setTypeFilter(""); }}>
+          <Button type="button" variant="outline" className="w-full sm:w-auto" disabled={!query && !typeFilter} onClick={() => { setQuery(""); setTypeFilter(""); setPage(1); }}>
             پاک‌کردن فیلتر
           </Button>
           <p className="text-xs text-muted-foreground sm:col-span-3" aria-live="polite">
-            نمایش {visible.length.toLocaleString("fa-IR")} از {products.length.toLocaleString("fa-IR")} محصول
+            نمایش {products.length.toLocaleString("fa-IR")} از {total.toLocaleString("fa-IR")} محصول
           </p>
         </div>
       ) : null}
@@ -371,6 +393,21 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
           </li>
         ))}
       </ul>
+      {!loading && total > pageSize ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>
+            صفحه {page.toLocaleString("fa-IR")} از {Math.max(1, Math.ceil(total / pageSize)).toLocaleString("fa-IR")}
+          </span>
+          <span className="flex gap-2">
+            <Button type="button" size="xs" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+              قبلی
+            </Button>
+            <Button type="button" size="xs" variant="outline" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((value) => value + 1)}>
+              بعدی
+            </Button>
+          </span>
+        </div>
+      ) : null}
       <InfoBox>
         تغییر قیمت و موجودی در صف قرار می‌گیرد و در اجرای بعدی (خودکار یا افزونهٔ وردپرس) به فروشگاه می‌رود.
       </InfoBox>
@@ -510,23 +547,6 @@ function orderHasQueuedWork(order: StoreOrder): boolean {
   return order.operations.some((operation) => ACTIVE_OPERATION_STATES.has(operation.status));
 }
 
-function orderSearchHaystack(order: StoreOrder): string {
-  return toLatinDigits(
-    [
-      order.number,
-      order.remoteId,
-      order.customer,
-      order.status,
-      ORDER_STATUS_LABELS[order.status],
-      order.localOrderNumber ?? "",
-      order.paymentMethod,
-      order.ingestError ?? "",
-    ]
-      .filter(Boolean)
-      .join(" "),
-  ).toLowerCase();
-}
-
 function syncResultText(result: { queued?: boolean; imported?: number; duplicates?: number; failed?: number; total?: number }): string {
   if (result.queued) {
     return "درخواست بازخوانی سفارش‌ها در صف افزونه قرار گرفت؛ پس از اجرای افزونه، سفارش‌ها همین‌جا به‌روز می‌شوند.";
@@ -543,6 +563,9 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [orders, setOrders] = useState<StoreOrder[]>([]);
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersPageSize, setOrdersPageSize] = useState(25);
   const [statusFor, setStatusFor] = useState<string | null>(null);
   const [refundFor, setRefundFor] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
@@ -559,20 +582,28 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
     const request = ++loadRequestRef.current;
     setLoading(true);
     setLoadError("");
-    const { ok, data, aborted } = await api<{ orders?: StoreOrder[]; error?: string }>(
-      `/api/integrations/connections/${connectionId}/store/orders`,
+    const params = new URLSearchParams({ page: String(ordersPage), pageSize: String(ordersPageSize) });
+    if (query.trim()) params.set("search", query.trim());
+    if (statusFilter) params.set("status", statusFilter);
+    if (ingestFilter) params.set("view", ingestFilter);
+    const { ok, data, aborted } = await api<{ orders?: StoreOrder[]; total?: number; page?: number; pageSize?: number; error?: string }>(
+      `/api/integrations/connections/${connectionId}/store/orders?${params.toString()}`,
     );
     if (request !== loadRequestRef.current || aborted) return;
     if (ok) {
       setOrders(data.orders ?? []);
+      setOrdersTotal(Number(data.total ?? data.orders?.length ?? 0));
+      setOrdersPage(Number(data.page ?? ordersPage));
+      setOrdersPageSize(Number(data.pageSize ?? ordersPageSize));
     } else {
       setLoadError(errorMessageOrRaw(data.error) || "بارگذاری سفارش‌های فروشگاه ممکن نشد.");
     }
     setLoading(false);
-  }, [connectionId]);
+  }, [connectionId, ordersPage, ordersPageSize, query, statusFilter, ingestFilter]);
 
   useEffect(() => {
     setOrders([]);
+    setOrdersPage(1);
     setStatusFor(null);
     setRefundFor(null);
     setAmount("");
@@ -582,6 +613,9 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
     setIngestFilter("");
     setLocalError("");
     setNotice("");
+  }, [connectionId]);
+
+  useEffect(() => {
     void load();
   }, [load]);
 
@@ -602,18 +636,8 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
     [orders],
   );
 
-  const visibleOrders = useMemo(() => {
-    const needle = toLatinDigits(query.trim()).toLowerCase();
-    return orders.filter((order) => {
-      if (statusFilter && order.status !== statusFilter) return false;
-      if (ingestFilter === "imported" && !order.localOrderId) return false;
-      if (ingestFilter === "unrecorded" && order.localOrderId) return false;
-      if (ingestFilter === "attention" && !orderNeedsAttention(order)) return false;
-      if (ingestFilter === "queued" && !orderHasQueuedWork(order)) return false;
-      if (!needle) return true;
-      return orderSearchHaystack(order).includes(needle);
-    });
-  }, [ingestFilter, orders, query, statusFilter]);
+  const visibleOrders = orders;
+  const hasOrderFilter = Boolean(query.trim() || statusFilter || ingestFilter);
 
   async function runSync() {
     setSyncing(true);
@@ -722,13 +746,13 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
             aria-label="جست‌وجو در سفارش‌های ووکامرس"
             placeholder="جست‌وجو با شماره سفارش، مشتری، روش پرداخت یا خطا…"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => { setOrdersPage(1); setQuery(event.target.value); }}
           />
           <select
             className={inputClass}
             aria-label="فیلتر وضعیت سفارش ووکامرس"
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
+            onChange={(event) => { setOrdersPage(1); setStatusFilter(event.target.value); }}
           >
             <option value="">همهٔ وضعیت‌ها</option>
             {statusOptions.map((status) => (
@@ -741,7 +765,7 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
             className={inputClass}
             aria-label="فیلتر ثبت و صف سفارش"
             value={ingestFilter}
-            onChange={(event) => setIngestFilter(event.target.value)}
+            onChange={(event) => { setOrdersPage(1); setIngestFilter(event.target.value); }}
           >
             <option value="">همهٔ ثبت‌ها</option>
             <option value="imported">ثبت‌شده در حسابداری</option>
@@ -762,12 +786,10 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
 
         {!loading && orders.length === 0 ? (
           <EmptyState>
-            هنوز سفارشی از فروشگاه دریافت نشده است. «همگام‌سازی سفارش‌ها» را بزنید یا وب‌هوک/افزونهٔ وردپرس را بررسی کنید.
+            {hasOrderFilter
+              ? "سفارشی با این جست‌وجو یا فیلتر پیدا نشد."
+              : "هنوز سفارشی از فروشگاه دریافت نشده است. «همگام‌سازی سفارش‌ها» را بزنید یا وب‌هوک/افزونهٔ وردپرس را بررسی کنید."}
           </EmptyState>
-        ) : null}
-
-        {!loading && orders.length > 0 && visibleOrders.length === 0 ? (
-          <EmptyState>سفارشی با این جست‌وجو یا فیلتر پیدا نشد.</EmptyState>
         ) : null}
 
         {!loading && visibleOrders.length > 0 ? (
@@ -939,8 +961,24 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
           </ul>
         ) : null}
 
+        {ordersTotal > ordersPageSize ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>
+              صفحه {ordersPage.toLocaleString("fa-IR")} — نمایش {orders.length.toLocaleString("fa-IR")} از {ordersTotal.toLocaleString("fa-IR")} ردیف خوانده‌شده
+            </span>
+            <span className="flex gap-2">
+              <Button type="button" size="xs" variant="outline" disabled={ordersPage <= 1} onClick={() => setOrdersPage((value) => Math.max(1, value - 1))}>
+                قبلی
+              </Button>
+              <Button type="button" size="xs" variant="outline" disabled={orders.length < ordersPageSize || ordersPage * ordersPageSize >= ordersTotal} onClick={() => setOrdersPage((value) => value + 1)}>
+                بعدی
+              </Button>
+            </span>
+          </div>
+        ) : null}
+
         <InfoBox>
-          این صفحه آخرین ۱۰۰ سفارش یا رویداد سفارشِ شناخته‌شده برای اتصال انتخاب‌شده را نشان می‌دهد. سفارش پرداخت‌نشده ممکن است «ثبت نشده» باشد، اما برای پیگیری وب‌هوک و تغییر وضعیت همچنان نمایش داده می‌شود.
+          این صفحه سفارش‌ها را صفحه‌بندی‌شده از آینهٔ محلی نشان می‌دهد. سفارش پرداخت‌نشده ممکن است «ثبت نشده» باشد، اما برای پیگیری وب‌هوک و تغییر وضعیت همچنان نمایش داده می‌شود.
         </InfoBox>
       </div>
     </SectionCard>

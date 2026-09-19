@@ -172,6 +172,8 @@ export function WpConnectionPanel() {
     linkMode: "plugin" as LinkMode,
     consumerKey: "",
     consumerSecret: "",
+    wpUsername: "",
+    wpApplicationPassword: "",
     currencyUnit: "toman" as "rial" | "toman",
   });
 
@@ -254,7 +256,7 @@ export function WpConnectionPanel() {
     if (!data) return;
     if (data.linkToken) setLinkToken(data.linkToken);
     else if (data.webhookSecret) setWebhookSecret(data.webhookSecret);
-    setForm({ ...form, name: "", baseUrl: "", consumerKey: "", consumerSecret: "" });
+    setForm({ ...form, name: "", baseUrl: "", consumerKey: "", consumerSecret: "", wpUsername: "", wpApplicationPassword: "" });
   }
 
   async function rotateToken(id: string) {
@@ -353,6 +355,25 @@ export function WpConnectionPanel() {
                 value={form.consumerSecret}
                 onChange={(e) => setForm({ ...form, consumerSecret: e.target.value })}
               />
+              <input
+                className={inputClass}
+                dir="ltr"
+                placeholder="WordPress username برای wp/v2 (اختیاری)"
+                value={form.wpUsername}
+                onChange={(e) => setForm({ ...form, wpUsername: e.target.value })}
+              />
+              <input
+                className={inputClass}
+                dir="ltr"
+                type="password"
+                autoComplete="off"
+                placeholder="WordPress Application Password برای محتوا/رسانه"
+                value={form.wpApplicationPassword}
+                onChange={(e) => setForm({ ...form, wpApplicationPassword: e.target.value })}
+              />
+              <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
+                کلیدهای ووکامرس فقط برای wc/v3 استفاده می‌شوند. برای نوشته‌ها، برگه‌ها، رسانه و طبقه‌بندی‌های wp/v2، یک Application Password جداگانه از پروفایل کاربر وردپرس وارد کنید؛ این رمز پس از ذخیره نمایش داده نمی‌شود.
+              </p>
             </>
           ) : null}
           <select

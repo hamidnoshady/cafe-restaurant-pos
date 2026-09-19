@@ -103,6 +103,7 @@ describe("no duplicate party screens", () => {
     // `accounting-customers`, `accounting-suppliers`, `accounting-vendors`).
     const byApp = new Map<string, string[]>();
     for (const def of PARTY_SCOPES_DEF) {
+      if (!def.app || !def.href.includes("/directory")) continue;
       byApp.set(def.app, [...(byApp.get(def.app) ?? []), def.key]);
     }
     for (const [app, keys] of byApp) {

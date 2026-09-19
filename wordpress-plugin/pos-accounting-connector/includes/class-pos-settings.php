@@ -20,9 +20,8 @@ class POS_Connector_Settings {
 
 	const PAGE_SLUG = 'pos-connector';
 
-	public static function init() {
-		add_action( 'admin_menu', array( __CLASS__, 'register_page' ) );
-		add_action( 'admin_post_pos_connector_save', array( __CLASS__, 'handle_save' ) );
+		public static function init() {
+			add_action( 'admin_post_pos_connector_save', array( __CLASS__, 'handle_save' ) );
 		add_action( 'admin_post_pos_connector_test', array( __CLASS__, 'handle_test' ) );
 		add_action( 'admin_post_pos_connector_sync_now', array( __CLASS__, 'handle_sync_now' ) );
 		add_action( 'admin_post_pos_connector_retry', array( __CLASS__, 'handle_retry' ) );
@@ -48,9 +47,9 @@ class POS_Connector_Settings {
 	}
 
 	private static function guard( $action ) {
-		if ( ! current_user_can( 'manage_woocommerce' ) ) {
-			wp_die( esc_html__( 'دسترسی مجاز نیست.', 'pos-accounting-connector' ) );
-		}
+			if ( ! current_user_can( pos_connector_admin_capability() ) ) {
+				wp_die( esc_html__( 'دسترسی مجاز نیست.', 'pos-accounting-connector' ) );
+			}
 		check_admin_referer( $action );
 	}
 
@@ -117,46 +116,88 @@ class POS_Connector_Settings {
 		self::redirect_back( 'test_failed' );
 	}
 
-	public static function handle_sync_now() {
-		self::guard( 'pos_connector_sync_now' );
-		POS_Connector_Sync::run();
-		self::redirect_back( 'synced' );
-	}
+		public static function handle_sync_now() {
+			self::guard( 'pos_connector_sync_now' );
+			$settings = pos_connector_settings();
+			if ( empty( $settings['base_url'] ) || empty( $settings['token'] ) ) {
+				self::redirect_back( 'test_not_configured' );
+			}
+			if ( empty( $settings['enabled'] ) ) {
+				self::redirect_back( 'disabled' );
+			}
+			if ( ! pos_connector_woocommerce_active() ) {
+				self::redirect_back( 'woo_missing' );
+			}
+			$result = POS_Connector_Sync::run();
+			if ( is_array( $result ) && ! empty( $result['paused'] ) ) {
+				self::redirect_back( 'paused' );
+			}
+			self::redirect_back( is_array( $result ) ? 'synced' : 'sync_failed' );
+		}
 
-	public static function handle_retry() {
-		self::guard( 'pos_connector_retry' );
-		$count = POS_Connector_Queue::retry_failed();
-		POS_Connector_Log::info( 'retry', sprintf( '%d رویداد دوباره در صف قرار گرفت.', $count ) );
-		self::redirect_back( 'retried' );
-	}
+		public static function handle_retry() {
+			self::guard( 'pos_connector_retry' );
+			$count = POS_Connector_Queue::retry_failed();
+			POS_Connector_Log::info( 'retry', sprintf( '%d رویداد دوباره در صف قرار گرفت.', $count ) );
+			self::redirect_back( $count > 0 ? 'retried' : 'nothing_to_retry' );
+		}
 
-	public static function handle_resync_products() {
-		self::guard( 'pos_connector_resync_products' );
-		self::queue_products_export();
-		self::redirect_back( 'products_queued' );
-	}
+		public static function handle_resync_products() {
+			self::guard( 'pos_connector_resync_products' );
+			$settings = pos_connector_settings();
+			if ( empty( $settings['enabled'] ) ) self::redirect_back( 'disabled' );
+			if ( empty( $settings['sync_products'] ) ) self::redirect_back( 'products_disabled' );
+			if ( ! pos_connector_woocommerce_active() ) self::redirect_back( 'woo_missing' );
+			$movement = POS_Connector_Sync::server_allows_data_movement();
+			if ( 'paused' === $movement ) self::redirect_back( 'paused' );
+			if ( true !== $movement ) self::redirect_back( 'sync_failed' );
+			self::queue_products_export();
+			self::redirect_back( 'products_queued' );
+		}
 
-	public static function handle_resync_orders() {
-		self::guard( 'pos_connector_resync_orders' );
-		$settings = pos_connector_settings();
-		POS_Connector_Sync::export_orders( (int) $settings['resync_orders_days'] );
-		POS_Connector_Log::info( 'export', 'بازخوانی دستی سفارش‌ها در صف قرار گرفت.' );
-		self::redirect_back( 'orders_queued' );
-	}
+		public static function handle_resync_orders() {
+			self::guard( 'pos_connector_resync_orders' );
+			$settings = pos_connector_settings();
+			if ( empty( $settings['enabled'] ) ) self::redirect_back( 'disabled' );
+			if ( empty( $settings['sync_orders'] ) ) self::redirect_back( 'orders_disabled' );
+			if ( ! pos_connector_woocommerce_active() ) self::redirect_back( 'woo_missing' );
+			$movement = POS_Connector_Sync::server_allows_data_movement();
+			if ( 'paused' === $movement ) self::redirect_back( 'paused' );
+			if ( true !== $movement ) self::redirect_back( 'sync_failed' );
+			$settings = pos_connector_settings();
+			if ( empty( $settings['sync_orders'] ) ) self::redirect_back( 'orders_disabled' );
+			$count = POS_Connector_Sync::export_orders( (int) $settings['resync_orders_days'] );
+			POS_Connector_Log::info( 'export', sprintf( '%d سفارش در صف ارسال قرار گرفت.', (int) $count ) );
+			self::redirect_back( 'orders_queued' );
+		}
 
-	public static function handle_resync_customers() {
-		self::guard( 'pos_connector_resync_customers' );
-		POS_Connector_Sync::export_customers();
-		POS_Connector_Log::info( 'export', 'بازخوانی دستی مشتریان در صف قرار گرفت.' );
-		self::redirect_back( 'customers_queued' );
-	}
+		public static function handle_resync_customers() {
+			self::guard( 'pos_connector_resync_customers' );
+			$settings = pos_connector_settings();
+			if ( empty( $settings['enabled'] ) ) self::redirect_back( 'disabled' );
+			if ( empty( $settings['sync_customers'] ) ) self::redirect_back( 'customers_disabled' );
+			if ( ! pos_connector_woocommerce_active() ) self::redirect_back( 'woo_missing' );
+			$movement = POS_Connector_Sync::server_allows_data_movement();
+			if ( 'paused' === $movement ) self::redirect_back( 'paused' );
+			if ( true !== $movement ) self::redirect_back( 'sync_failed' );
+			$settings = pos_connector_settings();
+			if ( empty( $settings['sync_customers'] ) ) self::redirect_back( 'customers_disabled' );
+			$count = POS_Connector_Sync::export_customers();
+			POS_Connector_Log::info( 'export', sprintf( '%d مشتری در صف ارسال قرار گرفت.', (int) $count ) );
+			self::redirect_back( 'customers_queued' );
+		}
 
-	public static function handle_resync_content() {
-		self::guard( 'pos_connector_resync_content' );
-		POS_Connector_Sync::export_content();
-		POS_Connector_Log::info( 'export', 'بازخوانی دستی محتوا در صف قرار گرفت.' );
-		self::redirect_back( 'content_queued' );
-	}
+		public static function handle_resync_content() {
+			self::guard( 'pos_connector_resync_content' );
+			$settings = pos_connector_settings();
+			if ( empty( $settings['enabled'] ) ) self::redirect_back( 'disabled' );
+			$movement = POS_Connector_Sync::server_allows_data_movement();
+			if ( 'paused' === $movement ) self::redirect_back( 'paused' );
+			if ( true !== $movement ) self::redirect_back( 'sync_failed' );
+			$count = POS_Connector_Sync::export_content();
+			POS_Connector_Log::info( 'export', sprintf( '%d محتوای وردپرس در صف ارسال قرار گرفت.', (int) $count ) );
+			self::redirect_back( 'content_queued' );
+		}
 
 	/**
 	 * Save the sweep cadences and re-arm WP-Cron to match.
@@ -212,8 +253,16 @@ class POS_Connector_Settings {
 			'test_ok'            => array( 'success', 'اتصال برقرار است.' ),
 			'test_failed'        => array( 'error', 'آزمایش اتصال ناموفق بود. متن خطا در پایین صفحه آمده است.' ),
 			'test_not_configured' => array( 'error', 'ابتدا آدرس سامانه و توکن را وارد و ذخیره کنید.' ),
-			'synced'             => array( 'success', 'همگام‌سازی اجرا شد.' ),
-			'retried'            => array( 'success', 'رویدادهای ناموفق دوباره در صف قرار گرفتند.' ),
+				'synced'             => array( 'success', 'همگام‌سازی اجرا شد.' ),
+				'sync_failed'        => array( 'error', 'همگام‌سازی اجرا نشد. تنظیمات، اتصال و گزارش خطاها را بررسی کنید.' ),
+				'disabled'           => array( 'warning', 'افزونه به صورت محلی غیرفعال است؛ عملیاتی انجام نشد.' ),
+				'paused'             => array( 'warning', 'همگام‌سازی از سمت پنل اشوبه متوقف است؛ اتصال و سلامت بررسی شد اما داده‌ای جابه‌جا نشد.' ),
+				'woo_missing'        => array( 'error', 'ووکامرس فعال نیست؛ عملیات ووکامرس اجرا نشد.' ),
+				'nothing_to_retry'   => array( 'info', 'رویداد ناموفقی برای تلاش دوباره وجود نداشت.' ),
+				'products_disabled'  => array( 'warning', 'همگام‌سازی محصولات از پنل سامانه غیرفعال است.' ),
+				'orders_disabled'    => array( 'warning', 'همگام‌سازی سفارش‌ها از پنل سامانه غیرفعال است.' ),
+				'customers_disabled' => array( 'warning', 'همگام‌سازی مشتریان از پنل سامانه غیرفعال است.' ),
+				'retried'            => array( 'success', 'رویدادهای ناموفق دوباره در صف قرار گرفتند.' ),
 			'products_queued'    => array( 'success', 'کل کاتالوگ (با تنوع‌ها) در صف ارسال قرار گرفت.' ),
 			'orders_queued'      => array( 'success', 'سفارش‌های بازهٔ انتخابی در صف ارسال قرار گرفتند.' ),
 			'customers_queued'   => array( 'success', 'همهٔ مشتریان در صف ارسال قرار گرفتند.' ),

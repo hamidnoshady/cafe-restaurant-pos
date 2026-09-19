@@ -24,6 +24,8 @@ import type { ConnectionRow } from "./connections-service";
 export const WOO_SYNC_TICK_INTERVAL_MS = 60 * 1000;
 const DRAIN_BATCH = 25;
 
+class NeedsReviewError extends Error {}
+
 async function resolveLocationId(connection: ConnectionRow): Promise<string> {
   if (connection.location_id) return connection.location_id;
   const { rows } = await query<{ id: string }>(
@@ -189,16 +191,35 @@ async function applyOutboundEvent(
     case "order_status":
       await client.updateOrder(Number(event.remote_id), { status: body.status });
       return;
-    case "refund_create":
+    case "refund_create": {
       // `api_refund` is forced false by woo-ops-service and re-forced here:
       // this channel records a refund, it does not move money through
-      // someone's payment gateway.
-      await client.createRefund(Number(event.remote_id), {
+      // someone's payment gateway. Non-idempotent: tag the remote refund with
+      // a stable operation id and check for it before retrying after an
+      // ambiguous ACK/network failure.
+      const operationId = typeof patch.__operationId === "string" ? patch.__operationId : null;
+      if (!operationId) {
+        throw new NeedsReviewError("operation_id_missing_for_non_idempotent_refund");
+      }
+      const orderRemoteId = typeof patch.__orderRemoteId === "string" ? patch.__orderRemoteId : event.remote_id;
+      if (operationId) {
+        const existing = await client.listOrderRefunds(Number(orderRemoteId));
+        if (
+          existing.some((refund) =>
+            (refund.meta_data ?? []).some((meta) => meta.key === "_pos_operation_id" && meta.value === operationId),
+          )
+        ) {
+          return;
+        }
+      }
+      await client.createRefund(Number(orderRemoteId), {
         amount: body.amount,
         reason: body.reason ?? "",
         api_refund: false,
+        ...(operationId ? { meta_data: [{ key: "_pos_operation_id", value: operationId }] } : {}),
       });
       return;
+    }
     case "catalogue_export":
     case "customer_export":
     case "orders_export":
@@ -221,6 +242,7 @@ async function applyOutboundEvent(
 }
 
 export async function drainOutbox(connection: ConnectionRow): Promise<void> {
+  if (connection.status !== "active") return;
   const businessId = connection.business_id;
   const client = wooClientFor(connection);
 
@@ -265,6 +287,23 @@ export async function drainOutbox(connection: ConnectionRow): Promise<void> {
         });
       }
     } catch (err) {
+      if (err instanceof NeedsReviewError) {
+        await query(
+          `UPDATE integration_outbox_events
+              SET status = 'needs_review', last_error = $2, leased_until = NULL, updated_at = now()
+            WHERE id = $1`,
+          [event.id, err.message],
+        );
+        await writeIntegrationAudit({
+          businessId,
+          connectionId: connection.id,
+          action: "outbox.needs_review",
+          entityType: event.entity_type,
+          remoteId: event.remote_id,
+          error: err.message,
+        });
+        continue;
+      }
       const attempts = event.attempts + 1;
       if (isDeadAfterAttempts(attempts, OUTBOX_MAX_ATTEMPTS)) {
         await query(

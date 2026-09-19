@@ -30,12 +30,12 @@ import {
   SlidersHorizontalIcon,
 } from "lucide-react";
 import { api } from "@/app/dashboard/ui";
-import { useFeatureLocked } from "@/components/feature-lock";
 import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
-import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
+import { ConnectionPicker } from "./connection-lite";
 import { PluginWaitNote } from "./plugin-wait-note";
+import { useWpStore } from "./wp-store-context";
 import type { WpQueueRow, WpQueueSummary } from "@/lib/integrations/wp-manager-service";
 
 const KIND_LABELS: Record<string, { label: string; desc: string; link?: string }> = {
@@ -68,6 +68,7 @@ const KIND_LABELS: Record<string, { label: string; desc: string; link?: string }
 
 const STATUS_CONFIG: Record<string, { label: string; tone: "positive" | "active" | "danger" | "neutral"; desc: string }> = {
   pending: { label: "در انتظار ارسال", tone: "neutral", desc: "آماده برای ارسال به فروشگاه در نوبت بعدی" },
+  deferred: { label: "متوقف تا خروج از مکث", tone: "neutral", desc: "در حالت مکث دریافت و ذخیره شده و پس از فعال‌سازی پردازش می‌شود" },
   processing: { label: "در حال پردازش", tone: "active", desc: "در حال حاضر در فرآیند ارسال یا اعمال توسط افزونه" },
   failed: { label: "ناموفق (تلاش مجدد)", tone: "danger", desc: "تلاش با خطا روبرو شد؛ در نوبت بعدی مجدداً ارسال می‌شود" },
   dead: { label: "متوقف‌شده", tone: "danger", desc: "پس از حداکثر تلاش‌ها متوقف شد؛ نیاز به بررسی و تلاش مجدد دستی دارد" },
@@ -76,7 +77,7 @@ const STATUS_CONFIG: Record<string, { label: string; tone: "positive" | "active"
   duplicate: { label: "تکراری (صرف‌نظر)", tone: "neutral", desc: "رویداد قبلاً پردازش شده و شناسه تحویل تکراری بوده است" },
 };
 
-type StatusFilter = "all" | "open" | "failed" | "pending" | "sent";
+type StatusFilter = "all" | "open" | "failed" | "pending" | "deferred" | "sent";
 type DirectionFilter = "all" | "out" | "in";
 
 function describePersianError(raw: string | null): string {
@@ -104,8 +105,7 @@ function describePersianError(raw: string | null): string {
 }
 
 export function WpQueueSection() {
-  const [connections, setConnections] = useState<ConnectionLite[] | null>(null);
-  const [selectedId, setSelectedId] = useState("");
+  const { connections, selectedId, setSelectedId } = useWpStore();
   const [rows, setRows] = useState<WpQueueRow[] | null>(null);
   const [summary, setSummary] = useState<WpQueueSummary | null>(null);
 
@@ -113,6 +113,8 @@ export function WpQueueSection() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(25);
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -121,65 +123,50 @@ export function WpQueueSection() {
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [bannerMessage, setBannerMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const locked = useFeatureLocked();
-
-  useEffect(() => {
-    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
-    // would only light the console with 403s behind the grayed-out preview.
-    if (locked) {
-      setConnections([]);
-      return;
-    }
-    api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
-      if (res.ok && res.data.connections.length > 0) {
-        setConnections(res.data.connections);
-        setSelectedId(res.data.connections[0].id);
-      } else {
-        setConnections([]);
-      }
-    });
-  }, [locked]);
 
   const load = useCallback(
-    async (connectionId: string, status = statusFilter, direction = directionFilter, search = searchQuery) => {
+    async (connectionId: string, status = statusFilter, direction = directionFilter, search = searchQuery, nextPage = page) => {
       if (!connectionId) return;
       setLoading(true);
-      const params = new URLSearchParams({ connectionId });
+      const params = new URLSearchParams({ connectionId, page: String(nextPage), pageSize: String(pageSize) });
       if (status !== "all") params.set("status", status);
       if (direction !== "all") params.set("direction", direction);
       if (search.trim()) params.set("search", search.trim());
 
-      const res = await api<{ rows: WpQueueRow[]; summary?: WpQueueSummary }>(
+      const res = await api<{ rows: WpQueueRow[]; summary?: WpQueueSummary; page?: number }>(
         `/api/integrations/wp-manager/queue?${params.toString()}`,
       );
       setLoading(false);
       if (res.ok) {
         setRows(res.data.rows);
+        setPage(typeof res.data.page === "number" ? res.data.page : nextPage);
         if (res.data.summary) setSummary(res.data.summary);
       } else {
         setRows([]);
       }
     },
-    [statusFilter, directionFilter, searchQuery],
+    [statusFilter, directionFilter, searchQuery, page, pageSize],
   );
 
   useEffect(() => {
     if (selectedId) {
-      load(selectedId, statusFilter, directionFilter, searchQuery);
+      load(selectedId, statusFilter, directionFilter, searchQuery, page);
     }
-  }, [selectedId, statusFilter, directionFilter, load]);
+  }, [selectedId, statusFilter, directionFilter, page, load]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setPage(1);
     if (selectedId) {
-      load(selectedId, statusFilter, directionFilter, searchQuery);
+      load(selectedId, statusFilter, directionFilter, searchQuery, 1);
     }
   };
 
   const handleClearSearch = () => {
     setSearchQuery("");
+    setPage(1);
     if (selectedId) {
-      load(selectedId, statusFilter, directionFilter, "");
+      load(selectedId, statusFilter, directionFilter, "", 1);
     }
   };
 
@@ -331,7 +318,7 @@ export function WpQueueSection() {
             variant="outline"
             size="sm"
             disabled={loading}
-            onClick={() => load(selectedId)}
+            onClick={() => load(selectedId, statusFilter, directionFilter, searchQuery, page)}
             className="shrink-0"
           >
             <RefreshCwIcon className="size-4" />
@@ -375,7 +362,7 @@ export function WpQueueSection() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
           <button
             type="button"
-            onClick={() => setStatusFilter("all")}
+            onClick={() => { setPage(1); setStatusFilter("all"); }}
             className={`${cardClass} p-3 sm:p-4 text-start transition-all hover:border-teal-500/50 ${
               statusFilter === "all" ? "ring-2 ring-teal-500/30 border-teal-500/50" : ""
             }`}
@@ -392,7 +379,7 @@ export function WpQueueSection() {
 
           <button
             type="button"
-            onClick={() => setStatusFilter("pending")}
+            onClick={() => { setPage(1); setStatusFilter("pending"); }}
             className={`${cardClass} p-3 sm:p-4 text-start transition-all hover:border-teal-500/50 ${
               statusFilter === "pending" ? "ring-2 ring-teal-500/30 border-teal-500/50" : ""
             }`}
@@ -404,12 +391,14 @@ export function WpQueueSection() {
             <p className="mt-2 text-xl sm:text-2xl font-bold tabular-nums text-foreground">
               {toPersianDigits(summary.pending)}
             </p>
-            <span className="text-[10px] text-muted-foreground">در صف ارسال به فروشگاه</span>
+            <span className="text-[10px] text-muted-foreground">
+              {summary.deferred > 0 ? `${toPersianDigits(summary.deferred)} تعویق‌شده در مکث` : "در صف ارسال به فروشگاه"}
+            </span>
           </button>
 
           <button
             type="button"
-            onClick={() => setStatusFilter("open")}
+            onClick={() => { setPage(1); setStatusFilter("open"); }}
             className={`${cardClass} p-3 sm:p-4 text-start transition-all hover:border-teal-500/50 ${
               statusFilter === "open" ? "ring-2 ring-teal-500/30 border-teal-500/50" : ""
             }`}
@@ -426,7 +415,7 @@ export function WpQueueSection() {
 
           <button
             type="button"
-            onClick={() => setStatusFilter("failed")}
+            onClick={() => { setPage(1); setStatusFilter("failed"); }}
             className={`${cardClass} p-3 sm:p-4 text-start transition-all hover:border-red-500/50 ${
               statusFilter === "failed" ? "ring-2 ring-red-500/30 border-red-500/50" : ""
             } ${totalFailedCount > 0 ? "bg-red-50/40 dark:bg-red-950/20" : ""}`}
@@ -445,7 +434,7 @@ export function WpQueueSection() {
 
           <button
             type="button"
-            onClick={() => setStatusFilter("sent")}
+            onClick={() => { setPage(1); setStatusFilter("sent"); }}
             className={`${cardClass} col-span-2 sm:col-span-1 p-3 sm:p-4 text-start transition-all hover:border-teal-500/50 ${
               statusFilter === "sent" ? "ring-2 ring-teal-500/30 border-teal-500/50" : ""
             }`}
@@ -472,6 +461,7 @@ export function WpQueueSection() {
                 { key: "open", label: "کارهای باز" },
                 { key: "failed", label: "ناموفق / خطا" },
                 { key: "pending", label: "در انتظار" },
+                { key: "deferred", label: "تعویق‌شده" },
                 { key: "sent", label: "تکمیل‌شده" },
                 { key: "all", label: "همه موارد" },
               ] as const
@@ -479,7 +469,7 @@ export function WpQueueSection() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setStatusFilter(tab.key)}
+                onClick={() => { setPage(1); setStatusFilter(tab.key); }}
                 className={`px-3 py-1.5 font-medium rounded-lg transition-all ${
                   statusFilter === tab.key
                     ? "bg-card text-foreground font-semibold"
@@ -497,7 +487,7 @@ export function WpQueueSection() {
               <SlidersHorizontalIcon className="size-3.5 text-muted-foreground" />
               <select
                 value={directionFilter}
-                onChange={(e) => setDirectionFilter(e.target.value as DirectionFilter)}
+                onChange={(e) => { setPage(1); setDirectionFilter(e.target.value as DirectionFilter); }}
                 className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
                 aria-label="فیلتر جهت رویداد"
               >
@@ -568,7 +558,9 @@ export function WpQueueSection() {
                 ? "هیچ کار یا رویداد ناموفقی در صف وجود ندارد."
                 : statusFilter === "pending"
                   ? "کاری در صف انتظار نیست؛ تمامی داده‌ها با فروشگاه همگام هستند."
-                  : statusFilter === "sent"
+                  : statusFilter === "deferred"
+                    ? "رویداد تعویق‌شده‌ای وجود ندارد."
+                    : statusFilter === "sent"
                     ? "موردی در تاریخچه تکمیل‌شده با این فیلتر یافت نشد."
                     : "صف خالی است — کار در انتظار یا خطایی وجود ندارد."}
             </p>
@@ -577,6 +569,7 @@ export function WpQueueSection() {
                 variant="outline"
                 size="sm"
                 onClick={() => {
+                  setPage(1);
                   setStatusFilter("open");
                   setDirectionFilter("all");
                   setSearchQuery("");
@@ -836,6 +829,19 @@ export function WpQueueSection() {
             })}
           </ul>
         )}
+        {rows && rows.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/80 px-4 py-3 text-xs text-muted-foreground sm:px-5">
+            <span>صفحه {toPersianDigits(page)} — نمایش {toPersianDigits(rows.length)} ردیف</span>
+            <span className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                قبلی
+              </Button>
+              <Button variant="outline" size="sm" disabled={rows.length < pageSize || loading} onClick={() => setPage((value) => value + 1)}>
+                بعدی
+              </Button>
+            </span>
+          </div>
+        ) : null}
       </section>
     </div>
   );

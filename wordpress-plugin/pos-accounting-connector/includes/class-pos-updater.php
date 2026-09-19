@@ -72,7 +72,8 @@ class POS_Connector_Updater {
 	public static function init() {
 		add_filter( 'pre_set_site_transient_update_plugins', array( __CLASS__, 'inject_update' ) );
 		add_filter( 'plugins_api', array( __CLASS__, 'plugin_details' ), 10, 3 );
-		add_filter( 'upgrader_source_selection', array( __CLASS__, 'fix_source_dir' ), 10, 4 );
+			add_filter( 'upgrader_pre_download', array( __CLASS__, 'verify_package_download' ), 10, 4 );
+			add_filter( 'upgrader_source_selection', array( __CLASS__, 'fix_source_dir' ), 10, 4 );
 		add_action( 'upgrader_process_complete', array( __CLASS__, 'after_update' ), 10, 2 );
 		add_action( 'admin_post_pos_connector_check_update', array( __CLASS__, 'handle_check_update' ) );
 	}
@@ -138,8 +139,9 @@ class POS_Connector_Updater {
 			'download_url' => '',
 			'url'          => '',
 			'changelog'    => '',
-			'published_at' => '',
-			'checked_at'   => 0,
+				'published_at' => '',
+				'checksum'     => '',
+				'checked_at'   => 0,
 			'ok'           => false,
 			'error'        => '',
 			// 'self_host' or 'github' — which server the last successful
@@ -187,9 +189,10 @@ class POS_Connector_Updater {
 			'download_url' => '',
 			'url'          => '',
 			'changelog'    => '',
-			'published_at' => '',
-			'error'        => '',
-			'source'       => 'self_host',
+				'published_at' => '',
+				'checksum'     => '',
+				'error'        => '',
+				'source'       => 'self_host',
 		);
 
 		$response = wp_remote_get(
@@ -221,15 +224,18 @@ class POS_Connector_Updater {
 		if ( '' === $fields['error'] ) {
 			$fields['version'] = self::normalize_version( isset( $body['version'] ) && is_string( $body['version'] ) ? $body['version'] : '' );
 			$fields['download_url'] = isset( $body['download_url'] ) && is_string( $body['download_url'] ) ? $body['download_url'] : '';
-			if ( '' === $fields['version'] || '' === $fields['download_url'] ) {
-				$fields['error'] = 'invalid_manifest';
-			} elseif ( ! self::url_on_manifest_host( $fields['download_url'], $manifest_url ) ) {
-				$fields['error'] = 'unexpected_download_url';
-			} else {
-				$fields['changelog']    = isset( $body['notes'] ) && is_string( $body['notes'] ) ? $body['notes'] : '';
-				$fields['published_at'] = isset( $body['published_at'] ) && is_string( $body['published_at'] ) ? $body['published_at'] : '';
-				$fields['url']          = isset( $body['url'] ) && is_string( $body['url'] ) ? $body['url'] : $manifest_url;
-			}
+				$checksum = isset( $body['checksum'] ) && is_string( $body['checksum'] ) ? strtolower( trim( $body['checksum'] ) ) : '';
+				$checksum = preg_replace( '/^sha256:/', '', $checksum );
+				if ( '' === $fields['version'] || '' === $fields['download_url'] || ! preg_match( '/^[a-f0-9]{64}$/', $checksum ) ) {
+					$fields['error'] = 'invalid_manifest';
+				} elseif ( ! self::url_on_manifest_host( $fields['download_url'], $manifest_url ) ) {
+					$fields['error'] = 'unexpected_download_url';
+				} else {
+					$fields['changelog']    = isset( $body['notes'] ) && is_string( $body['notes'] ) ? $body['notes'] : '';
+					$fields['published_at'] = isset( $body['published_at'] ) && is_string( $body['published_at'] ) ? $body['published_at'] : '';
+					$fields['checksum']     = $checksum;
+					$fields['url']          = isset( $body['url'] ) && is_string( $body['url'] ) ? $body['url'] : $manifest_url;
+				}
 		}
 
 		return $fields;
@@ -329,8 +335,9 @@ class POS_Connector_Updater {
 			'download_url' => $result['download_url'],
 			'url'          => '' !== $result['url'] ? $result['url'] : ( 'self_host' === $result['source'] ? self::update_url() : 'https://github.com/' . self::repo() ),
 			'changelog'    => $result['changelog'],
-			'published_at' => $result['published_at'],
-			'checked_at'   => time(),
+				'published_at' => $result['published_at'],
+				'checksum'     => isset( $result['checksum'] ) ? $result['checksum'] : '',
+				'checked_at'   => time(),
 			'ok'           => true,
 			'error'        => '',
 			'source'       => $result['source'],
@@ -563,10 +570,38 @@ class POS_Connector_Updater {
 		return isset( $headers[ $key ] ) ? (string) $headers[ $key ] : '';
 	}
 
-	/**
-	 * Make a GitHub zip installable — the third hook, and the one that makes
-	 * the no-asset path work.
-	 *
+		/**
+		 * Download self-hosted packages with checksum verification before WordPress
+		 * extracts them. GitHub/fork mode is left to WordPress's normal downloader
+		 * and is intended only for development/forks.
+		 */
+		public static function verify_package_download( $reply, $package, $upgrader, $hook_extra ) {
+			if ( false !== $reply || empty( $hook_extra['plugin'] ) || self::plugin_basename() !== $hook_extra['plugin'] ) {
+				return $reply;
+			}
+			$latest = self::read_cache();
+			if ( empty( $latest['checksum'] ) || empty( $latest['download_url'] ) || $package !== $latest['download_url'] ) {
+				return $reply;
+			}
+			if ( ! function_exists( 'download_url' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/file.php';
+			}
+			$file = download_url( $package );
+			if ( is_wp_error( $file ) ) {
+				return $file;
+			}
+			$actual = hash_file( 'sha256', $file );
+			if ( ! hash_equals( $latest['checksum'], $actual ) ) {
+				@unlink( $file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+				return new WP_Error( 'pos_connector_checksum_mismatch', __( 'بستهٔ به‌روزرسانی با چک‌سام اعلام‌شده هم‌خوانی ندارد.', 'pos-accounting-connector' ) );
+			}
+			return $file;
+		}
+
+		/**
+		 * Make a GitHub zip installable — the third hook, and the one that makes
+		 * the no-asset path work.
+		 *
 	 * A release asset built by package-release.sh extracts to
 	 * `pos-accounting-connector/…` and needs nothing. The repository zipball
 	 * extracts to the whole monorepo — Next.js app, docs, docker and all —
@@ -672,9 +707,9 @@ class POS_Connector_Updater {
 	 * screen's own admin-post pattern.
 	 */
 	public static function handle_check_update() {
-		if ( ! current_user_can( 'manage_woocommerce' ) ) {
-			wp_die( esc_html__( 'دسترسی مجاز نیست.', 'pos-accounting-connector' ) );
-		}
+			if ( ! current_user_can( pos_connector_admin_capability() ) ) {
+				wp_die( esc_html__( 'دسترسی مجاز نیست.', 'pos-accounting-connector' ) );
+			}
 		check_admin_referer( 'pos_connector_check_update' );
 
 		$latest = self::check();

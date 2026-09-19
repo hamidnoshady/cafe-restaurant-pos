@@ -34,6 +34,7 @@ import { getBusinessIndustry } from "../industry-guard";
 import { connectionLocationId, resolveOrderCustomerId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
 import { wooLineCandidateIds, shouldImportWooOrder } from "./woo-catalogue";
 import { deleteWpContent, upsertWpContent } from "./wp-content-service";
+import { replaceTerms, type WooTermSnapshot } from "./woo-taxonomy-service";
 import type { WooCustomer, WooOrder, WooOrderLineItem, WooProduct, WooRefund } from "./woocommerce-client";
 import type { Industry } from "../industries";
 
@@ -130,6 +131,7 @@ export interface WebhookEvent {
 export type IngestOutcome =
   | { status: "processed" }
   | { status: "duplicate" }
+  | { status: "deferred" }
   | { status: "failed"; error: string };
 
 /**
@@ -190,6 +192,34 @@ export async function applyIngestEvent(connection: ConnectionRow, event: Webhook
     );
   }
 
+  if (connection.status === "paused") {
+    await query(
+      `UPDATE integration_webhook_events
+          SET status = 'deferred', error = NULL, processed_at = NULL
+        WHERE id = $1`,
+      [inboxId],
+    );
+    await writeIntegrationAudit({
+      businessId,
+      connectionId: connection.id,
+      action: "inbox.deferred_while_paused",
+      entityType: event.topic,
+      remoteId,
+    });
+    return { status: "deferred" };
+  }
+
+  return dispatchIngestEvent(connection, inboxId, event);
+
+}
+
+async function dispatchIngestEvent(
+  connection: ConnectionRow,
+  inboxId: string,
+  event: WebhookEvent,
+): Promise<IngestOutcome> {
+  const businessId = connection.business_id;
+  const remoteId = event.payload?.id != null ? String(event.payload.id) : "";
   try {
     if (event.topic.endsWith("order.created") || event.topic.endsWith("order.updated") || event.topic.endsWith("order.restored")) {
       const order = event.payload as unknown as WooOrder;
@@ -234,6 +264,29 @@ export async function applyIngestEvent(connection: ConnectionRow, event: Webhook
       const contentType = typeof event.payload.type === "string" ? event.payload.type.trim() : "";
       if (!contentType || !/^[1-9]\d*$/.test(remoteId)) throw new Error("invalid_content_delete");
       await deleteWpContent(businessId, connection.id, { id: remoteId, type: contentType });
+    } else if (event.topic.endsWith("catalogue.taxonomy_terms")) {
+      const taxonomy = typeof event.payload.taxonomy === "string" ? event.payload.taxonomy.trim() : "";
+      const terms = Array.isArray(event.payload.terms) ? (event.payload.terms as WooTermSnapshot[]) : [];
+      if (!taxonomy) throw new Error("missing_taxonomy");
+      await replaceTerms(businessId, connection.id, taxonomy, terms);
+    } else if (event.topic.endsWith("catalogue.sync_completed")) {
+      await query(
+        `UPDATE integration_connections SET last_catalogue_sync_at = now(), updated_at = now()
+          WHERE business_id = $1 AND id = $2`,
+        [businessId, connection.id],
+      );
+    } else if (event.topic.endsWith("orders.sync_completed")) {
+      await query(
+        `UPDATE integration_connections SET last_order_sync_at = now(), updated_at = now()
+          WHERE business_id = $1 AND id = $2`,
+        [businessId, connection.id],
+      );
+    } else if (event.topic.endsWith("customers.sync_completed")) {
+      await query(
+        `UPDATE integration_connections SET last_customer_sync_at = now(), updated_at = now()
+          WHERE business_id = $1 AND id = $2`,
+        [businessId, connection.id],
+      );
     } else if (event.topic.endsWith("content.sync_completed")) {
       // The plugin enqueues this marker *after* every row in a full export.
       // Queue ordering therefore makes this an honest watermark: all content
@@ -258,9 +311,72 @@ export async function applyIngestEvent(connection: ConnectionRow, event: Webhook
   }
 }
 
+export async function reprocessExistingIngestEvent(
+  connection: ConnectionRow,
+  inboxId: string,
+): Promise<IngestOutcome> {
+  const { rows } = await query<{
+    id: string;
+    event_topic: string;
+    delivery_id: string;
+    payload: Record<string, unknown>;
+    status: string;
+  }>(
+    `SELECT id, event_topic, delivery_id, payload, status
+       FROM integration_webhook_events
+      WHERE id = $1 AND business_id = $2 AND connection_id = $3`,
+    [inboxId, connection.business_id, connection.id],
+  );
+  const row = rows[0];
+  if (!row) return { status: "failed", error: "inbox_not_found" };
+  await query(
+    `UPDATE integration_webhook_events
+        SET status = 'pending', error = NULL, processed_at = NULL
+      WHERE id = $1`,
+    [row.id],
+  );
+  if (connection.status === "paused") {
+    await query(`UPDATE integration_webhook_events SET status = 'deferred' WHERE id = $1`, [row.id]);
+    return { status: "deferred" };
+  }
+  return dispatchIngestEvent(connection, row.id, {
+    topic: row.event_topic,
+    deliveryId: row.delivery_id,
+    payload: row.payload ?? {},
+  });
+}
+
+export async function reprocessDeferredIngestEvents(connection: ConnectionRow): Promise<{ processed: number; failed: number }> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT id
+       FROM integration_webhook_events
+      WHERE business_id = $1 AND connection_id = $2 AND status = 'deferred'
+      ORDER BY created_at ASC
+      LIMIT 500`,
+    [connection.business_id, connection.id],
+  );
+  let processed = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const outcome = await reprocessExistingIngestEvent(connection, row.id);
+    if (outcome.status === "processed" || outcome.status === "duplicate") processed += 1;
+    if (outcome.status === "failed") failed += 1;
+  }
+  if (processed + failed > 0) {
+    await writeIntegrationAudit({
+      businessId: connection.business_id,
+      connectionId: connection.id,
+      action: "inbox.deferred_reprocessed",
+      payload: { processed, failed },
+    });
+  }
+  return { processed, failed };
+}
+
 async function processWebhookEvent(connection: ConnectionRow, event: WebhookEvent): Promise<NextResponse> {
   const outcome = await applyIngestEvent(connection, event);
   if (outcome.status === "duplicate") return NextResponse.json({ ok: true, duplicate: true }, { status: 200 });
+  if (outcome.status === "deferred") return NextResponse.json({ ok: true, deferred: true }, { status: 202 });
   if (outcome.status === "failed") return NextResponse.json({ ok: false, error: outcome.error }, { status: 500 });
   return NextResponse.json({ ok: true }, { status: 200 });
 }

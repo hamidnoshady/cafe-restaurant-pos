@@ -45,6 +45,12 @@ export interface ConnectionRow extends Record<string, unknown> {
   plugin_version: string | null;
   plugin_site_url: string | null;
   last_plugin_seen_at: string | null;
+  plugin_health: Record<string, unknown>;
+  plugin_capabilities: Record<string, unknown> | null;
+  pending_plugin_site_url: string | null;
+  plugin_site_mismatch_at: string | null;
+  wp_username_ciphertext: string | null;
+  wp_application_password_ciphertext: string | null;
   currency_unit: WooCurrencyUnit;
   sync_orders: boolean;
   sync_products: boolean;
@@ -105,10 +111,95 @@ export interface Connection {
   pluginSiteUrl: string | null;
   /** The last time the plugin authenticated — the only real "is it alive?" signal in plugin mode. */
   lastPluginSeenAt: string | null;
+  pluginHealth: Record<string, unknown>;
+  pluginCapabilities: Record<string, unknown> | null;
+  pendingPluginSiteUrl: string | null;
+  pluginSiteMismatchAt: string | null;
+  hasWordPressCredentials: boolean;
+  transportHealth: TransportHealth;
 }
 
 export function webhookPathFor(connectionId: string): string {
   return `/api/integrations/woocommerce/webhook/${connectionId}`;
+}
+
+/** Plugin-mode freshness threshold. The plugin's fast lane runs every five minutes; three missed runs is stale. */
+export const PLUGIN_HEALTH_STALE_MS = 15 * 60 * 1000;
+
+export type TransportHealthState = "never_connected" | "healthy" | "stale" | "paused" | "error" | "site_mismatch";
+
+export interface TransportHealth {
+  state: TransportHealthState;
+  lastSeenAt: string | null;
+  staleAfterMs: number;
+  checkedAt: string;
+  message?: string;
+}
+
+export function deriveTransportHealth(
+  connection: Pick<ConnectionRow, "link_mode" | "status" | "last_plugin_seen_at" | "last_error" | "plugin_site_mismatch_at">,
+  now = new Date(),
+): TransportHealth {
+  if (connection.status === "paused") {
+    return {
+      state: "paused",
+      lastSeenAt: connection.last_plugin_seen_at,
+      staleAfterMs: PLUGIN_HEALTH_STALE_MS,
+      checkedAt: now.toISOString(),
+      message: "همگام‌سازی از سمت پنل متوقف شده است",
+    };
+  }
+  if (connection.status === "error") {
+    return {
+      state: "error",
+      lastSeenAt: connection.last_plugin_seen_at,
+      staleAfterMs: PLUGIN_HEALTH_STALE_MS,
+      checkedAt: now.toISOString(),
+      message: connection.last_error ?? "connection_error",
+    };
+  }
+  if (connection.link_mode !== "plugin") {
+    return {
+      state: "healthy",
+      lastSeenAt: null,
+      staleAfterMs: PLUGIN_HEALTH_STALE_MS,
+      checkedAt: now.toISOString(),
+    };
+  }
+  if (connection.plugin_site_mismatch_at) {
+    return {
+      state: "site_mismatch",
+      lastSeenAt: connection.last_plugin_seen_at,
+      staleAfterMs: PLUGIN_HEALTH_STALE_MS,
+      checkedAt: now.toISOString(),
+      message: "site_mismatch",
+    };
+  }
+  if (!connection.last_plugin_seen_at) {
+    return {
+      state: "never_connected",
+      lastSeenAt: null,
+      staleAfterMs: PLUGIN_HEALTH_STALE_MS,
+      checkedAt: now.toISOString(),
+      message: "plugin_never_connected",
+    };
+  }
+  const lastSeenMs = Date.parse(connection.last_plugin_seen_at);
+  if (!Number.isFinite(lastSeenMs) || now.getTime() - lastSeenMs > PLUGIN_HEALTH_STALE_MS) {
+    return {
+      state: "stale",
+      lastSeenAt: connection.last_plugin_seen_at,
+      staleAfterMs: PLUGIN_HEALTH_STALE_MS,
+      checkedAt: now.toISOString(),
+      message: "plugin_stale",
+    };
+  }
+  return {
+    state: "healthy",
+    lastSeenAt: connection.last_plugin_seen_at,
+    staleAfterMs: PLUGIN_HEALTH_STALE_MS,
+    checkedAt: now.toISOString(),
+  };
 }
 
 function mapConnection(row: ConnectionRow): Connection {
@@ -144,6 +235,12 @@ function mapConnection(row: ConnectionRow): Connection {
     pluginVersion: row.plugin_version,
     pluginSiteUrl: row.plugin_site_url,
     lastPluginSeenAt: row.last_plugin_seen_at,
+    pluginHealth: row.plugin_health ?? {},
+    pluginCapabilities: row.plugin_capabilities ?? null,
+    pendingPluginSiteUrl: row.pending_plugin_site_url,
+    pluginSiteMismatchAt: row.plugin_site_mismatch_at,
+    hasWordPressCredentials: Boolean(row.wp_username_ciphertext && row.wp_application_password_ciphertext),
+    transportHealth: deriveTransportHealth(row),
   };
 }
 
@@ -151,6 +248,8 @@ export const CONNECTION_COLUMNS = `id, business_id, location_id, name, provider,
   link_mode, consumer_key_ciphertext, consumer_secret_ciphertext, webhook_secret_ciphertext,
   link_token_hash, link_token_ciphertext, link_token_set_at,
   plugin_version, plugin_site_url, last_plugin_seen_at,
+  plugin_health, plugin_capabilities, pending_plugin_site_url, plugin_site_mismatch_at,
+  wp_username_ciphertext, wp_application_password_ciphertext,
   currency_unit, sync_orders, sync_products, sync_customers, push_stock, push_prices,
   sync_categories, auto_pull_orders, order_lookback_days,
   status, last_sync_at, last_catalogue_sync_at, last_order_sync_at,
@@ -180,6 +279,9 @@ export interface CreateConnectionInput {
   /** Required in `rest_api` mode, ignored in `plugin` mode. */
   consumerKey?: string;
   consumerSecret?: string;
+  /** Optional separate WordPress Core REST credentials for wp/v2 content/taxonomy calls. */
+  wpUsername?: string;
+  wpApplicationPassword?: string;
   currencyUnit: WooCurrencyUnit;
   locationId?: string | null;
   syncOrders?: boolean;
@@ -234,11 +336,12 @@ export async function createConnection(
        (business_id, location_id, name, base_url, link_mode,
         consumer_key_ciphertext, consumer_secret_ciphertext, webhook_secret_ciphertext,
         link_token_hash, link_token_ciphertext, link_token_set_at,
+        wp_username_ciphertext, wp_application_password_ciphertext,
         currency_unit, sync_orders, sync_products, sync_customers, push_stock, push_prices,
         sync_categories, auto_pull_orders, order_lookback_days, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
              CASE WHEN $9::text IS NULL THEN NULL ELSE now() END,
-             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
      RETURNING ${CONNECTION_COLUMNS}`,
     [
       businessId,
@@ -251,6 +354,8 @@ export async function createConnection(
       encryptSecret(webhookSecret, key),
       linkToken ? hashPluginToken(linkToken) : null,
       linkToken ? encryptSecret(linkToken, key) : null,
+      input.wpUsername?.trim() ? encryptSecret(input.wpUsername.trim(), key) : null,
+      input.wpApplicationPassword?.trim() ? encryptSecret(input.wpApplicationPassword.trim(), key) : null,
       input.currencyUnit,
       input.syncOrders ?? true,
       input.syncProducts ?? true,
@@ -297,7 +402,15 @@ export async function rotateLinkToken(
   const linkToken = generatePluginToken();
   await query(
     `UPDATE integration_connections
-        SET link_token_hash = $3, link_token_ciphertext = $4, link_token_set_at = now(), updated_at = now()
+        SET link_token_hash = $3,
+            link_token_ciphertext = $4,
+            link_token_set_at = now(),
+            last_plugin_seen_at = NULL,
+            plugin_version = NULL,
+            plugin_health = jsonb_build_object('state', 'needs_reconnect', 'rotatedAt', now()),
+            plugin_capabilities = NULL,
+            last_error = 'needs_reconnect',
+            updated_at = now()
       WHERE business_id = $1 AND id = $2`,
     [businessId, id, hashPluginToken(linkToken), encryptSecret(linkToken, key)],
   );
@@ -317,9 +430,12 @@ export interface UpdateConnectionInput {
   syncCategories?: boolean;
   autoPullOrders?: boolean;
   orderLookbackDays?: number;
-  /** New credentials, only when the owner is re-authenticating the store. */
+  /** New WooCommerce credentials, only when the owner is re-authenticating the store. */
   consumerKey?: string;
   consumerSecret?: string;
+  /** Separate WordPress Core REST credentials for wp/v2 posts/pages/media in REST mode. */
+  wpUsername?: string;
+  wpApplicationPassword?: string;
 }
 
 export async function updateConnection(
@@ -359,6 +475,10 @@ export async function updateConnection(
   }
   if (input.consumerKey !== undefined) add("consumer_key_ciphertext", encryptSecret(input.consumerKey.trim(), key));
   if (input.consumerSecret !== undefined) add("consumer_secret_ciphertext", encryptSecret(input.consumerSecret.trim(), key));
+  if (input.wpUsername !== undefined) add("wp_username_ciphertext", encryptSecret(input.wpUsername.trim(), key));
+  if (input.wpApplicationPassword !== undefined) {
+    add("wp_application_password_ciphertext", encryptSecret(input.wpApplicationPassword.trim(), key));
+  }
   if (sets.length === 0) return { ok: true, connection: mapConnection(existing) };
 
   const { rows } = await query<ConnectionRow>(
@@ -367,7 +487,15 @@ export async function updateConnection(
       RETURNING ${CONNECTION_COLUMNS}`,
     params,
   );
-  await writeIntegrationAudit({ businessId, connectionId: id, action: "connection.updated", payload: input });
+  const auditPayload = { ...input } as Record<string, unknown>;
+  for (const secretKey of ["consumerKey", "consumerSecret", "wpApplicationPassword"] as const) {
+    if (secretKey in auditPayload) auditPayload[secretKey] = "[stored]";
+  }
+  await writeIntegrationAudit({ businessId, connectionId: id, action: "connection.updated", payload: auditPayload });
+  if (existing.status === "paused" && input.status === "active") {
+    const { reprocessDeferredIngestEvents } = await import("./webhook-ingest-service");
+    await reprocessDeferredIngestEvents(rows[0]);
+  }
   return { ok: true, connection: mapConnection(rows[0]) };
 }
 
@@ -399,6 +527,12 @@ export function wooClientFor(connection: ConnectionRow) {
     baseUrl: connection.base_url,
     consumerKey: decryptSecret(connection.consumer_key_ciphertext, key),
     consumerSecret: decryptSecret(connection.consumer_secret_ciphertext, key),
+    ...(connection.wp_username_ciphertext && connection.wp_application_password_ciphertext
+      ? {
+          wpUsername: decryptSecret(connection.wp_username_ciphertext, key),
+          wpApplicationPassword: decryptSecret(connection.wp_application_password_ciphertext, key),
+        }
+      : {}),
   };
   return createWooCommerceClient(credentials);
 }
@@ -438,16 +572,18 @@ export async function testConnection(
   if (!connection) return { ok: false, error: "not_found" };
 
   if (connection.link_mode === "plugin") {
-    const seen = connection.last_plugin_seen_at;
+    const health = deriveTransportHealth(connection);
+    const ok = health.state === "healthy" || health.state === "paused";
     await writeIntegrationAudit({
       businessId,
       connectionId: id,
-      action: seen ? "connection.test_ok" : "connection.test_failed",
-      error: seen ? undefined : "plugin_never_connected",
+      action: ok ? "connection.plugin_status_ok" : "connection.plugin_status_failed",
+      payload: { health },
+      error: ok ? undefined : health.message ?? health.state,
     });
-    return seen
-      ? { ok: true, lastSeenAt: seen }
-      : { ok: false, error: "plugin_never_connected", lastSeenAt: null };
+    return ok
+      ? { ok: true, lastSeenAt: health.lastSeenAt }
+      : { ok: false, error: health.message ?? health.state, lastSeenAt: health.lastSeenAt };
   }
 
   try {

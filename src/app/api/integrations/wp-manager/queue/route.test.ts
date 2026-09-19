@@ -87,6 +87,7 @@ describe("GET /api/integrations/wp-manager/queue", () => {
       failed: 0,
       dead: 0,
       sent: 0,
+      deferred: 0,
       inboundFailed: 0,
       outboundFailed: 0,
     };
@@ -108,7 +109,37 @@ describe("GET /api/integrations/wp-manager/queue", () => {
       direction: "out",
       search: "5001",
       limit: undefined,
+      page: 1,
+      pageSize: 25,
     });
+  });
+
+  it("forwards server-side pagination parameters", async () => {
+    vi.mocked(wpManagerService.wpQueue).mockResolvedValueOnce([] as never);
+    vi.mocked(wpManagerService.wpQueueSummary).mockResolvedValueOnce({
+      total: 0,
+      pending: 0,
+      processing: 0,
+      failed: 0,
+      dead: 0,
+      sent: 0,
+      deferred: 0,
+      inboundFailed: 0,
+      outboundFailed: 0,
+    } as never);
+
+    const req = new Request(
+      `http://localhost:3000/api/integrations/wp-manager/queue?connectionId=${CONNECTION_ID}&page=3&pageSize=50`,
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.page).toBe(3);
+    expect(body.pageSize).toBe(50);
+    expect(wpManagerService.wpQueue).toHaveBeenCalledWith(SESSION.businessId, CONNECTION_ID, expect.objectContaining({
+      page: 3,
+      pageSize: 50,
+    }));
   });
 });
 
@@ -122,6 +153,19 @@ describe("POST /api/integrations/wp-manager/queue", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body).toEqual({ error: "invalid_json" });
+  });
+
+  it("refuses retry/flush data movement while the connection is paused", async () => {
+    vi.mocked(connectionsService.getConnection).mockResolvedValueOnce({ ...MOCK_CONNECTION, status: "paused" } as never);
+    const req = new Request("http://localhost:3000/api/integrations/wp-manager/queue", {
+      method: "POST",
+      body: JSON.stringify({ action: "flush", connectionId: CONNECTION_ID }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "connection_paused" });
+    expect(wpManagerService.flushWpOutbox).not.toHaveBeenCalled();
   });
 
   it("retries a single queue row when action is retry", async () => {
