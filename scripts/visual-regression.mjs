@@ -364,6 +364,9 @@ async function main() {
     console.log("Review each image before committing — a baseline is an approval.");
   }
   if (failures.length > 0) {
+    for (const failure of failures) {
+      console.error(`::error title=Visual regression::${failure.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`);
+    }
     console.error("\nVisual regressions:\n" + failures.map((f) => `  - ${f}`).join("\n"));
     console.error(
       "\nDiffs written to docs/design/visual/__diff__/." +

@@ -35,7 +35,7 @@ const WpStoreContext = createContext<WpStoreContextValue | null>(null);
 
 export function WpStoreProvider({ children }: { children: React.ReactNode }) {
   const locked = useFeatureLocked();
-  const [connections, setConnections] = useState<WpManagerConnection[] | null>(null);
+  const [connections, setConnections] = useState<WpManagerConnection[] | null>(() => (locked ? [] : null));
   const [selectedId, setSelectedIdState] = useState("");
   const searchParams = useSearchParams();
   const pathname = usePathname();
