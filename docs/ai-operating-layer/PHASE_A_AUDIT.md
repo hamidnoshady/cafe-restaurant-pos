@@ -714,3 +714,44 @@ integration green.
 **Still deferred to Phase F Part 3+:** project files (link table to the Media
 Library — waits on Phase G provenance columns), project tasks, project members,
 and entity `project_id` FKs on agents/coworkers/automations.
+
+## 6f (cont.) — Phase F Part 3 DELIVERED (project tasks — a lifecycle, not just facts)
+
+Notes and memory are STATELESS (a fact is simply true). Part 3 adds the one
+thing a workspace lacks: a unit of work with a LIFECYCLE. A **task** is
+"something to do for this project", open until done — two states, no assignee /
+due date / priority yet (the same restraint 0111 showed deferring those columns).
+
+**Schema.** Migration `0159_ai_project_tasks.sql` — `ai_project_tasks`
+(title, `status` open|done, `source` user|ai, `completed_at` nullable),
+CASCADE off ai_projects, RLS `tenant_isolation` via the parent project row
+(mirrors 0158/0111), plus a partial index on open tasks (the hot read).
+
+**Service (`ai-projects.ts`).** `addTask` (title trim + `PROJECT_TASK_CHAR_LIMIT`
+bound + `PROJECT_TASK_MAX_OPEN` cap counting only OPEN tasks, so completing one
+frees a slot and the prompt context can't grow without bound), `listTasks`
+(open-first), `setTaskStatus` (stamps/clears `completed_at` via an ownership
+join, returns null cross-tenant), `deleteTask`. `ProjectContext.openTasks` and
+`buildProjectPromptContext` render only OPEN tasks under
+`کارهای باز پروژه (هنوز انجام‌نشده):`; `getProjectPromptContext` loads them in
+the same one-pass Promise.all — so completing a task drops it from every future
+turn.
+
+**Action + routes.** `project.task.add` — project-scoped, `alwaysConfirm`,
+ambient project id injected server-side (model supplies only `title`); rides the
+generic chat-route projectScoped injection unchanged. REST:
+`/api/ai/projects/[id]/tasks` (GET/POST) and `.../[taskId]` (PATCH toggle,
+DELETE). Project page gets a tasks list (toggle/add/delete) above memory.
+
+**Tests.** `ai.test.ts` +3 and the `alwaysConfirm` set now pins **four** entries
+(`ar.receipt.record`, `project.memory.add`, `project.task.add`,
+`website.post.publish`); `ai-projects.test.ts` +2 (open-task rendering, bounds);
+`api-guards.test.ts` covers the two new routes; new
+`ai-project-tasks.integration.test.ts` (10 tests) proves the round-trip
+open-task → prompt-context → complete → drops-out, plus bounds and cross-tenant
+null. Full suite **4837 unit tests / 326 files**; `tsc` clean; task +
+tenant-isolation integration green. Commit `503dca9`.
+
+**Still deferred to Phase F Part 4+:** project files (Media Library link — waits
+on Phase G), project members, and entity `project_id` FKs on
+agents/coworkers/automations.
