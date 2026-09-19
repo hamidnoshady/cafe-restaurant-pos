@@ -260,6 +260,22 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           activeProjectId = projectId;
           projectContext = buildProjectPromptContext(ctx);
           promptContext.projectContext = projectContext;
+          // Phase F pt.5 — if the project pins a default agent and the request
+          // did not name one of its own, run this turn as the pinned agent. A
+          // request-level agentId always wins (it is already resolved above);
+          // a disabled/deleted pin resolves to null and the turn stays the full
+          // assistant. This can only NARROW the turn, never widen it.
+          if (!agentScope && ctx.defaultAgentId) {
+            const pinned = await getCustomAgent(session.businessId, ctx.defaultAgentId);
+            if (pinned && pinned.enabled) {
+              agentScope = agentTurnScope(pinned);
+              promptContext.agent = {
+                name: agentScope.name,
+                instructions: agentScope.instructions,
+                actionTypes: agentScope.actionTypes,
+              };
+            }
+          }
           // Only when there is no scoped agent — an agent's action list is its
           // own, and a project does not widen it.
           if (!agentScope) promptContext.projectScoped = true;

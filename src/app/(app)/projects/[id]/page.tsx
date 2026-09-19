@@ -43,10 +43,12 @@ interface Project {
   ownerUserId: string | null;
   ownerName: string | null;
   budgetRial: number | null;
+  defaultAgentId: string | null;
   updatedAt: string;
 }
 interface Cost { spentRial: number; budgetRial: number | null; remainingBudgetRial: number | null; campaigns: number }
 interface OwnerOption { id: string; fullName: string }
+interface AgentOption { id: string; name: string }
 
 interface Note {
   id: string;
@@ -94,10 +96,12 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [cost, setCost] = useState<Cost | null>(null);
   const [owners, setOwners] = useState<OwnerOption[]>([]);
+  const [agents, setAgents] = useState<AgentOption[]>([]);
   const [editingOperations, setEditingOperations] = useState(false);
   const [statusDraft, setStatusDraft] = useState<Project["status"]>("active");
   const [ownerDraft, setOwnerDraft] = useState("");
   const [budgetDraft, setBudgetDraft] = useState("");
+  const [agentDraft, setAgentDraft] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
   const [memory, setMemory] = useState<Memory[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -115,7 +119,7 @@ export default function ProjectDetailPage() {
 
   const load = useCallback(async () => {
     const [projRes, notesRes, memoryRes, tasksRes, convsRes] = await Promise.all([
-      api<{ project: Project; cost: Cost; owners: OwnerOption[] }>(`/api/ai/projects/${id}`),
+      api<{ project: Project; cost: Cost; owners: OwnerOption[]; agents: AgentOption[] }>(`/api/ai/projects/${id}`),
       api<{ notes: Note[] }>(`/api/ai/projects/${id}/notes`),
       api<{ memory: Memory[] }>(`/api/ai/projects/${id}/memory`),
       api<{ tasks: Task[] }>(`/api/ai/projects/${id}/tasks`),
@@ -125,6 +129,7 @@ export default function ProjectDetailPage() {
       setProject(projRes.data.project);
       setCost(projRes.data.cost);
       setOwners(projRes.data.owners);
+      setAgents(projRes.data.agents);
     }
     if (notesRes.ok) setNotes(notesRes.data.notes);
     if (memoryRes.ok) setMemory(memoryRes.data.memory);
@@ -160,6 +165,7 @@ export default function ProjectDetailPage() {
     setStatusDraft(project.status);
     setOwnerDraft(project.ownerUserId ?? "");
     setBudgetDraft(project.budgetRial === null ? "" : String(project.budgetRial));
+    setAgentDraft(project.defaultAgentId ?? "");
     setEditingOperations(true);
   }
 
@@ -169,7 +175,12 @@ export default function ProjectDetailPage() {
     const budgetRial = budgetDraft.trim() === "" ? null : Number(budgetDraft);
     const { ok, data } = await api<{ project: Project; error?: string }>(`/api/ai/projects/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ status: statusDraft, ownerUserId: ownerDraft || null, budgetRial }),
+      body: JSON.stringify({
+        status: statusDraft,
+        ownerUserId: ownerDraft || null,
+        budgetRial,
+        defaultAgentId: agentDraft || null,
+      }),
     });
     if (!ok) { setError(data.error ?? "خطا در ذخیرهٔ تنظیمات پروژه"); return; }
     setProject(data.project);
@@ -410,10 +421,12 @@ export default function ProjectDetailPage() {
                 <label className="grid gap-1 text-xs text-muted-foreground">وضعیت<select className={inputClass} value={statusDraft} onChange={(e) => setStatusDraft(e.target.value as Project["status"])}><option value="active">فعال</option><option value="paused">متوقف</option><option value="completed">تکمیل‌شده</option></select></label>
                 <label className="grid gap-1 text-xs text-muted-foreground">مالک<select className={inputClass} value={ownerDraft} onChange={(e) => setOwnerDraft(e.target.value)}><option value="">بدون مالک</option>{owners.map((member) => <option value={member.id} key={member.id}>{member.fullName}</option>)}</select></label>
                 <label className="grid gap-1 text-xs text-muted-foreground">بودجه (ریال)<input className={inputClass} type="number" min="0" step="1" value={budgetDraft} onChange={(e) => setBudgetDraft(e.target.value)} placeholder="بدون سقف" /></label>
+                <label className="grid gap-1 text-xs text-muted-foreground">ایجنت پیش‌فرض<select className={inputClass} value={agentDraft} onChange={(e) => setAgentDraft(e.target.value)}><option value="">دستیار کامل</option>{agents.map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</select><span className="text-[11px] text-muted-foreground">همهٔ گفت‌وگوهای این پروژه با این ایجنت اجرا می‌شوند.</span></label>
                 <div className="flex gap-2"><Button size="sm" onClick={handleSaveOperations}><SaveIcon className="size-3" /> ذخیره</Button><Button variant="outline" size="sm" onClick={() => setEditingOperations(false)}>انصراف</Button></div>
               </> : <>
                 <p>وضعیت: <b>{project.status === "active" ? "فعال" : project.status === "paused" ? "متوقف" : "تکمیل‌شده"}</b></p>
                 <p>مالک: <b>{project.ownerName ?? "تعیین نشده"}</b></p>
+                <p>ایجنت پیش‌فرض: <b>{project.defaultAgentId ? (agents.find((a) => a.id === project.defaultAgentId)?.name ?? "ایجنت حذف‌شده") : "دستیار کامل"}</b></p>
                 <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">خرج تا امروز</p><b className="text-base">{formatPersianNumber(cost?.spentRial ?? 0)} ریال</b><p className="mt-2 text-xs text-muted-foreground">بودجه: {cost?.budgetRial === null || cost?.budgetRial === undefined ? "تعریف نشده" : `${formatPersianNumber(cost.budgetRial)} ریال`}</p>{cost?.remainingBudgetRial !== null && cost?.remainingBudgetRial !== undefined ? <p className="text-xs text-muted-foreground">ماندهٔ بودجه: {formatPersianNumber(cost.remainingBudgetRial)} ریال</p> : null}<p className="mt-2 text-xs text-muted-foreground">{formatPersianNumber(cost?.campaigns ?? 0)} کمپین مرتبط</p></div>
               </>}
             </div>

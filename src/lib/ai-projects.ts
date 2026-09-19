@@ -50,6 +50,12 @@ export interface AiProject {
   ownerUserId: string | null;
   ownerName: string | null;
   budgetRial: number | null;
+  /**
+   * Phase F pt.5 — the custom agent every conversation in this project runs as
+   * by default. null = the full dashboard assistant. A request-level agentId
+   * still overrides it.
+   */
+  defaultAgentId: string | null;
   updatedAt: string;
 }
 
@@ -108,18 +114,19 @@ type ProjectRow = {
   id: string; name: string; instructions: string; created_by: string;
   archived_at: string | null; created_at: string; status: string;
   owner_user_id: string | null; owner_name: string | null;
-  budget_rial: string | number | null; updated_at: string;
+  budget_rial: string | number | null; default_agent_id: string | null; updated_at: string;
 };
 
 const PROJECT_COLUMNS = `p.id, p.name, p.instructions, p.created_by, p.archived_at, p.created_at,
-  p.status, p.owner_user_id, u.full_name AS owner_name, p.budget_rial, p.updated_at`;
+  p.status, p.owner_user_id, u.full_name AS owner_name, p.budget_rial, p.default_agent_id, p.updated_at`;
 
 function toProject(row: ProjectRow): AiProject {
   return {
     id: row.id, name: row.name, instructions: row.instructions, createdBy: row.created_by,
     archivedAt: row.archived_at, createdAt: row.created_at,
     status: row.status as AiProjectStatus, ownerUserId: row.owner_user_id, ownerName: row.owner_name,
-    budgetRial: row.budget_rial === null ? null : Number(row.budget_rial), updatedAt: row.updated_at,
+    budgetRial: row.budget_rial === null ? null : Number(row.budget_rial),
+    defaultAgentId: row.default_agent_id, updatedAt: row.updated_at,
   };
 }
 
@@ -144,7 +151,8 @@ export async function createProject(
        RETURNING *
      )
      SELECT i.id, i.name, i.instructions, i.created_by, i.archived_at, i.created_at,
-            i.status, i.owner_user_id, u.full_name AS owner_name, i.budget_rial, i.updated_at
+            i.status, i.owner_user_id, u.full_name AS owner_name, i.budget_rial,
+            i.default_agent_id, i.updated_at
        FROM inserted i LEFT JOIN users u ON u.id = i.owner_user_id AND u.business_id = $1`,
     [owner.businessId, name, instructions, owner.actorUserId, owner.actorUserId],
   );
@@ -189,6 +197,7 @@ export async function updateProject(
   input: {
     name?: string; instructions?: string; status?: AiProjectStatus;
     ownerUserId?: string | null; budgetRial?: number | null;
+    defaultAgentId?: string | null;
   },
 ): Promise<AiProject | null> {
   const existing = await getProject(owner);
@@ -200,6 +209,8 @@ export async function updateProject(
   const status = input.status ?? existing.status;
   const budgetRial = input.budgetRial === undefined ? existing.budgetRial : input.budgetRial;
   const ownerUserId = input.ownerUserId === undefined ? existing.ownerUserId : input.ownerUserId;
+  const defaultAgentId =
+    input.defaultAgentId === undefined ? existing.defaultAgentId : input.defaultAgentId;
   if (!["active", "paused", "completed"].includes(status)) throw new Error("invalid_project_status");
   if (budgetRial !== null && (!Number.isSafeInteger(budgetRial) || budgetRial < 0)) throw new Error("invalid_project_budget");
   if (ownerUserId) {
@@ -208,6 +219,17 @@ export async function updateProject(
       [ownerUserId, owner.businessId],
     );
     if (!members[0]) throw new Error("project_owner_not_found");
+  }
+  // A pinned agent must be a real, enabled agent of THIS business. Disabled or
+  // cross-tenant ids are refused (RLS would already stop the cross-tenant read;
+  // this turns it into a clear error rather than a silent null pin). Clearing
+  // the pin (null) is always allowed.
+  if (defaultAgentId) {
+    const { rows: agents } = await query<{ id: string }>(
+      `SELECT id FROM ai_custom_agents WHERE id = $1 AND business_id = $2 AND enabled`,
+      [defaultAgentId, owner.businessId],
+    );
+    if (!agents[0]) throw new Error("project_default_agent_not_found");
   }
 
   // Check instruction limit against existing note titles
@@ -224,14 +246,15 @@ export async function updateProject(
     `WITH updated AS (
        UPDATE ai_projects
           SET name = $3, instructions = $4, status = $5, owner_user_id = $6,
-              budget_rial = $7, updated_at = now()
+              budget_rial = $7, default_agent_id = $8, updated_at = now()
         WHERE id = $1 AND business_id = $2
         RETURNING *
      )
      SELECT p.id, p.name, p.instructions, p.created_by, p.archived_at, p.created_at,
-            p.status, p.owner_user_id, u.full_name AS owner_name, p.budget_rial, p.updated_at
+            p.status, p.owner_user_id, u.full_name AS owner_name, p.budget_rial,
+            p.default_agent_id, p.updated_at
        FROM updated p LEFT JOIN users u ON u.id = p.owner_user_id AND u.business_id = $2`,
-    [owner.projectId, owner.businessId, name, instructions, status, ownerUserId, budgetRial],
+    [owner.projectId, owner.businessId, name, instructions, status, ownerUserId, budgetRial, defaultAgentId],
   );
   return rows[0] ? toProject(rows[0]) : null;
 }
@@ -627,6 +650,12 @@ export interface ProjectContext {
   memory: AiProjectMemory[];
   /** Only OPEN tasks reach the prompt; done tasks drop out of the context. */
   openTasks: AiProjectTask[];
+  /**
+   * Phase F pt.5 — the agent this project pins, if any. The chat route runs the
+   * turn as this agent when the request did not name one of its own. Carried on
+   * the context so the caller resolves it in the same pass it loads the rest.
+   */
+  defaultAgentId: string | null;
 }
 
 /**
@@ -650,6 +679,7 @@ export async function getProjectPromptContext(
     notes,
     memory,
     openTasks: tasks.filter((t) => t.status === "open"),
+    defaultAgentId: project.defaultAgentId,
   };
 }
 
