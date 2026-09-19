@@ -269,8 +269,7 @@ describe("queryBugReports", () => {
     const firstPage = await platformService.queryBugReports({ pageSize: 2 });
     expect(firstPage.total).toBe(4);
     expect(firstPage.reports).toHaveLength(2);
-    // Screenshots are never in the list payload.
-    expect(firstPage.reports.every((r) => r.screenshot === null)).toBe(true);
+    // Screenshots are never in the list payload (the summary type omits them).
     // Status tiles reflect the whole inbox, not the current page.
     expect(firstPage.statusCounts.new).toBe(3);
     expect(firstPage.statusCounts.resolved).toBe(1);

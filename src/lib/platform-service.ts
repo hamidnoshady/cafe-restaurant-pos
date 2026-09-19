@@ -1655,45 +1655,80 @@ function toPlatformSupportTicket(row: PlatformSupportTicketRow): PlatformSupport
   };
 }
 
-/** Every business's tickets, newest activity first, with the console's filters. */
-export async function listSupportTickets({
-  status = "",
-  priority = "",
-  category = "",
-  search = "",
-  businessId = "",
-  assignedToMe = false,
-  adminId = "",
-  limit = 200,
-}: {
+export interface SupportTicketQuery {
   status?: string;
   priority?: string;
   category?: string;
   search?: string;
   businessId?: string;
+  /** Restrict to tickets assigned to `adminId`. */
   assignedToMe?: boolean;
   adminId?: string;
-  limit?: number;
-} = {}): Promise<PlatformSupportTicketSummary[]> {
-  const safeLimit = Number.isFinite(limit) ? Math.floor(limit) : 200;
-  const boundedLimit = Math.min(Math.max(safeLimit, 1), 500);
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<PlatformSupportTicketRow>(
+  page?: number;
+  pageSize?: number;
+}
+
+export interface SupportTicketListResult {
+  tickets: PlatformSupportTicketSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Server-paginated support desk. Same filters as the console's toolbar, but the
+ * free-text search — which scans the whole conversation — runs in SQL, and the
+ * result is a bounded page rather than the whole (potentially large) queue.
+ */
+export async function querySupportTickets(q: SupportTicketQuery = {}): Promise<SupportTicketListResult> {
+  const page = Math.max(1, Math.floor(q.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(q.pageSize ?? 40)));
+  const offset = (page - 1) * pageSize;
+
+  return withoutTenantScope("platform", async () => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    const bind = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (q.status && q.status.trim()) where.push(`t.status = ${bind(q.status.trim().slice(0, 40))}`);
+    if (q.priority && q.priority.trim()) where.push(`t.priority = ${bind(q.priority.trim().slice(0, 20))}`);
+    if (q.category && q.category.trim()) where.push(`t.category = ${bind(q.category.trim().slice(0, 20))}`);
+    if (q.businessId && q.businessId.trim()) where.push(`t.business_id = ${bind(q.businessId.trim())}::uuid`);
+    if (q.assignedToMe && q.adminId) where.push(`t.assigned_admin_id = ${bind(q.adminId)}::uuid`);
+    if (q.search && q.search.trim()) {
+      const p = bind(`%${q.search.trim().slice(0, 200)}%`);
+      where.push(
+        `concat_ws(' ', b.name, u.full_name, t.subject,
+          (SELECT string_agg(m.body, ' ') FROM support_ticket_messages m WHERE m.ticket_id = t.id)
+        ) ILIKE ${p}`,
+      );
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const { rows: countRows } = await query<{ total: string }>(
+      `SELECT count(*)::text AS total
+         FROM support_tickets t
+         JOIN businesses b ON b.id = t.business_id
+         LEFT JOIN users u ON u.id = t.user_id
+        ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const { rows } = await query<PlatformSupportTicketRow>(
       `${PLATFORM_TICKET_SELECT}
-        WHERE ($1 = '' OR t.status = $1)
-          AND ($2 = '' OR t.priority = $2)
-          AND ($3 = '' OR t.category = $3)
-          AND ($4 = '' OR t.business_id = $4::uuid)
-          AND ($5 = false OR t.assigned_admin_id = NULLIF($6, '')::uuid)
-          AND ($7 = '' OR concat_ws(' ', b.name, u.full_name, t.subject,
-               (SELECT string_agg(m.body, ' ') FROM support_ticket_messages m WHERE m.ticket_id = t.id)
-              ) ILIKE '%' || $7 || '%')
+        ${whereSql}
        ORDER BY t.updated_at DESC
-       LIMIT $8`,
-      [status.trim().slice(0, 40), priority.trim().slice(0, 20), category.trim().slice(0, 20), businessId.trim(), assignedToMe, adminId, search.trim().slice(0, 200), boundedLimit],
-    ),
-  );
-  return rows.map(toPlatformSupportTicket);
+       LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    );
+
+    return { tickets: rows.map(toPlatformSupportTicket), total, page, pageSize };
+  });
 }
 
 /** One ticket with its full conversation, for the console. */

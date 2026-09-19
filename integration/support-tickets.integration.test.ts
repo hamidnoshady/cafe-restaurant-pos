@@ -584,7 +584,7 @@ describe("the platform desk", () => {
     const alphaTicket = await seedTicket(alpha.id, alpha.locationId, alpha.ownerId, { subject: "تیکت آلفا" });
     const betaTicket = await seedTicket(beta.id, beta.locationId, beta.cashierId, { subject: "تیکت بتا" });
 
-    const all = await platformService.listSupportTickets();
+    const all = (await platformService.querySupportTickets()).tickets;
     expect(all.map((t) => t.id).sort()).toEqual([alphaTicket.id, betaTicket.id].sort());
 
     const alphaRow = all.find((t) => t.id === alphaTicket.id)!;
@@ -600,23 +600,43 @@ describe("the platform desk", () => {
     const betaTicket = await seedTicket(beta.id, beta.locationId, beta.cashierId, { priority: "urgent" });
     await platformService.updateSupportTicket({ ticketId: billing.id, adminId: admin.id, status: "closed" });
 
-    expect((await platformService.listSupportTickets({ priority: "urgent" })).map((t) => t.id).sort()).toEqual(
-      [urgent.id, betaTicket.id].sort(),
-    );
-    expect((await platformService.listSupportTickets({ status: "closed" })).map((t) => t.id)).toEqual([billing.id]);
-    expect((await platformService.listSupportTickets({ category: "billing" })).map((t) => t.id)).toEqual([billing.id]);
-    expect((await platformService.listSupportTickets({ businessId: beta.id })).map((t) => t.id)).toEqual([betaTicket.id]);
+    const ids = async (q: Parameters<typeof platformService.querySupportTickets>[0]) =>
+      (await platformService.querySupportTickets(q)).tickets.map((t) => t.id);
+
+    expect((await ids({ priority: "urgent" })).sort()).toEqual([urgent.id, betaTicket.id].sort());
+    expect(await ids({ status: "closed" })).toEqual([billing.id]);
+    expect(await ids({ category: "billing" })).toEqual([billing.id]);
+    expect(await ids({ businessId: beta.id })).toEqual([betaTicket.id]);
 
     // Search hits the subject and the message bodies.
-    expect((await platformService.listSupportTickets({ search: "قبض" })).map((t) => t.id)).toEqual([billing.id]);
-    expect((await platformService.listSupportTickets({ search: "شرح اولیه" })).map((t) => t.id)).toEqual(
+    expect(await ids({ search: "قبض" })).toEqual([billing.id]);
+    expect(await ids({ search: "شرح اولیه" })).toEqual(
       expect.arrayContaining([urgent.id, betaTicket.id]),
     );
 
     // «فقطِ من» shows only tickets assigned to the acting admin.
     await platformService.updateSupportTicket({ ticketId: betaTicket.id, adminId: admin.id, assignedAdminId: admin.id });
-    const mine = await platformService.listSupportTickets({ assignedToMe: true, adminId: admin.id });
-    expect(mine.map((t) => t.id)).toEqual([betaTicket.id]);
+    const mine = await ids({ assignedToMe: true, adminId: admin.id });
+    expect(mine).toEqual([betaTicket.id]);
+  });
+
+  it("paginates server-side and clamps the page size", async () => {
+    // Seed enough tickets to require more than one page at pageSize 2.
+    for (let i = 0; i < 5; i++) {
+      await seedTicket(alpha.id, alpha.locationId, alpha.ownerId, { subject: `صفحه‌بندی ${i}` });
+    }
+    const first = await platformService.querySupportTickets({ pageSize: 2, search: "صفحه‌بندی" });
+    expect(first.total).toBe(5);
+    expect(first.tickets).toHaveLength(2);
+    expect(first.page).toBe(1);
+
+    const second = await platformService.querySupportTickets({ pageSize: 2, page: 2, search: "صفحه‌بندی" });
+    expect(second.tickets).toHaveLength(2);
+    // No overlap between pages.
+    expect(second.tickets.some((t) => first.tickets.map((x) => x.id).includes(t.id))).toBe(false);
+
+    const clamped = await platformService.querySupportTickets({ pageSize: 100_000 });
+    expect(clamped.pageSize).toBeLessThanOrEqual(100);
   });
 
   it("an admin reply hands the ticket back to the member and is audited", async () => {
