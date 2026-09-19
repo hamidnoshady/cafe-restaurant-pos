@@ -830,3 +830,66 @@ Commit `f1cc000`.
 **Still deferred to Phase F Part 6+:** project files (Media Library link — waits
 on Phase G provenance columns), project members, and `project_id` FKs on
 coworkers/automations (agents are now reachable from a project via the pin).
+
+## 6f (cont.) — Phase F CAPSTONE DELIVERED + Phase F CLOSED (project files)
+
+The last deferred Phase F item, unblocked once Phase G pt.1 gave `media_assets`
+a `project_id` and pt.2 tagged chat images with it: a project shows its own
+files.
+
+- `GET /api/ai/projects/[id]/files` — ownership through the parent project (the
+  same shape as notes/memory/tasks), then `listMediaAssets` scoped by business +
+  `project_id`. Read-only: files are authored through the chat/media write paths
+  and tagged with provenance there.
+- Project page: a read-only files panel (image thumbnails / document icons,
+  «ساختهٔ دستیار» / «از گفت‌وگو» provenance badges, links to
+  `/api/media/[id]/file`). api-guards covers the route. Commit `a24a775`.
+
+**Phase F (Projects as workspaces) is COMPLETE.** A project now: shapes every
+turn with its instruction + notes + memory + open tasks (pt.1–3, live prompt
+context); owns its conversation list scoped in SQL (pt.4); can pin a default
+agent that scopes those turns (pt.5); and holds its own files (capstone). Still
+genuinely out of scope for later phases (not blocking): project members, and
+`project_id` FKs on coworkers/automations.
+
+## 6g. Phase G — Parts 1–2 DELIVERED (media persistence: the Part 21 gap)
+
+The audit named it in §1.6: AI chat attachments were deliberately non-persistent
+(`ai-attachment.ts`: "nothing here touches a table or object storage"), and
+`media_assets` had no provenance columns, so a receipt pasted into chat or an
+image the assistant made vanished when the turn ended.
+
+**Part 1 — provenance vocabulary (`migrations/0161`).** `media_assets` gains
+`source` ('upload'|'ai_attachment'|'ai_generated', CHECK-pinned),
+`created_by_ai`, `conversation_id` → ai_conversations and `project_id` →
+ai_projects, both **ON DELETE SET NULL** (a file outlives the thread/project that
+made it). Partial indexes on the two workspace reads. Every column is
+backfill-safe (existing assets stay "human upload, no workspace"). No RLS change
+— media_assets is already tenant-isolated (0149). `media-service`:
+`MediaAssetRecord` + `storeMediaAsset` carry provenance (`createdByAi` derived
+from `source` — an ai_attachment is the user's own file, only ai_generated is
+AI-authored); `listMediaAssets` gains `conversationId`/`projectId` filters.
+Commit `bfbcf5c`.
+
+**Part 2 — the write path (`ai-media-persist.ts`).** Pure `decodeImageDataUrl`
+(validates + decodes a base64 image data URL, fail-closed on MIME/byte-signature
+mismatch — a script mislabeled as PNG is refused) + `chatAttachmentFileName`;
+and best-effort `persistChatImageAttachments` (reads media config, stores each
+valid image with `source='ai_attachment'` + conversation/project, never throws).
+PDFs are not stored — their value is the extracted text, not a document-library
+entry per upload. The chat route fires it non-blocking after the turn's
+conversation + project resolve (dashboard/wizard only). Commit `7b7d0aa`.
+
+**Tests.** `ai-media-persist.test.ts` (10, pure decode + filename);
+media-library integration +8 (provenance defaults, ai_attachment/ai_generated,
+conversation/project filters, ON DELETE SET NULL keeps the asset, and the
+persist round-trip incl. skipping a same-turn PDF, skipping when storage is off,
+refusing a mislabeled image). Full suite **4848 unit / 327 files**; `tsc` clean.
+
+**Still to do in Phase G:** persist AI-*generated* images (needs an image-
+generation call site to exist in the chat flow first — auto-tagging/enhance
+already persist through the library's own upload path); a media provenance badge
+on the main library page. **Deferred, blocked:** Phase H (cache/RAG → LiteLLM)
+still requires empirical verification against the deployed
+`ghcr.io/berriai/litellm:main-stable` image before any local removal — no prod
+access in this environment, so it stays untouched per the standing rule.
