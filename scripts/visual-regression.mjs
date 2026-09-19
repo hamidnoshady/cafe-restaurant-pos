@@ -123,19 +123,33 @@ function comparePng(actualBuf, expectedBuf) {
   }
   const diff = new PNG({ width: a.width, height: a.height });
   let changed = 0;
+  let minX = a.width;
+  let minY = a.height;
+  let maxX = -1;
+  let maxY = -1;
   for (let i = 0; i < a.data.length; i += 4) {
     const dr = Math.abs(a.data[i] - b.data[i]);
     const dg = Math.abs(a.data[i + 1] - b.data[i + 1]);
     const db = Math.abs(a.data[i + 2] - b.data[i + 2]);
     // A small per-channel delta is antialiasing, not a design change.
     const differs = dr > 12 || dg > 12 || db > 12;
-    if (differs) changed++;
+    if (differs) {
+      changed++;
+      const pixel = i / 4;
+      const x = pixel % a.width;
+      const y = Math.floor(pixel / a.width);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
     diff.data[i] = differs ? 255 : a.data[i];
     diff.data[i + 1] = differs ? 0 : a.data[i + 1];
     diff.data[i + 2] = differs ? 0 : a.data[i + 2];
     diff.data[i + 3] = 255;
   }
-  return { mismatch: changed / (a.width * a.height), reason: null, diff: PNG.sync.write(diff) };
+  const bounds = changed > 0 ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 } : null;
+  return { mismatch: changed / (a.width * a.height), reason: null, diff: PNG.sync.write(diff), bounds };
 }
 
 async function main() {
@@ -332,13 +346,14 @@ async function main() {
       continue;
     }
 
-    const { mismatch, reason, diff } = comparePng(actual, readFileSync(baselinePath));
+    const { mismatch, reason, diff, bounds } = comparePng(actual, readFileSync(baselinePath));
     if (mismatch > MAX_DIFF_RATIO) {
       mkdirSync(DIFF_DIR, { recursive: true });
       writeFileSync(join(DIFF_DIR, `${screen.id}.actual.png`), actual);
       if (diff) writeFileSync(join(DIFF_DIR, `${screen.id}.diff.png`), diff);
+      const boundsText = bounds ? `, bounds ${bounds.x},${bounds.y} ${bounds.width}×${bounds.height}` : "";
       failures.push(
-        `${screen.id}: ${reason ?? `${(mismatch * 100).toFixed(2)}% of pixels changed`}`,
+        `${screen.id}: ${reason ?? `${(mismatch * 100).toFixed(2)}% of pixels changed${boundsText}`}`,
       );
     }
   }
