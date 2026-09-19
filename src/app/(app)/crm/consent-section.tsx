@@ -131,7 +131,7 @@ export function ConsentSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">پوشش رضایت ارتباط</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">پوشش رضایت ارتباط</h2>
           </div>
         }
         description="چه سهمی از مشتریان اجازه داده‌اند، و چه سهمی واقعاً قابل ارسال‌اند."
@@ -164,7 +164,7 @@ export function ConsentSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ممیزی رضایت</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">سابقهٔ تغییرات رضایت</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">سابقهٔ تغییرات رضایت</h2>
           </div>
         }
         description="فقط افزودنی است؛ هیچ ردیفی ویرایش یا حذف نمی‌شود."

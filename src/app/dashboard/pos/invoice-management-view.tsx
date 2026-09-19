@@ -43,7 +43,7 @@ const chipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     active
       ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
 export function InvoiceManagementView() {
@@ -150,7 +150,7 @@ export function InvoiceManagementView() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت فاکتور</p>
-            <h2 className="mt-1 font-semibold text-stone-950 dark:text-stone-50">همه فاکتورها</h2>
+            <h2 className="mt-1 font-semibold text-foreground">همه فاکتورها</h2>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
               فهرست فاکتورهای ثبت‌شدهٔ این شعبه؛ جست‌وجو، فیلتر روش پرداخت، مشاهدهٔ جزئیات و چاپ مجدد.
             </p>
@@ -160,7 +160,7 @@ export function InvoiceManagementView() {
               type="button"
               onClick={() => setRefreshKey((key) => key + 1)}
               disabled={loading}
-              className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 dark:text-stone-300 sm:flex-none"
+              className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 sm:flex-none"
             >
               <RefreshCwIcon aria-hidden="true" className="size-4" />
               به‌روزرسانی
@@ -169,7 +169,7 @@ export function InvoiceManagementView() {
               type="button"
               onClick={downloadCsv}
               disabled={!rows || rows.length === 0 || loading}
-              className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 dark:text-stone-300 sm:flex-none"
+              className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 sm:flex-none"
               title="خروجی فاکتورهای همین صفحه"
             >
               <DownloadIcon aria-hidden="true" className="size-4" />
@@ -224,24 +224,24 @@ export function InvoiceManagementView() {
             <EmptyState>فاکتوری با این مشخصات ثبت نشده است.</EmptyState>
           ) : rows ? (
             <>
-              <div className="hidden overflow-x-auto rounded-xl border border-stone-200/80 dark:border-stone-500/30 lg:block">
+              <div className="hidden overflow-x-auto rounded-xl border border-border/80 lg:block">
                 <table className="w-full min-w-[900px] text-sm">
                   <thead>
-                    <tr className="border-b border-border bg-stone-50 dark:bg-stone-500/10">
-                      <th className="py-3 pe-3 ps-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400">#</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400">شماره فاکتور</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400">مشتری</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400">اقلام</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400">وضعیت</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400">روش پرداخت</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400">مبلغ</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400">تاریخ ثبت</th>
-                      <th className="py-3 pe-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400">عملیات</th>
+                    <tr className="border-b border-border bg-muted/60">
+                      <th className="py-3 pe-3 ps-4 text-start text-xs font-medium text-muted-foreground">#</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground">شماره فاکتور</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground">مشتری</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground">اقلام</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground">وضعیت</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground">روش پرداخت</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground">مبلغ</th>
+                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground">تاریخ ثبت</th>
+                      <th className="py-3 pe-4 text-start text-xs font-medium text-muted-foreground">عملیات</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((row, index) => (
-                      <tr key={row.id} className="border-b border-border transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-500/10">
+                      <tr key={row.id} className="border-b border-border transition-colors last:border-b-0 hover:bg-muted">
                         <td className="py-3 pe-3 ps-4 text-muted-foreground">{toPersianDigits((page - 1) * pageSize + index + 1)}</td>
                         <td className="whitespace-nowrap py-3 pe-3 font-semibold">{toPersianDigits(row.orderNumber)}</td>
                         <td className="max-w-48 truncate py-3 pe-3 font-medium">{row.customerName ?? "بدون مشتری"}</td>
@@ -304,7 +304,7 @@ export function InvoiceManagementView() {
                     type="button"
                     disabled={page <= 1 || loading}
                     onClick={() => setPage((current) => current - 1)}
-                    className="inline-flex min-h-10 flex-1 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 dark:text-stone-300 sm:flex-none"
+                    className="inline-flex min-h-10 flex-1 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 sm:flex-none"
                   >
                     قبلی
                   </button>
@@ -312,7 +312,7 @@ export function InvoiceManagementView() {
                     type="button"
                     disabled={page >= pageCount || loading}
                     onClick={() => setPage((current) => current + 1)}
-                    className="inline-flex min-h-10 flex-1 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 dark:text-stone-300 sm:flex-none"
+                    className="inline-flex min-h-10 flex-1 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 sm:flex-none"
                   >
                     بعدی
                   </button>

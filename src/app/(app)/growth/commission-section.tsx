@@ -183,7 +183,7 @@ export function CommissionSection() {
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش پورسانت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">رتبه‌بندی فروشندگان</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">رتبه‌بندی فروشندگان</h2>
             </div>
           }
           description="مجموع پورسانت انباشته — همان عددی که به‌عنوان بدهی حقوق ثبت شده است"
@@ -242,7 +242,7 @@ export function CommissionSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مقررات مالی</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">قوانین پورسانت</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">قوانین پورسانت</h2>
           </div>
         }
         description="هر خط فروش به خاص‌ترین قانون می‌رسد: کالا، بعد برند، بعد دسته و در پایان قانون کلی؛ میان قوانین هم‌سطح، اولویت بزرگ‌تر برنده است. قانون حذف نمی‌شود — غیرفعالش کنید تا تاریخچهٔ تسویه حفظ شود."

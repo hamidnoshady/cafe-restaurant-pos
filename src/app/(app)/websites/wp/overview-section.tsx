@@ -88,10 +88,10 @@ function Kpi({
   tone?: "default" | "warn";
 }) {
   const body = (
-    <div className={`${cardClass} flex items-center gap-3 p-4 transition-colors hover:bg-stone-50 dark:hover:bg-stone-900/40 sm:p-5`}>
+    <div className={`${cardClass} flex items-center gap-3 p-4 transition-colors hover:bg-muted/60 dark:hover:bg-stone-900/40 sm:p-5`}>
       <span
         className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${
-          tone === "warn" ? "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300" : "bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300"
+            tone === "warn" ? "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300" : "bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300"
         }`}
       >
         <Icon className="size-5" />
@@ -252,7 +252,7 @@ export function WpOverviewSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت فروشگاه</p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100 sm:text-lg">اتصال و وضعیت همگام‌سازی</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">اتصال و وضعیت همگام‌سازی</h2>
           </div>
         }
         description="فروشگاه متصل را انتخاب کنید و وضعیت همگام‌سازی کاتالوگ، سفارش‌ها و مشتریان را بررسی نمایید."

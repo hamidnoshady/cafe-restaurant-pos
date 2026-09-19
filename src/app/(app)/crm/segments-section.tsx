@@ -289,12 +289,8 @@ export function SegmentsSection() {
       <SectionCard
         title={
           <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-              رفتار خرید
-            </p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">
-              بخش‌بندی مشتریان
-            </h2>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">رفتار خرید</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">بخش‌بندی مشتریان</h2>
           </div>
         }
         description="گروه‌های پویا بر پایهٔ رفتار خرید، برچسب، رضایت ارتباط و ماندهٔ حساب. هر بار که باز می‌شوند، دوباره محاسبه می‌شوند."

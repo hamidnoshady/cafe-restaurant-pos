@@ -8,24 +8,8 @@
  * amount with an optional round, and the lists modal adds/renames/deletes the
  * named lists themselves.
  */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useDeferredValue,
-} from "react";
-import {
-  FileSpreadsheetIcon,
-  PencilIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  SaveIcon,
-  SearchIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
+import { FileSpreadsheetIcon, PencilIcon, PlusIcon, RefreshCwIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,6 +27,8 @@ import type { VariantSummary } from "@/lib/accessories-service";
 import type { PriceEntry, PriceList } from "@/lib/price-lists-service";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
 import { EmptyState, SectionCard, SectionCardSkeleton } from "../page-chrome";
+import { SearchField } from "@/app/dashboard/filters";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 type ColumnKey = string; // "sale" | "purchase" | <price list id>
 type Row = Record<ColumnKey, string>;
@@ -418,30 +404,13 @@ export function PriceListsSection({ apiBase }: { apiBase: string }) {
             : "در حال خواندن…"
         }
         actions={
-          <div className="relative w-full sm:w-64">
-            <SearchIcon
-              aria-hidden="true"
-              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-            <input
-              className={`${inputClass} ps-9 pe-9`}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="فیلتر و جستجو"
-              aria-label="جستجوی کالا بر اساس نام، کد یا بارکد"
-              type="search"
-            />
-            {search ? (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                aria-label="پاک‌کردن جستجو"
-                className="absolute end-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <XIcon aria-hidden="true" className="size-4" />
-              </button>
-            ) : null}
-          </div>
+          <SearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="فیلتر و جستجو"
+            label="جستجوی کالا بر اساس نام، کد یا بارکد"
+            className="w-full sm:w-64"
+          />
         }
         flush
       >
@@ -458,109 +427,53 @@ export function PriceListsSection({ apiBase }: { apiBase: string }) {
             </EmptyState>
           </div>
         ) : (
-          // `max-h` + a sticky head keeps the column titles visible while a long
-          // matrix scrolls; without it the header left the viewport after ~15
-          // rows and every price column became unidentifiable.
-          <div className="min-w-0 max-h-[70vh] overflow-auto overscroll-contain">
-            <table className="w-full min-w-[56rem] border-separate border-spacing-0 text-sm">
-              <caption className="sr-only">
-                جدول قیمت کالاها؛ ستون‌های قیمت فروش، قیمت خرید و لیست‌های قیمت نام‌دار. مبالغ به{" "}
-                {money.unitLabel}.
-              </caption>
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-muted text-xs text-muted-foreground">
-                  <th scope="col" className="border-b border-border/80 px-3 py-3 text-start font-medium">
-                    #
-                  </th>
-                  <th scope="col" className="border-b border-border/80 px-3 py-3 text-start font-medium">
-                    کد کالا
-                  </th>
-                  <th scope="col" className="border-b border-border/80 px-3 py-3 text-start font-medium">
-                    عنوان کالا
-                  </th>
-                  <th scope="col" className="border-b border-border/80 px-3 py-3 text-start font-medium">
-                    قیمت فروش
-                  </th>
-                  <th scope="col" className="border-b border-border/80 px-3 py-3 text-start font-medium">
-                    قیمت خرید
-                  </th>
-                  {lists.map((list) => (
-                    <th
-                      key={list.id}
-                      scope="col"
-                      className="border-b border-border/80 px-3 py-3 text-start font-medium"
-                    >
-                      <span className="block max-w-[10rem] truncate" title={list.name}>
-                        {list.name}
-                      </span>
-                    </th>
+          <DataTable caption="قیمت کالاها در فهرست‌های قیمت" tableClassName="min-w-[56rem]">
+            <DataTableHead>
+              <Th>#</Th>
+              <Th>کد کالا</Th>
+              <Th>عنوان کالا</Th>
+              <Th>قیمت فروش</Th>
+              <Th>قیمت خرید</Th>
+              {lists.map((list) => (
+                <Th key={list.id}>{list.name}</Th>
+              ))}
+            </DataTableHead>
+            <DataTableBody>
+              {filtered.map((item, index) => (
+                <DataTableRow key={item.id}>
+                  <Td muted className="text-xs">{toPersianDigits(index + 1)}</Td>
+                  <Td dir="ltr" muted className="text-xs">
+                    {item.sku ?? "—"}
+                  </Td>
+                  <Td className="font-medium">{item.name}</Td>
+                  {(["sale", "purchase"] as const).map((column) => (
+                    <Td key={column}>
+                      <PriceCell
+                        itemId={item.id}
+                        column={column}
+                        label={`${column === "sale" ? "قیمت فروش" : "قیمت خرید"} ${item.name}`}
+                        value={cells[item.id]?.[column] ?? ""}
+                        changed={(initial[item.id]?.[column] ?? "") !== (cells[item.id]?.[column] ?? "")}
+                        onChange={setCell}
+                      />
+                    </Td>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((item, index) => (
-                  <tr key={item.id} className="even:bg-muted/30 hover:bg-muted/50">
-                    <td className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
-                      {toPersianDigits(index + 1)}
-                    </td>
-                    <td
-                      className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground"
-                      dir="ltr"
-                    >
-                      {item.sku ?? "—"}
-                    </td>
-                    <th
-                      scope="row"
-                      className="border-b border-border/60 px-3 py-2 text-start font-medium text-foreground"
-                    >
-                      <span className="block max-w-[18rem] truncate" title={item.name}>
-                        {item.name}
-                      </span>
-                      {item.parentName ? (
-                        <span className="block max-w-[18rem] truncate text-xs font-normal text-muted-foreground">
-                          {item.parentName}
-                        </span>
-                      ) : null}
-                    </th>
-                    {(["sale", "purchase"] as const).map((column) => (
-                      <td key={column} className="border-b border-border/60 px-3 py-2">
-                        <PriceCell
-                          itemId={item.id}
-                          column={column}
-                          label={`${column === "sale" ? "قیمت فروش" : "قیمت خرید"} ${item.name}`}
-                          value={cells[item.id]?.[column] ?? ""}
-                          changed={(initial[item.id]?.[column] ?? "") !== (cells[item.id]?.[column] ?? "")}
-                          onChange={setCell}
-                        />
-                      </td>
-                    ))}
-                    {lists.map((list) => (
-                      <td key={list.id} className="border-b border-border/60 px-3 py-2">
-                        <PriceCell
-                          itemId={item.id}
-                          column={list.id}
-                          label={`${list.name} ${item.name}`}
-                          value={cells[item.id]?.[list.id] ?? ""}
-                          changed={(initial[item.id]?.[list.id] ?? "") !== (cells[item.id]?.[list.id] ?? "")}
-                          onChange={setCell}
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-              {lists.length === 0 ? (
-                <tfoot>
-                  <tr>
-                    <td colSpan={columnCount} className="px-3 py-3 text-xs text-muted-foreground">
-                      لیست قیمت نام‌داری (مثلاً «عمده» یا «همکار») تعریف نشده است؛ با «مدیریت
-                      لیست‌های قیمت» می‌توانید ستون تازه بسازید.
-                    </td>
-                  </tr>
-                </tfoot>
-              ) : null}
-            </table>
-          </div>
+                  {lists.map((list) => (
+                    <Td key={list.id}>
+                      <PriceCell
+                        itemId={item.id}
+                        column={list.id}
+                        label={`${list.name} ${item.name}`}
+                        value={cells[item.id]?.[list.id] ?? ""}
+                        changed={(initial[item.id]?.[list.id] ?? "") !== (cells[item.id]?.[list.id] ?? "")}
+                        onChange={setCell}
+                      />
+                    </Td>
+                  ))}
+                </DataTableRow>
+              ))}
+            </DataTableBody>
+          </DataTable>
         )}
       </SectionCard>
 

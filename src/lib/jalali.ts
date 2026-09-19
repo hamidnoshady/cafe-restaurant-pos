@@ -150,13 +150,26 @@ export const JALALI_WEEKDAYS = [
 ] as const;
 
 /**
- * Format a Date (or ISO string) as a Jalali date string.
+ * Format a Date (or ISO string) as a Jalali date string, **in Persian digits**.
  * Uses the date's value in the given IANA time zone (default Asia/Tehran) —
  * storage stays ISO/UTC, only display shifts.
  *
  * `withTime` appends the wall-clock time in that same zone (24-hour, zero
  * padded) — needed wherever an exact moment matters rather than just the day
  * (shift start/end, audit events).
+ *
+ * The digits are Persian because this function's output is, without exception,
+ * user-facing text. It used to return ASCII digits, which made every caller
+ * responsible for remembering `toPersianDigits(...)` — and 42 of 193 call sites
+ * did not, so the same table could show «۱۴۰۴/۱۲/۲۴» in one column and
+ * "1404/12/24" in the next. Converting here makes the correct thing the
+ * default; `toPersianDigits` only rewrites `[0-9]`, so the ~100 callers that
+ * already wrap this call are unaffected (it is idempotent).
+ *
+ * If you need ASCII — a filename, a sort key, an API payload — do not use this
+ * function. It is a display formatter. Use the ISO value you already have, or
+ * `toLatinDigits()` on the result if you truly need the Jalali calendar in
+ * machine form.
  */
 export function formatJalali(
   date: Date | string,
@@ -180,11 +193,11 @@ export function formatJalali(
   const time = withTime ? `${pad(get("hour") % 24)}:${pad(get("minute"))}` : "";
 
   if (withMonthName) {
-    const day = `${jd} ${JALALI_MONTHS[jm - 1]} ${jy}`;
-    return withTime ? `${day}، ${time}` : day;
+    const day = `${toPersianDigits(jd)} ${JALALI_MONTHS[jm - 1]} ${toPersianDigits(jy)}`;
+    return withTime ? `${day}، ${toPersianDigits(time)}` : day;
   }
-  const day = `${jy}/${pad(jm)}/${pad(jd)}`;
-  return withTime ? `${day} ${time}` : day;
+  const day = `${toPersianDigits(jy)}/${toPersianDigits(pad(jm))}/${toPersianDigits(pad(jd))}`;
+  return withTime ? `${day} ${toPersianDigits(time)}` : day;
 }
 
 /**

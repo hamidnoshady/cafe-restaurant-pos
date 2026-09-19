@@ -134,7 +134,7 @@ export function GiftCardsSection() {
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">اعتبار هدیه</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">صدور کارت هدیه</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">صدور کارت هدیه</h2>
             </div>
           }
           bodyClassName="space-y-3 p-4 sm:p-5"
@@ -179,7 +179,7 @@ export function GiftCardsSection() {
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">استعلام و استفاده</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مصرف و مانده</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مصرف و مانده</h2>
             </div>
           }
           bodyClassName="space-y-3 p-4 sm:p-5"

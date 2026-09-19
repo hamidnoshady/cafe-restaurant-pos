@@ -209,7 +209,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">وضعیت پرونده</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">این پرونده ادغام شده است</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">این پرونده ادغام شده است</h2>
             </div>
           }
           description="محتوای آن به پروندهٔ دیگری منتقل شده و اینجا فقط برای سابقه نگه داشته می‌شود."
@@ -224,7 +224,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پرونده ۳۶۰ درجه</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">{file.name}</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">{file.name}</h2>
           </div>
         }
         description={[
@@ -335,7 +335,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">رضایت ارتباط</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">رضایت ارتباط</h2>
             </div>
           }
           description="پایهٔ هر ارسال آینده؛ تغییرش ثبت می‌شود."
@@ -380,7 +380,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یادداشت‌های مشتری</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">یادداشت‌ها</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">یادداشت‌ها</h2>
             </div>
           }
           description="آنچه دربارهٔ این مشتری باید به یاد بماند."

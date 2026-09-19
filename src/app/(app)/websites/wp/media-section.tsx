@@ -31,6 +31,7 @@ import {
 } from "@/lib/integrations/wp-media";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
 import { PluginWaitNote } from "./plugin-wait-note";
+import { FilterChip } from "@/app/dashboard/filters";
 
 interface MediaRow {
   remoteId: string;
@@ -409,24 +410,11 @@ export function WpMediaSection() {
           <div>
             <p className="mb-1.5 text-sm font-medium text-foreground">نوع فایل</p>
             <div className="flex flex-wrap gap-2" role="group" aria-label="فیلتر نوع رسانه">
-              {WP_MEDIA_KINDS.map((value) => {
-                const active = kind === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setKind(value)}
-                    className={`min-h-11 rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${
-                      active
-                        ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                        : "border-border bg-card text-muted-foreground hover:border-amber-300 hover:bg-amber-50 hover:text-foreground dark:hover:border-amber-500/40 dark:hover:bg-amber-500/10"
-                    }`}
-                  >
-                    {KIND_LABELS[value]}
-                  </button>
-                );
-              })}
+              {WP_MEDIA_KINDS.map((value) => (
+                <FilterChip key={value} selected={kind === value} onClick={() => setKind(value)}>
+                  {KIND_LABELS[value]}
+                </FilterChip>
+              ))}
             </div>
           </div>
         </div>

@@ -8,7 +8,7 @@
  * stock summaries, low-stock visibility, a quick search, status filtering and
  * a direct way to open a warehouse's stock.
  */
-import { PlusIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import { PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
@@ -17,6 +17,15 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "../page-chrome";
+import { FilterChip, FilterChipRow, SearchField } from "@/app/dashboard/filters";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "../data-table";
 
 export interface WarehouseSupplier {
   id: string;
@@ -71,12 +80,6 @@ const FILTERS: Array<{ key: WarehouseStatusFilter; label: string }> = [
   { key: "inactive", label: "غیرفعال" },
 ];
 
-const filterButtonClass = (selected: boolean) =>
-  `min-h-10 rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
-    selected
-      ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-      : "border-border bg-card text-muted-foreground hover:border-amber-300 hover:bg-amber-50 hover:text-foreground dark:hover:border-amber-500/40 dark:hover:bg-amber-500/10"
-  }`;
 
 function warehouseMatches(warehouse: Warehouse, search: string, status: WarehouseStatusFilter): boolean {
   if (status !== "all" && (status === "active") !== warehouse.is_active) return false;
@@ -189,29 +192,24 @@ export function WarehousesSection({ onOpenStock }: { onOpenStock: (locationId: s
         ) : (
           <>
             <div className="flex flex-col gap-3 border-b border-border/80 p-4 sm:flex-row sm:items-center sm:px-5">
-              <div className="relative min-w-0 flex-1">
-                <SearchIcon aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  className={`${inputClass} ps-9`}
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="جستجوی نام، آدرس یا تلفن…"
-                  aria-label="جستجو در انبارها"
-                />
-              </div>
-              <div className="flex shrink-0 flex-wrap gap-2" role="group" aria-label="فیلتر وضعیت انبار">
+              <SearchField
+                value={search}
+                onChange={setSearch}
+                placeholder="جستجوی نام، آدرس یا تلفن…"
+                label="جستجو در انبارها"
+                className="flex-1"
+              />
+              <FilterChipRow label="فیلتر وضعیت انبار" className="shrink-0">
                 {FILTERS.map((filter) => (
-                  <button
+                  <FilterChip
                     key={filter.key}
-                    type="button"
-                    className={filterButtonClass(status === filter.key)}
-                    aria-pressed={status === filter.key}
+                    selected={status === filter.key}
                     onClick={() => setStatus(filter.key)}
                   >
                     {filter.label}
-                  </button>
+                  </FilterChip>
                 ))}
-              </div>
+              </FilterChipRow>
               <p className="shrink-0 text-xs text-muted-foreground" aria-live="polite">
                 {toPersianDigits(String(visibleWarehouses.length))} انبار
               </p>
@@ -231,44 +229,52 @@ export function WarehousesSection({ onOpenStock }: { onOpenStock: (locationId: s
               </div>
             ) : (
               <>
-                <div className="hidden overflow-x-auto md:block">
-                  <table className="w-full min-w-[720px] text-sm">
-                    <thead>
-                      <tr className="border-b border-border bg-stone-50 dark:bg-stone-900/40">
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:px-5 sm:text-sm">انبار</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">اقلام</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">ارزش موجودی</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">کمبود</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">آخرین تغییر</th>
-                        <th className="py-3 pe-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:pe-5 sm:text-sm">وضعیت</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleWarehouses.map((warehouse) => (
-                        <tr key={warehouse.id} className="border-b border-border/80 transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-900/30">
-                          <td className="px-4 py-3 sm:px-5">
-                            <button
-                              type="button"
-                              onClick={() => onOpenStock(warehouse.id)}
-                              className="max-w-full text-start font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring focus-visible:ring-amber-400/40"
-                              title="مشاهده موجودی این انبار"
-                            >
-                              {warehouse.name}
-                            </button>
-                            <WarehouseDetails warehouse={warehouse} />
-                          </td>
-                          <td className="px-4 py-3 tabular-nums">{toPersianDigits(warehouse.item_count)}</td>
-                          <td className="px-4 py-3 font-medium tabular-nums">{money.format(Number(warehouse.stock_value_rial))}</td>
-                          <td className="px-4 py-3">
-                            {Number(warehouse.low_stock_count) > 0 ? <StatusBadge tone="danger">{toPersianDigits(warehouse.low_stock_count)} قلم</StatusBadge> : <span className="text-xs text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground tabular-nums">{warehouse.last_movement_at ? formatJalali(warehouse.last_movement_at) : "—"}</td>
-                          <td className="py-3 pe-4 sm:pe-5"><WarehouseStatus warehouse={warehouse} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  caption="فهرست انبارها با موجودی و وضعیت"
+                  className="hidden border-0 md:block"
+                  tableClassName="min-w-[720px]"
+                >
+                  <DataTableHead>
+                    <Th className="sm:px-5">انبار</Th>
+                    <Th numeric>اقلام</Th>
+                    <Th numeric>ارزش موجودی</Th>
+                    <Th>کمبود</Th>
+                    <Th>آخرین تغییر</Th>
+                    <Th>وضعیت</Th>
+                  </DataTableHead>
+                  <DataTableBody>
+                    {visibleWarehouses.map((warehouse) => (
+                      <DataTableRow key={warehouse.id}>
+                        <Td className="sm:px-5">
+                          <button
+                            type="button"
+                            onClick={() => onOpenStock(warehouse.id)}
+                            className="max-w-full text-start font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring focus-visible:ring-amber-400/40"
+                            title="مشاهده موجودی این انبار"
+                          >
+                            {warehouse.name}
+                          </button>
+                          <WarehouseDetails warehouse={warehouse} />
+                        </Td>
+                        <Td numeric>{toPersianDigits(warehouse.item_count)}</Td>
+                        <Td numeric>{money.format(Number(warehouse.stock_value_rial))}</Td>
+                        <Td>
+                          {Number(warehouse.low_stock_count) > 0 ? (
+                            <StatusBadge tone="danger">{toPersianDigits(warehouse.low_stock_count)} قلم</StatusBadge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </Td>
+                        <Td muted className="text-xs tabular-nums">
+                          {warehouse.last_movement_at ? formatJalali(warehouse.last_movement_at) : "—"}
+                        </Td>
+                        <Td>
+                          <WarehouseStatus warehouse={warehouse} />
+                        </Td>
+                      </DataTableRow>
+                    ))}
+                  </DataTableBody>
+                </DataTable>
                 <div className="divide-y divide-border/80 md:hidden">
                   {visibleWarehouses.map((warehouse) => (
                     <article key={warehouse.id} className="space-y-3 p-4">

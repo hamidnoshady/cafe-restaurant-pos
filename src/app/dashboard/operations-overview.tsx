@@ -161,7 +161,15 @@ function Skeleton({ className = "", style }: { className?: string; style?: CSSPr
   return <span aria-hidden="true" className={`ops-skeleton block ${className}`} style={style} />;
 }
 
-function KpiCard({
+/**
+ * The operations board's animated stat tile — the dense operational variation.
+ *
+ * Distinct from page-chrome's `KpiCard` on purpose: this one counts its number
+ * up on load (`useCountUp`), staggers its entry (`ops-card-enter`, `entryDelay`)
+ * and reserves a taller 144px body for the live operational readout. It honours
+ * `reducedMotion` for both. The ordinary apps must keep the still tile.
+ */
+function OpsKpiTile({
   icon: Icon,
   label,
   hint,
@@ -556,17 +564,17 @@ export function OperationsOverview({
       </header>
 
       <div className="mb-5 grid gap-3 md:grid-cols-3 md:gap-4">
-        <KpiCard icon={BarChart3Icon} label="فروش امروز" hint="جمع فروش تکمیل‌شده" value={data?.kpis.sales ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={0} className="md:hidden" />
+        <OpsKpiTile icon={BarChart3Icon} label="فروش امروز" hint="جمع فروش تکمیل‌شده" value={data?.kpis.sales ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={0} className="md:hidden" />
         <div className="hidden md:contents">
-          <KpiCard icon={BarChart3Icon} label="فروش امروز" hint="جمع فروش تکمیل‌شده" value={data?.kpis.sales ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={0} />
-          <KpiCard icon={ClipboardListIcon} label="تعداد سفارش" hint="سفارش‌های تکمیل‌شده" value={data?.kpis.orderCount ?? "0"} loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={60} />
-          <KpiCard icon={ShoppingCartIcon} label="میانگین سفارش" hint="میانگین هر فاکتور" value={data?.kpis.averageOrderValue ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={120} />
+          <OpsKpiTile icon={BarChart3Icon} label="فروش امروز" hint="جمع فروش تکمیل‌شده" value={data?.kpis.sales ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={0} />
+          <OpsKpiTile icon={ClipboardListIcon} label="تعداد سفارش" hint="سفارش‌های تکمیل‌شده" value={data?.kpis.orderCount ?? "0"} loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={60} />
+          <OpsKpiTile icon={ShoppingCartIcon} label="میانگین سفارش" hint="میانگین هر فاکتور" value={data?.kpis.averageOrderValue ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={120} />
         </div>
       </div>
 
       <div className="-mx-4 mb-5 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 md:hidden" aria-label="شاخص‌های تکمیلی">
-        <KpiCard icon={ClipboardListIcon} label="تعداد سفارش" hint="سفارش‌های تکمیل‌شده" value={data?.kpis.orderCount ?? "0"} loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={60} className="min-w-[calc(100%-48px)] snap-start" />
-        <KpiCard icon={ShoppingCartIcon} label="میانگین سفارش" hint="میانگین هر فاکتور" value={data?.kpis.averageOrderValue ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={120} className="min-w-[calc(100%-48px)] snap-start" />
+        <OpsKpiTile icon={ClipboardListIcon} label="تعداد سفارش" hint="سفارش‌های تکمیل‌شده" value={data?.kpis.orderCount ?? "0"} loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={60} className="min-w-[calc(100%-48px)] snap-start" />
+        <OpsKpiTile icon={ShoppingCartIcon} label="میانگین سفارش" hint="میانگین هر فاکتور" value={data?.kpis.averageOrderValue ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={120} className="min-w-[calc(100%-48px)] snap-start" />
       </div>
 
       <section className={`mb-5 overflow-hidden ${cardClass} p-4 sm:p-5`} aria-labelledby="sales-trend-heading">

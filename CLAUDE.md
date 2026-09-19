@@ -364,15 +364,24 @@ and the only thing the ledger sees. See the "Payment ways" section of [README.md
 
 Every page and panel under `src/app/dashboard/**` is **built from the primitives in
 `src/app/dashboard/page-chrome.tsx`** — `PageShell`, `PageHeader`, `SectionCard`/`cardClass`,
-`TabBar`/`TabPanel`, `EmptyState`, `StatusBadge` — plus `<Button>` and `ui.tsx`'s
-`inputClass`/`Field`/`ErrorBox`/`InfoBox` for controls. See
-[docs/ui-conventions.md](docs/ui-conventions.md) for what each one replaces and why.
+`TabBar`/`TabPanel`, `EmptyState`, `StatusBadge`, `CardEyebrow`, `KpiCard`/`KpiRow` — plus
+`DataTable`/`Th`/`Td` (`data-table.tsx`), `FilterChip`/`FilterChipRow`/`SearchField`
+(`filters.tsx`), `<Button>` and `ui.tsx`'s `inputClass`/`Field`/`ErrorBox`/`InfoBox`. See
+[docs/ui-conventions.md](docs/ui-conventions.md) for what each one replaces and why, and the
+**Decision guide** in [docs/design-system.md](docs/design-system.md) for which one to reach
+for.
 
 **The visual canon is [docs/design-system.md](docs/design-system.md)** — the exact colours,
 borders/shadow weights, radius scale, control/table/chip recipes, hover/focus/active states
-and motion vocabulary, backed by the reference screenshots in `docs/design/reference/`.
-Read it before building or restyling any page or panel; the screenshots there are ground
+and motion vocabulary, backed by the approved reference screenshots (the pre-2026-09 set is
+archived under `docs/design/reference/archive-2026-09/` and is historical, not normative).
+Read it before building or restyling any page or panel; the approved screenshots are ground
 truth, and its "old look" list is a set of regressions, not style choices.
+
+Enforcement is five tests — `npm run test:design` — and a pixel diff, `npm run test:visual`,
+both required on every pull request (`.github/workflows/test.yml`). **Never re-record a
+visual baseline to make a red run green** (see `docs/design/visual-regression.md`). The
+per-page audit and the ordered remaining work are in `docs/design/coverage-matrix.md`.
 
 Two rules carry the history:
 

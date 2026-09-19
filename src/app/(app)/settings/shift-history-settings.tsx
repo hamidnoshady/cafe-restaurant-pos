@@ -270,7 +270,7 @@ export function ShiftHistorySettings() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملکرد پرسنل</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">شیفت‌ها</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">شیفت‌ها</h2>
           </div>
         }
         description="تاریخچهٔ ورود/خروج کارکنان صندوق، گارسون و آشپزخانه. شیفت بازمانده (فراموش‌شده) را می‌توانید از همین‌جا ببندید."

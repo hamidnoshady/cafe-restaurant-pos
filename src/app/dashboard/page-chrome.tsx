@@ -17,7 +17,7 @@
  * page can import it directly. Nothing here takes a callback except`TabBar`,
  * which is only ever rendered from a client manager.
  */
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -258,15 +258,147 @@ export function TabPanel<K extends string>({
 /**
  * What a page shows where a list would be, before anything has been created.
  *
- * A `<div>`, not a `<p>`: callers routinely centre a small stack inside it
- * (icon, line, button), and a `<div>` inside a `<p>` is invalid HTML that
- * browsers re-flow unpredictably.
+ * Two shapes, one component, because the reference screens use both:
+ *
+ * - **the quiet line** (`<EmptyState>متنی…</EmptyState>`) — a dashed rule with
+ *   one sentence, for an empty sub-list inside a card that already has a title
+ *   explaining what is missing. This is the original shape and the one 130-odd
+ *   existing callers use, so it stays the default.
+ * - **the rich state** (`title` given) — the Orders screenshot's amber icon
+ *   chip over a bold title over a muted explanatory line, optionally with an
+ *   action under it. This is what a *page's* main region shows when it has
+ *   nothing, and before this prop it was hand-rolled in at least four files
+ *   with four slightly different icon chips.
+ *
+ * `icon` is decorative: the title carries the meaning, so the chip is
+ * `aria-hidden` and the region announces only the text.
+ *
+ * Both shapes render a `<div>`, never a `<p>`: callers routinely centre a small
+ * stack inside the quiet shape (icon, line, button), and a `<div>` inside a
+ * `<p>` is invalid HTML that browsers re-flow unpredictably.
  */
-export function EmptyState({ children }: { children: ReactNode }) {
+export function EmptyState({
+  children,
+  icon: Icon,
+  title,
+  action,
+  className,
+}: {
+  /** The explanatory line. With `title`, renders as the muted paragraph under it. */
+  children?: ReactNode;
+  /** A Lucide icon for the amber chip. Only used with `title`. */
+  icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
+  /** Promotes the state to the rich, centred shape from the reference screens. */
+  title?: ReactNode;
+  /** A recovery action — «پاک‌کردن فیلترها», «تلاش دوباره». */
+  action?: ReactNode;
+  className?: string;
+}) {
+  if (!title) {
+    return (
+      <div
+        className={cn(
+          "rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground",
+          className,
+        )}
+      >
+        {children}
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-      {children}
+    <div
+      className={cn(
+        "flex min-h-64 flex-col items-center justify-center p-6 text-center",
+        className,
+      )}
+    >
+      {Icon ? (
+        <span
+          aria-hidden="true"
+          className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+        >
+          <Icon className="size-5" aria-hidden="true" />
+        </span>
+      ) : null}
+      <p className={cn("text-sm font-bold text-foreground", Icon && "mt-4")}>{title}</p>
+      {children ? (
+        <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">{children}</p>
+      ) : null}
+      {action ? <div className="mt-4">{action}</div> : null}
     </div>
+  );
+}
+
+/**
+ * A KPI tile — the stat cards that head the overview screens.
+ *
+ * Five files had grown their own `StatCard`/`KpiCard` with the same three
+ * lines (muted label, big number, muted hint) and slightly different sizes;
+ * `KpiRowSkeleton` already reserved the shape for all of them, so the loading
+ * state was shared while the loaded state was not. This is the loaded state.
+ *
+ * The number is `tabular-nums` so a row of tiles doesn't jitter as figures
+ * refresh, and truncates rather than wrapping — a long Rial total must not make
+ * one tile taller than its neighbours.
+ */
+export function KpiCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  className,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  hint?: ReactNode;
+  /** Optional amber icon chip, as the dashboard overview uses. */
+  icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
+  className?: string;
+}) {
+  return (
+    <div className={cn("min-w-0 p-4 sm:p-5", cardClass, className)}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 text-xs font-medium leading-5 text-muted-foreground">{label}</p>
+        {Icon ? (
+          <span
+            aria-hidden="true"
+            className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+          >
+            <Icon className="size-4" aria-hidden="true" />
+          </span>
+        ) : null}
+      </div>
+      {/*
+        `truncate` on a long Rial figure hides the digits that matter, so the
+        full value stays reachable as the element's own title. Only when the
+        value is a plain string — a ReactNode has no sensible title text.
+      */}
+      <p
+        title={typeof value === "string" ? value : undefined}
+        className="mt-2 truncate text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl"
+      >
+        {value}
+      </p>
+      {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The grid KPI tiles sit in — the shape `KpiRowSkeleton` reserves, so the
+ * skeleton and the loaded row cannot drift apart.
+ */
+export function KpiRow({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("grid gap-3 sm:grid-cols-2 xl:grid-cols-4", className)}>{children}</div>
   );
 }
 
@@ -413,22 +545,39 @@ export function DashboardPageSkeleton() {
  */
 export function StatusBadge({
   tone = "neutral",
+  dot = false,
   children,
 }: {
   tone?: "active" | "positive" | "neutral" | "danger";
+  /**
+   * The leading dot the report headers use («متوازن» on the trial balance).
+   * Same tone as the text, so it needs no colour of its own.
+   */
+  dot?: boolean;
   children: ReactNode;
 }) {
   return (
     <span
       className={cn(
         "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        dot && "gap-1.5",
         tone === "active" && "bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200",
         tone === "positive" && "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-100",
         tone === "neutral" && "bg-muted text-muted-foreground",
         tone === "danger" && "bg-destructive/10 text-destructive",
       )}
     >
+      {dot ? <span aria-hidden="true" className="size-1.5 rounded-full bg-current" /> : null}
       {children}
     </span>
   );
+}
+
+/**
+ * The amber eyebrow over a card title — the small category line («گزارش مالی»,
+ * «انبارها», «عملیات هزینه») the reference cards open with. Three characters of
+ * meaning in a class string that was being retyped in a dozen files.
+ */
+export function CardEyebrow({ children }: { children: ReactNode }) {
+  return <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">{children}</p>;
 }

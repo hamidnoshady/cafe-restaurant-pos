@@ -1,6 +1,7 @@
 "use client";
 
 import { EmptyState, overlayPanelClass, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 import { useEffect, useMemo, useState } from "react";
 import { api, ErrorBox, errorMessage, Field, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
@@ -459,7 +460,7 @@ export function ChartOfAccountsSection({
                   aria-pressed={visibility === key}
                   onClick={() => setVisibility(key)}
                   className={`min-h-10 rounded-xl px-3 text-sm font-medium ${
-                    visibility === key
+            visibility === key
                       ? "border-amber-200 bg-amber-100 text-amber-950 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200 dark:hover:bg-amber-500/20"
                       : "border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
@@ -482,71 +483,59 @@ export function ChartOfAccountsSection({
               {/* The desktop table. `hidden … lg:block` — it used to be only
                   `lg:block`, which is not a hiding rule at all, so both this
                   and the card list below rendered together on a phone. */}
-              <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <caption className="sr-only">سرفصل حساب‌ها، به ترتیب ساختار درختی</caption>
-                    <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
-                      <tr className="border-b border-border">
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">کد</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">حساب</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">نوع</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">سطح</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">ماهیت</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">وضعیت</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">عملیات</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(({ account: a, depth, contextOnly }) => (
-                        <tr
-                          key={a.id}
-                          className={`border-b border-border last:border-b-0 ${contextOnly ? "opacity-60" : ""} ${
-                            pendingId === a.id ? "bg-amber-50/60 dark:bg-amber-500/10" : ""
-                          }`}
-                        >
-                          <td dir="ltr" className="whitespace-nowrap px-4 py-3 text-start font-medium tabular-nums text-muted-foreground">
-                            {a.code}
-                          </td>
-                          <td className="px-4 py-3 font-semibold text-foreground">
-                            <span className="flex min-w-0 items-center gap-1.5" style={{ paddingInlineStart: `${depth * INDENT_REM}rem` }}>
-                              {depth > 0 ? (
-                                <span aria-hidden="true" className="select-none text-muted-foreground">
-                                  └
-                                </span>
-                              ) : null}
-                              <span className="min-w-0 break-words">{a.name}</span>
-                              {WELL_KNOWN_CODE_SET.has(a.code) ? <StatusBadge tone="active">سیستمی</StatusBadge> : null}
-                              {a.isContra ? <StatusBadge tone="neutral">کاهنده</StatusBadge> : null}
+              <DataTable caption="سرفصل حساب‌ها، به ترتیب ساختار درختی" className="hidden lg:block">
+                <DataTableHead>
+                  <Th>کد</Th>
+                  <Th>حساب</Th>
+                  <Th>نوع</Th>
+                  <Th>سطح</Th>
+                  <Th>ماهیت</Th>
+                  <Th>وضعیت</Th>
+                  <Th>عملیات</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {rows.map(({ account: a, depth, contextOnly }) => (
+                    <DataTableRow key={a.id} selected={pendingId === a.id} className={contextOnly ? "opacity-60" : undefined}>
+                      <Td dir="ltr" nowrap muted className="text-start font-medium tabular-nums">
+                        {a.code}
+                      </Td>
+                      <Td className="font-semibold">
+                        <span className="flex min-w-0 items-center gap-1.5" style={{ paddingInlineStart: `${depth * INDENT_REM}rem` }}>
+                          {depth > 0 ? (
+                            <span aria-hidden="true" className="select-none text-muted-foreground">
+                              └
                             </span>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{ACCOUNT_LEVEL_LABELS[a.level]}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{NORMAL_BALANCE_LABELS[a.normalBalance]}</td>
-                          <td className="px-4 py-3">
-                            <StatusBadge tone={a.isActive ? "positive" : "neutral"}>
-                              {a.isActive ? "فعال" : "بایگانی‌شده"}
-                            </StatusBadge>
-                          </td>
-                          <td className="px-4 py-3">
-                            <AccountActions
-                              account={a}
-                              canEdit={canEdit}
-                              busy={actionBusy}
-                              pending={pendingId === a.id}
-                              onEdit={() => { setLocalError(""); setNotice(""); setEditing(a); }}
-                              onStatement={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}
-                              onHistory={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}
-                              onToggle={() => void toggleActive(a)}
-                              onRemove={() => remove(a)}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                          ) : null}
+                          <span className="min-w-0 break-words">{a.name}</span>
+                          {WELL_KNOWN_CODE_SET.has(a.code) ? <StatusBadge tone="active">سیستمی</StatusBadge> : null}
+                          {a.isContra ? <StatusBadge tone="neutral">کاهنده</StatusBadge> : null}
+                        </span>
+                      </Td>
+                      <Td muted>{TYPE_LABELS[a.type]}</Td>
+                      <Td muted>{ACCOUNT_LEVEL_LABELS[a.level]}</Td>
+                      <Td muted>{NORMAL_BALANCE_LABELS[a.normalBalance]}</Td>
+                      <Td>
+                        <StatusBadge tone={a.isActive ? "positive" : "neutral"}>
+                          {a.isActive ? "فعال" : "بایگانی‌شده"}
+                        </StatusBadge>
+                      </Td>
+                      <Td>
+                        <AccountActions
+                          account={a}
+                          canEdit={canEdit}
+                          busy={actionBusy}
+                          pending={pendingId === a.id}
+                          onEdit={() => { setLocalError(""); setNotice(""); setEditing(a); }}
+                          onStatement={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}
+                          onHistory={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}
+                          onToggle={() => void toggleActive(a)}
+                          onRemove={() => remove(a)}
+                        />
+                      </Td>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
 
               <div className="space-y-3 lg:hidden">
                 {rows.map(({ account: a, depth, contextOnly }) => (
@@ -556,7 +545,7 @@ export function ChartOfAccountsSection({
                     // the card rather than explaining it, and the «والد» row
                     // below already names where the account sits.
                     style={{ marginInlineStart: `${Math.min(depth, 2) * 0.75}rem` }}
-                    className={`rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30 ${
+                    className={`rounded-xl border border-border/80 bg-muted/60 p-4 ${
                       contextOnly ? "opacity-60" : ""
                     }`}
                   >

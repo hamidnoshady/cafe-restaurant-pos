@@ -238,12 +238,8 @@ export function ActivitiesSection() {
       <SectionCard
         title={
           <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-              پیگیری‌ها و وظایف
-            </p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">
-              کارها و پیگیری‌ها
-            </h2>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پیگیری‌ها و وظایف</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">کارها و پیگیری‌ها</h2>
           </div>
         }
         description={

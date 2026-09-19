@@ -25,7 +25,8 @@ import {
 import { ModifierBadges } from "../modifier-badges";
 import { useRealtime } from "../use-realtime";
 import { KnowledgeHelpButton } from "../knowledge-help";
-import { PageShell, cardClass } from "../page-chrome";
+import { EmptyState, PageShell, cardClass } from "../page-chrome";
+import { FilterChip } from "../filters";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
@@ -255,18 +256,12 @@ function OrderDetailsPanel({
   if (!selectedOrder) {
     return (
       <aside
-        className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-muted p-6 text-center"
+        className="rounded-2xl border border-dashed border-border/80 bg-muted"
         aria-label="جزئیات سفارش"
       >
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
-          <ShoppingBagIcon className="size-5" aria-hidden="true" />
-        </span>
-        <h2 className="mt-4 text-sm font-bold text-foreground">
-          سفارشی برای نمایش نیست
-        </h2>
-        <p className="mt-2 max-w-60 text-xs leading-6 text-muted-foreground">
+        <EmptyState icon={ShoppingBagIcon} title="سفارشی برای نمایش نیست" className="min-h-72">
           برای دیدن خلاصه و ادامهٔ پیگیری، یک سفارش را از فهرست انتخاب کنید.
-        </p>
+        </EmptyState>
       </aside>
     );
   }
@@ -914,46 +909,30 @@ export function OrdersList({
           className="mt-3 flex min-h-12 gap-2 overflow-x-auto pb-1"
           aria-label="فیلتر وضعیت سفارش"
         >
-          <button
-            type="button"
-            onClick={() => setStatusFilter("all")}
-            className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
-              statusFilter === "all"
-                ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                : "border-border/80 bg-card text-muted-foreground hover:bg-muted"
-            }`}
-          >
+          <FilterChip dense selected={statusFilter === "all"} onClick={() => setStatusFilter("all")}>
             همه
-          </button>
+          </FilterChip>
           {availableStatuses.map((status) => (
-            <button
+            <FilterChip
               key={status}
-              type="button"
+              dense
+              selected={statusFilter === status}
               onClick={() => setStatusFilter(status)}
-              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
-                statusFilter === status
-                  ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                  : "border-border/80 bg-card text-muted-foreground hover:bg-muted"
-              }`}
             >
               {STATUS_LABELS[status]}
-            </button>
+            </FilterChip>
           ))}
           {(["dine_in", "takeaway", "delivery"] as OrderType[]).map((type) => (
-            <button
+            <FilterChip
               key={type}
-              type="button"
+              dense
+              selected={typeFilter === type}
               onClick={() =>
                 setTypeFilter((current) => (current === type ? "all" : type))
               }
-              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
-                typeFilter === type
-                  ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                  : "border-border/80 bg-card text-muted-foreground hover:bg-muted"
-              }`}
             >
               {TYPE_LABELS[type]}
-            </button>
+            </FilterChip>
           ))}
         </div>
 
@@ -1089,18 +1068,10 @@ export function OrdersList({
               </button>
             </div>
           ) : orderRows.length === 0 ? (
-            <div className="flex min-h-64 flex-col items-center justify-center p-6 text-center">
-              <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                <ShoppingBagIcon className="size-5" aria-hidden="true" />
-              </span>
-              <p className="mt-4 text-sm font-bold text-foreground">
-                سفارشی برای نمایش نیست
-              </p>
-              <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">
-                با ثبت سفارش جدید، این صف به‌صورت خودکار به‌روز می‌شود.
-                سفارش‌های بسته‌شده تا پایان روز کاری همین‌جا می‌مانند.
-              </p>
-            </div>
+            <EmptyState icon={ShoppingBagIcon} title="سفارشی برای نمایش نیست">
+              با ثبت سفارش جدید، این صف به‌صورت خودکار به‌روز می‌شود.
+              سفارش‌های بسته‌شده تا پایان روز کاری همین‌جا می‌مانند.
+            </EmptyState>
           ) : filteredOrders.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center p-6 text-center">
               <SearchIcon

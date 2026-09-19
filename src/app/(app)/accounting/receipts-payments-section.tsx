@@ -17,6 +17,7 @@ import { ArrowDownLeftIcon, ArrowUpRightIcon, DownloadIcon, PlusIcon, RefreshCwI
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { useOverlayEscape } from "./use-overlay-escape";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 /**
  * «دریافت و پرداخت» — the voucher ledger slice. The reference software keeps
@@ -64,7 +65,7 @@ const chipClass = (active: boolean) =>
   `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
     active
       ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
+      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
 export function ReceiptsPaymentsSection() {
@@ -165,7 +166,7 @@ export function ReceiptsPaymentsSection() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دریافت و پرداخت</p>
-            <h2 className="mt-1 font-semibold text-stone-950 dark:text-stone-50">
+            <h2 className="mt-1 font-semibold text-foreground dark:text-stone-50">
               {side === "receipts" ? "دریافت‌ها" : "پرداخت‌ها"}
             </h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -177,7 +178,7 @@ export function ReceiptsPaymentsSection() {
               type="button"
               onClick={() => setRefreshKey((k) => k + 1)}
               aria-busy={loading}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 dark:text-stone-300 transition-colors hover:bg-muted"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted"
             >
               <RefreshCwIcon aria-hidden="true" className="size-4" />
               {/* The design system reports progress with a busy label, not a spinner. */}
@@ -187,7 +188,7 @@ export function ReceiptsPaymentsSection() {
               type="button"
               onClick={downloadCsv}
               disabled={!rows || rows.length === 0}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-stone-600 dark:text-stone-300 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
             >
               <DownloadIcon aria-hidden="true" className="size-4" />
               دانلود
@@ -232,7 +233,7 @@ export function ReceiptsPaymentsSection() {
                 <button
                   type="button"
                   onClick={() => setRefreshKey((k) => k + 1)}
-                  className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-4 text-xs font-semibold text-stone-600 dark:text-stone-300 transition-colors hover:bg-muted"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-4 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted"
                 >
                   <RefreshCwIcon aria-hidden="true" className="size-4" />
                   تلاش مجدد
@@ -250,32 +251,29 @@ export function ReceiptsPaymentsSection() {
                   ? `${toPersianDigits(VISIBLE_ROWS)} سند از ${toPersianDigits(rows.length)} سند — برای دیدن بقیه جست‌وجو کنید`
                   : `${toPersianDigits(rows.length)} سند`}
               </p>
-              <div className="hidden overflow-x-auto rounded-xl border border-stone-200/80 dark:border-stone-500/30 lg:block">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-stone-50 dark:bg-stone-500/10">
-                      <th className="py-3 pe-3 ps-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">#</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">شخص</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">شرح</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">روش</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">تاریخ</th>
-                      <th className="py-3 pe-4 text-start text-xs font-medium text-stone-500 dark:text-stone-400 sm:text-sm">مبلغ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.slice(0, VISIBLE_ROWS).map((r, index) => (
-                      <tr key={r.id} className="border-b border-border transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-stone-500/10">
-                        <td className="py-3 pe-3 ps-4 text-muted-foreground">{toPersianDigits(index + 1)}</td>
-                        <td className="max-w-48 truncate py-3 pe-3 font-medium" title={r.partyName}>{r.partyName}</td>
-                        <td className="max-w-64 truncate py-3 pe-3 text-muted-foreground" title={r.memo ?? undefined}>{r.memo ?? "—"}</td>
-                        <td className="py-3 pe-3 text-muted-foreground">{METHOD_LABELS[r.method]}</td>
-                        <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{fmtJalali(r.date)}</td>
-                        <td className="whitespace-nowrap py-3 pe-4 font-semibold">{money.format(r.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable caption="اسناد دریافت و پرداخت" className="hidden lg:block">
+                <DataTableHead>
+                  <Th>#</Th>
+                  <Th>شخص</Th>
+                  <Th>شرح</Th>
+                  <Th>روش</Th>
+                  <Th>تاریخ</Th>
+                  <Th>مبلغ</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {rows.slice(0, VISIBLE_ROWS).map((r, index) => (
+                    <DataTableRow key={r.id}>
+                      <Td muted>{toPersianDigits(index + 1)}</Td>
+                      <Td className="max-w-48 truncate font-medium" title={r.partyName}>{r.partyName}</Td>
+                      <Td muted className="max-w-64 truncate" title={r.memo ?? undefined}>{r.memo ?? "—"}</Td>
+                      <Td muted>{METHOD_LABELS[r.method]}</Td>
+                      <Td nowrap muted>{fmtJalali(r.date)}</Td>
+                      <Td nowrap className="font-semibold">{money.format(r.amount)}</Td>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
+
               <div className="space-y-3 lg:hidden">
                 {rows.slice(0, VISIBLE_ROWS).map((r) => (
                   <article key={r.id} className="rounded-xl border border-border/80 bg-muted p-4">

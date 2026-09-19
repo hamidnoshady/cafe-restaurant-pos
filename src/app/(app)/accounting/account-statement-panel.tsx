@@ -10,6 +10,7 @@ import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { overlayPanelClass } from "@/app/dashboard/page-chrome";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 import { useOverlayEscape } from "./use-overlay-escape";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 
@@ -101,7 +102,7 @@ export function AccountStatementPanel({
           </Button>
         </header>
 
-        <div className="grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4 dark:bg-stone-800/30">
+        <div className="grid gap-3 rounded-xl border border-border/80 bg-muted/60 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4">
           <label className="block text-sm font-medium">
             <span className="mb-1.5 block text-xs text-muted-foreground">از تاریخ</span>
             <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از ابتدا" />
@@ -125,7 +126,7 @@ export function AccountStatementPanel({
           <LoadingSkeleton rows={3} />
         ) : (
           <div className="mt-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/60 px-4 py-3 text-sm">
               <span className="text-muted-foreground">مانده افتتاحیه</span>
               <span className="font-semibold tabular-nums text-foreground">{money.format(statement.openingBalance)}</span>
             </div>
@@ -136,41 +137,41 @@ export function AccountStatementPanel({
               </p>
             ) : (
               <>
-                <div className="hidden overflow-x-auto rounded-xl border border-border/80 lg:block">
-                  <table className="min-w-[700px] w-full text-sm">
-                    <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
-                      <tr className="border-b border-border">
-                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
-                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">شرح</th>
-                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">بدهکار</th>
-                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">بستانکار</th>
-                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">مانده</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* An entry can post two lines to the same account, so the
-                          entry id alone is not a unique key. */}
-                      {statement.lines.map((l, i) => (
-                        <tr key={`${l.entryId}-${i}`} className="border-b border-border last:border-b-0">
-                          <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</td>
-                          <td className="px-3 py-3 text-foreground">
-                            {l.memo ?? "—"}
-                            {/* `sourceType` was fetched and then dropped; naming what
-                                posted a line is most of what makes a معین readable. */}
-                            <span className="ms-2 text-xs text-muted-foreground">{ledgerSourceLabel(l.sourceType)}</span>
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.debit ? money.format(l.debit) : "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.credit ? money.format(l.credit) : "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums text-foreground">{money.format(l.balance)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  caption="گردش این حساب در بازه انتخاب‌شده"
+                  className="hidden lg:block"
+                  tableClassName="min-w-[700px]"
+                >
+                  <DataTableHead>
+                    <Th>تاریخ</Th>
+                    <Th>شرح</Th>
+                    <Th numeric>بدهکار</Th>
+                    <Th numeric>بستانکار</Th>
+                    <Th numeric>مانده</Th>
+                  </DataTableHead>
+                  <DataTableBody>
+                    {/* An entry can post two lines to the same account, so the
+                        entry id alone is not a unique key. */}
+                    {statement.lines.map((l, i) => (
+                      <DataTableRow key={`${l.entryId}-${i}`}>
+                        <Td muted nowrap>{toPersianDigits(formatJalali(l.date))}</Td>
+                        <Td>
+                          {l.memo ?? "—"}
+                          {/* `sourceType` was fetched and then dropped; naming what
+                              posted a line is most of what makes a معین readable. */}
+                          <span className="ms-2 text-xs text-muted-foreground">{ledgerSourceLabel(l.sourceType)}</span>
+                        </Td>
+                        <Td numeric nowrap>{l.debit ? money.format(l.debit) : "—"}</Td>
+                        <Td numeric nowrap>{l.credit ? money.format(l.credit) : "—"}</Td>
+                        <Td numeric nowrap className="font-semibold">{money.format(l.balance)}</Td>
+                      </DataTableRow>
+                    ))}
+                  </DataTableBody>
+                </DataTable>
 
                 <div className="space-y-3 lg:hidden">
                   {statement.lines.map((l, i) => (
-                    <article key={`${l.entryId}-${i}`} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                    <article key={`${l.entryId}-${i}`} className="rounded-xl border border-border/80 bg-muted/60 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>
                       </div>
@@ -196,7 +197,7 @@ export function AccountStatementPanel({
               </>
             )}
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/60 px-4 py-3 text-sm">
               <span className="text-muted-foreground">مانده اختتامیه</span>
               <span className="font-bold tabular-nums text-foreground">{money.format(statement.closingBalance)}</span>
             </div>

@@ -28,6 +28,14 @@ import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { WEBSITE_ERROR_LABELS } from "@/lib/website/adapter";
 import { WEBSITE_OUTBOX_KIND_LABELS, WEBSITE_OUTBOX_STATUS_LABELS } from "@/lib/website/sync";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
 import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
 
@@ -297,56 +305,52 @@ function ProductsCard({ onChange }: { onChange: () => Promise<void> }) {
               <EmptyState>{filter ? "محصولی با این نام پیدا نشد." : "محصولی برای نمایش نیست."}</EmptyState>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-xs text-muted-foreground">
-                  <tr className="border-b border-border/80">
-                    <th className="px-4 py-2 text-start font-medium">ارسال</th>
-                    <th className="px-4 py-2 text-start font-medium">نام</th>
-                    <th className="px-4 py-2 text-start font-medium">نوع</th>
-                    <th className="px-4 py-2 text-start font-medium">قیمت ({money.unitLabel})</th>
-                    <th className="px-4 py-2 text-start font-medium">آخرین ارسال</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((row) => (
-                    <tr key={`${row.localKind}:${row.localId}`} className="border-b border-border/60 last:border-b-0">
-                      <td className="px-4 py-2">
-                        <input
-                          type="checkbox"
-                          className="size-4"
-                          checked={row.syncEnabled}
-                          disabled={busyId === row.localId}
-                          onChange={(e) => toggle(row, e.target.checked)}
-                          aria-label={`ارسال ${row.name} به سایت`}
-                        />
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="font-medium">{row.name}</div>
-                        {row.sku ? <div dir="ltr" className="text-start text-xs text-muted-foreground">{row.sku}</div> : null}
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">{LOCAL_KIND_LABELS[row.localKind]}</td>
-                      <td className="px-4 py-2 tabular-nums">{row.priceRial === null ? "—" : money.format(row.priceRial, { withUnit: false })}</td>
-                      <td className="px-4 py-2 text-xs text-muted-foreground">
-                        {row.lastPushedAt ? (
-                          <>
-                            <div>{formatJalali(row.lastPushedAt, { withTime: true })}</div>
-                            <div>
-                              {row.lastPushedPriceRial !== null ? `قیمت ${money.format(row.lastPushedPriceRial)}` : ""}
-                              {row.lastPushedStock !== null ? ` · موجودی ${formatPersianNumber(row.lastPushedStock)}` : ""}
-                            </div>
-                          </>
-                        ) : row.syncEnabled ? (
-                          <StatusBadge tone="active">در صف</StatusBadge>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable caption="محصولات قابل ارسال به سایت">
+              <DataTableHead>
+                <Th>ارسال</Th>
+                <Th>نام</Th>
+                <Th>نوع</Th>
+                <Th numeric>قیمت (ریال)</Th>
+                <Th>آخرین ارسال</Th>
+              </DataTableHead>
+              <DataTableBody>
+                {visible.map((row) => (
+                  <DataTableRow key={`${row.localKind}:${row.localId}`}>
+                    <Td>
+                      <input
+                        type="checkbox"
+                        className="size-4"
+                        checked={row.syncEnabled}
+                        disabled={busyId === row.localId}
+                        onChange={(e) => toggle(row, e.target.checked)}
+                        aria-label={`ارسال ${row.name} به سایت`}
+                      />
+                    </Td>
+                    <Td>
+                      <div className="font-medium">{row.name}</div>
+                      {row.sku ? <div dir="ltr" className="text-start text-xs text-muted-foreground">{row.sku}</div> : null}
+                    </Td>
+                    <Td muted>{LOCAL_KIND_LABELS[row.localKind]}</Td>
+                    <Td numeric>{row.priceRial === null ? "—" : money.format(row.priceRial)}</Td>
+                    <Td muted className="text-xs">
+                      {row.lastPushedAt ? (
+                        <>
+                          <div>{formatJalali(row.lastPushedAt, { withTime: true })}</div>
+                          <div>
+                            {row.lastPushedPriceRial !== null ? `قیمت ${money.format(row.lastPushedPriceRial)}` : ""}
+                            {row.lastPushedStock !== null ? ` · موجودی ${formatPersianNumber(row.lastPushedStock)}` : ""}
+                          </div>
+                        </>
+                      ) : row.syncEnabled ? (
+                        <StatusBadge tone="active">در صف</StatusBadge>
+                      ) : (
+                        "—"
+                      )}
+                    </Td>
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
           )}
         </>
       )}

@@ -205,7 +205,7 @@ export function LoyaltySection({ canManage = true }: { canManage?: boolean }) {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">بازگشت مشتری</p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">مشتریان آمادهٔ خرید مجدد</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان آمادهٔ خرید مجدد</h2>
           </div>
         }
         description="پیش‌بینی از تاریخچهٔ خرید همان مشتری در شعبهٔ فعال؛ موعد گذشته یعنی زمان تماس یا پیام"
@@ -341,7 +341,7 @@ function ProgramsPanel({
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">طرح‌های امتیازدهی</p>
-          <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">برنامهٔ وفاداری</h2>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">برنامهٔ وفاداری</h2>
         </div>
       }
       description={canManage ? "نرخ کسب، ارزش بازخرید و انقضای امتیازها را اینجا مدیریت کنید." : "تنظیم برنامه‌ها فقط برای مدیر و مالک مجاز است."}
@@ -559,7 +559,7 @@ function CustomerPanel({
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امور مالی مشتریان</p>
-          <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">مشتری و اعتبار</h2>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتری و اعتبار</h2>
         </div>
       }
       description="مانده‌ها از دفتر امتیاز و رویدادهای حسابداری خوانده می‌شوند، نه از یک ستون قابل ویرایش."

@@ -24,6 +24,14 @@ import { Button } from "@/components/ui/button";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import { EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { PartyFormDialog } from "@/app/dashboard/parties/party-form";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
 import { api, ErrorBox, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 const PAGE_SIZE = 50;
@@ -181,7 +189,7 @@ export function GrowthCustomersSection({
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مشتریان وفادار</p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">مشتریان</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان</h2>
           </div>
         }
         description="این فهرست رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ستون‌ها برای کار رشد‌اند — چرخهٔ حیات، امتیاز و خرید. افزودن و ویرایش در همین بخش انجام می‌شود و پروندهٔ کامل (یادداشت‌ها و تاریخچه) در CRM است."
@@ -233,93 +241,53 @@ export function GrowthCustomersSection({
               : "هنوز مشتری‌ای ثبت نشده است. با «افزودن مشتری» شروع کنید."}
           </EmptyState>
         ) : (
-          <div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
-            <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[56rem] text-sm">
-                <caption className="sr-only">فهرست مشتریان رشد با مرحلهٔ چرخهٔ حیات، خرید و امتیاز وفاداری</caption>
-                <thead>
-                  <tr className="border-b border-border/80 text-muted-foreground">
-                    <th scope="col" className="py-2 pe-3 text-start font-medium">مشتری</th>
-                    <th scope="col" className="py-2 pe-3 text-start font-medium">تلفن</th>
-                    <th scope="col" className="py-2 pe-3 text-start font-medium">مرحلهٔ چرخهٔ حیات</th>
-                    <th scope="col" className="py-2 pe-3 text-start font-medium">خریدها</th>
-                    <th scope="col" className="py-2 pe-3 text-start font-medium">مجموع خرید</th>
-                    <th scope="col" className="py-2 pe-3 text-start font-medium">آخرین خرید</th>
-                    <th scope="col" className="py-2 pe-3 text-start font-medium">امتیاز وفاداری</th>
-                    <th scope="col" className={`py-2 text-start font-medium ${canManage ? "pe-3" : ""}`}>وضعیت</th>
+          <>
+            <DataTable caption="فهرست مشتریان باشگاه" className="hidden lg:block">
+              <DataTableHead>
+                <Th>مشتری</Th>
+                <Th>تلفن</Th>
+                <Th>مرحلهٔ چرخهٔ حیات</Th>
+                <Th numeric>خریدها</Th>
+                <Th numeric>مجموع خرید</Th>
+                <Th numeric>امتیاز وفاداری</Th>
+                <Th>وضعیت</Th>
+                {canManage ? <Th>عملیات</Th> : null}
+              </DataTableHead>
+              <DataTableBody>
+                {customers.map((customer) => (
+                  <DataTableRow key={customer.id} selected={customer.id === selectedCustomerId}>
+                    <Td>
+                      <Link
+                        href={crmCustomerHref(customer.id)}
+                        className="inline-flex items-center gap-2 font-medium text-foreground hover:underline"
+                      >
+                        <ContactIcon className="size-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
+                        {customer.displayName}
+                      </Link>
+                    </Td>
+                    <Td muted>{customer.phone ? toPersianDigits(customer.phone) : "—"}</Td>
+                    <Td>{stageLabel(customer.lifecycleStage)}</Td>
+                    <Td numeric>{formatPersianNumber(customer.orderCount)}</Td>
+                    <Td numeric className="font-semibold">
+                      {money.format(customer.totalSpentRial)}
+                    </Td>
+                    <Td numeric>{formatPersianNumber(customer.points)}</Td>
+                    <Td>
+                      <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
+                        {customer.isActive ? "فعال" : "آرشیو"}
+                      </StatusBadge>
+                    </Td>
                     {canManage ? (
-                      <th scope="col" className="py-2 text-start font-medium">عملیات</th>
+                      <Td>
+                        <Button type="button" variant="ghost" size="xs" onClick={() => setForm({ partyId: customer.id })}>
+                          ویرایش
+                        </Button>
+                      </Td>
                     ) : null}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/80">
-                  {rows.map((customer) => (
-                    <tr
-                      key={customer.id}
-                      className={customer.id === selectedCustomerId ? "bg-amber-50 dark:bg-amber-500/10" : ""}
-                    >
-                      <td className="py-3 pe-3">
-                        <Link
-                          href={crmCustomerHref(customer.id)}
-                          className="inline-flex items-center gap-2 font-medium text-foreground hover:underline"
-                        >
-                          <ContactIcon className="size-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
-                          {customer.displayName}
-                        </Link>
-                      </td>
-                      <td className="py-3 pe-3 text-muted-foreground">
-                        {customer.phone ? (
-                          // A phone on a customer list is there to be called; on a
-                          // tablet at the counter that means a tap, not a re-type.
-                          <a
-                            href={`tel:${customer.phone}`}
-                            className="hover:underline"
-                            dir="ltr"
-                          >
-                            {toPersianDigits(customer.phone)}
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="py-3 pe-3">
-                        {customer.lifecycleStage ? (
-                          <StatusBadge tone={stageTone(customer.lifecycleStage)}>
-                            {stageLabel(customer.lifecycleStage)}
-                          </StatusBadge>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 pe-3 tabular-nums">{formatPersianNumber(customer.orderCount)}</td>
-                      <td className="py-3 pe-3 font-semibold tabular-nums">{money.format(customer.totalSpentRial)}</td>
-                      <td className="py-3 pe-3 whitespace-nowrap text-muted-foreground tabular-nums">
-                        {purchaseDate(customer.lastPurchaseDate)}
-                      </td>
-                      <td className="py-3 pe-3 tabular-nums">{formatPersianNumber(customer.points)}</td>
-                      <td className={canManage ? "py-3 pe-3" : "py-3"}>
-                        <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
-                          {customer.isActive ? "فعال" : "آرشیو"}
-                        </StatusBadge>
-                      </td>
-                      {canManage ? (
-                        <td className="py-3">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => openEdit(customer.id)}
-                            aria-label={`ویرایش ${customer.displayName}`}
-                          >
-                            ویرایش
-                          </Button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
 
             <ul className="space-y-3 lg:hidden">
               {rows.map((customer) => (
@@ -395,7 +363,7 @@ export function GrowthCustomersSection({
                 </li>
               ))}
             </ul>
-          </div>
+          </>
         )}
 
         {totalPages > 1 ? (

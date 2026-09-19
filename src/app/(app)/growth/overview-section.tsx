@@ -41,14 +41,15 @@ import { formatJalali } from "@/lib/jalali";
 import { WELL_KNOWN_CODES } from "@/lib/coa-template";
 import type { GrowthOverview } from "@/lib/growth-overview";
 import {
-  cardClass,
   EmptyState,
+  KpiCard,
+  KpiRow,
   KpiRowSkeleton,
   SectionCard,
   SectionCardSkeleton,
   StatusBadge,
 } from "@/app/dashboard/page-chrome";
-import { api } from "@/app/dashboard/ui";
+import { api, ErrorBox } from "@/app/dashboard/ui";
 import type { GrowthSectionKey } from "./growth-routes";
 
 const CAMPAIGN_STATE_LABELS: Record<string, string> = {
@@ -80,35 +81,6 @@ const BRIDGE_HINTS: Record<string, string> = {
   [WELL_KNOWN_CODES.giftCardPayable]: "مانده کارت‌های هدیهٔ فروخته‌شده و خرج‌نشده",
   [WELL_KNOWN_CODES.commissionExpense]: "هزینهٔ پورسانت ثبت‌شده در دفاتر",
 };
-
-/** A KPI tile: cardClass composed, not restated (design-lint holds this line). */
-function StatCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
-      <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      {/*
-        `truncate` on a long Rial figure hides the digits that matter, so the
-        full value stays reachable as the element's own title — the same
-        contract the KPI tiles in accounting keep.
-      */}
-      <p
-        title={value}
-        className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl"
-      >
-        {value}
-      </p>
-      {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
-}
 
 /**
  * «تلاش دوباره» for a failed read — the shape ar-/ap-section established. A
@@ -270,33 +242,33 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
         width in the field — showing a two-column column of six, twice as tall
         as it needed to be.
       */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard
+      <KpiRow className="lg:grid-cols-3 xl:grid-cols-3">
+        <KpiCard
           label="تخفیف کمپین‌ها · ۳۰ روز گذشته"
           value={money.format(overview.campaigns.discountRial)}
           hint={`${formatPersianNumber(overview.campaigns.applications)} بار اعمال روی فروش · ${formatPersianNumber(overview.campaigns.counts.live)} کمپین در حال اجرا`}
         />
-        <StatCard
+        <KpiCard
           label={`بدهی کارت هدیه (${toPersianDigits(WELL_KNOWN_CODES.giftCardPayable)})`}
           value={money.format(overview.giftCards.outstandingRial)}
           hint={`${formatPersianNumber(overview.giftCards.issued30d)} کارت به ارزش ${money.format(overview.giftCards.issuedValue30d)} در ۳۰ روز گذشته صادر شد`}
         />
-        <StatCard
+        <KpiCard
           label={`اعتبار فروشگاهی مشتریان (${toPersianDigits(WELL_KNOWN_CODES.storeCreditPayable)})`}
           value={money.format(storeCredit)}
           hint={`${formatPersianNumber(overview.loyalty.customersWithPoints)} مشتری از ${formatPersianNumber(overview.loyalty.customersTotal)} امتیاز مصرف‌نشده دارد`}
         />
-        <StatCard
+        <KpiCard
           label="پورسانت فروشندگان · ۳۰ روز گذشته"
           value={money.format(overview.commission.accrued30d)}
           hint={`هزینه ${toPersianDigits(WELL_KNOWN_CODES.commissionExpense)}، بدهی حقوق ${toPersianDigits(WELL_KNOWN_CODES.salariesPayable)}`}
         />
-        <StatCard
+        <KpiCard
           label="امتیاز در گردش"
           value={formatPersianNumber(overview.loyalty.pointsOutstanding)}
           hint={`ارزش تخمینی بازخرید ${money.format(overview.loyalty.pointsValueEstimate)} · ${formatPersianNumber(overview.loyalty.earned30d)} کسب و ${formatPersianNumber(overview.loyalty.redeemed30d)} خرج‌شده در ۳۰ روز`}
         />
-        <StatCard
+        <KpiCard
           label="آمادهٔ خرید مجدد (این شعبه)"
           // Without a branch in context this figure was never computed; «۰» would
           // be a claim, not an answer.
@@ -307,7 +279,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
               : "شعبه‌ای در دسترس نیست؛ این پیش‌بینی برای هر شعبه جداگانه محاسبه می‌شود."
           }
         />
-      </div>
+      </KpiRow>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard

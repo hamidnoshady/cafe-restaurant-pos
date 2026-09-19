@@ -7,7 +7,16 @@ import { RefreshCwIcon } from "lucide-react";
 import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber } from "@/lib/digits";
 import { api, ErrorBox, SecondaryButton } from "@/app/dashboard/ui";
-import { cardClass } from "@/app/dashboard/page-chrome";
+import { CardEyebrow, cardClass, StatusBadge } from "@/app/dashboard/page-chrome";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableFoot,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
 
 interface TrialBalanceRow {
   id: string;
@@ -132,9 +141,7 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
       {error ? <ErrorBox>{error}</ErrorBox> : null}
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-            گزارش مالی
-          </p>
+          <CardEyebrow>گزارش مالی</CardEyebrow>
           <h2
             id="trial-balance-heading"
             className="mt-1 text-base font-semibold text-foreground"
@@ -146,18 +153,9 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${
-              statusTone === "positive"
-                ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200"
-                : statusTone === "danger"
-                  ? "bg-destructive/10 text-destructive"
-                  : "bg-muted text-muted-foreground"
-            }`}
-          >
-            <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+          <StatusBadge tone={statusTone} dot>
             {statusText}
-          </span>
+          </StatusBadge>
           <SecondaryButton
             onClick={() => setRetryKey((key) => key + 1)}
             disabled={loading}
@@ -171,109 +169,71 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
       </header>
 
       <div className="p-4 sm:p-5">
-        <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <caption className="sr-only">فهرست حساب‌ها و ماندهٔ بدهکار و بستانکار</caption>
-              <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
-                <tr className="border-b border-border">
-                  <th
-                    scope="col"
-                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
-                  >
-                    کد
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
-                  >
-                    حساب
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
-                  >
-                    نوع
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
-                  >
-                    بدهکار
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-4 py-3.5 text-start text-xs font-medium sm:text-sm"
-                  >
-                    بستانکار
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((a) => (
-                  <tr
-                    key={a.id}
-                    className="border-b border-border last:border-b-0"
-                  >
-                    <td className="whitespace-nowrap px-4 py-3.5 font-medium text-muted-foreground">
-                      {a.code}
-                    </td>
-                    <td className="px-4 py-3.5 font-medium text-foreground">
-                      {a.name}
-                      {a.isActive === false ? (
-                        <span className="ms-2 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                          غیرفعال
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">
-                      {TYPE_LABELS[a.type]}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3.5 text-end font-semibold text-foreground">
-                      {money.format(Number(a.debit))}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3.5 text-end font-semibold text-foreground">
-                      {money.format(Number(a.credit))}
-                    </td>
-                  </tr>
-                ))}
-                {rows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-4 py-10 text-center text-sm text-muted-foreground"
-                    >
-                      {emptyRowsMessage}
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-border bg-stone-50/60 text-foreground dark:bg-stone-800/30">
-                  <th
-                    scope="row"
-                    className="px-4 py-3.5 text-start font-semibold"
-                    colSpan={3}
-                  >
-                    جمع کل
-                  </th>
-                  <td className="whitespace-nowrap px-4 py-3.5 text-end font-bold">
-                    {money.format(data.totalDebit)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3.5 text-end font-bold">
-                    {money.format(data.totalCredit)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
+        <DataTable
+          caption="فهرست حساب‌ها و ماندهٔ بدهکار و بستانکار"
+          className="hidden lg:block"
+        >
+          <DataTableHead>
+            <Th>کد</Th>
+            <Th>حساب</Th>
+            <Th>نوع</Th>
+            <Th numeric>بدهکار</Th>
+            <Th numeric>بستانکار</Th>
+          </DataTableHead>
+          <DataTableBody>
+            {rows.map((a) => (
+              <DataTableRow key={a.id}>
+                <Td muted nowrap className="font-medium">
+                  {a.code}
+                </Td>
+                <Td className="font-medium">
+                  {a.name}
+                  {a.isActive === false ? (
+                    <span className="ms-2">
+                      <StatusBadge>غیرفعال</StatusBadge>
+                    </span>
+                  ) : null}
+                </Td>
+                <Td muted>{TYPE_LABELS[a.type]}</Td>
+                <Td numeric nowrap>
+                  {money.format(Number(a.debit))}
+                </Td>
+                <Td numeric nowrap>
+                  {money.format(Number(a.credit))}
+                </Td>
+              </DataTableRow>
+            ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-4 py-10 text-center text-sm text-muted-foreground"
+                >
+                  {emptyRowsMessage}
+                </td>
+              </tr>
+            ) : null}
+          </DataTableBody>
+          <DataTableFoot>
+            <tr>
+              <th scope="row" className="px-4 py-3.5 text-start" colSpan={3}>
+                جمع کل
+              </th>
+              <Td numeric nowrap className="font-bold">
+                {money.format(data.totalDebit)}
+              </Td>
+              <Td numeric nowrap className="font-bold">
+                {money.format(data.totalCredit)}
+              </Td>
+            </tr>
+          </DataTableFoot>
+        </DataTable>
 
         <div className="space-y-3 lg:hidden">
           {rows.map((a) => (
             <article
               key={a.id}
-              className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30"
+              className="rounded-xl border border-border/80 bg-muted/60 p-4"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -294,13 +254,13 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                 </span>
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
-                <div className="rounded-lg bg-stone-50 px-3 py-2.5 dark:bg-stone-800/40">
+                <div className="rounded-lg bg-muted/60 px-3 py-2.5">
                   <dt className="text-xs text-muted-foreground">بدهکار</dt>
                   <dd className="mt-1 whitespace-nowrap text-end text-sm font-semibold text-foreground">
                     {money.format(Number(a.debit))}
                   </dd>
                 </div>
-                <div className="rounded-lg bg-stone-50 px-3 py-2.5 dark:bg-stone-800/40">
+                <div className="rounded-lg bg-muted/60 px-3 py-2.5">
                   <dt className="text-xs text-muted-foreground">بستانکار</dt>
                   <dd className="mt-1 whitespace-nowrap text-end text-sm font-semibold text-foreground">
                     {money.format(Number(a.credit))}
@@ -314,7 +274,7 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
               {emptyRowsMessage}
             </p>
           ) : null}
-          <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+          <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border/80 bg-muted/60 p-4">
             <div>
               <dt className="text-xs font-medium text-muted-foreground">
                 جمع کل بدهکار
