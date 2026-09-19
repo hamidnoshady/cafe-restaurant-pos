@@ -97,9 +97,8 @@ export function WpContentSection() {
 
   return (
     <div className="space-y-4">
-      <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-        <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
-        <Button variant="outline" size="sm" disabled={busy} onClick={syncContent} className="ms-auto">
+      <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId}>
+        <Button variant="outline" size="sm" disabled={busy} onClick={syncContent}>
           <RefreshCwIcon className="size-4" />
           همگام‌سازی محتوا
         </Button>
@@ -107,7 +106,7 @@ export function WpContentSection() {
           <PlusIcon className="size-4" />
           {tab === "post" ? "نوشتهٔ تازه" : "برگهٔ تازه"}
         </Button>
-      </div>
+      </ConnectionPicker>
       <PluginWaitNote connections={connections} selectedId={selectedId} />
       {info ? <p className="text-xs text-teal-700 dark:text-teal-300">{info}</p> : null}
 

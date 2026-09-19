@@ -79,13 +79,12 @@ export function WpCustomersSection() {
 
   return (
     <div className="space-y-4">
-      <div className={`${cardClass} flex flex-wrap items-center gap-3 p-4`}>
-        <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId} />
-        <Button variant="outline" size="sm" disabled={busy} onClick={syncCustomers} className="ms-auto">
+      <ConnectionPicker connections={connections} value={selectedId} onChange={setSelectedId}>
+        <Button variant="outline" size="sm" disabled={busy} onClick={syncCustomers}>
           <RefreshCwIcon className="size-4" />
           همگام‌سازی مشتریان
         </Button>
-      </div>
+      </ConnectionPicker>
       <PluginWaitNote connections={connections} selectedId={selectedId} />
       {info ? <p className="text-xs text-teal-700 dark:text-teal-300">{info}</p> : null}
 
