@@ -14,30 +14,25 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: {
-    name?: string;
-    earnPointsPer100000?: number;
-    pointValueRial?: number;
-    pointsExpiryDays?: number | null;
-    isActive?: boolean;
-    isDefault?: boolean;
-  };
+  let body: Record<string, unknown>;
   try {
-    body = await request.json();
+    body = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (!body.name?.trim()) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  if (typeof body.name !== "string" || !body.name.trim()) {
+    return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  }
 
   try {
     const program = await upsertProgram(session.businessId, {
       name: body.name,
-      earnPointsPer100000: body.earnPointsPer100000,
-      pointValueRial: body.pointValueRial,
-      pointsExpiryDays: body.pointsExpiryDays,
-      isActive: body.isActive,
-      isDefault: body.isDefault,
+      earnPointsPer100000: body.earnPointsPer100000 as number | undefined,
+      pointValueRial: body.pointValueRial as number | undefined,
+      pointsExpiryDays: body.pointsExpiryDays as number | null | undefined,
+      isActive: body.isActive as boolean | undefined,
+      isDefault: body.isDefault as boolean | undefined,
     });
     return NextResponse.json({ ok: true, program });
   } catch (err) {

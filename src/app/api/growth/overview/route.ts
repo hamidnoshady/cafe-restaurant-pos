@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { businessToday } from "@/lib/business-day-service";
+import { businessToday, getBusinessDayStatus } from "@/lib/business-day-service";
 import { growthOverview } from "@/lib/growth-overview";
 
 /**
@@ -17,19 +17,11 @@ export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  // `businessToday`, not `new Date()`: the rolling window and the campaign
-  // life-cycle classifier both compare against "today", and the server's UTC
-  // calendar day is not the business's trading day. A branch in Tehran whose
-  // day starts at 06:00 rolled its window over at 03:30 local, so a campaign
-  // ending tonight already read «پایان‌یافته» on the late shift — the same
-  // off-by-one-day bug A/R aging documents.
-  const [location, today] = await Promise.all([
-    resolveActiveLocation(session),
-    businessToday(session.businessId),
-  ]);
+  const location = await resolveActiveLocation(session);
+  const businessDay = location ? await getBusinessDayStatus(location.id) : null;
   const overview = await growthOverview(session.businessId, {
     locationId: location?.id ?? null,
-    today,
+    today: businessDay?.businessDate ?? (await businessToday(session.businessId)),
   });
   return NextResponse.json({ overview });
 });

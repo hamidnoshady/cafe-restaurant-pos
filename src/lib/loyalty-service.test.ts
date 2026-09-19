@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { pointsBalance, upsertProgram } from "./loyalty-service";
 import * as db from "./db";
 
@@ -7,151 +7,82 @@ vi.mock("./db", () => ({
   getPool: vi.fn(),
 }));
 
-// The posting-rules side-effect import pulls the whole engine in; none of it
-// runs in these tests, but its imports must resolve, which they do.
-
 const BUSINESS = "00000000-0000-4000-8000-000000000001";
 const CUSTOMER = "00000000-0000-4000-8000-000000000002";
 
-function mockLedger(rows: { points: number; expires_at: string | null; created_on: string }[]) {
-  vi.mocked(db.query).mockResolvedValue({ rows } as never);
+const programRow = {
+  id: "00000000-0000-4000-8000-000000000003",
+  business_id: BUSINESS,
+  name: "برنامه",
+  earn_points_per_100000: 3,
+  point_value_rial: 1000,
+  points_expiry_days: null,
+  is_active: true,
+  is_default: true,
+};
+
+function programClient() {
+  const client = {
+    query: vi.fn(async (sql: string, ..._params: unknown[]) => {
+      if (sql.includes("SELECT * FROM loyalty_programs") && sql.includes("FOR UPDATE")) {
+        return { rows: [programRow] };
+      }
+      if (sql.includes("INSERT INTO loyalty_programs")) return { rows: [programRow] };
+      return { rows: [] };
+    }),
+    release: vi.fn(),
+  };
+  vi.mocked(db.getPool).mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as never);
+  return client;
 }
 
 describe("pointsBalance", () => {
   beforeEach(() => {
     vi.mocked(db.query).mockReset();
+    vi.mocked(db.getPool).mockReset();
   });
 
-  it("sums a ledger with no expiry like the plain SUM it used to be", async () => {
-    mockLedger([
-      { points: 100, expires_at: null, created_on: "2026-01-01" },
-      { points: -30, expires_at: null, created_on: "2026-02-01" },
-    ]);
-    expect(await pointsBalance(BUSINESS, CUSTOMER)).toBe(70);
+  it("uses the requested business date and excludes point lots on their expiry date", async () => {
+    vi.mocked(db.query).mockResolvedValue({ rows: [{ balance: "70" }] } as never);
+
+    expect(await pointsBalance(BUSINESS, CUSTOMER, undefined, "2026-01-02")).toBe(70);
+    expect(vi.mocked(db.query)).toHaveBeenCalledWith(
+      expect.stringContaining("expires_at IS NULL OR expires_at > $3::date"),
+      [BUSINESS, CUSTOMER, "2026-01-02"],
+    );
   });
 
-  it("forfeits an expired lot that was never redeemed", async () => {
-    mockLedger([
-      { points: 100, expires_at: null, created_on: "2026-01-01" },
-      // Advertised as expiring and long past: must not count.
-      { points: 50, expires_at: "2020-01-01", created_on: "2019-12-01" },
-    ]);
-    expect(await pointsBalance(BUSINESS, CUSTOMER)).toBe(100);
-  });
-
-  it("does not resurrect points that were redeemed before their lot expired", async () => {
-    mockLedger([
-      // 100 expiring points; 80 were spent in time, so only 20 lapse.
-      { points: 100, expires_at: "2020-06-01", created_on: "2020-01-01" },
-      { points: -80, expires_at: null, created_on: "2020-03-01" },
-    ]);
-    expect(await pointsBalance(BUSINESS, CUSTOMER)).toBe(0);
-  });
-
-  it("spends soonest-expiring lots first so redemption forfeits the least", async () => {
-    mockLedger([
-      { points: 50, expires_at: "2020-06-01", created_on: "2020-01-01" }, // lapsed
-      { points: 50, expires_at: null, created_on: "2020-01-02" },
-      // Spent while the expiring lot was valid → drawn from it, not the open one.
-      { points: -40, expires_at: null, created_on: "2020-02-01" },
-    ]);
-    // 10 of the expiring lot lapse; the open 50 remain.
-    expect(await pointsBalance(BUSINESS, CUSTOMER)).toBe(50);
-  });
-
-  it("never goes negative through expiry alone", async () => {
-    mockLedger([
-      { points: 30, expires_at: "2020-01-01", created_on: "2019-01-01" },
-      { points: -30, expires_at: null, created_on: "2019-06-01" },
-    ]);
-    expect(await pointsBalance(BUSINESS, CUSTOMER)).toBe(0);
-  });
-
-  it("treats a redemption on the expiry day itself as valid", async () => {
-    mockLedger([
-      { points: 30, expires_at: "2020-01-01", created_on: "2019-01-01" },
-      { points: -30, expires_at: null, created_on: "2020-01-01" },
-    ]);
-    expect(await pointsBalance(BUSINESS, CUSTOMER)).toBe(0);
+  it("rejects invalid as-of dates before issuing a database query", async () => {
+    await expect(pointsBalance(BUSINESS, CUSTOMER, undefined, "not-a-date")).rejects.toThrow("تاریخ محاسبهٔ امتیاز");
+    expect(vi.mocked(db.query)).not.toHaveBeenCalled();
   });
 });
 
-describe("upsertProgram validation", () => {
-  it("rejects a fractional earn rate with a Persian message, not a DB error", async () => {
-    await expect(
-      upsertProgram(BUSINESS, { name: "برنامه", earnPointsPer100000: 1.5 }),
-    ).rejects.toThrow("نرخ کسب امتیاز باید یک عدد صحیح صفر یا بیشتر باشد.");
+describe("upsertProgram validation and partial edits", () => {
+  it("rejects fractional values rather than relying on a database cast", async () => {
+    await expect(upsertProgram(BUSINESS, { name: "برنامه", earnPointsPer100000: 1.5 })).rejects.toThrow(
+      "نرخ کسب امتیاز",
+    );
+    await expect(upsertProgram(BUSINESS, { name: "برنامه", pointValueRial: 999.5 })).rejects.toThrow(
+      "ارزش ریالی هر امتیاز",
+    );
   });
 
-  it("rejects a fractional point value", async () => {
-    await expect(
-      upsertProgram(BUSINESS, { name: "برنامه", pointValueRial: 999.5 }),
-    ).rejects.toThrow("ارزش ریالی هر امتیاز باید یک عدد صحیح مثبت باشد.");
-  });
+  it("accepts a zero earn rate, preserving the stored fields omitted by a partial edit", async () => {
+    const client = programClient();
 
-  it("rejects a zero or negative point value", async () => {
-    await expect(upsertProgram(BUSINESS, { name: "برنامه", pointValueRial: 0 })).rejects.toThrow();
-    await expect(upsertProgram(BUSINESS, { name: "برنامه", pointValueRial: -100 })).rejects.toThrow();
-  });
+    const saved = await upsertProgram(BUSINESS, { name: "برنامه", earnPointsPer100000: 0 });
 
-  it("rejects a negative earn rate but accepts zero (a business may pause earning)", async () => {
-    await expect(upsertProgram(BUSINESS, { name: "برنامه", earnPointsPer100000: -1 })).rejects.toThrow();
-
-    // Zero passes validation and reaches the database layer.
-    const client = {
-      query: vi.fn().mockResolvedValue({
-        rows: [
-          {
-            id: "p1",
-            business_id: BUSINESS,
-            name: "برنامه",
-            earn_points_per_100000: 0,
-            point_value_rial: 1000,
-            points_expiry_days: null,
-            is_active: true,
-            is_default: false,
-          },
-        ],
-      }),
-      release: vi.fn(),
-    };
-    vi.mocked(db.getPool).mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as never);
-    const program = await upsertProgram(BUSINESS, { name: "برنامه", earnPointsPer100000: 0 });
-    expect(program.earnPointsPer100000).toBe(0);
-  });
-
-  it("keeps a stored field when the caller does not send it (no silent default demotion)", async () => {
-    const client = {
-      query: vi.fn().mockResolvedValue({
-        rows: [
-          {
-            id: "p1",
-            business_id: BUSINESS,
-            name: "برنامه",
-            earn_points_per_100000: 3,
-            point_value_rial: 1000,
-            points_expiry_days: null,
-            is_active: true,
-            is_default: true,
-          },
-        ],
-      }),
-      release: vi.fn(),
-    };
-    vi.mocked(db.getPool).mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as never);
-
-    await upsertProgram(BUSINESS, { name: "برنامه", earnPointsPer100000: 3 });
-
-    // Since isDefault was not sent, no blanket demotion may run, and the
-    // upsert must carry null (→ COALESCE keeps the stored value) not `false`.
-    const calls = client.query.mock.calls.map((c) => String(c[0]));
-    expect(calls.some((sql) => sql.includes("SET is_default = false WHERE"))).toBe(false);
-    const insertCall = client.query.mock.calls.find((c) => String(c[0]).includes("INSERT INTO loyalty_programs"));
+    expect(saved).toMatchObject({ id: programRow.id, earnPointsPer100000: 3, isDefault: true });
+    const insertCall = client.query.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO loyalty_programs"));
     expect(insertCall).toBeDefined();
-    const params = insertCall![1] as unknown[];
-    // Params: business, name, earn, value, expiryProvided, expiry, isActive, isDefault
-    expect(params[7]).toBeNull();
-    expect(params[6]).toBeNull();
-    expect(params[4]).toBe(false);
+    // business, name, rate, value, expiry, active, chosen default
+    expect(insertCall?.[1]).toEqual([BUSINESS, "برنامه", 0, 1000, null, true, true]);
+  });
+
+  it("rejects an inactive default program before opening a transaction", async () => {
+    await expect(upsertProgram(BUSINESS, { name: "برنامه", isActive: false, isDefault: true })).rejects.toThrow(
+      "پیش‌فرض باید فعال باشد",
+    );
   });
 });

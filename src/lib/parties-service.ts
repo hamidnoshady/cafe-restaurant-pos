@@ -943,9 +943,15 @@ export async function getParty(businessId: string, id: string): Promise<Party | 
   return rows[0] ? toParty(rows[0], dek) : null;
 }
 
-/** The legacy getter, still imported by the loyalty and assistant paths. */
+/**
+ * The compatibility getter used by loyalty and checkout paths. A party can
+ * carry several roles, but a supplier-only or employee-only record must never
+ * receive customer points or a customer-credit liability just because its UUID
+ * was supplied to an endpoint.
+ */
 export async function getCustomer(businessId: string, id: string): Promise<Party | null> {
-  return getParty(businessId, id);
+  const party = await getParty(businessId, id);
+  return party?.roles.includes("Customer") ? party : null;
 }
 
 /**

@@ -84,12 +84,7 @@ export interface GrowthActivityRow {
 
 export interface GrowthOverview {
   window: { from: string; to: string };
-  /**
-   * Whether the reader actually has a branch in context. `repurchase` is a
-   * per-branch prediction, so without one its `due` is 0 *because nothing was
-   * asked*, not because nobody is due — a difference the dashboard has to be
-   * able to say out loud instead of printing a confident «۰».
-   */
+  /** Repurchase predictions are per-branch, so no selected branch is not a zero result. */
   hasLocation: boolean;
   campaigns: {
     counts: Record<CampaignState, number>;
@@ -141,7 +136,8 @@ export async function growthOverview(
   const [
     promoRows,
     perfRows,
-    pointRows,
+    pointActivityRows,
+    pointBalanceRows,
     customerRows,
     programRows,
     giftCardRows,
@@ -179,44 +175,41 @@ export async function growthOverview(
     query<{
       earned: number;
       redeemed: number;
-      outstanding: number;
-      customers_with_points: number;
     }>(
-      // `customers_with_points` is a count of *balances*, not of rows: the old
-      // COUNT(DISTINCT customer_id) over the whole ledger counted anyone who
-      // had ever earned a point, including customers who have since spent
-      // every one of them — so the dashboard could claim more point-holders
-      // than there were points. The per-customer sum is taken first and only
-      // the positive balances are counted, which is the same definition
-      // `pointsBalance` gives one customer.
-      `WITH balances AS (
-         SELECT customer_id, SUM(points)::int AS balance
-           FROM customer_points
-          WHERE business_id = $1
-          GROUP BY customer_id
-       )
-       SELECT
-              COALESCE((SELECT SUM(points) FILTER (WHERE points > 0)
-                          FROM customer_points
-                         WHERE business_id = $1
-                           AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS earned,
-              COALESCE((SELECT -SUM(points) FILTER (WHERE points < 0)
-                          FROM customer_points
-                         WHERE business_id = $1
-                           AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS redeemed,
-              COALESCE((SELECT SUM(balance) FROM balances), 0)::int AS outstanding,
-              (SELECT COUNT(*) FROM balances WHERE balance > 0)::int AS customers_with_points`,
+      `SELECT
+              COALESCE(SUM(points) FILTER (WHERE points > 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS earned,
+              COALESCE(-SUM(points) FILTER (WHERE points < 0 AND created_at::date >= $2 AND created_at::date <= $3), 0)::int AS redeemed
+         FROM customer_points
+        WHERE business_id = $1`,
       [businessId, from, to],
     ),
-    // Only *customers*, and only the surviving record of a merge: `parties`
-    // holds employees and suppliers on the same table since migration 0137, so
-    // the unfiltered COUNT(*) made «۱۲ مشتری از ۹۰» compare point-holders with
-    // the whole counterparty book — staff, suppliers, merged duplicates and
-    // archived rows included.
+    // A customer who earned and then redeemed every point is not "a customer
+    // with points". Neither is one whose expiring lot lapsed. Calculate the
+    // live balance in the same expiry-aware shape the customer screen uses.
+    query<{
+      outstanding: string;
+      customers_with_points: number;
+    }>(
+      `SELECT COALESCE(SUM(balance), 0)::text AS outstanding,
+              COUNT(*) FILTER (WHERE balance > 0)::int AS customers_with_points
+         FROM (
+           SELECT customer_id,
+                  COALESCE(SUM(points) FILTER (WHERE expires_at IS NULL OR expires_at > $2::date), 0) AS balance
+             FROM customer_points
+            WHERE business_id = $1
+            GROUP BY customer_id
+         ) point_balances`,
+      [businessId, opts.today],
+    ),
+    // Compare point holders with actual, live customers — `parties` also holds
+    // suppliers and staff, and a person may hold several roles.
     query<{ total: number }>(
       `SELECT COUNT(*)::int AS total
          FROM parties
-        WHERE business_id = $1 AND role = 'customer' AND is_active AND merged_into_id IS NULL`,
+        WHERE business_id = $1
+          AND roles && ARRAY['customer']::text[]
+          AND is_active
+          AND merged_into_id IS NULL`,
       [businessId],
     ),
     query<{ programs: number }>(
@@ -323,12 +316,9 @@ export async function growthOverview(
     balance: accountBalance(row.type, Number(row.debit), Number(row.credit)),
   }));
 
-  const points = pointRows.rows[0] ?? {
-    earned: 0,
-    redeemed: 0,
-    outstanding: 0,
-    customers_with_points: 0,
-  };
+  const pointActivity = pointActivityRows.rows[0] ?? { earned: 0, redeemed: 0 };
+  const pointBalances = pointBalanceRows.rows[0] ?? { outstanding: "0", customers_with_points: 0 };
+  const outstandingPoints = Number(pointBalances.outstanding);
   const program = await getDefaultProgram(businessId);
 
   return {
@@ -343,11 +333,11 @@ export async function growthOverview(
     },
     loyalty: {
       programs: programRows.rows[0]?.programs ?? 0,
-      pointsOutstanding: points.outstanding,
-      pointsValueEstimate: points.outstanding * (program?.pointValueRial ?? 0),
-      earned30d: points.earned,
-      redeemed30d: points.redeemed,
-      customersWithPoints: points.customers_with_points,
+      pointsOutstanding: outstandingPoints,
+      pointsValueEstimate: outstandingPoints * (program?.pointValueRial ?? 0),
+      earned30d: pointActivity.earned,
+      redeemed30d: pointActivity.redeemed,
+      customersWithPoints: pointBalances.customers_with_points,
       customersTotal: customerRows.rows[0]?.total ?? 0,
     },
     giftCards: {

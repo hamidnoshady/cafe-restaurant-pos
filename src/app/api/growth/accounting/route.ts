@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { businessToday } from "@/lib/business-day-service";
+import { businessToday, getBusinessDayStatus } from "@/lib/business-day-service";
 import { growthOverview } from "@/lib/growth-overview";
 
 /**
@@ -19,16 +19,11 @@ export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
-  // The business's trading day, not the server's UTC calendar day — the same
-  // reason `/api/growth/overview` uses it: the rolling window must mean the
-  // same thing on this screen as it does on the app's own dashboard.
-  const [location, today] = await Promise.all([
-    resolveActiveLocation(session),
-    businessToday(session.businessId),
-  ]);
+  const location = await resolveActiveLocation(session);
+  const businessDay = location ? await getBusinessDayStatus(location.id) : null;
   const overview = await growthOverview(session.businessId, {
     locationId: location?.id ?? null,
-    today,
+    today: businessDay?.businessDate ?? (await businessToday(session.businessId)),
   });
 
   return NextResponse.json({
