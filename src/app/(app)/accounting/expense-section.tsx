@@ -1,6 +1,7 @@
 "use client";
 
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -469,45 +470,38 @@ export function ExpenseSection({
             </p>
           ) : (
             <>
-              <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[56rem] text-sm">
-                    <caption className="sr-only">فهرست هزینه‌های ثبت‌شده</caption>
-                    <thead className="bg-muted/60 text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">دسته</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">شرح</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">طرف حساب</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">پرداخت از</th>
-                        <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">ثبت‌کننده</th>
-                        <th scope="col" className="px-4 py-3 text-end text-xs font-medium sm:text-sm">مبلغ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {expenses.map((e) => (
-                        <tr key={e.id} className="border-b border-border last:border-b-0">
-                          <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                            {toPersianDigits(formatJalali(e.expenseDate))}
-                          </td>
-                          <td className="px-4 py-3 text-foreground">
-                            {toPersianDigits(e.accountCode)} {e.accountName}
-                          </td>
-                          <td className="max-w-[18rem] break-words px-4 py-3 text-foreground">{e.memo}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{e.vendor ?? "—"}</td>
-                          <td className="px-4 py-3 text-muted-foreground">
-                            {toPersianDigits(e.paymentAccountCode)} {e.paymentAccountName}
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{e.createdByName ?? "—"}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-end font-semibold tabular-nums text-foreground">
-                            {money.format(e.amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <DataTable caption="فهرست هزینه‌های ثبت‌شده" className="hidden lg:block" tableClassName="min-w-[56rem]">
+                <DataTableHead>
+                  <Th>تاریخ</Th>
+                  <Th>دسته</Th>
+                  <Th>شرح</Th>
+                  <Th>طرف حساب</Th>
+                  <Th>پرداخت از</Th>
+                  <Th>ثبت‌کننده</Th>
+                  <Th numeric>مبلغ</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {expenses.map((e) => (
+                    <DataTableRow key={e.id}>
+                      <Td muted nowrap>
+                        {toPersianDigits(formatJalali(e.expenseDate))}
+                      </Td>
+                      <Td>
+                        {toPersianDigits(e.accountCode)} {e.accountName}
+                      </Td>
+                      <Td className="max-w-[18rem] break-words">{e.memo}</Td>
+                      <Td muted>{e.vendor ?? "—"}</Td>
+                      <Td muted>
+                        {toPersianDigits(e.paymentAccountCode)} {e.paymentAccountName}
+                      </Td>
+                      <Td muted>{e.createdByName ?? "—"}</Td>
+                      <Td numeric nowrap className="font-semibold">
+                        {money.format(e.amount)}
+                      </Td>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
 
               <div className="space-y-3 lg:hidden">
                 {expenses.map((e) => (

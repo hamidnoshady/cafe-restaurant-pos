@@ -29,6 +29,7 @@ import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, Secondar
 import { Button } from "@/components/ui/button";
 import type { InstallmentPlanRow } from "@/lib/installments-service";
 import { useOverlayEscape } from "./use-overlay-escape";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 /**
  * «کارت اقساط» — the installment schedule card. Functions follow the trade's
@@ -177,62 +178,59 @@ export function InstallmentsSection() {
             <EmptyState>هنوز برنامه قسطی ثبت نشده است.</EmptyState>
           ) : (
             <>
-              <div className="hidden overflow-x-auto rounded-xl border border-border/80 dark:border-stone-500/30 lg:block">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/60 dark:bg-stone-500/10">
-                      <th className="py-3 pe-3 ps-4 text-start text-xs font-medium text-muted-foreground sm:text-sm">#</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">عنوان</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">مبلغ اصل</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">مانده</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">تعداد اقساط</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">سررسید بعدی</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">وضعیت</th>
-                      <th className="py-3 pe-4 text-start text-xs font-medium text-muted-foreground sm:text-sm">اقدام</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {plans.map((p, index) => (
-                      <tr key={p.id} className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-500/10">
-                        <td className="py-3 pe-3 ps-4 text-muted-foreground">{toPersianDigits(index + 1)}</td>
-                        <td className="py-3 pe-3">
-                          <span className="inline-flex max-w-56 items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium">
-                            <UserIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
-                            <span className="truncate">{p.partyName ?? "بدون شخص"}</span>
-                          </span>
-                          {p.invoiceOrderNumber !== null ? (
-                            <p className="mt-1 text-[11px] text-muted-foreground">فاکتور {toPersianDigits(p.invoiceOrderNumber)}</p>
-                          ) : null}
-                        </td>
-                        <td className="whitespace-nowrap py-3 pe-3 font-semibold">{money.format(p.principal)}</td>
-                        <td className="whitespace-nowrap py-3 pe-3 font-semibold text-muted-foreground">{money.format(p.remaining)}</td>
-                        <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">
-                          {toPersianDigits(p.paidCount)} / {toPersianDigits(p.installmentCount)}
-                        </td>
-                        <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{fmtJalali(p.nextDueDate)}</td>
-                        <td className="py-3 pe-3">
-                          {p.status === "settled" ? (
-                            <StatusBadge tone="positive">تسویه شده</StatusBadge>
-                          ) : p.status === "overdue" ? (
-                            <StatusBadge tone="danger">سررسید گذشته</StatusBadge>
-                          ) : (
-                            <StatusBadge tone="active">پرداخت نشده</StatusBadge>
-                          )}
-                        </td>
-                        <td className="py-3 pe-4">
-                          <button
-                            type="button"
-                            onClick={() => setDetailId(p.id)}
-                            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20"
-                          >
-                            جزئیات و پرداخت
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable caption="برنامه‌های قسطی ثبت‌شده" className="hidden lg:block">
+                <DataTableHead>
+                  <Th>#</Th>
+                  <Th>عنوان</Th>
+                  <Th>مبلغ اصل</Th>
+                  <Th>مانده</Th>
+                  <Th>تعداد اقساط</Th>
+                  <Th>سررسید بعدی</Th>
+                  <Th>وضعیت</Th>
+                  <Th>اقدام</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {plans.map((p, index) => (
+                    <DataTableRow key={p.id}>
+                      <Td muted>{toPersianDigits(index + 1)}</Td>
+                      <Td>
+                        <span className="inline-flex max-w-56 items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium">
+                          <UserIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
+                          <span className="truncate">{p.partyName ?? "بدون شخص"}</span>
+                        </span>
+                        {p.invoiceOrderNumber !== null ? (
+                          <p className="mt-1 text-[11px] text-muted-foreground">فاکتور {toPersianDigits(p.invoiceOrderNumber)}</p>
+                        ) : null}
+                      </Td>
+                      <Td nowrap className="font-semibold">{money.format(p.principal)}</Td>
+                      <Td nowrap muted className="font-semibold">{money.format(p.remaining)}</Td>
+                      <Td nowrap muted>
+                        {toPersianDigits(p.paidCount)} / {toPersianDigits(p.installmentCount)}
+                      </Td>
+                      <Td nowrap muted>{fmtJalali(p.nextDueDate)}</Td>
+                      <Td>
+                        {p.status === "settled" ? (
+                          <StatusBadge tone="positive">تسویه شده</StatusBadge>
+                        ) : p.status === "overdue" ? (
+                          <StatusBadge tone="danger">سررسید گذشته</StatusBadge>
+                        ) : (
+                          <StatusBadge tone="active">پرداخت نشده</StatusBadge>
+                        )}
+                      </Td>
+                      <Td>
+                        <button
+                          type="button"
+                          onClick={() => setDetailId(p.id)}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20"
+                        >
+                          جزئیات و پرداخت
+                        </button>
+                      </Td>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
+
               <div className="space-y-3 lg:hidden">
                 {plans.map((p) => (
                   <article key={p.id} className="rounded-xl border border-border/80 bg-muted p-4">
@@ -748,42 +746,38 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
                 </div>
               ) : null}
 
-              <div className="overflow-x-auto rounded-xl border border-border/80 dark:border-stone-500/30">
-                <table className="w-full min-w-[36rem] text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/60 dark:bg-stone-500/10">
-                      <th className="py-2.5 pe-3 ps-4 text-start text-xs font-medium text-muted-foreground">قسط</th>
-                      <th className="py-2.5 pe-3 text-start text-xs font-medium text-muted-foreground">سررسید</th>
-                      <th className="py-2.5 pe-3 text-start text-xs font-medium text-muted-foreground">مبلغ</th>
-                      <th className="py-2.5 pe-3 text-start text-xs font-medium text-muted-foreground">وضعیت</th>
-                      <th className="py-2.5 pe-4 text-start text-xs font-medium text-muted-foreground">اقدام</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(plan.items ?? []).map((item) => (
-                      <tr key={item.id} className="border-b border-border last:border-b-0">
-                        <td className="py-3 pe-3 ps-4 text-muted-foreground">{toPersianDigits(item.seq)}</td>
-                        <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{fmtJalali(item.dueDate)}</td>
-                        <td className="whitespace-nowrap py-3 pe-3 font-semibold">{money.format(item.amount)}</td>
-                        <td className="py-3 pe-3">
-                          {item.paidAt ? <StatusBadge tone="positive">تسویه شده</StatusBadge> : <StatusBadge tone="active">پرداخت نشده</StatusBadge>}
-                        </td>
-                        <td className="py-3 pe-4">
-                          {item.paidAt ? (
-                            <span className="text-xs text-muted-foreground">
-                              {item.paidMethod === "cash" ? "نقدی" : item.paidMethod === "bank" ? "بانکی" : "ثبت‌شده"}
-                            </span>
-                          ) : payingId === item.id ? null : (
-                            <button type="button" onClick={() => { setPayingId(item.id); setError(""); }} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20">
-                              ثبت پرداخت
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable caption="اقساط این برنامه" tableClassName="min-w-[36rem]">
+                <DataTableHead>
+                  <Th>قسط</Th>
+                  <Th>سررسید</Th>
+                  <Th>مبلغ</Th>
+                  <Th>وضعیت</Th>
+                  <Th>اقدام</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {(plan.items ?? []).map((item) => (
+                    <DataTableRow key={item.id}>
+                      <Td muted>{toPersianDigits(item.seq)}</Td>
+                      <Td nowrap muted>{fmtJalali(item.dueDate)}</Td>
+                      <Td nowrap className="font-semibold">{money.format(item.amount)}</Td>
+                      <Td>
+                        {item.paidAt ? <StatusBadge tone="positive">تسویه شده</StatusBadge> : <StatusBadge tone="active">پرداخت نشده</StatusBadge>}
+                      </Td>
+                      <Td>
+                        {item.paidAt ? (
+                          <span className="text-xs text-muted-foreground">
+                            {item.paidMethod === "cash" ? "نقدی" : item.paidMethod === "bank" ? "بانکی" : "ثبت‌شده"}
+                          </span>
+                        ) : payingId === item.id ? null : (
+                          <button type="button" onClick={() => { setPayingId(item.id); setError(""); }} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20">
+                            ثبت پرداخت
+                          </button>
+                        )}
+                      </Td>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
 
               {payingId ? (
                 <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4">

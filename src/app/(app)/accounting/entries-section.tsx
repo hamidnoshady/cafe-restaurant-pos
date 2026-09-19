@@ -1,6 +1,7 @@
 "use client";
 
 import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
@@ -225,32 +226,28 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
                     </div>
 
                     <div className="p-4 sm:p-5">
-                      <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                        <table className="w-full text-sm">
-                          <thead className="bg-muted/60 text-muted-foreground">
-                            <tr className="border-b border-border">
-                              <th className="px-4 py-2.5 text-start text-xs font-medium sm:text-sm">حساب</th>
-                              <th className="px-4 py-2.5 text-start text-xs font-medium sm:text-sm">بدهکار</th>
-                              <th className="px-4 py-2.5 text-start text-xs font-medium sm:text-sm">بستانکار</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {e.lines.map((l, i) => (
-                              <tr key={i} className="border-b border-border last:border-b-0">
-                                <td className="px-4 py-3 text-muted-foreground">
-                                  {l.account_code} {l.account_name}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums text-foreground">
-                                  {Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums text-foreground">
-                                  {Number(l.credit) !== 0 ? money.format(Number(l.credit)) : "—"}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <DataTable caption="ردیف‌های این سند حسابداری" className="hidden lg:block">
+                        <DataTableHead>
+                          <Th>حساب</Th>
+                          <Th numeric>بدهکار</Th>
+                          <Th numeric>بستانکار</Th>
+                        </DataTableHead>
+                        <DataTableBody>
+                          {e.lines.map((l, i) => (
+                            <DataTableRow key={i}>
+                              <Td muted>
+                                {l.account_code} {l.account_name}
+                              </Td>
+                              <Td numeric nowrap>
+                                {Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}
+                              </Td>
+                              <Td numeric nowrap>
+                                {Number(l.credit) !== 0 ? money.format(Number(l.credit)) : "—"}
+                              </Td>
+                            </DataTableRow>
+                          ))}
+                        </DataTableBody>
+                      </DataTable>
 
                       <div className="space-y-2 lg:hidden">
                         {e.lines.map((l, i) => (

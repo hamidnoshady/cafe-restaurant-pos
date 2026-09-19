@@ -34,6 +34,7 @@ import {
   SecondaryButton,
 } from "@/app/dashboard/ui";
 import { FilterChip } from "@/app/dashboard/filters";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface FiscalYear {
   id: string;
@@ -526,45 +527,39 @@ export function FiscalPeriodsSection() {
                   بستن موقت، ثبت سند را به مالک و حسابدار محدود می‌کند. قفل‌کردن ثبت را برای همه می‌بندد؛ پیش از بستن نهایی سال می‌توانید یک دوره را بازگشایی کنید.
                 </p>
               )}
-              <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/60 text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">دوره</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">وضعیت</th>
-                        {canManagePeriods ? <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">اقدام</th> : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {periods.map((period) => (
-                        <tr key={period.id} className="border-b border-border last:border-b-0">
-                          <td className="px-4 py-3 font-medium text-foreground">
-                            {toPersianDigits(period.name)}
-                            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                              {formatRange(period.startsOn, period.endsOn)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusBadge tone={STATUS_TONES[period.status]}>{STATUS_LABELS[period.status]}</StatusBadge>
-                          </td>
-                          {canManagePeriods ? (
-                            <td className="px-4 py-3">
-                              <div className="flex flex-wrap gap-2">
-                                <PeriodActionButtons
-                                  period={period}
-                                  disabled={isMutating || pendingAction !== null}
-                                  onRequest={requestPeriodStatus}
-                                />
-                              </div>
-                            </td>
-                          ) : null}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <DataTable caption="دوره‌های مالی و وضعیت هر دوره" className="hidden lg:block">
+                <DataTableHead>
+                  <Th>دوره</Th>
+                  <Th>وضعیت</Th>
+                  {canManagePeriods ? <Th>اقدام</Th> : null}
+                </DataTableHead>
+                <DataTableBody>
+                  {periods.map((period) => (
+                    <DataTableRow key={period.id}>
+                      <Td className="font-medium">
+                        {toPersianDigits(period.name)}
+                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                          {formatRange(period.startsOn, period.endsOn)}
+                        </span>
+                      </Td>
+                      <Td>
+                        <StatusBadge tone={STATUS_TONES[period.status]}>{STATUS_LABELS[period.status]}</StatusBadge>
+                      </Td>
+                      {canManagePeriods ? (
+                        <Td>
+                          <div className="flex flex-wrap gap-2">
+                            <PeriodActionButtons
+                              period={period}
+                              disabled={isMutating || pendingAction !== null}
+                              onRequest={requestPeriodStatus}
+                            />
+                          </div>
+                        </Td>
+                      ) : null}
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
 
               <div className="space-y-3 lg:hidden">
                 {periods.map((period) => (

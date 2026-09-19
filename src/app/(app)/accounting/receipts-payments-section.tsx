@@ -17,6 +17,7 @@ import { ArrowDownLeftIcon, ArrowUpRightIcon, DownloadIcon, PlusIcon, RefreshCwI
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { useOverlayEscape } from "./use-overlay-escape";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 /**
  * «دریافت و پرداخت» — the voucher ledger slice. The reference software keeps
@@ -250,32 +251,29 @@ export function ReceiptsPaymentsSection() {
                   ? `${toPersianDigits(VISIBLE_ROWS)} سند از ${toPersianDigits(rows.length)} سند — برای دیدن بقیه جست‌وجو کنید`
                   : `${toPersianDigits(rows.length)} سند`}
               </p>
-              <div className="hidden overflow-x-auto rounded-xl border border-border/80 dark:border-stone-500/30 lg:block">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/60 dark:bg-stone-500/10">
-                      <th className="py-3 pe-3 ps-4 text-start text-xs font-medium text-muted-foreground sm:text-sm">#</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">شخص</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">شرح</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">روش</th>
-                      <th className="py-3 pe-3 text-start text-xs font-medium text-muted-foreground sm:text-sm">تاریخ</th>
-                      <th className="py-3 pe-4 text-start text-xs font-medium text-muted-foreground sm:text-sm">مبلغ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.slice(0, VISIBLE_ROWS).map((r, index) => (
-                      <tr key={r.id} className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/60 dark:hover:bg-stone-500/10">
-                        <td className="py-3 pe-3 ps-4 text-muted-foreground">{toPersianDigits(index + 1)}</td>
-                        <td className="max-w-48 truncate py-3 pe-3 font-medium" title={r.partyName}>{r.partyName}</td>
-                        <td className="max-w-64 truncate py-3 pe-3 text-muted-foreground" title={r.memo ?? undefined}>{r.memo ?? "—"}</td>
-                        <td className="py-3 pe-3 text-muted-foreground">{METHOD_LABELS[r.method]}</td>
-                        <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{fmtJalali(r.date)}</td>
-                        <td className="whitespace-nowrap py-3 pe-4 font-semibold">{money.format(r.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable caption="اسناد دریافت و پرداخت" className="hidden lg:block">
+                <DataTableHead>
+                  <Th>#</Th>
+                  <Th>شخص</Th>
+                  <Th>شرح</Th>
+                  <Th>روش</Th>
+                  <Th>تاریخ</Th>
+                  <Th>مبلغ</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {rows.slice(0, VISIBLE_ROWS).map((r, index) => (
+                    <DataTableRow key={r.id}>
+                      <Td muted>{toPersianDigits(index + 1)}</Td>
+                      <Td className="max-w-48 truncate font-medium" title={r.partyName}>{r.partyName}</Td>
+                      <Td muted className="max-w-64 truncate" title={r.memo ?? undefined}>{r.memo ?? "—"}</Td>
+                      <Td muted>{METHOD_LABELS[r.method]}</Td>
+                      <Td nowrap muted>{fmtJalali(r.date)}</Td>
+                      <Td nowrap className="font-semibold">{money.format(r.amount)}</Td>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
+
               <div className="space-y-3 lg:hidden">
                 {rows.slice(0, VISIBLE_ROWS).map((r) => (
                   <article key={r.id} className="rounded-xl border border-border/80 bg-muted p-4">

@@ -62,20 +62,11 @@ const EXCLUDED_PREFIXES: readonly string[] = ["platform/", "components/ui/"];
  * screenshot first, then the rest of Accounting, then the operational
  * inventory/stock pages, then the remaining long tail.
  *
- * Progress: 11 of 36 migrated (trial balance, growth customers, CMS billing,
+ * Progress: 19 of 36 migrated (trial balance, growth customers, CMS billing,
  * CMS product sync, inventory warehouses, plus the shared report table's
  * consumers are unchanged pending a `report-table.tsx` refactor).
  */
 const TABLE_MIGRATION_BACKLOG: readonly string[] = [
-  // — Accounting ledger: statement panels and registers —
-  "(app)/accounting/chart-of-accounts-section.tsx",
-  "(app)/accounting/entries-section.tsx",
-  "(app)/accounting/expense-section.tsx",
-  "(app)/accounting/fiscal-periods-section.tsx",
-  "(app)/accounting/fixed-assets-section.tsx",
-  "(app)/accounting/installments-section.tsx",
-  "(app)/accounting/receipts-payments-section.tsx",
-  "(app)/accounting/reconciliation-section.tsx",
   // — Inventory / stock / products —
   "dashboard/inventory/documents-section.tsx",
   "dashboard/inventory/purchases-section.tsx",

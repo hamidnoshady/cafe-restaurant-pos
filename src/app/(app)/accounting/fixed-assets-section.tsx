@@ -27,6 +27,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 export interface FixedAssetRow {
   id: string;
@@ -598,129 +599,123 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
           ) : (
             <>
               {/* Desktop Table View */}
-              <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/60 text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">نام دارایی</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تاریخ خرید</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">بهای تمام‌شده</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">ارزش اسقاط</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">پیشرفت استهلاک</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">استهلاک انباشته</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">ارزش دفتری</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">وضعیت</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">عملیات</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAssets.map((a) => {
-                        const depreciable = Math.max(0, a.cost - a.salvageValue);
-                        const percent = depreciable > 0 ? Math.min(100, Math.round((a.accumulatedDepreciation / depreciable) * 100)) : 100;
-                        const isFullyDepreciated = a.bookValue <= a.salvageValue || a.accumulatedDepreciation >= depreciable;
-                        const postedPeriods = a.depreciationCount ?? 0;
+              <DataTable caption="فهرست دارایی‌های ثابت و وضعیت استهلاک" className="hidden lg:block">
+                <DataTableHead>
+                  <Th>نام دارایی</Th>
+                  <Th>تاریخ خرید</Th>
+                  <Th>بهای تمام‌شده</Th>
+                  <Th>ارزش اسقاط</Th>
+                  <Th>پیشرفت استهلاک</Th>
+                  <Th>استهلاک انباشته</Th>
+                  <Th>ارزش دفتری</Th>
+                  <Th>وضعیت</Th>
+                  <Th>عملیات</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {filteredAssets.map((a) => {
+                    const depreciable = Math.max(0, a.cost - a.salvageValue);
+                    const percent = depreciable > 0 ? Math.min(100, Math.round((a.accumulatedDepreciation / depreciable) * 100)) : 100;
+                    const isFullyDepreciated = a.bookValue <= a.salvageValue || a.accumulatedDepreciation >= depreciable;
+                    const postedPeriods = a.depreciationCount ?? 0;
 
-                        return (
-                          <tr key={a.id} className="border-b border-border transition-colors hover:bg-muted/60 last:border-b-0 dark:hover:bg-stone-800/40">
-                            <td className="px-4 py-3 font-semibold text-foreground">
-                              <div>
-                                <span>{a.name}</span>
-                                {a.locationName ? (
-                                  <span className="ms-2 text-xs font-normal text-muted-foreground">
-                                    ({a.locationName})
-                                  </span>
-                                ) : null}
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                              {toPersianDigits(formatJalali(a.acquisitionDate))}
-                            </td>
-                            <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">
-                              {money.format(a.cost)}
-                            </td>
-                            <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                              {money.format(a.salvageValue)}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="w-28 space-y-1">
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-muted-foreground">
-                                    {toPersianDigits(postedPeriods)}/{toPersianDigits(a.usefulLifeMonths)} ماه
-                                  </span>
-                                  <span className="font-semibold tabular-nums text-foreground">
-                                    {toPersianDigits(percent)}٪
-                                  </span>
-                                </div>
-                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700">
-                                  <div
-                                    className={`h-full rounded-full transition-all ${
-            isFullyDepreciated
-                                        ? "bg-emerald-500 dark:bg-emerald-400"
-                                        : "bg-amber-500 dark:bg-amber-400"
-                                    }`}
-                                    style={{ width: `${percent}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap px-4 py-3 text-foreground">
-                              {money.format(a.accumulatedDepreciation)}
-                            </td>
-                            <td className="whitespace-nowrap px-4 py-3 font-bold tabular-nums text-foreground">
-                              {money.format(a.bookValue)}
-                            </td>
-                            <td className="px-4 py-3">
-                              {isFullyDepreciated ? (
-                                <StatusBadge tone="positive">مستهلک‌شده</StatusBadge>
-                              ) : (
-                                <StatusBadge tone="active">در جریان استهلاک</StatusBadge>
-                              )}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1.5">
-                                {!isFullyDepreciated ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setDepreciateTarget(a)}
-                                    disabled={busy || isSubmitting}
-                                    className="rounded-lg px-2.5 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20"
-                                  >
-                                    ثبت استهلاک
-                                  </button>
-                                ) : null}
+                    return (
+                      <DataTableRow key={a.id}>
+                        <Td className="font-semibold">
+                          <div>
+                            <span>{a.name}</span>
+                            {a.locationName ? (
+                              <span className="ms-2 text-xs font-normal text-muted-foreground">
+                                ({a.locationName})
+                              </span>
+                            ) : null}
+                          </div>
+                        </Td>
+                        <Td nowrap muted>
+                          {toPersianDigits(formatJalali(a.acquisitionDate))}
+                        </Td>
+                        <Td nowrap className="font-medium">
+                          {money.format(a.cost)}
+                        </Td>
+                        <Td nowrap muted>
+                          {money.format(a.salvageValue)}
+                        </Td>
+                        <Td>
+                          <div className="w-28 space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">
+                                {toPersianDigits(postedPeriods)}/{toPersianDigits(a.usefulLifeMonths)} ماه
+                              </span>
+                              <span className="font-semibold tabular-nums text-foreground">
+                                {toPersianDigits(percent)}٪
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+        isFullyDepreciated
+                                    ? "bg-emerald-500 dark:bg-emerald-400"
+                                    : "bg-amber-500 dark:bg-amber-400"
+                                }`}
+                                style={{ width: `${percent}%` }}
+                              />
+                            </div>
+                          </div>
+                        </Td>
+                        <Td nowrap>
+                          {money.format(a.accumulatedDepreciation)}
+                        </Td>
+                        <Td numeric nowrap className="font-bold">
+                          {money.format(a.bookValue)}
+                        </Td>
+                        <Td>
+                          {isFullyDepreciated ? (
+                            <StatusBadge tone="positive">مستهلک‌شده</StatusBadge>
+                          ) : (
+                            <StatusBadge tone="active">در جریان استهلاک</StatusBadge>
+                          )}
+                        </Td>
+                        <Td>
+                          <div className="flex items-center gap-1.5">
+                            {!isFullyDepreciated ? (
+                              <button
+                                type="button"
+                                onClick={() => setDepreciateTarget(a)}
+                                disabled={busy || isSubmitting}
+                                className="rounded-lg px-2.5 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20"
+                              >
+                                ثبت استهلاک
+                              </button>
+                            ) : null}
 
-                                <button
-                                  type="button"
-                                  onClick={() => setHistoryTarget(a)}
-                                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-stone-800/60"
-                                  title="مشاهده تاریخچه استهلاک"
-                                >
-                                  <HistoryIcon className="size-3.5" />
-                                  <span>تاریخچه</span>
-                                </button>
+                            <button
+                              type="button"
+                              onClick={() => setHistoryTarget(a)}
+                              className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-stone-800/60"
+                              title="مشاهده تاریخچه استهلاک"
+                            >
+                              <HistoryIcon className="size-3.5" />
+                              <span>تاریخچه</span>
+                            </button>
 
-                                {a.accumulatedDepreciation === 0 ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeleteTarget(a)}
-                                    disabled={busy || isSubmitting}
-                                    className="rounded-lg p-1 text-destructive transition-colors hover:bg-destructive/10"
-                                    title="حذف دارایی"
-                                    aria-label={`حذف ${a.name}`}
-                                  >
-                                    <Trash2Icon className="size-4" />
-                                  </button>
-                                ) : null}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                            {a.accumulatedDepreciation === 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteTarget(a)}
+                                disabled={busy || isSubmitting}
+                                className="rounded-lg p-1 text-destructive transition-colors hover:bg-destructive/10"
+                                title="حذف دارایی"
+                                aria-label={`حذف ${a.name}`}
+                              >
+                                <Trash2Icon className="size-4" />
+                              </button>
+                            ) : null}
+                          </div>
+                        </Td>
+                      </DataTableRow>
+                    );
+                  })}
+                </DataTableBody>
+              </DataTable>
 
               {/* Mobile / Tablet Cards View */}
               <div className="space-y-3 lg:hidden">
@@ -1095,34 +1090,30 @@ function DepreciationHistoryModal({
           </p>
         ) : (
           <div className="space-y-3">
-            <div className="overflow-hidden rounded-xl border border-border/80">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/60 text-muted-foreground">
-                  <tr className="border-b border-border">
-                    <th className="px-3 py-2.5 text-start text-xs font-medium">عنوان دوره</th>
-                    <th className="px-3 py-2.5 text-start text-xs font-medium">تاریخ سند</th>
-                    <th className="px-3 py-2.5 text-start text-xs font-medium">مبلغ استهلاک</th>
-                    <th className="px-3 py-2.5 text-start text-xs font-medium">ثبت‌کننده</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry) => (
-                    <tr key={entry.id} className="border-b border-border last:border-b-0">
-                      <td className="px-3 py-2.5 font-semibold text-foreground">{entry.periodLabel}</td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">
-                        {toPersianDigits(formatJalali(entry.entryDate))}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold tabular-nums text-foreground">
-                        {money.format(entry.amount)}
-                      </td>
-                      <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                        {entry.createdByName ?? "سیستم"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable caption="تاریخچه استهلاک این دارایی">
+              <DataTableHead>
+                <Th>عنوان دوره</Th>
+                <Th>تاریخ سند</Th>
+                <Th>مبلغ استهلاک</Th>
+                <Th>ثبت‌کننده</Th>
+              </DataTableHead>
+              <DataTableBody>
+                {entries.map((entry) => (
+                  <DataTableRow key={entry.id}>
+                    <Td className="font-semibold">{entry.periodLabel}</Td>
+                    <Td nowrap muted>
+                      {toPersianDigits(formatJalali(entry.entryDate))}
+                    </Td>
+                    <Td numeric nowrap className="font-bold">
+                      {money.format(entry.amount)}
+                    </Td>
+                    <Td muted className="text-xs">
+                      {entry.createdByName ?? "سیستم"}
+                    </Td>
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
 
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/60 px-4 py-3 text-sm">
               <span className="text-muted-foreground">
