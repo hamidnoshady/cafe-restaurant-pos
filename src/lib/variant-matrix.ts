@@ -53,8 +53,16 @@ export function buildVariantMatrix(
   if (b.name && a.name === b.name) {
     throw new Error("نام دو محور تنوع نمی‌تواند یکسان باشد.");
   }
+  // A partially filled second axis is almost always an accidental submission;
+  // silently dropping it makes the resulting matrix differ from the preview.
+  if ((b.name && b.values.length === 0) || (!b.name && b.values.length > 0)) {
+    throw new Error("محور دوم باید هم نام و هم حداقل یک مقدار داشته باشد، یا کاملاً خالی باشد.");
+  }
+  if (a.values.length * Math.max(1, b.values.length) > 1000) {
+    throw new Error("ماتریس نمی‌تواند بیشتر از ۱۰۰۰ تنوع بسازد.");
+  }
 
-  const bValues = b.name && b.values.length > 0 ? b.values : [null];
+  const bValues = b.name ? b.values : [null];
   const cells: MatrixCell[] = [];
   for (const aValue of a.values) {
     for (const bValue of bValues) {
