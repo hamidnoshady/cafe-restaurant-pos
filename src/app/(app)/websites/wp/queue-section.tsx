@@ -50,7 +50,7 @@ const KIND_LABELS: Record<string, { label: string; desc: string; link?: string }
   post_upsert: { label: "ایجاد یا ویرایش نوشته/برگه", desc: "ذخیره تغییرات متنی در وردپرس", link: "/websites/wp/content" },
   media_create: { label: "افزودن فایل رسانه‌ای", desc: "آپلود یا ثبت فایل در کتابخانه رسانه", link: "/websites/wp/media" },
   holoo_sale: { label: "ارسال فاکتور فروش به هلو", desc: "ثبت سند فاکتور در نرم‌افزار هلو" },
-  holoo_receipt: { label: "ارسال دریافت وجه به هلو", desc: "ثبت سند مالی دریافت در نرم‌افزار هلو" },
+  holoo_receipt: { label: "ارسال دریافت وجه به هلو", desc: "ثبت سند مالی دریافت در نرم‌زار هلو" },
   holoo_purchase: { label: "ارسال خرید به هلو", desc: "ثبت فاکتور خرید در نرم‌افزار هلو" },
   "order.created": { label: "رویداد: ثبت سفارش تازه", desc: "دریافت سفارش ثبت‌شده از فروشگاه آنلاین", link: "/websites/wp/orders" },
   "order.updated": { label: "رویداد: ویرایش سفارش", desc: "به‌روزرسانی وضعیت یا اطلاعات سفارش", link: "/websites/wp/orders" },

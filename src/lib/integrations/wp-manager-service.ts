@@ -145,14 +145,30 @@ export interface WpStoreCustomerRow {
   lastSeen: string | null;
 }
 
+export interface WpStoreCustomersPage {
+  customers: WpStoreCustomerRow[];
+  /** All matched mappings, including the ones past the returned page. */
+  total: number;
+}
+
 /**
  * The store's customers as the app knows them: mapping joined to the local
- * customer record, with their order count from the mirrored inbox.
+ * customer record, with the count of orders mirrored *from this store*.
+ *
+ * The order count deliberately goes through the order mappings — not
+ * `orders.customer_id` alone — because the same CRM party also buys at the
+ * POS, and the badge this feeds is labeled «سفارش آنلاین». `last_seen`
+ * falls back to the mapping's own update time: a store that only ever
+ * pull-syncs (REST scheduled pulls, plugin exports) has no `customer.*`
+ * inbox events, and without the fallback the column was blank for exactly
+ * those stores. The page is capped at 500 rows; `total` is the *full*
+ * matched count so the UI can say «نمایش ۵۰۰ نخست از N» instead of
+ * silently implying 500 customers is everyone.
  */
 export async function wpStoreCustomers(
   businessId: string,
   connectionId: string,
-): Promise<WpStoreCustomerRow[]> {
+): Promise<WpStoreCustomersPage> {
   const { rows } = await query<{
     remote_id: string;
     local_id: string;
@@ -161,34 +177,48 @@ export async function wpStoreCustomers(
     email: string | null;
     orders_count: string;
     last_seen: string | null;
+    total_count: string;
   }>(
     `SELECT m.remote_id, m.local_id::text,
             COALESCE(c.name, '') AS name,
             c.phone, c.email,
-            (SELECT count(*) FROM orders o WHERE o.customer_id = m.local_id)::text AS orders_count,
-            (SELECT max(w.created_at)::text
-               FROM integration_webhook_events w
-              WHERE w.connection_id = m.connection_id
-                AND w.event_topic LIKE 'customer.%'
-                AND w.remote_id = m.remote_id) AS last_seen
+            (SELECT count(*)
+               FROM integration_mappings om
+               JOIN orders o ON o.id = om.local_id
+              WHERE om.business_id = $1
+                AND om.connection_id = m.connection_id
+                AND om.entity_type = 'order'
+                AND o.customer_id = m.local_id)::text AS orders_count,
+            COALESCE(
+              (SELECT max(w.created_at)
+                 FROM integration_webhook_events w
+                WHERE w.connection_id = m.connection_id
+                  AND w.event_topic LIKE 'customer.%'
+                  AND w.remote_id = m.remote_id),
+              m.updated_at
+            )::text AS last_seen,
+            count(*) OVER ()::text AS total_count
        FROM integration_mappings m
        LEFT JOIN parties c ON c.id = m.local_id
       WHERE m.business_id = $1 AND m.connection_id = $2
         AND m.connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
         AND m.entity_type = 'customer'
-      ORDER BY name
+      ORDER BY name, m.remote_id
       LIMIT 500`,
     [businessId, connectionId],
   );
-  return rows.map((r) => ({
-    remoteId: r.remote_id,
-    localId: r.local_id,
-    name: r.name,
-    phone: r.phone,
-    email: r.email,
-    ordersCount: Number(r.orders_count),
-    lastSeen: r.last_seen,
-  }));
+  return {
+    customers: rows.map((r) => ({
+      remoteId: r.remote_id,
+      localId: r.local_id,
+      name: r.name,
+      phone: r.phone,
+      email: r.email,
+      ordersCount: Number(r.orders_count),
+      lastSeen: r.last_seen,
+    })),
+    total: Number(rows[0]?.total_count ?? 0),
+  };
 }
 
 export interface WpQueueRow {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   accountBalance,
+  accountBalanceText,
   campaignStateCounts,
   classifyCampaign,
   GROWTH_BRIDGE_CODES,
@@ -58,6 +59,11 @@ describe("accountBalance", () => {
 
   it("keeps a contra-revenue account's credit-negative reading", () => {
     expect(accountBalance("revenue", 0, 40_000)).toBe(40_000);
+  });
+
+  it("keeps large PostgreSQL aggregates exact as text", () => {
+    expect(accountBalanceText("liability", "1", "90071992547409930")).toBe("90071992547409929");
+    expect(accountBalanceText("expense", "90071992547409930", "1")).toBe("90071992547409929");
   });
 });
 

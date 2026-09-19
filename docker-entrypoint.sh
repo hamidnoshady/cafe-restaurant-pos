@@ -85,5 +85,41 @@ if [ -d "/app/backups" ]; then
   chown -R node:node /app/backups
 fi
 
+# Size the V8 heap from the container's real memory limit.
+#
+# Node's default old-space heuristic is conservative in a cgroup-limited
+# container: with ~1GB it settles near 512MB, and this server has crashed in
+# production at exactly that ceiling ("FATAL ERROR: Reached heap limit
+# Allocation failed") after a couple of days of uptime — the process serves
+# Next.js, WebSocket sync, a dozen background ticks and Chromium-driven print
+# rendering, which is more than a half-gigabyte working set on a busy day.
+# Give V8 ~75% of the cgroup limit (the remainder covers Chromium, pg_dump and
+# the non-heap parts of Node itself) so the heap ceiling is the container's,
+# not a heuristic's. An explicit --max-old-space-size in NODE_OPTIONS wins;
+# an unlimited cgroup (no memory limit set) keeps Node's default.
+case "${NODE_OPTIONS:-}" in
+  *max-old-space-size*) ;; # operator already chose a heap size — respect it
+  *)
+    MEM_LIMIT_BYTES=""
+    if [ -r /sys/fs/cgroup/memory.max ]; then
+      MEM_LIMIT_BYTES="$(cat /sys/fs/cgroup/memory.max 2>/dev/null)" # cgroup v2
+    elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+      MEM_LIMIT_BYTES="$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null)" # cgroup v1
+    fi
+    # "max" (v2) or an absurdly large number (v1's no-limit sentinel) means
+    # the container is unlimited — leave Node's default alone.
+    if [ -n "$MEM_LIMIT_BYTES" ] && [ "$MEM_LIMIT_BYTES" != "max" ] \
+      && [ "$MEM_LIMIT_BYTES" -lt 274877906944 ] 2>/dev/null; then
+      HEAP_MB=$((MEM_LIMIT_BYTES / 1024 / 1024 * 75 / 100))
+      # Floor of 256MB: below that the app cannot run anyway and a tiny
+      # explicit cap would only crash it sooner than the default would.
+      if [ "$HEAP_MB" -ge 256 ]; then
+        export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=$HEAP_MB"
+        echo "Sized V8 heap to ${HEAP_MB}MB (75% of the container's $((MEM_LIMIT_BYTES / 1024 / 1024))MB memory limit)."
+      fi
+    fi
+    ;;
+esac
+
 echo "Starting POS server ..."
 exec su-exec node "$@"

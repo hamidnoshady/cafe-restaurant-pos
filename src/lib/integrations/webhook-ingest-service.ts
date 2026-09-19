@@ -33,7 +33,7 @@ import { writeIntegrationAudit } from "./audit";
 import { getBusinessIndustry } from "../industry-guard";
 import { connectionLocationId, resolveOrderCustomerId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
 import { wooLineCandidateIds, shouldImportWooOrder } from "./woo-catalogue";
-import { upsertWpContent } from "./wp-content-service";
+import { deleteWpContent, upsertWpContent } from "./wp-content-service";
 import type { WooCustomer, WooOrder, WooOrderLineItem, WooProduct, WooRefund } from "./woocommerce-client";
 import type { Industry } from "../industries";
 
@@ -227,6 +227,20 @@ export async function applyIngestEvent(connection: ConnectionRow, event: Webhook
       // Manager app's own job, and a shop that only syncs orders still has
       // pages it would be harmless to see.
       await upsertWpContent(connection, event.payload as never);
+    } else if (event.topic.endsWith("content.deleted")) {
+      // Deletion is a first-class mirror event. Without this, removing an
+      // attachment in WordPress left a broken, undeletable tile in the media
+      // section forever.
+      await deleteWpContent(businessId, connection.id, event.payload as never);
+    } else if (event.topic.endsWith("content.sync_completed")) {
+      // The plugin enqueues this marker *after* every row in a full export.
+      // Queue ordering therefore makes this an honest watermark: all content
+      // that preceded it has already reached the local mirror.
+      await query(
+        `UPDATE integration_connections SET last_content_sync_at = now(), updated_at = now()
+          WHERE business_id = $1 AND id = $2`,
+        [businessId, connection.id],
+      );
     }
     // Any other topic is acknowledged and left alone — we never want a
     // re-delivery storm for an event we don't handle yet.

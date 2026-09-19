@@ -141,6 +141,19 @@ describe("requestWebUsbPrinter", () => {
     });
   });
 
+  it("strips NUL padding from the device's serial and product name at pairing time", async () => {
+    // Plenty of printer firmwares report fixed-size EEPROM string descriptors
+    // verbatim, NUL padding included. Those bytes must never reach the server:
+    // PostgreSQL rejects \u0000 in jsonb (22P05) and the save 500s.
+    const device = fakeDevice({ serialNumber: "VNBV9BJGLG\u0000\u0000\u0000", productName: "USB Printer\u0000P" });
+    installUsb([], device);
+    const result = await requestWebUsbPrinter();
+    expect(result).toEqual({
+      ok: true,
+      printer: { usbVendorId: 0x04b8, usbProductId: 0x0e15, usbSerial: "VNBV9BJGLG", usbProductName: "USB PrinterP" },
+    });
+  });
+
   it("retries unfiltered when the printer-class filter matches nothing", async () => {
     const device = fakeDevice();
     // First call (classCode 7 filter) throws; the fallback unfiltered call succeeds.
@@ -182,6 +195,15 @@ describe("findPairedDevice", () => {
     // An unknown serial still yields a device rather than nothing — the
     // firmware may have stopped reporting it after a driver update.
     expect(await findPairedDevice({ usbVendorId: 0x04b8, usbProductId: 0x0e15, usbSerial: "ZZZ" })).toBe(first);
+  });
+
+  it("matches a stored cleaned serial against a live NUL-padded one", async () => {
+    // The stored serial was cleaned at pairing time; the live device still
+    // reports its padded form — a strict equality would silently miss it.
+    const first = fakeDevice({ serialNumber: "AAA\u0000\u0000" });
+    const second = fakeDevice({ serialNumber: "BBB\u0000\u0000" });
+    installUsb([first, second]);
+    expect(await findPairedDevice({ usbVendorId: 0x04b8, usbProductId: 0x0e15, usbSerial: "BBB" })).toBe(second);
   });
 
   it("matches on vendor alone when no product id was stored", async () => {

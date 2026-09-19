@@ -10,16 +10,23 @@ import {
 /**
  * The shared server-side door of every products-workspace page: session,
  * owner/manager role and the trade-goods industry set, then the trade's own
- * items/stock API prefix the client sections write through.
+ * items/stock API prefix. `draftScope` keeps local add-product drafts isolated
+ * by business and branch on shared devices.
  */
 export async function requireProductWorkspace(): Promise<{
   industry: ProductWorkspaceIndustry;
   apiBase: string;
+  draftScope: string;
 }> {
   const session = await getSession();
   if (!session) redirect("/login");
   if (session.role !== "owner" && session.role !== "manager") redirect("/accounting/overview");
   const industry = await getBusinessIndustry(session.businessId);
   if (!isProductWorkspaceIndustry(industry)) redirect("/accounting/overview");
-  return { industry, apiBase: productApiBaseFor(industry) };
+  const draftLocation = session.activeLocationId ?? session.locationId ?? "default-location";
+  return {
+    industry,
+    apiBase: productApiBaseFor(industry),
+    draftScope: `${session.businessId}:${draftLocation}`,
+  };
 }

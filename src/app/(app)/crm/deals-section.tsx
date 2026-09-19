@@ -1,6 +1,6 @@
 "use client";
 
-import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
  * The sales pipeline (Phase 36) — a kanban over `crm_deals`.
@@ -15,7 +15,9 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { PlusIcon, RefreshCwIcon } from "lucide-react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { PlusIcon, RefreshCwIcon, ChevronDownIcon, ArrowLeftRightIcon, ReceiptTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,7 +26,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useMoney } from "@/components/money/money-context";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { formatPersianNumber, toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
@@ -37,7 +48,7 @@ import {
 } from "@/lib/crm-shared";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
-import { crmCustomerHref } from "./crm-routes";
+import { crmCustomerHref, crmDealOrderHref } from "./crm-routes";
 
 interface Deal {
   id: string;
@@ -59,10 +70,14 @@ interface Deal {
 
 export function DealsSection() {
   const money = useMoney();
+  const searchParams = useSearchParams();
   const [deals, setDeals] = useState<Deal[] | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Deal | "new" | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  // A deal moving to «از دست رفته» waits here for its reason before the move
+  // actually commits — see `requestStageChange`.
+  const [pendingLostId, setPendingLostId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api<{ deals: Deal[] }>("/api/crm/deals").then(({ ok, data }) => {
@@ -72,7 +87,23 @@ export function DealsSection() {
   }, []);
   useEffect(load, [load]);
 
-  const move = async (dealId: string, stage: DealStage) => {
+  // `/crm/deals?deal=<id>` is how the customer timeline and other screens hand
+  // a specific deal over (see `customer-timeline-service.ts`). Without this,
+  // that link lands on the generic board and the deal it promised is nowhere
+  // to be found — the same convention the directory's `?customer=` follows.
+  useEffect(() => {
+    const dealId = searchParams.get("deal");
+    if (!dealId || !deals) return;
+    const target = deals.find((deal) => deal.id === dealId);
+    if (target) {
+      setEditing(target);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("deal");
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, [searchParams, deals]);
+
+  const move = async (dealId: string, stage: DealStage, lostReason?: string) => {
     // Optimistic: the card follows the cursor, and a failure re-reads the
     // server's truth rather than leaving the board lying.
     setDeals((current) =>
@@ -80,21 +111,35 @@ export function DealsSection() {
     );
     const { ok, data } = await api<{ error?: string }>(`/api/crm/deals/${dealId}`, {
       method: "PATCH",
-      body: JSON.stringify({ stage }),
+      body: JSON.stringify({ stage, lostReason }),
     });
     if (!ok) setError(errorMessage(data.error));
     load();
   };
 
+  /**
+   * The one gate every stage change passes through, whether it came from a
+   * drag or the fallback menu. Moving *into* «از دست رفته» asks why first — a
+   * card that lands there with no reason is a loss report nobody can read
+   * later, and the edit dialog already treats the reason as part of that
+   * stage, not an afterthought.
+   */
+  const requestStageChange = (dealId: string, stage: DealStage) => {
+    if (stage === "lost") {
+      setPendingLostId(dealId);
+      return;
+    }
+    void move(dealId, stage);
+  };
+
   if (!deals) {
-    return (
-      <SectionCardSkeleton rows={4} />
-    );
+    return <SectionCardSkeleton rows={4} />;
   }
 
   const open = deals.filter((deal) => !DEAL_STAGE_META[deal.stage].terminal);
   const weighted = weightedPipelineValue(open);
   const rawValue = open.reduce((sum, deal) => sum + deal.valueRial, 0);
+  const pendingLostDeal = pendingLostId ? deals.find((deal) => deal.id === pendingLostId) ?? null : null;
 
   return (
     <div className="min-w-0 space-y-4">
@@ -107,7 +152,7 @@ export function DealsSection() {
             <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">قیف فروش</h2>
           </div>
         }
-        description="کارت‌ها را بین مرحله‌ها بکشید. رسیدن به «برنده» هیچ سندی ثبت نمی‌کند."
+        description="کارت‌ها را بین مرحله‌ها بکشید، یا از منوی «جابه‌جایی» روی هر کارت استفاده کنید. رسیدن به «برنده» هیچ سندی ثبت نمی‌کند."
         actions={
           <div className="flex gap-1">
             <Button type="button" variant="ghost" size="icon-sm" onClick={load} aria-label="بازخوانی">
@@ -151,7 +196,7 @@ export function DealsSection() {
                     key={stage}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
-                      if (dragging) move(dragging, stage);
+                      if (dragging) requestStageChange(dragging, stage);
                       setDragging(null);
                     }}
                     className="flex w-64 shrink-0 flex-col gap-2 rounded-2xl border border-border/80 bg-muted/60 p-3"
@@ -174,28 +219,71 @@ export function DealsSection() {
                         onDragEnd={() => setDragging(null)}
                         className={`cursor-grab p-3 active:cursor-grabbing ${cardClass}`}
                       >
-                        <button
-                          type="button"
-                          onClick={() => setEditing(deal)}
-                          className="block w-full text-right text-sm font-medium text-foreground hover:underline"
-                        >
-                          {deal.title}
-                        </button>
+                        <div className="flex items-start justify-between gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditing(deal)}
+                            className="block min-w-0 flex-1 text-right text-sm font-medium text-foreground hover:underline"
+                          >
+                            <span className="block truncate">{deal.title}</span>
+                          </button>
+                          {/* HTML5 drag-and-drop has no touch/keyboard path, so a
+                              phone or a keyboard-only user needs a real way to
+                              move a card — not just a mouse gesture. */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                className="-mt-1 -me-1 shrink-0"
+                                aria-label={`جابه‌جایی «${deal.title}»`}
+                              >
+                                <ChevronDownIcon aria-hidden="true" className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="min-w-44">
+                              <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
+                                <ArrowLeftRightIcon aria-hidden="true" className="size-3.5" />
+                                انتقال به مرحله
+                              </DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {DEAL_STAGES.filter((target) => target !== deal.stage).map((target) => (
+                                <DropdownMenuItem
+                                  key={target}
+                                  onClick={() => requestStageChange(deal.id, target)}
+                                  className={target === "lost" ? "text-destructive focus:text-destructive" : ""}
+                                >
+                                  {DEAL_STAGE_META[target].label}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                         <p className="mt-1 text-sm font-semibold text-foreground/80">
                           {money.format(deal.valueRial)}
                         </p>
                         {deal.customerId ? (
-                          <a
+                          <Link
                             href={crmCustomerHref(deal.customerId)}
                             className="mt-1 block truncate text-xs text-muted-foreground hover:underline"
                           >
                             {deal.customerName}
-                          </a>
+                          </Link>
                         ) : null}
                         {deal.expectedCloseDate ? (
                           <p className="mt-1 text-xs text-muted-foreground">
                             موعد: {toPersianDigits(formatJalali(deal.expectedCloseDate))}
                           </p>
+                        ) : null}
+                        {deal.stage === "won" && deal.orderId ? (
+                          <Link
+                            href={crmDealOrderHref(deal.orderId)}
+                            className="mt-1 flex items-center gap-1 text-xs text-teal-700 hover:underline dark:text-teal-300"
+                          >
+                            <ReceiptTextIcon aria-hidden="true" className="size-3.5" />
+                            سفارش تسویه‌شده
+                          </Link>
                         ) : null}
                         {deal.stage === "lost" && deal.lostReason ? (
                           <p className="mt-1 text-xs text-rose-700 dark:text-rose-300">{deal.lostReason}</p>
@@ -229,7 +317,63 @@ export function DealsSection() {
           }}
         />
       ) : null}
+
+      {pendingLostDeal ? (
+        <LostReasonDialog
+          dealTitle={pendingLostDeal.title}
+          onClose={() => setPendingLostId(null)}
+          onConfirm={(reason) => {
+            void move(pendingLostDeal.id, "lost", reason);
+            setPendingLostId(null);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * The one thing a card dropped (or menu-moved) onto «از دست رفته» needs before
+ * it commits: why. The full edit dialog already carries this field for a
+ * *typed* stage change; this is the same question for the kanban's own
+ * gesture, so a drag cannot silently produce a loss report with no reason on
+ * it.
+ */
+function LostReasonDialog({
+  dealTitle,
+  onClose,
+  onConfirm,
+}: {
+  dealTitle: string;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>«{dealTitle}» از دست رفت؟</DialogTitle>
+        </DialogHeader>
+        <Field label="دلیل از دست رفتن (اختیاری)">
+          <input
+            autoFocus
+            className={inputClass}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="مثلاً قیمت بالا بود"
+          />
+        </Field>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            انصراف
+          </Button>
+          <Button type="button" variant="destructive" onClick={() => onConfirm(reason.trim())}>
+            انتقال به «از دست رفته»
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -252,13 +396,55 @@ function DealDialog({
   );
   const [expected, setExpected] = useState(deal?.expectedCloseDate?.slice(0, 10) ?? "");
   const [owner, setOwner] = useState(deal?.ownerUser ?? "");
+  const [source, setSource] = useState(deal?.source ?? "");
   const [lostReason, setLostReason] = useState(deal?.lostReason ?? "");
+  const [customerId, setCustomerId] = useState<string | null>(deal?.customerId ?? null);
+  const [customerQuery, setCustomerQuery] = useState(deal?.customerName ?? "");
+  const [matches, setMatches] = useState<{ id: string; name: string }[]>([]);
+  const [matchesLoading, setMatchesLoading] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Same live-directory search the activity and ticket dialogs use — a deal
+  // attached to a customer is what makes it show on that customer's 360° file
+  // and lets the pipeline link back to them.
+  useEffect(() => {
+    if (customerQuery.trim().length < 2 || customerId) {
+      setMatches([]);
+      setMatchesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setMatchesLoading(true);
+    const timer = setTimeout(() => {
+      void api<{ customers: { id: string; name: string }[] }>(
+        `/api/parties?q=${encodeURIComponent(customerQuery.trim())}`,
+      )
+        .then(({ ok, data }) => {
+          if (!cancelled && ok) setMatches(data.customers.slice(0, 6));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setMatchesLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [customerQuery, customerId]);
 
   const save = async () => {
     if (!title.trim()) {
       setError(errorMessage("deal_title_required"));
+      return;
+    }
+    const probabilityValue = probability.trim() === "" ? null : Number(toLatinDigits(probability));
+    if (
+      probabilityValue !== null &&
+      (!Number.isFinite(probabilityValue) || probabilityValue < 0 || probabilityValue > 100)
+    ) {
+      setError(errorMessage("deal_probability_invalid"));
       return;
     }
     setBusy(true);
@@ -267,14 +453,22 @@ function DealDialog({
       method: "POST",
       body: JSON.stringify({
         id: deal?.id,
+        // `customerId` and `orderId` ride along even though this form cannot
+        // set the second one itself: the API replaces a deal's row wholesale
+        // on every save, so leaving a field out of the body is how it used to
+        // get silently cleared — a customer link vanishing the moment someone
+        // fixed a typo in the title.
+        customerId,
         title: title.trim(),
         description: description.trim(),
         stage,
         valueRial: money.fromInput(Number(toLatinDigits(value).replace(/[^\d]/g, "")) || 0),
-        probability: probability.trim() === "" ? null : Number(toLatinDigits(probability)),
+        probability: probabilityValue,
         expectedCloseDate: expected || null,
         ownerUser: owner.trim(),
+        source: source.trim(),
         lostReason: stage === "lost" ? lostReason.trim() : null,
+        orderId: deal?.orderId ?? null,
       }),
     });
     setBusy(false);
@@ -302,11 +496,64 @@ function DealDialog({
         <Field label="عنوان">
           <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
+        <Field label="مشتری (اختیاری)">
+          {customerId ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-foreground">{customerQuery}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={() => {
+                  setCustomerId(null);
+                  setCustomerQuery("");
+                }}
+              >
+                تغییر
+              </Button>
+            </div>
+          ) : (
+            <>
+              <input
+                className={inputClass}
+                placeholder="جستجوی نام یا شماره…"
+                value={customerQuery}
+                onChange={(e) => setCustomerQuery(e.target.value)}
+              />
+              {matchesLoading ? (
+                <LoadingSkeleton rows={1} compact className="mt-1" label="در حال جست‌وجوی مشتری" />
+              ) : matches.length > 0 ? (
+                <ul className="mt-1 flex flex-wrap gap-1.5">
+                  {matches.map((match) => (
+                    <li key={match.id}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        onClick={() => {
+                          setCustomerId(match.id);
+                          setCustomerQuery(match.name);
+                          setMatches([]);
+                        }}
+                      >
+                        {match.name}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          )}
+        </Field>
         <Field label={`مبلغ (${money.unitLabel})`} hint="انتظار فروش؛ هیچ سند حسابداری از این مبلغ ساخته نمی‌شود.">
-          <input
+          <PersianNumberInput
             className={inputClass}
-            value={toPersianDigits(value)}
-            onChange={(e) => setValue(toLatinDigits(e.target.value).replace(/[^\d]/g, ""))}
+            dir="ltr"
+            inputMode="numeric"
+            allowNegative={false}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="۰"
           />
         </Field>
         <Field label="مرحله">
@@ -322,6 +569,15 @@ function DealDialog({
             ))}
           </select>
         </Field>
+        {stage === "won" && deal?.orderId ? (
+          <p className="mb-4 -mt-2 text-xs text-muted-foreground">
+            این معامله به{" "}
+            <Link href={crmDealOrderHref(deal.orderId)} className="text-teal-700 hover:underline dark:text-teal-300">
+              سفارش تسویه‌شده
+            </Link>{" "}
+            وصل است.
+          </p>
+        ) : null}
         {stage === "lost" ? (
           <Field label="دلیل از دست رفتن">
             <input
@@ -335,10 +591,15 @@ function DealDialog({
           label="احتمال موفقیت (٪)"
           hint={`خالی بگذارید تا احتمال پیش‌فرض این مرحله (${toPersianDigits(String(DEAL_STAGE_META[stage].probability))}٪) به کار برود.`}
         >
-          <input
+          <PersianNumberInput
             className={inputClass}
-            value={toPersianDigits(probability)}
-            onChange={(e) => setProbability(toLatinDigits(e.target.value).replace(/[^\d]/g, ""))}
+            dir="ltr"
+            inputMode="numeric"
+            allowNegative={false}
+            grouping={false}
+            value={probability}
+            onChange={(e) => setProbability(e.target.value)}
+            placeholder="۰"
           />
         </Field>
         <Field label="موعد پیش‌بینی‌شده (اختیاری)">
@@ -346,6 +607,14 @@ function DealDialog({
         </Field>
         <Field label="مسئول پیگیری (اختیاری)">
           <input className={inputClass} value={owner} onChange={(e) => setOwner(e.target.value)} />
+        </Field>
+        <Field label="منبع (اختیاری)" hint="این معامله از کجا شروع شد؛ مثلاً اینستاگرام، معرفی مشتری یا تماس تلفنی.">
+          <input
+            className={inputClass}
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            placeholder="مثلاً اینستاگرام"
+          />
         </Field>
         <Field label="توضیح (اختیاری)">
           <textarea

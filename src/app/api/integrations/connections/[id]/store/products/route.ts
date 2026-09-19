@@ -42,11 +42,15 @@ export const POST = withTenantScope(async (request: Request, context: { params: 
     // (a string like "15000") passes through untouched, so a caller that
     // knows what it is doing is not fought over.
     if (typeof fields.priceRial === "string" || typeof fields.priceRial === "number") {
-      fields.regular_price = rialToWooAmount(BigInt(String(fields.priceRial)), connection.currency_unit);
+      const value = String(fields.priceRial);
+      if (!/^\d+$/.test(value)) return NextResponse.json({ error: "invalid_price" }, { status: 400 });
+      fields.regular_price = rialToWooAmount(BigInt(value), connection.currency_unit);
       delete fields.priceRial;
     }
     if (typeof fields.salePriceRial === "string" || typeof fields.salePriceRial === "number") {
-      fields.sale_price = rialToWooAmount(BigInt(String(fields.salePriceRial)), connection.currency_unit);
+      const value = String(fields.salePriceRial);
+      if (!/^\d+$/.test(value)) return NextResponse.json({ error: "invalid_sale_price" }, { status: 400 });
+      fields.sale_price = rialToWooAmount(BigInt(value), connection.currency_unit);
       delete fields.salePriceRial;
     }
     const patch = sanitizeProductPatch(fields);

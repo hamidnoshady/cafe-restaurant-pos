@@ -59,6 +59,17 @@ export function crmCustomerHref(customerId: string): string {
 }
 
 /**
+ * Where a won deal's settled sale actually lives. The orders screen opens a
+ * given order straight away on `?order=<id>` (see `accounting/orders/page.tsx`
+ * and `OrdersList`'s `initialOrderId`) — this is the one other place in the
+ * app a deal's `orderId` is allowed to point, since the pipeline itself posts
+ * nothing.
+ */
+export function crmDealOrderHref(orderId: string): string {
+  return `/accounting/orders?order=${orderId}`;
+}
+
+/**
  * The sections a cashier may open — the floor's share of the app. Kept as one
  * named list rather than inline in the predicate so the reason above and the
  * rule below cannot drift.
