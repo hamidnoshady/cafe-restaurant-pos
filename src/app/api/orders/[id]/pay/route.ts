@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { broadcast } from "@/lib/realtime";
 import { deductForOrder } from "@/lib/inventory-service";
 import {
@@ -89,7 +88,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
-  const businessDay = await getBusinessDayStatus(location.id);
 
   let body: PayBody;
   try {
@@ -251,7 +249,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
           amountRial: total,
           sourceType: "order",
           sourceId: id,
-          earnedOn: businessDay?.businessDate,
           createdBy: session.sub,
         });
       }

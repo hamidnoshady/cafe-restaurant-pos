@@ -30,8 +30,6 @@ export interface CompleteOrderPaymentInput {
   reference?: string | null;
   customerId?: string | null;
   tipAmount?: number;
-  /** The branch's business date, supplied by the route that resolved the branch. */
-  businessDate?: string;
   receivedBy: string | null;
 }
 
@@ -57,7 +55,6 @@ export async function completeOrderPayment(
     reference,
     customerId = null,
     tipAmount = 0,
-    businessDate,
     receivedBy,
   } = input;
   const locked = await lockOpenOrder(client, locationId, orderId);
@@ -160,7 +157,6 @@ export async function completeOrderPayment(
         amountRial: amount,
         sourceType: "order",
         sourceId: orderId,
-        earnedOn: businessDate,
         createdBy: receivedBy,
       });
     }

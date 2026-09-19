@@ -1,0 +1,173 @@
+import { describe, expect, it } from "vitest";
+import { internalBarcodeForPayload } from "./barcode";
+import { parseProductCreateInput } from "./product-input";
+
+const validBase = {
+  name: "  پیراهن مردانه  ",
+  sku: " SH-10 ",
+  sellPrice: 1_500_000,
+  purchasePrice: 900_000,
+  quantity: "2.5",
+  unit: "عدد",
+  subUnit: "کارتن",
+  conversionFactor: "12",
+  minOrderQty: 0,
+  reorderReminderQty: 3,
+  leadTimeDays: 2,
+  taxSalePercent: 10,
+  taxPurchasePercent: 10,
+  variants: [],
+};
+
+describe("parseProductCreateInput", () => {
+  it("normalises a valid simple product", () => {
+    const barcode = internalBarcodeForPayload("00000000001");
+    const result = parseProductCreateInput({ ...validBase, barcode: ` ${barcode} ` });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toMatchObject({
+      name: "پیراهن مردانه",
+      sku: "SH-10",
+      barcode,
+      sellPrice: 1_500_000,
+      purchasePrice: 900_000,
+      quantity: "2.5",
+      conversionFactor: 12,
+      isSellable: true,
+    });
+  });
+
+  it("rejects malformed request shapes instead of throwing", () => {
+    expect(parseProductCreateInput(null)).toMatchObject({ ok: false });
+    expect(parseProductCreateInput([])).toMatchObject({ ok: false });
+    expect(parseProductCreateInput({ name: "کالا", variants: "not-an-array" })).toMatchObject({
+      ok: false,
+      issues: [{ code: "invalid_variants", section: "attributes" }],
+    });
+  });
+
+  it("validates all numeric DB constraints before a write", () => {
+    const result = parseProductCreateInput({
+      ...validBase,
+      sellPrice: 0,
+      purchasePrice: -1,
+      conversionFactor: 0,
+      minOrderQty: -2,
+      reorderReminderQty: -3,
+      leadTimeDays: 1.5,
+      taxSalePercent: 101,
+      taxPurchasePercent: -1,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((entry) => entry.field)).toEqual(
+      expect.arrayContaining([
+        "sellPrice",
+        "purchasePrice",
+        "conversionFactor",
+        "minOrderQty",
+        "reorderReminderQty",
+        "leadTimeDays",
+        "taxSalePercent",
+        "taxPurchasePercent",
+      ]),
+    );
+  });
+
+  it("requires a coherent primary/sub-unit conversion", () => {
+    const missingFactor = parseProductCreateInput({ name: "کالا", unit: "عدد", subUnit: "کارتن" });
+    expect(missingFactor).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([expect.objectContaining({ code: "conversion_required", section: "general" })]),
+    });
+
+    const factorWithoutUnits = parseProductCreateInput({ name: "کالا", conversionFactor: 12 });
+    expect(factorWithoutUnits).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([expect.objectContaining({ code: "units_required", section: "general" })]),
+    });
+  });
+
+  it("refuses empty and duplicate variant rows rather than silently creating a simple item", () => {
+    const empty = parseProductCreateInput({ name: "تی‌شرت", variants: [{ sku: "TS-1", attributes: [] }] });
+    expect(empty).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([expect.objectContaining({ code: "empty_variant", section: "attributes" })]),
+    });
+
+    const duplicate = parseProductCreateInput({
+      name: "تی‌شرت",
+      variants: [
+        { attributes: [{ name: "رنگ", value: "مشکی" }] },
+        { attributes: [{ name: " رنگ ", value: " مشکی " }] },
+      ],
+    });
+    expect(duplicate).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([expect.objectContaining({ code: "duplicate_variant", section: "attributes" })]),
+    });
+  });
+
+  it("keeps variant pricing and stock overrides and normalises Persian barcodes", () => {
+    const barcode = internalBarcodeForPayload("00000000002");
+    const persianBarcode = barcode.replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[Number(digit)]);
+    const result = parseProductCreateInput({
+      name: "کفش",
+      sellPrice: 2_000_000,
+      variants: [
+        {
+          sku: "K-42",
+          barcode: persianBarcode,
+          sellPrice: 2_200_000,
+          purchasePrice: 1_200_000,
+          quantity: "3",
+          attributes: [
+            { name: "رنگ", value: "مشکی" },
+            { name: "سایز", value: "۴۲" },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.variants[0]).toMatchObject({
+      barcode,
+      sellPrice: 2_200_000,
+      purchasePrice: 1_200_000,
+      quantity: "3",
+    });
+  });
+
+  it("puts barcodes on sellable variants, never their container parent", () => {
+    const barcode = internalBarcodeForPayload("00000000003");
+    const result = parseProductCreateInput({
+      name: "کفش",
+      barcode,
+      variants: [{ attributes: [{ name: "سایز", value: "۴۲" }] }],
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([expect.objectContaining({ code: "parent_barcode_with_variants", section: "base" })]),
+    });
+  });
+
+  it("rejects repeated barcodes in the same request", () => {
+    const barcode = internalBarcodeForPayload("00000000004");
+    const result = parseProductCreateInput({
+      name: "کفش",
+      variants: [
+        { barcode, attributes: [{ name: "سایز", value: "۴۱" }] },
+        { barcode, attributes: [{ name: "سایز", value: "۴۲" }] },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([expect.objectContaining({ code: "duplicate_barcode", section: "attributes" })]),
+    });
+  });
+});

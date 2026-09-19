@@ -3,7 +3,6 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { getCustomer } from "@/lib/parties-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { issueStoreCredit, storeCreditBalance, useStoreCredit } from "@/lib/loyalty-service";
 import type { SettlementMethod } from "@/lib/ledger";
 
@@ -38,7 +37,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     return NextResponse.json({ error: "bad_request", message: "روش بازپرداخت باید نقدی یا بانکی باشد." }, { status: 400 });
   }
 
-  const businessDay = await getBusinessDayStatus(location.id);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -50,7 +48,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
         customerId: id,
         amount: body.amount,
         paymentMethod: body.paymentMethod as Extract<SettlementMethod, "cash" | "bank">,
-        businessDate: businessDay?.businessDate,
         createdBy: session.sub,
       });
       balance = result.balance;
@@ -61,7 +58,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
         customerId: id,
         amount: body.amount,
         reason: (body.reason as string | null | undefined) ?? null,
-        businessDate: businessDay?.businessDate,
         createdBy: session.sub,
       });
       balance = await storeCreditBalance(session.businessId, id, client);

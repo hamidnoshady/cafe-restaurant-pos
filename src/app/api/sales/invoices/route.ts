@@ -4,7 +4,6 @@ import { getPool, query } from "@/lib/db";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { industryProfile } from "@/lib/industry-profile";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import {
   createRetailInvoice,
@@ -54,7 +53,6 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
-  const businessDay = await getBusinessDayStatus(location.id);
 
   let body: {
     lines?: unknown;
@@ -155,7 +153,6 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       paymentReference: paymentReference || null,
       customerId,
       note: typeof body.note === "string" ? body.note : null,
-      businessDate: businessDay?.businessDate,
       createdBy: session.sub,
     });
     await enqueueHolooSaleForOrder(client, session.businessId, invoice.orderId);
