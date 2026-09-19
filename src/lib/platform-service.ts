@@ -1403,22 +1403,71 @@ function toPlatformBugReport(row: PlatformBugReportRow): PlatformBugReport {
   };
 }
 
+export interface BugReportQuery {
+  /** Exact lifecycle status (new/in_progress/resolved/closed). */
+  status?: string;
+  /** Free-text over business name, reporter name, description, page url. */
+  search?: string;
+  businessId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface BugReportListResult {
+  reports: PlatformBugReportSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Count by lifecycle status across the *unfiltered* inbox, for headline tiles. */
+  statusCounts: Record<string, number>;
+}
+
 /**
- * Every report filed by a tenant member, newest first. Screenshots are kept
- * out of the list response because one report can contain a multi-megabyte data
- * URL; the detail endpoint loads one only when an operator opens a report.
+ * Server-paginated bug-report inbox. Screenshots are never included here (they
+ * are multi-megabyte data URLs); the detail endpoint loads one on demand. The
+ * status tiles are computed from the whole inbox, not the current page, so the
+ * "new" count stays honest while an operator filters.
  */
-export async function listBugReports({
-  status = "",
-  search = "",
-  limit = 200,
-}: { status?: string; search?: string; limit?: number } = {}): Promise<PlatformBugReportSummary[]> {
-  const safeLimit = Number.isFinite(limit) ? Math.floor(limit) : 200;
-  const boundedLimit = Math.min(Math.max(safeLimit, 1), 500);
-  const normalizedStatus = status.trim().slice(0, 40);
-  const normalizedSearch = search.trim().slice(0, 200);
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<PlatformBugReportRow>(
+export async function queryBugReports(q: BugReportQuery = {}): Promise<BugReportListResult> {
+  const page = Math.max(1, Math.floor(q.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(q.pageSize ?? 40)));
+  const offset = (page - 1) * pageSize;
+
+  return withoutTenantScope("platform", async () => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    const bind = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (q.status && q.status.trim()) where.push(`br.status = ${bind(q.status.trim().slice(0, 40))}`);
+    if (q.businessId) where.push(`br.business_id = ${bind(q.businessId)}::uuid`);
+    if (q.search && q.search.trim()) {
+      const p = bind(`%${q.search.trim().slice(0, 200)}%`);
+      where.push(
+        `concat_ws(' ', b.name, u.full_name, br.description, br.page_url) ILIKE ${p}`,
+      );
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const joins = `JOIN businesses b ON b.id = br.business_id
+                   LEFT JOIN locations l ON l.id = br.location_id
+                   LEFT JOIN users u ON u.id = br.user_id`;
+
+    const { rows: countRows } = await query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM bug_reports br ${joins} ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const { rows: statusRows } = await query<{ status: string; total: string }>(
+      `SELECT status, count(*)::text AS total FROM bug_reports GROUP BY status`,
+    );
+    const statusCounts: Record<string, number> = {};
+    for (const row of statusRows) statusCounts[row.status] = Number(row.total);
+
+    const { rows } = await query<PlatformBugReportRow>(
       `SELECT br.id::text AS id, br.business_id::text AS business_id, b.name AS business_name,
               br.location_id::text AS location_id, l.name AS location_name,
               br.user_id::text AS user_id, u.full_name AS user_name,
@@ -1426,23 +1475,19 @@ export async function listBugReports({
               (br.screenshot IS NOT NULL) AS has_screenshot,
               br.page_url, NULL::text AS user_agent, br.viewport, br.status, br.created_at
          FROM bug_reports br
-         JOIN businesses b ON b.id = br.business_id
-         LEFT JOIN locations l ON l.id = br.location_id
-         LEFT JOIN users u ON u.id = br.user_id
-        WHERE ($1 = '' OR br.status = $1)
-          AND ($2 = '' OR concat_ws(' ', b.name, u.full_name, br.description, br.page_url) ILIKE '%' || $2 || '%')
+         ${joins}
+        ${whereSql}
         ORDER BY br.created_at DESC
-        LIMIT $3`,
-      [normalizedStatus, normalizedSearch, boundedLimit],
-    ),
-  );
-  return rows.map((row) => {
-    const report = toPlatformBugReport(row);
+        LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    );
+
     return {
-      ...report,
-      screenshot: null,
-      userAgent: null,
-      hasScreenshot: row.has_screenshot,
+      reports: rows.map((row) => ({ ...toPlatformBugReport(row), screenshot: null, userAgent: null })),
+      total,
+      page,
+      pageSize,
+      statusCounts,
     };
   });
 }

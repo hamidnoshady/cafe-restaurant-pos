@@ -246,6 +246,55 @@ describe("queryAudit", () => {
   });
 });
 
+describe("queryBugReports", () => {
+  it("paginates, filters by status, and counts the whole inbox", async () => {
+    const biz = await db.query<{ id: string }>(`SELECT id FROM businesses WHERE slug = 'alpha'`);
+    const businessId = biz.rows[0].id;
+    const other = await db.query<{ id: string }>(`SELECT id FROM businesses WHERE slug = 'beta'`);
+    const otherId = other.rows[0].id;
+
+    for (let i = 0; i < 3; i++) {
+      await db.query(
+        `INSERT INTO bug_reports (business_id, description, status)
+         VALUES ($1, $2, 'new')`,
+        [businessId, `crash on save ${i}`],
+      );
+    }
+    await db.query(
+      `INSERT INTO bug_reports (business_id, description, status, screenshot)
+       VALUES ($1, 'printer offline', 'resolved', 'data:image/jpeg;base64,AAAA')`,
+      [otherId],
+    );
+
+    const firstPage = await platformService.queryBugReports({ pageSize: 2 });
+    expect(firstPage.total).toBe(4);
+    expect(firstPage.reports).toHaveLength(2);
+    // Screenshots are never in the list payload.
+    expect(firstPage.reports.every((r) => r.screenshot === null)).toBe(true);
+    // Status tiles reflect the whole inbox, not the current page.
+    expect(firstPage.statusCounts.new).toBe(3);
+    expect(firstPage.statusCounts.resolved).toBe(1);
+
+    const onlyNew = await platformService.queryBugReports({ status: "new" });
+    expect(onlyNew.total).toBe(3);
+    expect(onlyNew.reports.every((r) => r.status === "new")).toBe(true);
+
+    const search = await platformService.queryBugReports({ search: "printer" });
+    expect(search.total).toBe(1);
+    expect(search.reports[0].hasScreenshot).toBe(true);
+
+    const scoped = await platformService.queryBugReports({ businessId });
+    expect(scoped.total).toBe(3);
+
+    const clamped = await platformService.queryBugReports({ pageSize: 100_000 });
+    expect(clamped.pageSize).toBeLessThanOrEqual(100);
+
+    // Keep the shared DB clean for the overview aggregation test below, which
+    // asserts an empty bug-report inbox.
+    await db.query(`DELETE FROM bug_reports`);
+  });
+});
+
 describe("getPlatformOverview", () => {
   it("aggregates business counts and growth in one call", async () => {
     const o = await overviewService.getPlatformOverview(0);
