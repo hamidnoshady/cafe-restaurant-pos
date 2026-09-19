@@ -19,6 +19,8 @@ import {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
   PROJECT_MEMORY_CHAR_LIMIT,
   PROJECT_MEMORY_MAX_ENTRIES,
+  PROJECT_TASK_CHAR_LIMIT,
+  PROJECT_TASK_MAX_OPEN,
   instructionWeight,
   isOverInstructionLimit,
   clampInstructions,
@@ -27,6 +29,8 @@ export {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
   PROJECT_MEMORY_CHAR_LIMIT,
   PROJECT_MEMORY_MAX_ENTRIES,
+  PROJECT_TASK_CHAR_LIMIT,
+  PROJECT_TASK_MAX_OPEN,
   instructionWeight,
   isOverInstructionLimit,
   clampInstructions,
@@ -79,6 +83,19 @@ export interface AiProjectMemory {
   source: "user" | "ai";
   createdBy: string;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiProjectTask {
+  id: string;
+  projectId: string;
+  title: string;
+  status: "open" | "done";
+  /** 'user' when a person added it; 'ai' when a confirmed assistant action did. */
+  source: "user" | "ai";
+  createdBy: string;
+  createdAt: string;
+  completedAt: string | null;
   updatedAt: string;
 }
 
@@ -481,6 +498,118 @@ export async function deleteMemory(
 }
 
 // ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+type TaskRow = {
+  id: string; project_id: string; title: string; status: string; source: string;
+  created_by: string; created_at: string; completed_at: string | null; updated_at: string;
+};
+
+function toTask(row: TaskRow): AiProjectTask {
+  return {
+    id: row.id, projectId: row.project_id, title: row.title,
+    status: row.status === "done" ? "done" : "open",
+    source: row.source === "ai" ? "ai" : "user",
+    createdBy: row.created_by, createdAt: row.created_at,
+    completedAt: row.completed_at, updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Adds an open task to a project. `source` distinguishes a human task added on
+ * the project page ('user') from one the assistant proposed and a human
+ * confirmed ('ai'). Bounded on both title length and the count of OPEN tasks,
+ * so the prompt context (which lists open tasks) can never grow without limit;
+ * done tasks do not count against the cap.
+ */
+export async function addTask(
+  owner: Owner & { projectId: string },
+  input: { title: string; source?: "user" | "ai"; createdBy?: string },
+): Promise<AiProjectTask> {
+  const title = input.title.trim();
+  if (!title) throw new Error("Task title is required");
+  if (title.length > PROJECT_TASK_CHAR_LIMIT) {
+    throw new Error("Task exceeds the character limit");
+  }
+
+  const project = await getProject(owner);
+  if (!project) throw new Error("Project not found");
+
+  const { rows: countRows } = await query<{ count: string }>(
+    `SELECT count(*) AS count FROM ai_project_tasks WHERE project_id = $1 AND status = 'open'`,
+    [owner.projectId],
+  );
+  if (Number(countRows[0].count) >= PROJECT_TASK_MAX_OPEN) {
+    throw new Error("Project has too many open tasks");
+  }
+
+  const source = input.source === "ai" ? "ai" : "user";
+  const createdBy = input.createdBy?.trim() || owner.actorUserId;
+  const { rows } = await query<TaskRow>(
+    `INSERT INTO ai_project_tasks (project_id, title, source, created_by)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, project_id, title, status, source, created_by, created_at, completed_at, updated_at`,
+    [owner.projectId, title, source, createdBy],
+  );
+  return toTask(rows[0]);
+}
+
+export async function listTasks(
+  owner: Owner & { projectId: string },
+): Promise<AiProjectTask[]> {
+  // Open first (newest at the top of the open group), then completed.
+  const { rows } = await query<TaskRow>(
+    `SELECT id, project_id, title, status, source, created_by, created_at, completed_at, updated_at
+       FROM ai_project_tasks
+      WHERE project_id = $1
+      ORDER BY (status = 'open') DESC, created_at DESC`,
+    [owner.projectId],
+  );
+  return rows.map(toTask);
+}
+
+/**
+ * Flips a task between open and done. `done: true` stamps completed_at; `false`
+ * reopens it and clears the stamp. Returns the updated task, or null when the
+ * task is not this business's (the ownership join returns no row).
+ */
+export async function setTaskStatus(
+  owner: Owner & { projectId: string; taskId: string },
+  done: boolean,
+): Promise<AiProjectTask | null> {
+  const status = done ? "done" : "open";
+  const { rows } = await query<TaskRow>(
+    `UPDATE ai_project_tasks t
+        SET status = $4,
+            completed_at = CASE WHEN $4 = 'done' THEN now() ELSE NULL END,
+            updated_at = now()
+       FROM ai_projects p
+      WHERE t.id = $1 AND t.project_id = $2
+        AND p.id = t.project_id AND p.business_id = $3
+      RETURNING t.id, t.project_id, t.title, t.status, t.source, t.created_by,
+                t.created_at, t.completed_at, t.updated_at`,
+    [owner.taskId, owner.projectId, owner.businessId, status],
+  );
+  return rows[0] ? toTask(rows[0]) : null;
+}
+
+export async function deleteTask(
+  owner: Owner & { projectId: string; taskId: string },
+): Promise<boolean> {
+  // Delete only through the parent project this business owns — the same
+  // ownership join deleteNote / deleteMemory use.
+  const { rowCount } = await query(
+    `DELETE FROM ai_project_tasks t
+      USING ai_projects p
+      WHERE t.id = $1 AND t.project_id = $2
+        AND p.id = t.project_id AND p.business_id = $3`,
+    [owner.taskId, owner.projectId, owner.businessId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------------------
 // Prompt context
 // ---------------------------------------------------------------------------
 
@@ -496,6 +625,8 @@ export interface ProjectContext {
   instructions: string;
   notes: AiProjectNote[];
   memory: AiProjectMemory[];
+  /** Only OPEN tasks reach the prompt; done tasks drop out of the context. */
+  openTasks: AiProjectTask[];
 }
 
 /**
@@ -508,8 +639,18 @@ export async function getProjectPromptContext(
 ): Promise<ProjectContext | null> {
   const project = await getProject(owner);
   if (!project) return null;
-  const [notes, memory] = await Promise.all([listNotes(owner), listMemory(owner)]);
-  return { name: project.name, instructions: project.instructions, notes, memory };
+  const [notes, memory, tasks] = await Promise.all([
+    listNotes(owner),
+    listMemory(owner),
+    listTasks(owner),
+  ]);
+  return {
+    name: project.name,
+    instructions: project.instructions,
+    notes,
+    memory,
+    openTasks: tasks.filter((t) => t.status === "open"),
+  };
 }
 
 /**
@@ -524,7 +665,13 @@ export function buildProjectPromptContext(
   instructionsOrContext: string | ProjectContext,
   notes: AiProjectNote[] = [],
 ): string {
-  const ctx: { instructions: string; notes: AiProjectNote[]; memory: AiProjectMemory[]; name?: string } =
+  const ctx: {
+    instructions: string;
+    notes: AiProjectNote[];
+    memory: AiProjectMemory[];
+    openTasks?: AiProjectTask[];
+    name?: string;
+  } =
     typeof instructionsOrContext === "string"
       ? { instructions: instructionsOrContext, notes, memory: [] }
       : instructionsOrContext;
@@ -543,6 +690,10 @@ export function buildProjectPromptContext(
   if (ctx.memory.length > 0) {
     const memoryList = ctx.memory.map((m) => `- ${m.content}`).join("\n");
     parts.push(`حافظهٔ پروژه (نکاتی که باید به یاد داشته باشی):\n${memoryList}`);
+  }
+  if (ctx.openTasks && ctx.openTasks.length > 0) {
+    const taskList = ctx.openTasks.map((t) => `- ${t.title}`).join("\n");
+    parts.push(`کارهای باز پروژه (هنوز انجام‌نشده):\n${taskList}`);
   }
   return parts.join("\n\n");
 }

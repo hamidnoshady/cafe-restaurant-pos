@@ -409,10 +409,10 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
     expect(publish.autopilotCategory).toBeUndefined();
     expect(publish.executor).toBeUndefined();
     // Phase C added the second alwaysConfirm action — recording a receipt moves
-    // money. Phase F pt.2 added the third — writing to a project's memory. This
-    // pins the whole set; a fourth entry is a decision.
+    // money. Phase F pt.2/pt.3 added writing a project's memory and adding a
+    // project task. This pins the whole set; a fifth entry is a decision.
     expect(ACTION_TYPES.filter((t) => ACTION_CATALOG[t].alwaysConfirm).sort()).toEqual(
-      ["ar.receipt.record", "project.memory.add", "website.post.publish"],
+      ["ar.receipt.record", "project.memory.add", "project.task.add", "website.post.publish"],
     );
   });
 
@@ -707,6 +707,46 @@ describe("Phase F pt.2 — project.memory.add is a project-scoped action", () =>
     // With the injected id it resolves.
     expect(resolveActionEndpoint(meta, { content: "x", projectId: "proj-1" })).toBe(
       "/api/ai/projects/proj-1/memory",
+    );
+  });
+});
+
+describe("Phase F pt.3 — project.task.add is a project-scoped action", () => {
+  it("registers the action, addressed by an ambient project id", () => {
+    expect(isKnownAction("project.task.add")).toBe(true);
+    const meta = ACTION_CATALOG["project.task.add"];
+    expect(meta.endpoint).toBe("/api/ai/projects/{projectId}/tasks");
+    expect(meta.method).toBe("POST");
+    expect(meta.projectScoped).toBe(true);
+    // Adding a task is always confirmed and never runs unattended.
+    expect(meta.alwaysConfirm).toBe(true);
+    expect(meta.autopilotCategory).toBeUndefined();
+    expect(meta.executor).toBeUndefined();
+    expect(meta.coworkerOnly).toBeUndefined();
+    // The payload hint must not invite the model to write an id.
+    expect(meta.payloadHint).not.toContain("projectId:");
+  });
+
+  it("lives in the project catalogue, not the base one, and is offered only on a project turn", () => {
+    expect(BASE_ACTION_TYPES).not.toContain("project.task.add");
+    expect(PROJECT_ACTION_TYPES).toContain("project.task.add");
+
+    const plain = toolDefinitions("dashboard");
+    const plainEnum = (plain.find((t) => t.function.name === "propose_action")!
+      .function.parameters as { properties: { type: { enum: string[] } } }).properties.type.enum;
+    expect(plainEnum).not.toContain("project.task.add");
+
+    const inProject = toolDefinitions("dashboard", { projectScoped: true });
+    const projEnum = (inProject.find((t) => t.function.name === "propose_action")!
+      .function.parameters as { properties: { type: { enum: string[] } } }).properties.type.enum;
+    expect(projEnum).toContain("project.task.add");
+  });
+
+  it("resolves the endpoint once the ambient project id is in the payload", () => {
+    const meta = ACTION_CATALOG["project.task.add"];
+    expect(resolveActionEndpoint(meta, { title: "تماس با تأمین‌کننده" })).toBeNull();
+    expect(resolveActionEndpoint(meta, { title: "x", projectId: "proj-1" })).toBe(
+      "/api/ai/projects/proj-1/tasks",
     );
   });
 });

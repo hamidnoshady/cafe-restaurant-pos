@@ -3,6 +3,8 @@ import {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
   PROJECT_MEMORY_CHAR_LIMIT,
   PROJECT_MEMORY_MAX_ENTRIES,
+  PROJECT_TASK_CHAR_LIMIT,
+  PROJECT_TASK_MAX_OPEN,
   instructionWeight,
   isOverInstructionLimit,
   clampInstructions,
@@ -11,6 +13,7 @@ import {
   buildProjectPromptContext,
   type AiProjectNote,
   type AiProjectMemory,
+  type AiProjectTask,
   type ProjectContext,
 } from "./ai-projects";
 
@@ -18,6 +21,13 @@ function memory(content: string, source: "user" | "ai" = "user"): AiProjectMemor
   return {
     id: content, projectId: "p1", content, source,
     createdBy: "u1", createdAt: "", updatedAt: "",
+  };
+}
+
+function task(title: string, source: "user" | "ai" = "user"): AiProjectTask {
+  return {
+    id: title, projectId: "p1", title, status: "open", source,
+    createdBy: "u1", createdAt: "", completedAt: null, updatedAt: "",
   };
 }
 
@@ -120,7 +130,7 @@ describe("buildProjectPromptContext", () => {
 });
 
 describe("buildProjectPromptContext (Phase F — ProjectContext form)", () => {
-  const base: ProjectContext = { name: "کمپین بهار", instructions: "", notes: [], memory: [] };
+  const base: ProjectContext = { name: "کمپین بهار", instructions: "", notes: [], memory: [], openTasks: [] };
 
   it("names the project when a ProjectContext is passed", () => {
     const result = buildProjectPromptContext({ ...base, instructions: "روی فروش تمرکز کن" });
@@ -147,17 +157,31 @@ describe("buildProjectPromptContext (Phase F — ProjectContext form)", () => {
       instructions: "لحن دوستانه",
       notes,
       memory: [memory("هفتهٔ اول تخفیف ندارد")],
+      openTasks: [task("تماس با تأمین‌کننده")],
     });
     expect(result).toContain("پروژهٔ رشد");
     expect(result).toContain("لحن دوستانه");
     expect(result).toContain("برنامهٔ بودجه");
     expect(result).toContain("هفتهٔ اول تخفیف ندارد");
+    expect(result).toContain("تماس با تأمین‌کننده");
+  });
+
+  it("lists only OPEN tasks under a 'کارهای باز' heading", () => {
+    const result = buildProjectPromptContext({
+      ...base,
+      openTasks: [task("پیش‌نویس تخفیف نوروز"), task("رزرو عکاس")],
+    });
+    expect(result).toContain("کارهای باز پروژه");
+    expect(result).toContain("پیش‌نویس تخفیف نوروز");
+    expect(result).toContain("رزرو عکاس");
   });
 
   it("returns empty string when a ProjectContext has nothing to say (name still shows)", () => {
     // A bare name is still context worth stating, so it is never empty when a
     // project is named. An unnamed, empty context is empty.
-    expect(buildProjectPromptContext({ name: "", instructions: "  ", notes: [], memory: [] })).toBe("");
+    expect(
+      buildProjectPromptContext({ name: "", instructions: "  ", notes: [], memory: [], openTasks: [] }),
+    ).toBe("");
   });
 
   it("stays backward compatible with the legacy (instructions, notes) call", () => {
@@ -177,5 +201,14 @@ describe("project memory bounds", () => {
     expect(PROJECT_MEMORY_MAX_ENTRIES).toBeGreaterThan(0);
     // A memory is a fact, not a document — much smaller than the instruction budget.
     expect(PROJECT_MEMORY_CHAR_LIMIT).toBeLessThan(PROJECT_INSTRUCTION_CHAR_LIMIT);
+  });
+});
+
+describe("project task bounds", () => {
+  it("caps a task title tighter than a memory fact, and caps open tasks", () => {
+    expect(PROJECT_TASK_CHAR_LIMIT).toBeGreaterThan(0);
+    expect(PROJECT_TASK_MAX_OPEN).toBeGreaterThan(0);
+    // A task title is one line — tighter than a memory fact.
+    expect(PROJECT_TASK_CHAR_LIMIT).toBeLessThan(PROJECT_MEMORY_CHAR_LIMIT);
   });
 });

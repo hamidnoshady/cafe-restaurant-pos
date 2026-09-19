@@ -8,6 +8,9 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowRightIcon,
   BrainIcon,
+  CheckIcon,
+  CircleIcon,
+  ListTodoIcon,
   MessageSquareIcon,
   PencilIcon,
   PlusIcon,
@@ -23,6 +26,8 @@ import {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
   PROJECT_MEMORY_CHAR_LIMIT,
   PROJECT_MEMORY_MAX_ENTRIES,
+  PROJECT_TASK_CHAR_LIMIT,
+  PROJECT_TASK_MAX_OPEN,
   instructionWeight,
 } from "@/lib/ai-projects-shared";
 import { formatPersianNumber } from "@/lib/digits";
@@ -71,6 +76,18 @@ interface Memory {
   updatedAt: string;
 }
 
+interface Task {
+  id: string;
+  projectId: string;
+  title: string;
+  status: "open" | "done";
+  source: "user" | "ai";
+  createdBy: string;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+}
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -83,9 +100,12 @@ export default function ProjectDetailPage() {
   const [budgetDraft, setBudgetDraft] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
   const [memory, setMemory] = useState<Memory[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showAddMemory, setShowAddMemory] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [taskDraft, setTaskDraft] = useState("");
   const [editingInstructions, setEditingInstructions] = useState(false);
   const [instructionsDraft, setInstructionsDraft] = useState("");
   const [showAddNote, setShowAddNote] = useState(false);
@@ -94,10 +114,11 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const [projRes, notesRes, memoryRes, convsRes] = await Promise.all([
+    const [projRes, notesRes, memoryRes, tasksRes, convsRes] = await Promise.all([
       api<{ project: Project; cost: Cost; owners: OwnerOption[] }>(`/api/ai/projects/${id}`),
       api<{ notes: Note[] }>(`/api/ai/projects/${id}/notes`),
       api<{ memory: Memory[] }>(`/api/ai/projects/${id}/memory`),
+      api<{ tasks: Task[] }>(`/api/ai/projects/${id}/tasks`),
       api<{ conversations: Conversation[] }>(`/api/ai/conversations?limit=50`),
     ]);
     if (projRes.ok) {
@@ -107,6 +128,7 @@ export default function ProjectDetailPage() {
     }
     if (notesRes.ok) setNotes(notesRes.data.notes);
     if (memoryRes.ok) setMemory(memoryRes.data.memory);
+    if (tasksRes.ok) setTasks(tasksRes.data.tasks);
     if (convsRes.ok) {
       setConversations(
         convsRes.data.conversations.filter((c: Conversation) => c.projectId === id),
@@ -211,10 +233,45 @@ export default function ProjectDetailPage() {
     setMemory((prev) => prev.filter((m) => m.id !== memoryId));
   }
 
+  async function handleAddTask() {
+    const title = taskDraft.trim();
+    if (!title) return;
+    setError("");
+    const { ok, data } = await api<{ task: Task }>(`/api/ai/projects/${id}/tasks`, {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    });
+    if (ok) {
+      setTasks((prev) => [data.task, ...prev]);
+      setTaskDraft("");
+      setShowAddTask(false);
+    } else {
+      const err = data as unknown as Record<string, string>;
+      setError(err.error ?? "خطا در افزودن کار");
+    }
+  }
+
+  async function handleToggleTask(task: Task) {
+    const done = task.status !== "done";
+    const { ok, data } = await api<{ task: Task }>(
+      `/api/ai/projects/${id}/tasks/${task.id}`,
+      { method: "PATCH", body: JSON.stringify({ done }) },
+    );
+    if (ok) {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? data.task : t)));
+    }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    await api(`/api/ai/projects/${id}/tasks/${taskId}`, { method: "DELETE" });
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+  }
+
   if (!project) return <DashboardPageSkeleton />;
 
   const titlesWeight = notes.map((n) => n.title);
   const currentWeight = instructionWeight(project.instructions, titlesWeight);
+  const openTaskCount = tasks.filter((t) => t.status === "open").length;
   const remaining = PROJECT_INSTRUCTION_CHAR_LIMIT - currentWeight;
 
   return (
@@ -444,6 +501,108 @@ export default function ProjectDetailPage() {
                       {note.content}
                     </p>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Tasks — units of work with an open/done lifecycle. Open tasks are
+              carried into every thread of this project so the assistant knows
+              what is still outstanding; done tasks stay for the record. */}
+          <div className="flex items-center justify-between pt-2">
+            <h2 className="text-sm font-semibold text-foreground">
+              کارهای پروژه ({formatPersianNumber(openTaskCount)} باز)
+            </h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAddTask(true)}
+              disabled={openTaskCount >= PROJECT_TASK_MAX_OPEN}
+            >
+              <PlusIcon className="size-3" />
+              کار
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            کارهای باز به دستیار گفته می‌شوند تا بداند چه چیزی هنوز انجام نشده است.
+          </p>
+
+          {showAddTask && (
+            <div className={`${cardClass} p-3`}>
+              <input
+                value={taskDraft}
+                onChange={(e) => setTaskDraft(e.target.value.slice(0, PROJECT_TASK_CHAR_LIMIT))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && taskDraft.trim()) handleAddTask();
+                }}
+                placeholder="یک کار کوتاه برای این پروژه"
+                className={`${inputClass} mb-1`}
+                autoFocus
+              />
+              <p className="mb-2 text-left text-[11px] text-muted-foreground">
+                {formatPersianNumber(PROJECT_TASK_CHAR_LIMIT - taskDraft.length)}
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleAddTask} disabled={!taskDraft.trim()}>
+                  افزودن
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowAddTask(false);
+                    setTaskDraft("");
+                  }}
+                >
+                  انصراف
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {tasks.length === 0 && !showAddTask ? (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ListTodoIcon className="size-3.5" />
+              کاری ثبت نشده.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {tasks.map((task) => (
+                <div
+                  key={task.id}
+                  className="group flex items-start justify-between gap-2 rounded-xl border border-border/80 bg-card p-2.5"
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleToggleTask(task)}
+                    className="flex min-w-0 flex-1 items-start gap-2 text-right outline-none"
+                    aria-label={task.status === "done" ? "بازکردن کار" : "انجام‌شدن کار"}
+                  >
+                    {task.status === "done" ? (
+                      <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <CircleIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground transition group-hover:text-foreground" />
+                    )}
+                    <span
+                      className={`min-w-0 text-xs ${task.status === "done" ? "text-muted-foreground line-through" : "text-foreground"}`}
+                    >
+                      {task.title}
+                      {task.source === "ai" && (
+                        <span className="mr-1 inline-block rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
+                          دستیار
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTask(task.id)}
+                    aria-label="حذف کار"
+                    className="rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 outline-none focus-visible:ring focus-visible:ring-ring/50 focus-visible:opacity-100"
+                    title="حذف"
+                  >
+                    <TrashIcon className="size-3.5" />
+                  </button>
                 </div>
               ))}
             </div>

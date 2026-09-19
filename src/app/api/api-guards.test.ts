@@ -272,6 +272,10 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   // reaches tenant scope through its parent project, exactly like notes.
   "ai/projects/[id]/memory": "lists/adds memory to a project — RLS through parent project",
   "ai/projects/[id]/memory/[memoryId]": "deletes a memory entry — RLS through parent project",
+  // Phase F pt.3 — project tasks reach tenant scope through their parent
+  // project, exactly like notes and memory.
+  "ai/projects/[id]/tasks": "lists/adds tasks to a project — RLS through parent project",
+  "ai/projects/[id]/tasks/[taskId]": "toggles/deletes a task — RLS through parent project",
 };
 
 /** True for the super-admin console's own routes, which use the platform guards. */

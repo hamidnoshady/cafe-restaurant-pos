@@ -189,7 +189,10 @@ export type ActionType =
   /** Phase F pt.2 — the assistant records a standing fact for the CURRENT
    *  project. Offered only on a project-scoped turn; the project id is ambient
    *  (injected server-side), never named by the model. */
-  | "project.memory.add";
+  | "project.memory.add"
+  /** Phase F pt.3 — the assistant adds an open task to the CURRENT project.
+   *  Same project-scoped, ambient-id shape as project.memory.add. */
+  | "project.task.add";
 
 export type AutopilotExecutorKey =
   | "menuItemPatch"
@@ -592,6 +595,18 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     label: "ثبت نکته در حافظهٔ پروژه",
     payloadHint:
       '{ content: string } — یک نکتهٔ کوتاه و ماندگار که باید در همهٔ گفت‌وگوهای این پروژه به‌خاطر بماند (مثلاً «مالک تومان را رند می‌کند»). شناسهٔ پروژه را ننویس؛ خودکار افزوده می‌شود. فقط وقتی کاربر خواست چیزی را «به خاطر بسپار»',
+    projectScoped: true,
+    alwaysConfirm: true,
+  },
+  "project.task.add": {
+    type: "project.task.add",
+    // `{projectId}` is the AMBIENT project; the chat route injects it. The model
+    // supplies only `title`.
+    endpoint: "/api/ai/projects/{projectId}/tasks",
+    method: "POST",
+    label: "افزودن کار به پروژه",
+    payloadHint:
+      '{ title: string } — یک کار باز و کوتاه برای این پروژه (مثلاً «تماس با تأمین‌کننده دربارهٔ بلند بهار»). شناسهٔ پروژه را ننویس؛ خودکار افزوده می‌شود. فقط وقتی کاربر خواست کاری به پروژه اضافه شود',
     projectScoped: true,
     alwaysConfirm: true,
   },
