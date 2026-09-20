@@ -125,9 +125,75 @@ jobs:
           if (Test-Path "$root/resources/desktop-runtime/.next/cache") { throw ".next/cache leaked into runtime" }
           Write-Host "PostgreSQL payload: $($postgres[0].FullName)"
 
-      - name: Run actual packaged desktop twice with clean user data
-        working-directory: electron
-        run: node scripts/smoke-packaged.js
+      - name: Install and run actual packaged desktop twice as a standard user
+        run: |
+          $ErrorActionPreference = "Stop"
+          $user = "SuiteSmoke"
+          $plainPassword = "Suite-Smoke-2026!xQ7"
+          $securePassword = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+          $smokeRoot = "C:\business-suite-smoke-$env:GITHUB_RUN_ID"
+          $installDir = "$smokeRoot\installed"
+          $outputPath = "$smokeRoot\smoke-output.txt"
+          $exitPath = "$smokeRoot\smoke-exit.txt"
+          $commandPath = "$smokeRoot\run-smoke.cmd"
+          $repo = (Resolve-Path ".").Path
+          $installer = (Get-ChildItem "electron/dist" -File -Filter *.exe |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+          $node = (Get-Command node).Source
+          $smokeScript = (Resolve-Path "electron/scripts/smoke-packaged.js").Path
+
+          if (-not $installer) { throw "NSIS installer missing before standard-user smoke" }
+          New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
+          if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name $user
+          }
+          New-LocalUser -Name $user -Password $securePassword -PasswordNeverExpires -UserMayNotChangePassword | Out-Null
+          Add-LocalGroupMember -Group "Users" -Member $user -ErrorAction SilentlyContinue
+
+          try {
+            # GitHub's Windows runner is elevated and PostgreSQL correctly
+            # refuses to run under an administrator token. Exercise the same
+            # ordinary-user path as a real Windows 11 installation instead.
+            icacls $smokeRoot /grant "${user}:(OI)(CI)F" /T /Q | Out-Null
+            icacls $repo /grant "${user}:(RX)" /Q | Out-Null
+            icacls "$repo\electron" /grant "${user}:(RX)" /Q | Out-Null
+            icacls "$repo\electron\scripts" /grant "${user}:(OI)(CI)RX" /T /Q | Out-Null
+            icacls "$repo\electron\dist" /grant "${user}:(OI)(CI)RX" /T /Q | Out-Null
+
+            @"
+          @echo off
+          setlocal
+          set TEMP=$smokeRoot
+          set TMP=$smokeRoot
+          set GITHUB_ACTIONS=true
+          "$installer" /S /D=$installDir
+          if errorlevel 1 (
+            echo Installer failed with exit code %ERRORLEVEL% > "$outputPath"
+            echo %ERRORLEVEL% > "$exitPath"
+            exit /b %ERRORLEVEL%
+          )
+          if not exist "$installDir\Business Suite.exe" (
+            echo Installed executable is missing > "$outputPath"
+            echo 98 > "$exitPath"
+            exit /b 98
+          )
+          set DESKTOP_EXECUTABLE=$installDir\Business Suite.exe
+          "$node" "$smokeScript" > "$outputPath" 2>&1
+          set RC=%ERRORLEVEL%
+          echo %RC% > "$exitPath"
+          exit /b %RC%
+          "@ | Set-Content -LiteralPath $commandPath -Encoding ascii
+
+            Start-Service seclogon -ErrorAction SilentlyContinue
+            $credential = [pscredential]::new("$env:COMPUTERNAME\$user", $securePassword)
+            $process = Start-Process -FilePath $env:ComSpec -ArgumentList "/d /c `"$commandPath`"" `
+              -WorkingDirectory $repo -Credential $credential -LoadUser -Wait -PassThru
+            if (Test-Path $outputPath) { Get-Content $outputPath }
+            $smokeExit = if (Test-Path $exitPath) { [int](Get-Content $exitPath | Select-Object -First 1) } else { $process.ExitCode }
+            if ($smokeExit -ne 0) { throw "Standard-user installed smoke exited $smokeExit" }
+          } finally {
+            Remove-LocalUser -Name $user -ErrorAction SilentlyContinue
+          }
 
       - name: Final size report and budgets
         id: sizes
