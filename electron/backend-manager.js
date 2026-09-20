@@ -281,13 +281,21 @@ class BackendManager {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let serverStderr = "";
     this.server.stdout.on("data", (chunk) => this.logger.childOutput("server", chunk));
-    this.server.stderr.on("data", (chunk) => this.logger.childOutput("server", chunk, "warn"));
+    this.server.stderr.on("data", (chunk) => {
+      serverStderr = `${serverStderr}${chunk}`.slice(-8_000);
+      this.logger.childOutput("server", chunk, "warn");
+    });
     this.server.once("error", (error) => this.logger.error("Application server process error", error));
     try {
       await waitForServerReady(appUrl, config.instanceId, 90_000, this.server);
     } catch (error) {
-      throw new StartupError("server-readiness", "The application server did not pass its identity-aware health check.", error);
+      const detail = serverStderr.trim();
+      const cause = detail
+        ? new Error(`${error instanceof Error ? error.message : String(error)}\n${detail}`)
+        : error;
+      throw new StartupError("server-readiness", "The application server did not pass its identity-aware health check.", cause);
     }
     this.logger.info("Desktop backend is ready", { appUrl, instanceId: config.instanceId });
     return { appUrl, config, configPath: this.configPath, userDataDir };
