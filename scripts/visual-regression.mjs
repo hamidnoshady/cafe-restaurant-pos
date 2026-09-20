@@ -422,7 +422,7 @@ async function main() {
     const diagnosticPath = join(DIFF_DIR, "crm-deals.actual.png");
     if (existsSync(diagnosticPath)) {
       const encoded = readFileSync(diagnosticPath).toString("base64");
-      const chunkSize = 30_000;
+      const chunkSize = 3_500;
       for (let offset = 0, index = 0; offset < encoded.length; offset += chunkSize, index += 1) {
         console.error(`::error title=VR_IMAGE_${String(index).padStart(3, "0")}::${encoded.slice(offset, offset + chunkSize)}`);
       }
