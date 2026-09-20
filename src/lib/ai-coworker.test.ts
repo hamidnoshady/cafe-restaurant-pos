@@ -21,6 +21,7 @@ function job(overrides: Partial<CoworkerJobInput> = {}): CoworkerJobInput {
     templateKey: "shift_close_waste",
     title: "ضایعات نان",
     locationId: null,
+    projectId: null,
     triggerKind: "event",
     eventKind: "shift_close",
     scheduleHour: null,

@@ -8,6 +8,7 @@ import {
   archiveProject,
   unarchiveProject,
 } from "@/lib/ai-projects";
+import { listCustomAgents } from "@/lib/ai-custom-agents-service";
 
 /**
  * GET    — one project
@@ -22,11 +23,17 @@ export const GET = withTenantScope(
     const { id } = await context.params;
 
     const owner = { businessId: session.businessId, actorUserId: session.sub, projectId: id };
-    const [project, cost, owners] = await Promise.all([
+    const [project, cost, owners, agents] = await Promise.all([
       getProject(owner), getProjectCostSummary(owner), listProjectAssignableOwners(owner),
+      listCustomAgents(session.businessId),
     ]);
     if (!project) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ project, cost, owners });
+    // Only enabled agents can be pinned; the picker shows just those (plus
+    // "none"), so a disabled agent is never offered as a new default.
+    const pinnableAgents = agents
+      .filter((a) => a.enabled)
+      .map((a) => ({ id: a.id, name: a.name }));
+    return NextResponse.json({ project, cost, owners, agents: pinnableAgents });
   },
 );
 
@@ -48,13 +55,14 @@ export const PATCH = withTenantScope(
           ...(body.status === "active" || body.status === "paused" || body.status === "completed" ? { status: body.status } : {}),
           ...(typeof body.ownerUserId === "string" || body.ownerUserId === null ? { ownerUserId: body.ownerUserId } : {}),
           ...(typeof body.budgetRial === "number" || body.budgetRial === null ? { budgetRial: body.budgetRial } : {}),
+          ...(typeof body.defaultAgentId === "string" || body.defaultAgentId === null ? { defaultAgentId: body.defaultAgentId } : {}),
         },
       );
       if (!project) return NextResponse.json({ error: "not_found" }, { status: 404 });
       return NextResponse.json({ project });
     } catch (err) {
       const message = err instanceof Error ? err.message : "internal_error";
-      if (message.includes("character limit") || message.includes("name is required") || ["invalid_project_status", "invalid_project_budget", "project_owner_not_found"].includes(message)) {
+      if (message.includes("character limit") || message.includes("name is required") || ["invalid_project_status", "invalid_project_budget", "project_owner_not_found", "project_default_agent_not_found"].includes(message)) {
         return NextResponse.json({ error: message }, { status: 400 });
       }
       throw err;

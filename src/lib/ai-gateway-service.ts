@@ -58,8 +58,8 @@ import {
   type ProxyRouterSettings,
   type PublicAiGatewayConfig,
   type PublicBusinessGateway,
+  type AiGatewayTurnPricing,
 } from "./ai-gateway";
-import type { AiGatewayTurnPricing } from "./ai-billing-service";
 import { getPlatformAiConfig } from "./ai-config";
 
 /** Management calls are operator-facing: fail them fast rather than hang a page. */

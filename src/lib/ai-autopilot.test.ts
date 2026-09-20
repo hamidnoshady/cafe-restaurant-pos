@@ -6,6 +6,7 @@ import {
   actionTypesForCategory,
   clampAutopilotSetting,
   evaluateAutopilotProposal,
+  evaluateUnattendedAction,
   type AutopilotCategorySetting,
 } from "./ai-autopilot";
 
@@ -344,5 +345,64 @@ describe("Phase 38 — evaluateAutopilotProposal for the website", () => {
     expect(evaluate("website.post.draft", { title: "a", body: "b" }, fullyOpen, {}, fullyOpen.dailyActionLimit)).toMatchObject({
       reasonCode: "daily_limit_reached",
     });
+  });
+});
+
+describe("evaluateUnattendedAction — the shared named ceiling", () => {
+  const priceAction = {
+    meta: ACTION_CATALOG["menu.item.priceUpdate"],
+    payload: { menuItemId: "m1", price: 105_000 },
+    context: { currentPriceRial: 100_000 },
+    appliedTodayInCategory: 0,
+  };
+
+  it("applies unattended when auto, authorised and within the caps", () => {
+    expect(
+      evaluateUnattendedAction({ ...priceAction, approvalMode: "auto", hasAuthorizer: true, setting: pricing }),
+    ).toEqual({ decision: "auto_apply" });
+  });
+
+  it("holds everything when the owner chose 'ask'", () => {
+    expect(
+      evaluateUnattendedAction({ ...priceAction, approvalMode: "ask", hasAuthorizer: true, setting: pricing }),
+    ).toMatchObject({ decision: "needs_confirmation", reasonCode: "approval_requested" });
+  });
+
+  it("refuses an unattended write with no human's authority behind it", () => {
+    expect(
+      evaluateUnattendedAction({ ...priceAction, approvalMode: "auto", hasAuthorizer: false, setting: pricing }),
+    ).toMatchObject({ decision: "needs_confirmation", reasonCode: "no_authorizer" });
+  });
+
+  it("holds an action whose category was never switched on (null setting)", () => {
+    expect(
+      evaluateUnattendedAction({ ...priceAction, approvalMode: "auto", hasAuthorizer: true, setting: null }),
+    ).toMatchObject({ decision: "needs_confirmation", reasonCode: "action_not_eligible" });
+  });
+
+  it("reports an unknown action distinctly from an ineligible one", () => {
+    expect(
+      evaluateUnattendedAction({
+        meta: undefined,
+        payload: {},
+        approvalMode: "auto",
+        hasAuthorizer: true,
+        setting: pricing,
+        appliedTodayInCategory: 0,
+        context: {},
+      }),
+    ).toMatchObject({ decision: "needs_confirmation", reasonCode: "unknown_action" });
+  });
+
+  it("cannot be a way around the per-category caps — an over-cap payload is held", () => {
+    expect(
+      evaluateUnattendedAction({
+        ...priceAction,
+        payload: { menuItemId: "m1", price: 400_000 },
+        approvalMode: "auto",
+        hasAuthorizer: true,
+        setting: pricing,
+      }),
+    ).toMatchObject({ decision: "needs_confirmation" });
   });
 });

@@ -9,6 +9,7 @@ import { useGSAP } from "@gsap/react";
 import { ChatBubble, TypingDots } from "./chat-bubble";
 import { animateStaggerIn } from "./chat-animations";
 import type { AiChatMessage } from "./use-ai-chat";
+import type { InputResponse } from "@/lib/ai-input-protocol";
 
 export { TypingDots };
 
@@ -22,6 +23,8 @@ interface AiChatMessagesProps {
   suggestions?: string[];
   applyProposal: (message: AiChatMessage) => void;
   dismissProposal: (message: AiChatMessage) => void;
+  submitInputRequest?: (message: AiChatMessage, response: InputResponse) => void;
+  dismissInputRequest?: (message: AiChatMessage) => void;
   sendMessage: (prompt?: string) => void;
   /** Phase 36 Wave 7 — «دوباره بپرس» on a cached answer. */
   askAgain?: (text: string) => void;
@@ -36,6 +39,8 @@ export function AiChatMessages({
   suggestions,
   applyProposal,
   dismissProposal,
+  submitInputRequest,
+  dismissInputRequest,
   sendMessage,
   askAgain,
 }: AiChatMessagesProps) {
@@ -61,6 +66,8 @@ export function AiChatMessages({
           applyingId={applyingId}
           applyProposal={applyProposal}
           dismissProposal={dismissProposal}
+          submitInputRequest={submitInputRequest}
+          dismissInputRequest={dismissInputRequest}
           onAskAgain={
             message.cacheNotice && askAgain
               ? () => {

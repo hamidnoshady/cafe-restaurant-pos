@@ -429,6 +429,65 @@ describe("a job that has nothing to do", () => {
   });
 });
 
+describe("a job that belongs to a project", () => {
+  it("labels a job with a project it owns, refuses a foreign one, and clears the label on project delete", async () => {
+    const projects = await import("../src/lib/ai-projects");
+
+    // A project of this shop's, and a foreign one belonging to nobody the shop
+    // owns.
+    const project = await dbLib.withTenant(shop.businessId, () =>
+      projects.createProject(
+        { businessId: shop.businessId, actorUserId: shop.userId },
+        { name: `راه‌اندازی ${randomUUID().slice(0, 6)}` },
+      ),
+    );
+    const otherBiz = await db.query<{ id: string }>(
+      "INSERT INTO businesses (name, slug) VALUES ('Other', $1) RETURNING id",
+      [`other-${randomUUID().slice(0, 8)}`],
+    );
+    const foreignProject = await db.query<{ id: string }>(
+      `INSERT INTO ai_projects (business_id, name, instructions, created_by)
+       VALUES ($1, 'foreign', '', 'seed') RETURNING id`,
+      [otherBiz.rows[0].id],
+    );
+
+    // Creating with the shop's own project id sticks.
+    const job = await createWasteJob({ projectId: project.id });
+    expect(job.projectId).toBe(project.id);
+
+    // Pointing at the foreign project is refused, not silently nulled.
+    const foreign = await dbLib.withTenant(shop.businessId, () =>
+      coworker.createCoworkerJob(
+        shop.businessId,
+        {
+          templateKey: "shift_close_waste",
+          title: "کار خارجی",
+          locationId: null,
+          projectId: foreignProject.rows[0].id,
+          triggerKind: "event",
+          eventKind: "shift_close",
+          scheduleHour: null,
+          scheduleWeekday: null,
+          params: { items: [{ inventoryItemId: shop.itemId, mode: "remaining", reason: "spoilage" }] },
+          approvalMode: "ask",
+          enabled: true,
+        },
+        shop.userId,
+      ),
+    );
+    expect(foreign.ok).toBe(false);
+    if (!foreign.ok) expect(foreign.errors).toContain("coworker_project_not_found");
+
+    // Deleting the project SET NULLs the label but keeps the job.
+    await db.query(`DELETE FROM ai_projects WHERE id = $1`, [project.id]);
+    const afterDelete = await dbLib.withTenant(shop.businessId, () =>
+      coworker.getCoworkerJob(shop.businessId, job.id),
+    );
+    expect(afterDelete).not.toBeNull();
+    expect(afterDelete?.projectId).toBeNull();
+  });
+});
+
 describe("the accounting review", () => {
   it("finds a real unbalanced entry and reports it without changing anything", async () => {
     const review = await import("../src/lib/accounting-review-service");

@@ -459,6 +459,317 @@ export async function chargeFeatureUse(input: {
 }
 
 // ---------------------------------------------------------------------------
+// AI wallet billing (Phase B — post-request settlement against the ONE wallet)
+//
+// The AI subsystem used to bill a second balance (`ai_business_billing`) with a
+// reserve→settle→cancel dance. It now spends from THIS wallet like every other
+// metered feature, under `feature_key = 'ai'`, but with two differences that
+// the generic `chargeFeatureUse` cannot express:
+//
+//   1. Post-request settlement. The real cost is only known AFTER the provider
+//      has already answered (and already incurred cost upstream). So a partial
+//      debit is legitimate: if the wallet can no longer cover the full settled
+//      cost, we debit what is there and record the remainder as AI debt rather
+//      than either refusing (the cost is already sunk) or driving the balance
+//      negative (the wallet's invariant must hold). The next turn is then
+//      blocked by the affordability gate until a top-up clears the debt.
+//   2. Idempotency by request id. A retried settlement for the same turn is a
+//      no-op — `ai_wallet_settlements` has a unique (business_id, request_id).
+// ---------------------------------------------------------------------------
+
+/** Feature key the canonical AI wallet debit is booked under. */
+export const AI_FEATURE_KEY = "ai";
+
+export interface AiAffordability {
+  affordable: boolean;
+  balanceRial: number;
+  debtRial: number;
+  requiredRial: number;
+}
+
+export interface AiSettlementInput {
+  businessId: string;
+  /** The application's per-turn identity, generated before the request. */
+  requestId: string;
+  /** Real cost to charge the wallet (provider cost + platform margin), integer Rial. */
+  chargedRial: number;
+  requestType?: string;
+  litellmCallId?: string | null;
+  model?: string | null;
+  costUsd?: number | null;
+  providerCostRial?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheHit?: boolean;
+  pricedBy?: "gateway" | "token_rate" | "free";
+  conversationId?: string | null;
+  projectId?: string | null;
+  agentId?: string | null;
+  automationId?: string | null;
+  coworkerId?: string | null;
+  locationId?: string | null;
+  userId?: string | null;
+  note?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AiSettlementResult {
+  /** The full settled cost of the turn (what it *should* cost). */
+  chargedRial: number;
+  /** What was actually debited from the wallet this call. */
+  debitedRial: number;
+  /** New debt added because the wallet could not cover the full cost. */
+  debtAddedRial: number;
+  /** Total outstanding AI debt after this settlement. */
+  debtRial: number;
+  balanceRial: number;
+  settlementId: string;
+  walletLedgerId: string | null;
+  /** True when this exact request was already settled (idempotent no-op). */
+  duplicate: boolean;
+}
+
+async function readAiDebt(client: PoolClient, businessId: string): Promise<number> {
+  const { rows } = await client.query<{ debt_rial: string }>(
+    `SELECT debt_rial FROM ai_wallet_debt WHERE business_id = $1`,
+    [businessId],
+  );
+  return n(rows[0]?.debt_rial);
+}
+
+/**
+ * Pay down any outstanding AI debt from whatever balance exists, inside the
+ * given locked wallet transaction. Returns the balance and debt afterwards.
+ * The paydown is a normal `feature_charge` debit so it shows on the ledger.
+ */
+async function reconcileAiDebtTx(
+  client: PoolClient,
+  businessId: string,
+): Promise<{ balanceRial: number; debtRial: number }> {
+  const debt = await readAiDebt(client, businessId);
+  const { rows } = await client.query<{ balance_rial: string }>(
+    `SELECT balance_rial FROM business_wallets WHERE business_id = $1`,
+    [businessId],
+  );
+  const balance = n(rows[0]?.balance_rial);
+  if (debt <= 0 || balance <= 0) return { balanceRial: balance, debtRial: debt };
+
+  const pay = Math.min(balance, debt);
+  const { balanceAfterRial } = await writeLedger(client, {
+    businessId,
+    kind: "feature_charge",
+    direction: "debit",
+    amountRial: pay,
+    featureKey: AI_FEATURE_KEY,
+    note: "تسویهٔ بدهی هوش مصنوعی",
+    metadata: { aiDebtPaydown: true },
+  });
+  const remaining = debt - pay;
+  await client.query(
+    `INSERT INTO ai_wallet_debt (business_id, debt_rial, updated_at)
+     VALUES ($1, $2, now())
+     ON CONFLICT (business_id) DO UPDATE SET debt_rial = $2, updated_at = now()`,
+    [businessId, remaining],
+  );
+  return { balanceRial: balanceAfterRial, debtRial: remaining };
+}
+
+/**
+ * The pre-request affordability gate. Opportunistically clears AI debt from
+ * any available balance first, then reports whether the business can start a
+ * new AI turn: it must have no remaining debt AND at least `requiredRial`
+ * (the configured per-turn ceiling, used here as a minimum-balance guard so a
+ * turn is never started that the wallet plainly cannot cover). This is the
+ * "block the next request when the business cannot afford AI" policy, without
+ * reintroducing an up-front reservation.
+ */
+export async function checkAiAffordability(
+  businessId: string,
+  requiredRial: number,
+): Promise<AiAffordability> {
+  const required = Math.max(0, Math.floor(n(requiredRial)));
+  const client = await getPool().connect();
+  try {
+    const { balanceRial, debtRial } = await withWalletTx(client, businessId, (c) =>
+      reconcileAiDebtTx(c, businessId),
+    );
+    return {
+      affordable: debtRial <= 0 && balanceRial >= required,
+      balanceRial,
+      debtRial,
+      requiredRial: required,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Settle one AI turn against the wallet after the provider has answered.
+ * Idempotent by (businessId, requestId). Debits the wallet by the settled
+ * cost, or by as much as the balance allows — booking any shortfall as AI
+ * debt so it is never hidden and blocks the next turn.
+ */
+export async function settleAiWalletCharge(input: AiSettlementInput): Promise<AiSettlementResult> {
+  const cost = Math.max(0, Math.floor(n(input.chargedRial)));
+  const client = await getPool().connect();
+  try {
+    return await withWalletTx(client, input.businessId, async (c) => {
+      // Idempotency: a settlement already recorded for this request wins.
+      const existing = await c.query<{
+        id: string;
+        charged_rial: string;
+        debt_rial: string;
+        wallet_ledger_id: string | null;
+      }>(
+        `SELECT id, charged_rial, debt_rial, wallet_ledger_id
+           FROM ai_wallet_settlements
+          WHERE business_id = $1 AND request_id = $2`,
+        [input.businessId, input.requestId],
+      );
+      if (existing.rows[0]) {
+        const debtRial = await readAiDebt(c, input.businessId);
+        const { rows } = await c.query<{ balance_rial: string }>(
+          `SELECT balance_rial FROM business_wallets WHERE business_id = $1`,
+          [input.businessId],
+        );
+        return {
+          chargedRial: n(existing.rows[0].charged_rial),
+          debitedRial: 0,
+          debtAddedRial: 0,
+          debtRial,
+          balanceRial: n(rows[0]?.balance_rial),
+          settlementId: existing.rows[0].id,
+          walletLedgerId: existing.rows[0].wallet_ledger_id,
+          duplicate: true,
+        };
+      }
+
+      const { rows: balRows } = await c.query<{ balance_rial: string }>(
+        `SELECT balance_rial FROM business_wallets WHERE business_id = $1`,
+        [input.businessId],
+      );
+      const balance = n(balRows[0]?.balance_rial);
+      const debitedRial = Math.min(cost, balance);
+      const debtAddedRial = cost - debitedRial;
+
+      let walletLedgerId: string | null = null;
+      let balanceAfter = balance;
+      if (debitedRial > 0) {
+        const led = await writeLedger(c, {
+          businessId: input.businessId,
+          kind: "feature_charge",
+          direction: "debit",
+          amountRial: debitedRial,
+          featureKey: AI_FEATURE_KEY,
+          note: input.note ?? "هزینهٔ استفاده از هوش مصنوعی",
+          userId: input.userId ?? null,
+          metadata: {
+            ...input.metadata,
+            requestType: input.requestType ?? "chat",
+            pricedBy: input.pricedBy ?? "token_rate",
+            ...(input.litellmCallId ? { litellmCallId: input.litellmCallId } : {}),
+            ...(debtAddedRial > 0 ? { partial: true, debtAddedRial } : {}),
+          },
+        });
+        walletLedgerId = led.id;
+        balanceAfter = led.balanceAfterRial;
+        // Tick the feature-usage counters like chargeFeatureUse does, so the
+        // AI feature participates in the same usage reporting as every other.
+        await c.query(
+          `INSERT INTO feature_usage (business_id, feature_key, used_count, charged_count, spent_rial)
+           VALUES ($1, $2, 1, 1, $3)
+           ON CONFLICT (business_id, feature_key) DO UPDATE SET
+             used_count = feature_usage.used_count + 1,
+             charged_count = feature_usage.charged_count + 1,
+             spent_rial = feature_usage.spent_rial + $3,
+             updated_at = now()`,
+          [input.businessId, AI_FEATURE_KEY, debitedRial],
+        );
+      } else {
+        // Metered-but-free (zero cost or nothing to debit): still count use.
+        await c.query(
+          `INSERT INTO feature_usage (business_id, feature_key, used_count, charged_count, spent_rial)
+           VALUES ($1, $2, 1, 0, 0)
+           ON CONFLICT (business_id, feature_key) DO UPDATE SET
+             used_count = feature_usage.used_count + 1, updated_at = now()`,
+          [input.businessId, AI_FEATURE_KEY],
+        );
+      }
+
+      let debtRial = await readAiDebt(c, input.businessId);
+      if (debtAddedRial > 0) {
+        debtRial += debtAddedRial;
+        await c.query(
+          `INSERT INTO ai_wallet_debt (business_id, debt_rial, updated_at)
+           VALUES ($1, $2, now())
+           ON CONFLICT (business_id) DO UPDATE SET
+             debt_rial = ai_wallet_debt.debt_rial + $2, updated_at = now()`,
+          [input.businessId, debtAddedRial],
+        );
+      }
+
+      const { rows: settleRows } = await c.query<{ id: string }>(
+        `INSERT INTO ai_wallet_settlements
+           (business_id, request_id, litellm_call_id, request_type, model,
+            conversation_id, project_id, agent_id, automation_id, coworker_id,
+            location_id, input_tokens, output_tokens, cache_hit,
+            cost_usd, provider_cost_rial, charged_rial, debt_rial, priced_by,
+            wallet_ledger_id, created_by_user_id, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb)
+         RETURNING id`,
+        [
+          input.businessId,
+          input.requestId,
+          input.litellmCallId ?? null,
+          input.requestType ?? "chat",
+          input.model ?? null,
+          input.conversationId ?? null,
+          input.projectId ?? null,
+          input.agentId ?? null,
+          input.automationId ?? null,
+          input.coworkerId ?? null,
+          input.locationId ?? null,
+          input.inputTokens == null ? null : Math.max(0, Math.floor(input.inputTokens)),
+          input.outputTokens == null ? null : Math.max(0, Math.floor(input.outputTokens)),
+          input.cacheHit ?? false,
+          input.costUsd == null ? null : Math.max(0, input.costUsd),
+          Math.max(0, Math.floor(n(input.providerCostRial))),
+          cost,
+          debtAddedRial,
+          input.pricedBy ?? "token_rate",
+          walletLedgerId,
+          input.userId ?? null,
+          JSON.stringify(input.metadata ?? {}),
+        ],
+      );
+
+      return {
+        chargedRial: cost,
+        debitedRial,
+        debtAddedRial,
+        debtRial,
+        balanceRial: balanceAfter,
+        settlementId: settleRows[0].id,
+        walletLedgerId,
+        duplicate: false,
+      };
+    });
+  } finally {
+    client.release();
+  }
+}
+
+/** Current outstanding AI debt for a business (0 when none). */
+export async function getAiDebtRial(businessId: string): Promise<number> {
+  const { rows } = await query<{ debt_rial: string }>(
+    `SELECT debt_rial FROM ai_wallet_debt WHERE business_id = $1`,
+    [businessId],
+  );
+  return n(rows[0]?.debt_rial);
+}
+
+// ---------------------------------------------------------------------------
 // Payments: create / start / verify / review
 // ---------------------------------------------------------------------------
 

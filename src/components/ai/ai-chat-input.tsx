@@ -21,6 +21,8 @@ interface AiChatInputProps {
   onTaskChange: (id: AiTaskId) => void;
   customTask: string;
   onCustomTaskChange: (text: string) => void;
+  agentId: string | null;
+  onAgentChange: (id: string | null) => void;
   actionsAllowed: boolean;
   setActionsAllowed: (allowed: boolean) => void;
   loadConversation: (id: string) => void;
@@ -40,6 +42,8 @@ export function AiChatInput({
   onTaskChange,
   customTask,
   onCustomTaskChange,
+  agentId,
+  onAgentChange,
   actionsAllowed,
   setActionsAllowed,
   loadConversation,
@@ -61,6 +65,8 @@ export function AiChatInput({
         onTaskChange={onTaskChange}
         customTask={customTask}
         onCustomTaskChange={onCustomTaskChange}
+        agentId={agentId}
+        onAgentChange={onAgentChange}
         actionsAllowed={actionsAllowed}
         setActionsAllowed={setActionsAllowed}
         loadConversation={loadConversation}

@@ -20,7 +20,7 @@
 
 import { ACTION_CATALOG, type ActionType, type ProposedAction } from "./ai";
 import {
-  evaluateAutopilotProposal,
+  evaluateUnattendedAction,
   type AutopilotAmountContext,
   type AutopilotCategorySetting,
   type AutopilotDecision,
@@ -109,6 +109,10 @@ export interface CoworkerJobInput {
   templateKey: string;
   title: string;
   locationId: string | null;
+  /** The project workspace this job serves, if any. NULL = a business-wide job.
+   * Shape only here; that the id names a real project of this business is
+   * checked in the service layer where the tenant scope lives. */
+  projectId: string | null;
   triggerKind: CoworkerTriggerKind;
   eventKind: CoworkerEventKind | null;
   scheduleHour: number | null;
@@ -183,6 +187,7 @@ export const COWORKER_ERROR_MESSAGES: Record<string, string> = {
   coworker_run_not_found: "این اجرا پیدا نشد.",
   coworker_run_already_decided: "برای این اجرا قبلاً تصمیم گرفته شده است.",
   coworker_module_unavailable: "این قالب برای صنف شما در دسترس نیست.",
+  coworker_project_not_found: "پروژهٔ انتخاب‌شده پیدا نشد.",
 };
 
 export function coworkerErrorMessage(code: string): string {
@@ -276,56 +281,22 @@ export interface CoworkerApprovalInput {
  * not *dropped* and not *forced*.
  */
 export function planCoworkerActions(input: CoworkerApprovalInput): CoworkerActionPlan[] {
-  return input.actions.map((action) => {
-    const meta = ACTION_CATALOG[action.type];
-    if (!meta) {
-      return {
-        action,
-        decision: { decision: "needs_confirmation", reasonCode: "invalid_payload", reasonFa: "این اقدام شناخته نشد." },
-      };
-    }
-    if (input.approvalMode !== "auto") {
-      return {
-        action,
-        decision: {
-          decision: "needs_confirmation",
-          reasonCode: "approval_requested",
-          reasonFa: "شما برای این کار «قبل از ثبت بپرس» را انتخاب کرده‌اید.",
-        },
-      };
-    }
-    if (!input.hasAuthorizer) {
-      return {
-        action,
-        decision: {
-          decision: "needs_confirmation",
-          reasonCode: "no_authorizer",
-          reasonFa: "کاربر تأییدکنندهٔ این کار مشخص نیست، پس ثبت خودکار انجام نمی‌شود.",
-        },
-      };
-    }
-    const setting = input.settingFor(action.type);
-    if (!setting) {
-      return {
-        action,
-        decision: {
-          decision: "needs_confirmation",
-          reasonCode: "action_not_eligible",
-          reasonFa: "این اقدام هرگز به‌صورت خودکار اجرا نمی‌شود و همیشه به تأیید شما نیاز دارد.",
-        },
-      };
-    }
-    return {
-      action,
-      decision: evaluateAutopilotProposal({
-        meta,
-        payload: action.payload,
-        setting,
-        appliedTodayInCategory: input.appliedTodayInCategory(action.type),
-        context: input.contextFor(action),
-      }),
-    };
-  });
+  // The whole gate is `evaluateUnattendedAction` — the ONE named ceiling that
+  // autopilot and automations funnel through too, so a coworker job cannot be
+  // a way around the caps an owner set for their business. This function only
+  // adapts the per-action inputs to it.
+  return input.actions.map((action) => ({
+    action,
+    decision: evaluateUnattendedAction({
+      meta: ACTION_CATALOG[action.type],
+      payload: action.payload,
+      approvalMode: input.approvalMode,
+      hasAuthorizer: input.hasAuthorizer,
+      setting: input.settingFor(action.type),
+      appliedTodayInCategory: input.appliedTodayInCategory(action.type),
+      context: input.contextFor(action),
+    }),
+  }));
 }
 
 /**

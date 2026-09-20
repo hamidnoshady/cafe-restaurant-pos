@@ -254,6 +254,12 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   // ownership filter is the authorization, the same shape as auth/businesses.
   "ai/conversations": "lists/creates only the caller's own conversations — ownership is the authorization",
   "ai/conversations/[id]": "reads/deletes only the caller's own conversation — ownership is the authorization",
+  // Phase E — a structured input request reaches tenant scope only through its
+  // parent conversation (like ai_messages), and the route re-checks
+  // ownsConversation before answering or cancelling, so ownership is the
+  // authorization, the same shape as the conversation routes above.
+  "ai/conversations/[id]/input-requests/[requestId]":
+    "answers/cancels an input request on the caller's own conversation — ownership is the authorization",
   // Phase 35 Wave 3 — projects are scoped to the business by RLS and to the
   // creating member by the same ownership pattern as conversations. Notes
   // reach tenant scope through their parent project (like ai_messages through
@@ -262,6 +268,17 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   "ai/projects/[id]": "reads/updates/archives a project — RLS + ownership",
   "ai/projects/[id]/notes": "lists/adds notes to a project — RLS through parent project",
   "ai/projects/[id]/notes/[noteId]": "deletes a note — RLS through parent project",
+  // Phase F — project memory (standing facts fed into project chat context)
+  // reaches tenant scope through its parent project, exactly like notes.
+  "ai/projects/[id]/memory": "lists/adds memory to a project — RLS through parent project",
+  "ai/projects/[id]/memory/[memoryId]": "deletes a memory entry — RLS through parent project",
+  // Phase F pt.3 — project tasks reach tenant scope through their parent
+  // project, exactly like notes and memory.
+  "ai/projects/[id]/tasks": "lists/adds tasks to a project — RLS through parent project",
+  "ai/projects/[id]/tasks/[taskId]": "toggles/deletes a task — RLS through parent project",
+  // Phase F capstone — a project's media files, scoped by project ownership and
+  // the tenant-isolated media_assets table.
+  "ai/projects/[id]/files": "lists a project's media files — ownership through parent project",
 };
 
 /** True for the super-admin console's own routes, which use the platform guards. */
