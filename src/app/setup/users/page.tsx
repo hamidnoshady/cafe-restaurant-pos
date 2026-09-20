@@ -2,10 +2,9 @@
 
 import { SetupDataSkeleton } from "../ui";
 
-import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { toPersianDigits } from "@/lib/digits";
+import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { PIN_MAX_LENGTH, isValidPin } from "@/lib/pin-policy";
 import { roleLabel } from "@/lib/role-labels";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, StepShell } from "../ui";
@@ -129,15 +128,13 @@ export default function UsersStep() {
             </>
           ) : (
             <Field label="پین (۴ تا ۱۲ رقم) *" hint="برای ورود سریع در صفحهٔ ورود؛ در هر شعبه باید یکتا باشد.">
-              <PersianNumberInput
+              <input
                 className={`${inputClass} w-48 text-center tracking-[0.25em]`}
                 dir="ltr"
                 inputMode="numeric"
-                grouping={false}
-                allowNegative={false}
                 maxLength={12}
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
+                onChange={(e) => setPin(toLatinDigits(e.target.value).replace(/[^0-9]/g, ""))}
                 required
               />
             </Field>

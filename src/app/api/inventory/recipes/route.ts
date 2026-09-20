@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { positiveQuantityText } from "@/lib/inventory-exact";
 
 /** Upsert one recipe line: how much of an inventory item one unit of a menu item consumes. */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { menuItemId?: string; inventoryItemId?: string; quantity?: number };
+  let body: { menuItemId?: string; inventoryItemId?: string; quantity?: number | string };
   try {
     body = await request.json();
   } catch {
@@ -16,8 +17,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
 
   const { menuItemId, inventoryItemId } = body;
-  const quantity = Number(body.quantity);
-  if (!menuItemId || !inventoryItemId || !Number.isFinite(quantity) || quantity <= 0) {
+  let quantity;
+  try {
+    quantity = positiveQuantityText(String(body.quantity ?? ""));
+  } catch {
+    return NextResponse.json({ error: "invalid_quantity" }, { status: 400 });
+  }
+  if (!menuItemId || !inventoryItemId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
 

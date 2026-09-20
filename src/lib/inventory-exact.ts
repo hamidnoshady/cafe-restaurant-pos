@@ -1,4 +1,8 @@
 import Decimal from "decimal.js";
+import {
+  isCanonicalUnsignedDecimalText,
+  isCanonicalUnsignedIntegerText,
+} from "./numeric-validation";
 
 Decimal.set({
   precision: 80,
@@ -11,11 +15,8 @@ export type QuantityText = string & { readonly __quantityText: unique symbol };
 export type UnitCostText = string & { readonly __unitCostText: unique symbol };
 export type RialText = string & { readonly __rialText: unique symbol };
 
-const DECIMAL_TEXT = /^(?:0|[1-9]\d*)(?:\.(\d+))?$/;
-const RIAL_TEXT = /^(?:0|[1-9]\d*)$/;
-
 function canonicalDecimal(input: string, maximumScale: number, field: string): string {
-  if (typeof input !== "string" || !DECIMAL_TEXT.test(input)) throw new Error(`invalid_${field}`);
+  if (typeof input !== "string" || !isCanonicalUnsignedDecimalText(input)) throw new Error(`invalid_${field}`);
   const canonical = input.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
   const clean = canonical === "" ? "0" : canonical;
   const scale = clean.includes(".") ? clean.length - clean.indexOf(".") - 1 : 0;
@@ -38,7 +39,7 @@ export function unitCostText(input: string): UnitCostText {
 }
 
 export function rialText(input: string): RialText {
-  if (typeof input !== "string" || !RIAL_TEXT.test(input)) throw new Error("invalid_rial");
+  if (typeof input !== "string" || !isCanonicalUnsignedIntegerText(input)) throw new Error("invalid_rial");
   return BigInt(input).toString() as RialText;
 }
 

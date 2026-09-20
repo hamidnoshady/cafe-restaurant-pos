@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, KeyRound, Link2, ShieldAlert, Trash2 } from "lucide-react";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 
 import { formatPersianNumber } from "@/lib/digits";
 import type { MaskedCmsControlConfig } from "@/lib/cms/platform-control";
@@ -293,13 +294,13 @@ export default function CmsConnectionPage() {
 
           <div className="max-w-xs">
             <Field label="بازهٔ آینه‌برداری (دقیقه)">
-              <input
+              <PersianNumberInput
                 className={inputClass}
                 disabled={!manage || !mirrorEnabled}
-                max={1440}
-                min={5}
+                inputMode="numeric"
+                allowDecimal={false}
+                allowNegative={false}
                 onChange={(event) => setIntervalMinutes(Number(event.target.value))}
-                type="number"
                 value={interval}
               />
             </Field>

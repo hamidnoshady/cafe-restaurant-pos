@@ -33,6 +33,7 @@ import {
   Unplug,
   Wand2,
 } from "lucide-react";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { toPersianDigits } from "@/lib/digits";
 // `BackupAlert` is a type-only import on purpose: `src/lib/backup.ts` and
 // `src/lib/platform-backup.ts` both live in `node:crypto` territory (the AES-GCM
@@ -576,20 +577,20 @@ function ConfigCard({
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="نگهداری نسخه روی دیسک">
-              <input
-                type="number"
-                min={1}
-                max={365}
+              <PersianNumberInput
+                inputMode="numeric"
+                allowDecimal={false}
+                allowNegative={false}
                 className={inputClass}
                 value={String(form.localRetention)}
                 onChange={(e) => setForm({ ...form, localRetention: Number(e.target.value) })}
               />
             </Field>
             <Field label="نگهداری نسخه در ابر">
-              <input
-                type="number"
-                min={1}
-                max={365}
+              <PersianNumberInput
+                inputMode="numeric"
+                allowDecimal={false}
+                allowNegative={false}
                 className={inputClass}
                 value={String(form.cloud.retention)}
                 onChange={(e) => setForm({ ...form, cloud: { ...form.cloud, retention: Number(e.target.value) } })}
@@ -798,7 +799,7 @@ function ServingCard({
         </div>
         <div className="w-32">
           <Field label="انقضا (روز)">
-            <input className={inputClass} type="number" min={1} value={days} onChange={(e) => setDays(e.target.value)} />
+            <PersianNumberInput className={inputClass} inputMode="numeric" allowDecimal={false} allowNegative={false} value={days} onChange={(e) => setDays(e.target.value)} />
           </Field>
         </div>
         <Button onClick={() => void issue()} disabled={!label.trim() || busy === "issue"}>

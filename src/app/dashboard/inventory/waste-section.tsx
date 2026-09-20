@@ -3,6 +3,7 @@
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
+import { compareUnsignedDecimalText, validateQuantityText } from "@/lib/numeric-validation";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { api, Field, inputClass } from "../ui";
@@ -23,6 +24,10 @@ interface WasteEntry {
   occurred_at: string;
 }
 
+export function buildWasteRequestBody(inventoryItemId: string, quantity: string, reason: string, note: string) {
+  return { inventoryItemId, quantity, reason, note };
+}
+
 const REASON_LABELS: Record<string, string> = {
   spoilage: "فساد",
   prep_error: "خطای آماده‌سازی",
@@ -39,6 +44,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("spoilage");
   const [note, setNote] = useState("");
+  const [quantityTouched, setQuantityTouched] = useState(false);
 
   const loadEntries = useCallback(() => {
     setLoadFailed(false);
@@ -56,26 +62,31 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
 
   const activeItems = items.filter((i) => i.is_active);
   const selectedItem = activeItems.find((item) => item.id === inventoryItemId);
-  const requestedQuantity = Number(quantity);
-  const validQuantity = /^(?:0|[1-9]\d*)(?:\.\d{1,9})?$/.test(quantity.trim()) && requestedQuantity > 0;
+  const quantityValidation = validateQuantityText(quantity.trim());
+  const validQuantity = quantityValidation.valid;
   const exceedsStock = Boolean(
-    selectedItem && Number.isFinite(requestedQuantity) && requestedQuantity > selectedItem.stock,
+    selectedItem
+      && validQuantity
+      && compareUnsignedDecimalText(quantity.trim(), String(selectedItem.stock)) > 0,
   );
+  const quantityError = quantityTouched && !validQuantity ? quantityValidation.message : undefined;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const qty = quantity.trim();
+    setQuantityTouched(true);
     // Keep this in step with the API's exact decimal contract. In particular,
-    // Number() accepts exponent notation which the API correctly rejects.
-    if (!inventoryItemId || !/^(?:0|[1-9]\d*)(?:\.\d{1,9})?$/.test(qty) || Number(qty) <= 0) return;
+    // exponent notation and values beyond the database's 9-place scale fail.
+    if (!inventoryItemId || !validateQuantityText(qty).valid) return;
     const ok = await run(() =>
       api("/api/inventory/waste", {
         method: "POST",
-        body: JSON.stringify({ inventoryItemId, quantity: qty, reason, note }),
+        body: JSON.stringify(buildWasteRequestBody(inventoryItemId, qty, reason, note)),
       }),
     );
     if (ok) {
       setQuantity("");
+      setQuantityTouched(false);
       setNote("");
       loadEntries();
     }
@@ -112,13 +123,22 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
               className={inputClass}
               dir="ltr"
               inputMode="decimal"
-              pattern="(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?"
+              allowNegative={false}
               title="عدد بزرگ‌تر از صفر با حداکثر ۹ رقم اعشار"
               value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              aria-describedby="waste-stock-help"
-              required
+              onChange={(e) => {
+                setQuantity(e.target.value);
+                setQuantityTouched(true);
+              }}
+              onBlur={() => setQuantityTouched(true)}
+              aria-invalid={quantityError ? true : undefined}
+              aria-describedby={quantityError ? "waste-quantity-error waste-stock-help" : "waste-stock-help"}
             />
+            {quantityError ? (
+              <span id="waste-quantity-error" className="text-xs font-medium text-destructive" role="alert">
+                {quantityError}
+              </span>
+            ) : null}
             <span
               id="waste-stock-help"
               className={`text-xs ${exceedsStock ? "font-medium text-destructive" : "text-muted-foreground"}`}

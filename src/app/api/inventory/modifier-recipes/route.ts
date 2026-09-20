@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { validateDecimalText } from "@/lib/numeric-validation";
 
 /**
  * Upsert one modifier recipe line: the signed change in an inventory item's
@@ -12,7 +13,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { modifierId?: string; inventoryItemId?: string; quantityDelta?: number };
+  let body: { modifierId?: string; inventoryItemId?: string; quantityDelta?: number | string };
   try {
     body = await request.json();
   } catch {
@@ -20,9 +21,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
 
   const { modifierId, inventoryItemId } = body;
-  const quantityDelta = Number(body.quantityDelta);
-  if (!modifierId || !inventoryItemId || !Number.isFinite(quantityDelta) || quantityDelta === 0) {
-    return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  const quantityDelta = String(body.quantityDelta ?? "");
+  const quantityValidation = validateDecimalText(quantityDelta, {
+    allowNegative: true,
+    allowZero: false,
+    maximumScale: 9,
+  });
+  if (!modifierId || !inventoryItemId || !quantityValidation.valid) {
+    return NextResponse.json({ error: "invalid_quantity_delta" }, { status: 400 });
   }
 
   const location = await resolveActiveLocation(session);

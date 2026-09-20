@@ -27,6 +27,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -406,10 +407,10 @@ function BlockEditor({
 
           {block.type === "spacer" ? (
             <Field label="ارتفاع (میلی‌متر)">
-              <input
-                type="number"
-                min={0}
-                max={100}
+              <PersianNumberInput
+                inputMode="numeric"
+                allowDecimal={false}
+                allowNegative={false}
                 className={inputClass}
                 value={block.heightMm ?? 4}
                 onChange={(e) => onPatch({ heightMm: Number(e.target.value) })}
@@ -419,10 +420,10 @@ function BlockEditor({
 
           {block.type === "logo" ? (
             <Field label="ارتفاع لوگو (میلی‌متر)" hint="لوگو از پروفایل کسب‌وکار خوانده می‌شود.">
-              <input
-                type="number"
-                min={4}
-                max={60}
+              <PersianNumberInput
+                inputMode="numeric"
+                allowDecimal={false}
+                allowNegative={false}
                 className={inputClass}
                 value={block.logoHeightMm ?? 14}
                 onChange={(e) => onPatch({ logoHeightMm: Number(e.target.value) })}
