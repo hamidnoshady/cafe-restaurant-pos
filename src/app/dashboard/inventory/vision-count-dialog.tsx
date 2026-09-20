@@ -911,7 +911,7 @@ export function VisionCountDialog({
                   }
                 }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img
                   src={still.dataUrl}
                   alt={`تصویر شمارش ${item.name}`}

@@ -208,9 +208,6 @@ export function PrintingManager() {
 }
 
 function TabBarMemo({ active, onChange }: { active: Tab; onChange: (tab: Tab) => void }) {
-  // The section's own TabBar (page-chrome) — kept behind a tiny wrapper so
-  // the tab list stays the single source of truth above.
-  const { TabBar } = require("@/app/dashboard/page-chrome") as typeof import("@/app/dashboard/page-chrome");
   return <TabBar idPrefix="printing" label="بخش‌های چاپ" tabs={TABS} active={active} onChange={onChange} />;
 }
 

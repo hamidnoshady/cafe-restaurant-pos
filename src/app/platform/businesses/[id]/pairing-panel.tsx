@@ -61,11 +61,11 @@ export function PairingPanel() {
       setLocationId((current) => current || data.locations?.[0]?.id || "");
     }
     else setError(errorMessage(data.error));
-  }, [id, allowed, version]);
+  }, [id, allowed]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, version]);
 
   async function issue() {
     setBusy(true);

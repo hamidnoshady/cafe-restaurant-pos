@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
 const https = require("node:https");
@@ -19,6 +20,12 @@ class GatewayManager {
     this.certificates = certificateManager;
     this.logger = logger;
     this.server = null;
+    this.onboardingServer = null;
+    this.onboardingToken = null;
+    this.onboardingDownloads = 0;
+    this.lastOnboardingDownloadAt = null;
+    this.tlsErrorCount = 0;
+    this.lastTlsError = null;
     this.clients = new Map();
   }
 
@@ -101,28 +108,83 @@ class GatewayManager {
       });
       upstreamRequest.end();
     });
-    this.server.on("tlsClientError", (error) => this.logger.warn("Gateway TLS client error", error.message));
+    this.server.on("tlsClientError", (error) => {
+      this.tlsErrorCount += 1;
+      this.lastTlsError = {
+        code: typeof error?.code === "string" ? error.code : "TLS_CLIENT_ERROR",
+        message: String(error?.message || "TLS handshake failed").slice(0, 240),
+        at: new Date().toISOString(),
+      };
+      this.logger.warn("Gateway TLS client error", this.lastTlsError);
+    });
 
     await new Promise((resolve, reject) => {
       this.server.once("error", reject);
       this.server.listen({ host: address, port, exclusive: true }, resolve);
     });
+
+    // Certificate bootstrap cannot depend on trusting the certificate it is
+    // trying to install. This second listener serves exactly one public CA
+    // file behind an ephemeral unguessable path; it never proxies the app,
+    // accepts writes, cookies, credentials or WebSockets. The desktop displays
+    // the SHA-256 fingerprint that the operator must compare on the device.
+    const onboardingPort = port + 1;
+    this.onboardingToken = crypto.randomBytes(24).toString("base64url");
+    const onboardingPath = `/__business-suite/onboarding/${this.onboardingToken}/business-suite-local-ca.crt`;
+    this.onboardingServer = http.createServer((request, response) => {
+      const pathname = new URL(request.url || "/", "http://onboarding.invalid").pathname;
+      if (request.method !== "GET" || pathname !== onboardingPath) {
+        response.writeHead(404, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "no-referrer",
+        });
+        response.end("Not found");
+        return;
+      }
+      this.onboardingDownloads += 1;
+      this.lastOnboardingDownloadAt = new Date().toISOString();
+      response.writeHead(200, {
+        "Content-Type": "application/x-x509-ca-cert",
+        "Content-Disposition": 'attachment; filename="business-suite-local-ca.crt"',
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'",
+        "Referrer-Policy": "no-referrer",
+      });
+      fs.createReadStream(this.certificates.caCertPath).pipe(response);
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        this.onboardingServer.once("error", reject);
+        this.onboardingServer.listen({ host: address, port: onboardingPort, exclusive: true }, resolve);
+      });
+    } catch (error) {
+      await this.stop();
+      throw error;
+    }
     this.address = address;
     this.port = port;
-    this.logger.info("Local HTTPS gateway started", { address, port });
-    return { address, port, certificate };
+    this.onboardingPort = onboardingPort;
+    this.onboardingPath = onboardingPath;
+    this.logger.info("Local HTTPS gateway and CA-only onboarding listener started", { address, port, onboardingPort });
+    return { address, port, onboardingPort, certificate };
   }
 
   async stop() {
-    if (!this.server) return;
-    const server = this.server;
+    const servers = [this.server, this.onboardingServer].filter(Boolean);
+    if (!servers.length) return;
     this.server = null;
-    await new Promise((resolve) => {
+    this.onboardingServer = null;
+    this.onboardingToken = null;
+    this.onboardingPath = null;
+    await Promise.all(servers.map((server) => new Promise((resolve) => {
       server.closeAllConnections?.();
       server.close(() => resolve());
       setTimeout(resolve, 5000).unref();
-    });
-    this.logger.info("Local HTTPS gateway stopped");
+    })));
+    this.logger.info("Local HTTPS gateway and CA onboarding listener stopped");
   }
 
   status() {
@@ -138,7 +200,14 @@ class GatewayManager {
       selectedAddress: address || null,
       port: this.backend.config?.gatewayPort || 8443,
       url: address ? `https://${address}:${this.backend.config?.gatewayPort || 8443}` : null,
-      caDownloadUrl: address ? `https://${address}:${this.backend.config?.gatewayPort || 8443}/__business-suite/local-ca.crt` : null,
+      caDownloadUrl: address && this.onboardingPath && this.onboardingServer?.listening
+        ? `http://${address}:${this.onboardingPort}${this.onboardingPath}`
+        : null,
+      onboardingPort: this.onboardingPort || (this.backend.config?.gatewayPort || 8443) + 1,
+      onboardingScope: "ca-certificate-only",
+      onboardingDownloads: this.onboardingDownloads,
+      lastOnboardingDownloadAt: this.lastOnboardingDownloadAt,
+      tlsDiagnostics: { count: this.tlsErrorCount, last: this.lastTlsError },
       certificate: this.certificates.describe(),
       clients: [...this.clients.values()].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt)).slice(0, 20),
       addressActive: address ? interfaces.some((item) => item.address === address) : false,

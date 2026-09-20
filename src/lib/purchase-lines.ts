@@ -10,6 +10,7 @@
  * and validation; the real SQL is exercised by the purchase integration tests.
  */
 import Decimal from "decimal.js";
+import type { PoolClient } from "pg";
 import { query } from "./db";
 import { positiveQuantityText, quantityText, rialText } from "./inventory-exact";
 
@@ -80,6 +81,7 @@ export function purchaseDateOrNull(input: unknown): string | null {
 export async function preparePurchaseLines(
   items: PurchaseItemInput[],
   locationId: string,
+  client?: PoolClient,
 ): Promise<PreparedPurchaseLines> {
   if (items.length === 0) throw new PurchaseLineError("no_items", 400);
   for (const it of items) {
@@ -95,7 +97,8 @@ export async function preparePurchaseLines(
   }
 
   const inventoryItemIds = items.map((i) => i.inventoryItemId);
-  const { rows: invItems } = await query<{ id: string; purchase_unit_factor: string }>(
+  const lookup = client ? client.query.bind(client) : query;
+  const { rows: invItems } = await lookup<{ id: string; purchase_unit_factor: string }>(
     "SELECT id, purchase_unit_factor FROM inventory_items WHERE id = ANY($1::uuid[]) AND location_id = $2",
     [inventoryItemIds, locationId],
   );

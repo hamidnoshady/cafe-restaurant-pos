@@ -140,7 +140,7 @@ export function BugReportDialog({
 
           {screenshot ? (
             <div className="relative overflow-hidden rounded-lg border border-border/80">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img
                 src={screenshot}
                 alt="تصویر صفحه هنگام گزارش"

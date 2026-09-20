@@ -26,12 +26,14 @@ import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 import { query, withTenant, withoutTenantScope } from "./db";
 import {
+  cleanupStagedDump,
   RestoreRefusal,
   restoreDumpFile,
   stageDumpFile,
   type RestoreSummary,
 } from "./restore-engine";
 import { runPgDump as runPgDumpTool } from "./pg-tools";
+import { secureUnlink } from "./secure-temp";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import {
   BACKUP_RUNS_SHOWN,
@@ -248,7 +250,7 @@ export async function runLocalBackup(businessId: string, trigger: RunTrigger): P
   try {
     const config = await getBackupConfig(businessId);
     
-    let artifact = makeArtifactName();
+    const artifact = makeArtifactName();
     let finalArtifactName = artifact;
     
     const pp = backupPassphrase(config);
@@ -258,33 +260,35 @@ export async function runLocalBackup(businessId: string, trigger: RunTrigger): P
     }
 
     const runId = await startRun(businessId, "local", trigger, finalArtifactName, null);
+    const transientPaths: string[] = [];
     try {
       const dir = backupDir(config.directory);
       await fs.mkdir(dir, { recursive: true });
       const finalPath = path.join(dir, finalArtifactName);
-      const tmpPath = path.join(dir, `${artifact}.tmp`);
-      
-      await runPgDump(tmpPath);
-      let data = await fs.readFile(tmpPath);
+      const plainTmpPath = path.join(dir, `${artifact}.plaintext.tmp`);
+      const artifactTmpPath = doEncryptLocal ? path.join(dir, `${artifact}.encrypted.tmp`) : plainTmpPath;
+      transientPaths.push(plainTmpPath);
+      if (artifactTmpPath !== plainTmpPath) transientPaths.push(artifactTmpPath);
+
+      await runPgDump(plainTmpPath);
+      let data: Buffer = await fs.readFile(plainTmpPath);
 
       if (doEncryptLocal) {
-        data = encryptBackup(data, pp) as any;
-        await fs.writeFile(tmpPath, data);
+        data = encryptBackup(data, pp);
+        await fs.writeFile(artifactTmpPath, data, { mode: 0o600 });
+        await secureUnlink(plainTmpPath);
       }
 
-      // The header's "dump to *.tmp, fsync, rename" is a real promise: flush
-      // the artifact to stable storage before the rename makes it visible under
-      // its final name, then fsync the directory so the rename itself survives
-      // a power cut (a crash in between would otherwise leave a zero-length
-      // artifact sitting at the final name). The directory sync is best-effort
-      // — some platforms (Windows) refuse to open a directory handle to sync.
-      const tmpFh = await fs.open(tmpPath, "r+");
+      // Flush the completed artifact before exposing its final name. Encrypted
+      // backups are written to a separate file so the plaintext dump is never
+      // rewritten in place and is securely removed on every failure path.
+      const tmpFh = await fs.open(artifactTmpPath, "r+");
       try {
         await tmpFh.sync();
       } finally {
         await tmpFh.close();
       }
-      await fs.rename(tmpPath, finalPath);
+      await fs.rename(artifactTmpPath, finalPath);
       try {
         const dirFh = await fs.open(dir, "r");
         try {
@@ -323,6 +327,8 @@ export async function runLocalBackup(businessId: string, trigger: RunTrigger): P
     } catch (err) {
       await finishRun(runId, { status: "failed", error: errText(err) });
       return { status: "failed", error: errText(err) };
+    } finally {
+      await Promise.all(transientPaths.map((file) => secureUnlink(file)));
     }
   } catch (err) {
     // couldn't even record the run (DB down &c.) — nothing sensible to persist
@@ -354,7 +360,7 @@ export async function runCloudUpload(
   const key = cloudKeyFor(config.cloud.prefix, artifact);
   const runId = await startRun(businessId, "cloud", trigger, artifact, key);
   try {
-    let data = await fs.readFile(path.join(backupDir(config.directory), artifact));
+    let data: Buffer = await fs.readFile(path.join(backupDir(config.directory), artifact));
     if (!isEncryptedBackup(data)) {
       const pp = backupPassphrase(config);
       // `validateBackupConfig` refuses to enable cloud without a passphrase,
@@ -364,7 +370,7 @@ export async function runCloudUpload(
       // the key from a publicly known input, so the artifact would be
       // plaintext to anyone who fetches it from the bucket.
       if (!pp) throw new Error("passphrase_required");
-      data = encryptBackup(data, pp) as any;
+      data = encryptBackup(data, pp);
     }
     const s3 = s3ConfigOf(config);
     await s3Put(s3, key, data);
@@ -794,12 +800,13 @@ export async function restoreFromArtifact(
         dumpPath: staged.dumpPath,
         source: staged.sourceName,
         apply: opts.apply,
+        emergencyDir: path.join(backupDir(config.directory), "emergency"),
       });
       return { status: applied ? "applied" : "verified", summary: applied ?? verified };
     } catch (err) {
       return { status: "failed", error: errText(err) };
     } finally {
-      await fs.rm(staged.workDir, { recursive: true, force: true }).catch(() => {});
+      await cleanupStagedDump(staged.workDir).catch(() => {});
     }
   } catch (err) {
     console.error(`restore failed for business ${businessId}:`, errText(err));

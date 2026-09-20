@@ -135,7 +135,7 @@ function AnchorButton({
   );
 }
 
-function useHeadingRenderer(
+function headingRenderer(
   Tag: "h2" | "h3" | "h4",
   byLine: Map<number, KbHeading>,
   tone: KbTone,
@@ -210,9 +210,9 @@ function buildComponents(tone: KbTone, byLine: Map<number, KbHeading>): Componen
       // a section title, rendered at h2 scale.
       <p className={`mt-8 mb-3 text-xl font-bold first:mt-0 ${t.heading}`}>{children}</p>
     ),
-    h2: useHeadingRenderer("h2", byLine, tone),
-    h3: useHeadingRenderer("h3", byLine, tone),
-    h4: useHeadingRenderer("h4", byLine, tone),
+    h2: headingRenderer("h2", byLine, tone),
+    h3: headingRenderer("h3", byLine, tone),
+    h4: headingRenderer("h4", byLine, tone),
     p: ({ children }) => <p className="my-3 break-words leading-7 first:mt-0 last:mb-0">{children}</p>,
     strong: ({ children }) => <strong className={`font-bold ${t.strong}`}>{children}</strong>,
     em: ({ children }) => <em className="italic">{children}</em>,
@@ -253,7 +253,7 @@ function buildComponents(tone: KbTone, byLine: Map<number, KbHeading>): Componen
       );
     },
     img: ({ src, alt }) => (
-      // eslint-disable-next-line @next/next/no-img-element -- article covers are remote by design
+
       <img
         src={typeof src === "string" ? src : ""}
         alt={alt ?? ""}

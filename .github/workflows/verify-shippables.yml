@@ -78,6 +78,9 @@ jobs:
       - name: Install application dependencies
         run: npm ci
 
+      - name: Stage explicit development PostgreSQL-tools status
+        run: npm run desktop:stage-pg-tools
+
       - name: Production dependency vulnerability gate
         run: npm audit --omit=dev --audit-level=high
 

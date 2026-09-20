@@ -123,7 +123,7 @@ function MediaPreview({ row }: { row: MediaRow }) {
   if (kind === "image" && row.mediaUrl && !failed) {
     return (
       // WordPress hosts are dynamic, so Next/Image cannot know their domains.
-      // eslint-disable-next-line @next/next/no-img-element
+
       <img
         src={row.mediaUrl}
         alt=""

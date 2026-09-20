@@ -1,0 +1,222 @@
+name: windows-11-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Candidate version (X.Y.Z)'
+        required: true
+        type: string
+      candidate_run_id:
+        description: 'windows-production-release run containing the signed candidate'
+        required: true
+        type: string
+      candidate_artifact:
+        description: 'Exact signed or blocked-readiness artifact name'
+        required: true
+        type: string
+      previous_run_id:
+        description: 'Run containing the prior signed release for update acceptance'
+        required: true
+        type: string
+      previous_artifact:
+        description: 'Exact prior signed artifact name'
+        required: true
+        type: string
+      uac_cancellation_evidence_url:
+        description: 'Evidence URL showing optional firewall UAC was cancelled and desktop mode remained usable'
+        required: true
+        type: string
+
+concurrency:
+  group: windows-11-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  infrastructure:
+    name: retail Windows 11 infrastructure status
+    runs-on: windows-latest
+    steps:
+      - name: Report non-fallback runner status
+        env:
+          CONFIGURED: ${{ vars.WINDOWS_11_RUNNER_CONFIGURED }}
+        run: |
+          if ($env:CONFIGURED -ne "true") {
+            Write-Host "::error title=Retail Windows 11 NOT CONFIGURED::Set WINDOWS_11_RUNNER_CONFIGURED=true only after registering a non-administrator self-hosted runner with labels self-hosted, Windows, X64, retail-windows-11. This workflow will not fall back to windows-latest/Windows Server."
+            throw "Retail Windows 11 acceptance infrastructure is NOT CONFIGURED"
+          }
+
+  retail-windows-11:
+    name: retail Windows 11 clean-state lifecycle
+    needs: infrastructure
+    runs-on: [self-hosted, Windows, X64, retail-windows-11]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prove retail Windows 11 and ordinary-user execution
+        id: platform
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          $productType = (Get-CimInstance Win32_OperatingSystem).ProductType
+          $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          if ($os.Caption -notmatch 'Windows 11') { throw "Non-fallback check failed: $($os.Caption) is not retail Windows 11" }
+          if ($productType -ne 1) { throw "Non-fallback check failed: ProductType=$productType is not a workstation OS" }
+          if ($admin) { throw "Runner account is elevated; acceptance requires an ordinary non-administrator user" }
+          "caption=$($os.Caption)" >> $env:GITHUB_OUTPUT
+          "build=$($os.BuildNumber)" >> $env:GITHUB_OUTPUT
+          Write-Host "Retail platform: $($os.Caption), build $($os.BuildNumber), ProductType=$productType, non-admin=$(-not $admin)"
+
+      - name: Verify real network profile posture
+        id: network
+        run: |
+          $profiles = @(Get-NetConnectionProfile | Where-Object { $_.IPv4Connectivity -ne 'Disconnected' -or $_.IPv6Connectivity -ne 'Disconnected' })
+          if (-not $profiles.Count) { throw "No active Windows network profile" }
+          $public = @($profiles | Where-Object NetworkCategory -eq 'Public')
+          $private = @($profiles | Where-Object { $_.NetworkCategory -in @('Private','DomainAuthenticated') })
+          if ($public.Count) { throw "Active Public profile is not accepted for local-device gateway testing: $($public.Name -join ', ')" }
+          if (-not $private.Count) { throw "A Private or DomainAuthenticated profile is required" }
+          $categories = (($profiles | ForEach-Object { [string]$_.NetworkCategory } | Sort-Object -Unique) -join ',')
+          "profiles=$categories" >> $env:GITHUB_OUTPUT
+
+      - name: Download signed candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: ${{ runner.temp }}\suite-candidate
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download prior signed release
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.previous_artifact }}
+          path: ${{ runner.temp }}\suite-previous
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.previous_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bind acceptance to candidate provenance
+        id: candidate
+        run: |
+          $provenanceFile = Get-ChildItem "${{ runner.temp }}\suite-candidate" -Recurse -File -Filter release-provenance.json | Select-Object -First 1
+          if (-not $provenanceFile) { throw "Candidate release-provenance.json is missing" }
+          $provenance = Get-Content $provenanceFile.FullName -Raw | ConvertFrom-Json
+          if ($provenance.version -ne "${{ inputs.version }}") { throw "Candidate version $($provenance.version) does not match requested ${{ inputs.version }}" }
+          "commit=$($provenance.commit)" >> $env:GITHUB_OUTPUT
+
+      - name: Assert dedicated clean state
+        run: |
+          $root = Join-Path $env:LOCALAPPDATA "BusinessSuiteRetailAcceptance"
+          $install = Join-Path $root "installed"
+          $data = Join-Path $root "data"
+          if (Test-Path $root) { throw "Clean-state acceptance root already exists: $root. Preserve it for diagnosis, then explicitly remove it before a new run." }
+          if (Get-Process "Business Suite" -ErrorAction SilentlyContinue) { throw "Business Suite is already running" }
+          New-Item -ItemType Directory -Path $root | Out-Null
+          "ACCEPTANCE_ROOT=$root" >> $env:GITHUB_ENV
+          "INSTALL_DIR=$install" >> $env:GITHUB_ENV
+          "USER_DATA=$data" >> $env:GITHUB_ENV
+
+      - name: Install prior release without elevation and launch twice
+        run: |
+          $installer = Get-ChildItem "${{ runner.temp }}\suite-previous" -Recurse -File -Filter "Business Suite Setup *.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Prior installer is missing" }
+          $process = Start-Process $installer.FullName -ArgumentList "/S", "/D=$env:INSTALL_DIR" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Prior installer failed: $($process.ExitCode)" }
+          $env:DESKTOP_EXECUTABLE = Join-Path $env:INSTALL_DIR "Business Suite.exe"
+          $env:DESKTOP_SMOKE_USER_DATA = $env:USER_DATA
+          $env:GITHUB_ACTIONS = "true"
+          node electron/scripts/smoke-packaged.js
+
+      - name: Abrupt-stop recovery acceptance
+        run: |
+          $exe = Join-Path $env:INSTALL_DIR "Business Suite.exe"
+          $process = Start-Process $exe -ArgumentList "--user-data-dir=$env:USER_DATA" -PassThru
+          Start-Sleep -Seconds 15
+          taskkill /pid $process.Id /t /f | Out-Null
+          Start-Sleep -Seconds 5
+          $env:DESKTOP_EXECUTABLE = $exe
+          $env:DESKTOP_SMOKE_USER_DATA = $env:USER_DATA
+          $env:GITHUB_ACTIONS = "true"
+          node electron/scripts/smoke-packaged.js
+
+      - name: In-place update to signed candidate and persistence acceptance
+        run: |
+          $installer = Get-ChildItem "${{ runner.temp }}\suite-candidate" -Recurse -File -Filter "Business Suite Setup *.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Candidate installer is missing" }
+          $process = Start-Process $installer.FullName -ArgumentList "/S", "/D=$env:INSTALL_DIR" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Candidate update failed: $($process.ExitCode)" }
+          $env:DESKTOP_EXECUTABLE = Join-Path $env:INSTALL_DIR "Business Suite.exe"
+          $env:DESKTOP_SMOKE_USER_DATA = $env:USER_DATA
+          $env:GITHUB_ACTIONS = "true"
+          node electron/scripts/smoke-packaged.js
+
+      - name: Verify installed candidate Authenticode and RFC3161 timestamp
+        env:
+          WINDOWS_EXPECTED_SIGNER: ${{ vars.WINDOWS_EXPECTED_SIGNER }}
+        run: |
+          $verification = Join-Path $env:ACCEPTANCE_ROOT "signature-root"
+          New-Item -ItemType Directory -Path "$verification\win-unpacked" -Force | Out-Null
+          Copy-Item (Join-Path $env:INSTALL_DIR "Business Suite.exe") "$verification\win-unpacked\Business Suite.exe"
+          Copy-Item (Get-ChildItem "${{ runner.temp }}\suite-candidate" -Recurse -File -Filter "Business Suite Setup *.exe" | Select-Object -First 1).FullName $verification
+          .\scripts\verify-windows-signatures.ps1 -ArtifactRoot $verification -Mode signed -ExpectedSigner $env:WINDOWS_EXPECTED_SIGNER -OutputPath windows-11-signatures.json
+
+      - name: Record optional UAC-cancellation evidence without weakening desktop mode
+        env:
+          UAC_EVIDENCE: ${{ inputs.uac_cancellation_evidence_url }}
+        run: |
+          if ($env:UAC_EVIDENCE -notmatch '^https://') { throw "UAC cancellation requires an HTTPS evidence URL from this retail acceptance session" }
+          if (-not (Test-Path (Join-Path $env:INSTALL_DIR "Business Suite.exe"))) { throw "Desktop mode did not remain installed after optional UAC cancellation" }
+          Write-Host "Manual retail evidence: $env:UAC_EVIDENCE"
+
+      - name: Uninstall while preserving persistent data
+        run: |
+          $uninstaller = Get-ChildItem $env:INSTALL_DIR -File | Where-Object { $_.Name -match 'uninstall' -and $_.Extension -eq '.exe' } | Select-Object -First 1
+          if (-not $uninstaller) { throw "Uninstaller missing" }
+          $process = Start-Process $uninstaller.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Uninstaller failed: $($process.ExitCode)" }
+          Start-Sleep -Seconds 3
+          if (Test-Path (Join-Path $env:INSTALL_DIR "Business Suite.exe")) { throw "Application executable remains after uninstall" }
+          if (-not (Test-Path $env:USER_DATA)) { throw "Persistent data was deleted by uninstall" }
+          if (-not (Test-Path (Join-Path $env:USER_DATA "pgdata"))) { throw "PostgreSQL data did not survive uninstall" }
+
+      - name: Write retail evidence
+        if: success()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ordered]@{
+            schemaVersion = 1
+            checkId = "windows-11-retail"
+            status = "PASS"
+            version = "${{ inputs.version }}"
+            commit = "${{ steps.candidate.outputs.commit }}"
+            executedAt = [DateTime]::UtcNow.ToString("o")
+            evidenceUrl = $env:RUN_URL
+            platform = "${{ steps.platform.outputs.caption }} build ${{ steps.platform.outputs.build }}"
+            networkProfiles = "${{ steps.network.outputs.profiles }}"
+            ordinaryUser = $true
+            checks = @("clean-state", "non-elevated-install", "two-launch", "private-network-profile", "abrupt-stop-recovery", "in-place-update", "uac-cancellation-evidence", "uninstall", "data-preserved")
+          } | ConvertTo-Json -Depth 6 | Set-Content windows-11-release-evidence.json -Encoding UTF8
+
+      - name: Upload retail evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-11-release-evidence-${{ inputs.version }}
+          if-no-files-found: warn
+          path: |
+            windows-11-release-evidence.json
+            windows-11-signatures.json

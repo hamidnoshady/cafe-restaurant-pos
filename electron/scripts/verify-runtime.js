@@ -43,6 +43,19 @@ if (resources.some((entry) => entry.from === "../node_modules" || entry.to === "
 if (!resources.some((entry) => entry.from === "../.desktop-runtime" && entry.to === "desktop-runtime")) {
   fail("electron-builder does not package the positive runtime stage");
 }
+if (!resources.some((entry) => entry.from === "../.desktop-assets/postgresql-tools" && entry.to === "postgresql-tools")) {
+  fail("electron-builder does not package the controlled PostgreSQL client-tools stage");
+}
+const pgToolsManifestPath = path.join(root, ".desktop-assets", "postgresql-tools", "provenance.json");
+if (!fs.existsSync(pgToolsManifestPath)) {
+  fail("PostgreSQL tools staging status is absent; run desktop:stage-pg-tools");
+} else {
+  const pgTools = JSON.parse(fs.readFileSync(pgToolsManifestPath, "utf8"));
+  if (!['verified', 'not-configured'].includes(pgTools.status)) fail("PostgreSQL tools staging status is invalid");
+  if (process.env.REQUIRE_PACKAGED_PG_TOOLS === "1" && pgTools.status !== "verified") {
+    fail("release packaging requires verified PostgreSQL client tools");
+  }
+}
 const icon = path.resolve(root, "electron", electronPackage.build.win.icon);
 if (!fs.existsSync(icon)) fail(`installer icon does not exist: ${icon}`);
 

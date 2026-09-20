@@ -1,0 +1,76 @@
+name: mobile-real-device-acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Physical device platform'
+        required: true
+        type: choice
+        options: [android-real-device, ios-real-device]
+      version:
+        description: 'Release version tested'
+        required: true
+        type: string
+      device_metadata_json:
+        description: 'JSON: {"deviceModel":"...","osVersion":"...","browser":"...","tester":"..."}'
+        required: true
+        type: string
+      ca_fingerprint:
+        description: 'Compared uppercase colon-delimited SHA-256 CA fingerprint'
+        required: true
+        type: string
+      evidence_url:
+        description: 'HTTPS evidence URL for this real-device session'
+        required: true
+        type: string
+      checks_json:
+        description: 'JSON object containing every required checklist id with value true; use config/mobile-device-acceptance.json'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  validate:
+    name: validate real-device security evidence
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Reject incomplete manual acceptance and sensitive evidence
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          VERSION: ${{ inputs.version }}
+          DEVICE_METADATA: ${{ inputs.device_metadata_json }}
+          CA_FINGERPRINT: ${{ inputs.ca_fingerprint }}
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          CHECKS: ${{ inputs.checks_json }}
+        run: |
+          $metadata = $env:DEVICE_METADATA | ConvertFrom-Json
+          $checks = $env:CHECKS | ConvertFrom-Json
+          [ordered]@{
+            checkId = $env:PLATFORM
+            version = $env:VERSION
+            deviceModel = $metadata.deviceModel
+            osVersion = $metadata.osVersion
+            browser = $metadata.browser
+            tester = $metadata.tester
+            caSha256Fingerprint = $env:CA_FINGERPRINT
+            evidenceUrl = $env:EVIDENCE_URL
+            checks = $checks
+          } | ConvertTo-Json -Depth 8 | Set-Content mobile-acceptance-input.json -Encoding UTF8
+          node scripts/validate-mobile-acceptance.mjs --input=mobile-acceptance-input.json --output=mobile-real-device-evidence.json
+      - name: Upload payload-free real-device evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.platform }}-evidence-${{ inputs.version }}
+          path: mobile-real-device-evidence.json
+          if-no-files-found: error

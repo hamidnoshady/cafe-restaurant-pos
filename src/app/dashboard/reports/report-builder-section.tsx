@@ -87,7 +87,9 @@ export function ReportBuilderSection() {
         setViews(list);
         if (list.length > 0) {
           setView(list[0].key);
-          selectMetric(list[0].metrics[0]?.key ?? "", list[0]);
+          const firstMetric = list[0].metrics[0];
+          setMetric(firstMetric?.key ?? "");
+          if (firstMetric?.aggregations[0]) setAggregation(firstMetric.aggregations[0]);
           setDimension(list[0].dimensions[0]?.key ?? "");
         }
       })

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "platforms": {
+    "android-real-device": {
+      "minimumOs": "Android 11",
+      "requiredChecks": [
+        "ca-installed-without-warning-bypass",
+        "sha256-fingerprint-matched",
+        "https-lock-no-warning",
+        "wss-live-connection",
+        "explicit-location-pairing",
+        "device-revocation-blocks-access",
+        "device-rotation-restores-authorized-access",
+        "offline-supported-actions-reconcile-once",
+        "no-direct-app-postgresql-or-print-connector-port",
+        "print-traffic-uses-server-and-windows-connector"
+      ]
+    },
+    "ios-real-device": {
+      "minimumOs": "iOS/iPadOS 16",
+      "requiredChecks": [
+        "profile-installed-and-full-trust-enabled",
+        "sha256-fingerprint-matched",
+        "https-lock-no-warning",
+        "wss-live-connection",
+        "explicit-location-pairing",
+        "device-revocation-blocks-access",
+        "device-rotation-restores-authorized-access",
+        "offline-supported-actions-reconcile-once",
+        "no-direct-app-postgresql-or-print-connector-port",
+        "print-traffic-uses-server-and-windows-connector"
+      ]
+    }
+  }
+}

@@ -16,6 +16,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { NextRequest } from "next/server";
 import { runMigrations } from "../scripts/migrate";
 import { createAppRole } from "../scripts/create-app-role";
+import { SYNC_EVENT_REGISTRY } from "../src/lib/sync-event-registry";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -127,6 +128,7 @@ beforeEach(async () => {
   await db.query("DELETE FROM server_sync_tokens");
   await db.query("DELETE FROM order_items");
   await db.query("DELETE FROM orders");
+  await db.query("DELETE FROM purchases");
   await db.query("DELETE FROM locations");
   await db.query("DELETE FROM businesses");
 
@@ -293,6 +295,258 @@ function statusEvent(locationId: string, itemId: string, status: string) {
     actorRole: "kitchen",
   };
 }
+
+
+
+describe("versioned transactional domain-event registry", () => {
+  async function actorForBusiness(
+    businessId: string,
+    locationId: string,
+    role: "owner" | "manager" | "cashier" = "manager",
+  ): Promise<string> {
+    const id = randomUUID();
+    await db.query(
+      `INSERT INTO users(id,business_id,location_id,role,full_name,password_hash,is_active)
+       VALUES($1,$2,$3,$4,'Sync Actor','test-hash',true)`,
+      [id, businessId, locationId, role],
+    );
+    return id;
+  }
+
+  it("routes every registered transactional handler and terminally rejects invalid payloads without effects", async () => {
+    const actorId = await actorForBusiness(bizA.id, bizA.locationId);
+    const definitions = SYNC_EVENT_REGISTRY.filter((entry) => !("legacy" in entry && entry.legacy));
+    for (const definition of definitions) {
+      const clientEventId = randomUUID();
+      const result = await dbLib.withTenant(bizA.id, () =>
+        syncEvents.applySyncEvent(
+          bizA.locationId,
+          { userId: actorId, role: "manager" },
+          {
+            clientEventId,
+            type: definition.type,
+            occurredAt: new Date().toISOString(),
+            payload: {},
+          },
+          "remote",
+          { schemaVersion: definition.schemaVersion },
+        ),
+      );
+      expect(result, definition.type).toMatchObject({ ok: false, deadLettered: true });
+      expect(result.error, definition.type).toMatch(/^invalid_/);
+      const effect = await db.query<{ status: string; effect_type: string | null }>(
+        "SELECT status,effect_type FROM sync_domain_effects WHERE client_event_id=$1",
+        [clientEventId],
+      );
+      expect(effect.rows, definition.type).toEqual([{ status: "dead_lettered", effect_type: null }]);
+    }
+  });
+
+  it("dead-letters an unknown event version without storing its payload in diagnostics", async () => {
+    const actorId = await actorForBusiness(bizA.id, bizA.locationId);
+    const secret = `card-secret-${randomUUID()}`;
+    const result = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(
+        bizA.locationId,
+        { userId: actorId, role: "manager" },
+        {
+          clientEventId: randomUUID(),
+          type: "order.payment.completed",
+          occurredAt: new Date().toISOString(),
+          payload: { orderId: bizA.orderId, method: "card", reference: secret },
+        },
+        "remote",
+        { schemaVersion: 999 },
+      ),
+    );
+    expect(result).toMatchObject({ ok: false, deadLettered: true, error: "unknown_event_version" });
+
+    const diagnostics = await dbLib.withTenant(bizA.id, () => serverSync.getSyncDomainDiagnostics(bizA.id));
+    expect(diagnostics.counts.openDeadLetters).toBe(1);
+    expect(diagnostics.deadLetters[0].payloadSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(diagnostics)).not.toContain(secret);
+
+    // Requeue is not allowed to hide a still-invalid event as "resolved".
+    // Reconciliation dead-letters it again and reopens the same payload-free
+    // diagnostic row with an incremented retry counter.
+    await dbLib.withTenant(bizA.id, () =>
+      serverSync.updateSyncDeadLetter(bizA.id, diagnostics.deadLetters[0].id, "retry", actorId, "retry unknown version"),
+    );
+    await dbLib.withTenant(bizA.id, () => syncEvents.reconcileDeferredSyncEvents(bizA.id, 10));
+    const retried = await dbLib.withTenant(bizA.id, () => serverSync.getSyncDomainDiagnostics(bizA.id));
+    expect(retried.counts.openDeadLetters).toBe(1);
+    expect(retried.deadLetters[0]).toMatchObject({ status: "open", retryCount: 1 });
+    expect(JSON.stringify(retried)).not.toContain(secret);
+  });
+
+  it("applies a purchase draft and inbox/effect atomically, deduping an ambiguous retry", async () => {
+    const actorId = await actorForBusiness(bizA.id, bizA.locationId);
+    const inventoryItemId = randomUUID();
+    await db.query(
+      `INSERT INTO inventory_items(id,location_id,name,unit,purchase_unit_factor,is_active)
+       VALUES($1,$2,'Flour','g',1,true)`,
+      [inventoryItemId, bizA.locationId],
+    );
+    const clientEventId = randomUUID();
+    const event = {
+      clientEventId,
+      type: "inventory.purchase.created",
+      occurredAt: new Date().toISOString(),
+      payload: { items: [{ inventoryItemId, purchaseQty: "100.000000000", totalCost: "9007199254740993" }] },
+    };
+
+    const injected = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(
+        bizA.locationId,
+        { userId: actorId, role: "manager" },
+        event,
+        "remote",
+        { schemaVersion: 1, failureInjection: "after_domain_effect" },
+      ),
+    );
+    expect(injected).toMatchObject({ ok: false, error: "injected_sync_failure_after_domain_effect" });
+    expect((await db.query("SELECT 1 FROM purchases WHERE location_id=$1", [bizA.locationId])).rowCount).toBe(0);
+    expect((await db.query("SELECT 1 FROM sync_events WHERE client_event_id=$1", [clientEventId])).rowCount).toBe(0);
+    expect((await db.query("SELECT 1 FROM sync_domain_effects WHERE client_event_id=$1", [clientEventId])).rowCount).toBe(0);
+    expect((await db.query("SELECT 1 FROM sync_event_dead_letters WHERE client_event_id=$1", [clientEventId])).rowCount).toBe(0);
+
+    const first = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(
+        bizA.locationId,
+        { userId: actorId, role: "manager" },
+        event,
+        "remote",
+        { schemaVersion: 1 },
+      ),
+    );
+    expect(first.ok).toBe(true);
+    const second = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(
+        bizA.locationId,
+        { userId: actorId, role: "manager" },
+        event,
+        "remote",
+        { schemaVersion: 1 },
+      ),
+    );
+    expect(second).toMatchObject({ ok: true, duplicate: true });
+    const purchases = await db.query<{ total: string }>(
+      "SELECT total::text FROM purchases WHERE location_id=$1",
+      [bizA.locationId],
+    );
+    expect(purchases.rows).toEqual([{ total: "9007199254740993" }]);
+    const effects = await db.query<{ status: string }>(
+      "SELECT status FROM sync_domain_effects WHERE client_event_id=$1",
+      [clientEventId],
+    );
+    expect(effects.rows).toEqual([{ status: "applied" }]);
+  });
+
+  it("defers a missing payment prerequisite without a partial payment or journal", async () => {
+    const actorId = await actorForBusiness(bizA.id, bizA.locationId);
+    const missingOrderId = randomUUID();
+    const result = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(
+        bizA.locationId,
+        { userId: actorId, role: "manager" },
+        {
+          clientEventId: randomUUID(),
+          type: "order.payment.completed",
+          occurredAt: new Date().toISOString(),
+          payload: { orderId: missingOrderId, method: "cash" },
+        },
+        "remote",
+        { schemaVersion: 1 },
+      ),
+    );
+    expect(result).toMatchObject({ ok: false, deferred: true });
+    expect((await db.query("SELECT 1 FROM payments WHERE order_id=$1", [missingOrderId])).rowCount).toBe(0);
+    const state = await db.query<{ status: string }>(
+      "SELECT status FROM sync_domain_effects WHERE client_event_id=$1",
+      [result.clientEventId],
+    );
+    expect(state.rows[0].status).toBe("deferred");
+  });
+
+  it("dead-letters a forged actor role without applying a domain effect", async () => {
+    const actorId = await actorForBusiness(bizA.id, bizA.locationId, "cashier");
+    const inventoryItemId = randomUUID();
+    await db.query(
+      `INSERT INTO inventory_items(id,location_id,name,unit,purchase_unit_factor,is_active)
+       VALUES($1,$2,'Role scoped item','unit',1,true)`,
+      [inventoryItemId, bizA.locationId],
+    );
+    const clientEventId = randomUUID();
+    const result = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(
+        bizA.locationId,
+        { userId: actorId, role: "manager" },
+        {
+          clientEventId,
+          type: "inventory.purchase.created",
+          occurredAt: new Date().toISOString(),
+          payload: { items: [{ inventoryItemId, purchaseQty: "1", totalCost: "100" }] },
+        },
+        "remote",
+        { schemaVersion: 1 },
+      ),
+    );
+    expect(result).toMatchObject({ ok: false, deadLettered: true, error: "actor_identity_mismatch" });
+    expect((await db.query("SELECT 1 FROM purchases WHERE location_id=$1", [bizA.locationId])).rowCount).toBe(0);
+    expect((await db.query("SELECT status FROM sync_domain_effects WHERE client_event_id=$1", [clientEventId])).rows[0].status).toBe("dead_lettered");
+  });
+
+  it("dead-letters a revoked or cross-location site device before any domain mutation", async () => {
+    const actorId = await actorForBusiness(bizA.id, bizA.locationId);
+    const device = await db.query<{ id: string }>(
+      `INSERT INTO site_devices(business_id,location_id,display_name,status,revoked_at)
+       VALUES($1,$2,'Revoked sync device','revoked',now()) RETURNING id`,
+      [bizA.id, bizA.locationId],
+    );
+    const clientEventId = randomUUID();
+    const result = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(
+        bizA.locationId,
+        { userId: actorId, role: "manager" },
+        {
+          clientEventId,
+          type: "inventory.waste.recorded",
+          occurredAt: new Date().toISOString(),
+          payload: { inventoryItemId: randomUUID(), quantity: "1", reason: "spoilage" },
+        },
+        "remote",
+        { schemaVersion: 1, siteDeviceId: device.rows[0].id },
+      ),
+    );
+    expect(result).toMatchObject({ ok: false, deadLettered: true, error: "site_identity_mismatch" });
+    expect((await db.query("SELECT 1 FROM inventory_events WHERE idempotency_key=$1", [`waste:${clientEventId}`])).rowCount).toBe(0);
+  });
+
+  it("never treats an unexpected handler failure as a terminal dead letter", async () => {
+    const actorId = await actorForBusiness(bizA.id, bizA.locationId);
+    const clientEventId = randomUUID();
+    const result = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(
+        bizA.locationId,
+        { userId: actorId, role: "manager" },
+        {
+          clientEventId,
+          type: "accounting.manual_journal.reversed",
+          occurredAt: new Date().toISOString(),
+          payload: { entryId: "not-a-uuid" },
+        },
+        "remote",
+        { schemaVersion: 1 },
+      ),
+    );
+    // PostgreSQL 22P02 is an infrastructure/input-boundary failure that rolls
+    // back fully. Only validated payload/domain errors may be terminal.
+    expect(result).toMatchObject({ ok: false, error: "22P02" });
+    expect(result).not.toHaveProperty("deadLettered", true);
+    expect((await db.query("SELECT 1 FROM sync_events WHERE client_event_id=$1", [clientEventId])).rowCount).toBe(0);
+    expect((await db.query("SELECT 1 FROM sync_event_dead_letters WHERE client_event_id=$1", [clientEventId])).rowCount).toBe(0);
+  });
+});
 
 describe("runServerPush — remote outcomes", () => {
   afterEach(() => vi.unstubAllGlobals());

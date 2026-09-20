@@ -87,7 +87,7 @@ export function findComponents(
       if (neighbours.length === 0) {
         labels[i] = nextLabel++;
       } else {
-        let label = neighbours[0];
+        const label = neighbours[0];
         for (const n of neighbours.slice(1)) sets.union(label, n);
         labels[i] = label;
       }

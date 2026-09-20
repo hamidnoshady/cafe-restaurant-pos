@@ -152,7 +152,7 @@ export async function main() {
     const passphrase = process.env.BACKUP_PASSPHRASE;
     if (!passphrase) fail("artifact is encrypted — set BACKUP_PASSPHRASE");
     console.log("Decrypting …");
-    sqlData = decryptBackup(sqlData, passphrase) as any;
+    sqlData = Buffer.from(decryptBackup(sqlData, passphrase));
   }
   const sql = sqlData.toString("utf8");
   const client = new Client({ connectionString: databaseUrl });

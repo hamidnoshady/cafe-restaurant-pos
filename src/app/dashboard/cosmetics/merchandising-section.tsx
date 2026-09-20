@@ -278,7 +278,7 @@ function ItemProfileForm({
     setHealthPermit(selected.healthPermit ?? "");
     setAuthenticity(selected.authenticityRegistration ?? "");
     setTags(selected.tags.join("، "));
-  }, [itemId]);
+  }, [selected]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

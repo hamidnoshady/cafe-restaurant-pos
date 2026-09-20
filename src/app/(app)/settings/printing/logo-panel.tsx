@@ -73,7 +73,7 @@ export function LogoPanel({ logo, onChanged }: { logo: LogoRecord | null; onChan
         <div className="grid gap-5 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] sm:items-start">
           <div className="rounded-xl border border-dashed border-border p-4 text-center">
             {logo ? (
-              // eslint-disable-next-line @next/next/no-img-element -- a data: URL, no loader/optimizer applies
+
               <img src={logo.dataUrl} alt="لوگوی کسب‌وکار" className="mx-auto max-h-32 w-auto object-contain" />
             ) : (
               <p className="py-8 text-sm text-muted-foreground">هنوز لوگویی بارگذاری نشده است.</p>

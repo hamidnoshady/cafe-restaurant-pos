@@ -375,7 +375,7 @@ function SelfEnrolmentCard({ self, onChanged }: { self: SelfStatus | null; onCha
       <Card title="ورود دومرحله‌ای شما — فقط یک بار نمایش داده می‌شود">
         {handover.totpQr ? (
           <div className="mb-4 flex justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img
               src={handover.totpQr}
               alt="کد QR ورود دومرحله‌ای"

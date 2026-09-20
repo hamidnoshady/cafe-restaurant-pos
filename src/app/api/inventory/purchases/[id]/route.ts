@@ -19,6 +19,7 @@ import {
 } from "@/lib/purchase-lines";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { enqueueHolooPurchase } from "@/lib/integrations/holoo/outbox-producer";
+import { receivePurchaseInTransaction } from "@/lib/purchase-receive-service";
 
 const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
 type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
@@ -189,125 +190,49 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const { rows: locked } = await client.query<{ id:string; status:string; total:string; supplier_id:string|null }>(
-      "SELECT id,status,total,supplier_id FROM purchases WHERE id=$1 AND location_id=$2 FOR UPDATE", [id, location.id]);
-    const purchase = locked[0];
-    if (!purchase) { await client.query("ROLLBACK"); return NextResponse.json({ error:"not_found" }, { status:404 }); }
-    if (!(VALID_TRANSITIONS[purchase.status] ?? []).includes(nextStatus)) {
-      await client.query("ROLLBACK"); return NextResponse.json({ error:"invalid_transition" }, { status:409 });
-    }
-    // A credit-settled purchase becomes an Accounts Payable subledger entry,
-    // so it needs a supplier to attribute the balance to. Attribution can
-    // still be supplied here (not only at purchase creation), the same way
-    // the AR subledger accepts a customer at checkout rather than requiring
-    // one when the order was first opened.
-    if (nextStatus === "received" && settlementMethod === "credit" && !purchase.supplier_id && !supplierId) {
-      await client.query("ROLLBACK");
-      return NextResponse.json({ error: "supplier_required" }, { status: 400 });
-    }
-    if (nextStatus === "received" && supplierId && !purchase.supplier_id) {
-      const { rowCount: supplierOwned } = await client.query(
-        `SELECT 1 FROM suppliers WHERE id = $1 AND location_id = $2`,
-        [supplierId, location.id],
-      );
-      if (supplierOwned !== 1) {
-        await client.query("ROLLBACK");
-        return NextResponse.json({ error: "supplier_not_found" }, { status: 404 });
-      }
-      await client.query(`UPDATE purchases SET supplier_id = $1 WHERE id = $2`, [supplierId, id]);
-    }
     if (nextStatus !== "received") {
-      await client.query(`UPDATE purchases SET status=$2::purchase_status, ordered_at=CASE WHEN $2::purchase_status='ordered' THEN now() ELSE ordered_at END WHERE id=$1`, [id,nextStatus]);
-      await client.query("COMMIT"); return NextResponse.json({ok:true});
-    }
-    // سیستم ادواری: a received purchase is a journal entry only — Debit 5105
-    // «خرید طی دوره» / Credit AP-cash-bank. No stock movement, no lot, no
-    // negative-layer settlement; the period close is what touches 1300/COGS.
-    if ((await getInventorySystem(session.businessId, client)) === "periodic") {
-      const { rows: totals } = await client.query<{ total: string }>(
-        "SELECT COALESCE(sum(extended_cost),0)::text total FROM purchase_items WHERE purchase_id=$1",
-        [id],
+      const { rows } = await client.query<{ status: string }>(
+        "SELECT status::text FROM purchases WHERE id=$1 AND location_id=$2 FOR UPDATE",
+        [id, location.id],
       );
-      if (totals[0].total !== String(purchase.total)) throw new Error("purchase_total_mismatch");
+      const purchase = rows[0];
+      if (!purchase) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "not_found" }, { status: 404 });
+      }
+      if (!(VALID_TRANSITIONS[purchase.status] ?? []).includes(nextStatus)) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "invalid_transition" }, { status: 409 });
+      }
       await client.query(
-        "UPDATE purchases SET status = 'received', received_at = now(), settlement_method = $2 WHERE id = $1",
-        [id, settlementMethod],
+        `UPDATE purchases SET status=$2::purchase_status,
+                ordered_at=CASE WHEN $2::purchase_status='ordered' THEN now() ELSE ordered_at END
+          WHERE id=$1`,
+        [id, nextStatus],
       );
-      await postPeriodicPurchaseEntry(client, {
+    } else {
+      await receivePurchaseInTransaction(client, {
         businessId: session.businessId,
         locationId: location.id,
         purchaseId: id,
-        createdBy: session.sub,
-        total: rialText(totals[0].total),
         settlementMethod,
-      });
-      await enqueueHolooPurchase(client, session.businessId, id, "purchase");
-      await client.query("COMMIT");
-      return NextResponse.json({ ok: true });
-    }
-    const { rows: items } = await client.query<{
-      id:string; inventory_item_id:string; quantity:string; extended_cost:string;
-    }>(
-      `SELECT id,inventory_item_id,quantity::text,extended_cost::text
-         FROM purchase_items WHERE purchase_id=$1 ORDER BY inventory_item_id,id`, [id]);
-    const { rows: eventRows } = await client.query<{id:string}>(
-      `INSERT INTO inventory_events
-         (business_id,location_id,event_type,source_type,source_id,created_by,costing_version)
-       VALUES($1,$2,'purchase_receipt','purchase',$3,$4,2) RETURNING id`,
-      [session.businessId,location.id,id,session.sub]);
-    const eventId=eventRows[0].id;
-    const costing = await applyPurchaseReceiptCosting(
-      client,
-      {
-        locationId: location.id,
-        businessId: session.businessId,
-        purchaseId: id,
-        inventoryEventId: eventId,
+        supplierId,
         createdBy: session.sub,
-        items: items.map((item) => ({
-          purchaseItemId: item.id,
-          inventoryItemId: item.inventory_item_id,
-          quantity: positiveQuantityText(item.quantity),
-          extendedCost: rialText(item.extended_cost),
-        })),
-      },
-    );
-    if (costing.receiptValue !== rialText(purchase.total)) throw new Error("purchase_total_mismatch");
-    await client.query(
-      "UPDATE purchases SET status = 'received', received_at = now(), settlement_method = $2 WHERE id = $1",
-      [id, settlementMethod],
-    );
-    await postExactPurchaseEntry(client, {
-      businessId: session.businessId,
-      locationId: location.id,
-      purchaseId: id,
-      createdBy: session.sub,
-      total: costing.receiptValue,
-      settlementMethod,
-      inventoryEventId: eventId,
-    });
-    await postNegativeStockSettlementEntry(client, {
-      businessId: session.businessId,
-      locationId: location.id,
-      purchaseId: id,
-      createdBy: session.sub,
-      upward: costing.upwardSettlementAdjustment,
-      downward: costing.downwardSettlementAdjustment,
-      inventoryEventId: eventId,
-    });
-    await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
-    await enqueueHolooPurchase(client, session.businessId, id, "purchase");
+      });
+    }
     await client.query("COMMIT");
+    return NextResponse.json({ ok: true });
   } catch (err) {
-    await client.query("ROLLBACK");
+    await client.query("ROLLBACK").catch(() => {});
     if (err instanceof MissingLedgerAccountError) {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
-    throw err;
+    const code = err instanceof Error ? err.message : "apply_failed";
+    const status = code.endsWith("_not_found") ? 404 : code === "supplier_required" ? 400 : 409;
+    return NextResponse.json({ error: code }, { status });
   } finally {
     client.release();
   }
-  return NextResponse.json({ ok: true });
 });
 
 /**

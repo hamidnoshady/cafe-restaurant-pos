@@ -355,7 +355,7 @@ function clientIp(request: NextRequest): string {
   const trustedHops = Number(process.env.TRUSTED_PROXY_HOPS ?? "1");
   const ip = clientIpFrom(request.headers, trustedHops);
   if (ip !== "unknown") return ip;
-  return (request as any).ip || "unknown";
+  return "unknown";
 }
 
 function rateLimited(retryAfterMs: number): NextResponse {

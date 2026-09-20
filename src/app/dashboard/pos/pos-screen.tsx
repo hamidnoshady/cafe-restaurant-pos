@@ -690,7 +690,7 @@ export function PosScreen({
                 : Number(discountValue) || 0,
           }
         : { type: null },
-    [discountType, discountValue],
+    [discountType, discountValue, money],
   );
   const cartLines: CartLine[] = useMemo(
     () =>

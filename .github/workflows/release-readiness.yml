@@ -1,0 +1,64 @@
+name: release-readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version whose external evidence must match'
+        type: string
+        required: true
+      production_gate:
+        description: 'Fail unless every production requirement is PASS'
+        type: boolean
+        default: true
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  readiness:
+    name: release readiness states
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Materialize configured acceptance evidence
+        env:
+          EVIDENCE: ${{ vars.RELEASE_ACCEPTANCE_EVIDENCE_JSON }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:EVIDENCE)) {
+            '{"schemaVersion":1,"checks":{}}' | Set-Content release-evidence.json -Encoding UTF8
+            Write-Host "::warning title=Readiness NOT CONFIGURED::RELEASE_ACCEPTANCE_EVIDENCE_JSON is unset. The report will name each missing requirement and production will remain blocked."
+          } else {
+            $parsed = $env:EVIDENCE | ConvertFrom-Json
+            $parsed | ConvertTo-Json -Depth 12 | Set-Content release-evidence.json -Encoding UTF8
+          }
+
+      - name: Generate PASS, FAIL, NOT CONFIGURED and MANUAL states
+        env:
+          PRODUCTION_ARG: ${{ inputs.production_gate && '--production' || '' }}
+        run: node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:GITHUB_SHA --version=${{ inputs.version }} $env:PRODUCTION_ARG
+
+      - name: Publish readiness summary
+        if: always()
+        run: |
+          if (Test-Path release-readiness.md) { Get-Content release-readiness.md | Add-Content $env:GITHUB_STEP_SUMMARY }
+
+      - name: Upload readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-readiness-${{ inputs.version }}
+          if-no-files-found: error
+          path: |
+            release-evidence.json
+            release-readiness.json
+            release-readiness.md

@@ -40,7 +40,7 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
       adminId: session.padmin,
       body: text,
       attachment,
-      ipAddress: (request as any).ip ?? clientIpFrom(request.headers, 0),
+      ipAddress: clientIpFrom(request.headers, 0),
       userAgent: request.headers.get("user-agent"),
     });
     return NextResponse.json({ message }, { status: 201 });

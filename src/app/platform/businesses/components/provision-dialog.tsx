@@ -297,7 +297,7 @@ function HandoverPanel({
 
       {handover.totpQr ? (
         <div className="flex justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img src={handover.totpQr} alt="کد QR ورود دومرحله‌ای" className="size-44 rounded-lg bg-card p-2" />
         </div>
       ) : null}

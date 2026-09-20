@@ -137,7 +137,7 @@ export function MediaPickerDialog({
                 title={asset.fileName}
               >
                 <span className="block aspect-square overflow-hidden bg-muted">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  { }
                   <img src={mediaFileUrl(asset.id)} alt={asset.fileName} loading="lazy" className="size-full object-cover" />
                 </span>
                 <span className="block truncate px-1.5 py-1 text-[11px] text-muted-foreground">{asset.fileName}</span>
@@ -172,7 +172,7 @@ export function MediaImageField({
       <div className="flex items-center gap-3">
         {value ? (
           <span className="block size-14 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={mediaFileUrl(value)} alt="" className="size-full object-cover" />
           </span>
         ) : (

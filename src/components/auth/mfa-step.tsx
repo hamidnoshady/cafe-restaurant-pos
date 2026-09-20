@@ -410,7 +410,7 @@ export function MfaStep({
 
         {method === "totp" && enrolment?.totpQr ? (
           <div className="flex justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img
               src={enrolment.totpQr}
               alt="کد QR ورود دومرحله‌ای"

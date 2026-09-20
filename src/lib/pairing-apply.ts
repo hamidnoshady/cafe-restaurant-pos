@@ -214,7 +214,7 @@ async function insertAccounts(
     for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
       const chunk = batch.slice(i, i + CHUNK_SIZE);
       const values: string[] = [];
-      const args: any[] = [];
+      const args: unknown[] = [];
       let offset = 1;
       for (const account of chunk) {
         values.push(`($${offset}, $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}::account_type)`);

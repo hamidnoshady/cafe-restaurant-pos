@@ -112,10 +112,7 @@ function BugReportsInner() {
   const counts = query.data?.statusCounts ?? {};
   const page = Number(values.page) || 1;
 
-  const total = useMemo(
-    () => Object.values(counts).reduce((sum, n) => sum + n, 0),
-    [counts],
-  );
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
 
   const columns: Column<BugReport>[] = [
     {
@@ -313,7 +310,7 @@ function BugReportDrawer({ id, onClose }: { id: string | null; onClose: () => vo
                 download={`bug-report-${report.id}.jpg`}
                 className="group block overflow-hidden rounded-lg border border-border bg-muted/40"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img
                   src={report.screenshot}
                   alt="تصویر صفحه هنگام گزارش"

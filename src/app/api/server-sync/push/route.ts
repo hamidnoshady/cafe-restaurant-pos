@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { applySyncEvent, type SyncEventInput, type SyncEventType } from "@/lib/sync-events";
+import { applySyncEvent, type SyncEventInput } from "@/lib/sync-events";
 import { query, withTenant, withoutTenantScope } from "@/lib/db";
 import { recordLegacyTokenUsage, resolveSyncCredential, tokensMatch, legacySyncToken } from "@/lib/server-sync";
 import type { Role } from "@/lib/auth";
@@ -19,8 +19,6 @@ import type { Role } from "@/lib/auth";
  * write is wrapped in withTenant() explicitly, rather than assuming RLS alone
  * scopes it correctly.
  */
-
-const VALID_TYPES: SyncEventType[] = ["order.create", "order.add_items", "order_item.status"];
 
 interface IncomingEvent {
   clientEventId?: unknown;
@@ -42,7 +40,7 @@ export async function POST(request: NextRequest) {
   if (!bearer) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const credential = await resolveSyncCredential(bearer);
-  let tokenBusinessId = credential?.businessId ?? null;
+  const tokenBusinessId = credential?.businessId ?? null;
   let usedLegacyToken = false;
   if (!tokenBusinessId) {
     const legacy = legacySyncToken();
@@ -71,11 +69,12 @@ export async function POST(request: NextRequest) {
     if (
       typeof e.clientEventId !== "string" || !e.clientEventId ||
       typeof e.occurredAt !== "string" ||
-      !e.type || !VALID_TYPES.includes(e.type as SyncEventType) ||
-      typeof e.payload !== "object" || e.payload === null ||
+      typeof e.type !== "string" || !e.type || e.type.length > 120 ||
+      typeof e.payload !== "object" || e.payload === null || Array.isArray(e.payload) ||
       typeof e.locationId !== "string" || !e.locationId ||
-      typeof e.actorUserId !== "string" ||
-      typeof e.actorRole !== "string"
+      typeof e.actorUserId !== "string" || !e.actorUserId ||
+      typeof e.actorRole !== "string" ||
+      (e.schemaVersion !== undefined && (!Number.isSafeInteger(e.schemaVersion) || Number(e.schemaVersion) < 1))
     ) {
       return NextResponse.json({ error: "invalid_event" }, { status: 400 });
     }
@@ -86,7 +85,6 @@ export async function POST(request: NextRequest) {
       if (
         event.businessId !== credential.businessId ||
         event.siteDeviceId !== credential.siteDeviceId ||
-        event.schemaVersion !== 1 ||
         event.origin !== "site"
       ) {
         return NextResponse.json({ error: "site_identity_mismatch" }, { status: 403 });
@@ -139,7 +137,7 @@ export async function POST(request: NextRequest) {
     for (const e of events) {
       const input: SyncEventInput = {
         clientEventId: e.clientEventId as string,
-        type: e.type as SyncEventType,
+        type: e.type as string,
         occurredAt: e.occurredAt as string,
         payload: e.payload as Record<string, unknown>,
       };
@@ -149,7 +147,7 @@ export async function POST(request: NextRequest) {
           { userId: e.actorUserId as string, role: e.actorRole as Role },
           input,
           "remote",
-          { siteDeviceId: credential?.siteDeviceId ?? null, schemaVersion: 1 },
+          { siteDeviceId: credential?.siteDeviceId ?? null, schemaVersion: Number(e.schemaVersion ?? 1) },
         ),
       );
     }

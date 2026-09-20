@@ -20,6 +20,36 @@ function isInitialised(dataDir) {
   return fs.existsSync(path.join(dataDir, "PG_VERSION"));
 }
 
+function quoteIdentifier(value) {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+/**
+ * A restore swaps databases by name and keeps the original under this prefix
+ * until the replacement validates. If Windows/process interruption lands in
+ * the tiny interval where `pos` has no name, recover the preserved original
+ * instead of creating an empty database.
+ */
+async function recoverInterruptedRestore(client, target, logger) {
+  const prefix = `${target}_restore_original_`;
+  const state = await client.query(
+    "SELECT datname FROM pg_database WHERE datname = $1 OR datname LIKE $2 ORDER BY datname DESC",
+    [target, `${prefix}%`],
+  );
+  const targetExists = state.rows.some((row) => row.datname === target);
+  const recoveries = state.rows.filter((row) => row.datname.startsWith(prefix));
+  if (targetExists) {
+    if (recoveries.length) logger.warn("A preserved pre-restore database remains available for recovery", { databases: recoveries.map((row) => row.datname) });
+    return false;
+  }
+  const recovery = recoveries[0]?.datname;
+  if (!recovery) return false;
+  await client.query(`ALTER DATABASE ${quoteIdentifier(recovery)} RENAME TO ${quoteIdentifier(target)}`);
+  await client.query(`ALTER DATABASE ${quoteIdentifier(target)} WITH ALLOW_CONNECTIONS true`);
+  logger.warn("Recovered the original database after an interrupted restore", { recovery, target });
+  return true;
+}
+
 function canListen(host, port) {
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -245,8 +275,9 @@ class BackendManager {
     try {
       const client = this.pg.getPgClient("postgres", "127.0.0.1");
       await client.connect();
+      await recoverInterruptedRestore(client, "pos", this.logger);
       const found = await client.query("SELECT 1 FROM pg_database WHERE datname = 'pos'");
-      if (found.rows.length === 0) await client.query("CREATE DATABASE pos");
+      if (found.rows.length === 0) await client.query("CREATE DATABASE pos ENCODING 'UTF8'");
       await client.end();
     } catch (error) {
       throw new StartupError("database-create", "The local pos database could not be created.", error);
@@ -274,7 +305,14 @@ class BackendManager {
     }
 
     const appUrl = `http://127.0.0.1:${config.appPort}`;
-    const serverEnv = desktopServerEnvironment(config, runtimeUrl, superuserUrl, this.app.getVersion());
+    const pgToolsDir = this.app.isPackaged
+      ? path.join(process.resourcesPath, "postgresql-tools")
+      : path.join(__dirname, "..", ".desktop-assets", "postgresql-tools");
+    const emergencyBackupDir = path.join(userDataDir, "emergency-backups");
+    const serverEnv = desktopServerEnvironment(config, runtimeUrl, superuserUrl, this.app.getVersion(), {
+      pgToolsDir,
+      emergencyBackupDir,
+    });
     this.server = spawn(process.execPath, [path.join(runtimeDir, "bin", "server.cjs")], {
       cwd: runtimeDir,
       env: childEnvironment(serverEnv),
@@ -346,4 +384,5 @@ module.exports = {
   loadOrCreateConfig,
   findFreePort,
   desktopServerEnvironment,
+  recoverInterruptedRestore,
 };

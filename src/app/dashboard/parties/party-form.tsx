@@ -758,7 +758,7 @@ export function PartyFormDialog({
             <p className="mb-1 text-sm font-medium text-foreground">تصویر پروفایل</p>
             <div className="flex flex-wrap items-center gap-3">
               {state.profileImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
+
                 <img
                   src={state.profileImage}
                   alt=""

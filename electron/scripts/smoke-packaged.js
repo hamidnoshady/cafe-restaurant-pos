@@ -8,7 +8,10 @@ const { spawn } = require("node:child_process");
 const dist = path.resolve(__dirname, "..", "dist", "win-unpacked");
 const executable = process.env.DESKTOP_EXECUTABLE || path.join(dist, "Business Suite.exe");
 if (!fs.existsSync(executable)) throw new Error(`packaged executable is missing: ${executable}`);
-const userData = fs.mkdtempSync(path.join(os.tmpdir(), "business-suite-packaged-smoke-"));
+const userData = process.env.DESKTOP_SMOKE_USER_DATA
+  ? path.resolve(process.env.DESKTOP_SMOKE_USER_DATA)
+  : fs.mkdtempSync(path.join(os.tmpdir(), "business-suite-packaged-smoke-"));
+fs.mkdirSync(userData, { recursive: true });
 
 function launch(name, bootstrap) {
   const marker = path.join(userData, `${name}.json`);

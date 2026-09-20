@@ -37,17 +37,18 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   };
 
   if (format === "sql") {
-    let payload: Buffer | string = tenantDataToSql(tables);
+    let payload: string | Uint8Array = tenantDataToSql(tables);
     let filename = `business-export-${stamp}.sql`;
     let contentType = "application/sql; charset=utf-8";
 
     if (encrypt) {
-      payload = encryptBackup(Buffer.from(payload as string, "utf8"), pp) as any;
+      payload = new Uint8Array(encryptBackup(Buffer.from(payload, "utf8"), pp));
       filename += ".enc";
       contentType = "application/octet-stream";
     }
 
-    return new NextResponse(payload as any, {
+    const body = typeof payload === "string" ? payload : new Blob([Uint8Array.from(payload)]);
+    return new NextResponse(body, {
       headers: {
         ...defaultHeaders,
         "Content-Type": contentType,
@@ -56,12 +57,12 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     });
   }
 
-  let payload = Buffer.from(await tenantDataToXlsxBuffer(tables));
+  let payload: Uint8Array = new Uint8Array(await tenantDataToXlsxBuffer(tables));
   let filename = `business-export-${stamp}.xlsx`;
   let contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
   if (encrypt) {
-    payload = encryptBackup(payload, pp) as any;
+    payload = new Uint8Array(encryptBackup(Buffer.from(payload), pp));
     filename += ".enc";
     contentType = "application/octet-stream";
   }

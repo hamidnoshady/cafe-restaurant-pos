@@ -1,0 +1,87 @@
+name: postgresql-tools-artifact
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: postgresql-tools-artifact
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: powershell
+
+env:
+  PG_TOOLS_SOURCE_URL: ${{ vars.PG_TOOLS_SOURCE_URL }}
+  PG_TOOLS_PROVENANCE_URL: ${{ vars.PG_TOOLS_PROVENANCE_URL }}
+  PG_TOOLS_ALLOWED_HOST: ${{ vars.PG_TOOLS_ALLOWED_HOST }}
+  PG_TOOLS_ARTIFACT_SHA256: ${{ vars.PG_TOOLS_ARTIFACT_SHA256 }}
+
+jobs:
+  validate-and-publish:
+    name: validate controlled PostgreSQL 16 client payload
+    runs-on: windows-latest
+    environment: postgresql-tools
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download only from the protected organization host
+        env:
+          ARTIFACT_BEARER: ${{ secrets.PG_TOOLS_ARTIFACT_BEARER }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:PG_TOOLS_ARTIFACT_SHA256 -notmatch '^[0-9a-f]{64}$') { throw 'PG_TOOLS_ARTIFACT_SHA256 is not configured' }
+          if ([string]::IsNullOrWhiteSpace($env:PG_TOOLS_ALLOWED_HOST)) { throw 'PG_TOOLS_ALLOWED_HOST is not configured' }
+          $archiveUri = [Uri]$env:PG_TOOLS_SOURCE_URL
+          $provenanceUri = [Uri]$env:PG_TOOLS_PROVENANCE_URL
+          foreach ($uri in @($archiveUri, $provenanceUri)) {
+            if ($uri.Scheme -ne 'https' -or $uri.Host -cne $env:PG_TOOLS_ALLOWED_HOST) {
+              throw "Refusing non-allowlisted PostgreSQL tools source: $($uri.Scheme)://$($uri.Host)"
+            }
+          }
+          $headers = @{}
+          if (-not [string]::IsNullOrWhiteSpace($env:ARTIFACT_BEARER)) { $headers.Authorization = "Bearer $env:ARTIFACT_BEARER" }
+          New-Item -ItemType Directory -Path controlled-input | Out-Null
+          Invoke-WebRequest -Uri $archiveUri -Headers $headers -OutFile controlled-input\postgresql-16-windows-x64-client-tools.zip -MaximumRedirection 0
+          Invoke-WebRequest -Uri $provenanceUri -Headers $headers -OutFile controlled-input\provenance.json -MaximumRedirection 0
+          $actual = (Get-FileHash controlled-input\postgresql-16-windows-x64-client-tools.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:PG_TOOLS_ARTIFACT_SHA256) { throw "Pinned SHA-256 mismatch: $actual" }
+
+      - name: Execute staging validator and exact tool version checks
+        env:
+          PG_TOOLS_ARCHIVE: ${{ github.workspace }}\controlled-input\postgresql-16-windows-x64-client-tools.zip
+          PG_TOOLS_PROVENANCE: ${{ github.workspace }}\controlled-input\provenance.json
+        run: node scripts/stage-postgresql-tools.mjs --require
+
+      - name: Write immutable artifact attestation
+        run: |
+          $runtime = Get-Content .desktop-assets\postgresql-tools\provenance.json -Raw | ConvertFrom-Json
+          if ($runtime.status -ne 'verified' -or $runtime.postgresMajor -ne 16) { throw 'Staged tools did not verify as PostgreSQL 16' }
+          [ordered]@{
+            schemaVersion = 1
+            status = 'PASS'
+            commit = $env:GITHUB_SHA
+            sourceHost = $env:PG_TOOLS_ALLOWED_HOST
+            artifactSha256 = $env:PG_TOOLS_ARTIFACT_SHA256
+            postgresVersion = $runtime.postgresVersion
+            organization = $runtime.artifact.organization
+            generatedAt = [DateTime]::UtcNow.ToString('o')
+          } | ConvertTo-Json -Depth 5 | Set-Content controlled-input\validation.json -Encoding UTF8
+
+      - name: Upload immutable controlled input for release packaging
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgresql-16-windows-x64-client-tools
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            controlled-input/postgresql-16-windows-x64-client-tools.zip
+            controlled-input/provenance.json
+            controlled-input/validation.json

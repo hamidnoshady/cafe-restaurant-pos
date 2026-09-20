@@ -94,6 +94,7 @@ import {
   type RestorePlan,
 } from "./platform-backup";
 import {
+  cleanupStagedDump,
   errText,
   RestoreRefusal,
   restoreDumpFile,
@@ -101,6 +102,7 @@ import {
   type RestoreSummary,
 } from "./restore-engine";
 import { runPgDump } from "./pg-tools";
+import { secureUnlink } from "./secure-temp";
 import { s3Delete, s3Get, s3List, s3Put, sha256Hex, type S3Config } from "./s3-lite";
 
 /** The manifest lists at most this many artifacts; retention bounds the real number. */
@@ -469,31 +471,33 @@ export async function runPlatformLocalBackup(
     const finalName = encrypt ? `${artifact}.enc` : artifact;
 
     const runId = await startRun("local", trigger, finalName, null, platformAdminId);
+    const transientPaths: string[] = [];
     try {
       const dir = platformBackupDir(config.directory);
       await fs.mkdir(dir, { recursive: true });
       const finalPath = path.join(dir, finalName);
-      const tmpPath = path.join(dir, `${artifact}.tmp`);
+      const plainTmpPath = path.join(dir, `${artifact}.plaintext.tmp`);
+      const artifactTmpPath = encrypt ? path.join(dir, `${artifact}.encrypted.tmp`) : plainTmpPath;
+      transientPaths.push(plainTmpPath);
+      if (artifactTmpPath !== plainTmpPath) transientPaths.push(artifactTmpPath);
 
-      await runPgDump(tmpPath, dumpDatabaseUrl());
-      // Annotate rather than infer: `fs.readFile`'s Buffer is narrower than the
-      // one `encryptBackup` returns, and the two only unify at the wider type.
-      let data: Buffer = await fs.readFile(tmpPath);
+      await runPgDump(plainTmpPath, dumpDatabaseUrl());
+      let data: Buffer = await fs.readFile(plainTmpPath);
       if (encrypt) {
         data = encryptBackup(data, passphrase);
-        await fs.writeFile(tmpPath, data);
+        await fs.writeFile(artifactTmpPath, data, { mode: 0o600 });
+        await secureUnlink(plainTmpPath);
       }
 
-      // Same durability contract as the tenant pipeline: flush the artifact,
-      // then rename, then sync the directory — so a power cut never leaves a
-      // zero-length file sitting at the final name.
-      const tmpFh = await fs.open(tmpPath, "r+");
+      // Same durability contract as the tenant pipeline. Ciphertext is written
+      // separately and plaintext is scrubbed rather than rewritten in place.
+      const tmpFh = await fs.open(artifactTmpPath, "r+");
       try {
         await tmpFh.sync();
       } finally {
         await tmpFh.close();
       }
-      await fs.rename(tmpPath, finalPath);
+      await fs.rename(artifactTmpPath, finalPath);
       try {
         const dirFh = await fs.open(dir, "r");
         try {
@@ -555,6 +559,8 @@ export async function runPlatformLocalBackup(
     } catch (err) {
       await finishRun(runId, { status: "failed", error: errText(err) });
       return { status: "failed", error: errText(err) };
+    } finally {
+      await Promise.all(transientPaths.map((file) => secureUnlink(file)));
     }
   } catch (err) {
     console.error("platform backup: local run failed to start:", errText(err));
@@ -1616,6 +1622,7 @@ export async function restorePlatformFromPlan(
         dumpPath: staged.dumpPath,
         source: plan.artifact,
         apply: plan.mode === "apply",
+        emergencyDir: path.join(platformBackupDir(config.directory), "emergency"),
       });
       const summary = applied ?? verified;
       if (applied) {
@@ -1635,7 +1642,7 @@ export async function restorePlatformFromPlan(
       await finishRestoreRun(runId, { status: "failed", error: message });
       return { status: "failed", error: message };
     } finally {
-      await fs.rm(staged.workDir, { recursive: true, force: true }).catch(() => {});
+      await cleanupStagedDump(staged.workDir).catch(() => {});
     }
   } catch (err) {
     const message = errText(err);

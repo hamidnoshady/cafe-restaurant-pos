@@ -38,7 +38,7 @@ export function PinPad({
 
   useEffect(() => {
     setPin("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [resetKey]);
 
   function submit(value: string) {

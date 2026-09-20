@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "predist": "node scripts/prepare-wincodesign-cache.js",
-    "dist": "npm run verify:runtime && electron-builder",
+    "dist": "npm run verify:runtime && electron-builder --config scripts/windows-signing-config.js",
     "verify:runtime": "node scripts/verify-runtime.js",
     "size": "node ../scripts/report-desktop-size.mjs --output=dist/desktop-size-report.md"
   },
@@ -60,6 +60,10 @@
       {
         "from": "../.desktop-runtime",
         "to": "desktop-runtime"
+      },
+      {
+        "from": "../.desktop-assets/postgresql-tools",
+        "to": "postgresql-tools"
       }
     ]
   }

@@ -1,0 +1,289 @@
+name: windows-production-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Production version (X.Y.Z)'
+        type: string
+        required: true
+      acceptance_run_id:
+        description: 'Optional release-acceptance-aggregate run id; empty produces a blocked signed candidate for hardware testing'
+        type: string
+        required: false
+
+concurrency:
+  group: windows-production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+defaults:
+  run:
+    shell: powershell
+
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
+  PGPORT: "55432"
+  DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
+  PRODUCTION_RELEASE: "1"
+  WINDOWS_SIGNING_PROVIDER: ${{ vars.WINDOWS_SIGNING_PROVIDER }}
+  WINDOWS_EXPECTED_SIGNER: ${{ vars.WINDOWS_EXPECTED_SIGNER }}
+  WINDOWS_RFC3161_URL: ${{ vars.WINDOWS_RFC3161_URL }}
+  PG_TOOLS_ARTIFACT_SHA256: ${{ vars.PG_TOOLS_ARTIFACT_SHA256 }}
+  WINDOWS_INSTALLER_BUDGET_MIB: ${{ vars.WINDOWS_INSTALLER_BUDGET_MIB }}
+  WINDOWS_SIZE_EXCEPTION_REASON: ${{ vars.WINDOWS_SIZE_EXCEPTION_REASON }}
+  CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+  CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+  WINDOWS_CERTIFICATE_SUBJECT: ${{ vars.WINDOWS_CERTIFICATE_SUBJECT }}
+  WINDOWS_CERTIFICATE_SHA1: ${{ vars.WINDOWS_CERTIFICATE_SHA1 }}
+  AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+  AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+  AZURE_TRUSTED_SIGNING_PROFILE: ${{ vars.AZURE_TRUSTED_SIGNING_PROFILE }}
+  AZURE_USE_OIDC: ${{ vars.AZURE_USE_OIDC }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+jobs:
+  release:
+    name: signed Windows production package
+    runs-on: windows-latest
+    timeout-minutes: 150
+    environment: windows-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail closed when protected release configuration is absent
+        env:
+          PG_TOOLS_RUN_ID: ${{ vars.PG_TOOLS_ARTIFACT_RUN_ID }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ("${{ inputs.version }}" -notmatch '^\d+\.\d+\.\d+$') { throw "Version must be X.Y.Z" }
+          if ([string]::IsNullOrWhiteSpace($env:PG_TOOLS_RUN_ID)) { throw "NOT CONFIGURED: PG_TOOLS_ARTIFACT_RUN_ID" }
+          if ($env:PG_TOOLS_ARTIFACT_SHA256 -notmatch '^[0-9a-f]{64}$') { throw "NOT CONFIGURED: pinned PG_TOOLS_ARTIFACT_SHA256" }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PROVIDER)) { throw "NOT CONFIGURED: WINDOWS_SIGNING_PROVIDER" }
+          if ($env:WINDOWS_SIGNING_PROVIDER -eq "unsigned") { throw "Production release cannot use the unsigned provider" }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_EXPECTED_SIGNER)) { throw "NOT CONFIGURED: WINDOWS_EXPECTED_SIGNER" }
+          if ($env:WINDOWS_SIGNING_PROVIDER -eq 'pfx' -and ([string]::IsNullOrWhiteSpace($env:CSC_LINK) -or [string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD))) { throw 'NOT CONFIGURED: protected PFX signing credentials' }
+          if ($env:WINDOWS_SIGNING_PROVIDER -eq 'certificate-store' -and ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_SUBJECT) -and [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_SHA1))) { throw 'NOT CONFIGURED: certificate-store selector' }
+          if ($env:WINDOWS_SIGNING_PROVIDER -eq 'azure-trusted-signing') {
+            foreach ($name in @('AZURE_TRUSTED_SIGNING_ENDPOINT','AZURE_TRUSTED_SIGNING_ACCOUNT','AZURE_TRUSTED_SIGNING_PROFILE','AZURE_CLIENT_ID','AZURE_TENANT_ID')) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "NOT CONFIGURED: $name" }
+            }
+            if ($env:AZURE_USE_OIDC -eq 'true' -and [string]::IsNullOrWhiteSpace($env:AZURE_SUBSCRIPTION_ID)) { throw 'NOT CONFIGURED: AZURE_SUBSCRIPTION_ID for OIDC' }
+            if ($env:AZURE_USE_OIDC -ne 'true' -and [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_SECRET)) { throw 'NOT CONFIGURED: AZURE_CLIENT_SECRET or set AZURE_USE_OIDC=true' }
+          }
+
+      - name: Authenticate to Azure with protected OIDC federation
+        if: vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && vars.AZURE_USE_OIDC == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Download immutable organization-controlled PostgreSQL tools artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: postgresql-16-windows-x64-client-tools
+          path: ${{ runner.temp }}\postgresql-tools-artifact
+          repository: ${{ github.repository }}
+          run-id: ${{ vars.PG_TOOLS_ARTIFACT_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download aggregated external acceptance evidence
+        if: inputs.acceptance_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: release-acceptance-evidence-${{ inputs.version }}
+          path: ${{ runner.temp }}\release-acceptance
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.acceptance_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install, lint, typecheck and test application
+        run: |
+          npm ci
+          npm run lint
+          npx tsc --noEmit
+          npm test
+          npm audit --omit=dev --audit-level=high
+
+      - name: Stage pinned PostgreSQL 16 client tools without network fallback
+        env:
+          PG_TOOLS_ARCHIVE: ${{ runner.temp }}\postgresql-tools-artifact\postgresql-16-windows-x64-client-tools.zip
+          PG_TOOLS_PROVENANCE: ${{ runner.temp }}\postgresql-tools-artifact\provenance.json
+        run: npm run desktop:stage-pg-tools:release
+
+      - name: Build production application and positive desktop runtime
+        run: |
+          npm run build
+          npm run desktop:runtime
+
+      - name: Install and audit Electron dependencies
+        working-directory: electron
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
+
+      - name: Verify runtime requires packaged PostgreSQL tools
+        working-directory: electron
+        env:
+          REQUIRE_PACKAGED_PG_TOOLS: "1"
+        run: npm run verify:runtime
+
+      - name: Set release version and build through configured signing provider
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          npm pkg set "version=$env:VERSION" --prefix electron
+          npm run dist --prefix electron
+
+      - name: Require valid expected-signer Authenticode and RFC3161 timestamps
+        run: .\scripts\verify-windows-signatures.ps1 -ArtifactRoot electron\dist -Mode signed -ExpectedSigner $env:WINDOWS_EXPECTED_SIGNER -OutputPath windows-signature-verification.json
+
+      - name: Start disposable PostgreSQL 16 server
+        env:
+          PGDATA: ${{ runner.temp }}\release-pgdata
+        run: |
+          if (Test-Path -LiteralPath $env:PGDATA) { Remove-Item -LiteralPath $env:PGDATA -Recurse -Force }
+          npm run db:dev:start
+          npm run db:migrate
+
+      - name: Full real-database, sync, accounting and inventory suite
+        run: npm run test:db
+
+      - name: Execute actual packaged custom-format dump/restore acceptance
+        env:
+          PG_TOOLS_DIR: ${{ github.workspace }}\electron\dist\win-unpacked\resources\postgresql-tools
+        run: node scripts/accept-packaged-pg-tools.mjs
+
+      - name: Execute verified swap, emergency backup and rollback acceptance
+        env:
+          PG_TOOLS_DIR: ${{ github.workspace }}\electron\dist\win-unpacked\resources\postgresql-tools
+        run: npx tsx scripts/accept-packaged-restore.ts
+
+      - name: Focused backup/restore safety suite
+        run: npx vitest run src/lib/pg-tools.test.ts src/lib/backup.test.ts src/lib/platform-backup.test.ts
+
+      - name: Stop disposable PostgreSQL
+        if: always()
+        continue-on-error: true
+        env:
+          PGDATA: ${{ runner.temp }}\release-pgdata
+        run: npm run db:dev:stop
+
+      - name: Size budgets and component report
+        run: |
+          node scripts/report-desktop-size.mjs --output=desktop-size-report.md
+          $installer = Get-ChildItem electron/dist -File -Filter "Business Suite Setup *.exe" | Select-Object -First 1
+          if (-not $installer) { throw "installer missing" }
+          $installed = (Get-ChildItem electron/dist/win-unpacked -Recurse -File | Measure-Object Length -Sum).Sum
+          $runtime = (Get-ChildItem .desktop-runtime -Recurse -File | Measure-Object Length -Sum).Sum
+          $tools = (Get-ChildItem electron/dist/win-unpacked/resources/postgresql-tools -Recurse -File | Measure-Object Length -Sum).Sum
+          $installerMiB = [math]::Round($installer.Length/1MB,1)
+          $toolsMiB = [math]::Round($tools/1MB,1)
+          $budgetMiB = 175
+          $exception = $null
+          if ($installer.Length -gt 175MB) {
+            [double]$configuredBudget = 0
+            if (-not [double]::TryParse($env:WINDOWS_INSTALLER_BUDGET_MIB, [ref]$configuredBudget) -or $configuredBudget -le 175 -or $configuredBudget -gt 250) {
+              throw "Installer $installerMiB MiB exceeds the 175 MiB baseline and no bounded measured exception (176..250 MiB) is configured"
+            }
+            if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIZE_EXCEPTION_REASON)) {
+              throw "Installer size exception requires WINDOWS_SIZE_EXCEPTION_REASON describing the measured PostgreSQL tools/signing increase"
+            }
+            $budgetMiB = $configuredBudget
+            $exception = $env:WINDOWS_SIZE_EXCEPTION_REASON
+          }
+          Write-Host "::notice title=Release sizes::installer=$installerMiB MiB (budget $budgetMiB); installed=$([math]::Round($installed/1MB,1)) MiB; runtime=$([math]::Round($runtime/1MB,1)) MiB; PostgreSQL tools=$toolsMiB MiB"
+          if ($installer.Length -gt ($budgetMiB * 1MB)) { throw "Installer $installerMiB MiB exceeds reviewed budget $budgetMiB MiB" }
+          if ($installed -gt 600MB) { throw "Installed payload exceeds 600 MiB" }
+          if ($runtime -gt 200MB) { throw "Positive runtime exceeds 200 MiB" }
+          [ordered]@{ installerMiB=$installerMiB; baselineMiB=175; approvedBudgetMiB=$budgetMiB; postgresqlToolsMiB=$toolsMiB; exceptionReason=$exception } | ConvertTo-Json | Set-Content windows-size-gate.json -Encoding UTF8
+
+      - name: Generate release checksums and provenance
+        run: |
+          $files = @(Get-ChildItem electron/dist -File -Filter *.exe)
+          if (-not $files.Count) { throw "No release artifact found" }
+          $rows = foreach ($file in $files) {
+            [ordered]@{ name = $file.Name; bytes = $file.Length; sha256 = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          [ordered]@{
+            schemaVersion = 1
+            version = "${{ inputs.version }}"
+            commit = $env:GITHUB_SHA
+            signingProvider = $env:WINDOWS_SIGNING_PROVIDER
+            expectedSigner = $env:WINDOWS_EXPECTED_SIGNER
+            postgresqlToolsArtifactSha256 = $env:PG_TOOLS_ARTIFACT_SHA256
+            generatedAt = [DateTime]::UtcNow.ToString("o")
+            artifacts = $rows
+          } | ConvertTo-Json -Depth 6 | Set-Content release-provenance.json -Encoding UTF8
+
+      - name: Generate machine-readable readiness and block incomplete production release
+        env:
+          EXTERNAL_EVIDENCE: ${{ vars.RELEASE_ACCEPTANCE_EVIDENCE_JSON }}
+          ACCEPTANCE_EVIDENCE_FILE: ${{ runner.temp }}\release-acceptance\release-acceptance-evidence.json
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          $checks = [ordered]@{}
+          $supplied = $null
+          if (Test-Path -LiteralPath $env:ACCEPTANCE_EVIDENCE_FILE) {
+            $supplied = Get-Content -LiteralPath $env:ACCEPTANCE_EVIDENCE_FILE -Raw | ConvertFrom-Json
+          } elseif (-not [string]::IsNullOrWhiteSpace($env:EXTERNAL_EVIDENCE)) {
+            $supplied = $env:EXTERNAL_EVIDENCE | ConvertFrom-Json
+          }
+          if ($supplied) {
+            foreach ($property in $supplied.checks.PSObject.Properties) { $checks[$property.Name] = $property.Value }
+          }
+          $now = [DateTime]::UtcNow.ToString("o")
+          $checks["automated-core"] = @{ configured=$true; status="PASS"; commit=$env:GITHUB_SHA; executedAt=$now; evidenceUrl=$env:RUN_URL; platform="GitHub Windows Server runner" }
+          $checks["postgresql-tools"] = @{ configured=$true; status="PASS"; commit=$env:GITHUB_SHA; executedAt=$now; evidenceUrl=$env:RUN_URL; platform="Packaged Windows x64 tools" }
+          $checks["authenticode"] = @{ configured=$true; status="PASS"; commit=$env:GITHUB_SHA; executedAt=$now; evidenceUrl=$env:RUN_URL; platform="Windows Authenticode" }
+          @{ schemaVersion=1; checks=$checks } | ConvertTo-Json -Depth 12 | Set-Content release-evidence.json -Encoding UTF8
+          node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:GITHUB_SHA --version=${{ inputs.version }} --production
+
+      - name: Upload verified signed production release
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-suite-windows-${{ inputs.version }}-signed
+          if-no-files-found: error
+          path: |
+            electron/dist/Business Suite Setup *.exe
+            electron/dist/windows-signing-status.json
+            windows-signature-verification.json
+            packaged-pg-tools-acceptance.json
+            packaged-restore-acceptance.json
+            release-provenance.json
+            release-readiness.json
+            release-readiness.md
+            desktop-size-report.md
+            windows-size-gate.json
+
+      - name: Upload readiness diagnostics when release is blocked
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-suite-windows-${{ inputs.version }}-blocked-readiness
+          if-no-files-found: warn
+          path: |
+            electron/dist/Business Suite Setup *.exe
+            windows-signature-verification.json
+            packaged-pg-tools-acceptance.json
+            packaged-restore-acceptance.json
+            release-provenance.json
+            release-readiness.json
+            release-readiness.md
+            desktop-size-report.md
+            windows-size-gate.json

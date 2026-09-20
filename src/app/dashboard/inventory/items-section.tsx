@@ -248,7 +248,7 @@ function ItemRow({
       <div className="flex min-w-0 items-start gap-3">
         {item.image_media_id ? (
           <span className="mt-0.5 block size-12 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img
               src={mediaFileUrl(item.image_media_id)}
               alt={item.name}

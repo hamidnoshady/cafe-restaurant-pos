@@ -7,7 +7,7 @@
  * Other upgrade requests (e.g. Next's dev-mode HMR websocket) are handed off
  * to Next's own upgrade handler so `next dev` keeps working normally.
  */
-import { createServer as createHttpServer, type IncomingMessage } from "http";
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "http";
 import { createServer as createHttpsServer } from "https";
 import fs from "fs";
 import path from "path";
@@ -118,8 +118,7 @@ app.prepare().then(async () => {
     initialDelayMs: number,
   ) => {
     const run = () => {
-      let task: Promise<void>;
-      task = Promise.resolve()
+      const task: Promise<void> = Promise.resolve()
         .then(tick)
         .then(() => undefined)
         .catch((error) => console.error("unexpected background tick failure:", error))
@@ -296,7 +295,7 @@ app.prepare().then(async () => {
     runMessagingTick().catch((err) => console.error("messaging tick failed:", err));
   scheduleBackgroundTick(messagingTick, MESSAGE_TICK_INTERVAL_MS, 35_000);
 
-  const requestListener = (req: any, res: any) => {
+  const requestListener = (req: IncomingMessage, res: ServerResponse) => {
     const t0 = Date.now();
     const parsed = parse(req.url ?? "/", true);
     res.on("finish", () => {

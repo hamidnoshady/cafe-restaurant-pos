@@ -455,7 +455,7 @@ function TicketDetailPanel({
                 download={`ticket-${ticket.id}-${message.id}.jpg`}
                 className="mt-2 block overflow-hidden rounded-lg border border-border/80 bg-card"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img src={message.attachment} alt="پیوست تیکت" className="max-h-44 w-full object-contain" />
               </a>
             ) : null}
@@ -473,7 +473,7 @@ function TicketDetailPanel({
       <div className="space-y-2 border-t border-border/80 p-4">
         {attachment ? (
           <div className="relative overflow-hidden rounded-lg border border-border/80">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={attachment} alt="پیوست در حال ارسال" className="max-h-40 w-full object-cover" />
             <Button type="button" variant="destructive" size="sm" onClick={() => setAttachment(null)} className="absolute end-2 top-2">
               <Trash2Icon aria-hidden="true" />
@@ -658,7 +658,7 @@ function NewTicketDialog({
 
           {attachment ? (
             <div className="relative overflow-hidden rounded-lg border border-border/80">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img src={attachment} alt="پیوست تیکت" className="max-h-44 w-full object-cover" />
               <Button type="button" variant="destructive" size="sm" onClick={() => setAttachment(null)} className="absolute end-2 top-2">
                 <Trash2Icon aria-hidden="true" />

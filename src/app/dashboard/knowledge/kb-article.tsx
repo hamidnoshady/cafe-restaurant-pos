@@ -169,7 +169,7 @@ export function KbArticleView({ slug }: { slug: string }) {
               <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_240px]">
                 <div className={`${cardClass} p-5 sm:p-7`}>
                   {article.coverImageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- remote knowledge cover
+
                     <img
                       src={article.coverImageUrl}
                       alt={article.title}

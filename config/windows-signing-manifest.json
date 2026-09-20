@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "description": "Project-owned Windows release binaries that must carry the expected product signature and RFC3161 timestamp in a production release.",
+  "required": [
+    {
+      "id": "desktop-executable",
+      "pattern": "win-unpacked/Business Suite.exe",
+      "exactly": 1
+    },
+    {
+      "id": "nsis-installer",
+      "pattern": "Business Suite Setup *.exe",
+      "exactly": 1
+    }
+  ]
+}

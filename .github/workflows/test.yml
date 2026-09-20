@@ -55,6 +55,18 @@ env:
   JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
 
 jobs:
+  lint:
+    name: ESLint (noninteractive)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
   typecheck:
     name: type check
     runs-on: windows-latest
@@ -271,7 +283,7 @@ jobs:
   required:
     name: all checks passed
     runs-on: windows-latest
-    needs: [typecheck, unit-tests, build, integration-tests, design-checks, visual-regression]
+    needs: [lint, typecheck, unit-tests, build, integration-tests, design-checks, visual-regression]
     if: always()
     steps:
       - name: Check job results

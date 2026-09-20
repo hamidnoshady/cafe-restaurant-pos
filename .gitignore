@@ -1,6 +1,7 @@
 node_modules/
 .next/
 .desktop-runtime/
+.desktop-assets/
 desktop-size-report.md
 backups/
 # Build output lives at the repo root. These patterns are anchored with a
