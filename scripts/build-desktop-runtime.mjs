@@ -10,6 +10,7 @@
 import { build } from "esbuild";
 import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextDir = path.join(root, ".next");
 const standaloneDir = path.join(nextDir, "standalone");
 const outDir = path.join(root, ".desktop-runtime");
+const require = createRequire(import.meta.url);
+const { nodeFileTrace } = require("next/dist/compiled/@vercel/nft");
 
 function required(relativePath, explanation) {
   const absolute = path.join(root, relativePath);
@@ -63,6 +66,43 @@ async function compile(entryPoint, outfile) {
   });
 }
 
+async function stageExternalNextEntrypoints(serverBundlePath) {
+  const bundle = await readFile(serverBundlePath, "utf8");
+  const specifiers = [
+    ...new Set(
+      [...bundle.matchAll(/require\(["'](next\/[A-Za-z0-9._/-]+)["']\)/g)].map((match) => match[1]),
+    ),
+  ].sort();
+  if (specifiers.length === 0) return;
+
+  // These package subpaths originate in the separately bundled custom server,
+  // so Next's standalone trace does not always include their package-root
+  // shims and transitive targets. A development checkout masks the omission by
+  // falling through to its parent node_modules; packaged resources cannot.
+  // Trace only the concrete external subpaths emitted by esbuild, then overlay
+  // their positively selected Next files on the standalone runtime.
+  const traceEntry = path.join(outDir, "bin", ".next-runtime-entry.cjs");
+  await writeFile(traceEntry, `${specifiers.map((specifier) => `require(${JSON.stringify(specifier)});`).join("\n")}\n`);
+  try {
+    const trace = await nodeFileTrace([path.relative(root, traceEntry)], {
+      base: root,
+      processCwd: root,
+      mixedModules: true,
+    });
+    if (trace.warnings.size > 0) {
+      throw new Error(`Next runtime entry trace warnings: ${[...trace.warnings].map(String).join("; ")}`);
+    }
+    for (const relative of trace.fileList) {
+      if (!relative.startsWith("node_modules/next/")) continue;
+      const destination = path.join(outDir, relative);
+      await mkdir(path.dirname(destination), { recursive: true });
+      await cp(path.join(root, relative), destination);
+    }
+  } finally {
+    await rm(traceEntry, { force: true });
+  }
+}
+
 async function main() {
   required(".next/BUILD_ID", "run npm run build first");
   required(".next/standalone", "next.config.ts must keep output: standalone");
@@ -104,14 +144,16 @@ async function main() {
 
   const binDir = path.join(outDir, "bin");
   await mkdir(binDir, { recursive: true });
+  const serverBundlePath = path.join(binDir, "server.cjs");
   const [serverBuild, migrateBuild, deriveBuild] = await Promise.all([
-    compile("server.ts", path.join(binDir, "server.cjs")),
+    compile("server.ts", serverBundlePath),
     compile("scripts/desktop/migrate-entry.ts", path.join(binDir, "migrate.cjs")),
     compile(
       "scripts/desktop/derive-runtime-database-url-entry.ts",
       path.join(binDir, "derive-runtime-database-url.cjs"),
     ),
   ]);
+  await stageExternalNextEntrypoints(serverBundlePath);
 
   const sourcePackage = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   const manifest = {

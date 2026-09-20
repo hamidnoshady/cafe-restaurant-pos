@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { createRequire } = require("node:module");
 const { fileURLToPath } = require("node:url");
 
 const root = path.resolve(__dirname, "..", "..");
@@ -29,11 +30,28 @@ for (const relative of [
   ".next/BUILD_ID",
   ".next/required-server-files.json",
   ".next/static",
+  "node_modules/next/headers.js",
+  "node_modules/next/navigation.js",
+  "node_modules/next/server.js",
   "public/sw.js",
   "public/offline.html",
   "public/windows/cafe-pos-print-connector.ps1",
   "migrations/0001_foundation.sql",
 ]) requirePath(relative);
+
+const runtimeRequire = createRequire(path.join(runtime, "package.json"));
+for (const specifier of ["next/headers", "next/navigation", "next/server"]) {
+  const resolved = runtimeRequire.resolve(specifier);
+  if (!resolved.startsWith(path.join(runtime, "node_modules", "next") + path.sep)) {
+    fail(`${specifier} escapes the staged Next package: ${resolved}`);
+    continue;
+  }
+  try {
+    runtimeRequire(specifier);
+  } catch (error) {
+    fail(`${specifier} cannot load from the staged runtime: ${error.message}`);
+  }
+}
 
 const bundleDependencyUrl = "file:///C:/__desktop_bundle_dependency__.ts";
 try {
