@@ -66,22 +66,43 @@ jobs:
             # android-emulator-runner invokes this through POSIX sh (dash on
             # Ubuntu), which does not implement `set -o pipefail`.
             set -eu
+
+            wait_for_android_boot() {
+              phase="$1"
+              if ! timeout 180 adb wait-for-device; then
+                echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::$phase: adb device did not return within 180 seconds"
+                return 1
+              fi
+              attempt=0
+              while [ "$attempt" -lt 120 ]; do
+                if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+                  return 0
+                fi
+                attempt=$((attempt + 1))
+                sleep 2
+              done
+              echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::$phase: Android did not finish booting within 240 seconds"
+              adb shell getprop || true
+              adb logcat -d | tail -n 300 || true
+              return 1
+            }
+
             adb root || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::adb root failed ($rc)"; exit $rc; }
-            # API 30 dynamic partitions may require one verity-disabling reboot
-            # before remount actually makes the system CA store writable.
-            adb disable-verity || true
+            # On API 29/30, adb disable-verity by itself can leave a
+            # -writable-system emulator in a boot loop. Disable AVB verification
+            # before rebooting, then let adb remount create the writable overlay.
+            adb shell avbctl disable-verification || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::AVB verification disable failed ($rc)"; exit $rc; }
             adb reboot || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::first adb reboot failed ($rc)"; exit $rc; }
-            adb wait-for-device
-            while [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" != "1" ]; do sleep 2; done
+            wait_for_android_boot "post-AVB reboot"
             adb root || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::adb root after reboot failed ($rc)"; exit $rc; }
             adb remount || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::adb remount failed ($rc)"; exit $rc; }
             HASH=$(openssl x509 -in "$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt" -subject_hash_old -noout)
             adb push "$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt" "/system/etc/security/cacerts/${HASH}.0" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::CA push failed ($rc)"; exit $rc; }
             adb shell chmod 644 "/system/etc/security/cacerts/${HASH}.0" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::CA chmod failed ($rc)"; exit $rc; }
-            adb reboot
-            adb wait-for-device
-            while [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" != "1" ]; do sleep 2; done
-            adb shell am start -a android.intent.action.VIEW -d 'https://10.0.2.2:9443/acceptance?platform=android-emulator'
+            adb reboot || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::CA activation reboot failed ($rc)"; exit $rc; }
+            wait_for_android_boot "post-CA reboot"
+            adb shell test -r "/system/etc/security/cacerts/${HASH}.0" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::installed CA is not readable after reboot ($rc)"; exit $rc; }
+            adb shell am start -a android.intent.action.VIEW -d 'https://10.0.2.2:9443/acceptance?platform=android-emulator' || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::browser launch failed ($rc)"; exit $rc; }
             for i in $(seq 1 45); do
               if grep -q '"completed": true' "$RUNNER_TEMP/mobile-android/browser-result.json"; then
                 cat "$RUNNER_TEMP/mobile-android/browser-result.json"
