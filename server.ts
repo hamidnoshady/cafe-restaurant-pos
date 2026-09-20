@@ -10,6 +10,7 @@
 import { createServer as createHttpServer, type IncomingMessage } from "http";
 import { createServer as createHttpsServer } from "https";
 import fs from "fs";
+import path from "path";
 import type { Duplex } from "stream";
 import { parse } from "url";
 import { WebSocketServer } from "ws";
@@ -19,6 +20,26 @@ import { WebSocketServer } from "ws";
 // the package; importing it as an ESM module under tsx skips that hook and
 // crashes on first render ("AsyncLocalStorage accessed in runtime where it
 // is not available").
+// A custom server does not execute Next's generated standalone/server.js,
+// which normally injects this already-resolved config. Without it, Next tries
+// to load its build-time webpack hook; that can appear to work in a source
+// checkout by falling through to the parent development node_modules, then
+// fail in the positively staged installer where that parent correctly does
+// not exist. Read the generated runtime metadata before constructing Next.
+if (process.env.NODE_ENV === "production" && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
+  try {
+    const metadata = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), ".next", "required-server-files.json"), "utf8"),
+    ) as { config?: { output?: string } };
+    if (metadata.config?.output === "standalone") {
+      process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(metadata.config);
+    }
+  } catch {
+    // Non-standalone/custom production deployments keep Next's normal config
+    // discovery behavior and receive its normal error if configuration fails.
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const next = require("next") as typeof import("next").default;
 

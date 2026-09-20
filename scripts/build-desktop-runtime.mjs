@@ -60,7 +60,19 @@ async function compile(entryPoint, outfile) {
       "import.meta.url": JSON.stringify(pathToFileURL(path.join(root, "__desktop_bundle_dependency__.ts")).href),
     },
     metafile: true,
-    external: ["next", "next/*", "pg-native", "bufferutil", "utf-8-validate"],
+    // Keep the large Next server runtime supplied by its traced package, but
+    // bundle the small public subpath facades used by application modules.
+    // `external: ["next"]` would also externalise next/headers, next/server,
+    // and next/navigation; those build-only-looking facades are not present in
+    // Next's standalone trace and a source checkout can mask that omission by
+    // falling through to the parent development node_modules.
+    external: ["pg-native", "bufferutil", "utf-8-validate"],
+    plugins: [{
+      name: "external-next-package-root-only",
+      setup(esbuild) {
+        esbuild.onResolve({ filter: /^next$/ }, () => ({ path: "next", external: true }));
+      },
+    }],
     logLevel: "warning",
     logOverride: { "empty-import-meta": "silent" },
   });
