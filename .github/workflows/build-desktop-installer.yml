@@ -115,11 +115,19 @@ jobs:
       - name: Build NSIS installer and win-unpacked runtime
         working-directory: electron
         run: |
-          & npm run dist 2>&1 | Tee-Object -FilePath electron-builder.log
-          if ($LASTEXITCODE -ne 0) {
-            $detail = ((Get-Content electron-builder.log -Tail 120) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
-            Write-Host "::error title=Electron installer build failed::$detail"
-            exit $LASTEXITCODE
+          & $env:ComSpec /d /c "npm run dist > electron-builder.log 2>&1"
+          $buildExit = $LASTEXITCODE
+          Get-Content electron-builder.log
+          if ($buildExit -ne 0) {
+            $tail = Get-Content electron-builder.log -Tail 120
+            $summary = "## Electron installer build failure`n`n``````text`n$($tail -join "`n")`n```````n"
+            [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $summary, (New-Object System.Text.UTF8Encoding($false)))
+            $important = $tail | Where-Object { $_ -match '(error|failed|ERR_|⨯|invalid|cannot|exception)' } | Select-Object -Last 8
+            foreach ($line in $important) {
+              $escaped = ([string]$line).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error file=electron/package.json,title=Electron installer build failed::$escaped"
+            }
+            exit $buildExit
           }
 
       - name: Upload Electron builder diagnostics

@@ -64,18 +64,18 @@ jobs:
           disable-animations: true
           script: |
             set -euo pipefail
-            adb root
+            adb root || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::adb root failed ($rc)"; exit $rc; }
             # API 30 dynamic partitions may require one verity-disabling reboot
             # before remount actually makes the system CA store writable.
             adb disable-verity || true
-            adb reboot
+            adb reboot || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::first adb reboot failed ($rc)"; exit $rc; }
             adb wait-for-device
             while [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" != "1" ]; do sleep 2; done
-            adb root
-            adb remount
+            adb root || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::adb root after reboot failed ($rc)"; exit $rc; }
+            adb remount || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::adb remount failed ($rc)"; exit $rc; }
             HASH=$(openssl x509 -in "$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt" -subject_hash_old -noout)
-            adb push "$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt" "/system/etc/security/cacerts/${HASH}.0"
-            adb shell chmod 644 "/system/etc/security/cacerts/${HASH}.0"
+            adb push "$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt" "/system/etc/security/cacerts/${HASH}.0" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::CA push failed ($rc)"; exit $rc; }
+            adb shell chmod 644 "/system/etc/security/cacerts/${HASH}.0" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=Android trust fixture::CA chmod failed ($rc)"; exit $rc; }
             adb reboot
             adb wait-for-device
             while [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" != "1" ]; do sleep 2; done
@@ -129,9 +129,9 @@ jobs:
               const all=JSON.parse(s).devices; const device=Object.values(all).flat().find(d=>d.name.startsWith("iPhone") && d.isAvailable); if(!device) process.exit(2); console.log(device.udid);
             })')
           xcrun simctl boot "$UDID" 2>/dev/null || true
-          xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl keychain "$UDID" add-root-cert "$RUNNER_TEMP/mobile-ios/gateway-certificates/business-suite-local-ca.crt"
-          xcrun simctl openurl "$UDID" 'https://127.0.0.1:9443/acceptance?platform=ios-simulator'
+          xcrun simctl bootstatus "$UDID" -b || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::simulator boot failed ($rc)"; exit $rc; }
+          xcrun simctl keychain "$UDID" add-root-cert "$RUNNER_TEMP/mobile-ios/gateway-certificates/business-suite-local-ca.crt" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::CA installation failed ($rc)"; exit $rc; }
+          xcrun simctl openurl "$UDID" 'https://127.0.0.1:9443/acceptance?platform=ios-simulator' || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::Safari openurl failed ($rc)"; exit $rc; }
           for i in $(seq 1 45); do
             if grep -q '"completed": true' "$RUNNER_TEMP/mobile-ios/browser-result.json"; then
               cat "$RUNNER_TEMP/mobile-ios/browser-result.json"
