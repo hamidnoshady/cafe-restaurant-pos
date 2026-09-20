@@ -77,7 +77,11 @@ service directly:
 
 1. Acquire the single-instance lock.
 2. Load or create protected persistent configuration.
-3. Start embedded PostgreSQL and wait for readiness.
+3. Start embedded PostgreSQL and wait for readiness. On Windows this always
+   goes through the bundled `pg_ctl.exe`, whose native restricted-token launch
+   path lets PostgreSQL run safely even when the signed-in account belongs to
+   the local Administrators group; spawning `postgres.exe` directly is not
+   supported and is rejected by PostgreSQL.
 4. Apply forward-only migrations.
 5. Derive the restricted `pos_app` runtime database URL.
 6. choose a free loopback application port and start the staged server.

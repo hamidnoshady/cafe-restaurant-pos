@@ -71,6 +71,49 @@ function childEnvironment(extra) {
   return { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...extra };
 }
 
+function postgresStartStrategy(platform = process.platform) {
+  return platform === "win32" ? "pg_ctl" : "embedded";
+}
+
+function pgCtlStartArguments(dataDir, logPath, port) {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`Invalid PostgreSQL port: ${port}`);
+  }
+  return [
+    "start",
+    "-D", dataDir,
+    "-l", logPath,
+    "-w",
+    "-t", "90",
+    // pg_ctl's -p means "postgres executable", not TCP port. Server options
+    // belong in one -o argument. These values are generated internally rather
+    // than accepted from user input because pg_ctl interprets this string.
+    "-o", `-p ${port} -c listen_addresses=127.0.0.1`,
+  ];
+}
+
+function runLoggedCommand(executable, args, logger, name) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
+    child.stdout?.on("data", (chunk) => logger.childOutput(name, chunk));
+    child.stderr?.on("data", (chunk) => logger.childOutput(name, chunk, "warn"));
+    child.once("error", (error) => finish(reject, error));
+    child.once("exit", (code, signal) => {
+      if (code === 0) finish(resolve);
+      else finish(reject, new Error(`${name} exited with code ${code ?? "null"}${signal ? ` (${signal})` : ""}`));
+    });
+  });
+}
+
 function desktopServerEnvironment(config, runtimeUrl, superuserUrl, appVersion = "unknown") {
   return {
     DATABASE_URL: runtimeUrl,
@@ -200,6 +243,32 @@ class BackendManager {
     return (await import(pathToFileURL(modulePath).href)).pg_ctl;
   }
 
+  async startPostgresWithPgCtl(dataDir, port) {
+    const pgCtl = await this.pgControlPath();
+    const logDir = this.logger.dir || path.join(this.app.getPath("userData"), "logs");
+    const logPath = path.join(logDir, "postgres.log");
+    fs.mkdirSync(logDir, { recursive: true });
+    // pg_ctl appends to -l. Keep each launch's diagnostics unambiguous and
+    // bounded; desktop.log retains the lifecycle history separately.
+    fs.writeFileSync(logPath, "", { encoding: "utf8", mode: 0o600 });
+    try {
+      await runLoggedCommand(pgCtl, pgCtlStartArguments(dataDir, logPath, port), this.logger, "pg_ctl start");
+    } catch (error) {
+      let postgresOutput = "";
+      try {
+        const contents = fs.readFileSync(logPath, "utf8");
+        postgresOutput = contents.slice(-16_384).trim();
+      } catch {
+        // The pg_ctl error remains useful when no server log was created.
+      }
+      if (postgresOutput) this.logger.childOutput("postgres", postgresOutput, "warn");
+      throw new Error(
+        `PostgreSQL pg_ctl startup failed${postgresOutput ? `: ${postgresOutput}` : "."}`,
+        { cause: error },
+      );
+    }
+  }
+
   async start() {
     const userDataDir = this.app.getPath("userData");
     const runtimeDir = this.resolveRuntimeDir();
@@ -217,6 +286,7 @@ class BackendManager {
 
     const dataDir = path.join(userDataDir, "pgdata");
     const firstRun = !isInitialised(dataDir);
+    let postgresStage = firstRun ? "initdb" : "postgres-start";
     try {
       this.logger.info("Starting embedded PostgreSQL", { port: config.pgPort, firstRun });
       const EmbeddedPostgres = await this.loadEmbeddedPostgres();
@@ -232,9 +302,18 @@ class BackendManager {
         onError: (error) => this.logger.error("postgres", error),
       });
       if (firstRun) await this.pg.initialise();
-      await this.pg.start();
+      postgresStage = "postgres-start";
+      if (postgresStartStrategy() === "pg_ctl") {
+        // postgres.exe refuses every Windows token that carries the local
+        // Administrators group, including GitHub's runner and ordinary users
+        // who launch the app elevated. pg_ctl uses PostgreSQL's native
+        // CreateRestrictedProcess path before starting the postmaster.
+        await this.startPostgresWithPgCtl(dataDir, config.pgPort);
+      } else {
+        await this.pg.start();
+      }
     } catch (error) {
-      throw new StartupError(firstRun ? "initdb" : "postgres-start", "Local PostgreSQL could not be started.", error);
+      throw new StartupError(postgresStage, "Local PostgreSQL could not be started.", error);
     }
 
     const superuserUrl = `postgres://postgres:${config.pgPassword}@127.0.0.1:${config.pgPort}/pos`;
@@ -299,11 +378,12 @@ class BackendManager {
     const dataDir = path.join(this.app.getPath("userData"), "pgdata");
     try {
       const pgCtl = await this.pgControlPath();
-      await new Promise((resolve, reject) => {
-        const child = spawn(pgCtl, ["stop", "-D", dataDir, "-m", "fast", "-w", "-t", "30"], { windowsHide: true });
-        child.once("error", reject);
-        child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`pg_ctl exited ${code}`)));
-      });
+      await runLoggedCommand(
+        pgCtl,
+        ["stop", "-D", dataDir, "-m", "fast", "-w", "-t", "30"],
+        this.logger,
+        "pg_ctl stop",
+      );
     } catch (error) {
       this.logger.warn("Graceful pg_ctl shutdown failed; using embedded fallback", error);
       await this.pg.stop().catch((stopError) => this.logger.error("PostgreSQL fallback stop failed", stopError));
@@ -334,4 +414,6 @@ module.exports = {
   loadOrCreateConfig,
   findFreePort,
   desktopServerEnvironment,
+  postgresStartStrategy,
+  pgCtlStartArguments,
 };

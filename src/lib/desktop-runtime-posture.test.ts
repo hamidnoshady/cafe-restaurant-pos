@@ -3,12 +3,16 @@ import { describe, expect, it } from "vitest";
 import { assertSecurePosture } from "./deployment-posture";
 
 const require = createRequire(import.meta.url);
-const { desktopServerEnvironment } = require("../../electron/backend-manager.js") as {
+const { desktopServerEnvironment, postgresStartStrategy, pgCtlStartArguments } = require(
+  "../../electron/backend-manager.js",
+) as {
   desktopServerEnvironment: (
     config: { jwtSecret: string; appPort: number; instanceId: string },
     runtimeUrl: string,
     superuserUrl: string,
   ) => Record<string, string>;
+  postgresStartStrategy: (platform?: string) => "pg_ctl" | "embedded";
+  pgCtlStartArguments: (dataDir: string, logPath: string, port: number) => string[];
 };
 
 describe("packaged desktop production posture", () => {
@@ -36,5 +40,26 @@ describe("packaged desktop production posture", () => {
     } finally {
       (process.env as Record<string, string | undefined>).NODE_ENV = previous;
     }
+  });
+
+  it("starts Windows PostgreSQL through pg_ctl's restricted-token path", () => {
+    expect(postgresStartStrategy("win32")).toBe("pg_ctl");
+    expect(postgresStartStrategy("linux")).toBe("embedded");
+
+    const args = pgCtlStartArguments(
+      "C:\\Users\\owner\\AppData\\Roaming\\Business Suite\\pgdata",
+      "C:\\Users\\owner\\AppData\\Roaming\\Business Suite\\logs\\postgres.log",
+      5544,
+    );
+    expect(args).toEqual([
+      "start",
+      "-D", "C:\\Users\\owner\\AppData\\Roaming\\Business Suite\\pgdata",
+      "-l", "C:\\Users\\owner\\AppData\\Roaming\\Business Suite\\logs\\postgres.log",
+      "-w",
+      "-t", "90",
+      "-o", "-p 5544 -c listen_addresses=127.0.0.1",
+    ]);
+    expect(args.join(" ")).not.toContain("0.0.0.0");
+    expect(() => pgCtlStartArguments("data", "postgres.log", 0)).toThrow(/Invalid PostgreSQL port/);
   });
 });

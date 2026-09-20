@@ -218,6 +218,15 @@ if (!gotSingleInstanceLock) {
         return;
       } catch (error) {
         await cleanup();
+        // CI has nobody to dismiss a recovery dialog. Exit immediately so the
+        // packaged smoke test reports the real startup stage and log output
+        // instead of hiding the failure behind its outer three-minute timeout.
+        if (process.env.DESKTOP_SMOKE_MARKER) {
+          logger.error(`Packaged smoke startup failed at ${error?.stage || "startup"}`, error);
+          quitting = true;
+          app.exit(1);
+          return;
+        }
         const choice = await showStartupFailure(error);
         if (choice === "exit") {
           quitting = true;
