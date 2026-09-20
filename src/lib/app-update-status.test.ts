@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeUpdateAvailable, imageRefFor } from "./app-update-status";
+import { computeUpdateAvailable } from "./app-update-status";
 
 describe("computeUpdateAvailable", () => {
   it("is false when the versions match", () => {
@@ -16,13 +16,5 @@ describe("computeUpdateAvailable", () => {
 
   it("is false when both sides are unknown", () => {
     expect(computeUpdateAvailable("unknown", "unknown")).toBe(false);
-  });
-});
-
-describe("imageRefFor", () => {
-  it("builds a sha-tagged image reference", () => {
-    expect(imageRefFor("ghcr.io/hamidnoshady/cafe-restaurant-pos", "abc1234")).toBe(
-      "ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-abc1234",
-    );
   });
 });

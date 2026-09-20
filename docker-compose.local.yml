@@ -1,4 +1,6 @@
-# On-site "local server" stack — the café laptop / mini-PC (Phase 11).
+# Optional container-based on-site server stack for Linux/server operators.
+# This is not the Windows standalone architecture; Windows uses Electron with
+# embedded PostgreSQL and the explicit local HTTPS gateway.
 #
 # This is the box that lives INSIDE the café on the same LAN as the phones,
 # cashier, and kitchen display. It runs the full app + its own Postgres, so
@@ -8,15 +10,10 @@
 # Setup:
 #   1. Give this machine a fixed LAN IP (router DHCP reservation or static).
 #   2. Copy .env.local.example → .env and fill JWT_SECRET, POSTGRES_PASSWORD.
-#   3. One-time only: `docker login ghcr.io` with a token that can read this
-#      repo's (private) package, then `docker compose -f docker-compose.local.yml
-#      pull && up -d`. After this, the app updates itself on future boots — see
-#      docs/server-sync.md "Self-update" for why a plain `docker pull` can't
-#      bootstrap the very first install, and windows/Start-CafePOS.bat for how
-#      later updates work with no manual login ever again.
+#   3. Authenticate to the image registry and run
+#      `docker compose -f docker-compose.local.yml pull && up -d`.
 #   4. In the Owner dashboard, configure server-sync to point at the VPS URL
-#      + shared token (see docs/server-sync.md) — this is also what lets the
-#      self-update check find a newer version.
+#      and the site-scoped token.
 #
 # The app service below runs a prebuilt image from GHCR, not a local build: a
 # café laptop shouldn't need the source tree, npm, or a build toolchain, just

@@ -18,7 +18,20 @@
 
 import { isIndustry, type Industry } from "./industries";
 
-export const PAIRING_SNAPSHOT_VERSION = 1;
+export const PAIRING_SNAPSHOT_VERSION = 3;
+
+/**
+ * Explicit contract for what pairing seeds and what continuing sync does (or
+ * does not) cover. Keeping this in the signed-in pairing response prevents a
+ * successful bootstrap from being misrepresented as full-database sync.
+ */
+export interface PairingDataClassification {
+  bootstrapMasterData: string[];
+  ongoingDomainEvents: string[];
+  siteLocalOperationalData: string[];
+  centralOnlyData: string[];
+  notYetReplicated: string[];
+}
 
 export interface SnapshotUser {
   id: string;
@@ -60,11 +73,63 @@ export interface SnapshotMenuItem {
   name: string;
   description: string | null;
   sku: string | null;
-  /** Integer Rial, as everywhere else in this system. */
-  price: number;
+  /** Integer Rial as a decimal string, preserving PostgreSQL bigint exactly. */
+  price: string;
   imageUrl: string | null;
   isActive: boolean;
   sortOrder: number;
+}
+
+export interface SnapshotModifierGroup {
+  id: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+}
+
+export interface SnapshotModifier {
+  id: string;
+  groupId: string;
+  name: string;
+  /** Signed integer Rial as a decimal string. */
+  priceDelta: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface SnapshotDiningTable {
+  id: string;
+  name: string;
+  zone: string | null;
+  capacity: number;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface SnapshotInventoryItem {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  reorderLevel: string | null;
+  averageCost: string;
+  purchaseUnit: string | null;
+  purchaseUnitFactor: string;
+  carryingValueRial: string | null;
+  isProduced: boolean;
+  isActive: boolean;
+}
+
+export interface SnapshotPaymentMethod {
+  id: string;
+  code: string;
+  name: string;
+  settlement: string;
+  sortOrder: number;
+  isActive: boolean;
+  isBuiltin: boolean;
+  opensDrawer: boolean;
+  requiresReference: boolean;
 }
 
 export interface SnapshotSetting {
@@ -101,10 +166,30 @@ export interface PairingSnapshot {
     phone: string | null;
     timezone: string;
   };
+  /** Independent, revocable identity of this Windows site. */
+  siteDevice: {
+    id: string;
+    publicId: string;
+    displayName: string;
+  };
   users: SnapshotUser[];
   accounts: SnapshotAccount[];
-  menu: { categories: SnapshotMenuCategory[]; items: SnapshotMenuItem[] };
+  menu: {
+    categories: SnapshotMenuCategory[];
+    items: SnapshotMenuItem[];
+    modifierGroups: SnapshotModifierGroup[];
+    modifiers: SnapshotModifier[];
+    itemModifierGroups: Array<{ menuItemId: string; modifierGroupId: string }>;
+  };
+  diningTables: SnapshotDiningTable[];
+  inventory: {
+    items: SnapshotInventoryItem[];
+    menuIngredients: Array<{ menuItemId: string; inventoryItemId: string; quantity: string }>;
+    modifierIngredients: Array<{ modifierId: string; inventoryItemId: string; quantityDelta: string }>;
+  };
+  paymentMethods: SnapshotPaymentMethod[];
   settings: SnapshotSetting[];
+  dataClassification: PairingDataClassification;
   features: Record<string, boolean>;
   /** Plaintext, delivered once — the local install stores only its hash via setServerSyncConfig. */
   syncToken: string;
@@ -131,6 +216,26 @@ function isNullableString(v: unknown): v is string | null {
 
 function isIntegerAtLeastZero(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+function isIntegerAtLeastOne(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 1;
+}
+
+function isDecimalString(v: unknown): v is string {
+  return typeof v === "string" && /^-?\d+(?:\.\d+)?$/.test(v);
+}
+
+function isIntegerString(v: unknown): v is string {
+  return typeof v === "string" && /^-?\d+$/.test(v);
+}
+
+function isNonNegativeIntegerString(v: unknown): v is string {
+  return typeof v === "string" && /^\d+$/.test(v);
+}
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((entry) => typeof entry === "string" && entry.length > 0);
 }
 
 /**
@@ -162,6 +267,11 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
   if (!isNullableString(location.address)) return fail;
   if (!isNullableString(location.phone)) return fail;
   if (typeof location.timezone !== "string" || !location.timezone) return fail;
+
+  const siteDevice = raw.siteDevice;
+  if (!isObject(siteDevice)) return fail;
+  if (!isUuid(siteDevice.id) || !isUuid(siteDevice.publicId)) return fail;
+  if (typeof siteDevice.displayName !== "string" || !siteDevice.displayName.trim()) return fail;
 
   if (!Array.isArray(raw.users) || raw.users.length === 0) return fail;
   for (const user of raw.users) {
@@ -204,6 +314,7 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
     if (typeof category.isActive !== "boolean") return fail;
     categoryIds.add(category.id);
   }
+  const menuItemIds = new Set<string>();
   for (const item of menu.items) {
     if (!isObject(item)) return fail;
     if (!isUuid(item.id)) return fail;
@@ -214,11 +325,83 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
     if (typeof item.name !== "string" || !item.name) return fail;
     if (!isNullableString(item.description)) return fail;
     if (!isNullableString(item.sku)) return fail;
-    if (!isIntegerAtLeastZero(item.price)) return fail;
+    if (!isNonNegativeIntegerString(item.price)) return fail;
     if (!isNullableString(item.imageUrl)) return fail;
     if (typeof item.isActive !== "boolean") return fail;
     if (!Number.isInteger(item.sortOrder)) return fail;
+    menuItemIds.add(item.id);
   }
+
+  if (!Array.isArray(menu.modifierGroups) || !Array.isArray(menu.modifiers) || !Array.isArray(menu.itemModifierGroups)) {
+    return fail;
+  }
+  const modifierGroupIds = new Set<string>();
+  for (const group of menu.modifierGroups) {
+    if (!isObject(group) || !isUuid(group.id) || typeof group.name !== "string" || !group.name) return fail;
+    if (!isIntegerAtLeastZero(group.minSelect) || !isIntegerAtLeastOne(group.maxSelect)) return fail;
+    if (group.minSelect > group.maxSelect) return fail;
+    modifierGroupIds.add(group.id);
+  }
+  const modifierIds = new Set<string>();
+  for (const modifier of menu.modifiers) {
+    if (!isObject(modifier) || !isUuid(modifier.id) || !isUuid(modifier.groupId)) return fail;
+    if (!modifierGroupIds.has(modifier.groupId)) return fail;
+    if (typeof modifier.name !== "string" || !modifier.name || !isIntegerString(modifier.priceDelta)) return fail;
+    if (typeof modifier.isActive !== "boolean" || !Number.isInteger(modifier.sortOrder)) return fail;
+    modifierIds.add(modifier.id);
+  }
+  for (const link of menu.itemModifierGroups) {
+    if (!isObject(link) || !isUuid(link.menuItemId) || !isUuid(link.modifierGroupId)) return fail;
+    if (!menuItemIds.has(link.menuItemId) || !modifierGroupIds.has(link.modifierGroupId)) return fail;
+  }
+
+  if (!Array.isArray(raw.diningTables)) return fail;
+  for (const table of raw.diningTables) {
+    if (!isObject(table) || !isUuid(table.id) || typeof table.name !== "string" || !table.name) return fail;
+    if (!isNullableString(table.zone) || !isIntegerAtLeastOne(table.capacity)) return fail;
+    if (!Number.isInteger(table.sortOrder) || typeof table.isActive !== "boolean") return fail;
+  }
+
+  const inventory = raw.inventory;
+  if (!isObject(inventory) || !Array.isArray(inventory.items)) return fail;
+  if (!Array.isArray(inventory.menuIngredients) || !Array.isArray(inventory.modifierIngredients)) return fail;
+  const inventoryItemIds = new Set<string>();
+  for (const item of inventory.items) {
+    if (!isObject(item) || !isUuid(item.id) || typeof item.name !== "string" || !item.name) return fail;
+    if (!isNullableString(item.sku) || typeof item.unit !== "string" || !item.unit) return fail;
+    if (item.reorderLevel !== null && !isDecimalString(item.reorderLevel)) return fail;
+    if (!isDecimalString(item.averageCost) || !isNullableString(item.purchaseUnit)) return fail;
+    if (!isDecimalString(item.purchaseUnitFactor) || (item.carryingValueRial !== null && !isNonNegativeIntegerString(item.carryingValueRial))) return fail;
+    if (typeof item.isProduced !== "boolean" || typeof item.isActive !== "boolean") return fail;
+    inventoryItemIds.add(item.id);
+  }
+  for (const ingredient of inventory.menuIngredients) {
+    if (!isObject(ingredient) || !isUuid(ingredient.menuItemId) || !isUuid(ingredient.inventoryItemId)) return fail;
+    if (!menuItemIds.has(ingredient.menuItemId) || !inventoryItemIds.has(ingredient.inventoryItemId)) return fail;
+    if (!isDecimalString(ingredient.quantity)) return fail;
+  }
+  for (const ingredient of inventory.modifierIngredients) {
+    if (!isObject(ingredient) || !isUuid(ingredient.modifierId) || !isUuid(ingredient.inventoryItemId)) return fail;
+    if (!modifierIds.has(ingredient.modifierId) || !inventoryItemIds.has(ingredient.inventoryItemId)) return fail;
+    if (!isDecimalString(ingredient.quantityDelta)) return fail;
+  }
+
+  if (!Array.isArray(raw.paymentMethods)) return fail;
+  for (const method of raw.paymentMethods) {
+    if (!isObject(method) || !isUuid(method.id)) return fail;
+    if (typeof method.code !== "string" || !method.code || typeof method.name !== "string" || !method.name) return fail;
+    if (typeof method.settlement !== "string" || !method.settlement || !Number.isInteger(method.sortOrder)) return fail;
+    if (typeof method.isActive !== "boolean" || typeof method.isBuiltin !== "boolean") return fail;
+    if (typeof method.opensDrawer !== "boolean" || typeof method.requiresReference !== "boolean") return fail;
+  }
+
+  const classification = raw.dataClassification;
+  if (!isObject(classification)) return fail;
+  if (!isStringArray(classification.bootstrapMasterData)) return fail;
+  if (!isStringArray(classification.ongoingDomainEvents)) return fail;
+  if (!isStringArray(classification.siteLocalOperationalData)) return fail;
+  if (!isStringArray(classification.centralOnlyData)) return fail;
+  if (!isStringArray(classification.notYetReplicated)) return fail;
 
   if (!Array.isArray(raw.settings)) return fail;
   for (const setting of raw.settings) {

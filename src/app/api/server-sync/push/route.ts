@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "@/lib/sync-events";
 import { query, withTenant, withoutTenantScope } from "@/lib/db";
-import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch, legacySyncToken } from "@/lib/server-sync";
+import { recordLegacyTokenUsage, resolveSyncCredential, tokensMatch, legacySyncToken } from "@/lib/server-sync";
 import type { Role } from "@/lib/auth";
 
 /**
@@ -30,6 +30,10 @@ interface IncomingEvent {
   locationId?: unknown;
   actorUserId?: unknown;
   actorRole?: unknown;
+  businessId?: unknown;
+  siteDeviceId?: unknown;
+  schemaVersion?: unknown;
+  origin?: unknown;
 }
 
 export async function POST(request: NextRequest) {
@@ -37,7 +41,8 @@ export async function POST(request: NextRequest) {
   const bearer = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
   if (!bearer) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let tokenBusinessId = await resolveBusinessBySyncToken(bearer);
+  const credential = await resolveSyncCredential(bearer);
+  let tokenBusinessId = credential?.businessId ?? null;
   let usedLegacyToken = false;
   if (!tokenBusinessId) {
     const legacy = legacySyncToken();
@@ -76,6 +81,19 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (credential?.siteDeviceId) {
+    for (const event of events) {
+      if (
+        event.businessId !== credential.businessId ||
+        event.siteDeviceId !== credential.siteDeviceId ||
+        event.schemaVersion !== 1 ||
+        event.origin !== "site"
+      ) {
+        return NextResponse.json({ error: "site_identity_mismatch" }, { status: 403 });
+      }
+    }
+  }
+
   // Resolve every referenced location's business — before any tenant scope
   // exists, the same as the token lookup above — and require they all agree,
   // so one push request can never touch more than one business's data.
@@ -110,6 +128,9 @@ export async function POST(request: NextRequest) {
   if (tokenBusinessId && tokenBusinessId !== eventsBusinessId) {
     return NextResponse.json({ error: "location_business_mismatch" }, { status: 403 });
   }
+  if (credential?.locationId && locationIds.some((id) => id !== credential.locationId)) {
+    return NextResponse.json({ error: "site_location_mismatch" }, { status: 403 });
+  }
   const businessId = tokenBusinessId ?? eventsBusinessId;
 
   const results = await withTenant(businessId, async () => {
@@ -128,6 +149,7 @@ export async function POST(request: NextRequest) {
           { userId: e.actorUserId as string, role: e.actorRole as Role },
           input,
           "remote",
+          { siteDeviceId: credential?.siteDeviceId ?? null, schemaVersion: 1 },
         ),
       );
     }

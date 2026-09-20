@@ -41,6 +41,8 @@ export function PairingPanel() {
   const allowed = can("business.provision");
 
   const [codes, setCodes] = useState<PairingCodeSummary[] | null>(null);
+  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
+  const [locationId, setLocationId] = useState("");
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -48,10 +50,16 @@ export function PairingPanel() {
 
   const load = useCallback(async () => {
     if (!allowed) return;
-    const { ok, data } = await api<{ codes?: PairingCodeSummary[]; error?: string }>(
-      `/api/platform/pairing?businessId=${encodeURIComponent(id)}`,
-    );
-    if (ok) setCodes(data.codes ?? []);
+    const { ok, data } = await api<{
+      codes?: PairingCodeSummary[];
+      locations?: Array<{ id: string; name: string }>;
+      error?: string;
+    }>(`/api/platform/pairing?businessId=${encodeURIComponent(id)}`);
+    if (ok) {
+      setCodes(data.codes ?? []);
+      setLocations(data.locations ?? []);
+      setLocationId((current) => current || data.locations?.[0]?.id || "");
+    }
     else setError(errorMessage(data.error));
   }, [id, allowed, version]);
 
@@ -65,7 +73,7 @@ export function PairingPanel() {
     setNotice(null);
     const { ok, data } = await api<{ code?: string; error?: string }>("/api/platform/pairing", {
       method: "POST",
-      body: JSON.stringify({ businessId: id }),
+      body: JSON.stringify({ businessId: id, locationId }),
     });
     setBusy(false);
     if (ok && data.code) {
@@ -126,7 +134,17 @@ export function PairingPanel() {
         </div>
       ) : null}
 
-      <Button onClick={issue} disabled={busy}>
+      <label className="mb-1 block text-xs font-medium" htmlFor="platform-pair-location">شعبهٔ سرور ویندوز</label>
+      <select
+        id="platform-pair-location"
+        value={locationId}
+        onChange={(event) => setLocationId(event.target.value)}
+        disabled={busy || Boolean(issuedCode)}
+        className="mb-3 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+      >
+        {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+      </select>
+      <Button onClick={issue} disabled={busy || !locationId}>
         {busy ? "در حال ساخت…" : "ساخت کد اتصال"}
       </Button>
 

@@ -43,6 +43,8 @@ interface PairedSiteView {
   tokenSetAt: string;
   lastSeenAt: string | null;
   lastSeenStatus: "ok" | "error" | "skipped" | null;
+  deviceCount: number;
+  locationCount: number;
 }
 
 interface StateView {
@@ -258,7 +260,9 @@ export function ServerSyncPanel() {
           <ErrorBox>{error}</ErrorBox>
           {pairedSite ? (
             <>
-              <StatusRow label="توکن جفت‌سازی ثبت‌شده در" value={formatTime(pairedSite.tokenSetAt)} />
+              <StatusRow label="دستگاه‌های فعال" value={toPersianDigits(String(pairedSite.deviceCount))} />
+              <StatusRow label="شعبه‌های متصل" value={toPersianDigits(String(pairedSite.locationCount))} />
+              <StatusRow label="آخرین چرخش اعتبارنامه" value={formatTime(pairedSite.tokenSetAt)} />
               <StatusRow label="آخرین ارتباط از نصب محلی" value={formatTime(pairedSite.lastSeenAt)} />
               <StatusRow
                 label="وضعیت آخرین ارتباط"

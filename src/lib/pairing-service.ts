@@ -8,6 +8,7 @@
  * pairing-snapshot.test.ts, and the transactional behaviour by
  * integration/pairing.integration.test.ts.
  */
+import { createHash } from "node:crypto";
 import { getPool, query, withoutTenantScope } from "./db";
 import { effectiveFeatures } from "./features";
 import type { Industry } from "./industries";
@@ -19,7 +20,6 @@ import {
   type PairingCodeState,
 } from "./pairing-codes";
 import { PAIRING_SNAPSHOT_VERSION, type PairingSnapshot } from "./pairing-snapshot";
-import { setServerSyncConfig } from "./server-sync";
 import { SETTING_KEYS } from "./settings";
 import { generateSyncToken } from "./sync-token";
 
@@ -79,16 +79,25 @@ function toSummary(row: CodeRow, now: Date): PairingCodeSummary {
  * borrowed identity. (Only Owners reach this, and Owners are password logins,
  * so in practice it is set.)
  */
+export async function listPairingLocations(businessId: string): Promise<Array<{ id: string; name: string }>> {
+  const { rows } = await query<{ id: string; name: string }>(
+    `SELECT id, name FROM locations WHERE business_id = $1 AND is_active ORDER BY name, created_at`,
+    [businessId],
+  );
+  return rows;
+}
+
 export async function issuePairingCode(
   businessId: string,
   issuedBy: string | null,
-): Promise<{ code: string; summary: PairingCodeSummary } | { error: "no_location" }> {
-  const { rows: locationRows } = await query<{ id: string }>(
-    `SELECT id FROM locations WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1`,
-    [businessId],
-  );
-  const locationId = locationRows[0]?.id;
+  locationId: string,
+): Promise<{ code: string; summary: PairingCodeSummary } | { error: "no_location" | "invalid_location" }> {
   if (!locationId) return { error: "no_location" };
+  const { rows: locationRows } = await query<{ id: string }>(
+    `SELECT id FROM locations WHERE id = $1 AND business_id = $2 AND is_active`,
+    [locationId, businessId],
+  );
+  if (!locationRows[0]) return { error: "invalid_location" };
 
   const code = generatePairingCode();
   const client = await getPool().connect();
@@ -96,8 +105,9 @@ export async function issuePairingCode(
     await client.query("BEGIN");
     await client.query(
       `UPDATE install_pairing_codes SET revoked_at = now()
-        WHERE business_id = $1 AND redeemed_at IS NULL AND revoked_at IS NULL`,
-      [businessId],
+        WHERE business_id = $1 AND location_id = $2
+          AND redeemed_at IS NULL AND revoked_at IS NULL`,
+      [businessId, locationId],
     );
     const { rows } = await client.query<CodeRow>(
       `INSERT INTO install_pairing_codes
@@ -162,11 +172,14 @@ export type RedeemResult =
 export async function redeemPairingCode(
   rawCode: string,
   clientIp: string | null,
+  deviceName = "Windows Business Suite",
 ): Promise<RedeemResult> {
   return withoutTenantScope("pairing-redeem", async () => {
     const client = await getPool().connect();
     let businessId: string;
     let locationId: string;
+    let siteDevice!: PairingSnapshot["siteDevice"];
+    let syncToken!: string;
     try {
       await client.query("BEGIN");
       const { rows } = await client.query<CodeRow>(
@@ -189,13 +202,28 @@ export async function redeemPairingCode(
         return { ok: false, error: state };
       }
 
+      businessId = row.business_id;
+      locationId = row.location_id;
+      syncToken = generateSyncToken();
+      const cleanDeviceName = deviceName.trim().slice(0, 120) || "Windows Business Suite";
+      const deviceRows = await client.query<{ id: string; public_id: string; display_name: string }>(
+        `INSERT INTO site_devices (business_id, location_id, display_name)
+         VALUES ($1, $2, $3)
+         RETURNING id, public_id, display_name`,
+        [businessId, locationId, cleanDeviceName],
+      );
+      const device = deviceRows.rows[0];
+      await client.query(
+        `INSERT INTO site_sync_credentials (site_device_id, business_id, token_hash)
+         VALUES ($1, $2, $3)`,
+        [device.id, businessId, createHash("sha256").update(syncToken).digest("hex")],
+      );
       await client.query(
         `UPDATE install_pairing_codes SET redeemed_at = now(), redeemed_ip = $2 WHERE id = $1`,
         [row.id, clientIp],
       );
       await client.query("COMMIT");
-      businessId = row.business_id;
-      locationId = row.location_id;
+      siteDevice = { id: device.id, publicId: device.public_id, displayName: device.display_name };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -203,7 +231,10 @@ export async function redeemPairingCode(
       client.release();
     }
 
-    return { ok: true, snapshot: await buildPairingSnapshot(businessId, locationId) };
+    return {
+      ok: true,
+      snapshot: await buildPairingSnapshot(businessId, locationId, siteDevice, syncToken),
+    };
   });
 }
 
@@ -221,9 +252,28 @@ export async function redeemPairingCode(
 export async function buildPairingSnapshot(
   businessId: string,
   locationId: string,
+  siteDevice: PairingSnapshot["siteDevice"],
+  syncToken: string,
 ): Promise<PairingSnapshot> {
-  const [bizRes, locRes, userRes, assignRes, accountRes, catRes, itemRes, settingRes, features] =
-    await Promise.all([
+  const [
+    bizRes,
+    locRes,
+    userRes,
+    assignRes,
+    accountRes,
+    catRes,
+    itemRes,
+    modifierGroupRes,
+    modifierRes,
+    itemModifierRes,
+    diningRes,
+    inventoryRes,
+    menuIngredientRes,
+    modifierIngredientRes,
+    paymentMethodRes,
+    settingRes,
+    features,
+  ] = await Promise.all([
       query<{ id: string; name: string; slug: string; timezone: string; industry: Industry }>(
         `SELECT id, name, slug::text AS slug, subdomain::text AS subdomain, timezone, industry
            FROM businesses WHERE id = $1`,
@@ -292,6 +342,90 @@ export async function buildPairingSnapshot(
            FROM menu_items WHERE location_id = $1 ORDER BY sort_order, name`,
         [locationId],
       ),
+      query<{ id: string; name: string; min_select: number; max_select: number }>(
+        `SELECT id, name, min_select, max_select
+           FROM modifier_groups WHERE location_id = $1 ORDER BY created_at, id`,
+        [locationId],
+      ),
+      query<{
+        id: string;
+        group_id: string;
+        name: string;
+        price_delta: string;
+        is_active: boolean;
+        sort_order: number;
+      }>(
+        `SELECT id, group_id, name, price_delta, is_active, sort_order
+           FROM modifiers WHERE location_id = $1 ORDER BY group_id, sort_order, name`,
+        [locationId],
+      ),
+      query<{ menu_item_id: string; modifier_group_id: string }>(
+        `SELECT mm.menu_item_id, mm.modifier_group_id
+           FROM menu_item_modifier_groups mm
+           JOIN menu_items mi ON mi.id = mm.menu_item_id
+          WHERE mi.location_id = $1`,
+        [locationId],
+      ),
+      query<{
+        id: string;
+        name: string;
+        zone: string | null;
+        capacity: number;
+        sort_order: number;
+        is_active: boolean;
+      }>(
+        `SELECT id, name, zone, capacity, sort_order, is_active
+           FROM dining_tables WHERE location_id = $1 ORDER BY sort_order, name`,
+        [locationId],
+      ),
+      query<{
+        id: string;
+        name: string;
+        sku: string | null;
+        unit: string;
+        reorder_level: string | null;
+        avg_cost: string;
+        purchase_unit: string | null;
+        purchase_unit_factor: string;
+        carrying_value_rial: string | null;
+        is_produced: boolean;
+        is_active: boolean;
+      }>(
+        `SELECT id, name, sku, unit, reorder_level, avg_cost, purchase_unit,
+                purchase_unit_factor, carrying_value_rial, is_produced, is_active
+           FROM inventory_items WHERE location_id = $1 ORDER BY name, id`,
+        [locationId],
+      ),
+      query<{ menu_item_id: string; inventory_item_id: string; quantity: string }>(
+        `SELECT m.menu_item_id, m.inventory_item_id, m.quantity
+           FROM menu_item_ingredients m
+           JOIN menu_items mi ON mi.id = m.menu_item_id
+          WHERE mi.location_id = $1`,
+        [locationId],
+      ),
+      query<{ modifier_id: string; inventory_item_id: string; quantity_delta: string }>(
+        `SELECT m.modifier_id, m.inventory_item_id, m.quantity_delta
+           FROM modifier_ingredients m
+           JOIN modifiers md ON md.id = m.modifier_id
+          WHERE md.location_id = $1`,
+        [locationId],
+      ),
+      query<{
+        id: string;
+        code: string;
+        name: string;
+        settlement: string;
+        sort_order: number;
+        is_active: boolean;
+        is_builtin: boolean;
+        opens_drawer: boolean;
+        requires_reference: boolean;
+      }>(
+        `SELECT id, code, name, settlement::text AS settlement, sort_order,
+                is_active, is_builtin, opens_drawer, requires_reference
+           FROM payment_methods WHERE business_id = $1 ORDER BY sort_order, name`,
+        [businessId],
+      ),
       query<{ key: string; value: unknown }>(
         `SELECT key, value FROM settings
           WHERE business_id = $1 AND location_id IS NULL AND key = ANY($2::text[])`,
@@ -307,28 +441,11 @@ export async function buildPairingSnapshot(
     locationsByUser.set(row.user_id, list);
   }
 
-  // Minted here rather than reused: the local install needs a token it can
-  // present to this server, and the plaintext of any existing one is
-  // unrecoverable (only the hash is stored). Writing it through
-  // setServerSyncConfig replaces the business's server_sync_tokens row, which
-  // is correct — one paired laptop per business is the model.
-  const syncToken = generateSyncToken();
-  const existingSync = await query<{ value: { remoteUrl?: string; batchSize?: number } }>(
-    `SELECT value FROM settings
-      WHERE business_id = $1 AND location_id IS NULL AND key = $2`,
-    [businessId, SETTING_KEYS.serverSyncConfig],
-  );
-  await setServerSyncConfig(businessId, {
-    remoteUrl: existingSync.rows[0]?.value?.remoteUrl ?? "",
-    token: syncToken,
-    enabled: false,
-    batchSize: existingSync.rows[0]?.value?.batchSize ?? 100,
-  });
-
   return {
     version: PAIRING_SNAPSHOT_VERSION,
     business: bizRes.rows[0],
     location: locRes.rows[0],
+    siteDevice,
     users: userRes.rows.map((u) => ({
       id: u.id,
       role: u.role,
@@ -362,19 +479,121 @@ export async function buildPairingSnapshot(
         name: i.name,
         description: i.description,
         sku: i.sku,
-        // bigint comes back as a string from node-postgres; money is integer
-        // Rial and always well within Number.MAX_SAFE_INTEGER.
-        price: Number(i.price),
+        // Keep PostgreSQL bigint as text through JSON; converting to Number
+        // would silently round sufficiently large Rial values.
+        price: i.price,
         imageUrl: i.image_url,
         isActive: i.is_active,
         sortOrder: i.sort_order,
       })),
+      modifierGroups: modifierGroupRes.rows.map((group) => ({
+        id: group.id,
+        name: group.name,
+        minSelect: group.min_select,
+        maxSelect: group.max_select,
+      })),
+      modifiers: modifierRes.rows.map((modifier) => ({
+        id: modifier.id,
+        groupId: modifier.group_id,
+        name: modifier.name,
+        priceDelta: modifier.price_delta,
+        isActive: modifier.is_active,
+        sortOrder: modifier.sort_order,
+      })),
+      itemModifierGroups: itemModifierRes.rows.map((link) => ({
+        menuItemId: link.menu_item_id,
+        modifierGroupId: link.modifier_group_id,
+      })),
     },
+    diningTables: diningRes.rows.map((table) => ({
+      id: table.id,
+      name: table.name,
+      zone: table.zone,
+      capacity: table.capacity,
+      sortOrder: table.sort_order,
+      isActive: table.is_active,
+    })),
+    inventory: {
+      items: inventoryRes.rows.map((item) => ({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        unit: item.unit,
+        reorderLevel: item.reorder_level,
+        averageCost: item.avg_cost,
+        purchaseUnit: item.purchase_unit,
+        purchaseUnitFactor: item.purchase_unit_factor,
+        carryingValueRial: item.carrying_value_rial,
+        isProduced: item.is_produced,
+        isActive: item.is_active,
+      })),
+      menuIngredients: menuIngredientRes.rows.map((ingredient) => ({
+        menuItemId: ingredient.menu_item_id,
+        inventoryItemId: ingredient.inventory_item_id,
+        quantity: ingredient.quantity,
+      })),
+      modifierIngredients: modifierIngredientRes.rows.map((ingredient) => ({
+        modifierId: ingredient.modifier_id,
+        inventoryItemId: ingredient.inventory_item_id,
+        quantityDelta: ingredient.quantity_delta,
+      })),
+    },
+    paymentMethods: paymentMethodRes.rows.map((method) => ({
+      id: method.id,
+      code: method.code,
+      name: method.name,
+      settlement: method.settlement,
+      sortOrder: method.sort_order,
+      isActive: method.is_active,
+      isBuiltin: method.is_builtin,
+      opensDrawer: method.opens_drawer,
+      requiresReference: method.requires_reference,
+    })),
     settings: settingRes.rows.map((s) => ({ key: s.key, value: s.value })),
+    dataClassification: PAIRING_DATA_CLASSIFICATION,
     features,
     syncToken,
   };
 }
+
+const PAIRING_DATA_CLASSIFICATION = {
+  bootstrapMasterData: [
+    "business identity and selected location",
+    "active users, location assignments, and credential hashes",
+    "chart of accounts",
+    "feature entitlements and selected operational settings",
+    "menu categories, items, modifier groups, modifiers, and recipes",
+    "dining tables (availability state resets locally)",
+    "inventory item catalogue (not stock balances or lots)",
+    "named payment methods",
+    "site-device identity and one-time sync credential",
+  ],
+  ongoingDomainEvents: [
+    "order.created",
+    "order.item_added",
+    "order.item_status_changed",
+  ],
+  siteLocalOperationalData: [
+    "embedded PostgreSQL files and local backup destinations",
+    "desktop identity, secrets, certificates, LAN gateway, logs, and firewall preference",
+    "IndexedDB offline mutation queue",
+    "printer and print-connector machine configuration",
+  ],
+  centralOnlyData: [
+    "platform administrators, impersonation grants, plans, wallet billing, and global feature catalogue",
+    "cloud media/update/backup distribution credentials",
+    "cross-business support and platform audit data",
+  ],
+  notYetReplicated: [
+    "historical/full orders, tenders, payments, refunds, reservations, and shifts",
+    "journal entries, fiscal periods, bank reconciliation, payroll, tax filings, and accounting documents",
+    "stock balances, lots, movements, counts, purchases, suppliers, production, and transfers",
+    "customers, CRM activity, loyalty, campaigns, coupons, and Growth/Marketing history",
+    "website content, WooCommerce mappings/outbox, WordPress, Holoo, API/MCP, and other integration state",
+    "media binaries and media-library history",
+    "changes to bootstrap master data after pairing unless represented by an event listed above",
+  ],
+} satisfies PairingSnapshot["dataClassification"];
 
 /**
  * The settings a till needs to operate, and nothing else. Backup destinations

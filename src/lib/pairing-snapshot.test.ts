@@ -17,6 +17,11 @@ function validSnapshot(): PairingSnapshot {
       phone: null,
       timezone: "Asia/Tehran",
     },
+    siteDevice: {
+      id: "77777777-7777-7777-7777-777777777777",
+      publicId: "88888888-8888-8888-8888-888888888888",
+      displayName: "Main till server",
+    },
     users: [
       {
         id: "33333333-3333-3333-3333-333333333333",
@@ -46,12 +51,25 @@ function validSnapshot(): PairingSnapshot {
           name: "اسپرسو",
           description: null,
           sku: null,
-          price: 850000,
+          price: "850000",
           imageUrl: null,
           isActive: true,
           sortOrder: 0,
         },
       ],
+      modifierGroups: [],
+      modifiers: [],
+      itemModifierGroups: [],
+    },
+    diningTables: [],
+    inventory: { items: [], menuIngredients: [], modifierIngredients: [] },
+    paymentMethods: [],
+    dataClassification: {
+      bootstrapMasterData: ["menu"],
+      ongoingDomainEvents: ["order.created"],
+      siteLocalOperationalData: ["logs"],
+      centralOnlyData: ["platform admins"],
+      notYetReplicated: ["accounting history"],
     },
     settings: [{ key: "business.prefs", value: { currencyDisplay: "toman" } }],
     features: { inventory: true, ai_assistant: false },
@@ -73,7 +91,7 @@ describe("validateSnapshot", () => {
   });
 
   it("rejects an unknown version rather than guessing at the shape", () => {
-    expect(validateSnapshot({ ...validSnapshot(), version: 2 })).toEqual({
+    expect(validateSnapshot({ ...validSnapshot(), version: 999 })).toEqual({
       ok: false,
       error: "snapshot_invalid",
     });
@@ -138,13 +156,13 @@ describe("validateSnapshot", () => {
 
   it("rejects a menu item priced as a float, since money is integer Rial", () => {
     const s = validSnapshot();
-    s.menu.items[0].price = 12.5;
+    s.menu.items[0].price = "12.5";
     expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
   });
 
   it("rejects a negative price", () => {
     const s = validSnapshot();
-    s.menu.items[0].price = -1;
+    s.menu.items[0].price = "-1";
     expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
   });
 
@@ -157,7 +175,7 @@ describe("validateSnapshot", () => {
   it("accepts empty accounts, menu and settings — a business may be freshly provisioned", () => {
     const s = validSnapshot();
     s.accounts = [];
-    s.menu = { categories: [], items: [] };
+    s.menu = { categories: [], items: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] };
     s.settings = [];
     expect(validateSnapshot(s).ok).toBe(true);
   });

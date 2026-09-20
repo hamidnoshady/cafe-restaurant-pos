@@ -20,6 +20,7 @@ import { hasModule } from "./industry-profile";
 
 export const CONNECTION_KIND_KEYS = [
   "desktop",
+  "local_devices",
   "woocommerce",
   "website",
   "holoo",
@@ -51,6 +52,13 @@ export const CONNECTION_KINDS: ConnectionKind[] = [
       "نصب برنامه روی رایانهٔ فروشگاه و اتصال آن به همین حساب ابری: آدرس این حساب و یک کد اتصال یک‌بارمصرف.",
     // Redeeming a code hands over a snapshot of the whole business, including
     // credential hashes. That is an owner's decision, like inviting a member.
+    allowedRoles: ["owner"],
+  },
+  {
+    key: "local_devices",
+    label: "دستگاه‌های محلی",
+    description:
+      "اتصال امن تلفن و تبلت به همین رایانه از طریق HTTPS؛ انتخاب شبکه، گواهی محلی، QR و قانون محدود فایروال ویندوز.",
     allowedRoles: ["owner"],
   },
   {

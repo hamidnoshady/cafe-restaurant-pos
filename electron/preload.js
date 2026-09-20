@@ -1,14 +1,22 @@
-// Bridge between the Electron shell and the web app.
-//
-// Deliberately minimal and explicitly enumerated: contextIsolation stays on,
-// and the renderer gets exactly the native capabilities it needs and nothing
-// more. Today that is one thing — a real folder picker for the backup
-// destination, which a browser cannot provide.
 "use strict";
 
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("desktop", {
-  /** Opens the OS folder dialog. Resolves to the chosen absolute path, or null if cancelled. */
+contextBridge.exposeInMainWorld("desktop", Object.freeze({
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
-});
+}));
+
+contextBridge.exposeInMainWorld("businessSuiteDesktop", Object.freeze({
+  isDesktop: true,
+  pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  localGateway: Object.freeze({
+    status: () => ipcRenderer.invoke("desktop:gateway-status"),
+    enable: (address) => ipcRenderer.invoke("desktop:gateway-enable", { address }),
+    disable: () => ipcRenderer.invoke("desktop:gateway-disable"),
+    installFirewallRule: () => ipcRenderer.invoke("desktop:firewall-install"),
+    removeFirewallRule: () => ipcRenderer.invoke("desktop:firewall-remove"),
+    regenerateCertificate: () => ipcRenderer.invoke("desktop:gateway-regenerate-certificate"),
+    showCaCertificate: () => ipcRenderer.invoke("desktop:show-ca-certificate"),
+    openLogs: () => ipcRenderer.invoke("desktop:open-logs"),
+  }),
+}));

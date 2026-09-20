@@ -379,10 +379,9 @@ The pattern is Runflare's without the Persian panel:
 
 ### E. To an on-site café machine instead of a server
 
-Moving *down* to a laptop/mini-PC is a different install, not this procedure:
-`docker-compose.local.yml` (Docker, self-updating) or the standalone `.exe`
-(`electron/`, bundled Postgres). See
-[docs/windows-desktop-app.md](windows-desktop-app.md) and
+Moving *down* to a Windows 11 laptop/mini-PC is a different install, not this
+procedure: use the standalone Electron installer (`electron/`, staged runtime
+and bundled PostgreSQL). See
 [docs/standalone-desktop-app.md](standalone-desktop-app.md). Restore the dump
 into whichever Postgres that install runs, then note that a local-mode install
 has no cloud-backup half at all — configure a `BACKUP_SECONDARY_DIR` (USB/NAS)

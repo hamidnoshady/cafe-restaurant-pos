@@ -7,7 +7,7 @@
  * its own hashed token, resolved before any tenant scope exists (the same
  * category as resolving a login email).
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
@@ -21,9 +21,10 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let serverSync: typeof import("../src/lib/server-sync");
+let siteDevices: typeof import("../src/lib/site-device-service");
 
-const bizA = { id: "" };
-const bizB = { id: "" };
+const bizA = { id: "", locationId: "" };
+const bizB = { id: "", locationId: "" };
 
 function urlFor(database: string): string {
   const url = new URL(rootDatabaseUrl!);
@@ -53,6 +54,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   dbLib = await import("../src/lib/db");
   serverSync = await import("../src/lib/server-sync");
+  siteDevices = await import("../src/lib/site-device-service");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -84,6 +86,16 @@ beforeEach(async () => {
     `cafe-b-${randomUUID().slice(0, 8)}`,
   ]);
   bizB.id = b.rows[0].id;
+  const locationA = await db.query<{ id: string }>(
+    "INSERT INTO locations (business_id, name) VALUES ($1, 'A Site') RETURNING id",
+    [bizA.id],
+  );
+  const locationB = await db.query<{ id: string }>(
+    "INSERT INTO locations (business_id, name) VALUES ($1, 'B Site') RETURNING id",
+    [bizB.id],
+  );
+  bizA.locationId = locationA.rows[0].id;
+  bizB.locationId = locationB.rows[0].id;
 
   // setServerSyncConfig's own INSERT relies on ambient tenant scope (RLS's
   // WITH CHECK); these tests call it directly like every other service-layer
@@ -138,6 +150,75 @@ describe("setServerSyncConfig / resolveBusinessBySyncToken", () => {
       serverSync.setServerSyncConfig(bizA.id, { remoteUrl: "", token: "", enabled: false }),
     );
     expect(await serverSync.resolveBusinessBySyncToken("token-1234")).toBeNull();
+  });
+});
+
+describe("site-scoped sync credentials", () => {
+  it("resolves one site identity and revocation invalidates only that credential", async () => {
+    const token = "site-token-a-123456789";
+    const device = await db.query<{ id: string }>(
+      `INSERT INTO site_devices (business_id, location_id, display_name)
+       VALUES ($1, $2, 'Windows A') RETURNING id`,
+      [bizA.id, bizA.locationId],
+    );
+    await db.query(
+      `INSERT INTO site_sync_credentials (site_device_id, business_id, token_hash)
+       VALUES ($1, $2, $3)`,
+      [device.rows[0].id, bizA.id, createHash("sha256").update(token).digest("hex")],
+    );
+
+    expect(await serverSync.resolveSyncCredential(token)).toEqual({
+      businessId: bizA.id,
+      siteDeviceId: device.rows[0].id,
+      locationId: bizA.locationId,
+    });
+    expect((await serverSync.resolveSyncCredential(token))?.locationId).not.toBe(bizB.locationId);
+
+    await db.query("UPDATE site_devices SET status = 'revoked', revoked_at = now() WHERE id = $1", [device.rows[0].id]);
+    expect(await serverSync.resolveSyncCredential(token)).toBeNull();
+  });
+
+  it("lists only the tenant's sites, rotates atomically, and revokes irreversibly", async () => {
+    const oldToken = "site-old-token-a-123456789";
+    const deviceA = await db.query<{ id: string }>(
+      `INSERT INTO site_devices (business_id, location_id, display_name)
+       VALUES ($1, $2, 'Windows A') RETURNING id`,
+      [bizA.id, bizA.locationId],
+    );
+    const deviceB = await db.query<{ id: string }>(
+      `INSERT INTO site_devices (business_id, location_id, display_name)
+       VALUES ($1, $2, 'Windows B') RETURNING id`,
+      [bizB.id, bizB.locationId],
+    );
+    await db.query(
+      `INSERT INTO site_sync_credentials (site_device_id, business_id, token_hash)
+       VALUES ($1, $2, $3)`,
+      [deviceA.rows[0].id, bizA.id, createHash("sha256").update(oldToken).digest("hex")],
+    );
+
+    const listedA = await dbLib.withTenant(bizA.id, () => siteDevices.listSiteDevices(bizA.id));
+    expect(listedA.map((device) => device.id)).toEqual([deviceA.rows[0].id]);
+    expect(listedA.map((device) => device.id)).not.toContain(deviceB.rows[0].id);
+
+    const rotated = await dbLib.withTenant(bizA.id, () =>
+      siteDevices.rotateSiteCredential(bizA.id, deviceA.rows[0].id, null),
+    );
+    expect(rotated.ok).toBe(true);
+    if (!rotated.ok) throw new Error(rotated.error);
+    expect(rotated.token).not.toBe(oldToken);
+    expect(await serverSync.resolveSyncCredential(oldToken)).toBeNull();
+    expect((await serverSync.resolveSyncCredential(rotated.token))?.locationId).toBe(bizA.locationId);
+
+    const revoked = await dbLib.withTenant(bizA.id, () =>
+      siteDevices.revokeSiteDevice(bizA.id, deviceA.rows[0].id, null),
+    );
+    expect(revoked).toEqual({ ok: true, alreadyRevoked: false });
+    expect(await serverSync.resolveSyncCredential(rotated.token)).toBeNull();
+    expect(
+      await dbLib.withTenant(bizA.id, () => siteDevices.rotateSiteCredential(bizA.id, deviceA.rows[0].id, null)),
+    ).toEqual({ ok: false, error: "device_not_active" });
+    expect(await db.query("SELECT 1 FROM site_sync_credentials WHERE site_device_id = $1", [deviceA.rows[0].id]))
+      .toHaveProperty("rowCount", 0);
   });
 });
 

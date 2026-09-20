@@ -37,7 +37,7 @@ import "dotenv/config";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
-import { createAppRole, DEFAULT_APP_ROLE } from "./create-app-role";
+import { createAppRole, DEFAULT_APP_ROLE } from "../src/lib/create-app-role";
 
 async function isPrivileged(databaseUrl: string): Promise<boolean> {
   const client = new Client({ connectionString: databaseUrl });

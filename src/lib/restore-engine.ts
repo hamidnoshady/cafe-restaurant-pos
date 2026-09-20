@@ -35,6 +35,7 @@ import path from "node:path";
 import { Client } from "pg";
 import { decryptBackup, isEncryptedBackup } from "./backup";
 import { pgRestoreBin, runPgRestore } from "./pg-tools";
+import { createAppRole } from "./create-app-role";
 
 /** Re-exported so existing importers (`backup-service.ts`, the console routes) keep one name for them. */
 export { PG_RESTORE_TIMEOUT_MS, runPgRestore } from "./pg-tools";
@@ -127,7 +128,6 @@ export async function regrantAppRole(databaseUrl: string): Promise<void> {
   const password = parsed.password;
   if (!roleName || !password) return;
   try {
-    const { createAppRole } = await import("../../scripts/create-app-role");
     await createAppRole({ databaseUrl, roleName, password, quiet: true });
   } catch (err) {
     console.error(`restore: re-granting app role ${roleName} on the restored database failed:`, errText(err));

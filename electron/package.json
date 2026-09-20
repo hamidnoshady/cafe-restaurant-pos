@@ -8,10 +8,13 @@
   "scripts": {
     "start": "electron .",
     "predist": "node scripts/prepare-wincodesign-cache.js",
-    "dist": "electron-builder"
+    "dist": "npm run verify:runtime && electron-builder",
+    "verify:runtime": "node scripts/verify-runtime.js",
+    "size": "node ../scripts/report-desktop-size.mjs --output=dist/desktop-size-report.md"
   },
   "dependencies": {
-    "embedded-postgres": "16.14.0-beta.17"
+    "embedded-postgres": "16.14.0-beta.17",
+    "node-forge": "^1.4.0"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -27,11 +30,17 @@
     "files": [
       "main.js",
       "preload.js",
+      "backend-manager.js",
+      "certificate-manager.js",
+      "firewall-manager.js",
+      "gateway-manager.js",
+      "network-interfaces.js",
+      "logger.js",
       "package.json"
     ],
     "win": {
       "target": "nsis",
-      "icon": "../windows/cafe-pos.ico"
+      "icon": "../public/favicon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -41,59 +50,16 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Business Suite",
       "menuCategory": "Business Suite",
-      "installerIcon": "../windows/cafe-pos.ico",
-      "uninstallerIcon": "../windows/cafe-pos.ico",
-      "installerHeaderIcon": "../windows/cafe-pos.ico",
+      "installerIcon": "../public/favicon.ico",
+      "uninstallerIcon": "../public/favicon.ico",
+      "installerHeaderIcon": "../public/favicon.ico",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },
     "extraResources": [
       {
-        "from": "../.next",
-        "to": "app/.next"
-      },
-      {
-        "from": "../public",
-        "to": "app/public"
-      },
-      {
-        "from": "../src",
-        "to": "app/src"
-      },
-      {
-        "from": "../migrations",
-        "to": "app/migrations"
-      },
-      {
-        "from": "../scripts",
-        "to": "app/scripts"
-      },
-      {
-        "from": "../server.ts",
-        "to": "app/server.ts"
-      },
-      {
-        "from": "../next.config.ts",
-        "to": "app/next.config.ts"
-      },
-      {
-        "from": "../tsconfig.json",
-        "to": "app/tsconfig.json"
-      },
-      {
-        "from": "../package.json",
-        "to": "app/package.json"
-      },
-      {
-        "from": "../node_modules",
-        "to": "app/node_modules",
-        "filter": [
-          "**/*",
-          "!vitest{,/**}",
-          "!@vitest{,/**}",
-          "!.cache{,/**}",
-          "!@embedded-postgres/{linux,darwin}-*{,/**}"
-        ]
+        "from": "../.desktop-runtime",
+        "to": "desktop-runtime"
       }
     ]
   }

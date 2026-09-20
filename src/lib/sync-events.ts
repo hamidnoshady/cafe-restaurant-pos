@@ -99,6 +99,10 @@ async function dispatch(
       discount,
       items: payload.items ?? [],
       openedBy: actor.userId,
+      // Domain-level dedupe in `orders` is independent of the transport inbox.
+      // If a future retry path reaches order creation without its original
+      // sync_events outcome, it still converges on the same order.
+      clientRequestId: event.clientEventId,
       delivery: payload.type === "delivery" && payload.delivery
         ? {
             address: payload.delivery.address ?? "",
@@ -188,13 +192,27 @@ export async function applySyncEvent(
    * events and never bounces a pulled event back to its source.
    */
   origin: "local" | "remote" = "local",
+  metadata: { siteDeviceId?: string | null; schemaVersion?: number } = {},
 ): Promise<SyncEventResult> {
   const { rows: inserted } = await query<{ id: string }>(
-    `INSERT INTO sync_events (location_id, client_event_id, event_type, payload, occurred_at, actor_user_id, actor_role, origin)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO sync_events
+       (location_id, client_event_id, event_type, payload, occurred_at,
+        actor_user_id, actor_role, origin, site_device_id, schema_version)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (location_id, client_event_id) DO NOTHING
      RETURNING id`,
-    [locationId, event.clientEventId, event.type, JSON.stringify(event.payload), event.occurredAt, actor.userId, actor.role, origin],
+    [
+      locationId,
+      event.clientEventId,
+      event.type,
+      JSON.stringify(event.payload),
+      event.occurredAt,
+      actor.userId,
+      actor.role,
+      origin,
+      metadata.siteDeviceId ?? null,
+      metadata.schemaVersion ?? 1,
+    ],
   );
 
   if (inserted.length === 0) {
@@ -203,7 +221,14 @@ export async function applySyncEvent(
       [locationId, event.clientEventId],
     );
     const row = prior[0];
-    return { clientEventId: event.clientEventId, ok: !row?.error, duplicate: true, error: row?.error ?? undefined };
+    if (!row?.applied_at && !row?.error) {
+      // Another worker is still applying this event, or a process stopped
+      // between the domain mutation and the outcome marker. Never report that
+      // ambiguous state as success: callers must retry/raise an operational
+      // alert, while the unique inbox row still prevents a second effect.
+      return { clientEventId: event.clientEventId, ok: false, duplicate: true, error: "event_outcome_pending" };
+    }
+    return { clientEventId: event.clientEventId, ok: !row.error, duplicate: true, error: row.error ?? undefined };
   }
 
   try {
