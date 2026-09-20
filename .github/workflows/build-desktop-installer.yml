@@ -58,9 +58,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -128,27 +128,33 @@ jobs:
       - name: Final size report and budgets
         id: sizes
         run: |
+          $ErrorActionPreference = "Stop"
+          function Add-GitHubOutput([string]$line) {
+            # Windows PowerShell 5.1's >> writes UTF-16; Actions command files
+            # require UTF-8. Append without a BOM so every key is readable.
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "$line`n", (New-Object System.Text.UTF8Encoding($false)))
+          }
           node scripts/report-desktop-size.mjs --output=desktop-size-report.md
           $exe = Get-ChildItem electron/dist -File -Filter *.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $exe) { throw "NSIS installer missing" }
           $unpacked = (Get-ChildItem electron/dist/win-unpacked -Recurse -File | Measure-Object Length -Sum).Sum
           $installerMiB = [math]::Round($exe.Length / 1MB, 1)
           $installedMiB = [math]::Round($unpacked / 1MB, 1)
-          "installer=$installerMiB" >> $env:GITHUB_OUTPUT
-          "installed=$installedMiB" >> $env:GITHUB_OUTPUT
-          "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          Add-GitHubOutput "installer=$installerMiB"
+          Add-GitHubOutput "installed=$installedMiB"
+          Add-GitHubOutput "name=$($exe.Name)"
           if ($exe.Length -gt 350MB) { throw "Installer $installerMiB MiB exceeds 350 MiB budget" }
           if ($unpacked -gt 600MB) { throw "Installed payload $installedMiB MiB exceeds 600 MiB budget" }
 
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: business-suite-desktop-installer
           path: electron/dist/*.exe
           if-no-files-found: error
 
       - name: Upload desktop size reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: business-suite-desktop-size-report
           path: |
@@ -162,11 +168,12 @@ jobs:
           INSTALLER: ${{ steps.sizes.outputs.installer }}
           INSTALLED: ${{ steps.sizes.outputs.installed }}
         run: |
-          @"
+          $summary = @"
           ## Business Suite Windows package
 
           - Installer: **$env:NAME** — **$env:INSTALLER MiB**
           - Unpacked installed payload: **$env:INSTALLED MiB**
           - Runtime: Next standalone trace + bundled custom server; no root node_modules
           - Acceptance: packaged executable initialized PostgreSQL UTF-8, migrated, passed RLS boot, bootstrapped through the real API, authenticated, stopped, restarted and retained data
-          "@ >> $env:GITHUB_STEP_SUMMARY
+          "@
+          [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$summary`n", (New-Object System.Text.UTF8Encoding($false)))

@@ -64,7 +64,7 @@ on:
 # namespace and push to the same branch.
 #
 # No infinite loop: the "Commit the bump and tag it" step pushes back to
-# `main` using the default `GITHUB_TOKEN` (via actions/checkout@v4), and
+# `main` using the default `GITHUB_TOKEN` (via actions/checkout@v7), and
 # GitHub does not fire further `push`-triggered workflow runs for commits
 # made with `GITHUB_TOKEN` — even though that commit touches
 # `wordpress-plugin/**` again.
@@ -84,7 +84,7 @@ jobs:
     name: bump, zip, tag
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Compute the next version
         id: version
@@ -273,7 +273,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Upload the package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pos-accounting-connector-v${{ steps.version.outputs.next }}
           path: |

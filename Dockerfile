@@ -41,11 +41,19 @@ COPY . .
 # image. CI passes 3072 MB so Next can use the resized runner without starving
 # Docker and PostgreSQL of memory.
 ARG NODE_OPTIONS
+ENV NODE_ENV=production
 # next build only needs JWT_SECRET to be *set* to satisfy the prod env check;
 # pages that read cookies() render dynamically at request time, not at build.
-ENV NODE_ENV=production
-ENV JWT_SECRET=build-time-placeholder-not-used-at-runtime
-RUN NODE_OPTIONS="$NODE_OPTIONS" npm run build
+# It is deliberately NOT an ENV/ARG instruction: BuildKit's
+# SecretsUsedInArgOrEnv rule flags any ARG/ENV whose name looks like a
+# credential, because such a value is baked into the image's metadata and is
+# readable with `docker history` / `docker inspect` on every layer that
+# follows. Setting it inline on this one RUN keeps it scoped to the single
+# build command — no image layer, no metadata, nothing to leak — and it is a
+# throwaway placeholder either way; the real secret is injected at runtime by
+# the deployment (see docker-compose.srv1.yml's JWT_SECRET).
+RUN JWT_SECRET=build-time-placeholder-not-used-at-runtime \
+    NODE_OPTIONS="$NODE_OPTIONS" npm run build
 # Next serves public/ directly; it includes the dependency-free Windows print
 # connector downloaded by the authenticated one-click installer route. Keep the
 # directory creation defensive for source/export variants that omit assets.
