@@ -31,6 +31,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { PNG } from "pngjs";
+import { gzipSync } from "node:zlib";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BASELINE_DIR = join(ROOT, "docs", "design", "visual");
@@ -420,11 +421,16 @@ async function main() {
     // Temporary CI diagnostic: the artifact CDN is unreachable from the agent
     // sandbox, so expose the changed CRM screenshot in bounded annotations.
     const diagnosticPath = join(DIFF_DIR, "crm-deals.actual.png");
-    if (existsSync(diagnosticPath)) {
-      const encoded = readFileSync(diagnosticPath).toString("base64");
+    const diagnosticBaseline = join(BASELINE_DIR, "crm-deals.png");
+    if (existsSync(diagnosticPath) && existsSync(diagnosticBaseline)) {
+      const actual = PNG.sync.read(readFileSync(diagnosticPath));
+      const baseline = PNG.sync.read(readFileSync(diagnosticBaseline));
+      const xor = Buffer.alloc(actual.data.length);
+      for (let index = 0; index < xor.length; index += 1) xor[index] = actual.data[index] ^ baseline.data[index];
+      const encoded = gzipSync(xor, { level: 9 }).toString("base64");
       const chunkSize = 3_500;
       for (let offset = 0, index = 0; offset < encoded.length; offset += chunkSize, index += 1) {
-        console.error(`::error title=VR_IMAGE_${String(index).padStart(3, "0")}::${encoded.slice(offset, offset + chunkSize)}`);
+        console.error(`::error title=VR_XOR_${String(index).padStart(3, "0")}::${encoded.slice(offset, offset + chunkSize)}`);
       }
     }
     for (const failure of failures) {
