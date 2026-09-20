@@ -21,7 +21,9 @@
  * channel writes to a live shopfront, and "send whatever the dashboard sent"
  * is how a typo becomes a store-wide price change.
  */
+import { randomUUID } from "node:crypto";
 import { query } from "../db";
+import { normalizeNumericText } from "../digits";
 import { writeIntegrationAudit } from "./audit";
 import { parentRemoteIdFor } from "./sync-service";
 
@@ -129,8 +131,14 @@ export interface RefundRequest {
 }
 
 export function sanitizeRefund(body: Record<string, unknown>): { amount: string; reason: string; api_refund: false } {
-  const amount = String(body.amount ?? "").trim();
-  if (!/^\d+(?:\.\d+)?$/.test(amount) || Number(amount) <= 0) throw new WooOpsError("invalid_refund_amount");
+  const amount = normalizeNumericText(String(body.amount ?? ""), {
+    allowDecimal: true,
+    allowNegative: true,
+    grouping: true,
+  });
+  if (amount.startsWith("-") || !/^\d+(?:\.\d+)?$/.test(amount) || Number(amount) <= 0) {
+    throw new WooOpsError("invalid_refund_amount");
+  }
   return {
     amount,
     reason: String(body.reason ?? "").trim().slice(0, 500),
@@ -141,9 +149,11 @@ export function sanitizeRefund(body: Record<string, unknown>): { amount: string;
 /**
  * Enqueue one operation.
  *
- * Upserted on `(connection_id, entity_type, remote_id)` like every other
- * outbox row — pressing «ثبت» twice before the store is next reached
- * refreshes one job rather than queueing two.
+ * Idempotent product/order updates are upserted on `(connection_id,
+ * entity_type, remote_id)` like every other push. Refunds are intentionally
+ * different: each click gets its own operation id and queue key, because a
+ * second partial refund against the same order is a real business action, not
+ * a duplicate to collapse.
  */
 export async function enqueueOperation(
   businessId: string,
@@ -154,19 +164,22 @@ export async function enqueueOperation(
 ): Promise<void> {
   const parentRemoteId =
     entityType === "product_update" ? await parentRemoteIdFor(businessId, connectionId, remoteId) : null;
+  const operationId = entityType === "refund_create" ? `woo-refund:${connectionId}:${remoteId}:${randomUUID()}` : null;
+  const queuedRemoteId = operationId ? `${remoteId}:${operationId}` : remoteId;
+  const fullPayload = {
+    ...payload,
+    ...(parentRemoteId ? { __parentRemoteId: parentRemoteId } : {}),
+    ...(operationId ? { __operationId: operationId, __orderRemoteId: remoteId } : {}),
+  };
   await query(
-    `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload)
-     VALUES ($1, $2, $3, $4, $5::jsonb)
+    `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload, operation_id)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6)
      ON CONFLICT (connection_id, entity_type, remote_id)
-     DO UPDATE SET payload = EXCLUDED.payload, status = 'pending', attempts = 0,
+     DO UPDATE SET payload = EXCLUDED.payload,
+                   operation_id = COALESCE(integration_outbox_events.operation_id, EXCLUDED.operation_id),
+                   status = 'pending', attempts = 0,
                    next_attempt_at = now(), last_error = NULL, leased_until = NULL, updated_at = now()`,
-    [
-      businessId,
-      connectionId,
-      entityType,
-      remoteId,
-      JSON.stringify(parentRemoteId ? { ...payload, __parentRemoteId: parentRemoteId } : payload),
-    ],
+    [businessId, connectionId, entityType, queuedRemoteId, JSON.stringify(fullPayload), operationId],
   );
   await writeIntegrationAudit({
     businessId,
@@ -199,6 +212,15 @@ export async function enqueueExport(
 // Reading the store's orders back
 // ---------------------------------------------------------------------------
 
+export interface StoreOrderOperationRow {
+  type: "order_status" | "refund_create";
+  status: string;
+  targetStatus: string | null;
+  amount: string | null;
+  reason: string | null;
+  error: string | null;
+}
+
 export interface StoreOrderRow {
   remoteId: string;
   localOrderId: string | null;
@@ -214,6 +236,24 @@ export interface StoreOrderRow {
   ingestStatus: string;
   ingestError: string | null;
   lineCount: number;
+  /** Pending/failed live-store operations queued from the manager for this order. */
+  operations: StoreOrderOperationRow[];
+}
+
+export interface StoreOrdersQueryOptions {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+  ingestStatus?: string;
+  view?: "imported" | "unrecorded" | "queued" | "attention" | "";
+}
+
+export interface StoreOrdersPage {
+  orders: StoreOrderRow[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 /**
@@ -224,11 +264,54 @@ export interface StoreOrderRow {
  * put the store's latency into a dashboard. What the app already received is
  * also what it actually recorded — which is the question being asked.
  */
-export async function storeOrdersFor(
+export async function storeOrdersPageFor(
   businessId: string,
   connectionId: string,
-  limit = 50,
-): Promise<StoreOrderRow[]> {
+  options: StoreOrdersQueryOptions = {},
+): Promise<StoreOrdersPage> {
+  const page = Math.max(1, Math.floor(options.page ?? 1));
+  const pageSize = Math.min(200, Math.max(10, Math.floor(options.pageSize ?? 25)));
+  const offset = (page - 1) * pageSize;
+  const search = options.search?.trim().slice(0, 200) ?? "";
+  const status = options.status?.trim().slice(0, 80) ?? "";
+  const ingestStatus = options.ingestStatus?.trim().slice(0, 80) ?? "";
+  const view = options.view ?? "";
+
+  const params: unknown[] = [businessId, connectionId, pageSize, offset];
+  const filters: string[] = [];
+  if (search) {
+    params.push(`%${search}%`);
+    const idx = `$${params.length}`;
+    filters.push(`(
+      remote_id ILIKE ${idx}
+      OR COALESCE(order_number::text, '') ILIKE ${idx}
+      OR COALESCE(payload->>'number', '') ILIKE ${idx}
+      OR COALESCE(payload #>> '{billing,first_name}', '') ILIKE ${idx}
+      OR COALESCE(payload #>> '{billing,last_name}', '') ILIKE ${idx}
+      OR COALESCE(payload #>> '{billing,company}', '') ILIKE ${idx}
+      OR COALESCE(payload #>> '{billing,phone}', '') ILIKE ${idx}
+      OR COALESCE(payload #>> '{billing,email}', '') ILIKE ${idx}
+    )`);
+  }
+  if (status) {
+    params.push(status);
+    filters.push(`COALESCE(payload->>'status', '') = $${params.length}`);
+  }
+  if (ingestStatus) {
+    params.push(ingestStatus);
+    filters.push(`COALESCE(ingest_status, 'none') = $${params.length}`);
+  }
+  if (view === "imported") {
+    filters.push("local_order_id IS NOT NULL");
+  } else if (view === "unrecorded") {
+    filters.push("local_order_id IS NULL");
+  } else if (view === "queued") {
+    filters.push("jsonb_array_length(outbox_operations) > 0");
+  } else if (view === "attention") {
+    filters.push("(COALESCE(ingest_status, 'none') = 'failed' OR outbox_operations @> '[{\"status\": \"failed\"}]'::jsonb OR outbox_operations @> '[{\"status\": \"dead\"}]'::jsonb OR outbox_operations @> '[{\"status\": \"needs_review\"}]'::jsonb)");
+  }
+  const filterSql = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
   const { rows } = await query<{
     remote_id: string;
     local_order_id: string | null;
@@ -237,34 +320,106 @@ export async function storeOrdersFor(
     payload: Record<string, unknown> | null;
     ingest_status: string | null;
     ingest_error: string | null;
-    created_at: string;
+    created_at: string | null;
+    outbox_operations: StoreOrderOperationRow[] | null;
+    total_count: string;
   }>(
-    `SELECT m.remote_id,
-            m.local_id::text AS local_order_id,
-            o.order_number::text,
-            e.event_topic,
-            e.payload,
-            COALESCE(e.status, 'none') AS ingest_status,
-            e.error AS ingest_error,
-            e.created_at
-       FROM integration_mappings m
-       LEFT JOIN orders o ON o.id = m.local_id
-       LEFT JOIN LATERAL (
-         SELECT w.event_topic, w.payload, w.status, w.error, w.created_at
-           FROM integration_webhook_events w
-          WHERE w.connection_id = m.connection_id AND w.remote_id = m.remote_id
-          ORDER BY w.created_at DESC
-          LIMIT 1
-       ) e ON true
-      WHERE m.business_id = $1 AND m.connection_id = $2 AND m.entity_type = 'order'
-      ORDER BY e.created_at DESC NULLS LAST, m.remote_id DESC
-      LIMIT $3`,
-    [businessId, connectionId, limit],
+    `WITH latest_events AS (
+       SELECT DISTINCT ON (w.remote_id)
+              w.remote_id,
+              w.event_topic,
+              w.payload,
+              w.status,
+              w.error,
+              w.created_at
+         FROM integration_webhook_events w
+        WHERE w.business_id = $1
+          AND w.connection_id = $2
+          AND w.remote_id <> ''
+          AND w.event_topic IN ('order.created', 'order.updated', 'order.restored')
+        ORDER BY w.remote_id, w.created_at DESC, w.id DESC
+     ), order_keys AS (
+       SELECT remote_id FROM latest_events
+       UNION
+       SELECT remote_id
+         FROM integration_mappings
+        WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'order'
+       UNION
+       SELECT CASE
+                WHEN entity_type = 'refund_create' THEN COALESCE(payload->>'__orderRemoteId', remote_id)
+                ELSE remote_id
+              END AS remote_id
+         FROM integration_outbox_events
+        WHERE business_id = $1
+          AND connection_id = $2
+          AND remote_id <> ''
+          AND entity_type IN ('order_status', 'refund_create')
+          AND status IN ('pending', 'processing', 'failed', 'dead', 'needs_review')
+     ), base AS (
+       SELECT k.remote_id,
+              m.local_id::text AS local_order_id,
+              o.order_number::text,
+              e.event_topic,
+              e.payload,
+              COALESCE(e.status, 'none') AS ingest_status,
+              e.error AS ingest_error,
+              e.created_at,
+              COALESCE(ops.operations, '[]'::jsonb) AS outbox_operations,
+              GREATEST(
+                COALESCE(e.created_at, '-infinity'::timestamptz),
+                COALESCE(ops.latest_at, '-infinity'::timestamptz),
+                COALESCE(m.updated_at, '-infinity'::timestamptz)
+              ) AS sort_at
+         FROM order_keys k
+         LEFT JOIN integration_mappings m
+           ON m.business_id = $1
+          AND m.connection_id = $2
+          AND m.entity_type = 'order'
+          AND m.remote_id = k.remote_id
+         LEFT JOIN orders o ON o.id = m.local_id
+         LEFT JOIN latest_events e ON e.remote_id = k.remote_id
+         LEFT JOIN LATERAL (
+           SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'type', oe.entity_type,
+                      'status', oe.status,
+                      'targetStatus', oe.payload->>'status',
+                      'amount', oe.payload->>'amount',
+                      'reason', oe.payload->>'reason',
+                      'error', oe.last_error
+                    )
+                    ORDER BY oe.updated_at DESC, oe.created_at DESC
+                  ) AS operations,
+                  max(oe.updated_at) AS latest_at
+             FROM integration_outbox_events oe
+            WHERE oe.business_id = $1
+              AND oe.connection_id = $2
+              AND (oe.remote_id = k.remote_id OR (oe.entity_type = 'refund_create' AND oe.payload->>'__orderRemoteId' = k.remote_id))
+              AND oe.entity_type IN ('order_status', 'refund_create')
+              AND oe.status IN ('pending', 'processing', 'failed', 'dead', 'needs_review')
+         ) ops ON true
+     ), filtered AS (
+       SELECT *, count(*) OVER ()::text AS total_count
+         FROM base
+         ${filterSql}
+     )
+     SELECT remote_id, local_order_id, order_number, event_topic, payload,
+            ingest_status, ingest_error, created_at, outbox_operations, total_count
+       FROM filtered
+      ORDER BY sort_at DESC, remote_id DESC
+      LIMIT $3 OFFSET $4`,
+    params,
   );
 
-  return rows.map((row) => {
+  const orders = rows.map((row) => {
     const payload = (row.payload ?? {}) as Record<string, unknown>;
     const billing = (payload.billing ?? {}) as Record<string, unknown>;
+    const operations = (Array.isArray(row.outbox_operations) ? row.outbox_operations : []).filter(
+      (operation): operation is StoreOrderOperationRow =>
+        operation?.type === "order_status" || operation?.type === "refund_create",
+    );
+    const company = String(billing.company ?? "").trim();
+    const name = [billing.first_name, billing.last_name].filter(Boolean).join(" ").trim();
     return {
       remoteId: row.remote_id,
       localOrderId: row.local_order_id,
@@ -274,11 +429,49 @@ export async function storeOrdersFor(
       total: String(payload.total ?? "0"),
       currency: String(payload.currency ?? ""),
       dateCreated: typeof payload.date_created === "string" ? payload.date_created : null,
-      customer: [billing.first_name, billing.last_name].filter(Boolean).join(" ").trim(),
+      customer: name || company,
       paymentMethod: String(payload.payment_method ?? ""),
       ingestStatus: row.ingest_status ?? "none",
       ingestError: row.ingest_error,
       lineCount: Array.isArray(payload.line_items) ? payload.line_items.length : 0,
-    };
+      operations,
+    } satisfies StoreOrderRow;
   });
+
+  return { orders, total: Number(rows[0]?.total_count ?? 0), page, pageSize };
+}
+
+/** Back-compatible first page helper used by older callers/tests. */
+export async function storeOrdersFor(
+  businessId: string,
+  connectionId: string,
+  limit = 50,
+): Promise<StoreOrderRow[]> {
+  return (await storeOrdersPageFor(businessId, connectionId, { page: 1, pageSize: limit })).orders;
+}
+
+/** True when an order id belongs to the connection's local mirror or inbox. */
+export async function storeOrderKnownFor(businessId: string, connectionId: string, remoteId: string): Promise<boolean> {
+  const { rows } = await query<{ found: number }>(
+    `SELECT 1 AS found
+       FROM integration_mappings
+      WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'order' AND remote_id = $3
+      UNION
+     SELECT 1 AS found
+       FROM integration_webhook_events
+      WHERE business_id = $1
+        AND connection_id = $2
+        AND remote_id = $3
+        AND event_topic IN ('order.created', 'order.updated', 'order.restored')
+      UNION
+     SELECT 1 AS found
+       FROM integration_outbox_events
+      WHERE business_id = $1
+        AND connection_id = $2
+        AND remote_id = $3
+        AND entity_type IN ('order_status', 'refund_create')
+      LIMIT 1`,
+    [businessId, connectionId, remoteId],
+  );
+  return rows.length > 0;
 }

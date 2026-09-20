@@ -116,6 +116,113 @@ export async function listBusinesses(): Promise<BusinessSummary[]> {
   });
 }
 
+/** Filters/sort/pagination for the console's server-backed business directory. */
+export interface BusinessQuery {
+  /** Free-text over name, slug and subdomain. */
+  search?: string;
+  status?: BusinessStatus;
+  plan?: string;
+  industry?: Industry;
+  /** ISO date (inclusive) lower bound on created_at. */
+  createdFrom?: string;
+  /** ISO date (inclusive) upper bound on created_at. */
+  createdTo?: string;
+  /** "active" = has any orders; "idle" = none. */
+  activity?: "active" | "idle";
+  sort?: "newest" | "oldest" | "name" | "orders" | "members" | "activity";
+  page?: number;
+  pageSize?: number;
+}
+
+export interface BusinessListResult {
+  businesses: BusinessSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+const BUSINESS_SORT_SQL: Record<NonNullable<BusinessQuery["sort"]>, string> = {
+  newest: "b.created_at DESC",
+  oldest: "b.created_at ASC",
+  name: "b.name ASC",
+  orders: "order_count DESC",
+  members: "member_count DESC",
+  activity: "last_activity_at DESC NULLS LAST",
+};
+
+/**
+ * The console's business directory — filtered, sorted and paginated in the
+ * database rather than fetched whole and sliced in the browser (task section
+ * 6). Every filter is an optional WHERE clause; the counters used for the
+ * `orders`/`members`/`activity` sorts are computed as sub-selects so a big
+ * deployment stays a single indexed round-trip. `pageSize` is clamped so a
+ * caller can never ask for an unbounded page.
+ */
+export async function queryBusinesses(q: BusinessQuery = {}): Promise<BusinessListResult> {
+  const page = Math.max(1, Math.floor(q.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(q.pageSize ?? 20)));
+  const offset = (page - 1) * pageSize;
+  const sort = BUSINESS_SORT_SQL[q.sort ?? "newest"] ?? BUSINESS_SORT_SQL.newest;
+
+  return withoutTenantScope("platform", async () => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    /** Push a bound value and return its `$n` placeholder. */
+    const bind = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (q.search && q.search.trim()) {
+      const p = bind(`%${q.search.trim()}%`);
+      where.push(`(b.name ILIKE ${p} OR b.slug::text ILIKE ${p} OR b.subdomain::text ILIKE ${p})`);
+    }
+    if (q.status) where.push(`b.status = ${bind(q.status)}`);
+    if (q.plan) where.push(`b.plan = ${bind(q.plan)}`);
+    if (q.industry) where.push(`b.industry = ${bind(q.industry)}`);
+    if (q.createdFrom) where.push(`b.created_at >= ${bind(q.createdFrom)}`);
+    if (q.createdTo) where.push(`b.created_at <= ${bind(`${q.createdTo}T23:59:59.999Z`)}`);
+
+    // Activity filter needs the correlated existence of an order.
+    if (q.activity === "active") {
+      where.push(
+        "EXISTS (SELECT 1 FROM orders o JOIN locations l ON l.id = o.location_id WHERE l.business_id = b.id)",
+      );
+    } else if (q.activity === "idle") {
+      where.push(
+        "NOT EXISTS (SELECT 1 FROM orders o JOIN locations l ON l.id = o.location_id WHERE l.business_id = b.id)",
+      );
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const { rows: countRows } = await query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM businesses b ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const { rows } = await query<BusinessRow>(
+      `SELECT b.id, b.name, b.slug::text AS slug, b.subdomain::text AS subdomain,
+              b.status::text AS status, b.plan,
+              b.timezone, b.industry, b.created_at, b.suspended_at, b.archived_at,
+              (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
+              (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count,
+              (SELECT count(*) FROM orders o JOIN locations l ON l.id = o.location_id
+                WHERE l.business_id = b.id) AS order_count,
+              (SELECT max(o.opened_at) FROM orders o JOIN locations l ON l.id = o.location_id
+                WHERE l.business_id = b.id) AS last_activity_at
+         FROM businesses b
+        ${whereSql}
+        ORDER BY ${sort}
+        LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    );
+
+    return { businesses: rows.map(toSummary), total, page, pageSize };
+  });
+}
+
 /** One business by id, or null. */
 export async function getBusiness(businessId: string): Promise<BusinessSummary | null> {
   return withoutTenantScope("platform", async () => {
@@ -1296,22 +1403,71 @@ function toPlatformBugReport(row: PlatformBugReportRow): PlatformBugReport {
   };
 }
 
+export interface BugReportQuery {
+  /** Exact lifecycle status (new/in_progress/resolved/closed). */
+  status?: string;
+  /** Free-text over business name, reporter name, description, page url. */
+  search?: string;
+  businessId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface BugReportListResult {
+  reports: PlatformBugReportSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Count by lifecycle status across the *unfiltered* inbox, for headline tiles. */
+  statusCounts: Record<string, number>;
+}
+
 /**
- * Every report filed by a tenant member, newest first. Screenshots are kept
- * out of the list response because one report can contain a multi-megabyte data
- * URL; the detail endpoint loads one only when an operator opens a report.
+ * Server-paginated bug-report inbox. Screenshots are never included here (they
+ * are multi-megabyte data URLs); the detail endpoint loads one on demand. The
+ * status tiles are computed from the whole inbox, not the current page, so the
+ * "new" count stays honest while an operator filters.
  */
-export async function listBugReports({
-  status = "",
-  search = "",
-  limit = 200,
-}: { status?: string; search?: string; limit?: number } = {}): Promise<PlatformBugReportSummary[]> {
-  const safeLimit = Number.isFinite(limit) ? Math.floor(limit) : 200;
-  const boundedLimit = Math.min(Math.max(safeLimit, 1), 500);
-  const normalizedStatus = status.trim().slice(0, 40);
-  const normalizedSearch = search.trim().slice(0, 200);
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<PlatformBugReportRow>(
+export async function queryBugReports(q: BugReportQuery = {}): Promise<BugReportListResult> {
+  const page = Math.max(1, Math.floor(q.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(q.pageSize ?? 40)));
+  const offset = (page - 1) * pageSize;
+
+  return withoutTenantScope("platform", async () => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    const bind = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (q.status && q.status.trim()) where.push(`br.status = ${bind(q.status.trim().slice(0, 40))}`);
+    if (q.businessId) where.push(`br.business_id = ${bind(q.businessId)}::uuid`);
+    if (q.search && q.search.trim()) {
+      const p = bind(`%${q.search.trim().slice(0, 200)}%`);
+      where.push(
+        `concat_ws(' ', b.name, u.full_name, br.description, br.page_url) ILIKE ${p}`,
+      );
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const joins = `JOIN businesses b ON b.id = br.business_id
+                   LEFT JOIN locations l ON l.id = br.location_id
+                   LEFT JOIN users u ON u.id = br.user_id`;
+
+    const { rows: countRows } = await query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM bug_reports br ${joins} ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const { rows: statusRows } = await query<{ status: string; total: string }>(
+      `SELECT status, count(*)::text AS total FROM bug_reports GROUP BY status`,
+    );
+    const statusCounts: Record<string, number> = {};
+    for (const row of statusRows) statusCounts[row.status] = Number(row.total);
+
+    const { rows } = await query<PlatformBugReportRow>(
       `SELECT br.id::text AS id, br.business_id::text AS business_id, b.name AS business_name,
               br.location_id::text AS location_id, l.name AS location_name,
               br.user_id::text AS user_id, u.full_name AS user_name,
@@ -1319,23 +1475,19 @@ export async function listBugReports({
               (br.screenshot IS NOT NULL) AS has_screenshot,
               br.page_url, NULL::text AS user_agent, br.viewport, br.status, br.created_at
          FROM bug_reports br
-         JOIN businesses b ON b.id = br.business_id
-         LEFT JOIN locations l ON l.id = br.location_id
-         LEFT JOIN users u ON u.id = br.user_id
-        WHERE ($1 = '' OR br.status = $1)
-          AND ($2 = '' OR concat_ws(' ', b.name, u.full_name, br.description, br.page_url) ILIKE '%' || $2 || '%')
+         ${joins}
+        ${whereSql}
         ORDER BY br.created_at DESC
-        LIMIT $3`,
-      [normalizedStatus, normalizedSearch, boundedLimit],
-    ),
-  );
-  return rows.map((row) => {
-    const report = toPlatformBugReport(row);
+        LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    );
+
     return {
-      ...report,
-      screenshot: null,
-      userAgent: null,
-      hasScreenshot: row.has_screenshot,
+      reports: rows.map((row) => ({ ...toPlatformBugReport(row), screenshot: null, userAgent: null })),
+      total,
+      page,
+      pageSize,
+      statusCounts,
     };
   });
 }
@@ -1503,45 +1655,80 @@ function toPlatformSupportTicket(row: PlatformSupportTicketRow): PlatformSupport
   };
 }
 
-/** Every business's tickets, newest activity first, with the console's filters. */
-export async function listSupportTickets({
-  status = "",
-  priority = "",
-  category = "",
-  search = "",
-  businessId = "",
-  assignedToMe = false,
-  adminId = "",
-  limit = 200,
-}: {
+export interface SupportTicketQuery {
   status?: string;
   priority?: string;
   category?: string;
   search?: string;
   businessId?: string;
+  /** Restrict to tickets assigned to `adminId`. */
   assignedToMe?: boolean;
   adminId?: string;
-  limit?: number;
-} = {}): Promise<PlatformSupportTicketSummary[]> {
-  const safeLimit = Number.isFinite(limit) ? Math.floor(limit) : 200;
-  const boundedLimit = Math.min(Math.max(safeLimit, 1), 500);
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<PlatformSupportTicketRow>(
+  page?: number;
+  pageSize?: number;
+}
+
+export interface SupportTicketListResult {
+  tickets: PlatformSupportTicketSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Server-paginated support desk. Same filters as the console's toolbar, but the
+ * free-text search — which scans the whole conversation — runs in SQL, and the
+ * result is a bounded page rather than the whole (potentially large) queue.
+ */
+export async function querySupportTickets(q: SupportTicketQuery = {}): Promise<SupportTicketListResult> {
+  const page = Math.max(1, Math.floor(q.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(q.pageSize ?? 40)));
+  const offset = (page - 1) * pageSize;
+
+  return withoutTenantScope("platform", async () => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    const bind = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (q.status && q.status.trim()) where.push(`t.status = ${bind(q.status.trim().slice(0, 40))}`);
+    if (q.priority && q.priority.trim()) where.push(`t.priority = ${bind(q.priority.trim().slice(0, 20))}`);
+    if (q.category && q.category.trim()) where.push(`t.category = ${bind(q.category.trim().slice(0, 20))}`);
+    if (q.businessId && q.businessId.trim()) where.push(`t.business_id = ${bind(q.businessId.trim())}::uuid`);
+    if (q.assignedToMe && q.adminId) where.push(`t.assigned_admin_id = ${bind(q.adminId)}::uuid`);
+    if (q.search && q.search.trim()) {
+      const p = bind(`%${q.search.trim().slice(0, 200)}%`);
+      where.push(
+        `concat_ws(' ', b.name, u.full_name, t.subject,
+          (SELECT string_agg(m.body, ' ') FROM support_ticket_messages m WHERE m.ticket_id = t.id)
+        ) ILIKE ${p}`,
+      );
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const { rows: countRows } = await query<{ total: string }>(
+      `SELECT count(*)::text AS total
+         FROM support_tickets t
+         JOIN businesses b ON b.id = t.business_id
+         LEFT JOIN users u ON u.id = t.user_id
+        ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const { rows } = await query<PlatformSupportTicketRow>(
       `${PLATFORM_TICKET_SELECT}
-        WHERE ($1 = '' OR t.status = $1)
-          AND ($2 = '' OR t.priority = $2)
-          AND ($3 = '' OR t.category = $3)
-          AND ($4 = '' OR t.business_id = $4::uuid)
-          AND ($5 = false OR t.assigned_admin_id = NULLIF($6, '')::uuid)
-          AND ($7 = '' OR concat_ws(' ', b.name, u.full_name, t.subject,
-               (SELECT string_agg(m.body, ' ') FROM support_ticket_messages m WHERE m.ticket_id = t.id)
-              ) ILIKE '%' || $7 || '%')
+        ${whereSql}
        ORDER BY t.updated_at DESC
-       LIMIT $8`,
-      [status.trim().slice(0, 40), priority.trim().slice(0, 20), category.trim().slice(0, 20), businessId.trim(), assignedToMe, adminId, search.trim().slice(0, 200), boundedLimit],
-    ),
-  );
-  return rows.map(toPlatformSupportTicket);
+       LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    );
+
+    return { tickets: rows.map(toPlatformSupportTicket), total, page, pageSize };
+  });
 }
 
 /** One ticket with its full conversation, for the console. */
@@ -1806,10 +1993,74 @@ export interface AuditEntry {
   createdAt: string;
 }
 
-/** The platform audit log, newest first, optionally scoped to one business. */
-export async function listAudit(businessId?: string, limit = 200): Promise<AuditEntry[]> {
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<{
+/** Filters + pagination for the console's audit investigation surface. */
+export interface AuditQuery {
+  businessId?: string;
+  /** Exact platform admin (operator) id. */
+  adminId?: string;
+  /** Action-family prefix, e.g. "business" matches "business.provision". */
+  actionFamily?: string;
+  entity?: string;
+  /** Free-text over action, admin name, business name, entity id. */
+  search?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AuditListResult {
+  entries: AuditEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Distinct action families present (for the filter dropdown), unfiltered. */
+  actionFamilies?: string[];
+}
+
+/**
+ * The audit log as an investigation tool (task section 12): filtered, searched
+ * and paginated in the database rather than fetched in one 500-row page and
+ * sliced in the browser. Read-only; the table is immutable. `pageSize` is
+ * clamped server-side so a caller can never pull the whole log at once.
+ */
+export async function queryAudit(q: AuditQuery = {}): Promise<AuditListResult> {
+  const page = Math.max(1, Math.floor(q.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(q.pageSize ?? 40)));
+  const offset = (page - 1) * pageSize;
+
+  return withoutTenantScope("platform", async () => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    const bind = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (q.businessId) where.push(`al.business_id = ${bind(q.businessId)}::uuid`);
+    if (q.adminId) where.push(`al.platform_admin_id = ${bind(q.adminId)}::uuid`);
+    if (q.actionFamily) where.push(`al.action LIKE ${bind(`${q.actionFamily}%`)}`);
+    if (q.entity) where.push(`al.entity = ${bind(q.entity)}`);
+    if (q.createdFrom) where.push(`al.created_at >= ${bind(q.createdFrom)}`);
+    if (q.createdTo) where.push(`al.created_at <= ${bind(`${q.createdTo}T23:59:59.999Z`)}`);
+    if (q.search && q.search.trim()) {
+      const p = bind(`%${q.search.trim()}%`);
+      where.push(
+        `(al.action ILIKE ${p} OR pa.full_name ILIKE ${p} OR b.name ILIKE ${p} OR al.entity_id ILIKE ${p})`,
+      );
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const joins = `LEFT JOIN platform_admins pa ON pa.id = al.platform_admin_id
+                   LEFT JOIN businesses b ON b.id = al.business_id`;
+
+    const { rows: countRows } = await query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM platform_audit_log al ${joins} ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const { rows } = await query<{
       id: string;
       platform_admin_id: string | null;
       admin_name: string | null;
@@ -1825,26 +2076,31 @@ export async function listAudit(businessId?: string, limit = 200): Promise<Audit
               al.business_id, b.name AS business_name, al.action, al.entity,
               al.entity_id, al.payload, al.created_at
          FROM platform_audit_log al
-         LEFT JOIN platform_admins pa ON pa.id = al.platform_admin_id
-         LEFT JOIN businesses b ON b.id = al.business_id
-        WHERE ($1::uuid IS NULL OR al.business_id = $1)
+         ${joins}
+        ${whereSql}
         ORDER BY al.created_at DESC
-        LIMIT $2`,
-      [businessId ?? null, limit],
-    ),
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    platformAdminId: r.platform_admin_id,
-    adminName: r.admin_name,
-    businessId: r.business_id,
-    businessName: r.business_name,
-    action: r.action,
-    entity: r.entity,
-    entityId: r.entity_id,
-    payload: r.payload,
-    createdAt: r.created_at,
-  }));
+        LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    );
+
+    return {
+      entries: rows.map((r) => ({
+        id: r.id,
+        platformAdminId: r.platform_admin_id,
+        adminName: r.admin_name,
+        businessId: r.business_id,
+        businessName: r.business_name,
+        action: r.action,
+        entity: r.entity,
+        entityId: r.entity_id,
+        payload: r.payload,
+        createdAt: r.created_at,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

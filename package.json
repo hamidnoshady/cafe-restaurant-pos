@@ -13,12 +13,16 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
+    "test:design": "vitest run src/app/dashboard/design-lint.test.ts src/app/design-lint.test.ts src/app/dashboard/primitive-lint.test.ts src/app/loading-coverage.test.ts src/app/reference-screenshots.test.ts",
+    "test:visual": "node scripts/visual-regression.mjs",
+    "test:visual:update": "node scripts/visual-regression.mjs --update",
     "db:dev": "node scripts/dev-postgres.mjs",
     "db:dev:start": "node scripts/dev-postgres.mjs --detach",
     "db:dev:stop": "node scripts/dev-postgres.mjs --stop",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:app-role": "tsx scripts/create-app-role.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed:visual": "tsx scripts/seed-visual-fixture.ts",
     "db:seed-knowledge": "tsx scripts/seed-knowledge.ts",
     "db:platform-admin": "tsx scripts/seed-platform-admin.ts",
     "mfa:reset-platform": "tsx scripts/reset-platform-mfa.ts",
@@ -27,8 +31,7 @@
     "db:reconcile-opening": "tsx scripts/reconcile-opening-inventory.ts",
     "db:normalize-phones": "tsx scripts/normalize-customer-phones.ts",
     "db:encrypt-fields": "tsx scripts/encrypt-fields.ts",
-    "inventory:cutover": "tsx scripts/inventory-cutover.ts",
-    "print-agent": "tsx print-agent/server.ts"
+    "inventory:cutover": "tsx scripts/inventory-cutover.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -82,6 +85,7 @@
     "@types/ws": "^8.18.1",
     "embedded-postgres": "16.14.0-beta.17",
     "pdfkit": "^0.20.1",
+    "playwright": "1.56.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

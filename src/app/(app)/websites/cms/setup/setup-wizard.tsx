@@ -33,7 +33,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   buildReadiness,
   CDN_PROVIDER_LABELS,
@@ -93,12 +93,20 @@ export function WebsiteSetupWizard() {
     ]).then(([setupRes, stateRes]) => {
       setLoading(false);
       if (setupRes.ok) {
+        setError("");
         setSetup(setupRes.data.setup);
         setPlans(setupRes.data.plans);
       } else {
         setError(errorMessageOrRaw((setupRes.data as { error?: string }).error));
       }
-      if (stateRes.ok) setConnected(stateRes.data.connected);
+      if (stateRes.ok) {
+        setConnected(stateRes.data.connected);
+      } else if (setupRes.ok) {
+        // Do not silently render a completed wizard as disconnected when the
+        // second request failed. Keeping the previous value is safer than
+        // replacing it with false during a transient network error.
+        setError((stateRes.data as { error?: string }).error ?? "وضعیت اتصال سایت خوانده نشد.");
+      }
     });
   }, []);
 
@@ -219,6 +227,9 @@ function DomainStep({
   const [quote, setQuote] = useState<DomainQuote | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // A domain's price and the wallet balance are money: they follow the
+  // business's chosen display unit, like every other amount on the platform.
+  const money = useMoney();
 
   const valid = isValidDomain(domain);
 
@@ -294,6 +305,11 @@ function DomainStep({
             variant={mode === value ? "default" : "outline"}
             onClick={() => {
               setMode(value);
+              // A quote is specific to the purchase flow. Keeping it while
+              // switching to an owned domain (then back) can show a stale
+              // price for a different domain or registration period.
+              setQuote(null);
+              setError("");
               void save({ domainMode: value });
             }}
           >
@@ -372,12 +388,12 @@ function DomainStep({
                   {quote.domain}
                 </span>{" "}
                 برای {toPersianDigits(quote.period)} سال:{" "}
-                <span className="font-bold">{formatToman(quote.priceRial)}</span>
+                <span className="font-bold">{money.format(quote.priceRial)}</span>
               </>
             )}
           </p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            اعتبار فعلی شما: {formatToman(quote.balanceRial)} · {quote.availabilityMessage}
+            اعتبار فعلی شما: {money.format(quote.balanceRial)} · {quote.availabilityMessage}
           </p>
           {quote.priceRial !== null ? (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -504,6 +520,7 @@ function TypeStep({
   const [name, setName] = useState(setup.siteName ?? "");
   const [planKey, setPlanKey] = useState(setup.planKey ?? "");
   const available = plansForSiteType(plans, type);
+  const money = useMoney();
 
   return (
     <SectionCard
@@ -547,7 +564,7 @@ function TypeStep({
             <option value="">بدون طرح (بعداً انتخاب می‌کنم)</option>
             {available.map((plan) => (
               <option key={plan.key} value={plan.key}>
-                {plan.name} — ماهانه {formatToman(plan.monthlyPriceRial)}
+                {plan.name} — ماهانه {money.format(plan.monthlyPriceRial)}
               </option>
             ))}
           </select>
@@ -586,6 +603,7 @@ function BuildStep({
   const [error, setError] = useState("");
   const readiness = buildReadiness(setup);
   const plan = plans.find((row) => row.key === setup.planKey) ?? null;
+  const money = useMoney();
 
   return (
     <SectionCard
@@ -611,7 +629,7 @@ function BuildStep({
         <div>
           <dt className="text-xs text-muted-foreground">طرح</dt>
           <dd className="mt-0.5 text-sm font-medium text-foreground">
-            {plan ? `${plan.name} — ماهانه ${formatToman(plan.monthlyPriceRial)}` : "بدون طرح"}
+            {plan ? `${plan.name} — ماهانه ${money.format(plan.monthlyPriceRial)}` : "بدون طرح"}
           </dd>
         </div>
       </dl>

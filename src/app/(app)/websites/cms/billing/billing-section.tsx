@@ -10,8 +10,8 @@
  * the «افزایش اعتبار» link go to the one billing page the business already
  * knows.
  *
- * Every date here is Shamsi, through `formatJalali`; every amount is Toman,
- * from integer-Rial storage.
+ * Every date here is Shamsi, through `formatJalali`; every amount follows the
+ * business's chosen display unit (`useMoney`), from integer-Rial storage.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -20,7 +20,7 @@ import { CreditCardIcon, RefreshCwIcon, WalletIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   isRenewalDue,
   totalChargedRial,
@@ -30,6 +30,14 @@ import {
   type WebsitePlan,
   type WebsiteSubscription,
 } from "@/lib/website/billing";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
 import {
   EmptyState,
   SectionCard,
@@ -51,6 +59,7 @@ export function CmsBillingSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [planKey, setPlanKey] = useState("");
+  const money = useMoney();
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -128,7 +137,7 @@ export function CmsBillingSection() {
             <div>
               <dt className="text-xs text-muted-foreground">هزینهٔ ماهانه</dt>
               <dd className="mt-0.5 text-sm font-medium text-foreground">
-                {formatToman(subscription.monthlyPriceRial)}
+                {money.format(subscription.monthlyPriceRial)}
               </dd>
             </div>
             <div>
@@ -161,7 +170,7 @@ export function CmsBillingSection() {
               <option value="">— طرحی انتخاب نشده —</option>
               {activePlans.map((plan) => (
                 <option key={plan.key} value={plan.key}>
-                  {plan.name} — ماهانه {formatToman(plan.monthlyPriceRial)}
+                  {plan.name} — ماهانه {money.format(plan.monthlyPriceRial)}
                 </option>
               ))}
             </select>
@@ -218,39 +227,37 @@ export function CmsBillingSection() {
         }
       >
         <p className="text-sm text-foreground">
-          موجودی فعلی: <span className="font-bold">{formatToman(balanceRial)}</span>
+          موجودی فعلی: <span className="font-bold">{money.format(balanceRial)}</span>
         </p>
       </SectionCard>
 
       <SectionCard
         title="هزینه‌های سایت"
-        description={`مجموع ثبت‌شده تا امروز: ${formatToman(totalChargedRial(charges))}`}
+        description={`مجموع ثبت‌شده تا امروز: ${money.format(totalChargedRial(charges))}`}
       >
         {charges.length === 0 ? (
           <EmptyState>هنوز هزینه‌ای برای این سایت ثبت نشده است.</EmptyState>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[34rem] text-sm">
-              <thead className="text-xs text-muted-foreground">
-                <tr className="border-b border-border">
-                  <th className="px-3 py-2 text-start font-medium">تاریخ</th>
-                  <th className="px-3 py-2 text-start font-medium">بابت</th>
-                  <th className="px-3 py-2 text-start font-medium">شرح</th>
-                  <th className="px-3 py-2 text-start font-medium">مبلغ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {charges.map((charge) => (
-                  <tr key={charge.id} className="border-b border-border/60 last:border-0">
-                    <td className="px-3 py-2 text-muted-foreground">{formatJalali(charge.occurredAt)}</td>
-                    <td className="px-3 py-2">{WEBSITE_CHARGE_LABELS[charge.kind] ?? charge.kind}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{charge.description}</td>
-                    <td className="px-3 py-2 font-medium tabular-nums">{formatToman(charge.amountRial)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable caption="سوابق هزینهٔ سایت" tableClassName="min-w-[34rem]">
+            <DataTableHead>
+              <Th>تاریخ</Th>
+              <Th>بابت</Th>
+              <Th>شرح</Th>
+              <Th numeric>مبلغ</Th>
+            </DataTableHead>
+            <DataTableBody>
+              {charges.map((charge) => (
+                <DataTableRow key={charge.id}>
+                  <Td muted nowrap>
+                    {formatJalali(charge.occurredAt)}
+                  </Td>
+                  <Td>{WEBSITE_CHARGE_LABELS[charge.kind] ?? charge.kind}</Td>
+                  <Td muted>{charge.description}</Td>
+                  <Td numeric>{money.format(charge.amountRial)}</Td>
+                </DataTableRow>
+              ))}
+            </DataTableBody>
+          </DataTable>
         )}
       </SectionCard>
     </div>

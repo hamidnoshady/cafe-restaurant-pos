@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { buildWindowsPrintConnectorInstaller } from "./windows-print-connector";
 
 const connectorSource = readFileSync(
-  join(process.cwd(), "public/windows/cafe-pos-print-agent.ps1"),
+  join(process.cwd(), "public/windows/cafe-pos-print-connector.ps1"),
   "utf8",
 );
 
@@ -23,7 +23,7 @@ describe("Windows print connector installer", () => {
   it("pins both the download and connector CORS policy to the current origin", () => {
     const installer = buildWindowsPrintConnectorInstaller("https://branch.example.com:8443/path");
 
-    expect(installer).toContain("https://branch.example.com:8443/windows/cafe-pos-print-agent.ps1");
+    expect(installer).toContain("https://branch.example.com:8443/windows/cafe-pos-print-connector.ps1");
     expect(installer).toContain("$origin = 'https://branch.example.com:8443'");
   });
 
@@ -39,9 +39,21 @@ describe("Windows print connector installer", () => {
       "unsupported_installer_origin",
     );
   });
+
+  it("reinstalling is the upgrade path: it stops the current connector and the older print agent", () => {
+    const installer = buildWindowsPrintConnectorInstaller("https://cafe.example.com");
+    expect(installer).toContain("Stop-RunningConnector");
+    expect(installer).toContain('"connector.pid"');
+    expect(installer).toContain('"agent.pid"');
+    expect(installer).toContain('"cafe-pos-print-connector.ps1"');
+    expect(installer).toContain('"cafe-pos-print-agent.ps1"');
+    expect(installer).toContain("cafe-pos-print-agent.ps1\") -Force");
+    // The install only declares success for a current (v3+) connector.
+    expect(installer).toContain("[int]$health.version -ge 3");
+  });
 });
 
-describe("dependency-free Windows print connector", () => {
+describe("the dependency-free Windows print connector", () => {
   it("binds only to loopback and restricts browser requests to the installed origin", () => {
     expect(connectorSource).toContain("[Net.IPAddress]::Loopback");
     expect(connectorSource).toContain('$origin -eq $AllowedOrigin');
@@ -54,22 +66,61 @@ describe("dependency-free Windows print connector", () => {
     expect(connectorSource).toContain("driver = [string]$printer.DriverName");
     expect(connectorSource).toContain("port = [string]$printer.PortName");
     expect(connectorSource).toContain("likelyThermal = [bool]");
-    expect(connectorSource).not.toContain("suggestedType");
     expect(connectorSource).toContain('DllImport("winspool.drv"');
     expect(connectorSource).toContain("OpenPrinter");
     expect(connectorSource).toContain("WritePrinter");
-    expect(connectorSource).toContain('-Name "systemName"');
-    expect(connectorSource).toContain('-Name "ip"');
-    expect(connectorSource).not.toContain("systemPrinterName");
-    expect(connectorSource).not.toContain("ipAddress");
     expect(connectorSource).not.toMatch(/npm\s+(?:ci|install)/i);
     expect(connectorSource).not.toContain("node.exe");
   });
 
-  it("requests canonical server rendering before accepting rendered bytes", () => {
-    expect(connectorSource).toContain('error = "render_required"');
-    expect(connectorSource).toContain('$Request.Path -eq "/drawer/kick"');
-    expect(connectorSource).toContain('$Request.Path -eq "/print/raw"');
-    expect(connectorSource).toContain("FromBase64String");
+  it("addresses printers only through the canonical target shape", () => {
+    expect(connectorSource).toContain('-Name "target"');
+    expect(connectorSource).toContain('-Name "type"');
+    expect(connectorSource).toContain('-Name "systemName"');
+    expect(connectorSource).toContain('-Name "ip"');
+    expect(connectorSource).not.toContain('-Name "connection"');
+    expect(connectorSource).not.toContain("systemPrinterName");
+  });
+
+  it("speaks the one coherent protocol: health, windows list, network discovery, probe, raw", () => {
+    expect(connectorSource).toContain('"/health"');
+    expect(connectorSource).toContain('"/printers/windows"');
+    expect(connectorSource).toContain('"/printers/network/discover"');
+    expect(connectorSource).toContain('"/printers/probe"');
+    expect(connectorSource).toContain('"/print/raw"');
+    expect(connectorSource).not.toContain('"/printers/system"');
+    expect(connectorSource).not.toContain('"/printers/scan"');
+    expect(connectorSource).not.toContain("render_required");
+    expect(connectorSource).not.toContain('/print/" -like');
+  });
+
+  it("discovers network printers locally: local subnets, bounded windows, port 9100", () => {
+    expect(connectorSource).toContain("function Get-LocalSubnets");
+    expect(connectorSource).toContain("NetworkInterfaceType]::Loopback");
+    expect(connectorSource).toContain('169.254.*');
+    expect(connectorSource).toContain("function Find-NetworkPrinters");
+    expect(connectorSource).toContain("ConnectAsync");
+    expect(connectorSource).toContain("$Concurrency");
+    expect(connectorSource).toContain("latencyMs");
+    // Only the raw-print port is swept; fallback ports stay out of the scan.
+    expect(connectorSource).toMatch(/\$TargetPort = 9100/);
+    expect(connectorSource).not.toContain("9101");
+    expect(connectorSource).not.toContain("515");
+  });
+
+  it("returns canonical error codes, not raw exceptions", () => {
+    expect(connectorSource).toContain('"printer_not_found"');
+    expect(connectorSource).toContain('"network_unreachable"');
+    expect(connectorSource).toContain('"invalid_target"');
+    expect(connectorSource).toContain('"print_failed"');
+  });
+
+  it("logs startup, print attempts and failures without receipt content", () => {
+    expect(connectorSource).toContain("Connector v3 started");
+    expect(connectorSource).toContain("Write-ConnectorLog (\"Printed \" + $bytes.Length + \" bytes to \"");
+    expect(connectorSource).toContain('"Print failed for "');
+    // Log lines carry targets and byte counts, never the request body.
+    expect(connectorSource).not.toContain("Write-ConnectorLog $Request.Body");
+    expect(connectorSource).not.toContain("Write-ConnectorLog $Payload");
   });
 });

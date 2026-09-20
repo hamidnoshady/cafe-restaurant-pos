@@ -20,6 +20,7 @@ import { JalaliDatePicker } from "../jalali-date-picker";
 import { BarChart } from "../charts";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessageOrRaw, inputClass } from "../ui";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface StaffRow {
   staffId: string;
@@ -174,38 +175,34 @@ function ComparisonCard() {
             {" — "}ارقام به {money.unitLabel}.
           </p>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b text-start text-xs text-muted-foreground">
-                  <th className="py-2 text-start font-medium">شعبه</th>
-                  <th className="py-2 text-start font-medium">فروش</th>
-                  <th className="py-2 text-start font-medium">سفارش</th>
-                  <th className="py-2 text-start font-medium">بهای تمام‌شده (COGS)</th>
-                  <th className="py-2 text-start font-medium">ضایعات</th>
-                  <th className="py-2 text-start font-medium">نقدی</th>
-                  <th className="py-2 text-start font-medium">کارتی</th>
-                  <th className="py-2 text-start font-medium">وضعیت</th>
-                </tr>
-              </thead>
-              <tbody>
-                {overview.locations.map((l) => (
-                  <tr key={l.id} className="border-b last:border-0">
-                    <td className="py-2 font-medium">{l.name}</td>
-                    <td className="py-2 tabular-nums">{money.format(l.total, { withUnit: false })}</td>
-                    <td className="py-2 tabular-nums">{toPersianDigits(l.orderCount)}</td>
-                    <td className="py-2 tabular-nums">{money.format(l.cogs, { withUnit: false })}</td>
-                    <td className="py-2 tabular-nums">{money.format(l.wasteCost, { withUnit: false })}</td>
-                    <td className="py-2 tabular-nums">{money.format(l.cashTotal, { withUnit: false })}</td>
-                    <td className="py-2 tabular-nums">{money.format(l.cardTotal, { withUnit: false })}</td>
-                    <td className="py-2">
-                      <StaleBadge stale={l.stale} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable caption="عملکرد شعبه‌ها در این بازه" frame={false} tableClassName="min-w-[640px]">
+            <DataTableHead>
+              <Th>شعبه</Th>
+              <Th numeric>فروش</Th>
+              <Th numeric>سفارش</Th>
+              <Th numeric>بهای تمام‌شده (COGS)</Th>
+              <Th numeric>ضایعات</Th>
+              <Th numeric>نقدی</Th>
+              <Th numeric>کارتی</Th>
+              <Th>وضعیت</Th>
+            </DataTableHead>
+            <DataTableBody>
+              {overview.locations.map((l) => (
+                <DataTableRow key={l.id}>
+                  <Td className="font-medium">{l.name}</Td>
+                  <Td numeric>{money.format(l.total, { withUnit: false })}</Td>
+                  <Td numeric>{toPersianDigits(l.orderCount)}</Td>
+                  <Td numeric>{money.format(l.cogs, { withUnit: false })}</Td>
+                  <Td numeric>{money.format(l.wasteCost, { withUnit: false })}</Td>
+                  <Td numeric>{money.format(l.cashTotal, { withUnit: false })}</Td>
+                  <Td numeric>{money.format(l.cardTotal, { withUnit: false })}</Td>
+                  <Td>
+                    <StaleBadge stale={l.stale} />
+                  </Td>
+                </DataTableRow>
+              ))}
+            </DataTableBody>
+          </DataTable>
 
           <div>
             <h3 className="mb-2 text-sm font-medium text-muted-foreground">فروش دوره به تفکیک شعبه ({money.unitLabel})</h3>

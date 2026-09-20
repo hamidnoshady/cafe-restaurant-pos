@@ -577,7 +577,7 @@ export function ChequesSection({
         {kpis ? (
           <CardContent className="pt-0">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <KpiCard
+              <ChequeToneTile
                 icon={WalletIcon}
                 label={
                   direction === "receivable"
@@ -588,21 +588,21 @@ export function ChequesSection({
                 hint={`${toPersianDigits(kpis.activeCount)} فقره — از ${toPersianDigits(kpis.totalCount)} کل`}
                 tone="primary"
               />
-              <KpiCard
+              <ChequeToneTile
                 icon={AlertTriangleIcon}
                 label="سررسید گذشته"
                 value={money.format(kpis.totalOverdue)}
                 hint={`${toPersianDigits(kpis.overdueCount)} فقره نیاز به پیگیری`}
                 tone={kpis.overdueCount > 0 ? "destructive" : "muted"}
               />
-              <KpiCard
+              <ChequeToneTile
                 icon={Clock3Icon}
                 label="۷ روز آینده"
                 value={toPersianDigits(kpis.dueSoonCount) + " فقره"}
                 hint="سررسید در هفته جاری"
                 tone="amber"
               />
-              <KpiCard
+              <ChequeToneTile
                 icon={CheckCircle2Icon}
                 label="وضعیت‌ها"
                 value={
@@ -1187,7 +1187,16 @@ export function ChequesSection({
 // Subcomponents
 // ---------------------------------------------------------------------------
 
-function KpiCard({
+/**
+ * A *toned* summary tile — the cheque book's four status totals, each washed in
+ * its own status colour (primary / destructive / amber / muted).
+ *
+ * Deliberately not page-chrome's `KpiCard`, which is the neutral white tile the
+ * overview screens use: here the tile's fill *is* the status, so the two are
+ * different components rather than one with a prop. Named apart so the
+ * primitive lint can tell them apart too.
+ */
+function ChequeToneTile({
   icon: Icon,
   label,
   value,

@@ -214,7 +214,7 @@ export function TeamManager({
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت اعضا</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">اعضا و دسترسی‌ها</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">اعضا و دسترسی‌ها</h2>
           </div>
         }
         description="اعضای کسب‌وکار، نقش‌ها و سطوح دسترسی آن‌ها را در سامانه مدیریت کنید."
@@ -224,7 +224,7 @@ export function TeamManager({
             <InfoBox>هنوز عضوی برای این کسب‌وکار ثبت نشده است.</InfoBox>
           ) : null}
           {members.map((member) => (
-            <div key={member.id} className="rounded-xl border border-border/80 p-3 sm:p-4 transition-colors hover:bg-stone-50/70 dark:hover:bg-muted/50">
+            <div key={member.id} className="rounded-xl border border-border/80 p-3 sm:p-4 transition-colors hover:bg-muted/60 dark:hover:bg-muted/50">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-semibold text-foreground">
@@ -776,7 +776,7 @@ function InviteSection({
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دعوت و همکاری</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">دعوت همکار</h2>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">دعوت همکار</h2>
         </div>
       }
       description="همکاران جدید را با ارسال لینک دعوت به سیستم اضافه کنید."
@@ -909,7 +909,7 @@ function AddStaffSection({
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پرسنل صندوق و آشپزخانه</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">افزودن کارکنان صندوق و آشپزخانه</h2>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">افزودن کارکنان صندوق و آشپزخانه</h2>
         </div>
       }
       description="این کارکنان با رمز عددی روی دستگاه مشترک وارد می‌شوند و ایمیل ندارند."

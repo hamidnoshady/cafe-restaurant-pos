@@ -202,7 +202,7 @@ export function SecurityCenterSettings() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امنیت و دسترسی</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">کارمندان قفل‌شده</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">کارمندان قفل‌شده</h2>
           </div>
         }
         description="به‌دلیل تلاش‌های ناموفق مکرر، ورود این کارکنان موقتاً مسدود شده است."
@@ -249,7 +249,7 @@ export function SecurityCenterSettings() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">نشست‌ها و دستگاه‌ها</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">نشست‌های فعال</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">نشست‌های فعال</h2>
           </div>
         }
         description="کارکنانی که هم‌اکنون وارد سیستم هستند. پایان‌دادن به یک نشست بلافاصله اثر می‌کند."
@@ -301,7 +301,7 @@ export function SecurityCenterSettings() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ممیزی ورود</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">تلاش‌های ورود ناموفق</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">تلاش‌های ورود ناموفق</h2>
           </div>
         }
         description="آخرین تلاش‌های ناموفق ورود با پین، بیومتریک یا کد پیامکی."
@@ -458,7 +458,7 @@ function PhoneLoginCard() {
       title={
         <div>
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امنیت و دسترسی</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">ورود با شمارهٔ موبایل</h2>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">ورود با شمارهٔ موبایل</h2>
         </div>
       }
       description="هر عضو با شمارهٔ موبایل خود و یک کد پیامکی وارد می‌شود؛ رمز عددی تا ۷ روز بعد از هر تأیید کار می‌کند."

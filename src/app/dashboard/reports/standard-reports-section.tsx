@@ -21,7 +21,7 @@
  * search/group chrome is the only markup it owns.
  */
 
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
 import { SearchIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -195,6 +195,9 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   const [savedIds, setSavedIds] = useState<Map<string, string>>(new Map());
   const [selected, setSelected] = useState<StandardReportDef | null>(null);
   const [search, setSearch] = useState("");
+  // Keep keystrokes urgent while React updates the filtered report list at a
+  // lower priority. This matters on the lower-powered tablets used at the POS.
+  const deferredSearch = useDeferredValue(search);
   const [chartType, setChartType] = useState<ChartType>("bar");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -404,7 +407,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
   );
 
   const groups = useMemo(() => {
-    const needle = normalizeSearch(search);
+    const needle = normalizeSearch(deferredSearch);
     const matching = needle
       ? searchable.filter((entry) => entry.haystack.includes(needle)).map((entry) => entry.report)
       : searchable.map((entry) => entry.report);
@@ -415,7 +418,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
       byGroup.set(report.group, entry);
     }
     return [...byGroup.entries()].map(([key, value]) => ({ key, ...value }));
-  }, [searchable, search]);
+  }, [searchable, deferredSearch]);
 
   const totalCount = reports?.length ?? 0;
   const matchCount = groups.reduce((sum, group) => sum + group.reports.length, 0);

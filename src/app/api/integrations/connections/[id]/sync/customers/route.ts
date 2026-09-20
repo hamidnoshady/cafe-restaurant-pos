@@ -11,7 +11,17 @@ export const POST = withTenantScope(async (_request: Request, context: { params:
   const { id } = await context.params;
 
   const connection = await getConnection(session.businessId, id);
-  if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // Same provider guard as the read route: without it, POSTing a Holoo
+  // connection id would enqueue a WooCommerce `customer_export` job (or, in
+  // REST mode, hand Holoo credentials to the Woo client).
+  if (!connection || connection.provider !== "woocommerce")
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!connection.sync_customers) {
+    return NextResponse.json({ ok: false, error: "sync_customers_disabled" }, { status: 409 });
+  }
+  if (connection.status === "paused") {
+    return NextResponse.json({ ok: false, error: "connection_paused" }, { status: 409 });
+  }
 
   if (connection.link_mode === "plugin") {
     await enqueuePluginExport(session.businessId, id, "customer_export");

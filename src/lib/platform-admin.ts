@@ -54,6 +54,20 @@ export type PlatformCapability =
   // Platform billing: gateway config, credit packages, plan builder, wallet
   // grants and payment approval.
   | "billing.manage"
+  // Messaging (migration 0137+): SMS/Email provider credentials, rates, credit
+  // packages and top-up approval. Its own capability rather than riding
+  // `billing.manage` so the messaging desk is not coupled to the payments
+  // console; granted to the same roles, so no operator loses access.
+  | "messaging.manage"
+  // Media (migration 0149): the tenant object-storage connection, storage
+  // pricing and AI image-enhancement pricing. Its own capability rather than
+  // riding `backup.manage` (which is about the deployment's database backup, a
+  // different domain); granted to the same roles.
+  | "media.manage"
+  // Security (migration 0140s): MFA policy/enforcement, grace extensions and the
+  // Kavenegar OTP provider. Its own capability rather than riding
+  // `system.read`; the write side needs a real boundary.
+  | "security.manage"
   // Owner-only business data operations
   | "business.edit"
   | "business.reset"
@@ -105,6 +119,10 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "knowledge.manage",
     "backup.manage",
     "cms.manage",
+    // Messaging and media are operational, granted at the same level as the
+    // capabilities they used to ride (billing.manage / backup.manage).
+    "messaging.manage",
+    "media.manage",
   ],
   owner: [
     ...READ,
@@ -118,6 +136,9 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "knowledge.manage",
     "backup.manage",
     "cms.manage",
+    "messaging.manage",
+    "media.manage",
+    "security.manage",
     "backup.restore",
     "impersonate.full",
     "business.provision",

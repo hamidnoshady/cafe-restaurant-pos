@@ -1,3 +1,16 @@
+/**
+ * One-click Windows connector end-to-end contract. The pieces of the new
+ * architecture that must stay aligned across separately-deployed files:
+ *
+ *  - browser client ↔ connector protocol: the same endpoint names and the
+ *    same target shape, in both src/lib/printing/client.ts and
+ *    public/windows/cafe-pos-print-connector.ps1;
+ *  - installer ↔ connector: the installer downloads the connector file that
+ *    actually exists in public/windows and accepts only a v3+ health answer;
+ *  - UI: the printer screens never expose a legacy transport, WebUSB, a raw
+ *    USB path, or a manual IP outside Advanced settings — and the setup
+ *    wizard embeds the SAME printer panel Settings uses.
+ */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,53 +20,41 @@ function source(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
 
-const connector = source("public/windows/cafe-pos-print-agent.ps1");
-const client = source("src/lib/print-agent-client.ts");
-const printerSettings = source("src/app/(app)/settings/printing/printer-hardware.tsx");
+const connector = source("public/windows/cafe-pos-print-connector.ps1");
+const client = source("src/lib/printing/client.ts");
+const addFlow = source("src/app/(app)/settings/printing/add-printer-flow.tsx");
+const printersPanel = source("src/app/(app)/settings/printing/printers-panel.tsx");
+const setupHardware = source("src/app/setup/hardware/page.tsx");
 
-describe("one-click Windows connector end-to-end contract", () => {
-  it("keeps the browser and connector protocol endpoint names aligned", () => {
-    for (const endpoint of [
-      "/health",
-      "/printers/system",
-      "/printers/scan",
-      "/printers/probe",
-      "/drawer/kick",
-      "/print/raw",
-    ]) {
-      expect(client, `browser client is missing ${endpoint}`).toContain(endpoint);
-      expect(connector, `Windows connector is missing ${endpoint}`).toContain(endpoint);
+describe("browser ↔ connector protocol alignment", () => {
+  it("speaks the same five endpoints", () => {
+    for (const endpoint of ["/health", "/printers/windows", "/printers/network/discover", "/printers/probe", "/print/raw"]) {
+      expect(client, `browser client is missing ${endpoint}`).toContain(`"${endpoint}"`);
+      expect(connector, `Windows connector is missing ${endpoint}`).toContain(`"${endpoint}"`);
     }
-    for (const endpoint of [
-      "/print/document",
-      "/print/receipt",
-      "/print/kitchen-ticket",
-      "/print/label",
-      "/print/test",
-    ]) {
-      expect(client, `browser client is missing ${endpoint}`).toContain(endpoint);
-    }
-    expect(connector).toContain('$Request.Path -like "/print/*"');
-    expect(client).toContain('first.error !== "render_required"');
-    expect(connector).toContain('error = "render_required"');
-    expect(client).toContain("dataBase64: bytesToBase64(rendered.bytes)");
-    expect(connector).toContain('Get-ObjectValue -Object $Payload -Name "dataBase64"');
   });
 
-  it("returns exactly the installed-printer fields consumed by the settings screen", () => {
-    const printerBlock = connector.slice(
-      connector.indexOf("function Get-SystemPrinters"),
-      connector.indexOf("function Send-NetworkBytes"),
-    );
-
-    for (const field of ["name", "driver", "port", "isDefault", "status", "likelyThermal"]) {
-      expect(printerBlock, `queue response is missing ${field}`).toMatch(new RegExp(`\\b${field}\\s*=`));
+  it("addresses printers through the same canonical target shape", () => {
+    // The wire fields both sides must spell identically.
+    for (const field of ["target", "type", "ip", "port", "dataBase64"]) {
+      expect(client, `browser client is missing ${field}`).toContain(field);
+      expect(connector, `Windows connector is missing ${field}`).toContain(field);
     }
-    expect(printerBlock).not.toMatch(/displayName|driverName|portName|suggestedType/);
-    expect(client).toContain("export interface SystemPrinter");
-    expect(printerSettings).toContain("printer.likelyThermal");
+    // The Windows queue name field, and the model both sides share it from.
+    expect(connector).toContain('-Name "systemName"');
+    expect(source("src/lib/printing/types.ts")).toContain("systemName?: string");
+    // The full saved connection never travels to the connector.
+    expect(connector).not.toContain('-Name "connection"');
+    expect(connector).not.toContain('-Name "transport"');
   });
 
+  it("the client knows the connector's protocol version", () => {
+    expect(client).toContain("CONNECTOR_VERSION = 3");
+    expect(connector).toContain("version = 3");
+  });
+});
+
+describe("installer ↔ connector alignment", () => {
   it("extracts a complete PowerShell setup payload from the downloaded command file", () => {
     const commandFile = buildWindowsPrintConnectorInstaller("https://shop.example.com");
     const marker = "# CAFE_POS_INSTALLER_PAYLOAD";
@@ -62,35 +63,75 @@ describe("one-click Windows connector end-to-end contract", () => {
     expect(markerOffset).toBeGreaterThan(0);
     expect(commandFile.indexOf(marker, markerOffset + marker.length)).toBe(-1);
     const payload = commandFile.slice(markerOffset + marker.length);
-    expect(payload).toContain('$origin = \'https://shop.example.com\'');
+    expect(payload).toContain("$origin = 'https://shop.example.com'");
     expect(payload).toContain("Invoke-WebRequest");
     expect(payload).toContain('SpecialFolders.Item("Startup")');
     expect(payload).toContain("Start-Process");
     expect(payload).toContain("http://127.0.0.1:9123/health");
+    expect(payload).toContain("cafe-pos-print-connector.ps1");
     expect(payload.trimEnd()).toMatch(/exit 1\s*}\s*$/);
   });
 
-  it("offers the connector download unconditionally, not only while the agent is down", () => {
-    // The card used to render behind `{!localAgentOnline ? … : null}`, which
-    // hid the only download link whenever the health probe was answered by the
-    // *app server* on a cloud deployment — precisely the deployment that needs
-    // the connector — and left an already-installed till with no way to
-    // reinstall or re-point it at a new tenant origin.
-    expect(printerSettings).toContain("<WindowsConnectorCard localAgentOnline={localAgentOnline} />");
-    expect(printerSettings).not.toMatch(/!localAgentOnline\s*\?[\s\S]{0,200}windows-agent-installer/);
+  it("the installer's download URL matches the file served from public/windows", () => {
+    const installer = buildWindowsPrintConnectorInstaller("https://shop.example.com");
+    expect(installer).toContain("/windows/cafe-pos-print-connector.ps1");
+    expect(connector).toContain("Cafe POS Windows Print Connector (protocol v3)");
+  });
+});
 
-    const card = printerSettings.slice(printerSettings.indexOf("function WindowsConnectorCard"));
-    expect(card).toContain('href="/api/print/windows-agent-installer"');
-    // The button text changes with the state, but a button is always rendered.
-    expect(card).toContain("نصب دوبارهٔ رابط چاپ");
-    expect(card).not.toMatch(/localAgentOnline\s*\?\s*null\s*:\s*<Button/);
+describe("printer UI contract — the product rule", () => {
+  it("offers exactly the two hardware choices, in the user's language", () => {
+    expect(addFlow).toContain("چاپگر ویندوز");
+    expect(addFlow).toContain("چاپگر شبکه");
+    expect(addFlow).toContain("چاپگر کجاست");
   });
 
-  it("exposes only the nontechnical install flow in printer settings", () => {
-    expect(printerSettings).toContain('href="/api/print/windows-agent-installer"');
-    expect(printerSettings).toContain("دانلود و نصب رابط چاپ ویندوز");
-    expect(printerSettings).not.toContain("npm run print-agent");
-    expect(printerSettings).not.toContain("Install-PrintAgent.ps1");
-    expect(printerSettings).not.toContain("powershell -ExecutionPolicy");
+  it("never shows a legacy transport, WebUSB, or a raw USB path", () => {
+    for (const ui of [addFlow, printersPanel, setupHardware]) {
+      expect(ui).not.toContain("webusb");
+      expect(ui).not.toContain("WebUSB");
+      expect(ui).not.toContain("devicePath");
+      expect(ui).not.toContain("USB001");
+      expect(ui).not.toContain("/dev/usb/lp0");
+      expect(ui).not.toContain("transport");
+      expect(ui).not.toContain("render_required");
+      expect(ui).not.toContain("npm run print-agent");
+    }
+  });
+
+  it("keeps manual IP/port behind Advanced, never on the happy path", () => {
+    // The manual form renders only inside the «چاپگرتان پیدا نشد؟» expansion.
+    expect(addFlow).toContain("چاپگرتان پیدا نشد؟");
+    expect(addFlow).toContain("اتصال پیشرفته");
+    const manualForm = addFlow.slice(addFlow.indexOf("function ManualNetworkForm"));
+    expect(manualForm).toContain("نشانی IP");
+    expect(manualForm).toContain("۹۱۰۰");
+    // And the discovery list itself shows plain IPs, no ports or latency.
+    const networkStep = addFlow.slice(addFlow.indexOf("function NetworkStep"), addFlow.indexOf("function ManualNetworkForm"));
+    expect(networkStep).not.toContain("latencyMs");
+    expect(networkStep).not.toContain("پورت");
+  });
+
+  it("tests before saving — the wizard's save runs the test print first", () => {
+    expect(addFlow).toContain("چاپ آزمایشی و ذخیره");
+    expect(addFlow).toContain("testPrintDraft");
+    expect(addFlow).toContain("ذخیره بدون آزمایش");
+  });
+
+  it("the setup wizard embeds the SAME printer panel Settings uses", () => {
+    expect(setupHardware).toContain('from "@/app/(app)/settings/printing/printers-panel"');
+    expect(setupHardware).toContain("<PrintersPanel");
+    expect(setupHardware).not.toContain("addPrinter");
+    expect(setupHardware).not.toContain("escpos-stub");
+    expect(setupHardware).not.toContain("فاز ۵");
+    expect(setupHardware).not.toContain("شبیه‌سازی");
+  });
+
+  it("the connector install card offers the authenticated installer download", () => {
+    const connectorCard = source("src/app/(app)/settings/printing/connector-status.tsx");
+    expect(connectorCard).toContain('href="/api/printing/connector/installer"');
+    expect(connectorCard).toContain("نصب رابط چاپ");
+    // The operator is never asked to understand an "agent".
+    expect(connectorCard).not.toContain("عامل چاپ");
   });
 });

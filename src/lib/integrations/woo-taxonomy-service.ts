@@ -18,6 +18,8 @@ import { query } from "../db";
 import { localIdForRemote, upsertMapping } from "./mapping-service";
 import type { WooTerm } from "./woocommerce-client";
 
+export type WooTermSnapshot = WooTerm & { taxonomy?: string; menu_order?: number };
+
 /** How many terms of one taxonomy a single sync will store. */
 const TERMS_PER_TAXONOMY_LIMIT = 5000;
 
@@ -201,7 +203,7 @@ export async function upsertTermFromPayload(
   businessId: string,
   connectionId: string,
   taxonomy: string,
-  term: { id: number | string; name?: string; slug?: string },
+  term: { id: number | string; name?: string; slug?: string; parent?: number; description?: string; count?: number; menu_order?: number },
 ): Promise<void> {
   const remoteId = String(term.id ?? "");
   if (!taxonomy || !remoteId || remoteId === "0") return;
@@ -210,20 +212,28 @@ export async function upsertTermFromPayload(
   if (!name && !slug) return;
   await query(
     `INSERT INTO integration_woo_terms
-       (business_id, connection_id, taxonomy, remote_id, name, slug, payload)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+       (business_id, connection_id, taxonomy, remote_id, parent_remote_id, name, slug, description, remote_count, menu_order, payload)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
      ON CONFLICT (connection_id, taxonomy, remote_id)
-     DO UPDATE SET name = CASE WHEN $5 <> '' THEN $5 ELSE integration_woo_terms.name END,
-                   slug = CASE WHEN $6 <> '' THEN $6 ELSE integration_woo_terms.slug END,
+     DO UPDATE SET parent_remote_id = COALESCE($5, integration_woo_terms.parent_remote_id),
+                   name = CASE WHEN $6 <> '' THEN $6 ELSE integration_woo_terms.name END,
+                   slug = CASE WHEN $7 <> '' THEN $7 ELSE integration_woo_terms.slug END,
+                   description = CASE WHEN $8 <> '' THEN $8 ELSE integration_woo_terms.description END,
+                   remote_count = GREATEST(integration_woo_terms.remote_count, $9),
+                   menu_order = CASE WHEN $10 <> 0 THEN $10 ELSE integration_woo_terms.menu_order END,
                    updated_at = now()`,
     [
       businessId,
       connectionId,
       taxonomy,
       remoteId,
+      term.parent ? String(term.parent) : null,
       name,
       slug,
-      JSON.stringify({ id: Number(remoteId) || remoteId, name: term.name ?? "", slug: term.slug ?? "" }),
+      (term.description ?? "").trim(),
+      Math.max(0, Number(term.count ?? 0)),
+      Number(term.menu_order ?? 0),
+      JSON.stringify(term),
     ],
   );
 }
@@ -240,23 +250,26 @@ export async function recordProductTermsFromPayload(
   product: {
     categories?: { id: number; name?: string; slug?: string }[];
     tags?: { id: number; name?: string; slug?: string }[];
+    terms?: Record<string, { id: number | string; name?: string; slug?: string; parent?: number; description?: string; count?: number; menu_order?: number }[]>;
   },
 ): Promise<void> {
+  const assignments: { taxonomy: string; termRemoteId: string }[] = [];
   for (const category of product.categories ?? []) {
     await upsertTermFromPayload(businessId, connectionId, "product_cat", category);
+    assignments.push({ taxonomy: "product_cat", termRemoteId: String(category.id) });
   }
   for (const tag of product.tags ?? []) {
     await upsertTermFromPayload(businessId, connectionId, "product_tag", tag);
+    assignments.push({ taxonomy: "product_tag", termRemoteId: String(tag.id) });
   }
-  await replaceProductTerms(
-    businessId,
-    connectionId,
-    remoteProductId,
-    [
-      ...(product.categories ?? []).map((c) => ({ taxonomy: "product_cat", termRemoteId: String(c.id) })),
-      ...(product.tags ?? []).map((t) => ({ taxonomy: "product_tag", termRemoteId: String(t.id) })),
-    ],
-  );
+  for (const [taxonomy, terms] of Object.entries(product.terms ?? {})) {
+    if (!taxonomy || taxonomy === "product_cat" || taxonomy === "product_tag") continue;
+    for (const term of terms ?? []) {
+      await upsertTermFromPayload(businessId, connectionId, taxonomy, term);
+      assignments.push({ taxonomy, termRemoteId: String(term.id) });
+    }
+  }
+  await replaceProductTerms(businessId, connectionId, remoteProductId, assignments);
 }
 
 /** Which remote terms one remote product carries. */

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
 import {
   listAssignablePlatformAdmins,
-  listSupportTickets,
+  querySupportTickets,
   supportTicketStats,
 } from "@/lib/platform-service";
 
@@ -11,30 +11,35 @@ import {
  *
  * Gated on `support.manage`, which every platform-admin role holds (the
  * `support` role's whole job is this desk). Reads are scoped through the
- * platform bypass exactly like bug reports.
+ * platform bypass exactly like bug reports. Results are server-paginated.
  */
 export const GET = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("support.manage");
   if (error) return error;
 
-  const searchParams = request.nextUrl.searchParams;
-  const rawLimit = Number(searchParams.get("limit"));
-  const assignedToMe = searchParams.get("assignedToMe") === "true";
+  const sp = request.nextUrl.searchParams;
+  const assignedToMe = sp.get("assignedToMe") === "true";
 
-  const [tickets, stats, assignableAdmins] = await Promise.all([
-    listSupportTickets({
-      status: searchParams.get("status") ?? "",
-      priority: searchParams.get("priority") ?? "",
-      category: searchParams.get("category") ?? "",
-      search: searchParams.get("q") ?? "",
-      businessId: searchParams.get("businessId") ?? "",
+  const [list, stats, assignableAdmins] = await Promise.all([
+    querySupportTickets({
+      status: sp.get("status") ?? "",
+      priority: sp.get("priority") ?? "",
+      category: sp.get("category") ?? "",
+      search: sp.get("q") ?? "",
+      businessId: sp.get("businessId") ?? "",
       assignedToMe,
       adminId: assignedToMe ? session.padmin : "",
-      limit: Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 200,
+      page: Number(sp.get("page")) || 1,
+      pageSize: Number(sp.get("pageSize")) || 40,
     }),
     supportTicketStats(),
     listAssignablePlatformAdmins(),
   ]);
 
-  return NextResponse.json({ tickets, stats, assignableAdmins });
+  return NextResponse.json({
+    tickets: list.tickets,
+    stats,
+    assignableAdmins,
+    meta: { total: list.total, page: list.page, pageSize: list.pageSize },
+  });
 });

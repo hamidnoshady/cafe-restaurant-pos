@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { toPersianDigits } from "@/lib/digits";
 import { MEDIA_KIND_LABELS, type MediaKind } from "@/lib/media";
 import { EmptyState, SectionCard, SectionCardSkeleton, StatusBadge, cardClass } from "../page-chrome";
+import { FilterChip } from "../filters";
 import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
 
 interface FolderRow {
@@ -308,19 +309,13 @@ export function MediaManager() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex flex-wrap gap-1">
             {KIND_FILTERS.map((f) => (
-              <button
+              <FilterChip
                 key={f.key}
-                type="button"
-                aria-pressed={kind === f.key}
+                selected={kind === f.key}
                 onClick={() => setKind(f.key)}
-                className={`rounded-xl border px-3 py-1.5 text-sm transition-colors ${
-                  kind === f.key
-                    ? "border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                    : "border-transparent text-muted-foreground hover:border-border hover:bg-muted"
-                }`}
               >
                 {f.label}
-              </button>
+              </FilterChip>
             ))}
           </div>
           <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>

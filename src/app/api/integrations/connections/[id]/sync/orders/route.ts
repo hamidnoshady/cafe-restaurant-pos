@@ -25,7 +25,13 @@ export const POST = withTenantScope(
     const { id } = await context.params;
 
     const connection = await getConnection(session.businessId, id);
-    if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
+    if (!connection.sync_orders) {
+      return NextResponse.json({ ok: false, error: "sync_orders_disabled" }, { status: 409 });
+    }
+    if (connection.status === "paused") {
+      return NextResponse.json({ ok: false, error: "connection_paused" }, { status: 409 });
+    }
 
     let sinceDays: number | undefined;
     try {

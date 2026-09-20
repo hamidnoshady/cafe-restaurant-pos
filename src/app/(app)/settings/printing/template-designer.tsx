@@ -48,6 +48,7 @@ import {
 import { SectionCard, cardClass } from "@/app/dashboard/page-chrome";
 import { Field, inputClass } from "@/app/dashboard/ui";
 import { TemplatePreview } from "./template-preview";
+import { FilterChip } from "@/app/dashboard/filters";
 
 const SIZE_LABELS: Record<TextSize, string> = {
   xs: "خیلی کوچک",
@@ -458,10 +459,9 @@ function BlockEditor({
                 {(Object.keys(ITEM_COLUMN_LABELS) as ItemColumn[]).map((column) => {
                   const active = (block.columns ?? []).includes(column);
                   return (
-                    <button
+                    <FilterChip
                       key={column}
-                      type="button"
-                      aria-pressed={active}
+                      selected={active}
                       onClick={() =>
                         onPatch({
                           columns: active
@@ -469,14 +469,10 @@ function BlockEditor({
                             : [...(block.columns ?? []), column],
                         })
                       }
-                      className={`min-h-9 rounded-xl border px-3 text-xs font-medium transition-colors ${
-                        active
-                          ? "border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                          : "border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
+                      className="min-h-9 text-xs"
                     >
                       {ITEM_COLUMN_LABELS[column]}
-                    </button>
+                    </FilterChip>
                   );
                 })}
               </div>

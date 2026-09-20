@@ -1,6 +1,6 @@
 "use client";
 
-import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { KpiRow, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
  * The CRM app's management dashboard (Phase 36) — its «میز کار».
@@ -33,20 +33,9 @@ import { formatJalali } from "@/lib/jalali";
 import { LIFECYCLE_STAGES, type LifecycleStage } from "@/lib/crm-scoring";
 import { DEAL_STAGE_META } from "@/lib/crm-shared";
 import type { CrmOverview } from "@/lib/crm-overview";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { EmptyState, KpiCard, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import { crmCustomerHref, type CrmSectionKey } from "./crm-routes";
-
-/** A KPI tile: `cardClass` composed, not restated (design-lint holds this line). */
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
-      <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
-}
 
 /** A labelled proportion bar — lifecycle mix and consent coverage both read better as a shape. */
 function ShareBar({ parts }: { parts: { key: string; label: string; count: number; tone: string }[] }) {
@@ -162,7 +151,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شروع سریع</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">شروع کار با پروندهٔ مشتریان</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">شروع کار با پروندهٔ مشتریان</h2>
             </div>
           }
           description="هنوز مشتری‌ای ثبت نشده است. سه قدم اول برنامهٔ ارتباط با مشتری:"
@@ -181,13 +170,13 @@ export function CrmOverviewSection({
         </SectionCard>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard
+      <KpiRow className="xl:grid-cols-3">
+        <KpiCard
           label="مشتریان فعال"
           value={formatPersianNumber(customers.total)}
           hint={`${formatPersianNumber(customers.neverPurchased)} هنوز خرید نکرده‌اند`}
         />
-        <StatCard
+        <KpiCard
           label="مشتری تازه · ۳۰ روز گذشته"
           value={formatPersianNumber(customers.new30d)}
           hint={
@@ -198,17 +187,17 @@ export function CrmOverviewSection({
                 : `${formatPersianNumber(Math.abs(newTrend))} کمتر از دورهٔ قبل`
           }
         />
-        <StatCard
+        <KpiCard
           label="قابل ارسال پیامک"
           value={formatPersianNumber(consent.smsReachable)}
           hint={`${toPersianDigits(String(consent.smsCoveragePercent))}٪ از مشتریان · ${formatPersianNumber(consent.smsGranted)} رضایت داده‌اند`}
         />
-        <StatCard
+        <KpiCard
           label="ارزش تحقق‌یافتهٔ مشتریان"
           value={money.formatText(value.totalHistoricRial)}
           hint={`میانگین هر مشتری ${money.formatText(value.averageCustomerRial)}`}
         />
-        <StatCard
+        <KpiCard
           label="نگه‌داشت مشتری · دوره به دوره"
           value={retention.priorCount === 0 ? "—" : `${toPersianDigits(String(retention.retentionRate))}٪`}
           hint={
@@ -217,24 +206,24 @@ export function CrmOverviewSection({
               : `${formatPersianNumber(retention.retainedCount)} از ${formatPersianNumber(retention.priorCount)} مشتری دورهٔ قبل برگشتند`
           }
         />
-        <StatCard
+        <KpiCard
           label="کارهای عقب‌افتاده"
           value={formatPersianNumber(tasks.overdue)}
           hint={`${formatPersianNumber(tasks.dueToday)} کار امروز · ${formatPersianNumber(tasks.open)} کار باز`}
         />
-        <StatCard
+        <KpiCard
           label="بخش‌بندی‌های فعال"
           value={formatPersianNumber(segments.total)}
           hint={segments.total > 0 ? segments.names.slice(0, 2).join(" · ") : "برای هدف‌گیری مشتریان یک بخش بسازید"}
         />
-      </div>
+      </KpiRow>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تحلیل رفتار (RFM)</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">چرخهٔ عمر مشتریان</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">چرخهٔ عمر مشتریان</h2>
             </div>
           }
           description="بر پایهٔ تازگی، تکرار و مبلغ خرید (RFM)"
@@ -291,7 +280,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">معامله و فروش</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">قیف فروش</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">قیف فروش</h2>
             </div>
           }
           description="معامله‌های باز و ارزش وزنی آن‌ها"
@@ -342,7 +331,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملکرد فروش</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">بهترین مشتریان</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">بهترین مشتریان</h2>
             </div>
           }
           description="بیشترین خرید تحقق‌یافته"
@@ -377,7 +366,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">میز خدمت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">خدمات و رسیدگی</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">خدمات و رسیدگی</h2>
             </div>
           }
           description="تیکت‌های باز و زمان رسیدگی"
@@ -415,7 +404,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">رضایت ارتباط</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">رضایت ارتباط</h2>
             </div>
           }
           description="چه سهمی از مشتریان واقعاً قابل پیام دادن‌اند"
@@ -450,7 +439,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دفاتر مالی</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">پل حسابداری</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">پل حسابداری</h2>
             </div>
           }
           description="اعدادی که این برنامه با دفتر حساب‌ها مشترک دارد"
@@ -485,7 +474,7 @@ export function CrmOverviewSection({
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یکپارچه‌سازی</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان تکراری</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان تکراری</h2>
             </div>
           }
           description="پرونده‌هایی که احتمالاً یک نفرند"

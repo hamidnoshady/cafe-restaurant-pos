@@ -55,6 +55,8 @@ import {
   StatusBadge,
 } from "@/app/dashboard/page-chrome";
 import { reconciliationTotals } from "@/lib/bank-reconciliation";
+import { FilterChip } from "@/app/dashboard/filters";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 type AccountCode = "cash" | "bank" | "bankClearing";
 
@@ -349,21 +351,16 @@ export function ReconciliationSection({
               const isActive = accountCode === a.code;
               const Icon = a.icon;
               return (
-                <button
+                <FilterChip
                   key={a.code}
-                  type="button"
-                  aria-pressed={isActive}
+                  selected={isActive}
                   title={a.hint}
                   onClick={() => setAccountCode(a.code)}
-                  className={`flex min-h-12 shrink-0 snap-start items-center justify-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 sm:shrink dark:focus-visible:ring-amber-400/40 ${
-                    isActive
-                      ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                      : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"
-                  }`}
+                  className="flex min-h-12 snap-start items-center justify-center gap-2 sm:shrink"
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
                   <span className="whitespace-nowrap">{a.label}</span>
-                </button>
+                </FilterChip>
               );
             })}
           </div>
@@ -385,7 +382,7 @@ export function ReconciliationSection({
           ) : !history ? (
             <LoadingSkeleton rows={3} label="در حال بارگذاری تطبیق‌های حساب" />
           ) : !current ? (
-            <div className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+            <div className="rounded-xl border border-border/80 bg-muted/60 p-4">
               <h3 className="text-sm font-semibold text-foreground">شروع تطبیق جدید</h3>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 تاریخ پایان صورتحساب و مانده پایانی آن را وارد کنید. اقلام ثبت‌شده تا همان تاریخ برای تطبیق
@@ -455,18 +452,18 @@ export function ReconciliationSection({
               </div>
 
               <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                <div className="rounded-xl border border-border/80 bg-muted/60 p-3">
                   <dt className="text-xs text-muted-foreground">مانده صورتحساب</dt>
                   <dd className="mt-1 font-bold text-foreground">{money.format(detail.statementBalance)}</dd>
                 </div>
-                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                <div className="rounded-xl border border-border/80 bg-muted/60 p-3">
                   <dt className="text-xs text-muted-foreground">مانده اول دوره</dt>
                   <dd className="mt-1 font-bold text-foreground">{money.format(detail.openingBalance)}</dd>
                   <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
                     از آخرین تطبیق قفل‌شدهٔ این حساب
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                <div className="rounded-xl border border-border/80 bg-muted/60 p-3">
                   <dt className="text-xs text-muted-foreground">جمع اقلام تطبیق‌شده</dt>
                   <dd className="mt-1 font-bold text-foreground">{money.format(totals.clearedTotal)}</dd>
                   <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
@@ -475,7 +472,7 @@ export function ReconciliationSection({
                 </div>
                 <div
                   className={`rounded-xl border p-3 ${
-                    totals.difference === 0
+            totals.difference === 0
                       ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10"
                       : "border-destructive/30 bg-destructive/5"
                   }`}
@@ -484,7 +481,7 @@ export function ReconciliationSection({
                   <dd
                     aria-live="polite"
                     className={`mt-1 font-bold ${
-                      totals.difference === 0
+            totals.difference === 0
                         ? "text-emerald-700 dark:text-emerald-300"
                         : "text-destructive"
                     }`}
@@ -512,83 +509,59 @@ export function ReconciliationSection({
                 </EmptyState>
               ) : (
                 <>
-                  <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <caption className="sr-only">
-                          اقلام قابل تطبیق {activeAccount.label} تا تاریخ{" "}
-                          {toPersianDigits(formatJalali(detail.statementDate))}
-                        </caption>
-                        <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
-                          <tr className="border-b border-border">
-                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
-                              تطبیق
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
-                              تاریخ
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
-                              منبع
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
-                              شرح
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
-                              بدهکار
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-start text-xs font-medium sm:text-sm">
-                              بستانکار
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {detail.lines.map((l) => (
-                            <tr
-                              key={l.journalLineId}
-                              className={`border-b border-border transition-colors last:border-b-0 ${
-                                l.cleared ? "bg-amber-50/60 dark:bg-amber-500/10" : ""
-                              }`}
-                            >
-                              <td className="px-4 py-3">
-                                <input
-                                  type="checkbox"
-                                  className="size-5 accent-primary"
-                                  checked={l.cleared}
-                                  onChange={(e) => toggleLine(l.journalLineId, e.target.checked)}
-                                  disabled={pendingLines.has(l.journalLineId)}
-                                  aria-label={`تطبیق ${l.memo ?? "سند"} به تاریخ ${toPersianDigits(
-                                    formatJalali(l.entryDate),
-                                  )}`}
-                                />
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                                {toPersianDigits(formatJalali(l.entryDate))}
-                              </td>
-                              <td className="px-4 py-3 text-muted-foreground">
-                                {ledgerSourceLabel(l.sourceType)}
-                              </td>
-                              <td className="px-4 py-3 text-foreground">{l.memo ?? "—"}</td>
-                              <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">
-                                {l.debit ? money.format(l.debit) : "—"}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">
-                                {l.credit ? money.format(l.credit) : "—"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                  <DataTable
+                    caption={`اقلام قابل تطبیق ${activeAccount.label} تا تاریخ ${toPersianDigits(formatJalali(detail.statementDate))}`}
+                    className="hidden lg:block"
+                  >
+                    <DataTableHead>
+                      <Th>تطبیق</Th>
+                      <Th>تاریخ</Th>
+                      <Th>منبع</Th>
+                      <Th>شرح</Th>
+                      <Th numeric>بدهکار</Th>
+                      <Th numeric>بستانکار</Th>
+                    </DataTableHead>
+                    <DataTableBody>
+                      {detail.lines.map((l) => (
+                        <DataTableRow key={l.journalLineId} selected={l.cleared}>
+                          <Td>
+                            <input
+                              type="checkbox"
+                              className="size-5 accent-primary"
+                              checked={l.cleared}
+                              onChange={(e) => toggleLine(l.journalLineId, e.target.checked)}
+                              disabled={pendingLines.has(l.journalLineId)}
+                              aria-label={`تطبیق ${l.memo ?? "سند"} به تاریخ ${toPersianDigits(
+                                formatJalali(l.entryDate),
+                              )}`}
+                            />
+                          </Td>
+                          <Td nowrap muted>
+                            {toPersianDigits(formatJalali(l.entryDate))}
+                          </Td>
+                          <Td muted>
+                            {ledgerSourceLabel(l.sourceType)}
+                          </Td>
+                          <Td>{l.memo ?? "—"}</Td>
+                          <Td numeric nowrap>
+                            {l.debit ? money.format(l.debit) : "—"}
+                          </Td>
+                          <Td numeric nowrap>
+                            {l.credit ? money.format(l.credit) : "—"}
+                          </Td>
+                        </DataTableRow>
+                      ))}
+                    </DataTableBody>
+                  </DataTable>
 
                   <div className="space-y-3 lg:hidden">
                     {detail.lines.map((l) => (
                       <label
                         key={l.journalLineId}
                         className={`block rounded-xl border p-4 transition-colors ${
-                          l.cleared
+            l.cleared
                             ? "border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10"
-                            : "border-border/80 bg-stone-50/60 dark:bg-stone-800/30"
+                            : "border-border/80 bg-muted/60"
                         }`}
                       >
                         <div className="flex items-start gap-3">

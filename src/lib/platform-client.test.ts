@@ -1,0 +1,106 @@
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { platformFetch, withParams } from "./platform-client";
+
+function mockFetch(impl: (url: string, init?: RequestInit) => Promise<Response> | Response) {
+  vi.stubGlobal("fetch", vi.fn(impl as typeof fetch));
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("withParams", () => {
+  it("appends params and drops nullish/blank values", () => {
+    expect(withParams("/x", { a: 1, b: "", c: null, d: undefined, e: "y" })).toBe("/x?a=1&e=y");
+  });
+
+  it("returns the url unchanged with no params", () => {
+    expect(withParams("/x")).toBe("/x");
+  });
+
+  it("respects an existing query string", () => {
+    expect(withParams("/x?p=1", { q: 2 })).toBe("/x?p=1&q=2");
+  });
+});
+
+describe("platformFetch", () => {
+  it("returns a typed success envelope for 2xx JSON", async () => {
+    mockFetch(() => new Response(JSON.stringify({ hello: "world" }), { status: 200 }));
+    const res = await platformFetch<{ hello: string }>("/api/platform/x");
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.hello).toBe("world");
+  });
+
+  it("treats 204 as success with no data", async () => {
+    mockFetch(() => new Response(null, { status: 204 }));
+    const res = await platformFetch("/api/platform/x", { method: "DELETE" });
+    expect(res.ok).toBe(true);
+  });
+
+  it("maps a body error code through the envelope", async () => {
+    mockFetch(() => new Response(JSON.stringify({ error: "subdomain_taken" }), { status: 409 }));
+    const res = await platformFetch("/api/platform/x", { method: "POST", body: {} });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("subdomain_taken");
+      expect(res.status).toBe(409);
+    }
+  });
+
+  it("synthesizes a status code when the body has none", async () => {
+    mockFetch(() => new Response(JSON.stringify({}), { status: 403 }));
+    const res = await platformFetch("/api/platform/x");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("forbidden");
+  });
+
+  it("carries field validation errors", async () => {
+    mockFetch(
+      () =>
+        new Response(JSON.stringify({ error: "validation_error", fields: { name: "الزامی" } }), {
+          status: 422,
+        }),
+    );
+    const res = await platformFetch("/api/platform/x", { method: "POST", body: {} });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.fields?.name).toBe("الزامی");
+  });
+
+  it("returns network_error when fetch throws", async () => {
+    mockFetch(() => {
+      throw new TypeError("boom");
+    });
+    const res = await platformFetch("/api/platform/x");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("network_error");
+  });
+
+  it("returns request_cancelled on abort", async () => {
+    mockFetch(() => {
+      throw new DOMException("aborted", "AbortError");
+    });
+    const res = await platformFetch("/api/platform/x");
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("request_cancelled");
+      expect(res.cancelled).toBe(true);
+    }
+  });
+
+  it("returns parse_error for a 200 with invalid JSON", async () => {
+    mockFetch(() => new Response("<html>not json</html>", { status: 200 }));
+    const res = await platformFetch("/api/platform/x");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("parse_error");
+  });
+
+  it("serializes a JSON body and sets the content-type", async () => {
+    const spy = vi.fn((_url: string, _init?: RequestInit) => new Response(JSON.stringify({}), { status: 200 }));
+    mockFetch(spy as unknown as typeof fetch);
+    await platformFetch("/api/platform/x", { method: "POST", body: { a: 1 } });
+    const init = spy.mock.calls[0][1] as RequestInit;
+    expect(init.body).toBe(JSON.stringify({ a: 1 }));
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+  });
+});

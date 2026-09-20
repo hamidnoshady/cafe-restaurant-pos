@@ -30,11 +30,10 @@ describe("PROMPT_FRAGMENTS", () => {
       "rule:describe_app",
       // No `app:connections`: the «اتصال‌های فنی» hub is shell
       // infrastructure, not an app, so it contributes no prompt fragment.
-      "app:sales",
-      "app:growth",
-      "app:operations",
       "app:accounting",
-      "app:settings",
+      "app:growth",
+      "app:crm",
+      "app:website",
       "project",
     ];
     for (const key of allKeys) {
@@ -95,19 +94,18 @@ describe("fragmentsForTurn", () => {
   });
 
   it("includes app fragments only for dashboard mode with apps specified", () => {
-    const withApps = fragmentsForTurn({ mode: "dashboard", apps: ["sales", "accounting"] });
-    expect(withApps).toContain("app:sales");
+    const withApps = fragmentsForTurn({ mode: "dashboard", apps: ["accounting"] });
     expect(withApps).toContain("app:accounting");
     expect(withApps).not.toContain("app:growth");
 
     // Without apps specified, no app fragments
     const noApps = fragmentsForTurn({ mode: "dashboard" });
-    expect(noApps).not.toContain("app:sales");
+    expect(noApps).not.toContain("app:accounting");
   });
 
   it("does not include app fragments for non-dashboard modes", () => {
-    const keys = fragmentsForTurn({ mode: "floor", apps: ["sales"] });
-    expect(keys).not.toContain("app:sales");
+    const keys = fragmentsForTurn({ mode: "floor", apps: ["accounting"] });
+    expect(keys).not.toContain("app:accounting");
   });
 
   it("includes project fragment when hasProject is true", () => {
@@ -151,8 +149,8 @@ describe("assembleFromFragments", () => {
   });
 
   it("produces shorter output for a single-app turn than a full turn", () => {
-    const fullKeys = fragmentsForTurn({ mode: "dashboard", apps: ["sales", "growth", "operations", "accounting", "website", "settings"] });
-    const singleKeys = fragmentsForTurn({ mode: "dashboard", apps: ["sales"] });
+    const fullKeys = fragmentsForTurn({ mode: "dashboard", apps: ["accounting", "growth", "crm", "website"] });
+    const singleKeys = fragmentsForTurn({ mode: "dashboard", apps: ["accounting"] });
 
     const fullPrompt = assembleFromFragments(fullKeys, { businessName: "Test" });
     const singlePrompt = assembleFromFragments(singleKeys, { businessName: "Test" });

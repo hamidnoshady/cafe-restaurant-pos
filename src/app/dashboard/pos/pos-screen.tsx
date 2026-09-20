@@ -9,6 +9,7 @@ import {
   useState,
   useDeferredValue,
 } from "react";
+import { toast } from "sonner";
 import {
   CheckIcon,
   MinusIcon,
@@ -54,7 +55,7 @@ import {
   kickDrawer,
   printKitchenTicket,
   printReceipt,
-} from "@/lib/print-agent-client";
+} from "@/lib/printing/client";
 import {
   cartQuantitiesByItem,
   isGlobalCashierShortcutEligible,
@@ -94,6 +95,7 @@ import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { cardClass } from "../page-chrome";
+import { safeRandomId } from "@/lib/client-id";
 
 interface Category {
   id: string;
@@ -538,7 +540,7 @@ export function PosScreen({
       return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
     });
     return {
-      key: key ?? `${item.id}-${crypto.randomUUID()}`,
+      key: key ?? `${item.id}-${safeRandomId()}`,
       menuItemId: item.id,
       name: item.name,
       unitPrice: Number(item.price),
@@ -579,7 +581,7 @@ export function PosScreen({
       selectedModifierIds,
       note,
       quantity,
-      `${item.id}-${crypto.randomUUID()}`,
+      `${item.id}-${safeRandomId()}`,
     );
     setCart((prev) => upsertLine(prev, lineKey, line));
     flashItem(item.id);
@@ -847,7 +849,7 @@ export function PosScreen({
     submissionInFlight.current = true;
     setBusy(true);
     if (!clientRequestIdRef.current) {
-      clientRequestIdRef.current = crypto.randomUUID();
+      clientRequestIdRef.current = safeRandomId();
     }
     const orderBody = {
       type: orderType,
@@ -981,7 +983,7 @@ export function PosScreen({
           note: line.note || null,
         })),
       };
-      void printKitchenTicket(kitchenPrinter.connection, ticket);
+      void printKitchenTicket(kitchenPrinter.id, ticket);
     }
 
     if (paid) {
@@ -1025,11 +1027,20 @@ export function PosScreen({
             money.unit,
           ),
         };
-        void printReceipt(receiptPrinter.connection, receipt);
+        void printReceipt(receiptPrinter.id, receipt).then((result) => {
+          // Printing is best-effort by contract: a failed receipt print never
+          // invalidates the completed sale. Say so, non-destructively, with a
+          // way to try again — the order is safe either way.
+          if (!result.ok && result.error !== "not_in_browser") {
+            toast.warning("چاپ رسید انجام نشد؛ سفارش با موفقیت ثبت شده است.", {
+              action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, receipt) },
+            });
+          }
+        });
         // Any cash in the split opens the drawer — a bill half paid in notes
         // still needs somewhere to put them.
         if (draftOpensDrawer(paymentDraft, paymentMethods))
-          void kickDrawer(receiptPrinter.connection);
+          void kickDrawer(receiptPrinter.id);
       }
     }
 

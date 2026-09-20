@@ -11,7 +11,7 @@ import {
   ORDER_ITEM_STATUS_LABELS,
   type OrderItemStatus,
 } from "@/lib/order-item-status";
-import { printKitchenTicket } from "@/lib/print-agent-client";
+import { printKitchenTicket } from "@/lib/printing/client";
 import {
   modifierNamesLabel,
   type DisplayModifier,
@@ -30,6 +30,7 @@ import {
 } from "../ui";
 import { firstPrinter, usePrinters } from "../use-printers";
 import { cardClass } from "../page-chrome";
+import { safeRandomId } from "@/lib/client-id";
 
 interface Category {
   id: string;
@@ -221,7 +222,7 @@ export function TableOrderPanel({
     setCart((prev) => [
       ...prev,
       {
-        key: `${item.id}-${crypto.randomUUID()}`,
+        key: `${item.id}-${safeRandomId()}`,
         menuItemId: item.id,
         name: item.name,
         unitPrice: Number(item.price),
@@ -259,7 +260,7 @@ export function TableOrderPanel({
       note: l.note || undefined,
     }));
     if (!table.order_id && !clientRequestIdRef.current) {
-      clientRequestIdRef.current = crypto.randomUUID();
+      clientRequestIdRef.current = safeRandomId();
     }
     const createBody = {
       type: "dine_in" as const,
@@ -313,7 +314,7 @@ export function TableOrderPanel({
             note: l.note || null,
           })),
         };
-        void printKitchenTicket(kitchenPrinter.connection, ticket);
+        void printKitchenTicket(kitchenPrinter.id, ticket);
       }
       onChanged();
       loadOrder();

@@ -359,14 +359,17 @@ describe("the CRM overview", () => {
 
 describe("segments", () => {
   it("filters by consent in SQL, and still reports the unfiltered population", async () => {
-    // Three loyal customers; only one has agreed to be texted.
+    // Four loyal customers; only one has agreed to be texted on a mobile line.
     const willing = await makeCustomer(biz.id, "زهرا", { phone: "+989120000001", smsConsent: true });
     const unwilling = await makeCustomer(biz.id, "حسن", { phone: "+989120000002", smsConsent: false });
     // Agreed to be texted, but there is no number to text — granted is not the
     // same as reachable, and a send must use the second.
     const unreachable = await makeCustomer(biz.id, "نگار", { phone: null, smsConsent: true });
+    // A landline can parse as an Iranian number, but it cannot receive the SMS
+    // campaign; the segment predicate must use the mobile reachability rule.
+    const landline = await makeCustomer(biz.id, "دفتر", { phone: "+982112345678", smsConsent: true });
 
-    for (const id of [willing, unwilling, unreachable]) {
+    for (const id of [willing, unwilling, unreachable, landline]) {
       await makeSale(biz.locationId, biz.id, id, 300_000, 3);
       await makeSale(biz.locationId, biz.id, id, 300_000, 6);
     }
@@ -376,20 +379,35 @@ describe("segments", () => {
     };
 
     const view = await segmentsService.previewSegment(biz.id, definition, { purpose: "view" });
-    expect(view.count).toBe(3);
+    expect(view.count).toBe(4);
 
     const sms = await segmentsService.previewSegment(biz.id, definition, { purpose: "sms" });
-    // Only the one who agreed AND can be reached.
+    // Only the one who agreed AND can be reached on a mobile number.
     expect(sms.count).toBe(1);
-    // The gap is reported rather than hidden: «۳ نفر همخوانی دارند، ۱ نفر
+    // The gap is reported rather than hidden: «۴ نفر همخوانی دارند، ۱ نفر
     // اجازه داده» is the fact an owner needs, and a silently smaller number is
     // the thing that makes people distrust the tool.
-    expect(sms.totalBeforeConsent).toBe(3);
+    expect(sms.totalBeforeConsent).toBe(4);
 
     const audience = await segmentsService.resolveDefinition(biz.id, definition, { purpose: "sms" });
     expect(audience.map((row) => row.id)).toEqual([willing]);
     expect(audience.map((row) => row.id)).not.toContain(unwilling);
     expect(audience.map((row) => row.id)).not.toContain(unreachable);
+    expect(audience.map((row) => row.id)).not.toContain(landline);
+  });
+
+  it("keeps suppliers and personnel out of customer segments unless they are also customers", async () => {
+    const customer = await makeCustomer(biz.id, "خریدار");
+    const supplier = await db.query<{ id: string }>(
+      `INSERT INTO parties (business_id, name, role, roles)
+       VALUES ($1, 'تأمین‌کننده', 'supplier', ARRAY['supplier']::text[]) RETURNING id`,
+      [biz.id],
+    );
+
+    const preview = await segmentsService.previewSegment(biz.id, {});
+    expect(preview.count).toBe(1);
+    expect(preview.sample.map((row) => row.id)).toContain(customer);
+    expect(preview.sample.map((row) => row.id)).not.toContain(supplier.rows[0].id);
   });
 
   it("excludes a merged-away record, so a person is never counted twice", async () => {

@@ -15,7 +15,7 @@ import {
   setMemberTicketStatus,
 } from "../src/lib/support-service";
 import {
-  listSupportTickets,
+  querySupportTickets,
   getSupportTicket,
   addSupportMessage,
   updateSupportTicket,
@@ -107,7 +107,7 @@ async function main() {
     )
   ).rows;
 
-  const list = await listSupportTickets({ search: "چاپگر" });
+  const list = (await querySupportTickets({ search: "چاپگر" })).tickets;
   const found = list.find((t) => t.id === created.id);
   if (!found) throw new Error("platform list missed ticket");
   console.log("platform list ok:", found.businessName, found.userName, "| count:", found.messageCount);

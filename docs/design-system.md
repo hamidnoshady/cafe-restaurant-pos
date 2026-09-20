@@ -1,8 +1,11 @@
 # Design system — the app's visual canon
 
 **This document is the normative description of what the product looks like.** It is backed
-by the reference screenshots in [`docs/design/reference/`](design/reference/) — those images
-are the ground truth; when prose and screenshot disagree, match the screenshot. The classes
+by the approved reference screenshots described under "Reference screenshots" below — those
+images are the ground truth; when prose and screenshot disagree, match the screenshot. The
+pre-2026-09 images are archived under
+[`docs/design/reference/archive-2026-09/`](design/reference/archive-2026-09/) and are
+historical, not normative. The classes
 quoted here are copied from the shared primitives, which are the other normative half:
 
 - [`src/app/dashboard/page-chrome.tsx`](../src/app/dashboard/page-chrome.tsx) — `PageShell`,
@@ -22,15 +25,45 @@ edit, not because copying them into a page is acceptable.
 
 ## Reference screenshots
 
-| File | Shows |
-| --- | --- |
-| [accounting-trial-balance.png](design/reference/accounting-trial-balance.png) | Settings rail nav (amber active pill + dot), data table on warm header wash, «متوازن» green badge, Toman amounts in Persian digits |
-| [ledger-expense-form.png](design/reference/ledger-expense-form.png) | Amber eyebrow over card title, form grid of fields/selects, recent-expenses table, dashed empty state |
-| [ledger-expense-combobox.png](design/reference/ledger-expense-combobox.png) | SearchableSelect open: teal focus ring on the search input, white popover panel, checkmark on the selected option |
-| [pos-sell-screen.png](design/reference/pos-sell-screen.png) | POS exception chrome: category chips (amber active), amber dashed product cards, solid amber CTA, dense icon-led sidebar |
-| [reservations.png](design/reference/reservations.png) | Filter chips row (amber active), selects, rich empty states (amber icon chip + bold title + muted line), dashed placeholder panel |
-| [settings.png](design/reference/settings.png) | Grouped rail nav («کسب‌وکار / مالی و فروش / مدیریت» labels), card stacks, unit toggle where the active choice is amber-100 |
-| [dashboard-overview.png](design/reference/dashboard-overview.png) | KPI stat cards with amber icon chips and extrabold numbers, amber bar chart with dashed loading skeleton, green live pill |
+**The approved visual reference is the 2026-09-18 screenshot set** (Orders, POS,
+Inventory, Menu/file import, Accounting trial balance, Business settings). Those
+six images define the target appearance of every tenant-facing screen.
+
+> **Availability note.** The six images were supplied to the agent that wrote
+> this revision **in conversation only** — they were never delivered as files to
+> the working tree, so they could not be committed. The rules below were derived
+> by reading them directly; they have **not** been pixel-compared against a
+> stored copy, and no such copy is claimed to exist in this repo. If you have
+> the originals, add them under `docs/design/reference/` with the filenames in
+> the table below and delete this note.
+>
+> This note is enforced, not merely written down:
+> `src/app/reference-screenshots.test.ts` fails if the files appear and the note
+> stays (the canon would be claiming they are missing), and also if the note is
+> removed while the files are still absent (the canon would be implying a
+> pixel-comparison that never happened). When you add the images it will tell
+> you to do the comparison, record it in `docs/design/test-results.md`, and then
+> retire both the note and itself.
+
+| Expected filename | App / screen | What it establishes |
+| --- | --- | --- |
+| `orders-queue.png` | Accounting → سفارش‌ها | Page header with icon chip and actions; full-width search; amber-selected chip row; order-queue card; **two** rich empty states (amber icon chip, bold title, muted explanatory line) |
+| `pos-sell-screen.png` | Accounting → صندوق (فروش) | The approved **dense operational variation**: category chips, product cards with amber-selected border, cart panel, amber CTA. Not a template for ordinary pages |
+| `inventory-warehouses.png` | Accounting → انبار | Section nav rail with grouped labels; amber eyebrow above the card title; add-form card; filter chips + search; data table; `فعال` / `۱۸ قلم` status badges |
+| `settings-menu-import.png` | Settings → منو و ورود فایل | Section nav; stacked cards; form controls; file upload row; teal-tinted information callout |
+| `accounting-trial-balance.png` | Accounting → تراز آزمایشی | Grouped rail nav; table density and header wash; numeric columns in Persian digits with «تومان»; green dotted «متوازن» pill; amber eyebrow |
+| `settings-business.png` | Settings → کسب‌وکار و شعبه | Section nav with grouped labels; stacked form cards; the money-unit control where the selected option is amber-100 filled with its example beneath |
+
+### Superseded references
+
+The pre-2026-09 images previously listed here described the same language but an
+older spelling of it (notably `bg-stone-50` table headers, since replaced by the
+warm token wash). They have been **archived** to
+[`docs/design/reference/archive-2026-09/`](design/reference/archive-2026-09/)
+rather than deleted, because several are still the only picture of a screen the
+new set does not cover (the SearchableSelect popover, the dashboard overview's
+charts). Treat them as *historical*: where an archived image and the rules below
+disagree, the rules win.
 
 ## The language in one paragraph
 
@@ -49,7 +82,7 @@ Hovers are quiet washes, never overlays or zooms. Motion is short, eased and fun
 1. **Dashboard** (`src/app/dashboard/**`) — this document, fully. Built from the primitives.
 2. **Full-screen operational surfaces** (POS, orders queue, floor plan, KDS, reservations) —
    same palette, denser chrome, smaller headers, touch-height targets. See
-   [pos-sell-screen.png](design/reference/pos-sell-screen.png). Not `PageHeader` pages —
+   [pos-sell-screen.png](design/reference/archive-2026-09/pos-sell-screen.png). Not `PageHeader` pages —
    but still framed by `PageShell` or its equivalents in `ops-styles.ts`, which composes
    `cardClass`.
 3. **Entry surfaces** (`src/app/login`, `src/app/welcome`, `src/app/setup`,
@@ -315,7 +348,7 @@ green ring (`ops-sync-pulse`).
 
 Simple (`EmptyState`): `rounded-xl border border-dashed border-stone-200 px-3 py-6
 text-center text-sm text-muted-foreground`. Rich (see
-[reservations.png](design/reference/reservations.png)): a centered column inside a dashed
+[reservations.png](design/reference/archive-2026-09/reservations.png)): a centered column inside a dashed
 panel — an amber icon chip `grid size-12 place-items-center rounded-2xl bg-amber-100/70
 text-amber-700`, title `text-sm font-semibold text-stone-900`, one-line description
 `mt-1 text-xs text-muted-foreground`. Both forms name what will exist here, in Persian,
@@ -453,6 +486,99 @@ token, alpha preserved:
 | violet status coding: `#6B3B8D` `#72518E` `#8B5BAF` | `chart-7` | `#F7F2FC` `#FAF4FF` `#F1E5FB` | `chart-7/5` |
 | blue status coding: `#4B7D9B` `#35647D` | `chart-1` | `#F1F8FC` `#C7DCE8` | `chart-1/5` `chart-1/25` |
 
+## Decision guide — which component for which need
+
+Look the need up here **before** writing any chrome. If the need is not in this
+table, the answer is almost always "compose the closest one", not "write a new
+one": every duplicated pattern in this product started as a reasonable-looking
+exception.
+
+| You need… | Use | From |
+| --- | --- | --- |
+| A page's canvas | `PageShell` | `page-chrome.tsx` |
+| A page title, description and actions | `PageHeader` | `page-chrome.tsx` |
+| A titled surface | `SectionCard` (`flush` for edge-to-edge lists/tables) | `page-chrome.tsx` |
+| A bespoke-layout surface that must still look like a card | `cardClass` | `page-chrome.tsx` |
+| The small amber category line over a card title | `CardEyebrow` | `page-chrome.tsx` |
+| An in-page menu of sub-screens | `SectionNav` (`variant="rail"` when long) | `section-nav.tsx` |
+| A tab strip | `TabBar` + `TabPanel` | `page-chrome.tsx` |
+| **A data table** | `DataTable` + `DataTableHead`/`Body`/`Row`/`Foot`, `Th`, `Td` | `data-table.tsx` |
+| A money or count column | `<Td numeric>` (end-aligned, medium, `tabular-nums`) | `data-table.tsx` |
+| **A filter chip / chip row** | `FilterChip` (+ `dense` for operational), `FilterChipRow` | `filters.tsx` |
+| **A search field** | `SearchField` | `filters.tsx` |
+| **A KPI tile / stat row** | `KpiCard` + `KpiRow` | `page-chrome.tsx` |
+| A status pill | `StatusBadge` (`dot` for report headers) | `page-chrome.tsx` |
+| An empty sub-list inside a titled card | `<EmptyState>one sentence</EmptyState>` | `page-chrome.tsx` |
+| **A page region with nothing in it** | `<EmptyState icon title action>` | `page-chrome.tsx` |
+| A loading region | `LoadingSkeleton` / `SectionCardSkeleton` / `KpiRowSkeleton` / `DashboardPageSkeleton` | `page-chrome.tsx` |
+| A busy action | Swap the button's label («در حال ثبت…») and disable it — never a spinner | — |
+| A form field | `Field` + `inputClass`, or the shadcn `Input`/`Select` | `ui.tsx`, `components/ui/` |
+| An error / info callout | `ErrorBox` / `InfoBox` | `ui.tsx` |
+| A modal or side panel | `overlayPanelClass` | `page-chrome.tsx` |
+| A dropdown popover | `popoverPanelClass` | `page-chrome.tsx` |
+| A date input | `JalaliDatePicker` — **never** `<input type="date">` | `jalali-date-picker.tsx` |
+| A money amount | `useMoney().format` / `formatMoneyText` | `@/lib/money` |
+| Any user-facing number | `toPersianDigits` / `formatPersianNumber` | `@/lib/digits` |
+
+### When an operational variation is allowed
+
+The POS sell screen is an **approved dense variation** of this same system, not
+an exception to it. The variation is allowed only on **full-screen operational
+surfaces** — POS, KDS, the floor plan, the waiter board, the delivery board, the
+orders queue — and only in these dimensions:
+
+- **taller touch targets** (44–52px instead of 40px): `FilterChip dense`;
+- **denser cards and tighter gutters**, because the screen is read at arm's
+  length at a counter;
+- **a smaller page header**, or none, where the surface fills the viewport;
+- **an amber filled CTA**, which on ordinary pages is teal.
+
+Everything else is unchanged: same tokens, same radii, same colour roles, same
+motion budget, same empty/loading/error states. The variation is **not** a
+licence to hand-roll a chip or a table — `FilterChip` has `dense` precisely so
+that density is a prop rather than a fork.
+
+**The inverse is equally a rule:** do not push POS's density onto ordinary CRM,
+Growth or Website Management pages, and never copy one app's navigation items,
+content or business fields into another app to make them look alike. Share the
+visual language; keep each workflow.
+
+Note that CRM, Growth and Website Management render their app header in an **app
+shell** and their menu in the dashboard sidebar, rather than using an in-page
+`SectionNav`. That matches their information architecture and is deliberate —
+do not "fix" it into a rail.
+
+### Before you call a screen complete
+
+Run these, and say in your summary which ones you actually ran:
+
+```bash
+npx tsc --noEmit
+npm test
+npm run test:design      # design lint + primitive lint + loading coverage
+npm run test:db          # needs the database
+npm run build
+npm run test:visual      # needs a built app + seeded database + Chromium
+```
+
+Then check the screen itself, not just the suite:
+
+1. **Both themes** — toggle dark mode. A hardcoded light colour with no `dark:`
+   pair is the most common regression, and the lint only catches the spellings
+   it knows.
+2. **Both widths** — a phone (375px) and a desktop. Section navs drill down on
+   mobile; tables hand over to card lists.
+3. **Every state** — hover a row, focus an input (teal ring) and a chip (amber
+   ring), press a chip, disable a button, empty the list, force the error, and
+   watch the loading skeleton. The language lives in the states as much as in
+   the shapes.
+4. **Keyboard only** — tab to every control, and check the focus ring is
+   visible on each.
+5. **Dates and numbers** — Jalali dates, Persian digits, and the business's
+   selected money unit (Toman *or* Rial — never hard-coded).
+6. **Against the reference** — open the matching approved screenshot beside the
+   screen and compare the states, not just the layout.
+
 ## Checking your work
 
 The bans on this page are **executable**, and there is no baseline anywhere — every file
@@ -467,14 +593,33 @@ must pass every rule:
 - `src/app/design-lint.test.ts` holds the same line on every other tenant-facing surface:
   login, welcome, setup, invite, consent, the business directory and `src/components`
   (minus the shadcn layer and the deliberately separate platform console).
+- `src/app/dashboard/primitive-lint.test.ts` is the **structural** half: it walks the JSX
+  and fails a screen that hand-builds a table (`<thead>` without `DataTable`), a filter
+  chip (an `aria-pressed` button carrying the amber fill), a KPI tile (a local `StatCard`)
+  or a rich empty state (an amber icon chip in a centred column). Operational surfaces are
+  exempt **by path**, listed once with the reason. The table rule is now
+  **unconditional**: the `TABLE_MIGRATION_BACKLOG` exception list was deleted when the last
+  hand-rolled table was migrated, so there is no longer any way to exempt a file — a new
+  `<thead>` in a non-operational tenant file fails immediately.
 - `src/app/loading-coverage.test.ts` requires a skeleton boundary above every layout realm,
   and that every client component which starts a fetch also renders a `*Skeleton`.
+- `src/app/reference-screenshots.test.ts` keeps this document honest about the approved
+  screenshots: it fails if the six images are added and the availability note above still
+  says they are missing, and equally if that note is deleted while they are still absent.
 
 Run the lints with:
 
 ```bash
-npx vitest run src/app/dashboard/design-lint.test.ts src/app/design-lint.test.ts src/app/loading-coverage.test.ts
+npm run test:design
+# = vitest run src/app/dashboard/design-lint.test.ts src/app/design-lint.test.ts \
+#              src/app/dashboard/primitive-lint.test.ts src/app/loading-coverage.test.ts \
+#              src/app/reference-screenshots.test.ts
 ```
+
+Those five files are also a required job on every pull request
+(`.github/workflows/test.yml` → `design-checks`), together with the
+`visual-regression` job described in
+[`docs/design/visual-regression.md`](design/visual-regression.md).
 
 The equivalent greps, if you want to see the violations yourself:
 
@@ -485,6 +630,12 @@ grep -rnE -- '-\[#[0-9a-fA-F]{3,8}\]' src/app/dashboard/ && echo "raw hex drifte
 grep -rn 'animate-spin' src/app/dashboard/ src/app/login src/app/welcome src/app/components && echo "spinner drifted"
 grep -rnE '(bg|text|border)-stone-[0-9]|(?<!/)bg-white\b' src/app/dashboard/ src/app/login src/app/welcome src/app/setup src/app/components | grep -v 'dark:' && echo "light-only colour drifted (dark mode)"
 grep -rn 'mx-auto w-full max-w-\[' src/app/dashboard/ --include='*.tsx' | grep -v page-chrome && echo "PageShell bypassed"
+# `platform/` is a separate identity and the POS-family paths are approved operational
+# surfaces, so both are excluded here exactly as primitive-lint.test.ts excludes them.
+grep -rn '<thead' src/app --include='*.tsx' \
+  | grep -v data-table \
+  | grep -vE 'src/app/platform/|src/app/dashboard/(pos|kitchen|floor|waiter|delivery|watch)/' \
+  && echo "hand-rolled table in a tenant file (no exceptions remain)"
 grep -rn '<h1' src/app/dashboard/ --include='page.tsx' && echo "PageHeader bypassed"
 ```
 
@@ -492,7 +643,14 @@ And the visual check: build the page, open it next to the matching reference scr
 compare the *states* — hover a row, focus an input, press a chip. The language is in the
 states as much as in the shapes.
 
-Reference screenshots of the normalized screens, captured from the running app, live in
-[`docs/design/verification/`](design/verification/) — they were compared against the
-references here (palette + states) as the acceptance check for the token normalization.
-They are captures of the seeded demo data, not production data.
+And the automated visual check: `npm run test:visual` renders representative screens of
+all four apps (including **both** Website Management managers) in a pinned Chromium at a
+fixed viewport, timezone and locale with reduced motion, and diffs them against the
+baselines in [`docs/design/visual/`](design/visual/). Read
+[`docs/design/visual-regression.md`](design/visual-regression.md) before touching a
+baseline — a baseline is an approval, not a cache, and re-recording one to clear a red run
+silently converts a regression into the new normal.
+
+Older captures of the seeded demo data live in
+[`docs/design/verification/`](design/verification/); they document the earlier token
+normalization and are historical, like the archived references.

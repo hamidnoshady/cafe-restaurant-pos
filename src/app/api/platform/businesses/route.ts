@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformAdmin, requirePlatformCapability, platformAudit, withPlatformScope } from "@/lib/platform-auth";
-import { listBusinesses } from "@/lib/platform-service";
+import { queryBusinesses, type BusinessQuery } from "@/lib/platform-service";
 import { rootDomain } from "@/lib/host";
+import { isIndustry } from "@/lib/industries";
 import {
   provisionBusiness,
   validateProvisionBody,
@@ -11,16 +12,50 @@ import {
 } from "@/lib/business-provisioning";
 import { autoProvisionBusinessVirtualKey } from "@/lib/ai-gateway-service";
 
+const VALID_STATUS = new Set(["active", "suspended", "archived"]);
+const VALID_SORT = new Set(["newest", "oldest", "name", "orders", "members", "activity"]);
+const VALID_ACTIVITY = new Set(["active", "idle"]);
+
 /**
- * Every business on the deployment — the console's landing list (any admin
- * reads). `rootDomain` rides along because the console is a client component
- * and cannot read the server's environment: it needs the root to render a
- * business's real URL and to preview one before provisioning.
+ * The console's business directory — filtered, sorted and paginated server-side
+ * (any admin reads). Query params: `search`, `status`, `plan`, `industry`,
+ * `from`/`to` (created-at ISO dates), `activity`, `sort`, `page`, `pageSize`.
+ * `rootDomain` rides along because the console is a client component and cannot
+ * read the server's environment — it needs the root to render a business's real
+ * URL and to preview one before provisioning. The response carries `meta` with
+ * pagination info (task section 25).
  */
-export const GET = withPlatformScope(async () => {
+export const GET = withPlatformScope(async (request: NextRequest) => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
-  return NextResponse.json({ businesses: await listBusinesses(), rootDomain: rootDomain() });
+
+  const sp = request.nextUrl.searchParams;
+  const statusParam = sp.get("status") ?? undefined;
+  const sortParam = sp.get("sort") ?? undefined;
+  const activityParam = sp.get("activity") ?? undefined;
+  const industryParam = sp.get("industry") ?? undefined;
+  const pageNum = Number(sp.get("page"));
+  const pageSizeNum = Number(sp.get("pageSize"));
+
+  const q: BusinessQuery = {
+    search: sp.get("search") ?? undefined,
+    status: statusParam && VALID_STATUS.has(statusParam) ? (statusParam as BusinessQuery["status"]) : undefined,
+    plan: sp.get("plan") ?? undefined,
+    industry: industryParam && isIndustry(industryParam) ? industryParam : undefined,
+    createdFrom: sp.get("from") ?? undefined,
+    createdTo: sp.get("to") ?? undefined,
+    activity: activityParam && VALID_ACTIVITY.has(activityParam) ? (activityParam as BusinessQuery["activity"]) : undefined,
+    sort: sortParam && VALID_SORT.has(sortParam) ? (sortParam as BusinessQuery["sort"]) : undefined,
+    page: Number.isFinite(pageNum) && pageNum > 0 ? pageNum : undefined,
+    pageSize: Number.isFinite(pageSizeNum) && pageSizeNum > 0 ? pageSizeNum : undefined,
+  };
+
+  const result = await queryBusinesses(q);
+  return NextResponse.json({
+    businesses: result.businesses,
+    rootDomain: rootDomain(),
+    meta: { total: result.total, page: result.page, pageSize: result.pageSize },
+  });
 });
 
 /**

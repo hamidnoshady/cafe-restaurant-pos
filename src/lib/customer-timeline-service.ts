@@ -172,6 +172,49 @@ export async function customerTimeline(
     }
   }
 
+  // -- Store credit -----------------------------------------------------
+  // `TIMELINE_KINDS` has carried `store_credit` since Phase 33's vocabulary
+  // was written, but no query ever read it — the filter chip existed and
+  // silently returned nothing forever. `loyalty-service.ts` already proved
+  // where the truth lives: `domain_events` rows tagged
+  // `loyalty.store_credit_issued`/`_used`, keyed by `payload->>'customerId'`,
+  // the same shape `storeCreditBalance` reconstructs a balance from.
+  if (want("store_credit")) {
+    const { rows } = await query<{
+      event_type: string;
+      amount: string;
+      reason: string | null;
+      payment_method: string | null;
+      created_at: string;
+    }>(
+      `SELECT event_type, payload->>'amount' AS amount, payload->>'reason' AS reason,
+              payload->>'paymentMethod' AS payment_method, created_at
+         FROM domain_events
+        WHERE business_id = $1 AND payload->>'customerId' = $2
+          AND event_type IN ('loyalty.store_credit_issued', 'loyalty.store_credit_used')
+        ORDER BY created_at DESC
+        LIMIT $3`,
+      [businessId, customerId, limit],
+    );
+    for (const row of rows) {
+      const issued = row.event_type === "loyalty.store_credit_issued";
+      events.push({
+        at: row.created_at,
+        kind: "store_credit",
+        kindLabel: TIMELINE_KIND_LABELS.store_credit,
+        summary: issued ? "اعتبار فروشگاهی دریافت کرد" : "اعتبار فروشگاهی خرج کرد",
+        amount: moneyFields(Number(row.amount ?? 0)),
+        detail: issued
+          ? row.reason === "points_redemption"
+            ? "از تبدیل امتیاز وفاداری"
+            : (row.reason ?? undefined)
+          : row.payment_method
+            ? `همراه با ${row.payment_method}`
+            : undefined,
+      });
+    }
+  }
+
   // -- Reservations ---------------------------------------------------------
   if (want("reservation")) {
     const { rows } = await query<{

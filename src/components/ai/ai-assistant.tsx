@@ -247,10 +247,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
             ref={panelRef}
             role="dialog"
             aria-label="دستیار هوشمند"
-            className="fixed z-50 flex flex-col overflow-hidden rounded-3xl border border-border/80 bg-card shadow-[0_12px_32px_-6px_rgb(41_37_36/0.18)] ring-1 ring-foreground/10
-              inset-x-0 bottom-0 h-[min(88dvh,720px)] rounded-t-3xl border-t
-
-              sm:inset-x-auto sm:bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] sm:left-4 sm:h-[min(76dvh,660px)] sm:w-[min(94vw,420px)] sm:rounded-3xl sm:border md:bottom-5 md:left-5"
+            className="fixed z-50 flex flex-col overflow-hidden rounded-3xl border border-border/80 bg-card shadow-[0_12px_32px_-6px_rgb(41_37_36/0.18)] ring-1 ring-foreground/10 inset-x-0 bottom-0 h-[min(88dvh,720px)] rounded-t-3xl border-t sm:inset-x-auto sm:bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] sm:left-4 sm:h-[min(76dvh,660px)] sm:w-[min(94vw,420px)] sm:rounded-3xl sm:border md:bottom-5 md:left-5"
           >
             {/* Grab handle, phones only. */}
             <div className="flex justify-center pt-2 sm:hidden" aria-hidden="true">

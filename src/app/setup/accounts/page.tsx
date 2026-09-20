@@ -20,6 +20,7 @@ import {
 import { nextPath, stepsFor } from "../steps";
 import { useSetupIndustry } from "../industry-context";
 import { INDUSTRY_LABELS } from "@/lib/industries";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 const TYPE_LABELS: Record<AccountType, string> = {
   asset: "دارایی",
@@ -106,68 +107,64 @@ export default function AccountsStep() {
       ) : null}
       <form onSubmit={submit}>
         <ErrorBox>{error}</ErrorBox>
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead className="bg-muted/50 text-muted-foreground">
-              <tr>
-                <th className="p-2 text-start font-medium">کد</th>
-                <th className="p-2 text-start font-medium">نام حساب</th>
-                <th className="p-2 text-start font-medium">نوع</th>
-                <th className="p-2 text-start font-medium">والد</th>
-                <th className="w-10 p-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td className="p-1.5">
-                    <input
-                      className={`${inputClass} w-20`}
-                      dir="ltr"
-                      value={r.code}
-                      onChange={(e) => update(i, { code: e.target.value })}
-                    />
-                  </td>
-                  <td className="p-1.5">
-                    <input
-                      className={inputClass}
-                      value={r.name}
-                      onChange={(e) => update(i, { name: e.target.value })}
-                    />
-                  </td>
-                  <td className="p-1.5">
-                    <SearchableSelect
-                      className={inputClass}
-                      value={r.type}
-                      onChange={(value) => update(i, { type: value as AccountType })}
-                      ariaLabel="نوع حساب"
-                      options={Object.entries(TYPE_LABELS).map(([v, label]) => ({ value: v, label }))}
-                    />
-                  </td>
-                  <td className="p-1.5">
-                    <input
-                      className={`${inputClass} w-20`}
-                      dir="ltr"
-                      value={r.parentCode ?? ""}
-                      onChange={(e) => update(i, { parentCode: e.target.value || undefined })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="p-1.5 text-center">
-                    <button
-                      type="button"
-                      onClick={() => removeRow(i)}
-                      className="text-muted-foreground hover:text-destructive"
-                      title="حذف"
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable caption="سرفصل حساب‌هایی که ثبت می‌شوند" tableClassName="min-w-[560px]">
+          <DataTableHead>
+            <Th>کد</Th>
+            <Th>نام حساب</Th>
+            <Th>نوع</Th>
+            <Th>والد</Th>
+            <Th className="w-10" aria-label="حذف" />
+          </DataTableHead>
+          <DataTableBody>
+            {rows.map((r, i) => (
+              <DataTableRow key={i}>
+                <Td className="py-1.5">
+                  <input
+                    className={`${inputClass} w-20`}
+                    dir="ltr"
+                    value={r.code}
+                    onChange={(e) => update(i, { code: e.target.value })}
+                  />
+                </Td>
+                <Td className="py-1.5">
+                  <input
+                    className={inputClass}
+                    value={r.name}
+                    onChange={(e) => update(i, { name: e.target.value })}
+                  />
+                </Td>
+                <Td className="py-1.5">
+                  <SearchableSelect
+                    className={inputClass}
+                    value={r.type}
+                    onChange={(value) => update(i, { type: value as AccountType })}
+                    ariaLabel="نوع حساب"
+                    options={Object.entries(TYPE_LABELS).map(([v, label]) => ({ value: v, label }))}
+                  />
+                </Td>
+                <Td className="py-1.5">
+                  <input
+                    className={`${inputClass} w-20`}
+                    dir="ltr"
+                    value={r.parentCode ?? ""}
+                    onChange={(e) => update(i, { parentCode: e.target.value || undefined })}
+                    placeholder="—"
+                  />
+                </Td>
+                <Td className="py-1.5 text-center">
+                  <button
+                    type="button"
+                    onClick={() => removeRow(i)}
+                    className="text-muted-foreground hover:text-destructive"
+                    title="حذف"
+                  >
+                    ✕
+                  </button>
+                </Td>
+              </DataTableRow>
+            ))}
+          </DataTableBody>
+        </DataTable>
         <div className="mt-4 flex items-center gap-3">
           <PrimaryButton disabled={busy || rows.length === 0}>
             ثبت {toPersianDigits(rows.length)} حساب و ادامه

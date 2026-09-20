@@ -53,7 +53,7 @@ import {
 import { isAssistantSurface } from "@/lib/assistant-route";
 import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
-import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
+import { appForModule, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { ACCOUNTING_SECTION_ICONS } from "@/app/(app)/accounting/accounting-icons";
@@ -149,7 +149,11 @@ const SIDEBAR_KEYBOARD_STEP = 16;
  * never gated.
  */
 const WORKSPACE_APP_LAUNCHERS: readonly {
-  key: AppKey | "connections" | "ai";
+  // `ai` is not an `AppKey` (its module is unassigned in apps.ts, so it is
+  // never gated or badged by app availability), so the key union carries it
+  // explicitly. «اتصال‌های فنی» is no longer a launcher here — it renders from
+  // its own `connectionsHref` slot below.
+  key: AppKey | "ai";
   label: string;
   icon: LucideIcon;
   hrefs: readonly string[];
@@ -164,7 +168,7 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     // section sub-nav: ایجنت‌ها، همکاران، اتوماسیون‌ها، فعالیت، دانش، مصرف).
     // `ai` is not an `AppKey` (its module is unassigned in apps.ts, so it is
     // never gated or badged by app availability), which is why the key union
-    // carries it explicitly alongside «اتصال‌های فنی».
+    // carries it explicitly.
     key: "ai",
     label: "دستیار هوشمند",
     icon: SparklesIcon,
@@ -182,14 +186,6 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     hrefs: ["/accounting/overview", "/accounting/financial-reports", "/accounting/reports", "/overview"],
   },
   {
-    key: "crm",
-    label: "ارتباط با مشتری",
-    icon: ContactIcon,
-    // `/crm/directory` redirects into the app's directory, so a business
-    // that has customers but has never opened the CRM still gets the launcher.
-    hrefs: ["/crm/overview", "/crm/directory"],
-  },
-  {
     key: "growth",
     label: "رشد و بازاریابی",
     icon: TrendingUpIcon,
@@ -199,6 +195,14 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
       "/growth/campaigns",
       "/growth/commission",
     ],
+  },
+  {
+    key: "crm",
+    label: "ارتباط با مشتری",
+    icon: ContactIcon,
+    // `/crm/directory` redirects into the app's directory, so a business
+    // that has customers but has never opened the CRM still gets the launcher.
+    hrefs: ["/crm/overview", "/crm/directory"],
   },
   {
     key: "website",
@@ -211,12 +215,6 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     // connection hub: that would put the site managers back behind the
     // Accounting/Connections door.
     hrefs: ["/websites/overview"],
-  },
-  {
-    key: "connections",
-    label: "اتصال‌های فنی",
-    icon: PlugIcon,
-    hrefs: ["/settings/connections"],
   },
 ];
 
@@ -440,7 +438,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
   const router = useRouter();
   const { expandSidebar } = useSidebar();
   const hrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
-  // The apps this rail launches, as data rather than three copies of the same
+  // The four apps this rail launches, as data rather than four copies of the same
   // markup. Each entry lists its candidate routes in preference order: a
   // launcher always opens the app's own home, and falls back to a page the
   // app absorbed so a member whose saved bottom-nav still holds an old flat
@@ -451,15 +449,14 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
   // wears its own app's badge, exactly what the flat sidebar shows for the
   // same app, rather than re-deriving it. Looking the state up by the
   // launcher's resolved href instead is what once badged «حسابداری» with the
-  // *sales* app's «به‌زودی»: the launcher opened the sales overview, which is
-  // a sales page, not an accounting one. The hub entry has no app and so is
-  // never badged.
+  // old Sales state: now POS and the overview belong to Accounting.
   const stateByApp = new Map<AppKey, NonNullable<NavItem["appState"]>>();
   for (const item of navItems) {
     if (!item.appState) continue;
     const owner = appForModule(item.module);
     if (owner && !stateByApp.has(owner)) stateByApp.set(owner, item.appState);
   }
+  const connectionsHref = hrefs.includes("/settings/connections") ? "/settings/connections" : null;
   const launchers = WORKSPACE_APP_LAUNCHERS.flatMap((launcher) => {
     const href = launcher.hrefs.find((candidate) => hrefs.includes(candidate));
     if (!href) return [];
@@ -468,7 +465,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
         ...launcher,
         href,
         active: isActive(pathname, href),
-        appState: isAppKey(launcher.key) ? stateByApp.get(launcher.key) : undefined,
+        appState: stateByApp.get(launcher.key),
       },
     ];
   });
@@ -550,6 +547,24 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
               })}
             </SidebarMenu>
           </div>
+        ) : null}
+
+        {connectionsHref ? (
+          <SidebarMenu className="space-y-1.5">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive(pathname, connectionsHref)}
+                tooltip="اتصال‌های فنی"
+                className={APP_NAV_BUTTON_CLASS}
+              >
+                <Link href={connectionsHref}>
+                  <PlugIcon aria-hidden="true" className="size-5 shrink-0" />
+                  <span className={NAV_LABEL_CLASS}>اتصال‌های فنی</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         ) : null}
 
         <div className="group-data-[state=collapsed]/sidebar:hidden">

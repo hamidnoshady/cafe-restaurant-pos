@@ -251,6 +251,169 @@ describe("commission accrual", () => {
     expect(report[0].amount).toBe(7000);
   });
 
+  it("stamps the accrual row with the journal entry its domain event posted", async () => {
+    await commissionService.upsertCommissionRule(biz.id, {
+      employeeId: employee.id,
+      kind: "percent",
+      basis: "net",
+      value: 5,
+    });
+
+    await withClient((client) =>
+      commissionService.accrueCommissionForLine(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        employeeId: employee.id,
+        sourceType: "order_item",
+        sourceId: randomUUID(),
+        line: { net: 100_000, cost: 40_000, itemId: randomUUID() },
+      }),
+    );
+
+    // commission_accruals.entry_id is the join to the payroll liability —
+    // it used to stay NULL, and the tie-out had to be re-derived by hand.
+    const { rows } = await db.query<{ entry_id: string | null }>(
+      "SELECT entry_id FROM commission_accruals",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].entry_id).not.toBeNull();
+
+    const event = await db.query<{ entry_id: string }>(
+      "SELECT entry_id FROM domain_events WHERE event_type = 'commission.accrued'",
+    );
+    expect(rows[0].entry_id).toBe(event.rows[0].entry_id);
+  });
+
+  it("accrues through the category axis when the caller supplies the line's category", async () => {
+    const categoryId = randomUUID();
+    await commissionService.upsertCommissionRule(biz.id, {
+      employeeId: employee.id,
+      kind: "percent",
+      basis: "net",
+      value: 8,
+      categoryIds: [categoryId],
+    });
+
+    await withClient((client) =>
+      commissionService.accrueCommissionForLine(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        employeeId: employee.id,
+        sourceType: "order_item",
+        sourceId: randomUUID(),
+        // The categoryId was dropped on the floor before: a category-scoped
+        // rule could never match, no matter what the caller knew.
+        line: { net: 100_000, cost: 0, itemId: randomUUID(), categoryId },
+      }),
+    );
+
+    const report = await commissionService.staffCommissionReport(biz.id);
+    expect(report).toHaveLength(1);
+    expect(report[0].amount).toBe(8_000);
+  });
+
+  it("does not accrue outside a rule's active window", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+    await commissionService.upsertCommissionRule(biz.id, {
+      employeeId: employee.id,
+      kind: "percent",
+      basis: "net",
+      value: 5,
+      activeFrom: iso(Date.now() + 2 * day), // starts the day after tomorrow
+    });
+    await commissionService.upsertCommissionRule(biz.id, {
+      employeeId: employee.id,
+      kind: "percent",
+      basis: "net",
+      value: 6,
+      activeTo: iso(Date.now() - 2 * day), // ended the day before yesterday
+    });
+    await commissionService.upsertCommissionRule(biz.id, {
+      employeeId: employee.id,
+      kind: "percent",
+      basis: "net",
+      value: 7,
+      activeFrom: iso(Date.now() - 2 * day),
+      activeTo: iso(Date.now() + 2 * day),
+    });
+
+    await withClient((client) =>
+      commissionService.accrueCommissionForLine(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        employeeId: employee.id,
+        sourceType: "order_item",
+        sourceId: randomUUID(),
+        line: { net: 100_000, cost: 0, itemId: randomUUID() },
+      }),
+    );
+
+    // Only the in-window 7% rule may earn; active_from/active_to used to be
+    // stored, even editable through the service, and then simply ignored.
+    const report = await commissionService.staffCommissionReport(biz.id);
+    expect(report).toHaveLength(1);
+    expect(report[0].amount).toBe(7_000);
+  });
+
+  it("a deactivated rule stops earning but its accruals keep their history", async () => {
+    const rule = await commissionService.upsertCommissionRule(biz.id, {
+      employeeId: employee.id,
+      kind: "percent",
+      basis: "net",
+      value: 5,
+    });
+
+    const settle = () =>
+      withClient((client) =>
+        commissionService.accrueCommissionForLine(client, {
+          businessId: biz.id,
+          locationId: biz.locationId,
+          employeeId: employee.id,
+          sourceType: "order_item",
+          sourceId: randomUUID(),
+          line: { net: 100_000, cost: 0, itemId: randomUUID() },
+        }),
+      );
+
+    await settle();
+    await commissionService.setCommissionRuleActive(biz.id, rule.id, false);
+    await settle();
+
+    let report = await commissionService.staffCommissionReport(biz.id);
+    expect(report[0].lineCount).toBe(1);
+    expect(report[0].amount).toBe(5_000);
+
+    await commissionService.setCommissionRuleActive(biz.id, rule.id, true);
+    await settle();
+    report = await commissionService.staffCommissionReport(biz.id);
+    expect(report[0].lineCount).toBe(2);
+    expect(report[0].amount).toBe(10_000);
+  });
+
+  it("refuses to toggle a rule that belongs to another business", async () => {
+    const rule = await commissionService.upsertCommissionRule(biz.id, {
+      employeeId: employee.id,
+      kind: "percent",
+      basis: "net",
+      value: 5,
+    });
+    const otherBiz = await db.query<{ id: string }>(
+      `INSERT INTO businesses (name, slug) VALUES ('Third', $1) RETURNING id`,
+      [`third-${randomUUID().slice(0, 8)}`],
+    );
+
+    await expect(
+      commissionService.setCommissionRuleActive(otherBiz.rows[0].id, rule.id, false),
+    ).rejects.toThrow(/یافت نشد/);
+
+    const after = await db.query<{ is_active: boolean }>(
+      "SELECT is_active FROM commission_rules WHERE id = $1",
+      [rule.id],
+    );
+    expect(after.rows[0].is_active).toBe(true);
+  });
+
   it("refuses to name an employee from another business", async () => {
     const otherBiz = await db.query<{ id: string }>(
       `INSERT INTO businesses (name, slug) VALUES ('Other', $1) RETURNING id`,

@@ -170,20 +170,23 @@ describe("numeric fields", () => {
 
 describe("warehouse list responsive states", () => {
   it("uses a readable mobile card list instead of forcing a wide table through the phone", () => {
-    const fnb = read("warehouses-section.tsx");
-    expect(fnb).toMatch(/hidden overflow-x-auto md:block/);
-    expect(fnb).toMatch(/divide-y divide-border\/80 md:hidden/);
-    expect(fnb).toMatch(/جستجو در انبارها/);
-    expect(fnb).toMatch(/تلاش دوباره/);
-
+    // Both warehouse lists now render the desktop half through the shared
+    // `DataTable` (which owns `overflow-x-auto` internally), so the assertion
+    // is on the *behaviour* — a desktop-only table and a phone-only card list —
+    // rather than on the wrapper's literal classes.
     const retail = readFileSync(
       join(SRC_DIR, "app/dashboard/stock/warehouses-section.tsx"),
       "utf8",
     );
-    expect(retail).toMatch(/hidden overflow-x-auto md:block/);
-    expect(retail).toMatch(/divide-y divide-border\/80 md:hidden/);
-    expect(retail).toMatch(/جستجو در انبارها/);
-    expect(retail).toMatch(/تلاش دوباره/);
+    for (const source of [read("warehouses-section.tsx"), retail]) {
+      expect(source).toMatch(/from "(?:@\/app\/dashboard|\.\.)\/data-table"/);
+      expect(source).toMatch(/className="hidden border-0 md:block"/);
+      expect(source).toMatch(/divide-y divide-border\/80 md:hidden/);
+      expect(source).toMatch(/جستجو در انبارها/);
+      expect(source).toMatch(/تلاش دوباره/);
+      // The table must not also be visible on a phone.
+      expect(source).not.toMatch(/<DataTable\b(?![\s\S]{0,200}?hidden)/);
+    }
   });
 });
 

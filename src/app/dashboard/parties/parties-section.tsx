@@ -63,6 +63,7 @@ import { ArStatementPanel } from "@/app/(app)/accounting/ar-statement-panel";
 import { ApStatementPanel } from "@/app/(app)/accounting/ap-statement-panel";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import { PartyFormDialog } from "./party-form";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 const PAGE_SIZE = 20;
 
@@ -584,7 +585,7 @@ export function PartiesSection({
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">{scope.description}</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">{scope.label}</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">{scope.label}</h2>
           </div>
         }
         description={
@@ -701,61 +702,51 @@ export function PartiesSection({
               card list on a 900px tablet wasted the width and made a
               five-column list unreadable as a run-on sentence.
             */}
-            <div className={`hidden overflow-x-auto ${tableFrom}`}>
-              <table className="w-full text-sm">
-                <caption className="sr-only">{`فهرست ${scope.label}`}</caption>
-                <thead>
-                  <tr className="border-b border-border/80 text-muted-foreground">
+            <DataTable
+              caption={`فهرست ${scope.label}`}
+              frame={false}
+              className={`hidden ${tableFrom}`}
+            >
+              <DataTableHead>
+                {columns.map((column) => (
+                  <Th key={column}>{PARTY_COLUMN_LABELS[column]}</Th>
+                ))}
+                {canManage ? <Th>عملیات</Th> : null}
+              </DataTableHead>
+              <DataTableBody>
+                {parties.map((party) => (
+                  <DataTableRow key={party.id} className="align-top">
                     {columns.map((column) => (
-                      <th key={column} scope="col" className="py-2 pe-3 text-start font-medium">
-                        {PARTY_COLUMN_LABELS[column]}
-                      </th>
+                      <Td key={column}>
+                        <PartyCell
+                          column={column}
+                          party={party}
+                          scope={scope}
+                          showRoleChip={scope.roles.length > 1}
+                          showLedger={canSeeLedger}
+                          balance={balances[party.id]}
+                          formatMoney={(value) => money.format(value)}
+                        />
+                      </Td>
                     ))}
                     {canManage ? (
-                      <th scope="col" className="py-2 text-start font-medium">
-                        عملیات
-                      </th>
+                      <Td>
+                        <PartyRowActions
+                          party={party}
+                          pending={pendingKey === party.id}
+                          disabled={busy}
+                          statementKind={statementKindFor(party)}
+                          onEdit={() => setForm({ partyId: party.id, initial: party })}
+                          onToggleStatus={() => toggleStatus(party)}
+                          onRemove={() => remove(party)}
+                          onStatement={() => openStatement(party)}
+                        />
+                      </Td>
                     ) : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {parties.map((party) => (
-                    <tr
-                      key={party.id}
-                      className="border-b border-border/80 transition-colors hover:bg-stone-50/70 dark:hover:bg-muted/50"
-                    >
-                      {columns.map((column) => (
-                        <td key={column} className="py-3 pe-3 align-top">
-                          <PartyCell
-                            column={column}
-                            party={party}
-                            scope={scope}
-                            showRoleChip={scope.roles.length > 1}
-                            showLedger={canSeeLedger}
-                            balance={balances[party.id]}
-                            formatMoney={(value) => money.format(value)}
-                          />
-                        </td>
-                      ))}
-                      {canManage ? (
-                        <td className="py-3 align-top">
-                          <PartyRowActions
-                            party={party}
-                            pending={pendingKey === party.id}
-                            disabled={busy}
-                            statementKind={statementKindFor(party)}
-                            onEdit={() => setForm({ partyId: party.id, initial: party })}
-                            onToggleStatus={() => toggleStatus(party)}
-                            onRemove={() => remove(party)}
-                            onStatement={() => openStatement(party)}
-                          />
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
 
             <ul className={`space-y-3 ${cardsUntil}`}>
               {parties.map((party) => (

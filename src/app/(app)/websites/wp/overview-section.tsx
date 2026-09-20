@@ -6,7 +6,7 @@
  * (همگام‌سازی) per connection. All numbers come from local mirrors so the
  * page behaves identically in plugin and REST link modes.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,11 +20,13 @@ import {
   RefreshCwIcon,
   AlertTriangleIcon,
 } from "lucide-react";
-import { api } from "@/app/dashboard/ui";
+import { api, errorMessageOrRaw } from "@/app/dashboard/ui";
 import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import type { WpOverviewStats } from "@/lib/integrations/wp-manager-service";
+import { PluginWaitNote } from "./plugin-wait-note";
+import { useWpStore } from "./wp-store-context";
 
 interface Connection {
   id: string;
@@ -39,20 +41,37 @@ interface Connection {
   lastSyncAt: string | null;
   lastCatalogueSyncAt: string | null;
   lastOrderSyncAt: string | null;
-  lastCustomerSyncAt?: string | null;
+  lastCustomerSyncAt: string | null;
+  lastContentSyncAt: string | null;
   lastPluginSeenAt: string | null;
   lastError: string | null;
   pluginVersion: string | null;
 }
 
-function syncNow(connectionId: string, kind: "products" | "orders" | "customers" | "content" | "inventory") {
+type SyncKind = "products" | "orders" | "customers" | "content";
+
+const SYNC_LABELS: Record<SyncKind, string> = {
+  products: "محصولات",
+  orders: "سفارش‌ها",
+  customers: "مشتریان",
+  content: "محتوا",
+};
+
+function syncNow(connectionId: string, kind: SyncKind) {
   if (kind === "content") {
     return api(`/api/integrations/wp-manager/content`, {
       method: "POST",
-      body: JSON.stringify({ connectionId, action: "sync" }),
+      body: JSON.stringify({ connectionId }),
     });
   }
   return api(`/api/integrations/connections/${connectionId}/sync/${kind}`, { method: "POST" });
+}
+
+/** A tile number the way the rest of the dashboard shows numbers: grouped. */
+function tileNumber(value: number | string | null | undefined): string {
+  if (value === null || value === undefined) return "…";
+  if (typeof value === "number") return value.toLocaleString("fa-IR");
+  return toPersianDigits(value);
 }
 
 function Kpi({
@@ -64,26 +83,32 @@ function Kpi({
 }: {
   icon: typeof PlugIcon;
   label: string;
-  value: number | string;
+  value: number | string | null | undefined;
   href?: string;
   tone?: "default" | "warn";
 }) {
   const body = (
-    <div className={`${cardClass} flex items-center gap-3 p-4 transition-colors hover:bg-stone-50 dark:hover:bg-stone-900/40 sm:p-5`}>
+    <div className={`${cardClass} flex items-center gap-3 p-4 transition-colors hover:bg-muted/60 dark:hover:bg-stone-900/40 sm:p-5`}>
       <span
         className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${
-          tone === "warn" ? "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300" : "bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300"
+            tone === "warn" ? "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300" : "bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300"
         }`}
       >
         <Icon className="size-5" />
       </span>
       <div className="min-w-0">
-        <p className="text-2xl font-bold tabular-nums text-foreground">{toPersianDigits(value)}</p>
+        <p className="text-2xl font-bold tabular-nums text-foreground">{tileNumber(value)}</p>
         <p className="truncate text-xs text-muted-foreground">{label}</p>
       </div>
     </div>
   );
-  return href ? <Link href={href}>{body}</Link> : body;
+  return href ? (
+    <Link href={href} className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40">
+      {body}
+    </Link>
+  ) : (
+    body
+  );
 }
 
 function SyncRow({ label, value }: { label: string; value: string | null }) {
@@ -96,48 +121,52 @@ function SyncRow({ label, value }: { label: string; value: string | null }) {
 }
 
 export function WpOverviewSection() {
-  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const { connections, selectedId, setSelectedId, selectedConnection: selected, reloadConnections } = useWpStore();
   const [stats, setStats] = useState<WpOverviewStats | null>(null);
-  const [selectedId, setSelectedId] = useState<string>("");
-  const [busy, setBusy] = useState<string>("");
+  const [busy, setBusy] = useState<SyncKind | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
-  const load = useCallback(async () => {
-    const [connRes, statsRes] = await Promise.all([
-      api<{ connections: Connection[] }>("/api/integrations/connections?provider=woocommerce"),
-      api<{ stats: WpOverviewStats }>("/api/integrations/wp-manager/overview"),
-    ]);
-    if (connRes.ok) {
-      setConnections(connRes.data.connections);
-      setSelectedId((current) => current || connRes.data.connections[0]?.id || "");
+  // One stats fetch per selected connection — never a business-wide one
+  // racing it. The tiles describe the store the member is looking at, and a
+  // multi-store business used to see whichever response landed last. The
+  // `statsKey` bump re-reads the same store's numbers after a sync.
+  const [statsKey, setStatsKey] = useState(0);
+
+  useEffect(() => {
+    if (!selected) {
+      setStats(null);
+      return;
     }
-    if (statsRes.ok) setStats(statsRes.data.stats);
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const selected = useMemo(
-    () => connections?.find((c) => c.id === selectedId) ?? connections?.[0] ?? null,
-    [connections, selectedId],
-  );
-
-  useEffect(() => {
-    if (!selected) return;
+    let alive = true;
+    setStats(null);
     api<{ stats: WpOverviewStats }>(`/api/integrations/wp-manager/overview?connectionId=${selected.id}`).then((res) => {
-      if (res.ok) setStats(res.data.stats);
+      // A quick switch away and back must not let a slow first response
+      // overwrite the second one's numbers.
+      if (alive && res.ok) setStats(res.data.stats);
     });
-  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, statsKey]);
 
-  async function runSync(kind: "products" | "orders" | "customers" | "content") {
+  async function runSync(kind: SyncKind) {
     if (!selected) return;
     setBusy(kind);
     setError("");
+    setNotice("");
     const res = await syncNow(selected.id, kind);
-    setBusy("");
-    if (!res.ok) setError(res.data?.error ? String(res.data.error) : "همگام‌سازی با خطا مواجه شد");
-    setTimeout(load, 400);
+    setBusy(null);
+    if (!res.ok) {
+      setError(errorMessageOrRaw(String(res.data?.error ?? "")) || "همگام‌سازی با خطا مواجه شد");
+    } else if (res.data?.queued) {
+      setNotice(`درخواست همگام‌سازی ${SYNC_LABELS[kind]} در صف قرار گرفت؛ افزونهٔ وردپرس آن را در اجرای بعدی اعمال می‌کند.`);
+    } else {
+      setNotice(`همگام‌سازی ${SYNC_LABELS[kind]} انجام شد.`);
+    }
+    setTimeout(() => void reloadConnections(), 400);
+    setTimeout(() => setStatsKey((k) => k + 1), 600);
   }
 
   if (connections === null) {
@@ -146,20 +175,24 @@ export function WpOverviewSection() {
 
   if (connections.length === 0) {
     return (
-      <EmptyState>
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <PlugIcon className="size-10 text-muted-foreground/60" />
-          <p className="font-semibold text-foreground">هنوز فروشگاهی متصل نیست</p>
-          <p className="max-w-md text-sm text-muted-foreground">
-            برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید.
-          </p>
-          <Link href="/settings/connections?tab=woocommerce">
-            <Button>اتصال فروشگاه</Button>
-          </Link>
-        </div>
-      </EmptyState>
+      <div className="space-y-4">
+        <EmptyState>
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <PlugIcon className="size-10 text-muted-foreground/60" />
+            <p className="font-semibold text-foreground">هنوز فروشگاهی متصل نیست</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید.
+            </p>
+            <Link href="/settings/connections?tab=woocommerce">
+              <Button>اتصال فروشگاه</Button>
+            </Link>
+          </div>
+        </EmptyState>
+      </div>
     );
   }
+
+  const failedTotal = (stats?.failedJobs ?? 0) + (stats?.deadJobs ?? 0) + (stats?.failedInboxEvents ?? 0);
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -168,7 +201,7 @@ export function WpOverviewSection() {
         title={
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت فروشگاه</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">اتصال و وضعیت همگام‌سازی</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">اتصال و وضعیت همگام‌سازی</h2>
           </div>
         }
         description="فروشگاه متصل را انتخاب کنید و وضعیت همگام‌سازی کاتالوگ، سفارش‌ها و مشتریان را بررسی نمایید."
@@ -199,35 +232,29 @@ export function WpOverviewSection() {
               : "حالت REST API"}
           </span>
           <div className="ms-auto flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" disabled={busy !== ""} onClick={() => runSync("products")}>
-              <RefreshCwIcon className="size-4" />
-              محصولات
-            </Button>
-            <Button variant="outline" size="sm" disabled={busy !== ""} onClick={() => runSync("orders")}>
-              <RefreshCwIcon className="size-4" />
-              سفارش‌ها
-            </Button>
-            <Button variant="outline" size="sm" disabled={busy !== ""} onClick={() => runSync("customers")}>
-              <RefreshCwIcon className="size-4" />
-              مشتریان
-            </Button>
-            <Button variant="outline" size="sm" disabled={busy !== ""} onClick={() => runSync("content")}>
-              <RefreshCwIcon className="size-4" />
-              محتوا
-            </Button>
+            {(Object.keys(SYNC_LABELS) as SyncKind[]).map((kind) => (
+              <Button key={kind} variant="outline" size="sm" disabled={busy !== null} onClick={() => void runSync(kind)}>
+                <RefreshCwIcon className="size-4" />
+                {busy === kind ? "در حال همگام‌سازی…" : SYNC_LABELS[kind]}
+              </Button>
+            ))}
           </div>
         </div>
         {error ? <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p> : null}
+        {notice ? <p className="mt-3 text-xs text-teal-700 dark:text-teal-300">{notice}</p> : null}
         {selected?.lastError ? (
           <p className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">
             <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
             آخرین خطا: {selected.lastError}
           </p>
         ) : null}
-        <div className="mt-4 grid gap-x-8 gap-y-2 border-t border-border/80 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+        <PluginWaitNote connections={connections} selectedId={selected?.id ?? ""} />
+        <div className="mt-4 grid gap-x-8 gap-y-2 border-t border-border/80 pt-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <SyncRow label="آخرین ارتباط کلی" value={selected?.lastSyncAt ?? null} />
           <SyncRow label="آخرین همگام‌سازی کاتالوگ" value={selected?.lastCatalogueSyncAt ?? null} />
           <SyncRow label="آخرین همگام‌سازی سفارش‌ها" value={selected?.lastOrderSyncAt ?? null} />
+          <SyncRow label="آخرین همگام‌سازی مشتریان" value={selected?.lastCustomerSyncAt ?? null} />
+          <SyncRow label="آخرین همگام‌سازی محتوا" value={selected?.lastContentSyncAt ?? null} />
           <SyncRow
             label="آخرین مشاهدهٔ افزونه"
             value={selected?.linkMode === "plugin" ? selected?.lastPluginSeenAt ?? null : null}
@@ -237,23 +264,28 @@ export function WpOverviewSection() {
 
       {/* KPI tiles */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Kpi icon={ShoppingBagIcon} label="محصول همگام‌شده" value={stats?.products ?? 0} href="/websites/wp/products" />
-        <Kpi icon={ReceiptTextIcon} label="سفارش آنلاین" value={stats?.orders ?? 0} href="/websites/wp/orders" />
-        <Kpi icon={ContactIcon} label="مشتری فروشگاه" value={stats?.customers ?? 0} href="/websites/wp/customers" />
-        <Kpi icon={FolderTreeIcon} label="دسته/برچسب/ویژگی" value={stats?.terms ?? 0} href="/websites/wp/taxonomies" />
-        <Kpi icon={FileTextIcon} label="نوشته و برگه" value={(stats?.content.posts ?? 0) + (stats?.content.pages ?? 0)} href="/websites/wp/content" />
-        <Kpi icon={ImageIcon} label="رسانه" value={stats?.content.media ?? 0} href="/websites/wp/media" />
+        <Kpi icon={ShoppingBagIcon} label="محصول همگام‌شده" value={stats?.products} href="/websites/wp/products" />
+        <Kpi icon={ReceiptTextIcon} label="سفارش آنلاین" value={stats?.orders} href="/websites/wp/orders" />
+        <Kpi icon={ContactIcon} label="مشتری فروشگاه" value={stats?.customers} href="/websites/wp/customers" />
+        <Kpi icon={FolderTreeIcon} label="دسته/برچسب/ویژگی" value={stats?.terms} href="/websites/wp/taxonomies" />
+        <Kpi
+          icon={FileTextIcon}
+          label="نوشته و برگه"
+          value={stats ? (stats.content.posts ?? 0) + (stats.content.pages ?? 0) : null}
+          href="/websites/wp/content"
+        />
+        <Kpi icon={ImageIcon} label="رسانه" value={stats?.content.media} href="/websites/wp/media" />
         <Kpi
           icon={RefreshCwIcon}
           label="کار در صف"
-          value={stats?.pendingJobs ?? 0}
+          value={stats?.pendingJobs}
           href="/websites/wp/queue"
         />
         <Kpi
           icon={AlertTriangleIcon}
           label="رویداد ناموفق"
-          value={(stats?.failedJobs ?? 0) + (stats?.deadJobs ?? 0) + (stats?.failedInboxEvents ?? 0)}
-          tone={(stats?.failedJobs ?? 0) + (stats?.deadJobs ?? 0) + (stats?.failedInboxEvents ?? 0) > 0 ? "warn" : "default"}
+          value={failedTotal}
+          tone={failedTotal > 0 ? "warn" : "default"}
           href="/websites/wp/queue"
         />
       </div>

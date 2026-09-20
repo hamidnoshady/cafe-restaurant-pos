@@ -91,7 +91,7 @@ function Fact({
   hint?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+    <div className="min-w-0 rounded-xl border border-border/80 bg-muted/60 p-3">
       <p className="text-xs leading-5 text-muted-foreground">{label}</p>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         {tone ? (
@@ -123,7 +123,7 @@ function PostingRuleCard({ rule }: { rule: PostingRuleSummary }) {
         {rule.lines.map((line, index) => (
           <li
             key={`${line.side}-${line.code}-${index}`}
-            className="flex flex-wrap items-start gap-x-2 gap-y-1 rounded-lg bg-stone-50/60 px-3 py-2 dark:bg-stone-800/30"
+            className="flex flex-wrap items-start gap-x-2 gap-y-1 rounded-lg bg-muted/60 px-3 py-2"
           >
             <StatusBadge tone={line.side === "debit" ? "active" : "neutral"}>
               {line.side === "debit" ? "بدهکار" : "بستانکار"}

@@ -33,6 +33,8 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from "@/app/dashboard/ui";
+import { FilterChip } from "@/app/dashboard/filters";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface FiscalYear {
   id: string;
@@ -468,20 +470,15 @@ export function FiscalPeriodsSection() {
               {years.map((year) => {
                 const isSelected = selectedYearId === year.id;
                 return (
-                  <button
+                  <FilterChip
                     key={year.id}
-                    type="button"
-                    aria-pressed={isSelected}
+                    selected={isSelected}
                     onClick={() => selectYear(year.id)}
-                    className={`min-h-12 rounded-xl border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${
-                      isSelected
-                        ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200"
-                        : "border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground"
-                    }`}
+                    className="min-h-12 px-4"
                   >
                     {toPersianDigits(year.label)}
                     {year.closedAt ? <span className="sr-only">، بسته‌شده</span> : null}
-                  </button>
+                  </FilterChip>
                 );
               })}
             </div>
@@ -530,45 +527,39 @@ export function FiscalPeriodsSection() {
                   بستن موقت، ثبت سند را به مالک و حسابدار محدود می‌کند. قفل‌کردن ثبت را برای همه می‌بندد؛ پیش از بستن نهایی سال می‌توانید یک دوره را بازگشایی کنید.
                 </p>
               )}
-              <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/60 text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">دوره</th>
-                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">وضعیت</th>
-                        {canManagePeriods ? <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">اقدام</th> : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {periods.map((period) => (
-                        <tr key={period.id} className="border-b border-border last:border-b-0">
-                          <td className="px-4 py-3 font-medium text-foreground">
-                            {toPersianDigits(period.name)}
-                            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                              {formatRange(period.startsOn, period.endsOn)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusBadge tone={STATUS_TONES[period.status]}>{STATUS_LABELS[period.status]}</StatusBadge>
-                          </td>
-                          {canManagePeriods ? (
-                            <td className="px-4 py-3">
-                              <div className="flex flex-wrap gap-2">
-                                <PeriodActionButtons
-                                  period={period}
-                                  disabled={isMutating || pendingAction !== null}
-                                  onRequest={requestPeriodStatus}
-                                />
-                              </div>
-                            </td>
-                          ) : null}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <DataTable caption="دوره‌های مالی و وضعیت هر دوره" className="hidden lg:block">
+                <DataTableHead>
+                  <Th>دوره</Th>
+                  <Th>وضعیت</Th>
+                  {canManagePeriods ? <Th>اقدام</Th> : null}
+                </DataTableHead>
+                <DataTableBody>
+                  {periods.map((period) => (
+                    <DataTableRow key={period.id}>
+                      <Td className="font-medium">
+                        {toPersianDigits(period.name)}
+                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                          {formatRange(period.startsOn, period.endsOn)}
+                        </span>
+                      </Td>
+                      <Td>
+                        <StatusBadge tone={STATUS_TONES[period.status]}>{STATUS_LABELS[period.status]}</StatusBadge>
+                      </Td>
+                      {canManagePeriods ? (
+                        <Td>
+                          <div className="flex flex-wrap gap-2">
+                            <PeriodActionButtons
+                              period={period}
+                              disabled={isMutating || pendingAction !== null}
+                              onRequest={requestPeriodStatus}
+                            />
+                          </div>
+                        </Td>
+                      ) : null}
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
 
               <div className="space-y-3 lg:hidden">
                 {periods.map((period) => (

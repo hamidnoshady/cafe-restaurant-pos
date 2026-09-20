@@ -380,10 +380,21 @@ export const WOO_TAXONOMY_LABELS: Record<string, string> = {
   product_tag: "برچسب‌ها",
 };
 
-/** `pa_colour` → «ویژگی: colour»; a custom taxonomy falls back to its slug. */
+/**
+ * `pa_colour` → «ویژگی: colour»; a custom taxonomy falls back to its slug.
+ *
+ * Matched case-insensitively, the same way `isWooAttributeTaxonomy` does it:
+ * a store that registered `PA_Colour` used to be *badged* as an attribute by
+ * one helper and *labelled* with its raw slug by the other, so the same
+ * taxonomy read as two different things in one row. The remaining slug is
+ * humanised (`pa_shoe-size` → «ویژگی: shoe size») because a hyphenated slug
+ * is a URL fragment, not a name anyone chose to display.
+ */
 export function wooTaxonomyLabel(taxonomy: string): string {
   if (WOO_TAXONOMY_LABELS[taxonomy]) return WOO_TAXONOMY_LABELS[taxonomy];
-  if (taxonomy.startsWith("pa_")) return `ویژگی: ${taxonomy.slice(3)}`;
+  if (isWooAttributeTaxonomy(taxonomy)) {
+    return `ویژگی: ${taxonomy.slice(3).replace(/[-_]+/g, " ").trim() || taxonomy}`;
+  }
   return taxonomy;
 }
 
@@ -421,32 +432,76 @@ export function wooTermPath(term: WooTermLike, byId: Map<string, WooTermLike>): 
 }
 
 /**
- * Sort terms into tree order — parents before children, siblings by
- * `menu_order` then name — so a flat list renders as a tree without a
- * recursive component.
+ * How deep a term sits in its tree — 0 for a root, 1 for its children, …
+ *
+ * Cycle- and orphan-guarded, like `wooTermPath`: a term whose parent is not
+ * in the list (the store paginated it away, or it was filtered out) counts as
+ * a root rather than as a child of nothing.
+ */
+export function wooTermDepth<T extends WooTermLike>(term: T, byId: Map<string, T>): number {
+  let depth = 0;
+  const seen = new Set<string>([term.remoteId]);
+  let cursor = term.parentRemoteId ?? null;
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor);
+    const parent = byId.get(cursor);
+    if (!parent) break;
+    depth += 1;
+    cursor = parent.parentRemoteId ?? null;
+  }
+  return depth;
+}
+
+/**
+ * Sort terms into tree order — each parent immediately followed by its own
+ * subtree, siblings by `menu_order` then name — so a flat list renders as a
+ * tree without a recursive component.
+ *
+ * This is a depth-first walk rather than a sort by depth. Sorting by depth
+ * put *every* root first and *every* grandchild last, so «پوشاک» and «کفش»
+ * were followed by «کتانی» under the wrong parent and the browser's «└»
+ * markers pointed at whatever row happened to precede them. With two
+ * categories of two children each the reading was simply wrong, which is the
+ * one thing a category tree must not be.
+ *
+ * Orphans (a parent id that is not in this list) are treated as roots and
+ * kept, and a cycle is broken by emitting the untouched remainder in sibling
+ * order at the end: a bad import must not make terms disappear from the
+ * screen, which is what a naive `while (queue)` recursion would do.
  */
 export function sortWooTerms<T extends WooTermLike & { menuOrder?: number }>(terms: T[]): T[] {
   const byId = new Map(terms.map((t) => [t.remoteId, t]));
-  const depthOf = (term: T): number => {
-    let depth = 0;
-    const seen = new Set<string>([term.remoteId]);
-    let cursor = term.parentRemoteId ?? null;
-    while (cursor && !seen.has(cursor)) {
-      seen.add(cursor);
-      const parent = byId.get(cursor);
-      if (!parent) break;
-      depth += 1;
-      cursor = parent.parentRemoteId ?? null;
+  const siblingOrder = (a: T, b: T) =>
+    (a.menuOrder ?? 0) - (b.menuOrder ?? 0) || a.name.localeCompare(b.name, "fa");
+
+  const children = new Map<string, T[]>();
+  const roots: T[] = [];
+  for (const term of terms) {
+    const parentId = term.parentRemoteId ?? null;
+    // A term that claims itself as its parent is its own root, not a child.
+    if (parentId && parentId !== term.remoteId && byId.has(parentId)) {
+      const list = children.get(parentId) ?? [];
+      list.push(term);
+      children.set(parentId, list);
+    } else {
+      roots.push(term);
     }
-    return depth;
+  }
+  for (const list of children.values()) list.sort(siblingOrder);
+  roots.sort(siblingOrder);
+
+  const out: T[] = [];
+  const emitted = new Set<string>();
+  const walk = (term: T) => {
+    if (emitted.has(term.remoteId)) return;
+    emitted.add(term.remoteId);
+    out.push(term);
+    for (const child of children.get(term.remoteId) ?? []) walk(child);
   };
-  return [...terms].sort((a, b) => {
-    const depth = depthOf(a) - depthOf(b);
-    if (depth !== 0) return depth;
-    const order = (a.menuOrder ?? 0) - (b.menuOrder ?? 0);
-    if (order !== 0) return order;
-    return a.name.localeCompare(b.name, "fa");
-  });
+  for (const root of roots) walk(root);
+  // Anything left is inside a parent cycle; keep it visible.
+  for (const term of [...terms].sort(siblingOrder)) walk(term);
+  return out;
 }
 
 // ---------------------------------------------------------------------------

@@ -57,9 +57,9 @@ describe("the availability vocabulary", () => {
 
 describe("resolveAppAvailability", () => {
   it("defaults an app with no row anywhere to available and unbadged", () => {
-    const resolved = resolveAppAvailability("sales", null);
+    const resolved = resolveAppAvailability("accounting", null);
     expect(resolved).toMatchObject({
-      app: "sales",
+      app: "accounting",
       state: "available",
       source: "platform",
       usable: true,
@@ -113,7 +113,7 @@ describe("resolveAppAvailability", () => {
   });
 
   it("treats a whitespace-only note as no note", () => {
-    const resolved = resolveAppAvailability("operations", {
+    const resolved = resolveAppAvailability("accounting", {
       state: "disabled",
       note: "   ",
       availableFrom: null,
@@ -125,7 +125,7 @@ describe("resolveAppAvailability", () => {
 
 describe("isAppUsable", () => {
   const map = {
-    sales: resolveAppAvailability("sales", {
+    accounting: resolveAppAvailability("accounting", {
       state: "maintenance",
       note: null,
       availableFrom: null,
@@ -133,28 +133,28 @@ describe("isAppUsable", () => {
   } as unknown as AppAvailabilityMap;
 
   it("blocks an app the map says is down", () => {
-    expect(isAppUsable(map, "sales")).toBe(false);
+    expect(isAppUsable(map, "accounting")).toBe(false);
   });
 
   it("fails open for a route with no owning app, or an app the map lacks", () => {
     expect(isAppUsable(map, null)).toBe(true);
     expect(isAppUsable(map, "crm")).toBe(true);
-    expect(isAppUsable(undefined, "sales")).toBe(true);
+    expect(isAppUsable(undefined, "accounting")).toBe(true);
   });
 });
 
 describe("route → app", () => {
   it("maps a canonical workspace page to the app that owns its module", () => {
-    expect(appForPagePath("/accounting/inventory")).toBe("operations");
-    expect(appForPagePath("/accounting/pos")).toBe("sales");
+    expect(appForPagePath("/accounting/inventory")).toBe("accounting");
+    expect(appForPagePath("/accounting/pos")).toBe("accounting");
     expect(appForPagePath("/crm/segments")).toBe("crm");
     expect(appForPagePath("/growth")).toBe("growth");
     expect(appForPagePath("/websites/wp/products")).toBe("website");
   });
 
   it("maps an API route the same way", () => {
-    expect(appForApiPath("/api/orders")).toBe("sales");
-    expect(appForApiPath("/api/inventory/purchases/1")).toBe("operations");
+    expect(appForApiPath("/api/orders")).toBe("accounting");
+    expect(appForApiPath("/api/inventory/purchases/1")).toBe("accounting");
     expect(appForApiPath("/api/crm/cases")).toBe("crm");
     expect(appForApiPath("/api/integrations/wp-manager/overview")).toBe(
       "website",
@@ -168,6 +168,8 @@ describe("route → app", () => {
     // The «اتصال‌های فنی» hub is a shell utility, not an app: turning a
     // platform off must never lock the page that holds its credentials.
     expect(appForPagePath("/settings/connections")).toBeNull();
+    expect(appForPagePath("/settings")).toBeNull();
+    expect(appForPagePath("/support")).toBeNull();
     expect(appForApiPath("/api/auth/login")).toBeNull();
   });
 });

@@ -76,7 +76,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     status: body.status as CaseStatus | undefined,
     priority: body.priority as CasePriority | undefined,
     category: body.category,
-    orderId: body.orderId ?? null,
+    // `undefined` (field absent) means "keep the existing link" on update;
+    // only an explicit null clears it. Coercing absent → null here would make
+    // every edit from a client that doesn't know about orders unlink the
+    // ticket from the order the complaint was about.
+    orderId: body.orderId,
     assignedTo: body.assignedTo,
     resolution: body.resolution,
     createdBy: session.fullName,

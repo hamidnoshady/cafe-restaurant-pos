@@ -46,9 +46,9 @@ const TONE = {
     link: "text-teal-700 underline decoration-teal-700/40 underline-offset-4 hover:text-teal-800 dark:text-teal-300 dark:decoration-teal-300/40 dark:hover:text-teal-200",
     inlineCode: "rounded bg-muted px-1.5 py-0.5 text-[0.85em] text-foreground",
     codeBlock:
-      "border border-border bg-stone-900 text-stone-100 dark:bg-stone-950 dark:text-stone-100",
-    codeHeader: "border-b border-white/10 text-stone-400 dark:text-stone-400",
-    codeButton: "text-stone-300 hover:bg-white/10 dark:text-stone-300 dark:hover:bg-white/15",
+      "border border-border bg-stone-900 text-stone-100 dark:bg-stone-950 ",
+    codeHeader: "border-b border-white/10 text-muted-foreground dark:text-muted-foreground",
+    codeButton: "text-stone-300 hover:bg-white/10  dark:hover:bg-white/15",
     quote: "border-e-2 border-amber-400/50 dark:border-amber-400/50 text-muted-foreground",
     tableWrap: "border border-border",
     thead: "bg-muted/60",

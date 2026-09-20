@@ -5,6 +5,7 @@ import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber, formatPersianNumericText } from "@/lib/digits";
 import { isNonCurrentCode } from "@/lib/coa-template";
 import { DrillDownPanel, type DrillDownTarget } from "./drill-down-panel";
+import { DataTable, DataTableBody, DataTableFoot, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface PnlLine {
   accountCode: string;
@@ -145,98 +146,55 @@ function Section({
     <section className="border-b border-border py-5 first:pt-0 last:border-b-0">
       <h3 className="mb-3 text-base font-bold text-foreground">{heading}</h3>
 
-      <div className="hidden overflow-hidden rounded-xl border border-border/80 sm:block">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <caption className="sr-only">{heading}</caption>
-            <thead className="bg-muted text-muted-foreground">
-              <tr className="border-b border-border/80">
-                <th
-                  scope="col"
-                  className="px-4 py-3 text-start text-xs font-semibold"
-                >
-                  کد
-                </th>
-                <th
-                  scope="col"
-                  className="px-4 py-3 text-start text-xs font-semibold"
-                >
-                  حساب
-                </th>
-                <th
-                  scope="col"
-                  className="px-4 py-3 text-end text-xs font-semibold"
-                >
-                  مبلغ
-                </th>
+      <DataTable caption={heading} className="hidden sm:block" tableClassName="min-w-full">
+        <DataTableHead>
+          <Th>کد</Th>
+          <Th>حساب</Th>
+          <Th numeric>مبلغ</Th>
+          {showPrevious ? <Th numeric>دورهٔ قبل</Th> : null}
+        </DataTableHead>
+        <DataTableBody>
+          {lines.map((line) => {
+            const previousValue = showPrevious
+              ? previousAmount(previousLines, line.accountCode)
+              : null;
+            return (
+              <DataTableRow key={line.accountCode || line.accountName}>
+                <Td muted>{line.accountCode || "—"}</Td>
+                <Td>
+                  <ReportLineName line={line} drill={drill} />
+                </Td>
+                <Td numeric>{money.format(line.amount)}</Td>
                 {showPrevious ? (
-                  <th
-                    scope="col"
-                    className="px-4 py-3 text-end text-xs font-semibold"
-                  >
-                    دورهٔ قبل
-                  </th>
+                  <Td numeric muted>
+                    {previousValue !== null ? money.format(previousValue) : "—"}
+                  </Td>
                 ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((line) => {
-                const previousValue = showPrevious
-                  ? previousAmount(previousLines, line.accountCode)
-                  : null;
-                return (
-                  <tr
-                    key={line.accountCode || line.accountName}
-                    className="border-b border-border last:border-b-0"
-                  >
-                    <td className="px-4 py-3.5 text-muted-foreground">
-                      {line.accountCode || "—"}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <ReportLineName line={line} drill={drill} />
-                    </td>
-                    <td className="px-4 py-3.5 text-end tabular-nums font-medium text-foreground">
-                      {money.format(line.amount)}
-                    </td>
-                    {showPrevious ? (
-                      <td className="px-4 py-3.5 text-end tabular-nums text-muted-foreground">
-                        {previousValue !== null
-                          ? money.format(previousValue)
-                          : "—"}
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-              {lines.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={showPrevious ? 4 : 3}
-                    className="px-4 py-8 text-center text-sm text-muted-foreground"
-                  >
-                    بدون سطر
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-            <tfoot className="bg-muted">
-              <tr className="border-t-2 border-border/80 font-bold text-foreground">
-                <th scope="row" className="px-4 py-3.5 text-start" colSpan={2}>
-                  {totalLabel}
-                </th>
-                <td className="px-4 py-3.5 text-end tabular-nums">
-                  {money.format(total)}
-                </td>
-                {showPrevious ? (
-                  <td className="px-4 py-3.5 text-end tabular-nums text-muted-foreground">
-                    {previousTotal != null ? money.format(previousTotal) : "—"}
-                  </td>
-                ) : null}
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
+              </DataTableRow>
+            );
+          })}
+          {lines.length === 0 ? (
+            <DataTableRow>
+              <Td colSpan={showPrevious ? 4 : 3} muted className="py-8 text-center">
+                بدون سطر
+              </Td>
+            </DataTableRow>
+          ) : null}
+        </DataTableBody>
+        <DataTableFoot className="border-t-2 font-bold">
+          <tr>
+            <Th scope="row" colSpan={2}>
+              {totalLabel}
+            </Th>
+            <Td numeric>{money.format(total)}</Td>
+            {showPrevious ? (
+              <Td numeric muted>
+                {previousTotal != null ? money.format(previousTotal) : "—"}
+              </Td>
+            ) : null}
+          </tr>
+        </DataTableFoot>
+      </DataTable>
 
       <div className="space-y-2 sm:hidden">
         {lines.map((line) => {
@@ -359,44 +317,37 @@ export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
           بهای تمام‌شده نظری هر قلم منو
         </h3>
 
-        <div className="hidden overflow-hidden rounded-xl border border-border/80 sm:block">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <caption className="sr-only">بهای تمام‌شده نظری هر قلم منو</caption>
-              <thead className="bg-muted text-muted-foreground">
-                <tr className="border-b border-border/80">
-                  <th scope="col" className="px-4 py-3 text-start text-xs font-semibold">قلم منو</th>
-                  <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">تعداد فروش</th>
-                  <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">درآمد</th>
-                  <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">بهای نظری</th>
-                  <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">درصد بهای غذا</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.items.map((item) => (
-                  <tr key={item.menuItemId ?? item.menuItemName} className="border-b border-border last:border-b-0">
-                    <td className="px-4 py-3.5 font-semibold text-foreground">{item.menuItemName}</td>
-                    <td className="px-4 py-3.5 text-end tabular-nums text-muted-foreground">
-                      {formatPersianNumber(item.unitsSold)}
-                    </td>
-                    <td className="px-4 py-3.5 text-end tabular-nums text-foreground">{money.format(item.revenue)}</td>
-                    <td className="px-4 py-3.5 text-end tabular-nums text-foreground">{money.format(item.theoreticalCost)}</td>
-                    <td className="px-4 py-3.5 text-end tabular-nums font-medium text-foreground">
-                      {formatPct(item.foodCostPct)}
-                    </td>
-                  </tr>
-                ))}
-                {report.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                      در این بازه فروشی ثبت نشده
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <DataTable
+          caption="بهای تمام‌شده نظری هر قلم منو"
+          className="hidden sm:block"
+          tableClassName="min-w-full"
+        >
+          <DataTableHead>
+            <Th>قلم منو</Th>
+            <Th numeric>تعداد فروش</Th>
+            <Th numeric>درآمد</Th>
+            <Th numeric>بهای نظری</Th>
+            <Th numeric>درصد بهای غذا</Th>
+          </DataTableHead>
+          <DataTableBody>
+            {report.items.map((item) => (
+              <DataTableRow key={item.menuItemId ?? item.menuItemName}>
+                <Td className="font-semibold">{item.menuItemName}</Td>
+                <Td numeric muted>{formatPersianNumber(item.unitsSold)}</Td>
+                <Td numeric>{money.format(item.revenue)}</Td>
+                <Td numeric>{money.format(item.theoreticalCost)}</Td>
+                <Td numeric>{formatPct(item.foodCostPct)}</Td>
+              </DataTableRow>
+            ))}
+            {report.items.length === 0 ? (
+              <DataTableRow>
+                <Td colSpan={5} muted className="py-8 text-center">
+                  در این بازه فروشی ثبت نشده
+                </Td>
+              </DataTableRow>
+            ) : null}
+          </DataTableBody>
+        </DataTable>
 
         <div className="space-y-2 sm:hidden">
           {report.items.map((item) => (
@@ -712,77 +663,43 @@ export function CashFlowView({
           گردش وجوه نقد بر اساس نوع رویداد
         </h3>
 
-        <div className="hidden overflow-hidden rounded-xl border border-border/80 sm:block">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <caption className="sr-only">
-                گردش وجوه نقد بر اساس نوع رویداد
-              </caption>
-              <thead className="bg-muted text-muted-foreground">
-                <tr className="border-b border-border/80">
-                  <th
-                    scope="col"
-                    className="px-4 py-3 text-start text-xs font-semibold"
-                  >
-                    نوع رویداد
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-4 py-3 text-end text-xs font-semibold"
-                  >
-                    مبلغ
-                  </th>
+        <DataTable
+          caption="گردش وجوه نقد بر اساس نوع رویداد"
+          className="hidden sm:block"
+          tableClassName="min-w-full"
+        >
+          <DataTableHead>
+            <Th>نوع رویداد</Th>
+            <Th numeric>مبلغ</Th>
+            {previous ? <Th numeric>دورهٔ قبل</Th> : null}
+          </DataTableHead>
+          <DataTableBody>
+            {current.lines.map((line) => {
+              const previousValue =
+                previous?.lines.find(
+                  (item) => item.sourceType === line.sourceType,
+                )?.amount ?? null;
+              return (
+                <DataTableRow key={line.sourceType}>
+                  <Td className="font-semibold">{line.label}</Td>
+                  <Td numeric>{money.format(line.amount)}</Td>
                   {previous ? (
-                    <th
-                      scope="col"
-                      className="px-4 py-3 text-end text-xs font-semibold"
-                    >
-                      دورهٔ قبل
-                    </th>
+                    <Td numeric muted>
+                      {previousValue !== null ? money.format(previousValue) : "—"}
+                    </Td>
                   ) : null}
-                </tr>
-              </thead>
-              <tbody>
-                {current.lines.map((line) => {
-                  const previousValue =
-                    previous?.lines.find(
-                      (item) => item.sourceType === line.sourceType,
-                    )?.amount ?? null;
-                  return (
-                    <tr
-                      key={line.sourceType}
-                      className="border-b border-border last:border-b-0"
-                    >
-                      <td className="px-4 py-3.5 font-semibold text-foreground">
-                        {line.label}
-                      </td>
-                      <td className="px-4 py-3.5 text-end tabular-nums font-medium text-foreground">
-                        {money.format(line.amount)}
-                      </td>
-                      {previous ? (
-                        <td className="px-4 py-3.5 text-end tabular-nums text-muted-foreground">
-                          {previousValue !== null
-                            ? money.format(previousValue)
-                            : "—"}
-                        </td>
-                      ) : null}
-                    </tr>
-                  );
-                })}
-                {current.lines.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={previous ? 3 : 2}
-                      className="px-4 py-8 text-center text-sm text-muted-foreground"
-                    >
-                      بدون رویداد نقدی
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                </DataTableRow>
+              );
+            })}
+            {current.lines.length === 0 ? (
+              <DataTableRow>
+                <Td colSpan={previous ? 3 : 2} muted className="py-8 text-center">
+                  بدون رویداد نقدی
+                </Td>
+              </DataTableRow>
+            ) : null}
+          </DataTableBody>
+        </DataTable>
 
         <div className="space-y-2 sm:hidden">
           {current.lines.map((line) => {

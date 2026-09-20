@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { printLabel } from "@/lib/print-agent-client";
+import { printLabel } from "@/lib/printing/client";
 import { labelFieldsForTrade, type LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { api, Field, inputClass } from "../ui";
@@ -37,6 +37,15 @@ interface BrandRow {
   productLine: string | null;
 }
 
+function parseList(value: string): string[] {
+  // Accept Persian comma too; it is the natural keyboard character in RTL
+  // fields and previously produced a single invalid matrix value.
+  return value
+    .split(/[،,]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 export function MerchandisingSection() {
   const [items, setItems] = useState<ItemRow[]>([]);
   const [brands, setBrands] = useState<BrandRow[]>([]);
@@ -55,6 +64,11 @@ export function MerchandisingSection() {
     }
     if (brandsResult.status === "fulfilled" && brandsResult.value.ok) {
       setBrands(brandsResult.value.data.brands);
+    }
+    if (itemsResult.status === "rejected" || (itemsResult.status === "fulfilled" && !itemsResult.value.ok)) {
+      setError("بارگذاری کالاهای آرایشی ناموفق بود. دوباره تلاش کنید.");
+    } else if (brandsResult.status === "rejected" || (brandsResult.status === "fulfilled" && !brandsResult.value.ok)) {
+      setError("بارگذاری برندها ناموفق بود. دوباره تلاش کنید.");
     }
     setLoaded(true);
   }, []);
@@ -186,8 +200,8 @@ function MatrixForm({
       method: "POST",
       body: JSON.stringify({
         parentName,
-        axisA: { name: axisAName, values: axisAValues.split(",") },
-        axisB: axisBName.trim() && axisBValues.trim() ? { name: axisBName, values: axisBValues.split(",") } : { name: "", values: [] },
+        axisA: { name: axisAName.trim(), values: parseList(axisAValues) },
+        axisB: axisBName.trim() && axisBValues.trim() ? { name: axisBName.trim(), values: parseList(axisBValues) } : { name: "", values: [] },
       }),
     });
     setBusy(false);
@@ -250,6 +264,22 @@ function ItemProfileForm({
 
   const selected = items.find((i) => i.id === itemId);
 
+  useEffect(() => {
+    if (!selected) {
+      setBrandId("");
+      setIrcCode("");
+      setHealthPermit("");
+      setAuthenticity("");
+      setTags("");
+      return;
+    }
+    setBrandId(selected.brandId ?? "");
+    setIrcCode(selected.ircCode ?? "");
+    setHealthPermit(selected.healthPermit ?? "");
+    setAuthenticity(selected.authenticityRegistration ?? "");
+    setTags(selected.tags.join("، "));
+  }, [itemId]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!itemId) return;
@@ -270,7 +300,15 @@ function ItemProfileForm({
     });
     setBusy(false);
     if (!ok) setError(data.message ?? "ذخیره ناموفق بود.");
-    else onDone("مشخصات کالا ذخیره شد.");
+    else {
+      // Keep the editor truthful after save: a second save must not submit
+      // stale regulatory values for the previously selected item.
+      setIrcCode("");
+      setHealthPermit("");
+      setAuthenticity("");
+      setTags("");
+      onDone("مشخصات کالا ذخیره شد.");
+    }
   }
 
   return (
@@ -474,9 +512,9 @@ function BarcodesPanel({
         money.unit,
       ),
     };
-    printLabel(printer.connection, label).then((res) => {
+    printLabel(printer.id, label).then((res) => {
       if (res.ok) onDone("لیبل چاپ شد.");
-      else setError(res.error === "agent_unreachable" ? "چاپگر محلی در دسترس نیست." : "چاپ لیبل ناموفق بود.");
+      else setError(res.error === "connector_not_installed" || res.error === "connector_outdated" ? "رابط چاپ روی این کامپیوتر در دسترس نیست؛ از تنظیمات چاپگرها نصب کنید." : "چاپ لیبل ناموفق بود.");
     });
   }
 
@@ -494,7 +532,7 @@ function BarcodesPanel({
           placeholder="انتخاب کالا"
         />
       </Field>
-      <div className="grid grid-cols-[1fr_auto] gap-2">
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
         <input
           className={accInputClass}
           dir="ltr"

@@ -7,13 +7,7 @@ import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
-import {
-  cardClass,
-  EmptyState,
-  SectionCard,
-  SectionCardSkeleton,
-  StatusBadge,
-} from "@/app/dashboard/page-chrome";
+import { EmptyState, KpiCard, KpiRow, SectionCard, SectionCardSkeleton, StatusBadge, cardClass } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import type { AccountingSectionKey } from "./accounting-routes";
 
@@ -51,31 +45,6 @@ interface LedgerOverview {
     sourceType: string | null;
     total: number;
   }[];
-}
-
-/** A KPI tile: cardClass composed, not restated (design-lint holds this line). */
-function StatCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
-      <p className="text-xs font-medium leading-5 text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-        {value}
-      </p>
-      {hint ? (
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p>
-      ) : null}
-    </div>
-  );
 }
 
 function LedgerHealthNotice({ overview }: { overview: LedgerOverview }) {
@@ -205,7 +174,7 @@ function ShiftSalesQuickReport({ refreshKey }: { refreshKey: number }) {
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
             گزارش سریع
           </p>
-          <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+          <h2 className="mt-1 text-base font-semibold text-foreground">
             فروش شیفت جاری
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -295,7 +264,7 @@ export function LedgerDashboardSection({
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
                 شروع سریع
               </p>
-              <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100 sm:text-lg">
+              <h2 className="mt-1 text-base font-semibold text-foreground sm:text-lg">
                 دفتر شما هنوز خالی است
               </h2>
             </div>
@@ -330,29 +299,29 @@ export function LedgerDashboardSection({
 
       <LedgerHealthNotice overview={overview} />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard
+      <KpiRow className="xl:grid-cols-3">
+        <KpiCard
           label="نقدینگی (صندوق و بانک)"
           value={money.format(overview.cashAndBank)}
           hint="حساب‌های ۱۱۰۰ تا ۱۱۳۰"
         />
-        <StatCard
+        <KpiCard
           label="دریافتنی‌ها"
           value={money.format(overview.receivables)}
           hint={`${formatPersianNumber(overview.openReceivableCheques)} چک دریافتی باز`}
         />
-        <StatCard
+        <KpiCard
           label="پرداختنی‌ها"
           value={money.format(overview.payables)}
           hint={`${formatPersianNumber(overview.openPayableCheques)} چک صادرشدهٔ باز`}
         />
-        <StatCard label="درآمد" value={money.format(overview.revenue)} />
-        <StatCard label="هزینه‌ها" value={money.format(overview.expenses)} />
-        <StatCard
+        <KpiCard label="درآمد" value={money.format(overview.revenue)} />
+        <KpiCard label="هزینه‌ها" value={money.format(overview.expenses)} />
+        <KpiCard
           label="سود (زیان) خالص"
           value={money.format(overview.netIncome)}
         />
-      </div>
+      </KpiRow>
 
       <SectionCard
         title={
@@ -360,7 +329,7 @@ export function LedgerDashboardSection({
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
               دسترسی سریع
             </p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+            <h2 className="mt-1 text-base font-semibold text-foreground">
               کارهای رایج
             </h2>
           </div>
@@ -440,7 +409,7 @@ export function LedgerDashboardSection({
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
               آخرین رویدادها
             </p>
-            <h2 className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">
+            <h2 className="mt-1 text-base font-semibold text-foreground">
               اسناد اخیر
             </h2>
           </div>

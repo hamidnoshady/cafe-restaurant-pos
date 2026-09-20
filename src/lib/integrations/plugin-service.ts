@@ -48,6 +48,14 @@ const JOB_LEASE_MS = 5 * 60 * 1000;
 /** Cap on one push, so a compromised or looping plugin cannot submit unbounded work in one request. */
 const MAX_EVENTS_PER_PUSH = 100;
 
+const LEGACY_PLUGIN_JOB_TYPES = ["stock", "price", "catalogue_export", "customer_export", "orders_export"];
+
+function supportedPluginJobTypes(connection: ConnectionRow): string[] {
+  const raw = connection.plugin_capabilities?.jobTypes;
+  const advertised = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+  return advertised.length > 0 ? advertised : LEGACY_PLUGIN_JOB_TYPES;
+}
+
 /**
  * Resolve and verify one inbound plugin request.
  *
@@ -143,6 +151,41 @@ export async function authenticatePlugin(
 export interface PluginHandshakeInput {
   siteUrl?: string;
   pluginVersion?: string;
+  protocolVersion?: number;
+  capabilities?: {
+    eventTypes?: string[];
+    jobTypes?: string[];
+  };
+  telemetry?: Record<string, unknown>;
+}
+
+function normalizeSiteUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw.trim());
+    url.hash = "";
+    url.search = "";
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    return url.toString().replace(/\/+$/, "").toLowerCase();
+  } catch {
+    return raw.trim().replace(/\/+$/, "").toLowerCase() || null;
+  }
+}
+
+function sanitizeStringArray(value: unknown, limit = 80): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim().slice(0, 120))
+    .slice(0, limit);
+}
+
+function pluginCapabilities(input: PluginHandshakeInput): Record<string, unknown> {
+  return {
+    protocolVersion: Number.isFinite(input.protocolVersion) ? Math.max(1, Math.floor(input.protocolVersion ?? 1)) : 1,
+    eventTypes: sanitizeStringArray(input.capabilities?.eventTypes),
+    jobTypes: sanitizeStringArray(input.capabilities?.jobTypes),
+  };
 }
 
 export async function pluginHandshake(
@@ -151,25 +194,58 @@ export async function pluginHandshake(
 ): Promise<NextResponse> {
   return withTenant(connection.business_id, async () => {
     const siteUrl = input.siteUrl?.trim().slice(0, 500) || null;
+    const normalizedSiteUrl = normalizeSiteUrl(siteUrl);
     const version = input.pluginVersion?.trim().slice(0, 40) || null;
-    // Read the pre-handshake value first: an UPDATE ... RETURNING hands back
-    // the *new* row, where last_plugin_seen_at is already now(), so the
-    // first-contact test below would always be false.
-    const { rows: beforeRows } = await query<{ last_plugin_seen_at: Date | null }>(
-      `SELECT last_plugin_seen_at FROM integration_connections WHERE id = $1 AND business_id = $2`,
-      [connection.id, connection.business_id],
-    );
+    const capabilities = pluginCapabilities(input);
+    const telemetry = input.telemetry && typeof input.telemetry === "object" ? input.telemetry : {};
+    const storedSiteUrl = normalizeSiteUrl(connection.plugin_site_url);
+    if (storedSiteUrl && normalizedSiteUrl && storedSiteUrl !== normalizedSiteUrl) {
+      await query(
+        `UPDATE integration_connections
+            SET pending_plugin_site_url = $3,
+                plugin_site_mismatch_at = now(),
+                last_error = 'site_mismatch',
+                plugin_health = jsonb_build_object('state', 'site_mismatch', 'reportedSiteUrl', $3, 'expectedSiteUrl', plugin_site_url),
+                updated_at = now()
+          WHERE id = $1 AND business_id = $2`,
+        [connection.id, connection.business_id, siteUrl],
+      );
+      await writeIntegrationAudit({
+        businessId: connection.business_id,
+        connectionId: connection.id,
+        action: "plugin.site_mismatch",
+        payload: { expected: connection.plugin_site_url, reported: siteUrl },
+        error: "site_mismatch",
+      });
+      return NextResponse.json({ ok: false, error: "site_mismatch", expectedSiteUrl: connection.plugin_site_url, reportedSiteUrl: siteUrl }, { status: 409 });
+    }
+    // `connection` is the row loaded before authenticatePlugin writes the
+    // liveness timestamp, so it is the only reliable first-contact signal.
+    // Reading after auth would see the timestamp auth just set and would never
+    // queue the initial full exports.
+    const firstContact = !connection.last_plugin_seen_at;
     const { rows: handshakeRows } = await query<{ sync_orders: boolean; sync_products: boolean; sync_customers: boolean }>(
       `UPDATE integration_connections
           SET plugin_site_url = COALESCE($3, plugin_site_url),
               plugin_version = COALESCE($4, plugin_version),
+              plugin_capabilities = $5::jsonb,
+              plugin_health = $6::jsonb,
+              pending_plugin_site_url = NULL,
+              plugin_site_mismatch_at = NULL,
               status = CASE WHEN status = 'error' THEN 'active' ELSE status END,
               last_error = NULL,
               last_plugin_seen_at = now(),
               updated_at = now()
         WHERE id = $1 AND business_id = $2
         RETURNING sync_orders, sync_products, sync_customers`,
-      [connection.id, connection.business_id, siteUrl, version],
+      [
+        connection.id,
+        connection.business_id,
+        siteUrl,
+        version,
+        JSON.stringify(capabilities),
+        JSON.stringify({ ...telemetry, protocolVersion: capabilities.protocolVersion, receivedAt: new Date().toISOString() }),
+      ],
     );
 
     // First-contact bootstrap. The plugin only sends what it observes from
@@ -179,14 +255,14 @@ export async function pluginHandshake(
     // app held only the ~20 accounts created after connect — the rest arrived
     // by no path at all (the orders sweep covered orders; products had a
     // hourly sweep; customers had neither a sweep nor an initial request).
-    // On the very first handshake we queue the three full exports; each is
-    // upserted on a unique key, so the button a later handshake's owner
-    // presses just refreshes the one row.
-    const firstContact = !beforeRows[0]?.last_plugin_seen_at;
+    // On the very first handshake queue every historical mirror, including
+    // WordPress content/media. Each is upserted on a unique key, so a later
+    // manual request only refreshes the one outstanding export row.
     if (firstContact) {
       await enqueuePluginExport(connection.business_id, connection.id, "catalogue_export");
       await enqueuePluginExport(connection.business_id, connection.id, "customer_export");
       await enqueuePluginExport(connection.business_id, connection.id, "orders_export");
+      await enqueuePluginExport(connection.business_id, connection.id, "content_export");
       await writeIntegrationAudit({
         businessId: connection.business_id,
         connectionId: connection.id,
@@ -195,6 +271,7 @@ export async function pluginHandshake(
           products: handshakeRows[0]?.sync_products ?? true,
           customers: handshakeRows[0]?.sync_customers ?? true,
           orders: handshakeRows[0]?.sync_orders ?? true,
+          content: true,
         },
       });
     }
@@ -220,7 +297,9 @@ export async function pluginHandshake(
         pushStock: connection.push_stock,
         pushPrices: connection.push_prices,
         status: connection.status,
+        serverMessage: connection.status === "paused" ? "همگام‌سازی از سمت پنل متوقف شده است" : null,
       },
+      serverStatus: connection.status === "paused" ? "paused" : "active",
       // Everything time-sensitive about the protocol, so the plugin never has
       // to hardcode a constant this side owns.
       protocol: {
@@ -274,14 +353,15 @@ export async function pluginPushEvents(
   return withTenant(connection.business_id, async () => {
     const results: { deliveryId: string; status: string; error?: string }[] = [];
     for (const event of events) {
-      results.push(await ingestPluginEvent(connection, event));
+      const result = await ingestPluginEvent(connection, event);
+      results.push(result);
     }
-    // Real inbound sync: the plugin delivered a batch, so "آخرین همگام‌سازی"
-    // has something true to show. Only the REST-mode paths write last_sync_at
-    // today; without this, plugin-mode connections stay "—" forever even
-    // while orders and products keep arriving.
+    // Real inbound sync activity: the plugin delivered a batch. Domain-specific
+    // completion watermarks are advanced only by explicit *.sync_completed
+    // markers, not by ordinary row activity.
     await query(
-      `UPDATE integration_connections SET last_sync_at = now(), updated_at = now()
+      `UPDATE integration_connections
+          SET last_sync_at = now(), updated_at = now()
         WHERE id = $1 AND business_id = $2`,
       [connection.id, connection.business_id],
     );
@@ -318,6 +398,28 @@ export interface PluginJob {
  */
 export async function pluginPullJobs(connection: ConnectionRow): Promise<NextResponse> {
   return withTenant(connection.business_id, async () => {
+    if (connection.status === "paused") {
+      return NextResponse.json({ ok: true, jobs: [], paused: true, message: "همگام‌سازی از سمت پنل متوقف شده است" });
+    }
+    const supportedTypes = supportedPluginJobTypes(connection);
+    await query(
+      `UPDATE integration_outbox_events
+          SET status = 'needs_review',
+              last_error = CASE
+                WHEN entity_type = 'refund_create' THEN 'operation_id_missing_for_non_idempotent_refund'
+                WHEN entity_type = 'media_create' THEN 'operation_id_missing_for_non_idempotent_media_create'
+                ELSE 'operation_id_missing_for_non_idempotent_post_create'
+              END,
+              updated_at = now()
+        WHERE connection_id = $1
+          AND status IN ('pending', 'failed')
+          AND operation_id IS NULL
+          AND (
+            entity_type IN ('refund_create', 'media_create')
+            OR (entity_type = 'post_upsert' AND NOT (payload ? 'id'))
+          )`,
+      [connection.id],
+    );
     const { rows } = await query<{
       id: string;
       entity_type: string;
@@ -331,6 +433,7 @@ export async function pluginPullJobs(connection: ConnectionRow): Promise<NextRes
         WHERE id IN (
           SELECT id FROM integration_outbox_events
            WHERE connection_id = $1
+             AND entity_type = ANY($4::text[])
              AND (
                (status IN ('pending', 'failed') AND next_attempt_at <= now())
                OR (status = 'processing' AND leased_until IS NOT NULL AND leased_until < now())
@@ -349,7 +452,7 @@ export async function pluginPullJobs(connection: ConnectionRow): Promise<NextRes
                         AND m.remote_id = o.remote_id
                       LIMIT 1)
                   ) AS parent_remote_id`,
-      [connection.id, JOB_PULL_LIMIT, JOB_LEASE_MS],
+      [connection.id, JOB_PULL_LIMIT, JOB_LEASE_MS, supportedTypes],
     );
 
     const jobs: PluginJob[] = rows.map((row) => ({
@@ -443,7 +546,7 @@ export async function pluginAckJobs(
 export async function enqueuePluginExport(
   businessId: string,
   connectionId: string,
-  entityType: "catalogue_export" | "customer_export" | "orders_export",
+  entityType: "catalogue_export" | "customer_export" | "orders_export" | "content_export",
 ): Promise<void> {
   await query(
     `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload)

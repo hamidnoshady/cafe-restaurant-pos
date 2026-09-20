@@ -97,11 +97,6 @@ export const PROMPT_FRAGMENTS: Record<FragmentKey, string> = {
   ].join("\n"),
 
   // ── App-specific fragments (only sent when the app is in scope) ───────
-  "app:sales": [
-    "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance).",
-    "برای هر سؤالی دربارهٔ ضایعات («چقدر نان دور ریختیم؟»، «ضایعات این ماه چقدر بود؟») از get_waste_history استفاده کن؛ این ابزار تفکیک کالا و دلیل و هزینه را یک‌جا می‌دهد. get_stock_valuation فقط موجودی همین لحظه را می‌گوید و به سؤال «چه چیزی از انبار خارج شد» جواب نمی‌دهد.",
-  ].join("\n"),
-
   "app:growth": [
     "مشتریان آمادهٔ خرید مجدد (get_repurchase_candidates) و پورسانت کارکنان (get_staff_commission) در دسترس‌اند.",
     "بخش‌بندی مشتریان در برنامهٔ «ارتباط با مشتری» تعریف می‌شود؛ برای دیدن یا برآورد یک بخش از ابزارهای همان برنامه استفاده کن.",
@@ -114,11 +109,12 @@ export const PROMPT_FRAGMENTS: Record<FragmentKey, string> = {
     "ادغام مشتریان تکراری برگشت‌ناپذیر است و از دستیار انجام نمی‌شود. اگر تکراری دیدی، فقط بگو در کدام صفحه قابل بررسی است.",
   ].join("\n"),
 
-  "app:operations": [
-    "رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، و اقلام در حال انقضا (get_near_expiry_items) در دسترس‌اند.",
-  ].join("\n"),
-
   "app:accounting": [
+
+    "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance).",
+    "برای هر سؤالی دربارهٔ ضایعات («چقدر نان دور ریختیم؟»، «ضایعات این ماه چقدر بود؟») از get_waste_history استفاده کن؛ این ابزار تفکیک کالا و دلیل و هزینه را یک‌جا می‌دهد. get_stock_valuation فقط موجودی همین لحظه را می‌گوید و به سؤال «چه چیزی از انبار خارج شد» جواب نمی‌دهد.",
+
+    "رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، و اقلام در حال انقضا (get_near_expiry_items) در دسترس‌اند.",
     "برای سؤال‌هایی مثل «حساب‌هایم را بررسی کن»، «اشتباهی هست؟» یا «چه چیزی جا افتاده؟» حتماً run_accounting_review را صدا بزن و دقیقاً همان یافته‌ها را با درجهٔ اهمیت و پیشنهاد اصلاحشان گزارش کن. هرگز از خودت مورد اضافه نکن و هرگز نگو حسابی مشکل دارد مگر این ابزار گفته باشد.",
     "حسابداری (get_ar_aging، get_ap_upcoming، get_unreconciled_bank_lines، get_payroll_summary، get_vat_liability) در دسترس‌اند.",
   ].join("\n"),
@@ -133,7 +129,6 @@ export const PROMPT_FRAGMENTS: Record<FragmentKey, string> = {
     "قاعده: سایت ویترین است و منبع حقیقتِ قیمت و موجودی همین نرم‌افزار است — در پیش‌نویس فقط از داده‌های واقعی استفاده کن: نام و قیمت آیتم‌ها را با find_items یا get_menu_item_details بخوان و هیچ عدد، قیمت یا ادعایی از خودت نساز. هر پیش‌نویس پیش‌نویس می‌ماند؛ انتشار (website.post.publish) همیشه با تأیید صریح کاربر است و حتی با اجرای خودکار باز هم به تأیید نیاز دارد. اگر سایتی متصل نیست، بگو ساخت سایت در «مدیریت وب‌سایت» است و اتصال فنی آن در «اتصال‌های فنی».",
   ].join("\n"),
 
-  "app:settings": "",
 
   // ── Project instructions (injected when conversation has a project) ───
   project: "",

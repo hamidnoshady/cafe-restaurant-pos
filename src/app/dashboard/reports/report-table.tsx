@@ -24,6 +24,15 @@
  */
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableFoot,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
 
 export interface ReportTableColumn<Row> {
   key: string;
@@ -89,74 +98,58 @@ export function ReportTable<Row>({
   return (
     <div className={cn("min-w-0", className)}>
       {/* Desktop: one scrollable grid. */}
-      <div className="hidden overflow-x-auto sm:block">
-        <table className="min-w-full text-sm">
-          <caption className="sr-only">{caption}</caption>
-          <thead className="bg-stone-50 text-muted-foreground dark:bg-muted">
-            <tr className="border-b border-border">
+      <DataTable
+        caption={caption}
+        frame={false}
+        className="hidden sm:block"
+        tableClassName="min-w-full"
+      >
+        <DataTableHead>
+          {columns.map((column) => (
+            <Th key={column.key} numeric={column.align === "end"}>
+              {column.header}
+            </Th>
+          ))}
+        </DataTableHead>
+        <DataTableBody>
+          {rows.map((row, index) => (
+            <DataTableRow key={rowKey?.(row, index) ?? index}>
               {columns.map((column) => (
-                <th
+                <Td
                   key={column.key}
-                  scope="col"
-                  className={cn(
-                    "px-4 py-3 text-xs font-medium sm:text-sm",
-                    column.align === "end" ? "text-end" : "text-start",
-                  )}
+                  numeric={column.align === "end"}
+                  muted={column.muted}
+                  className={cn(column.numeric && "tabular-nums")}
                 >
-                  {column.header}
-                </th>
+                  {column.cell(row)}
+                </Td>
+              ))}
+            </DataTableRow>
+          ))}
+          {rows.length === 0 ? (
+            <DataTableRow>
+              <Td colSpan={columns.length} muted className="py-10 text-center">
+                {empty}
+              </Td>
+            </DataTableRow>
+          ) : null}
+        </DataTableBody>
+        {footer && rows.length > 0 ? (
+          <DataTableFoot>
+            <tr>
+              {footer.map((cell) => (
+                <Td
+                  key={cell.key}
+                  numeric={cell.align === "end"}
+                  className={cn(cell.numeric && "tabular-nums")}
+                >
+                  {cell.content}
+                </Td>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr
-                key={rowKey?.(row, index) ?? index}
-                className="border-b border-border transition-colors last:border-b-0 hover:bg-stone-50/70 dark:hover:bg-muted/60"
-              >
-                {columns.map((column) => (
-                  <td
-                    key={column.key}
-                    className={cn(
-                      "px-4 py-3",
-                      column.align === "end" ? "text-end" : "text-start",
-                      column.numeric && "tabular-nums",
-                      column.muted ? "text-muted-foreground" : "text-foreground",
-                    )}
-                  >
-                    {column.cell(row)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  {empty}
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-          {footer && rows.length > 0 ? (
-            <tfoot className="bg-stone-50 dark:bg-muted">
-              <tr className="border-t border-border font-semibold text-foreground">
-                {footer.map((cell) => (
-                  <td
-                    key={cell.key}
-                    className={cn(
-                      "px-4 py-3",
-                      cell.align === "end" ? "text-end" : "text-start",
-                      cell.numeric && "tabular-nums",
-                    )}
-                  >
-                    {cell.content}
-                  </td>
-                ))}
-              </tr>
-            </tfoot>
-          ) : null}
-        </table>
-      </div>
+          </DataTableFoot>
+        ) : null}
+      </DataTable>
 
       {/* Phone: the same columns as a labelled card, so nothing is hidden by width alone. */}
       <ul className="divide-y divide-border sm:hidden">
@@ -194,7 +187,7 @@ export function ReportTable<Row>({
           <li className="px-4 py-10 text-center text-sm text-muted-foreground">{empty}</li>
         ) : null}
         {footer && rows.length > 0 ? (
-          <li className="bg-stone-50 px-4 py-3 dark:bg-muted">
+          <li className="bg-muted/60 px-4 py-3 dark:bg-muted">
             <p className="font-semibold text-foreground">{footer[0]?.content}</p>
             <dl className="mt-2 grid gap-1.5">
               {footer.slice(1).map((cell) => (

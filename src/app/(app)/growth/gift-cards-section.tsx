@@ -14,7 +14,23 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
 import { SectionCard } from "@/app/dashboard/page-chrome";
-import { api, ErrorBox, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
+import { api, ErrorBox, errorMessageOrRaw, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
+
+/**
+ * Parse a money field the user typed, without letting a malformed string throw
+ * out of an async handler (which would leave `busy` stuck true and the buttons
+ * disabled forever). Returns `null` when the value cannot be read as a
+ * positive integer amount, so the caller can show a clear message instead.
+ */
+function parsePositiveAmount(money: ReturnType<typeof useMoney>, raw: string): number | null {
+  try {
+    const rial = money.parse(raw);
+    if (!Number.isFinite(rial) || rial <= 0) return null;
+    return rial;
+  } catch {
+    return null;
+  }
+}
 
 export function GiftCardsSection() {
   const money = useMoney();
@@ -22,21 +38,34 @@ export function GiftCardsSection() {
   const [issueValue, setIssueValue] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
   const [redeemValue, setRedeemValue] = useState("");
-  const [balance, setBalance] = useState<number | null>(null);
+  // The balance is always paired with the code it was fetched for, so editing
+  // the code afterwards can clear a now-stale figure rather than leaving the
+  // previous card's balance attached to a different code.
+  const [balance, setBalance] = useState<{ code: string; value: number } | null>(null);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const canIssue = code.trim().length > 0 && issueValue.trim().length > 0;
+  const canRedeem = redeemCode.trim().length > 0 && redeemValue.trim().length > 0;
+
   async function issue() {
-    if (!code.trim() || !issueValue.trim()) return;
+    if (!canIssue || busy) return;
+    const initialValue = parsePositiveAmount(money, issueValue);
+    if (initialValue == null) {
+      setDone("");
+      setError("ارزش کارت باید یک عدد مثبت باشد.");
+      return;
+    }
     setBusy(true);
     setError("");
+    setDone("");
     const { ok, data } = await api<{ error?: string; message?: string }>("/api/promotions/gift-cards", {
       method: "POST",
-      body: JSON.stringify({ code, initialValue: money.parse(issueValue) }),
+      body: JSON.stringify({ code: code.trim(), initialValue }),
     });
     setBusy(false);
-    if (!ok) setError(data.message ?? "صدور کارت هدیه ناموفق بود.");
+    if (!ok) setError(data.message ?? (errorMessageOrRaw(data.error) || "صدور کارت هدیه ناموفق بود."));
     else {
       setCode("");
       setIssueValue("");
@@ -45,23 +74,51 @@ export function GiftCardsSection() {
   }
 
   async function check() {
-    if (!redeemCode.trim()) return;
-    const { ok, data } = await api<{ balance: number }>(`/api/promotions/gift-cards?code=${encodeURIComponent(redeemCode)}`);
-    if (ok) setBalance(data.balance);
+    const trimmed = redeemCode.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setError("");
+    setDone("");
+    const { ok, status, data } = await api<{ error?: string; balance?: number; isActive?: boolean }>(
+      `/api/promotions/gift-cards?code=${encodeURIComponent(trimmed)}`,
+    );
+    setBusy(false);
+    if (ok && typeof data.balance === "number") {
+      setBalance({ code: trimmed, value: data.balance });
+      if (data.isActive === false) setDone("این کارت غیرفعال است.");
+    } else {
+      setBalance(null);
+      setError(
+        status === 404
+          ? "کارت هدیه‌ای با این کد پیدا نشد."
+          : errorMessageOrRaw(data.error) || "استعلام ماندهٔ کارت ناموفق بود.",
+      );
+    }
   }
 
   async function redeem() {
-    if (!redeemCode.trim() || !redeemValue.trim()) return;
+    if (!canRedeem || busy) return;
+    const amount = parsePositiveAmount(money, redeemValue);
+    if (amount == null) {
+      setDone("");
+      setError("مبلغ مصرف باید یک عدد مثبت باشد.");
+      return;
+    }
+    const trimmed = redeemCode.trim();
     setBusy(true);
     setError("");
-    const { ok, data } = await api<{ error?: string; message?: string; balance?: number }>("/api/promotions/gift-cards/redeem", {
-      method: "POST",
-      body: JSON.stringify({ code: redeemCode, amount: money.parse(redeemValue) }),
-    });
+    setDone("");
+    const { ok, data } = await api<{ error?: string; message?: string; balance?: number }>(
+      "/api/promotions/gift-cards/redeem",
+      {
+        method: "POST",
+        body: JSON.stringify({ code: trimmed, amount }),
+      },
+    );
     setBusy(false);
-    if (!ok) setError(data.message ?? "مصرف کارت هدیه ناموفق بود.");
+    if (!ok) setError(data.message ?? (errorMessageOrRaw(data.error) || "مصرف کارت هدیه ناموفق بود."));
     else {
-      setBalance(data.balance ?? null);
+      setBalance(typeof data.balance === "number" ? { code: trimmed, value: data.balance } : null);
       setRedeemValue("");
       setDone("کارت هدیه مصرف شد.");
     }
@@ -77,28 +134,41 @@ export function GiftCardsSection() {
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">اعتبار هدیه</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">صدور کارت هدیه</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">صدور کارت هدیه</h2>
             </div>
           }
           bodyClassName="space-y-3 p-4 sm:p-5"
         >
-          <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+          <form
+            className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_1fr_auto] sm:gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void issue();
+            }}
+          >
             <Field label="کد کارت جدید">
-              <input className={inputClass} dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} />
+              <input
+                className={inputClass}
+                dir="ltr"
+                value={code}
+                autoComplete="off"
+                onChange={(e) => setCode(e.target.value)}
+              />
             </Field>
             <Field label={`ارزش (${money.unitLabel})`}>
               <PersianNumberInput
                 inputMode="numeric"
+                allowNegative={false}
                 className={inputClass}
                 dir="ltr"
                 value={issueValue}
                 onChange={(e) => setIssueValue(e.target.value)}
               />
             </Field>
-            <Button type="button" disabled={busy} onClick={() => void issue()} className="min-h-11">
+            <Button type="submit" disabled={busy || !canIssue} className="min-h-11 w-full sm:w-auto">
               صدور
             </Button>
-          </div>
+          </form>
           <p className="text-xs leading-5 text-muted-foreground">
             پول نقد بابت کارت وارد صندوق می‌شود و حساب ۲۴۲۰ بستانکار می‌گردد؛ درآمد همان‌جا ثبت می‌شود که مشتری با
             کارت خرید می‌کند — نه این‌جا.
@@ -109,37 +179,60 @@ export function GiftCardsSection() {
           title={
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">استعلام و استفاده</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مصرف و مانده</h2>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مصرف و مانده</h2>
             </div>
           }
           bodyClassName="space-y-3 p-4 sm:p-5"
         >
-          <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+          <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_1fr_auto] sm:gap-2">
             <Field label="کد کارت">
-              <input className={inputClass} dir="ltr" value={redeemCode} onChange={(e) => setRedeemCode(e.target.value)} />
+              <input
+                className={inputClass}
+                dir="ltr"
+                value={redeemCode}
+                autoComplete="off"
+                onChange={(e) => {
+                  setRedeemCode(e.target.value);
+                  // A shown balance belongs to the code it was fetched for;
+                  // once that code changes, drop it so it can't mislead.
+                  setBalance((prev) => (prev && prev.code === e.target.value.trim() ? prev : null));
+                }}
+              />
             </Field>
             <Field label={`مبلغ مصرف (${money.unitLabel})`}>
               <PersianNumberInput
                 inputMode="numeric"
+                allowNegative={false}
                 className={inputClass}
                 dir="ltr"
                 value={redeemValue}
                 onChange={(e) => setRedeemValue(e.target.value)}
               />
             </Field>
-            <Button type="button" variant="outline" disabled={busy} onClick={() => void check()} className="min-h-11">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || !redeemCode.trim()}
+              onClick={() => void check()}
+              className="min-h-11 w-full sm:w-auto"
+            >
               مانده
             </Button>
           </div>
           <Button
             type="button"
-            disabled={busy || !redeemCode.trim() || !redeemValue.trim()}
+            disabled={busy || !canRedeem}
             onClick={() => void redeem()}
             className="min-h-11 w-full"
           >
             مصرف کارت
           </Button>
-          {balance != null ? <p className="text-xs text-muted-foreground">ماندهٔ کارت: {money.format(balance)}</p> : null}
+          {balance && balance.code === redeemCode.trim() ? (
+            <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-foreground">
+              ماندهٔ کارت <span dir="ltr" className="font-medium">{balance.code}</span>:{" "}
+              <span className="font-semibold">{money.format(balance.value)}</span>
+            </p>
+          ) : null}
           <p className="text-xs leading-5 text-muted-foreground">
             کارت هدیه یک بدهی واقعی است؛ صدور آن را بستانکار و مصرف آن را بدهکار می‌کند و هرگز درآمد را دوباره ثبت
             نمی‌کند. ماندهٔ کل کارت‌ها در میز کار رشد، از دفتر کل بازسازی می‌شود.

@@ -11,6 +11,7 @@ import { api } from "../ui";
 import { overlayPanelClass } from "../page-chrome";
 import { useOverlayEscape } from "@/app/(app)/accounting/use-overlay-escape";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface DrillDownLine {
   entryId: string;
@@ -100,33 +101,26 @@ export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; o
         ) : lines.length === 0 ? (
           <p className="text-sm text-muted-foreground">سندی برای این حساب در این بازه یافت نشد.</p>
         ) : (
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <caption className="sr-only">اسناد حساب {target.accountName}</caption>
-            <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th scope="col" className="py-2 pe-3 text-start font-medium">تاریخ</th>
-                <th scope="col" className="py-2 pe-3 text-start font-medium">شرح</th>
-                <th scope="col" className="py-2 pe-3 text-start font-medium">منبع</th>
-                <th scope="col" className="py-2 pe-3 text-end font-medium">بدهکار</th>
-                <th scope="col" className="py-2 text-end font-medium">بستانکار</th>
-              </tr>
-            </thead>
-            <tbody>
+          <DataTable caption={`اسناد حساب ${target.accountName}`} frame={false}>
+            <DataTableHead>
+              <Th>تاریخ</Th>
+              <Th>شرح</Th>
+              <Th>منبع</Th>
+              <Th numeric>بدهکار</Th>
+              <Th numeric>بستانکار</Th>
+            </DataTableHead>
+            <DataTableBody>
               {lines.map((l, i) => (
-                <tr key={`${l.entryId}-${i}`} className="border-b border-border">
-                  <td className="py-1.5 pe-3 text-muted-foreground">{toPersianDigits(formatJalali(l.entryDate))}</td>
-                  <td className="py-1.5 pe-3">{l.memo ?? "—"}</td>
-                  <td className="py-1.5 pe-3 text-muted-foreground">
-                    {ledgerSourceLabel(l.sourceType)}
-                  </td>
-                  <td className="py-1.5 pe-3 text-end tabular-nums">{l.debit ? money.format(l.debit) : "—"}</td>
-                  <td className="py-1.5 text-end tabular-nums">{l.credit ? money.format(l.credit) : "—"}</td>
-                </tr>
+                <DataTableRow key={`${l.entryId}-${i}`}>
+                  <Td muted nowrap>{toPersianDigits(formatJalali(l.entryDate))}</Td>
+                  <Td>{l.memo ?? "—"}</Td>
+                  <Td muted>{ledgerSourceLabel(l.sourceType)}</Td>
+                  <Td numeric>{l.debit ? money.format(l.debit) : "—"}</Td>
+                  <Td numeric>{l.credit ? money.format(l.credit) : "—"}</Td>
+                </DataTableRow>
               ))}
-            </tbody>
-          </table>
-          </div>
+            </DataTableBody>
+          </DataTable>
         )}
       </div>
     </div>

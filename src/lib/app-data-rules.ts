@@ -49,31 +49,31 @@ export const APP_DATA_RULES: readonly AppDataRule[] = [
   {
     domain: "customer_records",
     owner: "crm",
-    readers: ["sales", "growth", "accounting", "operations", "website"],
+    readers: ["growth", "accounting", "website"],
     syncStrategy: "shared-service",
   },
   {
     domain: "sales_documents",
-    owner: "sales",
-    readers: ["accounting", "growth", "crm", "website"],
+    owner: "accounting",
+    readers: ["growth", "crm", "website"],
     syncStrategy: "shared-service",
   },
   {
     domain: "ledger_entries",
     owner: "accounting",
-    readers: ["sales", "growth", "crm", "website"],
+    readers: ["growth", "crm", "website"],
     syncStrategy: "shared-service",
   },
   {
     domain: "growth_programs",
     owner: "growth",
-    readers: ["sales", "accounting", "crm"],
+    readers: ["accounting", "crm"],
     syncStrategy: "shared-service",
   },
   {
     domain: "operations_catalogue",
-    owner: "operations",
-    readers: ["sales", "accounting", "website"],
+    owner: "accounting",
+    readers: ["website"],
     syncStrategy: "shared-service",
   },
   {
@@ -86,13 +86,13 @@ export const APP_DATA_RULES: readonly AppDataRule[] = [
     // to state for it.
     domain: "wp_store_mirror",
     owner: "website",
-    readers: ["sales", "accounting", "growth", "crm", "operations"],
+    readers: ["accounting", "growth", "crm"],
     syncStrategy: "mapped-integration",
   },
   {
     domain: "website_content",
     owner: "website",
-    readers: ["sales", "growth"],
+    readers: ["accounting", "growth"],
     syncStrategy: "mapped-integration",
   },
 ];

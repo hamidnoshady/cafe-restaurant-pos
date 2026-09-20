@@ -3,7 +3,7 @@
  * Plugin Name:       POS Accounting Connector
  * Plugin URI:        https://github.com/hamidnoshady/cafe-restaurant-pos
  * Description:       اتصال امن دوطرفه فروشگاه ووکامرس به سامانهٔ فروش و حسابداری: ارسال سفارش، برگشت وجه، محصول و مشتری؛ دریافت موجودی و قیمت.
- * Version:           1.5.0
+ * Version:           1.6.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * WC requires at least: 7.0
@@ -77,7 +77,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'POS_CONNECTOR_VERSION', '1.5.0' );
+define( 'POS_CONNECTOR_VERSION', '1.6.0' );
 define( 'POS_CONNECTOR_FILE', __FILE__ );
 define( 'POS_CONNECTOR_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -92,7 +92,7 @@ define( 'POS_CONNECTOR_UPDATE_REPO', 'hamidnoshady/cafe-restaurant-pos' );
  * the download URL inside the manifest must live on the same host as the
  * manifest itself. Set once here; every build from this repo carries it.
  */
-define( 'POS_CONNECTOR_UPDATE_URL', '' );
+define( 'POS_CONNECTOR_UPDATE_URL', 'https://updates.eshobe.app/wordpress/pos-accounting-connector/update.json' );
 
 /** Option keys. Grouped in one array option so a single delete removes everything on uninstall. */
 define( 'POS_CONNECTOR_OPTION', 'pos_connector_settings' );
@@ -113,15 +113,19 @@ require_once POS_CONNECTOR_PATH . 'includes/class-pos-client.php';
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-queue.php';
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-sync.php';
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-settings.php';
+require_once POS_CONNECTOR_PATH . 'includes/class-pos-admin.php';
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-updater.php';
 
 /**
- * WooCommerce is a hard requirement, not a soft one: every hook this plugin
- * registers and every entity it maps is a WooCommerce concept. Failing loudly
- * at activation beats a plugin that activates and then silently does nothing.
+ * WooCommerce availability. The admin, diagnostics and updater stay available
+ * without WooCommerce; only Woo-specific hooks and sync jobs are skipped.
  */
 function pos_connector_woocommerce_active() {
 	return class_exists( 'WooCommerce' );
+}
+
+function pos_connector_admin_capability() {
+	return pos_connector_woocommerce_active() ? 'manage_woocommerce' : 'manage_options';
 }
 
 function pos_connector_bootstrap() {
@@ -132,20 +136,22 @@ function pos_connector_bootstrap() {
 	// dies with the rest of the plugin cannot deliver it.
 	POS_Connector_Updater::init();
 
-	if ( ! pos_connector_woocommerce_active() ) {
-		add_action(
-			'admin_notices',
-			static function () {
-				echo '<div class="notice notice-error"><p>';
-				esc_html_e( 'افزونهٔ «اتصال حسابداری» به ووکامرس نیاز دارد. ابتدا ووکامرس را نصب و فعال کنید.', 'pos-accounting-connector' );
-				echo '</p></div>';
-			}
-		);
-		return;
-	}
+		POS_Connector_Settings::init();
+		POS_Connector_Admin::init();
 
-	POS_Connector_Settings::init();
-	POS_Connector_Sync::init();
+		if ( ! pos_connector_woocommerce_active() ) {
+			add_action(
+				'admin_notices',
+				static function () {
+					echo '<div class="notice notice-error"><p>';
+					esc_html_e( 'ووکامرس فعال نیست. داشبورد و عیب‌یابی افزونه در دسترس است، اما همگام‌سازی محصولات، سفارش‌ها و مشتریان تا فعال شدن ووکامرس اجرا نمی‌شود.', 'pos-accounting-connector' );
+					echo '</p></div>';
+				}
+			);
+			return;
+		}
+
+		POS_Connector_Sync::init();
 
 	// WP-CLI is optional and only exists on WP-CLI requests. Registering
 	// through the CLI's own hook means the class is never loaded during a

@@ -1,11 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { query } from "../db";
 import {
   PRODUCT_UPDATE_FIELDS,
+  enqueueOperation,
   sanitizeOrderStatus,
   sanitizeProductPatch,
   sanitizeRefund,
+  storeOrdersFor,
   WooOpsError,
 } from "./woo-ops-service";
+
+vi.mock("../db", () => ({
+  query: vi.fn(),
+  getPool: vi.fn(),
+  closeDatabasePool: vi.fn(),
+  withTenant: vi.fn(async (_businessId: string, fn: () => Promise<unknown>) => fn()),
+  withoutTenantScope: vi.fn(async (_reason: string, fn: () => Promise<unknown>) => fn()),
+  rlsEffective: vi.fn(),
+  assertRlsEffective: vi.fn(),
+}));
+
+vi.mock("./audit", () => ({ writeIntegrationAudit: vi.fn() }));
+vi.mock("./sync-service", () => ({ parentRemoteIdFor: vi.fn() }));
+
+beforeEach(() => {
+  vi.mocked(query).mockReset();
+});
 
 /**
  * The shape of what this channel is willing to write to a live shopfront.
@@ -119,6 +139,10 @@ describe("sanitizeRefund", () => {
       reason: "مرجوعی مشتری",
       api_refund: false,
     });
+    // The WP Manager is Persian-first: a numeric keypad may produce Persian or
+    // Arabic-Indic digits, and copied WooCommerce totals often include grouping.
+    expect(sanitizeRefund({ amount: "۱٬۲۵۰٫۵" }).amount).toBe("1250.5");
+    expect(sanitizeRefund({ amount: "١,٢٥٠.٥" }).amount).toBe("1250.5");
   });
 
   it("never asks the gateway to move money", () => {
@@ -128,14 +152,106 @@ describe("sanitizeRefund", () => {
   });
 
   it("rejects an amount that is not a positive decimal", () => {
-    for (const amount of ["", "0", "-500", "1,000", "abc", undefined]) {
+    for (const amount of ["", "0", "-500", "abc", undefined]) {
       expect(() => sanitizeRefund({ amount } as Record<string, unknown>)).toThrow(WooOpsError);
     }
+    expect(sanitizeRefund({ amount: "1,000" }).amount).toBe("1000");
     expect(sanitizeRefund({ amount: "0.5" }).amount).toBe("0.5");
   });
 
   it("caps a runaway reason so the payload stays writable", () => {
     const reason = "ب".repeat(900);
     expect(sanitizeRefund({ amount: "1", reason }).reason).toHaveLength(500);
+  });
+});
+
+describe("enqueueOperation", () => {
+  it("does not collapse separate refunds for the same order", async () => {
+    vi.mocked(query).mockResolvedValue({ rows: [] } as never);
+
+    await enqueueOperation("biz", "conn", "refund_create", "7001", { amount: "10", reason: "first" });
+    await enqueueOperation("biz", "conn", "refund_create", "7001", { amount: "11", reason: "second" });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    const firstParams = vi.mocked(query).mock.calls[0][1] as unknown[];
+    const secondParams = vi.mocked(query).mock.calls[1][1] as unknown[];
+    expect(firstParams[3]).toMatch(/^7001:woo-refund:conn:7001:/);
+    expect(secondParams[3]).toMatch(/^7001:woo-refund:conn:7001:/);
+    expect(secondParams[3]).not.toBe(firstParams[3]);
+    expect(JSON.parse(String(firstParams[4]))).toMatchObject({ amount: "10", __orderRemoteId: "7001" });
+    expect(JSON.parse(String(secondParams[4]))).toMatchObject({ amount: "11", __orderRemoteId: "7001" });
+  });
+});
+
+describe("storeOrdersFor", () => {
+  it("reads orders from the inbox as well as imported mappings", async () => {
+    vi.mocked(query).mockResolvedValue({
+      rows: [
+        {
+          remote_id: "7001",
+          local_order_id: null,
+          order_number: null,
+          event_topic: "order.updated",
+          payload: {
+            id: 7001,
+            number: "A-7001",
+            status: "pending",
+            total: "1250.50",
+            currency: "IRT",
+            date_created: "2026-09-18T10:15:00+03:30",
+            payment_method: "cod",
+            billing: { first_name: "لیلا", last_name: "رضایی" },
+            line_items: [{ id: 1 }, { id: 2 }],
+          },
+          ingest_status: "processed",
+          ingest_error: null,
+          created_at: "2026-09-18T10:16:00Z",
+          outbox_operations: [
+            {
+              type: "order_status",
+              status: "pending",
+              targetStatus: "processing",
+              amount: null,
+              reason: null,
+              error: null,
+            },
+          ],
+        },
+      ],
+    } as never);
+
+    const rows = await storeOrdersFor("biz", "conn", 500);
+
+    expect(rows).toEqual([
+      {
+        remoteId: "7001",
+        localOrderId: null,
+        localOrderNumber: null,
+        number: "A-7001",
+        status: "pending",
+        total: "1250.50",
+        currency: "IRT",
+        dateCreated: "2026-09-18T10:15:00+03:30",
+        customer: "لیلا رضایی",
+        paymentMethod: "cod",
+        ingestStatus: "processed",
+        ingestError: null,
+        lineCount: 2,
+        operations: [
+          {
+            type: "order_status",
+            status: "pending",
+            targetStatus: "processing",
+            amount: null,
+            reason: null,
+            error: null,
+          },
+        ],
+      },
+    ]);
+    const [sql, params] = vi.mocked(query).mock.calls[0];
+    expect(String(sql)).toContain("latest_events");
+    expect(String(sql)).toContain("integration_webhook_events w");
+    expect(params).toEqual(["biz", "conn", 200, 0]);
   });
 });

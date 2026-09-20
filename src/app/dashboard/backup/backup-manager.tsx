@@ -22,6 +22,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, inputClass } from "../ui";
 import { Button } from "@/components/ui/button";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
+import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 interface Health {
   enabled: boolean;
@@ -600,37 +601,33 @@ function StatusCard({
       ) : runs.length === 0 ? (
         <p className="text-sm text-muted-foreground">هنوز پشتیبانی گرفته نشده است.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead>
-              <tr className="border-b text-xs text-muted-foreground">
-                <th className="py-2 text-start font-medium">زمان</th>
-                <th className="py-2 text-start font-medium">نوع</th>
-                <th className="py-2 text-start font-medium">شروع</th>
-                <th className="py-2 text-start font-medium">حجم</th>
-                <th className="py-2 text-start font-medium">وضعیت</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <tr key={r.id} className="border-b align-top last:border-0">
-                  <td className="py-2">{formatTime(r.startedAt)}</td>
-                  <td className="py-2">{r.kind === "local" ? "محلی" : "ابری"}</td>
-                  <td className="py-2">{r.trigger === "scheduled" ? "زمان‌بندی" : "دستی"}</td>
-                  <td className="py-2 tabular-nums">{formatSize(r.sizeBytes)}</td>
-                  <td className="py-2">
-                    <RunStatus status={r.status} />
-                    {r.error ? (
-                      <p dir="ltr" className="mt-1 max-w-xs truncate text-xs text-destructive" title={r.error}>
-                        {r.error}
-                      </p>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable caption="تاریخچه پشتیبان‌گیری" frame={false} tableClassName="min-w-[560px]">
+          <DataTableHead>
+            <Th>زمان</Th>
+            <Th>نوع</Th>
+            <Th>شروع</Th>
+            <Th numeric>حجم</Th>
+            <Th>وضعیت</Th>
+          </DataTableHead>
+          <DataTableBody>
+            {runs.map((r) => (
+              <DataTableRow key={r.id} className="align-top">
+                <Td>{formatTime(r.startedAt)}</Td>
+                <Td>{r.kind === "local" ? "محلی" : "ابری"}</Td>
+                <Td>{r.trigger === "scheduled" ? "زمان‌بندی" : "دستی"}</Td>
+                <Td numeric>{formatSize(r.sizeBytes)}</Td>
+                <Td>
+                  <RunStatus status={r.status} />
+                  {r.error ? (
+                    <p dir="ltr" className="mt-1 max-w-xs truncate text-xs text-destructive" title={r.error}>
+                      {r.error}
+                    </p>
+                  ) : null}
+                </Td>
+              </DataTableRow>
+            ))}
+          </DataTableBody>
+        </DataTable>
       )}
     </SectionCard>
   );

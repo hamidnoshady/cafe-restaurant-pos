@@ -37,7 +37,7 @@ export const GET = withPlatformScope(async () => {
 });
 
 export const PUT = withPlatformScope(async (request: NextRequest) => {
-  const { session, error } = await requirePlatformCapability("backup.manage");
+  const { session, error } = await requirePlatformCapability("media.manage");
   if (error) return error;
 
   let body: unknown;
