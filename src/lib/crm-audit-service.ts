@@ -54,6 +54,14 @@ export const CRM_AUDIT_KINDS = [
   "external.conflict_resolved",
   "segment.changed",
   "import.committed",
+  "export.generated",
+  // Configuration decisions. A field definition shapes what every record can
+  // record, and archiving one stops a question being asked of anybody — worth
+  // a name against it even though no customer data moves.
+  "custom_field.created",
+  "custom_field.archived",
+  "relationship.linked",
+  "relationship.unlinked",
 ] as const;
 
 export type CrmAuditKind = (typeof CRM_AUDIT_KINDS)[number];
@@ -65,7 +73,17 @@ export function isCrmAuditKind(value: unknown): value is CrmAuditKind {
 export interface CrmAuditInput {
   businessId: string;
   kind: CrmAuditKind;
-  entityType: "lead" | "deal" | "case" | "party" | "segment" | "external_profile" | "import";
+  entityType:
+    | "lead"
+    | "deal"
+    | "case"
+    | "party"
+    | "segment"
+    | "external_profile"
+    | "import"
+    | "export"
+    | "custom_field"
+    | "relationship";
   entityId?: string | null;
   /** The customer this decision was about, when there is one. */
   partyId?: string | null;

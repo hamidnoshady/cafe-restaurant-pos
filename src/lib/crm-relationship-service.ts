@@ -1,0 +1,308 @@
+/**
+ * Relationships between parties — «ارتباط اشخاص».
+ *
+ * ## What this is for
+ *
+ * A business rarely sells to an abstraction. It sells to «شرکت الف» but talks
+ * to «خانم رضایی», invoices «آقای تهرانی» in accounts payable, and needs a
+ * different person's signature to close anything. Without a relationship
+ * model, those four facts live in a notes field and nobody can answer "who do
+ * I call about this invoice?" without reading it.
+ *
+ * The model is deliberately **a graph over `parties`, not a second hierarchy**.
+ * Every node is already a party with its own file, history and consent; a
+ * contact of a company is a real person who might also be a retail customer in
+ * their own right. Modelling contacts as rows belonging to an organisation
+ * would fork that identity in two.
+ *
+ * ## Direction matters, and is not symmetric
+ *
+ * `from → to` reads as "from is *kind* of to": «خانم رضایی» is
+ * `contact_of` «شرکت الف». The reverse edge is a different statement and is
+ * not created automatically, because the inverse of "is a contact of" is "has
+ * as a contact", which is not the same relation and would double every count.
+ *
+ * `household` and `referred_by` are the exceptions people expect to be
+ * symmetric — and `household` genuinely is, so the service creates both
+ * directions for it. `referred_by` is emphatically not: A referred B does not
+ * mean B referred A, and conflating them would corrupt attribution.
+ *
+ * ## Merging is not handled here
+ *
+ * When two parties merge, their edges have to be re-pointed — and both the
+ * self-edges (the loser was a contact of the winner) and the collisions (both
+ * were contacts of the same company) have to be dropped first, or the merge
+ * aborts on a constraint. That logic lives in `party-merge-references.ts`,
+ * which declares both directions of this table with `selfEdgeColumn` and
+ * `uniqueWithSql`, and the merge service applies it generically. Writing a
+ * second copy here is precisely the hand-maintained list that registry
+ * replaced.
+ */
+
+import { query, withTenantTransaction } from "./db";
+import { recordCrmAudit } from "./crm-audit-service";
+import { isUuid } from "./uuid";
+
+export const RELATIONSHIP_KINDS = [
+  "contact_of",
+  "decision_maker",
+  "billing_contact",
+  "purchasing_contact",
+  "owner_of",
+  "household",
+  "referred_by",
+  "parent_organization",
+  "branch_of",
+] as const;
+export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
+
+export const RELATIONSHIP_LABELS: Record<RelationshipKind, string> = {
+  contact_of: "رابط",
+  decision_maker: "تصمیم‌گیرنده",
+  billing_contact: "رابط مالی",
+  purchasing_contact: "رابط خرید",
+  owner_of: "مالک",
+  household: "هم‌خانواده",
+  referred_by: "معرفی‌شده توسط",
+  parent_organization: "سازمان مادر",
+  branch_of: "شعبهٔ",
+};
+
+/** The inverse label, for rendering an edge from the other end. */
+export const RELATIONSHIP_INVERSE_LABELS: Record<RelationshipKind, string> = {
+  contact_of: "رابط دارد",
+  decision_maker: "تصمیم‌گیرنده دارد",
+  billing_contact: "رابط مالی دارد",
+  purchasing_contact: "رابط خرید دارد",
+  owner_of: "متعلق به",
+  household: "هم‌خانواده",
+  referred_by: "معرفی کرده",
+  parent_organization: "زیرمجموعه دارد",
+  branch_of: "شعبه دارد",
+};
+
+/**
+ * Kinds that mean the same thing in both directions.
+ *
+ * Only `household`. Two people sharing a home each share it with the other,
+ * and recording only one direction would make the relationship invisible from
+ * one of the two files — which is exactly the file somebody will be looking at.
+ */
+const SYMMETRIC_KINDS: readonly RelationshipKind[] = ["household"];
+
+export interface PartyRelationship extends Record<string, unknown> {
+  id: string;
+  fromPartyId: string;
+  fromName: string;
+  toPartyId: string;
+  toName: string;
+  kind: RelationshipKind;
+  roleTitle: string;
+  isPrimary: boolean;
+  note: string;
+  /** True when this row was read from the `to` party's point of view. */
+  inverse: boolean;
+  createdAt: string;
+}
+
+export function isRelationshipKind(value: unknown): value is RelationshipKind {
+  return typeof value === "string" && (RELATIONSHIP_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * Every relationship touching one party, from both ends.
+ *
+ * Both directions in one list, because the question a person asks while
+ * looking at a file is "who is connected to this?" — not "who is connected to
+ * this in the direction somebody happened to enter it". Each row carries
+ * `inverse` so the UI can label it correctly rather than reading «رابط» on the
+ * company's file when the company is not anybody's contact.
+ */
+export async function relationshipsFor(
+  businessId: string,
+  partyId: string,
+): Promise<PartyRelationship[]> {
+  if (!isUuid(partyId)) return [];
+
+  const { rows } = await query<PartyRelationship>(
+    `SELECT r.id, r.from_party_id AS "fromPartyId", pf.name AS "fromName",
+            r.to_party_id AS "toPartyId", pt.name AS "toName",
+            r.kind, r.role_title AS "roleTitle", r.is_primary AS "isPrimary",
+            r.note, false AS inverse, r.created_at AS "createdAt"
+       FROM crm_party_relationships r
+       JOIN parties pf ON pf.id = r.from_party_id
+       JOIN parties pt ON pt.id = r.to_party_id
+      WHERE r.business_id = $1 AND r.from_party_id = $2
+      UNION ALL
+     SELECT r.id, r.from_party_id, pf.name,
+            r.to_party_id, pt.name,
+            r.kind, r.role_title, r.is_primary, r.note, true, r.created_at
+       FROM crm_party_relationships r
+       JOIN parties pf ON pf.id = r.from_party_id
+       JOIN parties pt ON pt.id = r.to_party_id
+      WHERE r.business_id = $1 AND r.to_party_id = $2
+        -- A symmetric kind already has both rows stored, so reading it from
+        -- the other end too would show it twice on the same file.
+        AND r.kind <> ALL($3::text[])
+      ORDER BY "isPrimary" DESC, "createdAt" DESC`,
+    [businessId, partyId, [...SYMMETRIC_KINDS]],
+  );
+  return rows;
+}
+
+export type LinkResult =
+  | { ok: true; id: string }
+  | { ok: false; error: "not_found" | "self_link" | "already_linked" | "invalid_kind" };
+
+/**
+ * Create a relationship.
+ *
+ * Both parties are verified to exist in this business before anything is
+ * written: the ids arrive from a browser, and an edge to another tenant's
+ * party would surface that party's name on this business's screen.
+ */
+export async function linkParties(
+  businessId: string,
+  input: {
+    fromPartyId: string;
+    toPartyId: string;
+    kind: string;
+    roleTitle?: string;
+    isPrimary?: boolean;
+    note?: string;
+  },
+  actor: { name: string; userId?: string | null },
+): Promise<LinkResult> {
+  if (!isUuid(input.fromPartyId) || !isUuid(input.toPartyId)) {
+    return { ok: false, error: "not_found" };
+  }
+  if (input.fromPartyId === input.toPartyId) return { ok: false, error: "self_link" };
+  if (!isRelationshipKind(input.kind)) return { ok: false, error: "invalid_kind" };
+  const kind = input.kind;
+
+  return withTenantTransaction(businessId, async () => {
+    const { rows: parties } = await query<{ id: string; name: string }>(
+      `SELECT id, name FROM parties
+        WHERE business_id = $1 AND id = ANY($2::uuid[]) AND merged_into_id IS NULL`,
+      [businessId, [input.fromPartyId, input.toPartyId]],
+    );
+    // Both, and both unmerged: linking to a record that has been merged away
+    // would attach the relationship to a file no screen shows.
+    if (parties.length !== 2) return { ok: false as const, error: "not_found" as const };
+    const nameOf = new Map(parties.map((p) => [p.id, p.name]));
+
+    // Only one primary contact of a given kind per party. Two "primary billing
+    // contacts" is not a state anybody can act on — somebody has to be the one
+    // you call first.
+    if (input.isPrimary === true) {
+      await query(
+        `UPDATE crm_party_relationships SET is_primary = false, updated_at = now()
+          WHERE business_id = $1 AND to_party_id = $2 AND kind = $3 AND is_primary`,
+        [businessId, input.toPartyId, kind],
+      );
+    }
+
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO crm_party_relationships
+         (business_id, from_party_id, to_party_id, kind, role_title, is_primary, note, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (business_id, from_party_id, to_party_id, kind) DO UPDATE
+         SET role_title = EXCLUDED.role_title, is_primary = EXCLUDED.is_primary,
+             note = EXCLUDED.note, updated_at = now()
+       RETURNING id`,
+      [
+        businessId,
+        input.fromPartyId,
+        input.toPartyId,
+        kind,
+        (input.roleTitle ?? "").trim().slice(0, 120),
+        input.isPrimary === true,
+        (input.note ?? "").trim().slice(0, 500),
+        actor.name,
+      ],
+    );
+
+    // Symmetric kinds get the mirror edge, so the relationship is visible from
+    // whichever file somebody happens to open.
+    if (SYMMETRIC_KINDS.includes(kind)) {
+      await query(
+        `INSERT INTO crm_party_relationships
+           (business_id, from_party_id, to_party_id, kind, role_title, is_primary, note, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (business_id, from_party_id, to_party_id, kind) DO NOTHING`,
+        [
+          businessId,
+          input.toPartyId,
+          input.fromPartyId,
+          kind,
+          (input.roleTitle ?? "").trim().slice(0, 120),
+          false,
+          (input.note ?? "").trim().slice(0, 500),
+          actor.name,
+        ],
+      );
+    }
+
+    await recordCrmAudit({
+      businessId,
+      kind: "relationship.linked",
+      entityType: "relationship",
+      entityId: rows[0].id,
+      partyId: input.toPartyId,
+      summary: `«${nameOf.get(input.fromPartyId)}» ← ${RELATIONSHIP_LABELS[kind]} → «${nameOf.get(input.toPartyId)}»`,
+      detail: { kind, fromPartyId: input.fromPartyId, toPartyId: input.toPartyId },
+      actorUserId: actor.userId ?? null,
+      actorName: actor.name,
+    });
+
+    return { ok: true as const, id: rows[0].id };
+  });
+}
+
+/** Remove a relationship, and its mirror when the kind is symmetric. */
+export async function unlinkParties(
+  businessId: string,
+  relationshipId: string,
+  actor: { name: string; userId?: string | null },
+): Promise<boolean> {
+  if (!isUuid(relationshipId)) return false;
+
+  return withTenantTransaction(businessId, async () => {
+    const { rows } = await query<{
+      from_party_id: string;
+      to_party_id: string;
+      kind: RelationshipKind;
+    }>(
+      `DELETE FROM crm_party_relationships
+        WHERE business_id = $1 AND id = $2
+        RETURNING from_party_id, to_party_id, kind`,
+      [businessId, relationshipId],
+    );
+    const row = rows[0];
+    if (!row) return false;
+
+    if (SYMMETRIC_KINDS.includes(row.kind)) {
+      // Leaving the mirror behind would show the relationship on one file and
+      // not the other, which reads as a bug in whichever one you open second.
+      await query(
+        `DELETE FROM crm_party_relationships
+          WHERE business_id = $1 AND from_party_id = $2 AND to_party_id = $3 AND kind = $4`,
+        [businessId, row.to_party_id, row.from_party_id, row.kind],
+      );
+    }
+
+    await recordCrmAudit({
+      businessId,
+      kind: "relationship.unlinked",
+      entityType: "relationship",
+      entityId: relationshipId,
+      partyId: row.to_party_id,
+      summary: "یک ارتباط حذف شد",
+      detail: { kind: row.kind, fromPartyId: row.from_party_id, toPartyId: row.to_party_id },
+      actorUserId: actor.userId ?? null,
+      actorName: actor.name,
+    });
+
+    return true;
+  });
+}

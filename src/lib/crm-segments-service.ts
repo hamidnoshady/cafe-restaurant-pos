@@ -29,7 +29,7 @@
  * covered by `integration/crm.integration.test.ts`.
  */
 
-import { query } from "./db";
+import { query, withTenantTransaction } from "./db";
 import { businessToday } from "./business-day-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { arBalanceByCustomerSql } from "./ar-service";
@@ -255,20 +255,74 @@ export async function createSegment(
   const problems = validateSegmentDefinition(input.definition);
   if (problems.length > 0) throw new Error(problems.join(" "));
 
-  const { rows } = await query<CustomerSegment>(
-    `INSERT INTO customer_segments (business_id, name, description, definition, is_builtin, created_by)
+  return withTenantTransaction(businessId, async () => {
+    const { rows } = await query<CustomerSegment>(
+      `INSERT INTO customer_segments (business_id, name, description, definition, is_builtin, created_by)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+       RETURNING ${SEGMENT_COLUMNS}`,
+      [
+        businessId,
+        input.name.trim(),
+        input.description?.trim() ?? "",
+        JSON.stringify(input.definition ?? {}),
+        input.isBuiltin ?? false,
+        input.createdBy ?? "",
+      ],
+    );
+    // Version 1, in the same transaction as the segment. A campaign sent
+    // against this segment records the version it went to, so "who did this
+    // actually reach?" stays answerable after the definition changes.
+    await recordSegmentVersion(businessId, rows[0].id, 1, input.definition, input.name.trim(), input.createdBy ?? "");
+    return rows[0];
+  });
+}
+
+/**
+ * Append one immutable snapshot of a segment's definition.
+ *
+ * Append-only by design. The question a version answers — «این کمپین به چه
+ * کسانی رفت؟» — is unanswerable if the row can be rewritten, and it is asked
+ * precisely when something went wrong and somebody needs to know what the
+ * rules were at the time.
+ */
+async function recordSegmentVersion(
+  businessId: string,
+  segmentId: string,
+  version: number,
+  definition: SegmentDefinition | undefined,
+  name: string,
+  createdBy: string,
+): Promise<void> {
+  await query(
+    `INSERT INTO customer_segment_versions
+       (business_id, segment_id, version, definition, name, created_by)
      VALUES ($1, $2, $3, $4::jsonb, $5, $6)
-     RETURNING ${SEGMENT_COLUMNS}`,
-    [
-      businessId,
-      input.name.trim(),
-      input.description?.trim() ?? "",
-      JSON.stringify(input.definition ?? {}),
-      input.isBuiltin ?? false,
-      input.createdBy ?? "",
-    ],
+     ON CONFLICT (segment_id, version) DO NOTHING`,
+    [businessId, segmentId, version, JSON.stringify(definition ?? {}), name, createdBy],
   );
-  return rows[0];
+}
+
+export interface SegmentVersion extends Record<string, unknown> {
+  version: number;
+  definition: SegmentDefinition;
+  name: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** A segment's definition history, newest first. */
+export async function segmentVersions(
+  businessId: string,
+  segmentId: string,
+): Promise<SegmentVersion[]> {
+  const { rows } = await query<SegmentVersion>(
+    `SELECT version, definition, name, created_by AS "createdBy", created_at AS "createdAt"
+       FROM customer_segment_versions
+      WHERE business_id = $1 AND segment_id = $2
+      ORDER BY version DESC`,
+    [businessId, segmentId],
+  );
+  return rows;
 }
 
 export interface UpdateSegmentInput {
@@ -288,6 +342,12 @@ export async function updateSegment(
     if (problems.length > 0) throw new Error(problems.join(" "));
   }
 
+  // A definition change mints a new version; renaming or archiving does not.
+  // The version exists to explain *who a campaign reached*, and that is a
+  // function of the rules, not of the label on them — bumping on a rename
+  // would fill the history with versions that differ in nothing.
+  const versionsDefinition = input.definition !== undefined;
+
   const sets: string[] = [];
   const params: unknown[] = [businessId, id];
   const add = (fragment: string, value: unknown) => {
@@ -304,13 +364,30 @@ export async function updateSegment(
     add("archived_at = $n", input.archived ? new Date().toISOString() : null);
   if (sets.length === 0) return getSegment(businessId, id);
 
-  const { rows } = await query<CustomerSegment>(
-    `UPDATE customer_segments SET ${sets.join(", ")}, updated_at = now()
-      WHERE business_id = $1 AND id = $2
-      RETURNING ${SEGMENT_COLUMNS}`,
-    params,
-  );
-  return rows[0] ?? null;
+  return withTenantTransaction(businessId, async () => {
+    if (versionsDefinition) sets.push("current_version = current_version + 1");
+
+    const { rows } = await query<CustomerSegment & { current_version?: number }>(
+      `UPDATE customer_segments SET ${sets.join(", ")}, updated_at = now()
+        WHERE business_id = $1 AND id = $2
+        RETURNING ${SEGMENT_COLUMNS}, current_version`,
+      params,
+    );
+    const segment = rows[0];
+    if (!segment) return null;
+
+    if (versionsDefinition) {
+      await recordSegmentVersion(
+        businessId,
+        id,
+        Number(segment.current_version ?? 1),
+        input.definition,
+        String(segment.name ?? ""),
+        "",
+      );
+    }
+    return segment;
+  });
 }
 
 /** Archives rather than deletes — a sent campaign must keep resolving its segment's name. */
