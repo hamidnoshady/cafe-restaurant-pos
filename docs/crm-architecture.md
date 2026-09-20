@@ -272,6 +272,95 @@ pointed at the loser and archives it. It cannot be undone.
   list fell one table behind every feature that linked something to a customer,
   and the symptom was silent.
 
+## Custom fields are typed, and a type never changes
+
+Every business wants a field nobody anticipated — «شمارهٔ قرارداد», «طبقه».
+`crm_custom_fields` defines them and `crm_custom_field_values` stores each
+answer in a **typed shadow column** (`value_number`, `value_date`,
+`value_list`, …) chosen at write time by `coerceCustomValue`.
+
+Typing on write rather than on read is what keeps a report from casting user
+input: a bad value is a validation message on the form, not a 500 on a
+dashboard three screens away.
+
+Two rules follow from that:
+
+- **A field's type cannot change once it holds values.** Reinterpreting a text
+  answer of «حدود ۵۰۰ هزار» as money either discards what somebody wrote or
+  invents a figure they never entered. Archive the field and make a new one.
+- **Archive, never delete.** An answer recorded against a since-archived field
+  is still a fact somebody entered, so `customValuesFor` deliberately does not
+  filter archived definitions out.
+
+Keys are ASCII-derived (`field_3` for a Persian label) because the key travels
+through CSV headers, API payloads and segment definitions, where an RTL string
+is a reliable encoding bug. The *label* is what people read.
+
+## Relationships are a graph, not a second hierarchy
+
+`crm_party_relationships` links parties to each other — contact of, billing
+contact, household, referred by. It is an edge table over `parties`, not
+another place a person can exist.
+
+- An edge reads `from → to`: «علی مخاطب شرکت الف است». `relationshipsFor`
+  UNIONs both directions and flags the reverse leg `inverse`, so each file
+  shows the edge labelled from its own side.
+- **Only `household` is symmetric** and gets a mirror row. `referred_by` is
+  emphatically not: A referred B does not mean B referred A, and conflating
+  them corrupts attribution.
+- One primary per `(to_party, kind)`. Two "primary billing contacts" is not a
+  state anybody can act on.
+- **Merge re-pointing is not in this service.** Both directions of the table
+  are declared in `party-merge-references.ts` with `selfEdgeColumn` and
+  `uniqueWithSql`, so the generic merge drops would-be self-edges and
+  collisions before re-pointing. A second copy here is exactly the
+  hand-maintained list that registry replaced.
+
+## Segment versions make a sent campaign explainable
+
+Editing a segment's rules mints an immutable row in
+`customer_segment_versions`. A rename does not — versions exist to answer «این
+کمپین به چه کسانی رفت؟», which is a function of the rules, not the label.
+
+## Import and export
+
+`analyseImport` parses, validates and matches every row and **writes nothing**;
+`commitImport` performs it. The UI shows the analysis and asks. An import is
+the fastest way to damage a directory, and there is no undo, so the
+irreversible bulk write is turned into a decision somebody can actually make.
+
+`commitImport` re-analyses server-side rather than trusting the approved plan —
+it is minutes old, and another member may have created a matching customer
+since.
+
+Two non-negotiables:
+
+- **Import never grants consent.** No consent column, no flag to enable one, a
+  `sms_consent` column in the file is ignored, and the audit entry records
+  `consentGranted: false`. Whoever assembled the list may sincerely believe
+  those people opted in; the business's legal position depends on a consent
+  record with a source and a timestamp.
+- **Ambiguity is reported, never resolved.** A row matching two customers is
+  skipped with both candidates named. Picking the older one is the
+  misattribution bug arriving in bulk.
+
+Export is behind `crm.export`, audited with row count and filters, excludes
+consent state, and prefixes formula-looking cells with an apostrophe so Excel
+does not execute a customer name of `=HYPERLINK(...)`.
+
+Both halves share `crm-csv.ts` (BOM handling, quoted fields, Persian digits) —
+pure and unit-tested, so an exported file re-imports as matches rather than
+duplicates.
+
+## Saved views
+
+A saved view's `filters` document is validated against a **closed vocabulary
+per entity** on write and on read. It is user-authored content that one
+member creates and another member's browser executes — the shape of a stored
+injection — so the worst a malicious view can do is filter on a field that does
+not exist. Privacy (`owner_user_id` NULL = shared) is enforced in the SQL,
+including in the `DELETE`, so there is no check-then-act race.
+
 ## Permissions
 
 CRM permissions split by **blast radius**, not by screen:
