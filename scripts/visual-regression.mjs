@@ -390,9 +390,9 @@ async function main() {
       writeFileSync(join(DIFF_DIR, `${screen.id}.actual.png`), actual);
       if (diff) writeFileSync(join(DIFF_DIR, `${screen.id}.diff.png`), diff);
       const boundsText = bounds ? `, bounds ${bounds.x},${bounds.y} ${bounds.width}×${bounds.height}` : "";
-      failures.push(
-        `${screen.id}: ${reason ?? `${(mismatch * 100).toFixed(2)}% of pixels changed${boundsText}`}`,
-      );
+      const message =
+        reason ?? `${(mismatch * 100).toFixed(2)}% of pixels changed${boundsText}`;
+      failures.push({ id: screen.id, message });
     }
   }
 
@@ -417,10 +417,19 @@ async function main() {
     console.log("Review each image before committing — a baseline is an approval.");
   }
   if (failures.length > 0) {
+    // Workflow commands are only parsed from a step's STDOUT — a ::error on
+    // stderr is invisible to the Checks UI and to the annotations API, which
+    // left "which screens failed?" answerable only by downloading the log or
+    // the diff artifact. One annotation per failing screen, each naming the
+    // baseline file it belongs to.
     for (const failure of failures) {
-      console.error(`::error title=Visual regression::${failure.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`);
+      console.log(
+        `::error file=docs/design/visual/${failure.id}.png,title=Visual regression::${failure.message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`,
+      );
     }
-    console.error("\nVisual regressions:\n" + failures.map((f) => `  - ${f}`).join("\n"));
+    console.error(
+      "\nVisual regressions:\n" + failures.map((f) => `  - ${f.id}: ${f.message}`).join("\n"),
+    );
     console.error(
       "\nDiffs written to docs/design/visual/__diff__/." +
         "\nDo NOT re-record to clear this. Read docs/design/visual-regression.md:" +
