@@ -59,7 +59,7 @@ Installation resources are immutable. The following remain beneath Electron
 `userData` so they survive app updates and reinstall/uninstall by default:
 
 - PostgreSQL data directory
-- generated database password and restricted runtime-role URL
+- generated database password (the restricted runtime-role URL is derived at boot)
 - JWT and application master keys
 - desktop instance identity
 - local CA/server certificates
@@ -93,7 +93,7 @@ support.
 
 First launch either bootstraps a new local owner or redeems a short-lived code
 issued for an explicitly selected cloud location. Every redemption creates a
-separate site-device identity and credential. Pairing snapshot v2 seeds the
+separate site-device identity and credential. Pairing snapshot v3 seeds the
 currently classified bootstrap data; supported ongoing sync events remain a
 smaller explicit catalog documented in [server-sync.md](server-sync.md).
 
@@ -124,8 +124,35 @@ The Windows workflow additionally:
 - rejects root development-tree leakage;
 - checks staged, unpacked and installer size budgets;
 - parses the shipped PowerShell print connector;
-- launches the actual unpacked executable twice against the same `userData`;
-- requires health, first-run behavior, persistence and clean shutdown.
+- silently installs the actual NSIS installer under a newly-created standard
+  (non-administrator) Windows user;
+- launches the installed executable twice against the same `userData`;
+- requires UTF-8 database initialization, all migrations, restricted-role/RLS
+  startup, first-run bootstrap/authentication, persistence and clean shutdown.
+
+### Measured acceptance (2026-09-20)
+
+[Windows package run 35508534104](https://github.com/hamidnoshady/cafe-restaurant-pos/actions/runs/35508534104)
+passed end to end:
+
+| Measurement | Result | Regression gate |
+|---|---:|---:|
+| NSIS installer | 131.4 MiB | 350 MiB |
+| Unpacked installed payload | 504.9 MiB | 600 MiB |
+| Positively staged runtime (local Linux build) | 153.9 MiB | 200 MiB |
+
+The uploaded installer artifact is 136,405,815 bytes as a GitHub artifact and
+has digest
+`sha256:b6aa7459191c4f59b47532594e94a5da61f19a0eaf6dc1afcd7019f52c2ceb93`.
+The run also proved that exactly one executable Windows PostgreSQL payload was
+present, no foreign-OS payload was packaged, and the installed app retained its
+instance and database across the second launch.
+
+GitHub's `windows-latest` hosted image is a clean Windows Server runner, not a
+retail Windows 11 VM. The standard-user NSIS/runtime path is accepted there,
+but a final signed-build check on a clean Windows 11 machine with the target
+network adapters, firewall/UAC policy, printers, and phone certificate
+onboarding remains a release acceptance step.
 
 `npm run desktop:size` (or the Electron `size` script after packaging) writes a
 Markdown report with component and largest-path measurements.
