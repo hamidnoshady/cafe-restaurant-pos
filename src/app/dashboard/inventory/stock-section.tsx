@@ -9,7 +9,13 @@
  * from the item's reorder threshold. Search and the status chips filter
  * client-side over the warehouse's items.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useDeferredValue,
+} from "react";
 import { RotateCwIcon, SearchIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -17,9 +23,21 @@ import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { normalizePosSearchText } from "@/lib/pos-selection";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, inputClass } from "../ui";
-import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "../page-chrome";
+import {
+  EmptyState,
+  LoadingSkeleton,
+  SectionCard,
+  StatusBadge,
+} from "../page-chrome";
 import { type Warehouse, warehouseErrorMessage } from "./warehouses-section";
-import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
 
 interface StockItem {
   id: string;
@@ -51,12 +69,16 @@ type StatusFilter = "all" | "low" | "out" | "ok";
 function stockStatus(item: StockItem): "out" | "low" | "ok" {
   const qty = Number(item.quantity);
   if (qty <= 0) return "out";
-  const reorder = item.reorder_level === null ? null : Number(item.reorder_level);
+  const reorder =
+    item.reorder_level === null ? null : Number(item.reorder_level);
   if (reorder !== null && qty <= reorder) return "low";
   return "ok";
 }
 
-const STATUS_META: Record<"out" | "low" | "ok", { label: string; tone: "danger" | "active" | "neutral" }> = {
+const STATUS_META: Record<
+  "out" | "low" | "ok",
+  { label: string; tone: "danger" | "active" | "neutral" }
+> = {
   out: { label: "ناموجود", tone: "danger" },
   low: { label: "کم‌موجودی", tone: "active" },
   ok: { label: "کافی", tone: "neutral" },
@@ -69,7 +91,11 @@ const chipClass = (active: boolean) =>
       : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
   }`;
 
-export function StockSection({ locationId: controlledLocationId }: { locationId?: string | null }) {
+export function StockSection({
+  locationId: controlledLocationId,
+}: {
+  locationId?: string | null;
+}) {
   const money = useMoney();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [locationId, setLocationId] = useState(controlledLocationId ?? "");
@@ -77,10 +103,13 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const loadWarehouses = useCallback(() => {
-    api<{ warehouses: Warehouse[]; error?: string }>("/api/inventory/warehouses").then(({ ok, data }) => {
+    api<{ warehouses: Warehouse[]; error?: string }>(
+      "/api/inventory/warehouses",
+    ).then(({ ok, data }) => {
       if (ok && Array.isArray(data.warehouses)) {
         setWarehouses(data.warehouses);
       }
@@ -120,7 +149,10 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
         setData(data);
       } else {
         setData(null);
-        setError(warehouseErrorMessage(data?.error) || "خطا در دریافت موجودی انبار. دوباره تلاش کنید.");
+        setError(
+          warehouseErrorMessage(data?.error) ||
+            "خطا در دریافت موجودی انبار. دوباره تلاش کنید.",
+        );
       }
     });
   }, [locationId]);
@@ -143,16 +175,32 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
     return { all: data.items.length, low, out, ok };
   }, [data]);
 
-  const visibleItems = useMemo(() => {
+  // ⚡ Bolt: Pre-compute the searchable string for each item to avoid
+  // running expensive string allocations and normalization on every keystroke.
+  const normalizedItems = useMemo(() => {
     if (!data?.items) return [];
-    const normalizedQuery = normalizePosSearchText(search);
-    return data.items.filter((item) => {
-      if (statusFilter !== "all" && stockStatus(item) !== statusFilter) return false;
-      if (!normalizedQuery) return true;
-      const searchable = [item.item_name, item.sku ?? "", item.unit].filter(Boolean).join(" ");
-      return normalizePosSearchText(searchable).includes(normalizedQuery);
+    return data.items.map((item) => {
+      const searchable = [item.item_name, item.sku ?? "", item.unit]
+        .filter(Boolean)
+        .join(" ");
+      return { item, searchableText: normalizePosSearchText(searchable) };
     });
-  }, [data, search, statusFilter]);
+  }, [data]);
+
+  // ⚡ Bolt: Use deferred search query to prevent UI blocking on slow text inputs.
+  // Re-uses pre-computed searchable text for fast `.includes()` checking.
+  const visibleItems = useMemo(() => {
+    if (!normalizedItems) return [];
+    const normalizedQuery = normalizePosSearchText(deferredSearch);
+    return normalizedItems
+      .filter(({ item, searchableText }) => {
+        if (statusFilter !== "all" && stockStatus(item) !== statusFilter)
+          return false;
+        if (!normalizedQuery) return true;
+        return searchableText.includes(normalizedQuery);
+      })
+      .map(({ item }) => item);
+  }, [normalizedItems, deferredSearch, statusFilter]);
 
   const selectedWarehouse = useMemo(
     () => warehouses.find((w) => w.id === locationId) ?? null,
@@ -164,7 +212,9 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
       <SectionCard
         title={
           <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">انبارها</p>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+              انبارها
+            </p>
             <h2 className="mt-1 font-semibold text-foreground">موجودی انبار</h2>
           </div>
         }
@@ -178,7 +228,10 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
             className="gap-1.5"
             aria-label="به‌روزرسانی موجودی"
           >
-            <RotateCwIcon className={`size-3.5 ${loading ? "opacity-60" : ""}`} aria-hidden="true" />
+            <RotateCwIcon
+              className={`size-3.5 ${loading ? "opacity-60" : ""}`}
+              aria-hidden="true"
+            />
             <span>{loading ? "در حال بارگذاری…" : "به‌روزرسانی"}</span>
           </Button>
         }
@@ -225,7 +278,11 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="فیلتر وضعیت موجودی">
+        <div
+          className="mt-3 flex flex-wrap gap-2"
+          role="group"
+          aria-label="فیلتر وضعیت موجودی"
+        >
           <button
             type="button"
             className={chipClass(statusFilter === "all")}
@@ -269,11 +326,16 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
                 {visibleItems.length !== data.items.length
                   ? `نمایش ${toPersianDigits(String(visibleItems.length))} از ${toPersianDigits(String(data.totals.count))} قلم`
                   : `${toPersianDigits(String(data.totals.count))} قلم`}
-                {counts.low > 0 ? ` · ${toPersianDigits(String(counts.low))} کم‌موجودی` : ""}
-                {counts.out > 0 ? ` · ${toPersianDigits(String(counts.out))} ناموجود` : ""}
+                {counts.low > 0
+                  ? ` · ${toPersianDigits(String(counts.low))} کم‌موجودی`
+                  : ""}
+                {counts.out > 0
+                  ? ` · ${toPersianDigits(String(counts.out))} ناموجود`
+                  : ""}
               </span>
               <span className="text-xs font-semibold text-foreground sm:text-sm">
-                ارزش کل موجودی: {money.format(Number(data.totals.totalValueRial))}
+                ارزش کل موجودی:{" "}
+                {money.format(Number(data.totals.totalValueRial))}
               </span>
             </div>
           ) : undefined
@@ -304,7 +366,10 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
             </EmptyState>
           </div>
         ) : (
-          <DataTable caption="موجودی اقلام این انبار" tableClassName="min-w-[680px]">
+          <DataTable
+            caption="موجودی اقلام این انبار"
+            tableClassName="min-w-[680px]"
+          >
             <DataTableHead>
               <Th>قلم انبار</Th>
               <Th>موجودی و آستانه</Th>
@@ -320,7 +385,9 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
                 return (
                   <DataTableRow key={item.id}>
                     <Td className="sm:px-5">
-                      <span className="font-medium text-foreground">{item.item_name}</span>
+                      <span className="font-medium text-foreground">
+                        {item.item_name}
+                      </span>
                       {item.sku ? (
                         <span className="ms-2 inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                           {item.sku}
@@ -333,12 +400,15 @@ export function StockSection({ locationId: controlledLocationId }: { locationId?
                       </div>
                       {item.reorder_level !== null && (
                         <div className="mt-0.5 text-xs text-muted-foreground">
-                          حداقل: {formatQuantity(item.reorder_level)} {item.unit}
+                          حداقل: {formatQuantity(item.reorder_level)}{" "}
+                          {item.unit}
                         </div>
                       )}
                     </Td>
                     <Td>
-                      <StatusBadge tone={STATUS_META[status].tone}>{STATUS_META[status].label}</StatusBadge>
+                      <StatusBadge tone={STATUS_META[status].tone}>
+                        {STATUS_META[status].label}
+                      </StatusBadge>
                     </Td>
                     <Td numeric nowrap muted>
                       {unitCostNum > 0 ? money.format(unitCostNum) : "—"}
