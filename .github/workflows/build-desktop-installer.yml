@@ -114,7 +114,21 @@ jobs:
 
       - name: Build NSIS installer and win-unpacked runtime
         working-directory: electron
-        run: npm run dist
+        run: |
+          & npm run dist 2>&1 | Tee-Object -FilePath electron-builder.log
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ((Get-Content electron-builder.log -Tail 120) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Electron installer build failed::$detail"
+            exit $LASTEXITCODE
+          }
+
+      - name: Upload Electron builder diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-builder-failure-log
+          path: electron/electron-builder.log
+          if-no-files-found: error
 
       - name: Verify explicit unsigned-development status
         run: .\scripts\verify-windows-signatures.ps1 -ArtifactRoot electron\dist -Mode unsigned-development -OutputPath windows-signature-verification.json

@@ -1,4 +1,7 @@
 import { createRequire } from "node:module";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertSecurePosture } from "./deployment-posture";
 
@@ -14,6 +17,10 @@ const { desktopServerEnvironment, postgresStartStrategy, pgCtlStartArguments } =
   postgresStartStrategy: (platform?: string) => "pg_ctl" | "embedded";
   pgCtlStartArguments: (dataDir: string, logPath: string, port: number) => string[];
 };
+const writeSigningStatus = require("../../electron/scripts/write-signing-status.js") as (result: {
+  outDir: string;
+  artifactPaths: string[];
+}) => Promise<void>;
 
 describe("packaged desktop production posture", () => {
   it("always launches the internal server as a loopback-only production site", () => {
@@ -46,6 +53,28 @@ describe("packaged desktop production posture", () => {
     ]);
     expect(args.join(" ")).not.toContain("0.0.0.0");
     expect(() => pgCtlStartArguments("data", "postgres.log", 0)).toThrow(/Invalid PostgreSQL port/);
+  });
+
+  it("writes one package-level signing status from electron-builder's BuildResult", async () => {
+    const outDir = mkdtempSync(path.join(os.tmpdir(), "desktop-signing-status-"));
+    const prior = process.env.WINDOWS_SIGNING_PROVIDER;
+    process.env.WINDOWS_SIGNING_PROVIDER = "unsigned";
+    try {
+      await writeSigningStatus({
+        outDir,
+        artifactPaths: [path.join(outDir, "Business Suite Setup.exe"), path.join(outDir, "latest.yml")],
+      });
+      const report = JSON.parse(readFileSync(path.join(outDir, "windows-signing-status.json"), "utf8"));
+      expect(report).toMatchObject({
+        status: "UNSIGNED DEVELOPMENT",
+        provider: "unsigned",
+        artifacts: ["Business Suite Setup.exe", "latest.yml"],
+      });
+    } finally {
+      if (prior === undefined) delete process.env.WINDOWS_SIGNING_PROVIDER;
+      else process.env.WINDOWS_SIGNING_PROVIDER = prior;
+      rmSync(outDir, { recursive: true, force: true });
+    }
   });
 
   it("passes secure posture without an insecure-LAN bypass", () => {
