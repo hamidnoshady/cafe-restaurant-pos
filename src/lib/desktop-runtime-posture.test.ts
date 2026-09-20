@@ -21,6 +21,10 @@ const writeSigningStatus = require("../../electron/scripts/write-signing-status.
   outDir: string;
   artifactPaths: string[];
 }) => Promise<void>;
+const windowsSigningConfig = require("../../electron/scripts/windows-signing-config.js") as {
+  afterAllArtifactBuild?: string;
+  artifactBuildCompleted?: string;
+};
 
 describe("packaged desktop production posture", () => {
   it("always launches the internal server as a loopback-only production site", () => {
@@ -56,6 +60,8 @@ describe("packaged desktop production posture", () => {
   });
 
   it("writes one package-level signing status from electron-builder's BuildResult", async () => {
+    expect(windowsSigningConfig.afterAllArtifactBuild).toBe("scripts/write-signing-status.js");
+    expect(windowsSigningConfig.artifactBuildCompleted).toBeUndefined();
     const outDir = mkdtempSync(path.join(os.tmpdir(), "desktop-signing-status-"));
     const prior = process.env.WINDOWS_SIGNING_PROVIDER;
     process.env.WINDOWS_SIGNING_PROVIDER = "unsigned";

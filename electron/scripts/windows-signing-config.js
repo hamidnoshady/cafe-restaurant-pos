@@ -69,5 +69,5 @@ if (provider === "pfx") {
 module.exports = {
   ...base,
   win,
-  artifactBuildCompleted: "scripts/write-signing-status.js",
+  afterAllArtifactBuild: "scripts/write-signing-status.js",
 };

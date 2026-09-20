@@ -65,6 +65,13 @@ jobs:
           script: |
             set -euo pipefail
             adb root
+            # API 30 dynamic partitions may require one verity-disabling reboot
+            # before remount actually makes the system CA store writable.
+            adb disable-verity || true
+            adb reboot
+            adb wait-for-device
+            while [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" != "1" ]; do sleep 2; done
+            adb root
             adb remount
             HASH=$(openssl x509 -in "$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt" -subject_hash_old -noout)
             adb push "$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt" "/system/etc/security/cacerts/${HASH}.0"

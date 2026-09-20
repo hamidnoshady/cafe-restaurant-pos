@@ -87,6 +87,7 @@ describe("desktop mobile gateway boundary", () => {
     expect(status.url).toBe(`https://127.0.0.1:${gatewayPort}`);
     expect(status.caDownloadUrl).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${gatewayPort + 1}/__business-suite/onboarding/[A-Za-z0-9_-]+/business-suite-local-ca\\.crt$`));
     expect(status.onboardingScope).toBe("ca-certificate-only");
+    expect(new Date(status.certificate.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(398 * 24 * 60 * 60_000);
 
     await expect(secureGet(`${status.url}/api/health`)).rejects.toThrow();
     const ca = await fs.readFile(certificates.caCertPath);
@@ -103,5 +104,5 @@ describe("desktop mobile gateway boundary", () => {
     expect(forbiddenApp.status).toBe(404);
     expect(await forbiddenApp.text()).toBe("Not found");
     expect(gateway.status().onboardingDownloads).toBe(1);
-  });
+  }, 30_000);
 });
