@@ -71,6 +71,8 @@ export function AiAssistant({ mode, currentStep }: Props) {
     setTask,
     customTask,
     setCustomTask,
+    agentId,
+    setAgentId,
     ensureGreeting,
     startNewConversation,
     loadConversation,
@@ -78,6 +80,8 @@ export function AiAssistant({ mode, currentStep }: Props) {
     askAgain,
     applyProposal,
     dismissProposal,
+    submitInputRequest,
+    dismissInputRequest,
   } = useAiChat({ mode, currentStep });
 
   useEffect(() => {
@@ -267,6 +271,8 @@ export function AiAssistant({ mode, currentStep }: Props) {
               suggestions={suggestions}
               applyProposal={applyProposal}
               dismissProposal={dismissProposal}
+              submitInputRequest={submitInputRequest}
+              dismissInputRequest={dismissInputRequest}
               sendMessage={sendMessage}
               askAgain={askAgain}
             />
@@ -283,6 +289,8 @@ export function AiAssistant({ mode, currentStep }: Props) {
               onTaskChange={setTask}
               customTask={customTask}
               onCustomTaskChange={setCustomTask}
+              agentId={agentId}
+              onAgentChange={setAgentId}
               actionsAllowed={actionsAllowed}
               setActionsAllowed={setActionsAllowed}
               loadConversation={loadConversation}

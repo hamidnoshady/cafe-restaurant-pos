@@ -241,3 +241,91 @@ describe("searchConversations (AI Hub Wave 5, issue #145)", () => {
     expect(emptyQuery).toHaveLength(0);
   });
 });
+
+describe("listConversationsByProject (Phase F — a project's own threads)", () => {
+  async function seedProject(businessId: string, name: string): Promise<string> {
+    const { rows } = await db.query<{ id: string }>(
+      "INSERT INTO ai_projects (business_id, name, created_by) VALUES ($1, $2, 'seed') RETURNING id",
+      [businessId, name],
+    );
+    return rows[0].id;
+  }
+
+  it("returns only the caller's own conversations for one project, newest first", async () => {
+    const projX = await seedProject(alpha.businessId, "کمپین بهار");
+    const projY = await seedProject(alpha.businessId, "کمپین پاییز");
+
+    // Two of user A's threads in project X, one in project Y, plus a project-less
+    // thread; and one of user B's threads in project X.
+    const aX1 = await asBusiness(alpha.businessId, () =>
+      ai.getOrCreateConversation({
+        businessId: alpha.businessId, actorUserId: alpha.userA, mode: "dashboard",
+        conversationId: null, firstMessageContent: "اول", projectId: projX,
+      }),
+    );
+    const aX2 = await asBusiness(alpha.businessId, () =>
+      ai.getOrCreateConversation({
+        businessId: alpha.businessId, actorUserId: alpha.userA, mode: "dashboard",
+        conversationId: null, firstMessageContent: "دوم", projectId: projX,
+      }),
+    );
+    const aY = await asBusiness(alpha.businessId, () =>
+      ai.getOrCreateConversation({
+        businessId: alpha.businessId, actorUserId: alpha.userA, mode: "dashboard",
+        conversationId: null, firstMessageContent: "پاییزی", projectId: projY,
+      }),
+    );
+    const aNone = await asBusiness(alpha.businessId, () =>
+      ai.getOrCreateConversation({
+        businessId: alpha.businessId, actorUserId: alpha.userA, mode: "dashboard",
+        conversationId: null, firstMessageContent: "بدون پروژه",
+      }),
+    );
+    const bX = await asBusiness(alpha.businessId, () =>
+      ai.getOrCreateConversation({
+        businessId: alpha.businessId, actorUserId: alpha.userB, mode: "dashboard",
+        conversationId: null, firstMessageContent: "مال بی", projectId: projX,
+      }),
+    );
+
+    const aInX = await asBusiness(alpha.businessId, () =>
+      ai.listConversationsByProject({
+        businessId: alpha.businessId, actorUserId: alpha.userA, projectId: projX,
+      }),
+    );
+    // Only A's two X threads, newest-active first; not Y, not the project-less
+    // one, and not B's X thread.
+    expect(aInX.map((c) => c.id)).toEqual([aX2.id, aX1.id]);
+    expect(aInX.map((c) => c.id)).not.toContain(aY.id);
+    expect(aInX.map((c) => c.id)).not.toContain(aNone.id);
+    expect(aInX.map((c) => c.id)).not.toContain(bX.id);
+    expect(aInX.every((c) => c.projectId === projX)).toBe(true);
+
+    // B sees only B's own X thread.
+    const bInX = await asBusiness(alpha.businessId, () =>
+      ai.listConversationsByProject({
+        businessId: alpha.businessId, actorUserId: alpha.userB, projectId: projX,
+      }),
+    );
+    expect(bInX.map((c) => c.id)).toEqual([bX.id]);
+  });
+
+  it("honours the limit so a busy project never overflows a page", async () => {
+    const proj = await seedProject(alpha.businessId, "پرترافیک");
+    for (let i = 0; i < 3; i++) {
+      await asBusiness(alpha.businessId, () =>
+        ai.getOrCreateConversation({
+          businessId: alpha.businessId, actorUserId: alpha.userA, mode: "dashboard",
+          conversationId: null, firstMessageContent: `t${i}`, projectId: proj,
+        }),
+      );
+    }
+    const firstPage = await asBusiness(alpha.businessId, () =>
+      ai.listConversationsByProject(
+        { businessId: alpha.businessId, actorUserId: alpha.userA, projectId: proj },
+        { limit: 2 },
+      ),
+    );
+    expect(firstPage).toHaveLength(2);
+  });
+});

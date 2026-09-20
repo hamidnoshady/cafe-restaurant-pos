@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AiComposerTools } from "./ai-composer-tools";
 import { AiTaskSelector } from "./ai-task-selector";
+import { AiAgentSelector } from "./ai-agent-selector";
 import { formatAttachmentSize } from "./chat-bubble";
 import { animateSendPulse } from "./chat-animations";
 import type { AiTaskId } from "@/lib/ai-tasks";
@@ -47,6 +48,9 @@ interface ChatComposerProps {
   onTaskChange: (id: AiTaskId) => void;
   customTask: string;
   onCustomTaskChange: (text: string) => void;
+  /** Phase I — the custom agent this dashboard turn runs as (null = full assistant). */
+  agentId: string | null;
+  onAgentChange: (id: string | null) => void;
   actionsAllowed: boolean;
   setActionsAllowed: (allowed: boolean) => void;
   loadConversation: (id: string) => void;
@@ -69,6 +73,8 @@ export function ChatComposer({
   onTaskChange,
   customTask,
   onCustomTaskChange,
+  agentId,
+  onAgentChange,
   actionsAllowed,
   setActionsAllowed,
   loadConversation,
@@ -292,6 +298,13 @@ export function ChatComposer({
             disabled={busy}
             onSelectTask={onTaskChange}
             onCustomTask={onCustomTaskChange}
+          />
+
+          <AiAgentSelector
+            mode={mode}
+            agentId={agentId}
+            disabled={busy}
+            onSelectAgent={onAgentChange}
           />
 
           <AiComposerTools

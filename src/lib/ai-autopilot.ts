@@ -127,6 +127,9 @@ export interface AutopilotAmountContext {
 
 const REASONS: Record<string, string> = {
   action_not_eligible: "این اقدام هرگز به‌صورت خودکار اجرا نمی‌شود و همیشه به تأیید شما نیاز دارد.",
+  unknown_action: "این اقدام شناخته نشد.",
+  approval_requested: "شما برای این کار «قبل از ثبت بپرس» را انتخاب کرده‌اید.",
+  no_authorizer: "کاربر تأییدکنندهٔ این کار مشخص نیست، پس ثبت خودکار انجام نمی‌شود.",
   category_disabled: "اجرای خودکار برای این دسته خاموش است.",
   daily_limit_reached: "سقف تعداد اجرای خودکار امروز در این دسته تکمیل شده است.",
   too_many_items: "تعداد اقلام این پیشنهاد بیش از حد مجاز اجرای خودکار است.",
@@ -322,6 +325,64 @@ export function evaluateAutopilotProposal(input: {
     default:
       return defer("action_not_eligible");
   }
+}
+
+/**
+ * The unattended-execution ceiling as ONE named policy, shared verbatim by the
+ * three features that can write without a person watching — autopilot, the
+ * coworker, and (Phase D) automations.
+ *
+ * Historically each feature re-derived the same four questions in its own
+ * words. That duplication was the real risk: an owner who set "money: at most
+ * 5,000,000 ﷼ unattended" said that about their *business*, and a second copy
+ * of the rule is a second place it can silently drift. This function is that
+ * single copy. Every unattended write in the system funnels through it.
+ *
+ * Four gates, in order, none of which the caller's own `approvalMode` can
+ * override, and none of which is ever a *drop* — a "no" means the proposal is
+ * held for a human on the identical manual apply path, exactly as Phase 31
+ * requires:
+ *   1. the action is real and has an unattended executor at all;
+ *   2. the owner chose 'auto' for this piece of work;
+ *   3. a real user's authority backs it;
+ *   4. the per-category caps admit this specific payload
+ *      (delegated to `evaluateAutopilotProposal`, the amount-level gate).
+ */
+export interface UnattendedActionInput {
+  meta: ActionMeta | undefined;
+  payload: Record<string, unknown>;
+  /** The caller's approval choice: 'auto' at all, or always 'ask'. */
+  approvalMode: "ask" | "auto";
+  /** Whether a real user's authority backs an unattended write. */
+  hasAuthorizer: boolean;
+  /** The category's stored setting, or null when the owner never enabled it. */
+  setting: AutopilotCategorySetting | null;
+  appliedTodayInCategory: number;
+  context: AutopilotAmountContext;
+}
+
+export function evaluateUnattendedAction(input: UnattendedActionInput): AutopilotDecision {
+  const { meta } = input;
+  // 1 — a real action with an unattended path. `unknown_action` (the payload
+  // named a type that is not in the catalogue) is distinct from a known action
+  // that simply has no executor, which `evaluateAutopilotProposal` reports as
+  // `action_not_eligible` below.
+  if (!meta) return defer("unknown_action");
+  // 2 — the owner opted this piece of work into unattended writes at all.
+  if (input.approvalMode !== "auto") return defer("approval_requested");
+  // 3 — an unattended write is never anonymous.
+  if (!input.hasAuthorizer) return defer("no_authorizer");
+  // 4 — the action has a category the owner switched on, and its caps admit
+  // this payload. A null setting means the category was never enabled; an
+  // action with no category at all is caught by `action_not_eligible` inside.
+  if (!input.setting) return defer("action_not_eligible");
+  return evaluateAutopilotProposal({
+    meta,
+    payload: input.payload,
+    setting: input.setting,
+    appliedTodayInCategory: input.appliedTodayInCategory,
+    context: input.context,
+  });
 }
 
 /** Action types an autopilot run for `category` may propose. */

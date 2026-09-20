@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ACTION_CATALOG,
   ACTION_TYPES,
+  BASE_ACTION_TYPES,
+  PROJECT_ACTION_TYPES,
   buildSystemPrompt,
   chatCompletionsUrl,
   defaultConfig,
@@ -406,8 +408,12 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
     expect(publish.alwaysConfirm).toBe(true);
     expect(publish.autopilotCategory).toBeUndefined();
     expect(publish.executor).toBeUndefined();
-    // And the only alwaysConfirm action so far is that one — a second entry is a decision.
-    expect(ACTION_TYPES.filter((t) => ACTION_CATALOG[t].alwaysConfirm)).toEqual(["website.post.publish"]);
+    // Phase C added the second alwaysConfirm action — recording a receipt moves
+    // money. Phase F pt.2/pt.3 added writing a project's memory and adding a
+    // project task. This pins the whole set; a fifth entry is a decision.
+    expect(ACTION_TYPES.filter((t) => ACTION_CATALOG[t].alwaysConfirm).sort()).toEqual(
+      ["ar.receipt.record", "project.memory.add", "project.task.add", "website.post.publish"],
+    );
   });
 
   it("gives the assistant no way to change consent or merge a customer", () => {
@@ -487,6 +493,83 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase C — the capability gaps closed against existing role-guarded routes.
+// ---------------------------------------------------------------------------
+
+describe("Phase C — party, campaign and receipt writes", () => {
+  it("adds exactly the four gap actions and no more", () => {
+    for (const type of [
+      "party.customer.create",
+      "party.supplier.create",
+      "messaging.campaign.create",
+      "ar.receipt.record",
+    ] as const) {
+      expect(isKnownAction(type), type).toBe(true);
+      expect(ACTION_TYPES).toContain(type);
+    }
+  });
+
+  it("routes both party creates through the one party write door", () => {
+    // Migration 0137 made /api/parties the only place a party is written; a
+    // customer and a supplier differ only in `roles`, never in the endpoint.
+    for (const type of ["party.customer.create", "party.supplier.create"] as const) {
+      expect(ACTION_CATALOG[type].endpoint).toBe("/api/parties");
+      expect(ACTION_CATALOG[type].method).toBe("POST");
+    }
+    expect(ACTION_CATALOG["party.customer.create"].payloadHint).toContain('"Customer"');
+    expect(ACTION_CATALOG["party.supplier.create"].payloadHint).toContain('"Supplier"');
+  });
+
+  it("keeps campaign create a draft — no send action reaches the catalogue", () => {
+    const create = ACTION_CATALOG["messaging.campaign.create"];
+    expect(create.endpoint).toBe("/api/messaging");
+    // The discriminator the /api/messaging route reads. The launch/send action
+    // is deliberately absent: a message that reaches a real person stays a
+    // human's click, the same line messaging.campaign.trigger draws.
+    expect(create.payloadHint).toContain('"campaign"');
+    for (const forbidden of ["messaging.campaign.launch", "messaging.campaign.send"]) {
+      expect(isKnownAction(forbidden), forbidden).toBe(false);
+    }
+  });
+
+  it("makes recording a receipt an always-confirm, never-unattended write", () => {
+    const receipt = ACTION_CATALOG["ar.receipt.record"];
+    expect(receipt.endpoint).toBe("/api/ledger/ar/receipts");
+    expect(receipt.alwaysConfirm).toBe(true);
+    expect(receipt.autopilotCategory).toBeUndefined();
+    expect(receipt.executor).toBeUndefined();
+  });
+
+  it("leaves all four gap actions out of every unattended path", () => {
+    // No autopilot category, no executor, not coworker-only: none can be applied
+    // by a tick. They exist only to be proposed to a human who clicks apply.
+    for (const type of [
+      "party.customer.create",
+      "party.supplier.create",
+      "messaging.campaign.create",
+      "ar.receipt.record",
+    ] as const) {
+      const meta = ACTION_CATALOG[type];
+      expect(meta.autopilotCategory, type).toBeUndefined();
+      expect(meta.executor, type).toBeUndefined();
+      expect(meta.coworkerOnly, type).toBeFalsy();
+    }
+  });
+
+  it("offers the two messaging reads in dashboard mode and names them in the prompt", () => {
+    const names = toolDefinitions("dashboard").map((tool) => tool.function.name);
+    expect(names).toContain("list_message_templates");
+    expect(names).toContain("list_message_campaigns");
+
+    const prompt = buildSystemPrompt({ mode: "dashboard" });
+    expect(prompt).toContain("list_message_templates");
+    expect(prompt).toContain("messaging.campaign.create");
+    expect(prompt).toContain("party.customer.create");
+    expect(prompt).toContain("ar.receipt.record");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 36 Wave 6 — the retrieval tool rides along only when it can be served.
 // ---------------------------------------------------------------------------
 
@@ -499,8 +582,10 @@ describe("search_business_knowledge declaration", () => {
   it("is declared for dashboard mode only when retrieval is up", () => {
     const names = toolDefinitions("dashboard", { retrieval: true }).map((tool) => tool.function.name);
     expect(names).toContain(KNOWLEDGE_TOOL_NAME);
-    // propose_action stays last of the declared set — it is the confirm gate.
-    expect(names[names.length - 1]).toBe("propose_action");
+    // propose_action is the confirm gate; request_input (Phase E) is declared
+    // last of the interactive pair, after it.
+    expect(names).toContain("propose_action");
+    expect(names[names.length - 1]).toBe("request_input");
   });
 
   it("is never declared for wizard, floor or platform modes", () => {
@@ -531,5 +616,137 @@ describe("search_business_knowledge declaration", () => {
     expect(names).toContain("draft_expense_from_receipt");
     expect(names).toContain(KNOWLEDGE_TOOL_NAME);
     expect(names).toContain("propose_action");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase F pt.2 — AI-authored project memory (a project-scoped action).
+// ---------------------------------------------------------------------------
+
+describe("Phase F pt.2 — project.memory.add is a project-scoped action", () => {
+  it("registers the action, addressed by an ambient project id", () => {
+    expect(isKnownAction("project.memory.add")).toBe(true);
+    const meta = ACTION_CATALOG["project.memory.add"];
+    expect(meta.endpoint).toBe("/api/ai/projects/{projectId}/memory");
+    expect(meta.method).toBe("POST");
+    expect(meta.projectScoped).toBe(true);
+    // A memory write is always confirmed and never runs unattended.
+    expect(meta.alwaysConfirm).toBe(true);
+    expect(meta.autopilotCategory).toBeUndefined();
+    expect(meta.executor).toBeUndefined();
+    expect(meta.coworkerOnly).toBeUndefined();
+    // The payload hint must not invite the model to write an id.
+    expect(meta.payloadHint).not.toContain("projectId:");
+  });
+
+  it("keeps the project-scoped action out of the base catalogue but in the project one", () => {
+    expect(BASE_ACTION_TYPES).not.toContain("project.memory.add");
+    expect(PROJECT_ACTION_TYPES).toContain("project.memory.add");
+    // The project set is the base set plus exactly the project-scoped actions.
+    for (const t of BASE_ACTION_TYPES) expect(PROJECT_ACTION_TYPES).toContain(t);
+  });
+
+  it("does not offer the action on a plain dashboard turn", () => {
+    const tools = toolDefinitions("dashboard");
+    const propose = tools.find((t) => t.function.name === "propose_action");
+    const enumTypes = (propose!.function.parameters as { properties: { type: { enum: string[] } } })
+      .properties.type.enum;
+    expect(enumTypes).not.toContain("project.memory.add");
+  });
+
+  it("offers the action only when the turn is project-scoped", () => {
+    const tools = toolDefinitions("dashboard", { projectScoped: true });
+    const propose = tools.find((t) => t.function.name === "propose_action");
+    const enumTypes = (propose!.function.parameters as { properties: { type: { enum: string[] } } })
+      .properties.type.enum;
+    expect(enumTypes).toContain("project.memory.add");
+  });
+
+  it("never offers a project-scoped action to a read-only or scoped custom agent", () => {
+    // A read-only agent (empty action list) proposes nothing, project or not.
+    const readOnly = toolDefinitions("dashboard", {
+      projectScoped: true,
+      toolAllowlist: ["run_report"],
+      actionTypes: [],
+    });
+    expect(readOnly.map((t) => t.function.name)).not.toContain("propose_action");
+
+    // A scoped agent's propose enum is exactly its own action list — a project
+    // does not widen it.
+    const scoped = toolDefinitions("dashboard", {
+      projectScoped: true,
+      toolAllowlist: ["run_report"],
+      actionTypes: ["menu.item.priceUpdate"],
+    });
+    const propose = scoped.find((t) => t.function.name === "propose_action");
+    const enumTypes = (propose!.function.parameters as { properties: { type: { enum: string[] } } })
+      .properties.type.enum;
+    expect(enumTypes).toEqual(["menu.item.priceUpdate"]);
+  });
+
+  it("names the action in the prompt catalogue only on a project turn", () => {
+    const plain = buildSystemPrompt({ mode: "dashboard" });
+    expect(plain).not.toContain("project.memory.add");
+    const inProject = buildSystemPrompt({ mode: "dashboard", projectScoped: true });
+    expect(inProject).toContain("project.memory.add");
+  });
+
+  it("does not name the action for a scoped agent even inside a project", () => {
+    const agentInProject = buildSystemPrompt({
+      mode: "dashboard",
+      projectScoped: true,
+      agent: { name: "گزارش‌گر", instructions: "", actionTypes: ["menu.item.priceUpdate"] },
+    });
+    expect(agentInProject).not.toContain("project.memory.add");
+  });
+
+  it("resolves the endpoint once the ambient project id is in the payload", () => {
+    const meta = ACTION_CATALOG["project.memory.add"];
+    // Without the id (the model's raw proposal) the endpoint cannot be built.
+    expect(resolveActionEndpoint(meta, { content: "به یاد بسپار" })).toBeNull();
+    // With the injected id it resolves.
+    expect(resolveActionEndpoint(meta, { content: "x", projectId: "proj-1" })).toBe(
+      "/api/ai/projects/proj-1/memory",
+    );
+  });
+});
+
+describe("Phase F pt.3 — project.task.add is a project-scoped action", () => {
+  it("registers the action, addressed by an ambient project id", () => {
+    expect(isKnownAction("project.task.add")).toBe(true);
+    const meta = ACTION_CATALOG["project.task.add"];
+    expect(meta.endpoint).toBe("/api/ai/projects/{projectId}/tasks");
+    expect(meta.method).toBe("POST");
+    expect(meta.projectScoped).toBe(true);
+    // Adding a task is always confirmed and never runs unattended.
+    expect(meta.alwaysConfirm).toBe(true);
+    expect(meta.autopilotCategory).toBeUndefined();
+    expect(meta.executor).toBeUndefined();
+    expect(meta.coworkerOnly).toBeUndefined();
+    // The payload hint must not invite the model to write an id.
+    expect(meta.payloadHint).not.toContain("projectId:");
+  });
+
+  it("lives in the project catalogue, not the base one, and is offered only on a project turn", () => {
+    expect(BASE_ACTION_TYPES).not.toContain("project.task.add");
+    expect(PROJECT_ACTION_TYPES).toContain("project.task.add");
+
+    const plain = toolDefinitions("dashboard");
+    const plainEnum = (plain.find((t) => t.function.name === "propose_action")!
+      .function.parameters as { properties: { type: { enum: string[] } } }).properties.type.enum;
+    expect(plainEnum).not.toContain("project.task.add");
+
+    const inProject = toolDefinitions("dashboard", { projectScoped: true });
+    const projEnum = (inProject.find((t) => t.function.name === "propose_action")!
+      .function.parameters as { properties: { type: { enum: string[] } } }).properties.type.enum;
+    expect(projEnum).toContain("project.task.add");
+  });
+
+  it("resolves the endpoint once the ambient project id is in the payload", () => {
+    const meta = ACTION_CATALOG["project.task.add"];
+    expect(resolveActionEndpoint(meta, { title: "تماس با تأمین‌کننده" })).toBeNull();
+    expect(resolveActionEndpoint(meta, { title: "x", projectId: "proj-1" })).toBe(
+      "/api/ai/projects/proj-1/tasks",
+    );
   });
 });

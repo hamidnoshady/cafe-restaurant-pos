@@ -24,6 +24,7 @@
  */
 import { ACTION_CATALOG, type ActionType, type ProposedAction } from "./ai";
 import { createAiActionAudit } from "./ai-action-audit";
+import { projectExistsForBusiness } from "./ai-projects";
 import {
   clampAutopilotSetting,
   type AutopilotCategory,
@@ -81,6 +82,7 @@ export interface CoworkerJob {
   id: string;
   businessId: string;
   locationId: string | null;
+  projectId: string | null;
   templateKey: CoworkerTemplateKey;
   title: string;
   triggerKind: CoworkerTriggerKind;
@@ -100,6 +102,7 @@ interface JobRow extends Record<string, unknown> {
   id: string;
   business_id: string;
   location_id: string | null;
+  project_id: string | null;
   template_key: string;
   title: string;
   trigger_kind: string;
@@ -120,6 +123,7 @@ function toJob(row: JobRow): CoworkerJob {
     id: row.id,
     businessId: row.business_id,
     locationId: row.location_id,
+    projectId: row.project_id,
     templateKey: row.template_key as CoworkerTemplateKey,
     title: row.title,
     triggerKind: row.trigger_kind as CoworkerTriggerKind,
@@ -136,7 +140,7 @@ function toJob(row: JobRow): CoworkerJob {
   };
 }
 
-const JOB_COLUMNS = `id, business_id, location_id, template_key, title, trigger_kind, event_kind,
+const JOB_COLUMNS = `id, business_id, location_id, project_id, template_key, title, trigger_kind, event_kind,
                      schedule_hour, schedule_weekday, params, approval_mode, enabled, authorized_by,
                      created_at::text AS created_at, updated_at::text AS updated_at,
                      last_run_at::text AS last_run_at`;
@@ -183,6 +187,12 @@ async function validateForTemplate(
   if (!(await isModuleEnabled(businessId, template.module as ModuleKey))) {
     errors.push("coworker_module_unavailable");
   }
+  // A project label, if given, must name a real project of THIS business. RLS
+  // would already stop a cross-tenant read; this turns a made-up or foreign id
+  // into a clear error rather than a silently-null label.
+  if (input.projectId && !(await projectExistsForBusiness(businessId, input.projectId))) {
+    errors.push("coworker_project_not_found");
+  }
   errors.push(...validateTemplateParams(input.templateKey, input.params ?? {}));
   return Array.from(new Set(errors));
 }
@@ -197,13 +207,14 @@ export async function createCoworkerJob(
 
   const { rows } = await query<JobRow>(
     `INSERT INTO ai_coworker_jobs
-       (business_id, location_id, template_key, title, trigger_kind, event_kind, schedule_hour,
+       (business_id, location_id, project_id, template_key, title, trigger_kind, event_kind, schedule_hour,
         schedule_weekday, params, approval_mode, enabled, created_by, authorized_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $12)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $13)
      RETURNING ${JOB_COLUMNS}`,
     [
       businessId,
       input.locationId ?? null,
+      input.projectId ?? null,
       input.templateKey,
       input.title!.trim().slice(0, 120),
       input.triggerKind,
@@ -235,6 +246,7 @@ export async function updateCoworkerJob(
     templateKey: existing.templateKey,
     title: input.title ?? existing.title,
     locationId: input.locationId !== undefined ? input.locationId : existing.locationId,
+    projectId: input.projectId !== undefined ? input.projectId : existing.projectId,
     triggerKind: input.triggerKind ?? existing.triggerKind,
     eventKind: input.eventKind !== undefined ? input.eventKind : existing.eventKind,
     scheduleHour: input.scheduleHour !== undefined ? input.scheduleHour : existing.scheduleHour,
@@ -256,15 +268,16 @@ export async function updateCoworkerJob(
 
   const { rows } = await query<JobRow>(
     `UPDATE ai_coworker_jobs
-        SET location_id = $3, title = $4, trigger_kind = $5, event_kind = $6, schedule_hour = $7,
-            schedule_weekday = $8, params = $9::jsonb, approval_mode = $10, enabled = $11,
-            authorized_by = $12, updated_at = now()
+        SET location_id = $3, project_id = $4, title = $5, trigger_kind = $6, event_kind = $7, schedule_hour = $8,
+            schedule_weekday = $9, params = $10::jsonb, approval_mode = $11, enabled = $12,
+            authorized_by = $13, updated_at = now()
       WHERE business_id = $1 AND id = $2
       RETURNING ${JOB_COLUMNS}`,
     [
       businessId,
       id,
       merged.locationId ?? null,
+      merged.projectId ?? null,
       merged.title!.trim().slice(0, 120),
       merged.triggerKind,
       merged.eventKind,

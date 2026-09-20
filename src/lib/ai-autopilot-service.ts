@@ -26,16 +26,14 @@ import { AUTOPILOT_EXECUTORS, AUTOPILOT_REVERTERS } from "./ai-autopilot-executo
 import { autopilotAmountContext } from "./ai-amount-context";
 import { createAiActionAudit } from "./ai-action-audit";
 import { runAgentTurn } from "./ai-service";
-import { resolveGatewayTurnPricing } from "./ai-gateway-service";
 import { runReadTool } from "./ai-tools";
 import { compactProactiveFacts, type LocalBusinessClock } from "./ai-proactive";
 import {
-  AiInsufficientCreditError,
-  cancelAiTurnReservation,
-  reserveAiTurn,
+  AiWalletInsufficientError,
+  gateAiTurn,
+  newAiRequestId,
   settleAiTurn,
-  type AiTurnReservation,
-} from "./ai-billing-service";
+} from "./ai-wallet-billing";
 import type { PlatformAiConfig } from "./ai-config";
 
 export type AutopilotSettingsMap = Record<AutopilotCategory, AutopilotCategorySetting>;
@@ -537,7 +535,7 @@ async function runCategory(input: {
   const runId = await claimAutopilotRun(businessId, `${clock.dateKey}:${category}`);
   if (!runId) return false;
 
-  let reservation: AiTurnReservation | null = null;
+  const requestId = newAiRequestId();
   let facts: unknown;
   try {
     const collected = await collectCategoryFacts(businessId, category, clock);
@@ -550,15 +548,12 @@ async function runCategory(input: {
     }
 
     const authorizedBy = await authorizingUser(businessId, category);
+    // Phase B — gate on the wallet; an unaffordable business is skipped, not
+    // reserved against.
     try {
-      reservation = await reserveAiTurn({
-        businessId,
-        reservedRial: config.maxTurnRial,
-        userId: authorizedBy,
-        metadata: { source: "autopilot", kind: category, periodKey: `${clock.dateKey}:${category}` },
-      });
+      await gateAiTurn(businessId, config);
     } catch (error) {
-      if (error instanceof AiInsufficientCreditError) {
+      if (error instanceof AiWalletInsufficientError) {
         await finishAutopilotRun({ businessId, runId, status: "skipped", facts, error: "ai_credit_required" });
         return false;
       }
@@ -575,21 +570,20 @@ async function runCategory(input: {
       messages: [{ role: "user", content: prompt }],
     });
 
-    const activeReservation = reservation;
-    if (!activeReservation) throw new Error("ai_reservation_not_created");
-    // Phase 38b — gateway-priced when the gateway reported the turn's cost
-    // and the platform switched costing over; the token rates otherwise.
-    const gatewayPricing = await resolveGatewayTurnPricing(
-      reply.costUsd,
-      config.revenueMarginPercent,
-    );
+    // Phase B — settle the real cost against the wallet (gateway-priced when
+    // reported, token rates otherwise).
     await settleAiTurn({
       businessId,
-      reservation: activeReservation,
+      requestId,
+      config,
       usage: reply.usage,
-      inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-      outputTokenRialPerMillion: config.outputTokenRialPerMillion,
-      gatewayPricing,
+      costUsd: reply.costUsd,
+      attribution: {
+        requestType: "autopilot",
+        model: config.model,
+        userId: authorizedBy,
+        metadata: { source: "autopilot", kind: category, periodKey: `${clock.dateKey}:${category}` },
+      },
     });
 
     if (!reply.proposedAction) {
@@ -599,7 +593,7 @@ async function runCategory(input: {
         status: "completed",
         content: reply.content,
         facts,
-        creditRequestId: activeReservation.requestId,
+        creditRequestId: requestId,
       });
       return true;
     }
@@ -620,15 +614,11 @@ async function runCategory(input: {
           ? `${reply.content}\n\n[برای تأیید شما نگه داشته شد: ${decision.reasonFa}]`
           : reply.content,
       facts,
-      creditRequestId: activeReservation.requestId,
+      creditRequestId: requestId,
     });
     return true;
   } catch (error) {
-    if (reservation) {
-      await cancelAiTurnReservation({ businessId, reservation, reason: errorText(error) }).catch((cancelError) =>
-        console.error("autopilot AI credit reservation refund failed", cancelError),
-      );
-    }
+    // Phase B — no reservation to cancel.
     await finishAutopilotRun({ businessId, runId, status: "failed", facts, error: errorText(error) }).catch(
       (finishError) => console.error("autopilot run could not be marked failed", finishError),
     );

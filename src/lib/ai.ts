@@ -178,7 +178,21 @@ export type ActionType =
   | "website.product.upsert"
   | "website.post.publish"
   /** A deterministic coworker-only action that queues, never sends, one message. */
-  | "messaging.campaign.trigger";
+  | "messaging.campaign.trigger"
+  // Phase C — the party directory's two creates and the two money-shaped writes
+  // the assistant was missing. Each maps to an existing role-guarded route; none
+  // is eligible for an unattended run.
+  | "party.customer.create"
+  | "party.supplier.create"
+  | "messaging.campaign.create"
+  | "ar.receipt.record"
+  /** Phase F pt.2 — the assistant records a standing fact for the CURRENT
+   *  project. Offered only on a project-scoped turn; the project id is ambient
+   *  (injected server-side), never named by the model. */
+  | "project.memory.add"
+  /** Phase F pt.3 — the assistant adds an open task to the CURRENT project.
+   *  Same project-scoped, ambient-id shape as project.memory.add. */
+  | "project.task.add";
 
 export type AutopilotExecutorKey =
   | "menuItemPatch"
@@ -215,6 +229,15 @@ export interface ActionMeta {
    * to a public website is the one action tagged so far.
    */
   alwaysConfirm?: true;
+  /**
+   * Phase F pt.2 — the action only makes sense inside a PROJECT: its endpoint
+   * is addressed by an ambient project id the model never sees. It is kept out
+   * of the default `propose_action` enum (like `coworkerOnly` keeps waste out)
+   * and offered only when `toolDefinitions` is told the turn is project-scoped.
+   * The chat route injects the resolved `projectId` into the payload before the
+   * proposal is stored, so the model cannot target another project.
+   */
+  projectScoped?: true;
 }
 
 export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
@@ -508,6 +531,85 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     payloadHint: "{ postId: string } — متن را عمومی می‌کند؛ همیشه به تأیید انسان نیاز دارد",
     alwaysConfirm: true,
   },
+  // Phase C — capability gaps closed against the party directory and the ledger.
+  //
+  // All four point at endpoints the app already role-guards; the catalogue adds
+  // no business logic, it only names the door and its payload so a human can
+  // apply the proposal from the chat with their own session. None is tagged
+  // with an autopilot category or executor: creating a person or moving money
+  // is a decision a human confirms, never an unattended tick's.
+  //
+  // `/api/parties` is the *only* write door for a party (migration 0137 removed
+  // `/api/customers`), and the same route serves a customer and a supplier —
+  // the difference is entirely in `roles`. Two catalogue entries, one endpoint,
+  // so the model proposes the right kind of record and the route decides the
+  // permission (`parties.view` + `parties.manage`, and `ledger.view` on top
+  // when the body carries accounting fields — which these payloads avoid).
+  "party.customer.create": {
+    type: "party.customer.create",
+    endpoint: "/api/parties",
+    method: "POST",
+    label: "افزودن مشتری جدید",
+    payloadHint:
+      '{ role: "Customer", roles: ["Customer"], personType: "Real"|"Legal", displayName: string, contactInfo?: { mobile?: string, phone?: string, email?: string } } — فقط اطلاعات هویتی و تماس؛ فیلدهای حسابداری (کد حسابداری، درصد مالیات، اطلاعات بانکی) را اینجا نگذار',
+  },
+  "party.supplier.create": {
+    type: "party.supplier.create",
+    endpoint: "/api/parties",
+    method: "POST",
+    label: "افزودن تأمین‌کننده جدید",
+    payloadHint:
+      '{ role: "Supplier", roles: ["Supplier"], personType: "Real"|"Legal", displayName: string, contactInfo?: { mobile?: string, phone?: string, email?: string } } — فقط اطلاعات هویتی و تماس؛ فیلدهای حسابداری را اینجا نگذار',
+  },
+  // Creating a campaign only materialises a *draft* — nothing is sent. Launching
+  // (`action: "launch"`) is deliberately not a catalogue action: a send that
+  // reaches real people stays a human's click on the growth screen, the same
+  // line `messaging.campaign.trigger` draws for the coworker path.
+  "messaging.campaign.create": {
+    type: "messaging.campaign.create",
+    endpoint: "/api/messaging",
+    method: "POST",
+    label: "ساخت پیش‌نویس کمپین پیام",
+    payloadHint:
+      '{ action: "campaign", channel: "sms"|"email", name: string, templateId: string /* از list_message_templates */, segmentId: string /* از list_customer_segments */, promotionId?: string } — فقط پیش‌نویس می‌سازد؛ هیچ پیامی ارسال نمی‌شود',
+  },
+  // Recording an AR receipt moves money, so it is `alwaysConfirm`: a human sees
+  // the amount and the customer on the card and clicks. No executor, no
+  // category — an unattended tick never records a payment.
+  "ar.receipt.record": {
+    type: "ar.receipt.record",
+    endpoint: "/api/ledger/ar/receipts",
+    method: "POST",
+    label: "ثبت دریافت از مشتری",
+    payloadHint:
+      '{ customerId: string /* از find_customers */, method: "cash"|"bank", amount: number /* ریال صحیح، مثبت */, receiptDate?: string /* ISO؛ پیش‌فرض امروزِ کسب‌وکار */, memo?: string } — پول جابه‌جا می‌کند و همیشه به تأیید انسان نیاز دارد',
+    alwaysConfirm: true,
+  },
+  "project.memory.add": {
+    type: "project.memory.add",
+    // `{projectId}` is the AMBIENT project of this conversation; the chat route
+    // fills it into the payload before the proposal is stored. The model must
+    // never put an id here — it only supplies `content`.
+    endpoint: "/api/ai/projects/{projectId}/memory",
+    method: "POST",
+    label: "ثبت نکته در حافظهٔ پروژه",
+    payloadHint:
+      '{ content: string } — یک نکتهٔ کوتاه و ماندگار که باید در همهٔ گفت‌وگوهای این پروژه به‌خاطر بماند (مثلاً «مالک تومان را رند می‌کند»). شناسهٔ پروژه را ننویس؛ خودکار افزوده می‌شود. فقط وقتی کاربر خواست چیزی را «به خاطر بسپار»',
+    projectScoped: true,
+    alwaysConfirm: true,
+  },
+  "project.task.add": {
+    type: "project.task.add",
+    // `{projectId}` is the AMBIENT project; the chat route injects it. The model
+    // supplies only `title`.
+    endpoint: "/api/ai/projects/{projectId}/tasks",
+    method: "POST",
+    label: "افزودن کار به پروژه",
+    payloadHint:
+      '{ title: string } — یک کار باز و کوتاه برای این پروژه (مثلاً «تماس با تأمین‌کننده دربارهٔ بلند بهار»). شناسهٔ پروژه را ننویس؛ خودکار افزوده می‌شود. فقط وقتی کاربر خواست کاری به پروژه اضافه شود',
+    projectScoped: true,
+    alwaysConfirm: true,
+  },
 };
 
 export interface ProposedAction {
@@ -536,6 +638,23 @@ export function resolveActionEndpoint(meta: ActionMeta, payload: Record<string, 
 
 export const ACTION_TYPES = Object.keys(ACTION_CATALOG) as ActionType[];
 
+/**
+ * The action types a plain dashboard/wizard turn may propose: every action
+ * except the ones addressed by an ambient context the base turn does not have.
+ * A `projectScoped` action (project.memory.add) is added back only when the
+ * turn is inside a project — see `toolDefinitions`. This mirrors how
+ * `coworkerOnly` actions are already absent from the model's own enum.
+ */
+export const BASE_ACTION_TYPES = ACTION_TYPES.filter(
+  (t) => !ACTION_CATALOG[t].projectScoped,
+);
+
+/** The actions available inside a project: the base set plus project-scoped ones. */
+export const PROJECT_ACTION_TYPES = [
+  ...BASE_ACTION_TYPES,
+  ...ACTION_TYPES.filter((t) => ACTION_CATALOG[t].projectScoped),
+];
+
 // ---------------------------------------------------------------------------
 // Chat message shapes + prompts + tool definitions
 // ---------------------------------------------------------------------------
@@ -561,6 +680,33 @@ export interface PromptContext {
   autopilotCategory?: AutopilotCategory;
   allowedActionTypes?: ActionType[];
   retrieval?: boolean;
+  /**
+   * Phase D — when a dashboard turn runs as a custom agent, its instructions
+   * are appended to the grounding prompt and the propose_action catalogue dump
+   * is scoped to the agent's own action list (empty = a read-only agent). The
+   * base grounding rules (Persian, Toman, Jalali, never invent a number) always
+   * stand — an agent narrows, it never replaces them.
+   */
+  agent?: {
+    name: string;
+    instructions: string;
+    actionTypes: ActionType[];
+  };
+  /**
+   * Phase F — when a dashboard turn's conversation belongs to a project, the
+   * project's standing instruction, note titles and remembered facts are
+   * rendered (by ai-projects.buildProjectPromptContext) into this block and
+   * appended to the grounded prompt.
+   */
+  projectContext?: string | null;
+  /**
+   * Phase F pt.2 — the turn is inside a project, so the project-scoped action
+   * (project.memory.add) is named in the propose catalogue. It adds ONE
+   * project-local, always-confirm action; it does not touch the business-wide
+   * catalogue, which stays gated by mode and agent scope. A scoped custom agent
+   * never gets it (its action list is its own).
+   */
+  projectScoped?: boolean;
 }
 
 const WIZARD_STEP_LABELS: Record<string, string> = {
@@ -619,6 +765,8 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "برای هر سؤالی دربارهٔ ضایعات («چقدر نان دور ریختیم؟»، «ضایعات این ماه چقدر بود؟») از get_waste_history استفاده کن؛ این ابزار تفکیک کالا و دلیل و هزینه را یک‌جا می‌دهد. get_stock_valuation فقط موجودی همین لحظه را می‌گوید و به سؤال «چه چیزی از انبار خارج شد» جواب نمی‌دهد.",
       "برای سؤال‌هایی مثل «حساب‌هایم را بررسی کن»، «اشتباهی هست؟» یا «چه چیزی جا افتاده؟» حتماً run_accounting_review را صدا بزن و دقیقاً همان یافته‌ها را با درجهٔ اهمیت و پیشنهاد اصلاحشان گزارش کن. هرگز از خودت مورد اضافه نکن و هرگز نگو حسابی مشکل دارد مگر این ابزار گفته باشد.",
       "کاربر می‌تواند کارهای تکرارشونده را به «همکار هوشمند» بسپارد (مثلاً «هر شب با بستن شیفت، ماندهٔ نان را ضایعات بزن» یا «هر روز صبح حساب‌ها را بررسی کن»). با list_coworker_jobs می‌توانی کارهای فعلی و تعداد اجراهای منتظر تأیید را ببینی؛ برای ساختن کار جدید کاربر را به بخش «همکار هوشمند» در صفحهٔ هوش مصنوعی راهنمایی کن.",
+      "برای پیام‌رسانی به مشتریان: با list_message_templates قالب‌ها و با list_message_campaigns وضعیت کمپین‌ها را می‌بینی. برای ساختن کمپین جدید، اول templateId را از list_message_templates و segmentId را از list_customer_segments بگیر، سپس propose_action از نوع messaging.campaign.create بساز؛ این کار فقط یک پیش‌نویس می‌سازد و هیچ پیامی نمی‌فرستد — ارسال را خود کاربر از صفحهٔ رشد انجام می‌دهد.",
+      "برای افزودن مشتری یا تأمین‌کننده از party.customer.create یا party.supplier.create استفاده کن و فقط نام و اطلاعات تماس را پر کن؛ کد حسابداری، درصد مالیات و اطلاعات بانکی را نگذار. برای ثبت دریافت وجه از مشتری، اول با find_customers شناسهٔ مشتری را پیدا کن و سپس ar.receipt.record را با مبلغ ریالی و روش (نقد/بانک) پیشنهاد بده.",
       "برای هر تغییر در داده‌ها هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
       "قبل از پیشنهاد، اطلاعات لازم را با پرسیدن سؤال از کاربر کامل کن؛ فیلدها را با حدس‌های نامطمئن پر نکن.",
       ctx.hasAttachment
@@ -655,11 +803,43 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   }
 
   if (ctx.mode === "wizard" || ctx.mode === "dashboard" || ctx.mode === "autopilot") {
-    const types = ctx.mode === "autopilot" ? ctx.allowedActionTypes ?? [] : ACTION_TYPES;
-    const catalog = types
-      .map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`)
-      .join("\n");
-    lines.push("انواع عملیات مجاز برای propose_action و ساختار payload آن‌ها:\n" + catalog);
+    // Autopilot scopes to the run's category; a dashboard agent scopes to its
+    // own action allowlist; an ordinary dashboard/wizard turn sees them all.
+    const types =
+      ctx.mode === "autopilot"
+        ? ctx.allowedActionTypes ?? []
+        : ctx.mode === "dashboard" && ctx.agent
+          ? ctx.agent.actionTypes
+          : // A plain dashboard/wizard turn sees the base catalogue; inside a
+            // project (never an agent) the project-scoped action is added.
+            ctx.projectScoped && !ctx.agent
+            ? PROJECT_ACTION_TYPES
+            : BASE_ACTION_TYPES;
+    if (types.length > 0) {
+      const catalog = types
+        .map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`)
+        .join("\n");
+      lines.push("انواع عملیات مجاز برای propose_action و ساختار payload آن‌ها:\n" + catalog);
+    } else if (ctx.mode === "dashboard" && ctx.agent) {
+      // A read-only agent proposes nothing — say so, rather than leaving the
+      // model to infer a silence.
+      lines.push("این ایجنت اجازهٔ هیچ عملیات اجرایی (propose_action) ندارد و فقط برای پاسخ و تحلیل است.");
+    }
+  }
+
+  // Phase D — the agent's own instructions ride on top of the grounded prompt.
+  if (ctx.mode === "dashboard" && ctx.agent) {
+    lines.push(
+      `تو به‌عنوان ایجنت «${ctx.agent.name}» کار می‌کنی. قواعد پایهٔ بالا همیشه برقرارند؛ در همان چارچوب طبق این دستورالعمل رفتار کن:`,
+    );
+    if (ctx.agent.instructions.trim()) lines.push(ctx.agent.instructions.trim());
+  }
+
+  // Phase F — the project workspace this conversation lives in. Informs the
+  // assistant (standing instruction, notes, remembered facts); it never widens
+  // the action catalogue, which stays gated by mode and agent scope above.
+  if ((ctx.mode === "dashboard" || ctx.mode === "wizard") && ctx.projectContext?.trim()) {
+    lines.push(ctx.projectContext.trim());
   }
 
   return lines.filter(Boolean).join("\n");
@@ -704,6 +884,21 @@ export interface ToolDefinitionsOptions {
   hasAttachment?: boolean;
   actionTypes?: ActionType[];
   retrieval?: boolean;
+  /**
+   * Phase D — a custom agent's read-tool allowlist. When present, the dashboard
+   * read tools are intersected with it: the turn keeps only the read tools this
+   * agent was granted. `propose_action` is governed separately by `actionTypes`
+   * (a custom agent always supplies a concrete, possibly empty, action list).
+   * Absent means no agent scoping — the full mode surface, exactly as before.
+   */
+  toolAllowlist?: string[];
+  /**
+   * Phase F pt.2 — the turn's conversation belongs to a project, so
+   * project-scoped actions (project.memory.add) are added to `propose_action`'s
+   * enum. The ambient project id is supplied server-side, not by the model.
+   * Ignored for a scoped custom agent (an agent's action list is its own).
+   */
+  projectScoped?: boolean;
 }
 
 export const KNOWLEDGE_TOOL_NAME = "search_business_knowledge";
@@ -1023,6 +1218,29 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
       "get_website_status",
       "وضعیت اتصال وب‌سایت: متصل است یا نه، دامنه، آخرین آزمایش، کلیدهای ارسال قیمت و موجودی، و صف ارسال (در انتظار/ناموفق/متوقف).",
     ),
+    // Phase C — the messaging reads that make the two new campaign writes
+    // usable: the assistant needs a template id and a segment id before it can
+    // propose `messaging.campaign.create`, and campaign status to answer «کمپینم
+    // به کجا رسید». Both are read-only lists scoped to the business.
+    {
+      type: "function",
+      function: {
+        name: "list_message_templates",
+        description:
+          "قالب‌های پیام ذخیره‌شدهٔ کسب‌وکار با شناسه، کانال (پیامک/ایمیل)، نام و متن. برای ساختن کمپین، templateId را از همین‌جا بگیر.",
+        parameters: {
+          type: "object",
+          properties: {
+            channel: { type: "string", enum: ["sms", "email"], description: "فقط قالب‌های یک کانال؛ خالی یعنی همه" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    noArgsTool(
+      "list_message_campaigns",
+      "کمپین‌های پیام کسب‌وکار (پیش‌نویس، در حال ارسال، پایان‌یافته) با شناسه، نام، کانال، وضعیت و شمارش گیرنده/ارسال/تحویل/ناموفق.",
+    ),
   ];
 
   const receiptTool: OpenAiTool = {
@@ -1060,7 +1278,88 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
       },
     },
   });
-  const proposeTool = proposeToolFor(ACTION_TYPES);
+  // The default enum excludes project-scoped actions (they need an ambient
+  // project the plain turn does not have); a project turn adds them back below.
+  const proposeTool = proposeToolFor(BASE_ACTION_TYPES);
+  const projectProposeTool = proposeToolFor(PROJECT_ACTION_TYPES);
+
+  // Phase E — the structured input protocol. When the assistant needs the user
+  // to CHOOSE or FILL IN something before it can continue, it asks with a typed
+  // form instead of a prose question it would then have to parse. The turn ends
+  // on this call exactly like propose_action; the UI renders the card, and the
+  // user's structured answer (validated against this very spec) becomes the next
+  // turn. Never used to state facts — only to ask a bounded question.
+  const requestInputTool: OpenAiTool = {
+    type: "function",
+    function: {
+      name: "request_input",
+      description:
+        "درخواست یک ورودی ساختاریافته از کاربر وقتی برای ادامه به انتخاب یا اطلاعات مشخصی نیاز داری (مثلاً «کدام تأمین‌کننده؟» یا «مبلغ و تاریخ هزینه؟»). به جای پرسش متنی، یک فرم تایپ‌شده بساز تا پاسخ کاربر دقیق و بدون حدس برگردد. این ابزار فقط برای پرسیدن است، نه برای بیان اطلاعات یا اجرای تغییر.",
+      parameters: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["choice", "multi_choice", "form"],
+            description: "choice=انتخاب یک گزینه، multi_choice=چند گزینه، form=چند فیلد تایپ‌شده",
+          },
+          prompt: { type: "string", description: "پرسشی که بالای کارت نشان داده می‌شود" },
+          options: {
+            type: "array",
+            description: "برای choice/multi_choice: گزینه‌ها. هر گزینه id یکتا و label فارسی دارد.",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "شناسهٔ یکتای گزینه" },
+                label: { type: "string", description: "متن نمایشی گزینه" },
+              },
+              required: ["id", "label"],
+              additionalProperties: false,
+            },
+          },
+          fields: {
+            type: "array",
+            description: "برای form: فیلدها. هر فیلد key یکتا، label، و type دارد.",
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string", description: "کلید یکتای فیلد" },
+                label: { type: "string", description: "برچسب فارسی فیلد" },
+                type: {
+                  type: "string",
+                  enum: ["text", "number", "date", "boolean", "select"],
+                  description: "نوع فیلد؛ date به‌صورت YYYY-MM-DD",
+                },
+                required: { type: "boolean", description: "آیا پر کردن این فیلد الزامی است" },
+                options: {
+                  type: "array",
+                  description: "فقط برای type=select: گزینه‌های مجاز",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      label: { type: "string" },
+                    },
+                    required: ["id", "label"],
+                    additionalProperties: false,
+                  },
+                },
+                placeholder: { type: "string", description: "متن راهنمای داخل فیلد، اختیاری" },
+              },
+              required: ["key", "label", "type"],
+              additionalProperties: false,
+            },
+          },
+          allowOther: {
+            type: "boolean",
+            description: "فقط choice/multi_choice: اجازهٔ پاسخ متنی «سایر» علاوه بر گزینه‌ها",
+          },
+        },
+        required: ["kind", "prompt"],
+        additionalProperties: false,
+      },
+    },
+  };
 
   const floorReadTools: OpenAiTool[] = [
     {
@@ -1118,13 +1417,36 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
     },
   ];
 
-  if (mode === "wizard") return [readTools[0], proposeTool];
+  if (mode === "wizard") return [readTools[0], proposeTool, requestInputTool];
   if (mode === "dashboard") {
     const base = opts.hasAttachment
       ? [...readTools, receiptTool]
       : [...readTools];
     if (opts.retrieval) base.push(knowledgeTool());
-    return [...base, proposeTool];
+
+    // Phase D — a custom agent narrows the dashboard surface. The read tools
+    // are intersected with the agent's allowlist (so the agent can only call
+    // what it was granted), and `propose_action` is scoped to the agent's own
+    // action list — empty means a read-only agent that proposes nothing. With
+    // no allowlist present the full surface stands, exactly as before.
+    //
+    // Phase E — `request_input` is offered to every dashboard turn, including a
+    // scoped custom agent: asking the user a typed question is a read-shaped,
+    // never-mutating act (it opens no new write path), so even a read-only agent
+    // may clarify what it was asked before answering.
+    if (opts.toolAllowlist) {
+      const allowed = new Set(opts.toolAllowlist);
+      const scopedReads = base.filter((tool) => allowed.has(tool.function.name));
+      const actionTypes = opts.actionTypes ?? [];
+      return actionTypes.length === 0
+        ? [...scopedReads, requestInputTool]
+        : [...scopedReads, proposeToolFor(actionTypes), requestInputTool];
+    }
+
+    // Phase F pt.2 — inside a project the propose enum also carries the
+    // project-scoped actions (the model still never names the project id).
+    const propose = opts.projectScoped ? projectProposeTool : proposeTool;
+    return [...base, propose, requestInputTool];
   }
   if (mode === "floor") return floorReadTools;
   if (mode === "proactive") return [];

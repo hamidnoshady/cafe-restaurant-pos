@@ -132,6 +132,14 @@ export type MediaAssetRecord = {
   aiLabels: Record<string, unknown>;
   variant: "original" | "enhanced";
   sourceAssetId: string | null;
+  /** Phase G — how the asset entered the library. */
+  source: "upload" | "ai_attachment" | "ai_generated";
+  /** Phase G — true when the assistant, not a person, authored the bytes. */
+  createdByAi: boolean;
+  /** Phase G — the chat this asset came from, if any. */
+  conversationId: string | null;
+  /** Phase G — the project workspace this asset belongs to, if any. */
+  projectId: string | null;
   createdAt: string;
 };
 
@@ -148,11 +156,15 @@ type AssetRow = {
   ai_labels: Record<string, unknown>;
   variant: MediaAssetRecord["variant"];
   source_asset_id: string | null;
+  source: MediaAssetRecord["source"];
+  created_by_ai: boolean;
+  conversation_id: string | null;
+  project_id: string | null;
   created_at: string;
 };
 
 const ASSET_COLUMNS =
-  "id, folder_id, kind, file_name, mime_type, byte_size, category, tags, ai_status, ai_labels, variant, source_asset_id, created_at";
+  "id, folder_id, kind, file_name, mime_type, byte_size, category, tags, ai_status, ai_labels, variant, source_asset_id, source, created_by_ai, conversation_id, project_id, created_at";
 
 function rowToAsset(row: AssetRow): MediaAssetRecord {
   return {
@@ -168,6 +180,10 @@ function rowToAsset(row: AssetRow): MediaAssetRecord {
     aiLabels: row.ai_labels ?? {},
     variant: row.variant,
     sourceAssetId: row.source_asset_id,
+    source: row.source,
+    createdByAi: row.created_by_ai,
+    conversationId: row.conversation_id,
+    projectId: row.project_id,
     createdAt: row.created_at,
   };
 }
@@ -179,6 +195,9 @@ export interface MediaListFilter {
   tag?: string;
   search?: string;
   aiStatus?: MediaAssetRecord["aiStatus"];
+  /** Phase G — the workspace reads: a conversation's / a project's files. */
+  conversationId?: string;
+  projectId?: string;
   limit?: number;
   offset?: number;
 }
@@ -210,6 +229,14 @@ export async function listMediaAssets(businessId: string, filter: MediaListFilte
   if (filter.aiStatus) {
     params.push(filter.aiStatus);
     where.push(`ai_status = $${++i}`);
+  }
+  if (filter.conversationId) {
+    params.push(filter.conversationId);
+    where.push(`conversation_id = $${++i}`);
+  }
+  if (filter.projectId) {
+    params.push(filter.projectId);
+    where.push(`project_id = $${++i}`);
   }
   if (filter.search) {
     params.push(`%${filter.search}%`);
@@ -272,6 +299,11 @@ export async function storeMediaAsset(input: {
   folderId?: string | null;
   variant?: "original" | "enhanced";
   sourceAssetId?: string | null;
+  /** Phase G — provenance. Defaults preserve the historic "human upload". */
+  source?: "upload" | "ai_attachment" | "ai_generated";
+  createdByAi?: boolean;
+  conversationId?: string | null;
+  projectId?: string | null;
 }): Promise<MediaAssetRecord> {
   const { rows: idRows } = await query<{ id: string }>(`SELECT gen_random_uuid() AS id`);
   const assetId = idRows[0].id;
@@ -279,11 +311,17 @@ export async function storeMediaAsset(input: {
 
   await s3Put(s3ConfigOf(input.config), key, input.bytes);
 
+  // The bytes are the assistant's own only for a generated image; an
+  // ai_attachment is a user's file the assistant merely handled, so it is not
+  // AI-authored. Derive the flag from source unless the caller overrides it.
+  const source = input.source ?? "upload";
+  const createdByAi = input.createdByAi ?? source === "ai_generated";
+
   const { rows } = await query<AssetRow>(
     `INSERT INTO media_assets
        (id, business_id, folder_id, kind, file_name, mime_type, byte_size, storage_key, sha256,
-        variant, source_asset_id, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        variant, source_asset_id, created_by, source, created_by_ai, conversation_id, project_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      RETURNING ${ASSET_COLUMNS}`,
     [
       assetId,
@@ -298,6 +336,10 @@ export async function storeMediaAsset(input: {
       input.variant ?? "original",
       input.sourceAssetId ?? null,
       input.userId,
+      source,
+      createdByAi,
+      input.conversationId ?? null,
+      input.projectId ?? null,
     ],
   );
   return rowToAsset(rows[0]);

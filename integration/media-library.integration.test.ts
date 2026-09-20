@@ -34,6 +34,7 @@ let media: typeof import("../src/lib/media-service");
 let mediaLib: typeof import("../src/lib/media");
 let wallet: typeof import("../src/lib/wallet-service");
 let dbLib: typeof import("../src/lib/db");
+let mediaPersist: typeof import("../src/lib/ai-media-persist");
 
 const BID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // کافه اول — the funded one
 const BID2 = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; // کافه دوم — the broke one
@@ -110,6 +111,7 @@ beforeAll(async () => {
   mediaLib = await import("../src/lib/media");
   wallet = await import("../src/lib/wallet-service");
   dbLib = await import("../src/lib/db");
+  mediaPersist = await import("../src/lib/ai-media-persist");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -423,5 +425,193 @@ describe("daily billing tick", () => {
     // The exact number matters less than the invariant: rounded UP, never free.
     expect(Number(rows[0].per_gb_rial)).toBeGreaterThan(0);
     expect(Number(rows[0].amount_rial)).toBe(5000 + Number(rows[0].per_gb_rial));
+  });
+});
+
+describe("Phase G — asset provenance (source, AI authorship, conversation/project)", () => {
+  it("defaults an ordinary store to a human upload with no workspace", async () => {
+    const bytes = pngOf(300);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "plain.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+      }),
+    );
+    expect(asset.source).toBe("upload");
+    expect(asset.createdByAi).toBe(false);
+    expect(asset.conversationId).toBeNull();
+    expect(asset.projectId).toBeNull();
+  });
+
+  it("records an AI attachment as user-authored but AI-adjacent, linked to its conversation", async () => {
+    const { rows: conv } = await db.query<{ id: string }>(
+      `INSERT INTO ai_conversations (business_id, actor_user_id, mode, title)
+       VALUES ($1, gen_random_uuid(), 'dashboard', 'رسید') RETURNING id`,
+      [BID],
+    );
+    const bytes = pngOf(400);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "receipt.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+        source: "ai_attachment", conversationId: conv[0].id,
+      }),
+    );
+    expect(asset.source).toBe("ai_attachment");
+    // An attachment is the user's own file; only generation is AI-authored.
+    expect(asset.createdByAi).toBe(false);
+    expect(asset.conversationId).toBe(conv[0].id);
+  });
+
+  it("marks a generated image AI-authored and derives createdByAi from source", async () => {
+    const bytes = pngOf(500);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "generated.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+        source: "ai_generated",
+      }),
+    );
+    expect(asset.source).toBe("ai_generated");
+    expect(asset.createdByAi).toBe(true);
+  });
+
+  it("filters the library by conversation and by project", async () => {
+    const { rows: proj } = await db.query<{ id: string }>(
+      `INSERT INTO ai_projects (business_id, name, created_by) VALUES ($1, 'کمپین', 'seed') RETURNING id`,
+      [BID],
+    );
+    const { rows: conv } = await db.query<{ id: string }>(
+      `INSERT INTO ai_conversations (business_id, actor_user_id, mode, title, project_id)
+       VALUES ($1, gen_random_uuid(), 'dashboard', 'نخ', $2) RETURNING id`,
+      [BID, proj[0].id],
+    );
+    const bytes = pngOf(360);
+    const inWorkspace = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "ws.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+        source: "ai_generated", conversationId: conv[0].id, projectId: proj[0].id,
+      }),
+    );
+
+    const byConv = await scoped(BID, () => media.listMediaAssets(BID, { conversationId: conv[0].id }));
+    expect(byConv.assets.map((a) => a.id)).toContain(inWorkspace.id);
+    expect(byConv.assets.every((a) => a.conversationId === conv[0].id)).toBe(true);
+
+    const byProject = await scoped(BID, () => media.listMediaAssets(BID, { projectId: proj[0].id }));
+    expect(byProject.assets.map((a) => a.id)).toContain(inWorkspace.id);
+    expect(byProject.assets.every((a) => a.projectId === proj[0].id)).toBe(true);
+  });
+
+  it("nulls the links when the conversation or project is deleted, keeping the asset", async () => {
+    const { rows: proj } = await db.query<{ id: string }>(
+      `INSERT INTO ai_projects (business_id, name, created_by) VALUES ($1, 'موقت', 'seed') RETURNING id`,
+      [BID],
+    );
+    const { rows: conv } = await db.query<{ id: string }>(
+      `INSERT INTO ai_conversations (business_id, actor_user_id, mode, title, project_id)
+       VALUES ($1, gen_random_uuid(), 'dashboard', 'نخ موقت', $2) RETURNING id`,
+      [BID, proj[0].id],
+    );
+    const bytes = pngOf(320);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "keep.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+        source: "ai_attachment", conversationId: conv[0].id, projectId: proj[0].id,
+      }),
+    );
+
+    await db.query(`DELETE FROM ai_conversations WHERE id = $1`, [conv[0].id]);
+    await db.query(`DELETE FROM ai_projects WHERE id = $1`, [proj[0].id]);
+
+    const survived = await scoped(BID, () => media.getMediaAsset(BID, asset.id));
+    expect(survived).not.toBeNull();
+    expect(survived!.conversationId).toBeNull();
+    expect(survived!.projectId).toBeNull();
+    // The provenance label itself is retained — we still know it came from chat.
+    expect(survived!.source).toBe("ai_attachment");
+  });
+});
+
+describe("Phase G pt.2 — persisting AI chat image attachments into the library", () => {
+  // The config singleton was saved earlier in this file; persist reads it via
+  // getMediaConfig(). Guard by re-saving so this block is order-independent.
+  beforeAll(async () => {
+    await dbLib.withoutTenantScope("test", () => media.saveMediaConfig(config, null));
+  });
+
+  function pngDataUrl(size: number): string {
+    return `data:image/png;base64,${pngOf(size).toString("base64")}`;
+  }
+
+  it("stores a chat image with source=ai_attachment linked to its conversation and project", async () => {
+    const { rows: proj } = await db.query<{ id: string }>(
+      `INSERT INTO ai_projects (business_id, name, created_by) VALUES ($1, 'کمپین چت', 'seed') RETURNING id`,
+      [BID],
+    );
+    const { rows: conv } = await db.query<{ id: string }>(
+      `INSERT INTO ai_conversations (business_id, actor_user_id, mode, title, project_id)
+       VALUES ($1, gen_random_uuid(), 'dashboard', 'رسید چت', $2) RETURNING id`,
+      [BID, proj[0].id],
+    );
+
+    const stored = await scoped(BID, () =>
+      mediaPersist.persistChatImageAttachments({
+        businessId: BID,
+        userId: null,
+        conversationId: conv[0].id,
+        projectId: proj[0].id,
+        attachments: [
+          { kind: "image", dataUrl: pngDataUrl(220), name: "رسید.png" },
+          // A PDF in the same turn must NOT be persisted — only images are kept.
+          { kind: "pdf", dataUrl: "data:application/pdf;base64,JVBERi0xLjc=", name: "فاکتور.pdf" },
+        ],
+      }),
+    );
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0].source).toBe("ai_attachment");
+    expect(stored[0].createdByAi).toBe(false);
+    expect(stored[0].conversationId).toBe(conv[0].id);
+    expect(stored[0].projectId).toBe(proj[0].id);
+    expect(stored[0].fileName).toBe("رسید.png");
+
+    // It is now a real, listable library asset for this conversation.
+    const listed = await scoped(BID, () => media.listMediaAssets(BID, { conversationId: conv[0].id }));
+    expect(listed.assets.map((a) => a.id)).toContain(stored[0].id);
+  });
+
+  it("skips silently when storage is not configured", async () => {
+    await dbLib.withoutTenantScope("test", () =>
+      media.saveMediaConfig({ ...config, enabled: false }, null),
+    );
+    const stored = await scoped(BID, () =>
+      mediaPersist.persistChatImageAttachments({
+        businessId: BID,
+        userId: null,
+        conversationId: null,
+        projectId: null,
+        attachments: [{ kind: "image", dataUrl: pngDataUrl(120) }],
+      }),
+    );
+    expect(stored).toEqual([]);
+    // Restore for any later block.
+    await dbLib.withoutTenantScope("test", () => media.saveMediaConfig(config, null));
+  });
+
+  it("refuses a mislabeled image (bytes not matching the MIME) without storing it", async () => {
+    const evil = Buffer.from("<script>alert(1)</script>").toString("base64");
+    const stored = await scoped(BID, () =>
+      mediaPersist.persistChatImageAttachments({
+        businessId: BID,
+        userId: null,
+        conversationId: null,
+        projectId: null,
+        attachments: [{ kind: "image", dataUrl: `data:image/png;base64,${evil}` }],
+      }),
+    );
+    expect(stored).toEqual([]);
   });
 });

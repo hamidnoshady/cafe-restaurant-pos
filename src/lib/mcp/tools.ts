@@ -71,8 +71,15 @@ export interface McpTool {
  *   * `draft_expense_from_receipt` — reads an image the caller attached to the
  *     current chat turn. There is no such attachment over MCP; the tool would
  *     always answer "no image".
+ *   * `request_input` — the in-app structured-input protocol (Phase E). It asks
+ *     the human a typed question and waits for a card to be answered; over MCP
+ *     there is no card and no user to answer it, so it has no meaning.
  */
-const EXCLUDED_READ_TOOLS = new Set(["propose_action", "draft_expense_from_receipt"]);
+const EXCLUDED_READ_TOOLS = new Set([
+  "propose_action",
+  "draft_expense_from_receipt",
+  "request_input",
+]);
 
 /**
  * One English sentence per read tool.
@@ -122,6 +129,9 @@ export const MCP_READ_TOOL_SUMMARIES: Record<string, string> = {
   list_website_posts: "The business's website posts (drafts and published) with id, title, status and dates. Get a post id here before editing it.",
   list_website_products: "Products on the business's website with remote id, title, SKU, price in integer Rial and the site's stock figure.",
   get_website_status: "Whether a website is connected, its domain, the last connection test, the price/stock push switches and the sync queue counts (pending / failed / dead).",
+  // Phase C — the messaging reads that feed the campaign-create action.
+  list_message_templates: "Saved message templates by id, channel (sms/email), name and body. Get a template id here before creating a campaign.",
+  list_message_campaigns: "The business's message campaigns (draft, sending, done) with id, name, channel, status and recipient / sent / delivered / failed counts.",
 };
 
 function readDescriptor(tool: OpenAiTool): McpToolDescriptor {

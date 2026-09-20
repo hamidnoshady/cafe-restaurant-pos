@@ -119,6 +119,26 @@ export interface AiGatewayConfig {
 }
 
 /**
+ * What one assistant turn cost, resolved from the gateway's own reported figure.
+ *
+ * `resolveGatewayTurnPricing` (ai-gateway-service.ts) reads LiteLLM's
+ * `x-litellm-response-cost` header, converts the USD figure to Rial with the
+ * operator's FX rate, and applies any platform margin, producing this shape;
+ * `settleAiTurn` (ai-wallet-billing.ts) then decrements the wallet by
+ * `chargedRial`.
+ *
+ * Phase J relocated this type here from the now-deleted `ai-billing-service.ts`.
+ * It is a pure pricing shape (no money side effects, no schema), so it belongs
+ * with the gateway's other framework-free config types rather than with the
+ * legacy billing service that once also owned the credit ledger.
+ */
+export interface AiGatewayTurnPricing {
+  costUsd: number;
+  costRial: number;
+  chargedRial: number;
+}
+
+/**
  * Gateway config with the master key replaced by a boolean.
  *
  * Only the master key is a bearer credential and stays server-side; the costing

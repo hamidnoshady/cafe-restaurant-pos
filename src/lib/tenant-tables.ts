@@ -45,10 +45,10 @@ export const EXEMPT_TABLES = new Set([
   // distribution (migration 0038) — carries no business_id/location_id,
   // nothing to scope by, same shape as feature_flags/plans.
   "platform_update_config",
-  // Phase 18 & Phase 39 — singleton platform provider config (platform_ai_gateway)
-  // plus globally shared priced catalogues.
-  "ai_credit_packages",
-  "ai_subscription_plans",
+  // Phase J dropped the legacy AI credit catalogues (ai_credit_packages,
+  // ai_subscription_plans) with the rest of the Phase 18 billing schema
+  // (migration 0164); the singleton provider config platform_ai_gateway is
+  // listed below on its own.
   // Phase 35 — one deployment-wide VAPID key pair for Web Push (migration
   // 0102). Same shape as platform_ai_gateway: a singleton with no business_id,
   // and rotating it would invalidate every business's registered devices at
@@ -77,7 +77,7 @@ export const EXEMPT_TABLES = new Set([
   // Phase 37 (SMS/email marketing) — the platform's own message config
   // (singleton, credentials encrypted at rest) and its global credit-package
   // catalogue: neither carries a business_id, the same shape as
-  // platform_ai_gateway / ai_credit_packages. Every business-owned messaging
+  // platform_ai_gateway. Every business-owned messaging
   // table (message_business_billing, message_credit_ledger,
   // message_top_up_requests, message_templates, message_campaigns,
   // message_recipients, message_outbox) is RLS-protected in its migration and

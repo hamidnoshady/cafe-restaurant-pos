@@ -26,12 +26,11 @@ import { getPlatformAiConfig, isPlatformAiConfigured, type PlatformAiConfig } fr
 import { decorateAiConfig } from "./ai-runtime";
 import { runBusinessAutopilot } from "./ai-autopilot-service";
 import {
-  AiInsufficientCreditError,
-  cancelAiTurnReservation,
-  reserveAiTurn,
+  AiWalletInsufficientError,
+  gateAiTurn,
+  newAiRequestId,
   settleAiTurn,
-  type AiTurnReservation,
-} from "./ai-billing-service";
+} from "./ai-wallet-billing";
 import { runAgentTurn } from "./ai-service";
 import { runReadTool } from "./ai-tools";
 import { listCustomerBalances, UNKNOWN_CUSTOMER_KEY } from "./ar-service";
@@ -39,6 +38,7 @@ import { query, withTenant, withoutTenantScope } from "./db";
 import { isFeatureEnabled } from "./features";
 import { serviceDueDate } from "./watch";
 import { runCoworkerTick } from "./ai-coworker-service";
+import { runAutomationsTick } from "./ai-automations-service";
 import {
   AGENT_RUN_KIND,
   AI_AGENT_KEYS,
@@ -533,19 +533,16 @@ async function runDigest(input: {
   const claim = await claimRun(input.businessId, input.kind, proactivePeriodKey(input.kind, input.clock));
   if (!claim) return false;
 
-  let reservation: AiTurnReservation | null = null;
+  const requestId = newAiRequestId();
   let facts: unknown;
   try {
     facts = await collectDigestFacts(input.businessId, input.clock, input.kind, input.inclusion);
+    // Phase B — gate on the wallet before doing background work; a business
+    // that cannot afford AI has its digest skipped, not reserved against.
     try {
-      reservation = await reserveAiTurn({
-        businessId: input.businessId,
-        reservedRial: input.config.maxTurnRial,
-        userId: null,
-        metadata: { source: "proactive", kind: input.kind, periodKey: claim.periodKey },
-      });
+      await gateAiTurn(input.businessId, input.config);
     } catch (error) {
-      if (error instanceof AiInsufficientCreditError) {
+      if (error instanceof AiWalletInsufficientError) {
         await finishRun({
           businessId: input.businessId,
           runId: claim.id,
@@ -565,14 +562,18 @@ async function runDigest(input: {
       promptContext: { mode: "proactive", businessName: await businessName(input.businessId) },
       messages: [{ role: "user", content: digestPrompt(input.kind, input.clock, facts) }],
     });
-    const activeReservation = reservation;
-    if (!activeReservation) throw new Error("ai_reservation_not_created");
     await settleAiTurn({
       businessId: input.businessId,
-      reservation: activeReservation,
+      requestId,
+      config: input.config,
       usage: reply.usage,
-      inputTokenRialPerMillion: input.config.inputTokenRialPerMillion,
-      outputTokenRialPerMillion: input.config.outputTokenRialPerMillion,
+      costUsd: reply.costUsd,
+      attribution: {
+        requestType: "proactive",
+        model: input.config.model,
+        userId: null,
+        metadata: { source: "proactive", kind: input.kind, periodKey: claim.periodKey },
+      },
     });
     await finishRun({
       businessId: input.businessId,
@@ -580,17 +581,12 @@ async function runDigest(input: {
       status: "completed",
       content: reply.content,
       facts,
-      creditRequestId: activeReservation.requestId,
+      creditRequestId: requestId,
     });
     return true;
   } catch (error) {
-    if (reservation) {
-      await cancelAiTurnReservation({
-        businessId: input.businessId,
-        reservation,
-        reason: errorText(error),
-      }).catch((cancelError) => console.error("proactive AI credit reservation refund failed", cancelError));
-    }
+    // Phase B — no reservation to cancel; a failed digest that never reached
+    // the provider settled nothing.
     await finishRun({
       businessId: input.businessId,
       runId: claim.id,
@@ -753,6 +749,22 @@ async function runBusinessProactiveJobs(
   // shift just closed" cannot wait for the once-a-day digest hour, and a job's
   // actions are built by a pure template with no provider call, so it spends no
   // credits and needs no credit opt-in. It must never take the digests down.
+  //
+  // Phase D — automations ride the same tick, and MUST run before the coworker:
+  // an event automation reads the same lifecycle events (shift close, day
+  // close) the coworker does, and the coworker's tick clears that queue
+  // (`markEventsProcessed`) when it finishes. Running automations first means
+  // both features see the unprocessed rows; the automation's own per-event run
+  // claim (not the processed flag) is what keeps it idempotent across ticks.
+  // Like the coworker it uses no provider and spends no credit, so it needs no
+  // opt-in and must never take the digests down.
+  let automationsCompleted = 0;
+  try {
+    automationsCompleted = await runAutomationsTick(businessId, clock, now);
+  } catch (error) {
+    console.error(`automations tick failed for business ${businessId}:`, errorText(error));
+  }
+
   let coworkerCompleted = 0;
   try {
     coworkerCompleted = await runCoworkerTick(businessId, clock);
@@ -761,7 +773,7 @@ async function runBusinessProactiveJobs(
   }
 
   const due = dueProactiveRuns(settings, clock);
-  if (due.length === 0) return coworkerCompleted;
+  if (due.length === 0) return coworkerCompleted + automationsCompleted;
   // Phase 31 — autopilot rides this tick rather than opening a second business
   // enumeration under its own bypass. It is gated by the same credit opt-in
   // (settings.enabled, already true to be here) plus its own per-category
@@ -801,7 +813,7 @@ async function runBusinessProactiveJobs(
       console.error(`proactive AI ${kind} run failed for business ${businessId}:`, errorText(error));
     }
   }
-  return completed + autopilotCompleted + coworkerCompleted;
+  return completed + autopilotCompleted + coworkerCompleted + automationsCompleted;
 }
 
 /**

@@ -83,6 +83,8 @@ export const NOTIFICATION_EVENT_KEYS = [
   "ai.coworker.pending",
   "ai.coworker.reported",
   "ai.coworker.failed",
+  "ai.automation.pending",
+  "ai.automation.failed",
   "system.test",
 ] as const;
 export type NotificationEventKey = (typeof NOTIFICATION_EVENT_KEYS)[number];
@@ -249,6 +251,27 @@ export const NOTIFICATION_EVENTS: Record<NotificationEventKey, NotificationEvent
     group: "ai",
     label: "اجرای ناموفق کار همکار هوشمند",
     description: "وقتی یکی از کارهای تعریف‌شده اجرا می‌شود ولی به خطا می‌خورد.",
+    defaultSeverity: "important",
+    defaultRoles: ["owner"],
+    perLocation: true,
+    hasAmount: false,
+  },
+  "ai.automation.pending": {
+    key: "ai.automation.pending",
+    group: "ai",
+    label: "اتوماسیون در انتظار تأیید",
+    description:
+      "وقتی یک اتوماسیون (اگر… آنگاه…) اجرا می‌شود و اقدامش برای ثبت به تأیید شما نیاز دارد.",
+    defaultSeverity: "important",
+    defaultRoles: ["owner"],
+    perLocation: true,
+    hasAmount: false,
+  },
+  "ai.automation.failed": {
+    key: "ai.automation.failed",
+    group: "ai",
+    label: "اجرای ناموفق اتوماسیون",
+    description: "وقتی یک اتوماسیون اجرا می‌شود ولی به خطا می‌خورد.",
     defaultSeverity: "important",
     defaultRoles: ["owner"],
     perLocation: true,
