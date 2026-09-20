@@ -22,7 +22,12 @@ import { partyScopeFor } from "@/lib/parties-scopes";
 import type { GrowthCustomer } from "@/app/api/growth/customers/route";
 import { Button } from "@/components/ui/button";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
-import { EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
+import {
+  EmptyState,
+  SectionCard,
+  SectionCardSkeleton,
+  StatusBadge,
+} from "@/app/dashboard/page-chrome";
 import { PartyFormDialog } from "@/app/dashboard/parties/party-form";
 import {
   DataTable,
@@ -42,7 +47,9 @@ function stageLabel(stage: string | null): string {
 }
 
 /** A stage's badge tone, so the table reads at a glance the way the CRM's does. */
-function stageTone(stage: string | null): "active" | "positive" | "neutral" | "danger" {
+function stageTone(
+  stage: string | null,
+): "active" | "positive" | "neutral" | "danger" {
   if (!stage) return "neutral";
   return LIFECYCLE_STAGES[stage as LifecycleStage]?.tone ?? "neutral";
 }
@@ -155,11 +162,18 @@ export function GrowthCustomersSection({
     if (fetchedPinFor.current === key) return;
     fetchedPinFor.current = key;
     const controller = new AbortController();
-    void api<CustomersResponse>(`/api/growth/customers?id=${encodeURIComponent(selectedCustomerId)}`, {
-      signal: controller.signal,
-    }).then(({ ok, data, aborted }) => {
+    void api<CustomersResponse>(
+      `/api/growth/customers?id=${encodeURIComponent(selectedCustomerId)}`,
+      {
+        signal: controller.signal,
+      },
+    ).then(({ ok, data, aborted }) => {
       if (aborted || !ok) return;
-      setPinned(data.customers?.find((customer) => customer.id === selectedCustomerId) ?? null);
+      setPinned(
+        data.customers?.find(
+          (customer) => customer.id === selectedCustomerId,
+        ) ?? null,
+      );
     });
     return () => controller.abort();
   }, [selectedCustomerId, refreshKey]);
@@ -168,7 +182,8 @@ export function GrowthCustomersSection({
   // contain it, in place when it does.
   const rows = useMemo(() => {
     const list = customers ?? [];
-    if (!pinned || list.some((customer) => customer.id === pinned.id)) return list;
+    if (!pinned || list.some((customer) => customer.id === pinned.id))
+      return list;
     return [pinned, ...list];
   }, [customers, pinned]);
 
@@ -188,8 +203,12 @@ export function GrowthCustomersSection({
       <SectionCard
         title={
           <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مشتریان وفادار</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان</h2>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+              مشتریان وفادار
+            </p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">
+              مشتریان
+            </h2>
           </div>
         }
         description="این فهرست رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ستون‌ها برای کار رشد‌اند — چرخهٔ حیات، امتیاز و خرید. افزودن و ویرایش در همین بخش انجام می‌شود و پروندهٔ کامل (یادداشت‌ها و تاریخچه) در CRM است."
@@ -203,7 +222,9 @@ export function GrowthCustomersSection({
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <label className="block w-full min-w-0 sm:max-w-sm">
-            <span className="mb-1 block text-xs font-semibold text-muted-foreground">جست‌وجوی مشتری</span>
+            <span className="mb-1 block text-xs font-semibold text-muted-foreground">
+              جست‌وجوی مشتری
+            </span>
             <input
               className={inputClass}
               type="search"
@@ -211,6 +232,7 @@ export function GrowthCustomersSection({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="جستجو با نام یا تلفن…"
+              aria-label="جستجو با نام یا تلفن"
             />
           </label>
           <label className="flex items-center gap-2 text-sm text-muted-foreground sm:pb-2.5">
@@ -242,7 +264,10 @@ export function GrowthCustomersSection({
           </EmptyState>
         ) : (
           <>
-            <DataTable caption="فهرست مشتریان باشگاه" className="hidden lg:block">
+            <DataTable
+              caption="فهرست مشتریان باشگاه"
+              className="hidden lg:block"
+            >
               <DataTableHead>
                 <Th>مشتری</Th>
                 <Th>تلفن</Th>
@@ -255,17 +280,25 @@ export function GrowthCustomersSection({
               </DataTableHead>
               <DataTableBody>
                 {customers.map((customer) => (
-                  <DataTableRow key={customer.id} selected={customer.id === selectedCustomerId}>
+                  <DataTableRow
+                    key={customer.id}
+                    selected={customer.id === selectedCustomerId}
+                  >
                     <Td>
                       <Link
                         href={crmCustomerHref(customer.id)}
                         className="inline-flex items-center gap-2 font-medium text-foreground hover:underline"
                       >
-                        <ContactIcon className="size-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
+                        <ContactIcon
+                          className="size-4 shrink-0 text-teal-700 dark:text-teal-300"
+                          aria-hidden="true"
+                        />
                         {customer.displayName}
                       </Link>
                     </Td>
-                    <Td muted>{customer.phone ? toPersianDigits(customer.phone) : "—"}</Td>
+                    <Td muted>
+                      {customer.phone ? toPersianDigits(customer.phone) : "—"}
+                    </Td>
                     <Td>{stageLabel(customer.lifecycleStage)}</Td>
                     <Td numeric>{formatPersianNumber(customer.orderCount)}</Td>
                     <Td numeric className="font-semibold">
@@ -273,13 +306,20 @@ export function GrowthCustomersSection({
                     </Td>
                     <Td numeric>{formatPersianNumber(customer.points)}</Td>
                     <Td>
-                      <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
+                      <StatusBadge
+                        tone={customer.isActive ? "positive" : "neutral"}
+                      >
                         {customer.isActive ? "فعال" : "آرشیو"}
                       </StatusBadge>
                     </Td>
                     {canManage ? (
                       <Td>
-                        <Button type="button" variant="ghost" size="xs" onClick={() => setForm({ partyId: customer.id })}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => setForm({ partyId: customer.id })}
+                        >
                           ویرایش
                         </Button>
                       </Td>
@@ -301,10 +341,15 @@ export function GrowthCustomersSection({
                           href={crmCustomerHref(customer.id)}
                           className="flex items-center gap-2 font-semibold text-foreground hover:underline"
                         >
-                          <ContactIcon className="size-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
+                          <ContactIcon
+                            className="size-4 shrink-0 text-teal-700 dark:text-teal-300"
+                            aria-hidden="true"
+                          />
                           {/* A long name must wrap inside the card rather than push
                               the status badge off the edge of a phone screen. */}
-                          <span className="min-w-0 break-words">{customer.displayName}</span>
+                          <span className="min-w-0 break-words">
+                            {customer.displayName}
+                          </span>
                         </Link>
                         {customer.phone ? (
                           <a
@@ -315,35 +360,57 @@ export function GrowthCustomersSection({
                             {toPersianDigits(customer.phone)}
                           </a>
                         ) : (
-                          <p className="mt-1 text-xs text-muted-foreground">شماره‌ای ثبت نشده</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            شماره‌ای ثبت نشده
+                          </p>
                         )}
                       </div>
-                      <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
+                      <StatusBadge
+                        tone={customer.isActive ? "positive" : "neutral"}
+                      >
                         {customer.isActive ? "فعال" : "آرشیو"}
                       </StatusBadge>
                     </div>
                     <dl className="mt-3 grid gap-2 border-t border-border/80 pt-3 text-sm sm:grid-cols-2">
                       <div className="min-w-0">
-                        <dt className="text-xs text-muted-foreground">مرحلهٔ چرخهٔ حیات</dt>
-                        <dd className="mt-1 font-medium">{stageLabel(customer.lifecycleStage)}</dd>
+                        <dt className="text-xs text-muted-foreground">
+                          مرحلهٔ چرخهٔ حیات
+                        </dt>
+                        <dd className="mt-1 font-medium">
+                          {stageLabel(customer.lifecycleStage)}
+                        </dd>
                       </div>
                       <div className="min-w-0">
-                        <dt className="text-xs text-muted-foreground">امتیاز وفاداری</dt>
-                        <dd className="mt-1 font-medium tabular-nums">{formatPersianNumber(customer.points)}</dd>
+                        <dt className="text-xs text-muted-foreground">
+                          امتیاز وفاداری
+                        </dt>
+                        <dd className="mt-1 font-medium tabular-nums">
+                          {formatPersianNumber(customer.points)}
+                        </dd>
                       </div>
                       <div className="min-w-0">
-                        <dt className="text-xs text-muted-foreground">خریدها</dt>
-                        <dd className="mt-1 font-medium tabular-nums">{formatPersianNumber(customer.orderCount)}</dd>
+                        <dt className="text-xs text-muted-foreground">
+                          خریدها
+                        </dt>
+                        <dd className="mt-1 font-medium tabular-nums">
+                          {formatPersianNumber(customer.orderCount)}
+                        </dd>
                       </div>
                       <div className="min-w-0">
-                        <dt className="text-xs text-muted-foreground">مجموع خرید</dt>
+                        <dt className="text-xs text-muted-foreground">
+                          مجموع خرید
+                        </dt>
                         <dd className="mt-1 font-medium tabular-nums break-words">
                           {money.format(customer.totalSpentRial)}
                         </dd>
                       </div>
                       <div className="min-w-0">
-                        <dt className="text-xs text-muted-foreground">آخرین خرید</dt>
-                        <dd className="mt-1 font-medium tabular-nums">{purchaseDate(customer.lastPurchaseDate)}</dd>
+                        <dt className="text-xs text-muted-foreground">
+                          آخرین خرید
+                        </dt>
+                        <dd className="mt-1 font-medium tabular-nums">
+                          {purchaseDate(customer.lastPurchaseDate)}
+                        </dd>
                       </div>
                     </dl>
                     {canManage ? (
@@ -372,7 +439,8 @@ export function GrowthCustomersSection({
             className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground"
           >
             <span>
-              صفحهٔ {toPersianDigits(String(page))} از {toPersianDigits(String(totalPages))}
+              صفحهٔ {toPersianDigits(String(page))} از{" "}
+              {toPersianDigits(String(totalPages))}
             </span>
             <div className="flex gap-2">
               <Button
@@ -388,7 +456,9 @@ export function GrowthCustomersSection({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setPage((current) => Math.min(current + 1, totalPages))}
+                onClick={() =>
+                  setPage((current) => Math.min(current + 1, totalPages))
+                }
                 disabled={page >= totalPages || loading}
               >
                 بعدی
