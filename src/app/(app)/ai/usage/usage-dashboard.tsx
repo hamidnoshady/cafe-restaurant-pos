@@ -21,13 +21,21 @@ import { WalletIcon } from "lucide-react";
 import { api } from "@/app/dashboard/ui";
 import { useFeatureLocked } from "@/components/feature-lock";
 import {
-  cardClass,
   EmptyState,
+  KpiCard,
+  KpiRow,
   LoadingSkeleton,
   SectionCard,
   StatusBadge,
 } from "@/app/dashboard/page-chrome";
-import { cn } from "@/lib/utils";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
 import { formatToman } from "@/lib/money";
 import { toPersianDigits } from "@/lib/digits";
 import {
@@ -155,8 +163,8 @@ export function UsageDashboard() {
       </div>
 
       {/* Headline cards */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
+      <KpiRow className="grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
+        <KpiCard
           label="هزینهٔ این بازه"
           value={formatToman(summary.totalChargedRial)}
           hint={
@@ -165,23 +173,32 @@ export function UsageDashboard() {
               : undefined
           }
         />
-        <StatCard label="تعداد درخواست" value={`${fa(summary.totalTurns)} درخواست`} />
-        <StatCard
+        <KpiCard label="تعداد درخواست" value={`${fa(summary.totalTurns)} درخواست`} />
+        <KpiCard
           label="استفاده از حافظهٔ پاسخ"
           value={percentText(hitRate)}
           hint={`${fa(summary.cacheHits)} پاسخ از حافظه`}
         />
-        <StatCard
+        <KpiCard
           label="موجودی کیف پول"
-          value={formatToman(summary.balanceRial)}
+          // A debt reads in amber on the wallet tile, the one figure a manager
+          // must act on; a healthy balance keeps the default foreground.
+          value={
+            summary.debtRial > 0 ? (
+              <span className="text-amber-600 dark:text-amber-400">
+                {formatToman(summary.balanceRial)}
+              </span>
+            ) : (
+              formatToman(summary.balanceRial)
+            )
+          }
           hint={
             summary.debtRial > 0
               ? `بدهی هوش مصنوعی: ${formatToman(summary.debtRial)}`
               : undefined
           }
-          tone={summary.debtRial > 0 ? "warning" : undefined}
         />
-      </div>
+      </KpiRow>
 
       {/* Debt warning — the same backstop the pre-request gate enforces. */}
       {summary.debtRial > 0 ? (
@@ -245,96 +262,63 @@ export function UsageDashboard() {
             <EmptyState>در این بازه درخواستی ثبت نشده است.</EmptyState>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-border/80 text-xs text-muted-foreground">
-                  <th className="px-4 py-2 text-start font-medium">نوع کار</th>
-                  <th className="px-4 py-2 text-start font-medium">مدل</th>
-                  <th className="px-4 py-2 text-start font-medium">توکن (ورودی/خروجی)</th>
-                  <th className="px-4 py-2 text-start font-medium">هزینه</th>
-                  <th className="px-4 py-2 text-start font-medium">قیمت‌گذاری</th>
-                  <th className="px-4 py-2 text-start font-medium">زمان</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.recentTurns.map((turn) => (
-                  <tr
-                    key={turn.id}
-                    className="border-b border-border/60 last:border-0"
-                  >
-                    <td className="px-4 py-2.5">
-                      <span className="font-medium text-foreground">
-                        {requestTypeLabel(turn.requestType)}
+          <DataTable
+            caption="آخرین درخواست‌های هوش مصنوعی"
+            frame={false}
+            tableClassName="min-w-[640px]"
+          >
+            <DataTableHead>
+              <Th>نوع کار</Th>
+              <Th>مدل</Th>
+              <Th>توکن (ورودی/خروجی)</Th>
+              <Th numeric>هزینه</Th>
+              <Th>قیمت‌گذاری</Th>
+              <Th>زمان</Th>
+            </DataTableHead>
+            <DataTableBody>
+              {summary.recentTurns.map((turn) => (
+                <DataTableRow key={turn.id}>
+                  <Td>
+                    <span className="font-medium text-foreground">
+                      {requestTypeLabel(turn.requestType)}
+                    </span>
+                    {turn.cacheHit ? (
+                      <span className="ms-2 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                        از حافظه
                       </span>
-                      {turn.cacheHit ? (
-                        <span className="ms-2 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                          از حافظه
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">
-                      {turn.model ? (
-                        <span dir="ltr" className="font-mono text-xs">
-                          {turn.model}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">
-                      {turn.inputTokens != null || turn.outputTokens != null
-                        ? `${fa(turn.inputTokens ?? 0)} / ${fa(turn.outputTokens ?? 0)}`
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 font-medium text-foreground">
-                      {formatToman(turn.chargedRial)}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <StatusBadge tone={PRICED_BY_TONE[turn.pricedBy]}>
-                        {PRICED_BY_LABEL[turn.pricedBy]}
-                      </StatusBadge>
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                      {formatDateTime(turn.createdAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    ) : null}
+                  </Td>
+                  <Td muted>
+                    {turn.model ? (
+                      <span dir="ltr" className="font-mono text-xs">
+                        {turn.model}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </Td>
+                  <Td muted>
+                    {turn.inputTokens != null || turn.outputTokens != null
+                      ? `${fa(turn.inputTokens ?? 0)} / ${fa(turn.outputTokens ?? 0)}`
+                      : "—"}
+                  </Td>
+                  <Td numeric>{formatToman(turn.chargedRial)}</Td>
+                  <Td>
+                    <StatusBadge tone={PRICED_BY_TONE[turn.pricedBy]}>
+                      {PRICED_BY_LABEL[turn.pricedBy]}
+                    </StatusBadge>
+                  </Td>
+                  <Td muted className="text-xs">
+                    {formatDateTime(turn.createdAt)}
+                  </Td>
+                </DataTableRow>
+              ))}
+            </DataTableBody>
+          </DataTable>
         )}
       </SectionCard>
     </div>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "warning";
-}) {
-  return (
-    <div className={cn(cardClass, "p-4")}>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p
-        className={
-          tone === "warning"
-            ? "mt-1 text-lg font-bold text-amber-600 dark:text-amber-400"
-            : "mt-1 text-lg font-bold text-foreground"
-        }
-      >
-        {value}
-      </p>
-      {hint ? (
-        <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{hint}</p>
-      ) : null}
-    </div>
-  );
-}
+

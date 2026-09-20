@@ -53,7 +53,7 @@ import {
 import { isAssistantSurface } from "@/lib/assistant-route";
 import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
-import { appForModule, type AppKey } from "@/lib/apps";
+import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { ACCOUNTING_SECTION_ICONS } from "@/app/(app)/accounting/accounting-icons";
@@ -465,7 +465,9 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
         ...launcher,
         href,
         active: isActive(pathname, href),
-        appState: stateByApp.get(launcher.key),
+        // `ai` is not an `AppKey`, so it has no app-availability state to badge;
+        // `stateByApp` is keyed by `AppKey` only.
+        appState: isAppKey(launcher.key) ? stateByApp.get(launcher.key) : undefined,
       },
     ];
   });
