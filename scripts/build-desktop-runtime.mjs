@@ -12,7 +12,7 @@ import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextDir = path.join(root, ".next");
@@ -53,7 +53,12 @@ async function compile(entryPoint, outfile) {
     // unbound import.meta.url becomes undefined and fileURLToPath throws before
     // our compiled entry can call main(). A stable non-entry URL keeps every
     // imported guard false without retaining a TypeScript loader.
-    define: { "import.meta.url": JSON.stringify("file:///__desktop_bundle_dependency__.ts") },
+    // Generate a syntactically valid file URL for the build host. A root-only
+    // `file:///__...` URL works on POSIX but is not an absolute Windows file
+    // URL (which requires a drive), and made packaged helpers fail before main.
+    define: {
+      "import.meta.url": JSON.stringify(pathToFileURL(path.join(root, "__desktop_bundle_dependency__.ts")).href),
+    },
     metafile: true,
     external: ["next", "next/*", "pg-native", "bufferutil", "utf-8-validate"],
     logLevel: "warning",
