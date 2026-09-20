@@ -13,6 +13,17 @@ import {
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import {
+  toRestaurantMenu,
+  type MenuTreePayload,
+  type RestaurantMenuCategory,
+  type RestaurantMenuItem,
+  type RestaurantMenuData,
+  type RestaurantItemModifierGroup,
+  type RestaurantModifier,
+  type RestaurantModifierGroup,
+} from "@/lib/restaurant-menu";
+import { MenuItemImage } from "../menu-item-image";
+import {
   api,
   ErrorBox,
   errorMessage,
@@ -22,28 +33,22 @@ import {
   SecondaryButton,
 } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { ChevronDown, SearchIcon, XIcon } from "lucide-react";
+import { ChevronDown, ChevronDownIcon, ChevronUpIcon, SearchIcon, XIcon } from "lucide-react";
 import { EmptyState, SectionCard } from "../page-chrome";
 import { MediaImageField, mediaFileUrl } from "../media/media-picker";
 
-interface Category {
-  id: string;
-  name: string;
-  tax_rate: string | number;
-  is_active: boolean;
-}
-interface Item {
-  id: string;
-  category_id: string | null;
-  name: string;
-  description: string | null;
-  sku: string | null;
-  price: string | number;
-  is_active: boolean;
-  target_margin_percent: string | number | null;
-  /** Catalogue photo from «کتابخانهٔ رسانه» (migration 0149). */
-  image_media_id: string | null;
-}
+/**
+ * The manager edits the canonical shared model (restaurant-menu.ts) — the
+ * same rows, field names and ordering the POS and the waiter screen sell
+ * from. No screen-local redefinitions.
+ */
+type MenuData = RestaurantMenuData;
+type Category = RestaurantMenuCategory;
+type Item = RestaurantMenuItem;
+type ModifierGroup = RestaurantModifierGroup;
+type Modifier = RestaurantModifier;
+type ItemModifierGroupLink = RestaurantItemModifierGroup;
+
 interface SuggestedPrice {
   materialCost: number;
   hasRecipe: boolean;
@@ -54,31 +59,6 @@ interface SuggestedPrice {
   marginSource: "item" | "default" | "none";
   suggestedPrice: number | null;
   currentPrice: number;
-}
-interface ModifierGroup {
-  id: string;
-  name: string;
-  min_select: number;
-  max_select: number;
-}
-interface Modifier {
-  id: string;
-  group_id: string;
-  name: string;
-  price_delta: string | number;
-  is_active: boolean;
-}
-interface ItemGroupLink {
-  menu_item_id: string;
-  modifier_group_id: string;
-}
-
-interface MenuData {
-  categories: Category[];
-  items: Item[];
-  modifierGroups: ModifierGroup[];
-  modifiers: Modifier[];
-  itemModifierGroups: ItemGroupLink[];
 }
 
 export function MenuManager({
@@ -99,8 +79,8 @@ export function MenuManager({
   const load = useCallback(async () => {
     setLoadFailed(false);
     try {
-      const { ok, data } = await api<MenuData>("/api/menu");
-      if (ok) setData(data);
+      const { ok, data } = await api<MenuTreePayload>("/api/menu");
+      if (ok) setData(toRestaurantMenu(data));
       else setLoadFailed(true);
     } catch {
       setLoadFailed(true);
@@ -173,23 +153,58 @@ function CategorySection({
   run: Runner;
 }) {
   const [name, setName] = useState("");
+  const [taxRate, setTaxRate] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
 
   async function add() {
     if (!name.trim()) return;
+    const body: Record<string, unknown> = { name };
+    // An empty box means "the business's default tax", resolved server-side —
+    // the same default the setup wizard applies.
+    const parsed = taxRate.trim();
+    if (parsed !== "") body.taxRate = Number(parsed);
     const ok = await run(() =>
       api("/api/menu/categories", {
         method: "POST",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(body),
       }),
     );
-    if (ok) setName("");
+    if (ok) {
+      setName("");
+      setTaxRate("");
+    }
+  }
+
+  /**
+   * Swaps a category with its neighbour in the stored order. The list is
+   * already sorted by (sortOrder, name); trading the two rows' values is the
+   * smallest edit that makes the move durable for the POS, the waiter and
+   * the offline snapshot alike.
+   */
+  async function move(category: Category, direction: -1 | 1) {
+    const siblings = data.categories;
+    const index = siblings.findIndex((c) => c.id === category.id);
+    const neighbour = siblings[index + direction];
+    if (!neighbour) return;
+    const a = await run(() =>
+      api(`/api/menu/categories/${category.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: neighbour.sortOrder }),
+      }),
+    );
+    if (!a) return;
+    await run(() =>
+      api(`/api/menu/categories/${neighbour.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: category.sortOrder }),
+      }),
+    );
   }
 
   return (
     <SectionCard title="دسته‌ها">
       <form
-        className="mb-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+        className="mb-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto]"
         onSubmit={(event) => {
           event.preventDefault();
           void add();
@@ -204,6 +219,16 @@ function CategorySection({
             required
           />
         </Field>
+        <Field label="نرخ مالیات (٪)" hint="خالی = پیش‌فرض کسب‌وکار">
+          <PersianNumberInput
+            className={inputClass}
+            dir="ltr"
+            inputMode="decimal"
+            value={taxRate}
+            onChange={(e) => setTaxRate(e.target.value)}
+            placeholder="پیش‌فرض"
+          />
+        </Field>
         <div className="mb-4 flex items-end">
           <SecondaryButton onClick={add} disabled={busy}>
             افزودن
@@ -211,7 +236,7 @@ function CategorySection({
         </div>
       </form>
       <ul className="divide-y divide-border">
-        {data.categories.map((c) =>
+        {data.categories.map((c, index) =>
           editingId === c.id ? (
             <EditCategoryRow
               key={c.id}
@@ -226,14 +251,36 @@ function CategorySection({
               className="flex min-w-0 flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
             >
               <span
-                className={`min-w-0 break-words ${c.is_active ? "" : "text-muted-foreground line-through"}`}
+                className={`min-w-0 break-words ${c.isActive ? "" : "text-muted-foreground line-through"}`}
               >
                 {c.name}{" "}
                 <span className="text-xs text-muted-foreground">
-                  (مالیات {toPersianDigits(c.tax_rate)}%)
+                  (مالیات {toPersianDigits(c.taxRate)}٪)
                 </span>
               </span>
               <div className="flex flex-wrap items-center gap-2">
+                <span className="flex items-center">
+                  <button
+                    type="button"
+                    aria-label={"جابه‌جایی " + c.name + " به بالا"}
+                    title="جابه‌جایی به بالا"
+                    disabled={busy || index === 0}
+                    onClick={() => void move(c, -1)}
+                    className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+                  >
+                    <ChevronUpIcon className="size-4" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={"جابه‌جایی " + c.name + " به پایین"}
+                    title="جابه‌جایی به پایین"
+                    disabled={busy || index === data.categories.length - 1}
+                    onClick={() => void move(c, 1)}
+                    className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+                  >
+                    <ChevronDownIcon className="size-4" aria-hidden="true" />
+                  </button>
+                </span>
                 <SecondaryButton disabled={busy} onClick={() => setEditingId(c.id)}>
                   ویرایش
                 </SecondaryButton>
@@ -243,12 +290,12 @@ function CategorySection({
                     run(() =>
                       api(`/api/menu/categories/${c.id}`, {
                         method: "PATCH",
-                        body: JSON.stringify({ isActive: !c.is_active }),
+                        body: JSON.stringify({ isActive: !c.isActive }),
                       }),
                     )
                   }
                 >
-                  {c.is_active ? "غیرفعال" : "فعال"}
+                  {c.isActive ? "غیرفعال" : "فعال"}
                 </SecondaryButton>
                 <SecondaryButton
                   disabled={busy}
@@ -290,14 +337,24 @@ function EditCategoryRow({
   onDone: () => void;
 }) {
   const [name, setName] = useState(category.name);
+  const [taxRate, setTaxRate] = useState(String(category.taxRate));
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
+    const rate = taxRate.trim();
+    if (rate !== "" && (Number.isNaN(Number(rate)) || Number(rate) < 0 || Number(rate) > 100)) {
+      return;
+    }
+    // Only the fields the operator actually changed are sent, so saving a
+    // rename can never reset a category-specific tax rate back to the
+    // business default.
+    const body: Record<string, unknown> = { name };
+    if (rate !== "") body.taxRate = Number(rate);
     const ok = await run(() =>
       api(`/api/menu/categories/${category.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(body),
       }),
     );
     if (ok) onDone();
@@ -307,7 +364,7 @@ function EditCategoryRow({
     <li className="py-3">
       <form
         onSubmit={save}
-        className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+        className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto]"
       >
         <Field label="نام دسته">
           <input
@@ -316,6 +373,18 @@ function EditCategoryRow({
             onChange={(e) => setName(e.target.value)}
             required
             autoFocus
+          />
+        </Field>
+        <Field
+          label="نرخ مالیات (٪)"
+          hint="فقط با تغییر مقدار ذخیره می‌شود"
+        >
+          <PersianNumberInput
+            className={inputClass}
+            dir="ltr"
+            inputMode="decimal"
+            value={taxRate}
+            onChange={(e) => setTaxRate(e.target.value)}
           />
         </Field>
         <div className="mb-4 flex items-end gap-2">
@@ -344,6 +413,9 @@ function ItemSection({
   const [categoryId, setCategoryId] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [description, setDescription] = useState("");
+  const [sku, setSku] = useState("");
+  const [imageMediaId, setImageMediaId] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
     () => new Set(),
@@ -382,19 +454,31 @@ function ItemSection({
       return;
     }
     setFormError("");
+    // Everything a normal item needs travels in the same POST — an owner
+    // never has to save, reopen and re-edit just to attach a photo or a code.
     const ok = await run(() =>
       api("/api/menu/items", {
         method: "POST",
-        body: JSON.stringify({ categoryId, name, price: priceRial }),
+        body: JSON.stringify({
+          categoryId,
+          name,
+          price: priceRial,
+          description: description.trim() || null,
+          sku: sku.trim() || null,
+          imageMediaId,
+        }),
       }),
     );
     if (ok) {
       setName("");
       setPrice("");
+      setDescription("");
+      setSku("");
+      setImageMediaId(null);
     }
   }
 
-  const activeCategories = data.categories.filter((c) => c.is_active);
+  const activeCategories = data.categories.filter((c) => c.isActive);
 
   // ⚡ Bolt: Extract expensive O(n) string computations (like lowercase)
   // out of the hot rendering loop. This memoizes the normalized text based on the
@@ -427,11 +511,11 @@ function ItemSection({
   const itemsByCategory = useMemo(() => {
     const map = new Map<string, Item[]>();
     for (const item of filteredItems) {
-      if (!item.category_id) continue;
-      let arr = map.get(item.category_id);
+      if (!item.categoryId) continue;
+      let arr = map.get(item.categoryId);
       if (!arr) {
         arr = [];
-        map.set(item.category_id, arr);
+        map.set(item.categoryId, arr);
       }
       arr.push(item);
     }
@@ -442,7 +526,7 @@ function ItemSection({
   // NULL), and such rows used to disappear from this list entirely — alive in
   // the database, sellable by no screen, fixable nowhere.
   const uncategorizedItems = useMemo(
-    () => filteredItems.filter((item) => !item.category_id),
+    () => filteredItems.filter((item) => !item.categoryId),
     [filteredItems],
   );
 
@@ -488,6 +572,30 @@ function ItemSection({
             required
           />
         </Field>
+        <Field label="کد کالا (اختیاری)" hint="در جستجوی صندوق قابل یافتن است">
+          <input
+            className={inputClass}
+            dir="ltr"
+            value={sku}
+            onChange={(e) => setSku(e.target.value)}
+            placeholder="مثلاً ESP-1"
+          />
+        </Field>
+        <Field label="توضیحات (اختیاری)">
+          <input
+            className={inputClass}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </Field>
+        <div className="sm:col-span-2 xl:col-span-3">
+          <MediaImageField
+            label="تصویر آیتم"
+            value={imageMediaId}
+            onChange={setImageMediaId}
+            disabled={busy}
+          />
+        </div>
         <div className="mb-4 flex items-end">
           <PrimaryButton
             disabled={busy || activeCategories.length === 0 || !categoryId}
@@ -507,7 +615,7 @@ function ItemSection({
           className={`${inputClass} ps-9 pe-9`}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="جستجوی آیتم…"
+          placeholder="جستجوی نام یا کد کالا…"
           aria-label="جستجوی آیتم"
           type="search"
         />
@@ -559,6 +667,7 @@ function ItemSection({
                         categories={data.categories}
                         groups={data.modifierGroups}
                         links={data.itemModifierGroups}
+                        siblings={items}
                         busy={busy}
                         run={run}
                       />
@@ -584,6 +693,7 @@ function ItemSection({
                     categories={data.categories}
                     groups={data.modifierGroups}
                     links={data.itemModifierGroups}
+                    siblings={uncategorizedItems}
                     busy={busy}
                     run={run}
                   />
@@ -602,25 +712,48 @@ function ItemRow({
   categories,
   groups,
   links,
+  siblings,
   busy,
   run,
 }: {
   item: Item;
   categories: Category[];
   groups: ModifierGroup[];
-  links: ItemGroupLink[];
+  links: ItemModifierGroupLink[];
+  siblings: Item[];
   busy: boolean;
   run: Runner;
 }) {
-  const money = useMoney();
-  const [expanded, setExpanded] = useState(false);
-  const [pricingOpen, setPricingOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const attached = new Set(
-    links
-      .filter((l) => l.menu_item_id === item.id)
-      .map((l) => l.modifier_group_id),
-  );
+  const [showingModifiers, setShowingModifiers] = useState(false);
+  const [showingPricing, setShowingPricing] = useState(false);
+  const money = useMoney();
+
+  const itemLinks = links.filter((l) => l.menuItemId === item.id);
+  const activeGroupNames = groups
+    .filter((g) => itemLinks.some((l) => l.modifierGroupId === g.id && l.isActive))
+    .map((g) => g.name);
+  const categoryName =
+    categories.find((c) => c.id === item.categoryId)?.name ?? "—";
+
+  async function move(direction: -1 | 1) {
+    const index = siblings.findIndex((s) => s.id === item.id);
+    const neighbour = siblings[index + direction];
+    if (!neighbour) return;
+    const a = await run(() =>
+      api(`/api/menu/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: neighbour.sortOrder }),
+      }),
+    );
+    if (!a) return;
+    await run(() =>
+      api(`/api/menu/items/${neighbour.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: item.sortOrder }),
+      }),
+    );
+  }
 
   if (editing) {
     return (
@@ -635,37 +768,81 @@ function ItemRow({
   }
 
   return (
-    <li className="min-w-0 px-4 py-3 text-sm">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="flex min-w-0 items-center gap-2.5">
-          {item.image_media_id ? (
-            <span className="block size-9 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={mediaFileUrl(item.image_media_id)}
-                alt={item.name}
-                loading="lazy"
-                className="size-full object-cover"
-              />
-            </span>
-          ) : null}
-          <span
-            className={`min-w-0 break-words ${item.is_active ? "" : "text-muted-foreground line-through"}`}
-          >
-            {item.name}
+    <li className="px-2 py-3 text-sm">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <MenuItemImage
+            mediaId={item.imageMediaId}
+            alt=""
+            className="size-12 shrink-0 rounded-xl"
+          />
+          <div className="min-w-0">
+            <p
+              className={`flex items-center gap-2 ${item.isActive ? "" : "text-muted-foreground"}`}
+            >
+              <span className={`truncate font-medium ${item.isActive ? "" : "line-through"}`}>
+                {item.name}
+              </span>
+              {item.sku ? (
+                <span
+                  dir="ltr"
+                  className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground"
+                >
+                  {item.sku}
+                </span>
+              ) : null}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {categoryName} · {money.format(item.price)}
+              {item.targetMarginPercent != null
+                ? ` · حاشیهٔ سود ${toPersianDigits(item.targetMarginPercent)}٪`
+                : ""}
+            </p>
+            {activeGroupNames.length > 0 ? (
+              <p className="truncate text-xs text-muted-foreground">
+                افزودنی‌ها: {activeGroupNames.join("، ")}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <span className="flex items-center">
+            <button
+              type="button"
+              aria-label={"جابه‌جایی " + item.name + " به بالا"}
+              title="جابه‌جایی به بالا"
+              disabled={busy || siblings.indexOf(item) === 0}
+              onClick={() => void move(-1)}
+              className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+            >
+              <ChevronUpIcon className="size-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={"جابه‌جایی " + item.name + " به پایین"}
+              title="جابه‌جایی به پایین"
+              disabled={busy || siblings.indexOf(item) === siblings.length - 1}
+              onClick={() => void move(1)}
+              className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+            >
+              <ChevronDownIcon className="size-4" aria-hidden="true" />
+            </button>
           </span>
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground">
-            {money.format(Number(item.price))}
-          </span>
-          <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
+          <SecondaryButton onClick={() => setEditing(true)} disabled={busy}>
             ویرایش
           </SecondaryButton>
-          <SecondaryButton onClick={() => setExpanded((v) => !v)}>
+          <SecondaryButton
+            onClick={() => setShowingModifiers((v) => !v)}
+            disabled={busy}
+            aria-expanded={showingModifiers}
+          >
             افزودنی‌ها
           </SecondaryButton>
-          <SecondaryButton onClick={() => setPricingOpen((v) => !v)}>
+          <SecondaryButton
+            onClick={() => setShowingPricing((v) => !v)}
+            disabled={busy}
+            aria-expanded={showingPricing}
+          >
             قیمت پیشنهادی
           </SecondaryButton>
           <SecondaryButton
@@ -674,22 +851,17 @@ function ItemRow({
               run(() =>
                 api(`/api/menu/items/${item.id}`, {
                   method: "PATCH",
-                  body: JSON.stringify({ isActive: !item.is_active }),
+                  body: JSON.stringify({ isActive: !item.isActive }),
                 }),
               )
             }
           >
-            {item.is_active ? "غیرفعال" : "فعال"}
+            {item.isActive ? "غیرفعال" : "فعال"}
           </SecondaryButton>
           <SecondaryButton
             disabled={busy}
             onClick={() => {
-              if (
-                !window.confirm(
-                  `آیتم منوی «${item.name}» حذف شود؟ آیتمی که در سفارش استفاده شده باشد غیرفعال می‌شود.`,
-                )
-              )
-                return;
+              if (!window.confirm(`آیتم «${item.name}» حذف شود؟`)) return;
               void run(() =>
                 api(`/api/menu/items/${item.id}`, { method: "DELETE" }),
               );
@@ -699,50 +871,17 @@ function ItemRow({
           </SecondaryButton>
         </div>
       </div>
-      {pricingOpen ? <PricingPanel item={item} busy={busy} run={run} /> : null}
-      {expanded ? (
-        <div className="mt-2 flex flex-wrap gap-2 border-t border-border/80 pt-2">
-          {groups.length === 0 ? (
-            <span className="text-xs text-muted-foreground">
-              گروه افزودنی‌ای ثبت نشده است.
-            </span>
-          ) : (
-            groups.map((g) => {
-              const isOn = attached.has(g.id);
-              return (
-                <button
-                  key={g.id}
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    run(() =>
-                      isOn
-                        ? api(
-                            `/api/menu/item-modifier-groups?menuItemId=${item.id}&modifierGroupId=${g.id}`,
-                            { method: "DELETE" },
-                          )
-                        : api("/api/menu/item-modifier-groups", {
-                            method: "POST",
-                            body: JSON.stringify({
-                              menuItemId: item.id,
-                              modifierGroupId: g.id,
-                            }),
-                          }),
-                    )
-                  }
-                  aria-pressed={isOn}
-                  className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
-                    isOn
-                      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
-                      : "border-border text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {g.name}
-                </button>
-              );
-            })
-          )}
-        </div>
+      {showingModifiers ? (
+        <ItemModifierGroupsPanel
+          item={item}
+          groups={groups}
+          links={links}
+          busy={busy}
+          run={run}
+        />
+      ) : null}
+      {showingPricing ? (
+        <PricingPanel item={item} run={run} busy={busy} />
       ) : null}
     </li>
   );
@@ -762,71 +901,76 @@ function EditItemRow({
   onDone: () => void;
 }) {
   const money = useMoney();
-  const [categoryId, setCategoryId] = useState(item.category_id ?? "");
+  const [categoryId, setCategoryId] = useState(item.categoryId ?? "");
   const [name, setName] = useState(item.name);
-  const [price, setPrice] = useState(String(money.toInput(Number(item.price))));
-  const [imageMediaId, setImageMediaId] = useState<string | null>(
-    item.image_media_id,
-  );
-  const [formError, setFormError] = useState("");
-  const selectableCategories = categories.filter(
-    (category) => category.is_active || category.id === item.category_id,
-  );
+  const [price, setPrice] = useState(String(money.toInput(item.price)));
+  const [description, setDescription] = useState(item.description ?? "");
+  const [sku, setSku] = useState(item.sku ?? "");
+  const [imageMediaId, setImageMediaId] = useState(item.imageMediaId);
+  const [confirmSkuChange, setConfirmSkuChange] = useState(false);
+
+  const skuChanged = sku.trim() !== (item.sku ?? "");
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    // These used to `return` silently, leaving a «ذخیره» button that visibly
-    // did nothing when a field was missing.
-    if (!categoryId) {
-      setFormError("دستهٔ آیتم را انتخاب کنید.");
-      return;
-    }
-    if (!name.trim()) {
-      setFormError("نام آیتم را بنویسید.");
-      return;
-    }
+    if (!categoryId) return;
+    if (!name.trim()) return;
     let priceRial: number;
     try {
       priceRial = money.parse(price);
     } catch {
-      setFormError("قیمت معتبر نیست.");
       return;
     }
-    setFormError("");
+    if (skuChanged && !confirmSkuChange) return;
+    // Core fields always travel together (they are all visible in this
+    // form), but the photo and the SKU are only sent when they actually
+    // changed — renaming an item must not silently drop its photo or
+    // overwrite a code someone else fixed in another tab.
+    const body: Record<string, unknown> = {
+      categoryId,
+      name,
+      price: priceRial,
+      description: description.trim() || null,
+    };
+    if (skuChanged) body.sku = sku.trim() || null;
+    if (imageMediaId !== item.imageMediaId) body.imageMediaId = imageMediaId;
     const ok = await run(() =>
       api(`/api/menu/items/${item.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ categoryId, name, price: priceRial, imageMediaId }),
+        body: JSON.stringify(body),
       }),
     );
     if (ok) onDone();
   }
 
   return (
-    <li className="px-4 py-3">
+    <li className="border-b border-border/80 py-3">
       <form
         onSubmit={save}
-        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
       >
         <Field label="دسته">
           <SearchableSelect
             value={categoryId}
             onChange={setCategoryId}
             options={[
-              { value: "", label: "دسته را انتخاب کنید…" },
-              ...selectableCategories.map((category) => ({
-                value: category.id,
-                label: category.name,
-              })),
+              ...categories.map((c) => ({ value: c.id, label: c.name })),
+              // A category may have been deleted while this row was open; the
+              // item keeps its old id (NULL in the tree) until it is re-filed.
+              ...(categoryId && !categories.some((c) => c.id === categoryId)
+                ? [{ value: categoryId, label: "بدون دسته" }]
+                : []),
             ]}
           />
         </Field>
         <Field label="نام آیتم">
           <input
             className={inputClass}
+            maxLength={200}
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(e) => setName(e.target.value)}
             required
+            autoFocus
           />
         </Field>
         <Field label={`قیمت (${money.unitLabel})`}>
@@ -835,13 +979,26 @@ function EditItemRow({
             dir="ltr"
             inputMode="numeric"
             value={price}
-            onChange={(event) => setPrice(event.target.value)}
+            onChange={(e) => setPrice(e.target.value)}
             required
           />
         </Field>
-        <div className="sm:col-span-2 xl:col-span-3">
-          {/* The catalogue photo — picked from the shared media library so the
-              same upload serves the menu, the website, and visual counting. */}
+        <Field label="کد کالا (اختیاری)">
+          <input
+            className={inputClass}
+            dir="ltr"
+            value={sku}
+            onChange={(e) => setSku(e.target.value)}
+          />
+        </Field>
+        <Field label="توضیحات">
+          <input
+            className={inputClass}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </Field>
+        <div className="sm:col-span-2 xl:col-span-2">
           <MediaImageField
             label="تصویر آیتم"
             value={imageMediaId}
@@ -849,13 +1006,24 @@ function EditItemRow({
             disabled={busy}
           />
         </div>
-        <div className="sm:col-span-2 xl:col-span-3">
-          <ErrorBox>{formError}</ErrorBox>
-        </div>
-        <div className="flex flex-col gap-2 sm:col-span-2 xl:col-span-3 sm:flex-row">
-          <div className="w-full sm:w-40">
-            <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+        {skuChanged ? (
+          <div className="sm:col-span-2 xl:col-span-4">
+            <label className="flex items-start gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={confirmSkuChange}
+                onChange={(e) => setConfirmSkuChange(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                کد کالا تغییر می‌کند؛ اگر این کد روی برگه‌های چاپی یا بارکد خوان
+                استفاده شده، ثبت قبلی معتبر نخواهد بود.
+              </span>
+            </label>
           </div>
+        ) : null}
+        <div className="mb-4 flex items-end gap-2">
+          <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
           <SecondaryButton disabled={busy} onClick={onDone}>
             انصراف
           </SecondaryButton>
@@ -865,7 +1033,228 @@ function EditItemRow({
   );
 }
 
-/** Cost-plus pricing advisory: material cost (from the recipe) + ledger-derived overhead, target margin -> a suggested price the owner can apply or ignore. */
+/**
+ * Per-item configuration of modifier groups: attach/detach, the effective
+ * selection bounds (link override ?? group default, exactly as
+ * resolveModifierSelection computes them at the counter) and the per-item
+ * on/off switch from migration 0165.
+ */
+function ItemModifierGroupsPanel({
+  item,
+  groups,
+  links,
+  busy,
+  run,
+}: {
+  item: Item;
+  groups: ModifierGroup[];
+  links: ItemModifierGroupLink[];
+  busy: boolean;
+  run: Runner;
+}) {
+  const itemLinks = links.filter((l) => l.menuItemId === item.id);
+
+  async function attach(groupId: string) {
+    await run(() =>
+      api("/api/menu/item-modifier-groups", {
+        method: "POST",
+        body: JSON.stringify({ menuItemId: item.id, modifierGroupId: groupId }),
+      }),
+    );
+  }
+
+  async function detach(groupId: string) {
+    await run(() =>
+      api(
+        `/api/menu/item-modifier-groups?menuItemId=${encodeURIComponent(item.id)}&modifierGroupId=${encodeURIComponent(groupId)}`,
+        { method: "DELETE" },
+      ),
+    );
+  }
+
+  async function patchLink(groupId: string, patch: Record<string, unknown>) {
+    await run(() =>
+      api("/api/menu/item-modifier-groups", {
+        method: "PATCH",
+        body: JSON.stringify({ menuItemId: item.id, modifierGroupId: groupId, ...patch }),
+      }),
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-2 rounded-xl border border-border/80 bg-muted/30 p-3">
+      <p className="text-xs font-medium text-muted-foreground">
+        گروه‌های افزودنی این آیتم — بردار «مقدار پیش‌فرض گروه» را می‌توانید برای همین
+        آیتم محدودتر کنید.
+      </p>
+      {groups.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          هنوز گروه افزودنی‌ای در بخش «افزودنی‌ها» نساخته‌اید.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {groups.map((group) => {
+            const link = itemLinks.find((l) => l.modifierGroupId === group.id);
+            const effectiveMin = link?.minSelectOverride ?? group.minSelect;
+            const effectiveMax = link?.maxSelectOverride ?? group.maxSelect;
+            return (
+              <ItemGroupLinkRow
+                key={group.id}
+                group={group}
+                link={link}
+                effectiveMin={effectiveMin}
+                effectiveMax={effectiveMax}
+                busy={busy}
+                onAttach={() => void attach(group.id)}
+                onDetach={() => void detach(group.id)}
+                onPatch={(patch) => void patchLink(group.id, patch)}
+              />
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ItemGroupLinkRow({
+  group,
+  link,
+  effectiveMin,
+  effectiveMax,
+  busy,
+  onAttach,
+  onDetach,
+  onPatch,
+}: {
+  group: ModifierGroup;
+  link: ItemModifierGroupLink | undefined;
+  effectiveMin: number;
+  effectiveMax: number;
+  busy: boolean;
+  onAttach: () => void;
+  onDetach: () => void;
+  onPatch: (patch: Record<string, unknown>) => void;
+}) {
+  const [minOverride, setMinOverride] = useState(
+    link?.minSelectOverride === null || link?.minSelectOverride === undefined
+      ? ""
+      : String(link.minSelectOverride),
+  );
+  const [maxOverride, setMaxOverride] = useState(
+    link?.maxSelectOverride === null || link?.maxSelectOverride === undefined
+      ? ""
+      : String(link.maxSelectOverride),
+  );
+
+  // Re-seed the inputs when the link row itself changes (detach → attach,
+  // or a save that reloads the tree).
+  const linkKey = link ? `${link.menuItemId}:${link.modifierGroupId}` : "none";
+  const [lastLinkKey, setLastLinkKey] = useState(linkKey);
+  if (lastLinkKey !== linkKey) {
+    setLastLinkKey(linkKey);
+    setMinOverride(
+      link?.minSelectOverride === null || link?.minSelectOverride === undefined
+        ? ""
+        : String(link.minSelectOverride),
+    );
+    setMaxOverride(
+      link?.maxSelectOverride === null || link?.maxSelectOverride === undefined
+        ? ""
+        : String(link.maxSelectOverride),
+    );
+  }
+
+  function saveOverrides() {
+    const patch: Record<string, unknown> = {};
+    if (minOverride.trim() === "") patch.minSelectOverride = null;
+    else patch.minSelectOverride = Number(minOverride);
+    if (maxOverride.trim() === "") patch.maxSelectOverride = null;
+    else patch.maxSelectOverride = Number(maxOverride);
+    onPatch(patch);
+  }
+
+  return (
+    <li className="rounded-lg border border-border/70 bg-background p-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="flex min-w-0 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            aria-label={`افزودن گروه ${group.name} به این آیتم`}
+            checked={Boolean(link)}
+            disabled={busy}
+            onChange={(event) => (event.target.checked ? onAttach() : onDetach())}
+          />
+          <span
+            className={`truncate ${group.isActive ? "" : "text-muted-foreground"}`}
+          >
+            {group.name}
+          </span>
+          {!group.isActive ? (
+            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              گروه غیرفعال است
+            </span>
+          ) : null}
+        </label>
+        {link ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              پیش‌فرض گروه: {toPersianDigits(group.minSelect)}–
+              {toPersianDigits(group.maxSelect)}
+              {effectiveMin !== group.minSelect || effectiveMax !== group.maxSelect ? (
+                <>
+                  {" "}
+                  · مؤثر: {toPersianDigits(effectiveMin)}–
+                  {toPersianDigits(effectiveMax)}
+                </>
+              ) : null}
+            </span>
+            <SecondaryButton
+              disabled={busy}
+              onClick={() => onPatch({ isActive: !link.isActive })}
+            >
+              {link.isActive ? "غیرفعال برای این آیتم" : "فعال برای این آیتم"}
+            </SecondaryButton>
+          </div>
+        ) : null}
+      </div>
+      {link ? (
+        <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <label className="text-xs text-muted-foreground">
+            حداقل انتخاب (اختیاری)
+            <PersianNumberInput
+              className={`${inputClass} mt-1`}
+              dir="ltr"
+              inputMode="numeric"
+              value={minOverride}
+              onChange={(e) => setMinOverride(e.target.value)}
+              placeholder={`پیش‌فرض: ${toPersianDigits(group.minSelect)}`}
+              disabled={busy}
+            />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            حداکثر انتخاب (اختیاری)
+            <PersianNumberInput
+              className={`${inputClass} mt-1`}
+              dir="ltr"
+              inputMode="numeric"
+              value={maxOverride}
+              onChange={(e) => setMaxOverride(e.target.value)}
+              placeholder={`پیش‌فرض: ${toPersianDigits(group.maxSelect)}`}
+              disabled={busy}
+            />
+          </label>
+          <div className="mb-4 flex items-end">
+            <SecondaryButton disabled={busy} onClick={saveOverrides}>
+              ذخیرهٔ محدودیت‌ها
+            </SecondaryButton>
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 function PricingPanel({
   item,
   busy,
@@ -880,9 +1269,7 @@ function PricingPanel({
   const [loading, setLoading] = useState(true);
   const [marginError, setMarginError] = useState("");
   const [marginInput, setMarginInput] = useState(
-    item.target_margin_percent != null
-      ? String(item.target_margin_percent)
-      : "",
+    item.targetMarginPercent != null ? String(item.targetMarginPercent) : "",
   );
 
   const load = useCallback(() => {
@@ -897,7 +1284,7 @@ function PricingPanel({
 
   useEffect(() => {
     load();
-  }, [load, item.price, item.target_margin_percent]);
+  }, [load, item.price, item.targetMarginPercent]);
 
   async function saveMargin() {
     const trimmed = marginInput.trim();
@@ -1116,7 +1503,7 @@ function ModifierSection({
             key={g.id}
             group={g}
             groups={data.modifierGroups}
-            modifiers={data.modifiers.filter((m) => m.group_id === g.id)}
+            modifiers={data.modifiers.filter((m) => m.groupId === g.id)}
             busy={busy}
             run={run}
           />
@@ -1150,8 +1537,8 @@ function ModifierGroupRow({
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState("");
   const [editName, setEditName] = useState(group.name);
-  const [editMin, setEditMin] = useState(String(group.min_select));
-  const [editMax, setEditMax] = useState(String(group.max_select));
+  const [editMin, setEditMin] = useState(String(group.minSelect));
+  const [editMax, setEditMax] = useState(String(group.maxSelect));
 
   async function addModifier() {
     if (!modifierName.trim()) {
@@ -1228,6 +1615,26 @@ function ModifierGroupRow({
     );
   }
 
+  /** Swap sort_order with the neighbouring group — the POS shows this order. */
+  async function moveGroup(direction: -1 | 1) {
+    const index = groups.findIndex((g) => g.id === group.id);
+    const neighbour = groups[index + direction];
+    if (!neighbour) return;
+    const first = await run(() =>
+      api(`/api/menu/modifier-groups/${group.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: neighbour.sortOrder }),
+      }),
+    );
+    if (!first) return;
+    await run(() =>
+      api(`/api/menu/modifier-groups/${neighbour.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: group.sortOrder }),
+      }),
+    );
+  }
+
   return (
     <div className="min-w-0 rounded-xl border border-border/80 p-3">
       {editing ? (
@@ -1275,25 +1682,65 @@ function ModifierGroupRow({
         </form>
       ) : (
         <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium">
-            {group.name}{" "}
+          <p
+            className={`text-sm font-medium ${group.isActive ? "" : "text-muted-foreground"}`}
+          >
+            <span className={group.isActive ? "" : "line-through"}>{group.name}</span>{" "}
             <span className="text-xs text-muted-foreground">
-              (انتخاب {toPersianDigits(group.min_select)} تا{" "}
-              {toPersianDigits(group.max_select)})
+              (انتخاب {toPersianDigits(group.minSelect)} تا{" "}
+              {toPersianDigits(group.maxSelect)})
             </span>
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center">
+              <button
+                type="button"
+                aria-label={"جابه‌جایی " + group.name + " به بالا"}
+                title="جابه‌جایی به بالا"
+                disabled={busy || groups.findIndex((g) => g.id === group.id) === 0}
+                onClick={() => void moveGroup(-1)}
+                className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+              >
+                <ChevronUpIcon className="size-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label={"جابه‌جایی " + group.name + " به پایین"}
+                title="جابه‌جایی به پایین"
+                disabled={
+                  busy ||
+                  groups.findIndex((g) => g.id === group.id) === groups.length - 1
+                }
+                onClick={() => void moveGroup(1)}
+                className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+              >
+                <ChevronDownIcon className="size-4" aria-hidden="true" />
+              </button>
+            </span>
             <SecondaryButton
               disabled={busy}
               onClick={() => {
                 setEditName(group.name);
-                setEditMin(String(group.min_select));
-                setEditMax(String(group.max_select));
+                setEditMin(String(group.minSelect));
+                setEditMax(String(group.maxSelect));
                 setEditError("");
                 setEditing(true);
               }}
             >
               ویرایش
+            </SecondaryButton>
+            <SecondaryButton
+              disabled={busy}
+              onClick={() =>
+                run(() =>
+                  api(`/api/menu/modifier-groups/${group.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ isActive: !group.isActive }),
+                  }),
+                )
+              }
+            >
+              {group.isActive ? "غیرفعال" : "فعال"}
             </SecondaryButton>
             <SecondaryButton disabled={busy} onClick={removeGroup}>
               حذف
@@ -1307,6 +1754,7 @@ function ModifierGroupRow({
             key={m.id}
             modifier={m}
             groups={groups}
+            siblings={modifiers}
             busy={busy}
             run={run}
           />
@@ -1357,16 +1805,39 @@ function ModifierGroupRow({
 function ModifierRow({
   modifier,
   groups,
+  siblings,
   busy,
   run,
 }: {
   modifier: Modifier;
   groups: ModifierGroup[];
+  /** Same-group addons in display order — for the up/down reorder buttons. */
+  siblings: Modifier[];
   busy: boolean;
   run: Runner;
 }) {
   const money = useMoney();
   const [editing, setEditing] = useState(false);
+
+  /** Swap sort_order with the neighbouring addon inside this group. */
+  async function move(direction: -1 | 1) {
+    const index = siblings.findIndex((m) => m.id === modifier.id);
+    const neighbour = siblings[index + direction];
+    if (!neighbour) return;
+    const first = await run(() =>
+      api(`/api/menu/modifiers/${modifier.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: neighbour.sortOrder }),
+      }),
+    );
+    if (!first) return;
+    await run(() =>
+      api(`/api/menu/modifiers/${neighbour.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: modifier.sortOrder }),
+      }),
+    );
+  }
 
   if (editing) {
     return (
@@ -1383,13 +1854,38 @@ function ModifierRow({
   return (
     <li className="flex min-w-0 flex-col gap-2 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
       <span
-        className={`min-w-0 break-words ${modifier.is_active ? "" : "text-muted-foreground line-through"}`}
+        className={`min-w-0 break-words ${modifier.isActive ? "" : "text-muted-foreground line-through"}`}
       >
         {modifier.name}
       </span>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground">
-          {money.format(Number(modifier.price_delta))}
+          {money.format(modifier.priceDelta)}
+        </span>
+        <span className="flex items-center">
+          <button
+            type="button"
+            aria-label={"جابه‌جایی " + modifier.name + " به بالا"}
+            title="جابه‌جایی به بالا"
+            disabled={busy || siblings.findIndex((m) => m.id === modifier.id) === 0}
+            onClick={() => void move(-1)}
+            className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+          >
+            <ChevronUpIcon className="size-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label={"جابه‌جایی " + modifier.name + " به پایین"}
+            title="جابه‌جایی به پایین"
+            disabled={
+              busy ||
+              siblings.findIndex((m) => m.id === modifier.id) === siblings.length - 1
+            }
+            onClick={() => void move(1)}
+            className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+          >
+            <ChevronDownIcon className="size-4" aria-hidden="true" />
+          </button>
         </span>
         <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
           ویرایش
@@ -1400,12 +1896,12 @@ function ModifierRow({
             run(() =>
               api(`/api/menu/modifiers/${modifier.id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ isActive: !modifier.is_active }),
+                body: JSON.stringify({ isActive: !modifier.isActive }),
               }),
             )
           }
         >
-          {modifier.is_active ? "غیرفعال" : "فعال"}
+          {modifier.isActive ? "غیرفعال" : "فعال"}
         </SecondaryButton>
         <SecondaryButton
           disabled={busy}
@@ -1442,13 +1938,13 @@ function EditModifierRow({
   onDone: () => void;
 }) {
   const money = useMoney();
-  const [groupId, setGroupId] = useState(modifier.group_id);
+  const [groupId, setGroupId] = useState(modifier.groupId);
   const [name, setName] = useState(modifier.name);
   const [delta, setDelta] = useState(
-    String(money.toInput(Number(modifier.price_delta))),
+    String(money.toInput(modifier.priceDelta)),
   );
   const [formError, setFormError] = useState("");
-  const moved = groupId !== modifier.group_id;
+  const moved = groupId !== modifier.groupId;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();

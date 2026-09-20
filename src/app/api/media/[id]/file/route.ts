@@ -10,9 +10,15 @@ import { getMediaConfig, isMediaStorageReady, readMediaObject } from "@/lib/medi
  * Images and videos render inline (the library grid's thumbnails and the
  * item pickers); everything else downloads — a "document" that turned out to
  * be active content must never execute on this origin.
+ *
+ * Every signed-in staff role may fetch *inline* kinds: the POS and waiter
+ * tiles show catalogue photos, so a cashier used to get a 403 on every image
+ * on the selling screen while the media library itself stays owner/manager.
+ * Documents keep the stricter gate — the role check runs a second time once
+ * the asset's kind is known.
  */
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
   if (error) return error;
   const { id } = await context.params;
 
@@ -32,6 +38,11 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
 
   const { asset, bytes } = result;
   const inline = asset.kind === "image" || asset.kind === "video";
+  if (!inline) {
+    // Reading a document is a media-library action, not a selling-screen one.
+    const restricted = await requireRole("owner", "manager");
+    if (restricted.error) return restricted.error;
+  }
   const fileName = encodeURIComponent(asset.fileName);
   return new NextResponse(new Uint8Array(bytes), {
     headers: {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { validateCategoryCreate } from "@/lib/menu-validation";
+import { createCategory } from "@/lib/menu-service";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { resolveActiveLocation, type TaxSetting } from "@/lib/setup-state";
 
@@ -9,40 +10,28 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { name?: string; taxRate?: number };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const name = body.name?.trim();
-  if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  const input = validateCategoryCreate(body);
+  if (!input.ok) {
+    return NextResponse.json({ error: input.error }, { status: 400 });
+  }
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  const { rows: dup } = await query(
-    "SELECT id FROM menu_categories WHERE location_id = $1 AND name = $2",
-    [location.id, name],
-  );
-  if (dup.length > 0) return NextResponse.json({ error: "category_exists" }, { status: 409 });
+  // An absent tax rate means "the business's default", resolved here rather
+  // than defaulted in the client, so the API's answer is the same whichever
+  // screen sent the request.
+  const tax = await getSetting<TaxSetting>(session.businessId, SETTING_KEYS.tax);
+  const defaultTaxRate = input.value.taxRate ?? tax?.defaultRate ?? 0;
 
-  let taxRate = Number(body.taxRate);
-  if (!Number.isFinite(taxRate)) {
-    const tax = await getSetting<TaxSetting>(session.businessId, SETTING_KEYS.tax);
-    taxRate = tax?.defaultRate ?? 0;
-  }
-  if (taxRate < 0 || taxRate > 100) {
-    return NextResponse.json({ error: "invalid_rate" }, { status: 400 });
-  }
-
-  const { rows } = await query<{ id: string }>(
-    `INSERT INTO menu_categories (location_id, name, tax_rate, sort_order)
-     SELECT $1, $2, $3, COALESCE(MAX(sort_order) + 1, 0)
-       FROM menu_categories WHERE location_id = $1
-     RETURNING id`,
-    [location.id, name, taxRate],
-  );
-  return NextResponse.json({ ok: true, id: rows[0].id });
+  const result = await createCategory(location.id, input.value, defaultTaxRate);
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+  return NextResponse.json({ ok: true, id: result.id });
 });

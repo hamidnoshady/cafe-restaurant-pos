@@ -1,14 +1,24 @@
-export type PosSearchCategory = {
-  id: string;
-  name: string;
-  is_active: boolean;
-};
+import type {
+  RestaurantMenuCategory,
+  RestaurantMenuItem,
+} from "./restaurant-menu";
 
-export type PosSearchMenuItem = {
-  id: string;
-  category_id: string;
-  name: string;
-  is_active: boolean;
+/**
+ * The search model *is* the canonical menu model: the shared
+ * RestaurantMenuCategory/RestaurantMenuItem rows, so the POS and the waiter
+ * screen search exactly the data they render — including each item's SKU,
+ * which the old screen-local type dropped and with it every code search.
+ */
+export type PosSearchCategory = RestaurantMenuCategory;
+
+export type PosSearchMenuItem = Omit<RestaurantMenuItem, "categoryId"> & {
+  /** Narrowed to a real category: only categorized items are sellable/searchable. */
+  categoryId: string;
+  /**
+   * Reserved for the barcode scans food service may adopt later: the search
+   * helper matches it when present without callers having to rewrite it.
+   */
+  barcode?: string | null;
 };
 
 export type PosSearchResult = PosSearchMenuItem & {
@@ -76,7 +86,7 @@ export function searchPosMenuItems({
 }: PosSearchInput): PosSearchResult[] {
   const activeCategories = new Map(
     categories
-      .filter((category) => category.is_active)
+      .filter((category) => category.isActive)
       .map((category) => [category.id, category]),
   );
   const normalizedQuery = normalizePosSearchText(query);
@@ -88,9 +98,9 @@ export function searchPosMenuItems({
   if (!normalizedQuery) {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (!item.is_active || item.category_id !== selectedCategoryId) continue;
+      if (!item.isActive || item.categoryId !== selectedCategoryId) continue;
 
-      const category = activeCategories.get(item.category_id);
+      const category = activeCategories.get(item.categoryId);
       if (!category) continue;
 
       results.push({ ...item, categoryLabel: category.name });
@@ -105,28 +115,47 @@ export function searchPosMenuItems({
     normalizedCategoryNames.set(id, normalizePosSearchText(category.name));
   }
 
-  // ⚡ Bolt: Replace .flatMap() with traditional for-loop to avoid allocating
-  // intermediate arrays and closures for 1000s of items on every keystroke.
-  // Improves search query speed by ~45%.
+  // The item's own searchable text (name + SKU + barcode) is normalized once
+  // per menu load by the caller through `normalizedPosItemSearchText`; doing
+  // it per keystroke was the cost this loop used to pay.
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    if (!item.is_active) continue;
+    if (!item.isActive) continue;
 
-    const category = activeCategories.get(item.category_id);
+    const category = activeCategories.get(item.categoryId);
     if (!category) continue;
 
-    const categoryMatch = normalizedCategoryNames
-      .get(item.category_id)!
-      .includes(normalizedQuery);
+    const haystack = itemSearchCache.get(item) ?? normalizedItemText(item);
     if (
-      categoryMatch ||
-      normalizePosSearchText(item.name).includes(normalizedQuery)
+      haystack.includes(normalizedQuery) ||
+      normalizedCategoryNames.get(item.categoryId)!.includes(normalizedQuery)
     ) {
       results.push({ ...item, categoryLabel: category.name });
     }
   }
 
   return results;
+}
+
+/**
+ * The normalized name + SKU (+ barcode when a caller sets it) of one item —
+ * what a product-code search runs against. Exported so a screen can warm the
+ * cache once per menu load (`warmPosItemSearchCache`) instead of paying the
+ * normalization on the first keystroke of every item.
+ */
+export function normalizedItemText(item: PosSearchMenuItem): string {
+  return normalizePosSearchText(
+    [item.name, item.sku ?? "", item.barcode ?? ""].filter(Boolean).join(" "),
+  );
+}
+
+const itemSearchCache = new WeakMap<PosSearchMenuItem, string>();
+
+/** Pre-normalizes the searchable text of every item, one menu load → one pass. */
+export function warmPosItemSearchCache(items: readonly PosSearchMenuItem[]): void {
+  for (const item of items) {
+    if (!itemSearchCache.has(item)) itemSearchCache.set(item, normalizedItemText(item));
+  }
 }
 
 export function isGlobalCashierShortcutEligible({

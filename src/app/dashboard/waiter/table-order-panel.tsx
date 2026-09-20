@@ -16,8 +16,19 @@ import {
   modifierNamesLabel,
   type DisplayModifier,
 } from "@/lib/modifier-display";
+import { MAX_ORDER_LINE_QUANTITY } from "@/lib/order-quantity";
+import {
+  buildRestaurantMenuIndex,
+  toRestaurantMenu,
+  type MenuTreePayload,
+  type RestaurantGroupView,
+  type RestaurantMenuItem,
+  type RestaurantMenuData,
+} from "@/lib/restaurant-menu";
+import { searchPosMenuItems, warmPosItemSearchCache } from "@/lib/pos-selection";
 import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
+import { MenuItemImage } from "../menu-item-image";
 import { apiOrQueue } from "../offline-queue";
 import { useRealtime } from "../use-realtime";
 import {
@@ -25,49 +36,15 @@ import {
   ErrorBox,
   errorMessage,
   InfoBox,
+  inputClass,
   PrimaryButton,
   SecondaryButton,
 } from "../ui";
 import { firstPrinter, usePrinters } from "../use-printers";
 import { cardClass } from "../page-chrome";
 import { safeRandomId } from "@/lib/client-id";
+import { SearchIcon } from "lucide-react";
 
-interface Category {
-  id: string;
-  name: string;
-  is_active: boolean;
-}
-interface Item {
-  id: string;
-  category_id: string | null;
-  name: string;
-  price: string | number;
-  is_active: boolean;
-}
-interface ModifierGroup {
-  id: string;
-  name: string;
-  min_select: number;
-  max_select: number;
-}
-interface Modifier {
-  id: string;
-  group_id: string;
-  name: string;
-  price_delta: string | number;
-  is_active: boolean;
-}
-interface ItemGroupLink {
-  menu_item_id: string;
-  modifier_group_id: string;
-}
-interface MenuData {
-  categories: Category[];
-  items: Item[];
-  modifierGroups: ModifierGroup[];
-  modifiers: Modifier[];
-  itemModifierGroups: ItemGroupLink[];
-}
 interface OrderItem {
   id: string;
   name_snapshot: string;
@@ -121,12 +98,13 @@ export function TableOrderPanel({
   onChanged: () => void;
 }) {
   const money = useMoney();
-  const [menu, setMenu] = useState<MenuData | null>(null);
+  const [menu, setMenu] = useState<RestaurantMenuData | null>(null);
   const [activeCategory, setActiveCategory] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [orderModifiers, setOrderModifiers] = useState<OrderModifier[]>([]);
   const [cart, setCart] = useState<CartUiLine[]>([]);
-  const [pickerItem, setPickerItem] = useState<Item | null>(null);
+  const [pickerItem, setPickerItem] = useState<RestaurantMenuItem | null>(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -140,11 +118,13 @@ export function TableOrderPanel({
   const clientRequestIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    api<MenuData>("/api/menu").then(({ ok, data }) => {
-      if (ok) {
-        setMenu(data);
-        setActiveCategory(data.categories.find((c) => c.is_active)?.id ?? "");
-      }
+    api<MenuTreePayload>("/api/menu").then(({ ok, data }) => {
+      if (!ok) return;
+      const restaurantMenu = toRestaurantMenu(data);
+      setMenu(restaurantMenu);
+      setActiveCategory(
+        restaurantMenu.categories.find((c) => c.isActive)?.id ?? "",
+      );
     });
   }, []);
 
@@ -196,28 +176,57 @@ export function TableOrderPanel({
     return map;
   }, [orderModifiers]);
 
-  const attachedGroups = useCallback(
-    (itemId: string) => {
-      if (!menu) return [];
-      const groupIds = menu.itemModifierGroups
-        .filter((l) => l.menu_item_id === itemId)
-        .map((l) => l.modifier_group_id);
-      return menu.modifierGroups
-        .filter((g) => groupIds.includes(g.id))
-        .map((g) => ({
-          ...g,
-          modifiers: menu.modifiers.filter(
-            (m) => m.group_id === g.id && m.is_active,
-          ),
-        }));
-    },
+  /**
+   * The waiter sells from the *same* shared menu index as the cashier: the
+   * same categories, the same item ordering, the same per-item bounds, the
+   * same inactive-group/inactive-modifier filtering. Only the layout and
+   * the workflow differ — shared domain behaviour, separate shells.
+   */
+  const menuIndex = useMemo(
+    () => (menu ? buildRestaurantMenuIndex(menu) : null),
     [menu],
   );
+  const activeCategories = menuIndex?.activeCategories ?? [];
 
-  function addToCart(item: Item, selectedModifierIds: string[], note: string) {
+  const searchableItems = useMemo(
+    () =>
+      menu?.items.filter(
+        (item): item is RestaurantMenuItem & { categoryId: string } =>
+          item.isActive && item.categoryId !== null,
+      ) ?? [],
+    [menu],
+  );
+  useEffect(() => {
+    warmPosItemSearchCache(searchableItems);
+  }, [searchableItems]);
+
+  /** The menu grid: the selected category, or a name/SKU search across all of them. */
+  const visibleItems = useMemo(() => {
+    if (!menu) return [];
+    if (!searchQuery.trim()) {
+      return menuIndex?.itemsByCategory.get(activeCategory) ?? [];
+    }
+    return searchPosMenuItems({
+      categories: menu.categories,
+      items: searchableItems,
+      selectedCategoryId: activeCategory,
+      query: searchQuery,
+    });
+  }, [menu, menuIndex, activeCategory, searchQuery, searchableItems]);
+
+  const attachedGroups = useCallback(
+    (itemId: string): RestaurantGroupView[] =>
+      menuIndex?.groupsByItem.get(itemId) ?? [],
+    [menuIndex],
+  );
+
+  function addToCart(item: RestaurantMenuItem, selectedModifierIds: string[], note: string) {
+    const allModifiers = new Map(
+      (menu?.modifiers ?? []).map((m) => [m.id, m]),
+    );
     const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
-      const modifier = menu!.modifiers.find((m) => m.id === id)!;
-      return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
+      const modifier = allModifiers.get(id)!;
+      return { name: modifier.name, priceDelta: modifier.priceDelta };
     });
     setCart((prev) => [
       ...prev,
@@ -225,7 +234,7 @@ export function TableOrderPanel({
         key: `${item.id}-${safeRandomId()}`,
         menuItemId: item.id,
         name: item.name,
-        unitPrice: Number(item.price),
+        unitPrice: item.price,
         quantity: 1,
         modifierIds: selectedModifierIds,
         modifiers,
@@ -234,7 +243,7 @@ export function TableOrderPanel({
     ]);
   }
 
-  function pickItem(item: Item) {
+  function pickItem(item: RestaurantMenuItem) {
     const groups = attachedGroups(item.id);
     if (groups.length === 0) addToCart(item, [], "");
     else setPickerItem(item);
@@ -244,7 +253,11 @@ export function TableOrderPanel({
     setCart((prev) =>
       quantity <= 0
         ? prev.filter((l) => l.key !== key)
-        : prev.map((l) => (l.key === key ? { ...l, quantity } : l)),
+        : prev.map((l) =>
+            l.key === key
+              ? { ...l, quantity: Math.min(quantity, MAX_ORDER_LINE_QUANTITY) }
+              : l,
+          ),
     );
   }
 
@@ -405,41 +418,76 @@ export function TableOrderPanel({
             ) : (
               <>
                 <div className="mb-3 flex gap-1 overflow-x-auto border-b border-border pb-3">
-                  {menu.categories
-                    .filter((c) => c.is_active)
-                    .map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setActiveCategory(c.id)}
-                        className={`shrink-0 rounded-lg px-4 py-2 text-sm ${
-                          activeCategory === c.id
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
-                        }`}
-                      >
-                        {c.name}
-                      </button>
-                    ))}
+                  {activeCategories.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveCategory(c.id);
+                        setSearchQuery("");
+                      }}
+                      className={`shrink-0 rounded-lg px-4 py-2 text-sm ${
+                        activeCategory === c.id
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
+                      }`}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative mb-4">
+                  <SearchIcon
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted-foreground"
+                  />
+                  <input
+                    className={`${inputClass} ps-9`}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="جستجوی نام یا کد کالا…"
+                    aria-label="جستجوی آیتم منو"
+                    type="search"
+                  />
                 </div>
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {menu.items
-                    .filter(
-                      (i) => i.is_active && i.category_id === activeCategory,
-                    )
-                    .map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => pickItem(item)}
-                        className="flex flex-col items-start rounded-xl border border-border p-3 text-start hover:border-primary/60 hover:bg-primary/5"
-                      >
-                        <span className="text-sm font-medium">{item.name}</span>
-                        <span className="mt-1 text-xs text-muted-foreground">
-                          {money.format(Number(item.price))}
+                  {visibleItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => pickItem(item)}
+                      className="flex min-h-28 flex-col overflow-hidden rounded-xl border border-border bg-card text-start transition-colors hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 active:scale-[0.99]"
+                    >
+                      {/*
+                        Photo band only for items that have one — a photo-less
+                        item renders the compact card it always was instead of
+                        a gray placeholder strip; an unreachable photo keeps
+                        the band (MenuItemImage's own placeholder) so the grid
+                        never reflows.
+                      */}
+                      {item.imageMediaId || item.imageUrl ? (
+                        <span className="block h-16 w-full overflow-hidden rounded-t-xl">
+                          <MenuItemImage
+                            mediaId={item.imageMediaId}
+                            url={item.imageUrl}
+                            className="size-full"
+                            iconClassName="size-5"
+                          />
                         </span>
-                      </button>
-                    ))}
+                      ) : null}
+                      <span className="flex flex-1 flex-col p-3">
+                        <span className="text-sm font-medium">{item.name}</span>
+                        <span className="mt-auto pt-1 text-xs text-muted-foreground">
+                          {money.format(item.price)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                  {visibleItems.length === 0 ? (
+                    <p className="col-span-full py-6 text-center text-sm text-muted-foreground">
+                      آیتمی پیدا نشد.
+                    </p>
+                  ) : null}
                 </div>
 
                 {cart.length > 0 ? (
@@ -474,8 +522,14 @@ export function TableOrderPanel({
                             <button
                               type="button"
                               aria-label={"افزایش تعداد " + l.name}
+                              disabled={l.quantity >= MAX_ORDER_LINE_QUANTITY}
+                              title={
+                                l.quantity >= MAX_ORDER_LINE_QUANTITY
+                                  ? `حداکثر تعداد هر ردیف ${MAX_ORDER_LINE_QUANTITY} است`
+                                  : undefined
+                              }
                               onClick={() => setQty(l.key, l.quantity + 1)}
-                              className="flex size-6 items-center justify-center rounded bg-muted transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95 focus-visible:ring focus-visible:ring-ring/50 outline-none"
+                              className="flex size-6 items-center justify-center rounded bg-muted transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95 focus-visible:ring focus-visible:ring-ring/50 outline-none disabled:opacity-40"
                             >
                               +
                             </button>
@@ -501,7 +555,7 @@ export function TableOrderPanel({
       {pickerItem ? (
         <ModifierPicker
           itemName={pickerItem.name}
-          itemPrice={Number(pickerItem.price)}
+          itemPrice={pickerItem.price}
           groups={attachedGroups(pickerItem.id)}
           onCancel={() => setPickerItem(null)}
           onConfirm={(modifierIds, note) => {

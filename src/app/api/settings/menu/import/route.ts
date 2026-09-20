@@ -9,6 +9,10 @@ import {
   type ImportMoneyUnit,
   type ImportResult,
 } from "@/lib/menu-import";
+import {
+  applyMenuImport,
+  menuImportConsistencyErrors,
+} from "@/lib/menu-import-apply";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { xlsxToRows } from "@/lib/xlsx-import";
 
@@ -86,44 +90,6 @@ async function existingMatches(locationId: string, result: ImportResult) {
   }
 }
 
-/** Reject ambiguous per-category tax and per-group selection definitions before any rows are written. */
-function consistencyErrors(result: ImportResult): string[] {
-  const errors: string[] = [];
-  const categoryRates = new Map<string, number>();
-  const groupRules = new Map<string, string>();
-  const modifierPrices = new Map<string, number>();
-  for (const item of result.items) {
-    if (item.taxRate !== undefined) {
-      const current = categoryRates.get(item.category);
-      if (current !== undefined && current !== item.taxRate)
-        errors.push(`دستهٔ «${item.category}» بیش از یک نرخ مالیات دارد.`);
-      categoryRates.set(item.category, item.taxRate);
-    }
-    if (item.modifierGroup) {
-      const rule = `${item.modifierMinSelect ?? 0}/${item.modifierMaxSelect ?? 1}`;
-      const current = groupRules.get(item.modifierGroup);
-      if (current !== undefined && current !== rule)
-        errors.push(
-          `گروه افزودنی «${item.modifierGroup}» بیش از یک محدودهٔ انتخاب دارد.`,
-        );
-      groupRules.set(item.modifierGroup, rule);
-      // Without this, two rows listing «شیر بادام:25000» and «شیر بادام:30000»
-      // in the same group would silently resolve to whichever row apply()
-      // happened to reach last.
-      for (const modifier of item.modifiers ?? []) {
-        const key = `${item.modifierGroup}\u0000${modifier.name}`;
-        const currentPrice = modifierPrices.get(key);
-        if (currentPrice !== undefined && currentPrice !== modifier.priceDelta)
-          errors.push(
-            `افزودنی «${modifier.name}» در گروه «${item.modifierGroup}» بیش از یک قیمت دارد.`,
-          );
-        modifierPrices.set(key, modifier.priceDelta);
-      }
-    }
-  }
-  return [...new Set(errors)];
-}
-
 /** Full menu import for Settings. It supports preview and never marks a wizard step. */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(
@@ -177,7 +143,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   } catch {
     return NextResponse.json({ error: "parse_failed" }, { status: 400 });
   }
-  result.errors.push(...consistencyErrors(result));
+  result.errors.push(...menuImportConsistencyErrors(result));
   if (result.items.length === 0) {
     return NextResponse.json(
       {
@@ -210,188 +176,19 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     session.businessId,
     SETTING_KEYS.tax,
   );
-  const defaultTaxRate = tax?.defaultRate ?? 0;
-  const categoryTaxRate = new Map<string, number>();
-  for (const item of result.items)
-    if (item.taxRate !== undefined)
-      categoryTaxRate.set(item.category, item.taxRate);
 
-  let createdCategories = 0;
-  let createdItems = 0;
-  let updatedItems = 0;
-  let createdGroups = 0;
-  let createdModifiers = 0;
-  let reactivatedCategories = 0;
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const categoryIdByName = new Map<string, string>();
-    const { rows: existingCategories } = await client.query(
-      "SELECT id, name, is_active FROM menu_categories WHERE location_id = $1",
-      [location.id],
-    );
-    for (const category of existingCategories)
-      categoryIdByName.set(category.name, category.id);
+  // One shared, transactional upsert (menu-import-apply.ts) — the same write
+  // path the onboarding wizard uses, so bulk fixes land identically from
+  // either door.
+  const counts = await applyMenuImport(location.id, result, tax?.defaultRate ?? 0);
 
-    const categoriesToUpdate: { id: string; taxRate: number | null; wasInactive: boolean }[] = [];
-    const categoriesToInsert: { name: string; taxRate: number }[] = [];
-
-    for (const categoryName of result.categories) {
-      const taxRate = categoryTaxRate.get(categoryName) ?? defaultTaxRate;
-      const existingId = categoryIdByName.get(categoryName);
-      if (existingId) {
-        // Every category the file writes into is re-activated, the same
-        // deliberate upsert the modifiers below get: a category deactivated by
-        // an earlier delete (it had ordered items) would otherwise swallow the
-        // imported rows into a part of the menu the POS never shows, with no
-        // hint of where they went.
-        categoriesToUpdate.push({
-          id: existingId,
-          taxRate: categoryTaxRate.has(categoryName) ? taxRate : null,
-          wasInactive: !existingCategories.find((c) => c.id === existingId)?.is_active,
-        });
-      } else {
-        categoriesToInsert.push({ name: categoryName, taxRate });
-      }
-    }
-
-    if (categoriesToUpdate.length > 0) {
-      const ids = categoriesToUpdate.map((c) => c.id);
-      const rates = categoriesToUpdate.map((c) => c.taxRate);
-      reactivatedCategories = categoriesToUpdate.filter((c) => c.wasInactive).length;
-      await client.query(
-        `UPDATE menu_categories AS c
-         SET tax_rate = COALESCE(u.rate, c.tax_rate),
-             is_active = true
-         FROM unnest($1::uuid[], $2::numeric[]) AS u(id, rate)
-         WHERE c.id = u.id`,
-        [ids, rates],
-      );
-    }
-
-    if (categoriesToInsert.length > 0) {
-      for (const cat of categoriesToInsert) {
-        const { rows } = await client.query(
-          `INSERT INTO menu_categories (location_id, name, tax_rate, sort_order)
-           SELECT $1, $2, $3, COALESCE(MAX(sort_order) + 1, 0)
-             FROM menu_categories WHERE location_id = $1
-           RETURNING id`,
-          [location.id, cat.name, cat.taxRate],
-        );
-        categoryIdByName.set(cat.name, rows[0].id);
-        createdCategories++;
-      }
-    }
-
-    const itemIdByIndex = new Map<number, string>();
-    for (const [index, item] of result.items.entries()) {
-      const categoryId = categoryIdByName.get(item.category)!;
-      const { rows: existing } = await client.query(
-        "SELECT id FROM menu_items WHERE location_id = $1 AND category_id = $2 AND name = $3",
-        [location.id, categoryId, item.name],
-      );
-      if (existing.length > 0) {
-        await client.query(
-          `UPDATE menu_items
-              SET price = $1, description = COALESCE($2, description), sku = COALESCE($3, sku), updated_at = now()
-            WHERE id = $4`,
-          [
-            item.price,
-            item.description ?? null,
-            item.sku ?? null,
-            existing[0].id,
-          ],
-        );
-        itemIdByIndex.set(index, existing[0].id);
-        updatedItems++;
-      } else {
-        const { rows } = await client.query(
-          `INSERT INTO menu_items (location_id, category_id, name, price, description, sku, sort_order)
-           SELECT $1, $2, $3, $4, $5, $6, COALESCE(MAX(sort_order) + 1, 0)
-             FROM menu_items WHERE location_id = $1 AND category_id = $2
-           RETURNING id`,
-          [
-            location.id,
-            categoryId,
-            item.name,
-            item.price,
-            item.description ?? null,
-            item.sku ?? null,
-          ],
-        );
-        itemIdByIndex.set(index, rows[0].id);
-        createdItems++;
-      }
-    }
-
-    const groupIdByName = new Map<string, string>();
-    const { rows: existingGroups } = await client.query(
-      "SELECT id, name FROM modifier_groups WHERE location_id = $1",
-      [location.id],
-    );
-    for (const group of existingGroups) groupIdByName.set(group.name, group.id);
-    for (const [index, item] of result.items.entries()) {
-      if (!item.modifierGroup) continue;
-      const minSelect = item.modifierMinSelect ?? 0;
-      const maxSelect =
-        item.modifierMaxSelect ?? Math.max(1, item.modifiers?.length ?? 1);
-      let groupId = groupIdByName.get(item.modifierGroup);
-      if (groupId) {
-        await client.query(
-          "UPDATE modifier_groups SET min_select = $1, max_select = $2 WHERE id = $3",
-          [minSelect, maxSelect, groupId],
-        );
-      } else {
-        const { rows } = await client.query(
-          "INSERT INTO modifier_groups (location_id, name, min_select, max_select) VALUES ($1, $2, $3, $4) RETURNING id",
-          [location.id, item.modifierGroup, minSelect, maxSelect],
-        );
-        const createdGroupId = rows[0].id as string;
-        groupId = createdGroupId;
-        groupIdByName.set(item.modifierGroup, createdGroupId);
-        createdGroups++;
-      }
-      const itemId = itemIdByIndex.get(index)!;
-      await client.query(
-        `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
-         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [itemId, groupId],
-      );
-      for (const modifier of item.modifiers ?? []) {
-        const { rows: existing } = await client.query(
-          "SELECT id FROM modifiers WHERE group_id = $1 AND name = $2",
-          [groupId, modifier.name],
-        );
-        if (existing.length > 0) {
-          await client.query(
-            "UPDATE modifiers SET price_delta = $1, is_active = true WHERE id = $2",
-            [modifier.priceDelta, existing[0].id],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO modifiers (location_id, group_id, name, price_delta, sort_order)
-             SELECT $1, $2, $3, $4, COALESCE(MAX(sort_order) + 1, 0)
-               FROM modifiers WHERE group_id = $2`,
-            [location.id, groupId, modifier.name, modifier.priceDelta],
-          );
-          createdModifiers++;
-        }
-      }
-    }
-    await client.query("COMMIT");
-  } catch (cause) {
-    await client.query("ROLLBACK");
-    throw cause;
-  } finally {
-    client.release();
-  }
   return NextResponse.json({
     ok: true,
-    createdCategories,
-    createdItems,
-    updatedItems,
-    createdGroups,
-    createdModifiers,
-    reactivatedCategories,
+    createdCategories: counts.createdCategories,
+    createdItems: counts.createdItems,
+    updatedItems: counts.updatedItems,
+    createdGroups: counts.createdGroups,
+    createdModifiers: counts.createdModifiers,
+    reactivatedCategories: counts.reactivatedCategories,
   });
 });
