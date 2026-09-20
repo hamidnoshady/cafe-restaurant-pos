@@ -27,6 +27,7 @@ for (const relative of [
   "runtime-build.json",
   ...compiledEntries,
   ".next/BUILD_ID",
+  ".next/required-server-files.json",
   ".next/static",
   "public/sw.js",
   "public/offline.html",
@@ -50,6 +51,17 @@ for (const relative of compiledEntries) {
   if (compiled.includes("file:///__desktop_bundle_dependency__.ts")) {
     fail(`${relative} still contains the Windows-invalid import.meta replacement`);
   }
+}
+
+const serverBundle = fs.readFileSync(path.join(runtime, "bin/server.cjs"), "utf8");
+if (!serverBundle.includes("__NEXT_PRIVATE_STANDALONE_CONFIG")) {
+  fail("compiled server does not install the traced standalone Next config");
+}
+const requiredServerFiles = JSON.parse(
+  fs.readFileSync(path.join(runtime, ".next/required-server-files.json"), "utf8"),
+);
+if (requiredServerFiles.config?.output !== "standalone") {
+  fail("required-server-files.json does not contain a standalone Next config");
 }
 
 for (const relative of ["scripts", "next.config.ts", "tsconfig.json", ".next/cache", "coverage", "test-results", ".git"]) {

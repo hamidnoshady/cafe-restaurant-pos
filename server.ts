@@ -10,9 +10,25 @@
 import { createServer as createHttpServer, type IncomingMessage } from "http";
 import { createServer as createHttpsServer } from "https";
 import fs from "fs";
+import path from "path";
 import type { Duplex } from "stream";
 import { parse } from "url";
 import { WebSocketServer } from "ws";
+
+const port = Number(process.env.PORT) || 3000;
+const dev = process.env.NODE_ENV !== "production";
+
+if (!dev && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
+  // `next build` positively selects the production config and writes it into
+  // this traced manifest. Next's generated standalone server sets the same
+  // variable before loading `next`; our WebSocket-aware custom server must do
+  // likewise. Without it, Next tries to reload next.config.ts and its untraced
+  // build-only webpack package, so a packaged desktop cannot start.
+  const requiredFilesPath = path.join(process.cwd(), ".next", "required-server-files.json");
+  const requiredFiles = JSON.parse(fs.readFileSync(requiredFilesPath, "utf8")) as { config?: unknown };
+  if (!requiredFiles.config) throw new Error(`${requiredFilesPath} contains no standalone Next config`);
+  process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(requiredFiles.config);
+}
 
 // `require`, not `import`: Next's own require-hook (which wires up the
 // AsyncLocalStorage polyfill app-render needs) only runs on a CJS require of
@@ -22,8 +38,6 @@ import { WebSocketServer } from "ws";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const next = require("next") as typeof import("next").default;
 
-const port = Number(process.env.PORT) || 3000;
-const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
