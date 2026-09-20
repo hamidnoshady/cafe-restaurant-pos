@@ -32,6 +32,7 @@
 import { query } from "./db";
 import { businessToday } from "./business-day-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
+import { arBalanceByCustomerSql } from "./ar-service";
 import {
   compileSegment,
   consentPredicate,
@@ -115,29 +116,14 @@ function segmentSourceSql(): string {
          AND (expires_at IS NULL OR expires_at >= current_date)
        GROUP BY customer_id
     ),
-    -- The accounting bridge (Phase 36d). Same reconstruction as
-    -- ar-service.listCustomerBalances: sum every journal line posted to the
-    -- A/R control account, attributed to a customer through the order or the
-    -- receipt that caused it. Deliberately NOT "unpaid orders" — that would
-    -- ignore manual journal entries and credit notes and would let a segment
-    -- disagree with the trial balance about who owes what.
+    -- The accounting bridge (Phase 36d). The SQL is Accounting's own —
+    -- arBalanceByCustomerSql() — not a copy of it. A/R attribution has to
+    -- follow orders, receipts, cheques and the closed-order amendment bridge,
+    -- and a segment that reconstructed that itself would eventually disagree
+    -- with the trial balance about who owes what. Deliberately NOT "unpaid
+    -- orders", which would ignore manual entries and credit notes.
     ar_stats AS (
-      SELECT COALESCE(o.customer_id, r.customer_id) AS customer_id,
-             coalesce(sum(jl.debit - jl.credit), 0)::bigint AS ar_balance
-        FROM journal_lines jl
-        JOIN journal_entries je ON je.id = jl.entry_id
-        JOIN accounts a ON a.id = jl.account_id
-        LEFT JOIN order_amendments am
-               ON je.source_type = 'order_amendment' AND am.id = je.source_id
-        LEFT JOIN orders o
-               ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
-        LEFT JOIN ar_receipts r
-               ON je.source_type = 'ar_receipt' AND r.id = je.source_id
-       WHERE je.business_id = $1
-         AND a.business_id = $1
-         AND a.code = '${WELL_KNOWN_CODES.accountsReceivable}'
-         AND COALESCE(o.customer_id, r.customer_id) IS NOT NULL
-       GROUP BY COALESCE(o.customer_id, r.customer_id)
+      ${arBalanceByCustomerSql(WELL_KNOWN_CODES.accountsReceivable)}
     )
     SELECT c.*,
            coalesce(os.order_count, 0)   AS order_count,
@@ -473,26 +459,95 @@ export async function countSegment(
   return countDefinition(businessId, segment.definition, purpose);
 }
 
-/** Counts for every segment at once, so the list page is one round trip per segment rather than N+1 in the browser. */
+/**
+ * Member counts for every segment, in **one** pass over the customer base.
+ *
+ * ## What was wrong
+ *
+ * This used to call `countDefinition` once per segment. Each of those calls
+ * re-runs `segmentSourceSql()` — the CTE that aggregates every order, receipt
+ * and visit in the business to derive recency, frequency and spend per
+ * customer. So a business with twelve saved segments scanned its entire order
+ * history twelve times to render one list page, and the cost grew with the
+ * product of segments and customers. At the 100k-customer scale this app
+ * targets, that is the difference between a page and a timeout.
+ *
+ * ## The fix
+ *
+ * The expensive part does not depend on the segment at all. So the source CTE
+ * is evaluated **once** and every segment becomes a
+ * `count(*) FILTER (WHERE <its predicate>)` aggregate over that single scan —
+ * one row out, N counts in it. Postgres evaluates all the filters in the same
+ * pass it was already making.
+ *
+ * Each segment still gets its own compiled predicate and its own consent
+ * clause, so this is a change of execution strategy only: a segment counted
+ * here and the same segment counted alone must agree, and an integration test
+ * asserts exactly that.
+ *
+ * A definition that no longer compiles cannot be allowed to take the page
+ * down, and here it also cannot be allowed to break the *shared* query — so
+ * those segments are dropped from the combined statement and reported as 0,
+ * the same as before.
+ */
 export async function listSegmentsWithCounts(
   businessId: string,
 ): Promise<(CustomerSegment & { memberCount: number })[]> {
   const segments = await listSegments(businessId);
-  const counts = await Promise.all(
-    segments.map(async (segment) => {
-      try {
-        return await countDefinition(businessId, segment.definition, "view");
-      } catch {
-        // A stored definition that no longer compiles (a field removed in a
-        // later version, say) must not take the whole page down with it — the
-        // segment lists with an unknown count and can still be edited or
-        // archived.
-        return 0;
-      }
-    }),
-  );
-  return segments.map((segment, index) => ({
-    ...segment,
-    memberCount: counts[index],
-  }));
+  if (segments.length === 0) return [];
+
+  const anchorDate = await businessToday(businessId);
+  const params: unknown[] = [businessId];
+  const projections: string[] = [];
+  // Index of each segment in the output row, or null when its definition no
+  // longer compiles.
+  const slots = new Map<string, string>();
+
+  segments.forEach((segment, index) => {
+    try {
+      // paramOffset is the count of parameters already bound, so each
+      // segment's placeholders continue where the previous one stopped
+      // instead of every segment restarting at $2 and overwriting them.
+      const compiled = compileSegment(segment.definition, {
+        anchorDate,
+        paramOffset: params.length,
+      });
+      params.push(...compiled.params);
+      const alias = `seg_${index}`;
+      projections.push(
+        `count(*) FILTER (WHERE (${compiled.sql}) AND (${consentPredicate("view")}))::int AS ${alias}`,
+      );
+      slots.set(segment.id, alias);
+    } catch {
+      // A stored definition that no longer compiles (a field removed in a
+      // later version, say) must not take the whole page down with it — the
+      // segment lists with a zero count and can still be edited or archived.
+    }
+  });
+
+  if (projections.length === 0) {
+    return segments.map((segment) => ({ ...segment, memberCount: 0 }));
+  }
+
+  let counts: Record<string, number> = {};
+  try {
+    const { rows } = await query<Record<string, number>>(
+      `WITH scoped AS (${segmentSourceSql()})
+       SELECT ${projections.join(", ")}
+         FROM scoped s
+         JOIN parties c ON c.id = s.id`,
+      params,
+    );
+    counts = rows[0] ?? {};
+  } catch {
+    // Same principle one level up: the list page renders with unknown counts
+    // rather than an error, because the names and definitions are still
+    // useful and the user can still get to the editor.
+    counts = {};
+  }
+
+  return segments.map((segment) => {
+    const alias = slots.get(segment.id);
+    return { ...segment, memberCount: alias ? (counts[alias] ?? 0) : 0 };
+  });
 }

@@ -68,6 +68,50 @@ export const PERMISSIONS = {
   partiesView: "parties.view",
   partiesManage: "parties.manage",
 
+  /**
+   * CRM — the relationship layer on top of «اشخاص».
+   *
+   * Separate from `parties.*` because they answer different questions.
+   * `parties.manage` is "may correct this person's phone number", which a
+   * cashier needs a dozen times a shift. The permissions below are "may read
+   * everyone's purchase history", "may merge two customers irreversibly", "may
+   * decide who can be marketed to" — each of which is a different kind of
+   * trust, and bundling them into one `crm.manage` would mean granting a
+   * junior salesperson the ability to destroy the directory in order to let
+   * them log a phone call.
+   *
+   * The split is by *blast radius*, not by screen:
+   */
+  /** Read the 360° file, pipeline, segments and reports. */
+  crmView: "crm.view",
+  /** Day-to-day relationship work: notes, tasks, activities, cases, deals. */
+  crmManage: "crm.manage",
+  /**
+   * Merge two customer records. **Irreversible** — it rewrites every order,
+   * invoice and receipt that pointed at the loser and archives it. Its own
+   * permission because it is the only CRM action that cannot be undone, and
+   * because "clean up the duplicates" is exactly the task a business delegates
+   * to its newest employee.
+   */
+  crmMerge: "crm.merge",
+  /**
+   * Change marketing consent. Consent is a legal record, not a preference:
+   * whoever holds this can make the business's messaging lawful or unlawful.
+   */
+  crmConsentManage: "crm.consent_manage",
+  /**
+   * Export customer data — CSV, segment downloads, directory dumps. Reading
+   * one customer's file on screen and walking out with the whole customer list
+   * are not the same act, and only the second one is how a directory ends up
+   * at a competitor.
+   */
+  crmExport: "crm.export",
+  /**
+   * Reconfigure pipelines, stages and segment definitions. Structural: a stage
+   * rename or deletion reshapes every historical report built on it.
+   */
+  crmConfigure: "crm.configure",
+
   // Accounting
   ledgerView: "ledger.view",
   ledgerPost: "ledger.post",
@@ -109,6 +153,7 @@ const {
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
   partiesView, partiesManage,
+  crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure,
   ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
   reportsView, reportsExport,
   teamManage, settingsManage, locationsManage, backupManage,
@@ -128,6 +173,13 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,
     partiesView, partiesManage,
+    // The manager reached every CRM screen before these permissions existed
+    // (the routes gated on requireRole("owner","manager")), so the preset
+    // grants all of them. Introducing a permission must not quietly remove
+    // access somebody already had — that is an outage, not a security
+    // improvement. A business that wants a narrower manager revokes
+    // individual capabilities per member.
+    crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure,
     ledgerView, reportsView, reportsExport,
     settingsManage, backupManage,
   ],
@@ -149,6 +201,11 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     menuView, deliveryManage,
     inventoryView,
     partiesView, partiesManage,
+    // Matches what the CRM nav already showed a cashier (directory, persons,
+    // activities, cases) — logging that a customer called is floor work. No
+    // crmView: the 360° file, segments and pipeline are not. No merge, no
+    // consent, no export.
+    crmManage,
   ],
   waiter: [
     ordersCreate,
