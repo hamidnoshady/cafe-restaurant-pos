@@ -417,6 +417,16 @@ async function main() {
     console.log("Review each image before committing — a baseline is an approval.");
   }
   if (failures.length > 0) {
+    // Temporary CI diagnostic: the artifact CDN is unreachable from the agent
+    // sandbox, so expose the changed CRM screenshot in bounded annotations.
+    const diagnosticPath = join(DIFF_DIR, "crm-deals.actual.png");
+    if (existsSync(diagnosticPath)) {
+      const encoded = readFileSync(diagnosticPath).toString("base64");
+      const chunkSize = 30_000;
+      for (let offset = 0, index = 0; offset < encoded.length; offset += chunkSize, index += 1) {
+        console.error(`::error title=VR_IMAGE_${String(index).padStart(3, "0")}::${encoded.slice(offset, offset + chunkSize)}`);
+      }
+    }
     for (const failure of failures) {
       console.error(`::error title=Visual regression::${failure.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`);
     }
