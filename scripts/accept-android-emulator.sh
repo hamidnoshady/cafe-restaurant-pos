@@ -60,7 +60,20 @@ adb shell chmod 644 "/system/etc/security/cacerts/${HASH}.0"
 adb reboot
 wait_for_android_boot "post-CA reboot"
 adb shell test -r "/system/etc/security/cacerts/${HASH}.0"
-adb shell am start -a android.intent.action.VIEW -d 'https://10.0.2.2:9443/acceptance?platform=android-emulator'
+
+ACCEPTANCE_URL='https://10.0.2.2:9443/acceptance?platform=android-emulator'
+if adb shell pm path com.android.chrome >/dev/null 2>&1; then
+  # A clean emulator otherwise stops at Chrome's first-run UI instead of
+  # navigating to the acceptance URL. Keep this scoped to the disposable test
+  # emulator; no browser security control is disabled.
+  adb shell pm clear com.android.chrome >/dev/null
+  adb shell am set-debug-app --persistent com.android.chrome
+  adb shell 'printf "%s\n" "chrome --disable-fre --no-default-browser-check --no-first-run" > /data/local/tmp/chrome-command-line'
+  adb shell am start -n com.android.chrome/com.google.android.apps.chrome.Main -a android.intent.action.VIEW -d "$ACCEPTANCE_URL"
+else
+  printf '::notice file=scripts/accept-android-emulator.sh,title=Android trust fixture::Chrome package is absent; using the image default HTTPS handler\n'
+  adb shell am start -a android.intent.action.VIEW -d "$ACCEPTANCE_URL"
+fi
 
 for _ in $(seq 1 45); do
   if grep -q '"completed": true' "$RESULT"; then
