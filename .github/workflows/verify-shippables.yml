@@ -38,6 +38,7 @@ on:
       - 'package-lock.json'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
+      - '.github/workflows/verify-shippables.yml'
   # GitHub suppresses PR-synchronize events created by the Arena GitHub App.
   # Keep shipped-runtime checks active on those branch pushes as well.
   push:
@@ -54,6 +55,7 @@ on:
       - 'package-lock.json'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
+      - '.github/workflows/verify-shippables.yml'
 
 concurrency:
   group: verify-shippables-${{ github.ref }}

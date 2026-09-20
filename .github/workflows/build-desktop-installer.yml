@@ -23,8 +23,8 @@ on:
       - '.github/workflows/build-desktop-installer.yml'
   # Arena agent branches use a GitHub App whose PR-synchronize events may be
   # suppressed by GitHub. Run on those pushes as well so a Windows package is
-  # still tested before review; concurrency cancels the duplicate if a PR event
-  # is emitted too.
+  # still tested at the exact review commit; concurrency cancels the duplicate
+  # if a PR event is emitted too.
   push:
     branches: [main, 'arena/**']
     paths:
