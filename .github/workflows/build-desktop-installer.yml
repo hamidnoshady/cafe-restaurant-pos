@@ -21,8 +21,12 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/build-desktop-installer.yml'
+  # Arena agent branches use a GitHub App whose PR-synchronize events may be
+  # suppressed by GitHub. Run on those pushes as well so a Windows package is
+  # still tested before review; concurrency cancels the duplicate if a PR event
+  # is emitted too.
   push:
-    branches: [main]
+    branches: [main, 'arena/**']
     paths:
       - 'electron/**'
       - 'src/**'
@@ -38,7 +42,7 @@ on:
       - '.github/workflows/build-desktop-installer.yml'
 
 concurrency:
-  group: build-desktop-installer-${{ github.event_name == 'workflow_dispatch' && 'release' || github.ref }}
+  group: build-desktop-installer-${{ github.event_name == 'workflow_dispatch' && 'release' || github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
