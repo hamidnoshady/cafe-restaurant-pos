@@ -1,24 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { buildSystemPrompt, type AgentMode, type PromptContext } from "@/lib/ai";
+import { ACTION_CATALOG, buildSystemPrompt, type AgentMode, type PromptContext } from "@/lib/ai";
 import { isPlatformAiConfigured } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
-import { resolveGatewayTurnPricing } from "@/lib/ai-gateway-service";
 import {
-  AiInsufficientCreditError,
-  cancelAiTurnReservation,
-  reserveAiTurn,
+  AiWalletInsufficientError,
+  gateAiTurn,
+  newAiRequestId,
   settleAiTurn,
-  type AiTurnReservation,
-} from "@/lib/ai-billing-service";
+} from "@/lib/ai-wallet-billing";
 import { createAiActionAudit } from "@/lib/ai-action-audit";
-import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
+import {
+  appendMessage,
+  getConversationProjectId,
+  getOrCreateConversation,
+} from "@/lib/ai-conversations";
+import { buildProjectPromptContext, getProjectPromptContext } from "@/lib/ai-projects";
+import { persistChatImageAttachments } from "@/lib/ai-media-persist";
+import { createInputRequest } from "@/lib/ai-input-requests-service";
 import {
   parseChatAttachments,
   prepareAttachments,
   withAttachmentContext,
 } from "@/lib/ai-attachment";
 import { taskDirectiveFor } from "@/lib/ai-tasks";
+import { agentTurnScope, type AgentTurnScope } from "@/lib/ai-custom-agents";
+import { getCustomAgent } from "@/lib/ai-custom-agents-service";
 import {
   AiError,
   retrievalReadyForMode,
@@ -71,10 +78,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     messages?: unknown;
     currentStep?: unknown;
     conversationId?: unknown;
+    /** Phase F — start this conversation inside a project workspace. */
+    projectId?: unknown;
     attachment?: unknown;
     /** Wave 5 extension — one or more attachments (image and/or PDF). */
     attachments?: unknown;
     allowActions?: unknown;
+    /** Phase D — run this dashboard turn as a business-defined custom agent. */
+    agentId?: unknown;
     /** Phase 36c — the selected task lens (see ai-tasks.ts). */
     task?: unknown;
     /** Phase 36c — a free-form custom task description, wins over `task`. */
@@ -109,6 +120,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const messages = sanitizeMessages(body.messages);
   if (messages.length === 0) {
     return NextResponse.json({ error: "empty_messages" }, { status: 400 });
+  }
+
+  // Phase D — an optional custom agent scopes this turn. Only dashboard mode
+  // runs as an agent (the floor and wizard surfaces are their own realms). A
+  // disabled or unknown agent id is refused rather than silently falling back
+  // to the full assistant, so the caller can never think it is scoped when it
+  // is not.
+  let agentScope: AgentTurnScope | null = null;
+  if (mode === "dashboard" && typeof body.agentId === "string" && body.agentId.trim()) {
+    const agent = await getCustomAgent(session.businessId, body.agentId.trim());
+    if (!agent || !agent.enabled) {
+      return NextResponse.json({ error: "agent_unavailable" }, { status: 404 });
+    }
+    agentScope = agentTurnScope(agent);
   }
 
   // Wave 5 (issue #145, extended) — only dashboard mode (owner/manager) may
@@ -150,17 +175,16 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     );
   }
 
-  let reservation: AiTurnReservation;
+  // Phase B — the pre-request affordability gate replaces the credit
+  // reservation. It refuses when the business is in AI debt or its wallet is
+  // below the per-turn ceiling; it never holds money up front.
+  const requestId = newAiRequestId();
   try {
-    reservation = await reserveAiTurn({
-      businessId: session.businessId,
-      reservedRial: config.maxTurnRial,
-      userId: session.sub,
-    });
+    await gateAiTurn(session.businessId, config);
   } catch (err) {
-    if (err instanceof AiInsufficientCreditError) {
+    if (err instanceof AiWalletInsufficientError) {
       return NextResponse.json(
-        { error: "ai_credit_required", message: "اعتبار هوش مصنوعی شما برای یک پاسخ جدید کافی نیست." },
+        { error: "ai_credit_required", message: "اعتبار کیف پول شما برای استفاده از هوش مصنوعی کافی نیست." },
         { status: 402 },
       );
     }
@@ -176,6 +200,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     currentStep: typeof body.currentStep === "string" ? body.currentStep : null,
     userName: session.fullName,
     role: session.role,
+    agent: agentScope
+      ? {
+          name: agentScope.name,
+          instructions: agentScope.instructions,
+          actionTypes: agentScope.actionTypes,
+        }
+      : undefined,
   };
   const latestPrompt = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
 
@@ -186,6 +217,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     typeof body.conversationId === "string" && body.conversationId.trim()
       ? body.conversationId.trim()
       : null;
+  const requestedProjectId =
+    typeof body.projectId === "string" && body.projectId.trim()
+      ? body.projectId.trim()
+      : null;
   let conversationId: string | null = null;
   try {
     const conversation = await getOrCreateConversation({
@@ -194,11 +229,78 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       mode,
       conversationId: requestedConversationId,
       firstMessageContent: latestPrompt,
+      // A project link is set only when a new conversation is started; resuming
+      // an existing one keeps whatever project it already carries.
+      projectId: requestedProjectId,
     });
     conversationId = conversation.id;
     await appendMessage({ conversationId, role: "user", content: latestPrompt });
   } catch (err) {
     console.error("ai conversation persistence failed", err);
+  }
+
+  // Phase F — if this conversation belongs to a project, load the project's
+  // standing instruction, notes and remembered facts and render them into the
+  // prompt. Best-effort: a failure here degrades to a project-unaware turn, it
+  // never fails the turn. Only dashboard/wizard turns carry a project.
+  let projectContext: string | null = null;
+  // The ambient project id for this turn. When set, project-scoped actions are
+  // offered and their resolved id is injected into any proposal payload — the
+  // model never names a project id (Phase F pt.2).
+  let activeProjectId: string | null = null;
+  if (conversationId && (mode === "dashboard" || mode === "wizard")) {
+    try {
+      const projectId = await getConversationProjectId(session.businessId, conversationId);
+      if (projectId) {
+        const ctx = await getProjectPromptContext({
+          businessId: session.businessId,
+          actorUserId: session.sub,
+          projectId,
+        });
+        if (ctx) {
+          activeProjectId = projectId;
+          projectContext = buildProjectPromptContext(ctx);
+          promptContext.projectContext = projectContext;
+          // Phase F pt.5 — if the project pins a default agent and the request
+          // did not name one of its own, run this turn as the pinned agent. A
+          // request-level agentId always wins (it is already resolved above);
+          // a disabled/deleted pin resolves to null and the turn stays the full
+          // assistant. This can only NARROW the turn, never widen it.
+          if (!agentScope && ctx.defaultAgentId) {
+            const pinned = await getCustomAgent(session.businessId, ctx.defaultAgentId);
+            if (pinned && pinned.enabled) {
+              agentScope = agentTurnScope(pinned);
+              promptContext.agent = {
+                name: agentScope.name,
+                instructions: agentScope.instructions,
+                actionTypes: agentScope.actionTypes,
+              };
+            }
+          }
+          // Only when there is no scoped agent — an agent's action list is its
+          // own, and a project does not widen it.
+          if (!agentScope) promptContext.projectScoped = true;
+        }
+      }
+    } catch (err) {
+      console.error("ai project context load failed", err);
+    }
+  }
+
+  // Phase G pt.2 — persist any IMAGE attachments this turn carried into the
+  // Media Library, tagged with their provenance (from chat, and the
+  // conversation/project they belong to). Best-effort and non-blocking: it
+  // never throws and the turn proceeds regardless. Only dashboard/wizard turns
+  // attach files (the same scope parseChatAttachments enforces), and only when
+  // the conversation was actually persisted.
+  if (conversationId && attachments.length > 0 && (mode === "dashboard" || mode === "wizard")) {
+    void persistChatImageAttachments({
+      businessId: session.businessId,
+      userId: session.sub,
+      conversationId,
+      projectId: activeProjectId,
+      attachments,
+    }).catch((err) => console.error("ai chat attachment persistence failed", err));
   }
 
   // Phase 36 Wave 7 — the question's embedding, over the shared platform
@@ -207,8 +309,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   // caching). Failed embedding turns the cache off for this turn, never the
   // assistant.
   const bypassCache = body.bypassCache === true;
+  // An agent turn is a different assistant — narrower tools, its own
+  // instructions — so it never shares the general assistant's answer cache: a
+  // cached full-assistant answer must not surface inside a scoped agent, and a
+  // scoped agent's answer must not be served to the full assistant.
+  // Phase F — a project-scoped turn is shaped by the project's instruction,
+  // notes and memory, so it never shares the general answer cache: a generic
+  // cached answer must not surface inside a project, and a project-shaped
+  // answer must not be served to a project-less turn.
   const cacheCandidate =
-    (mode === "dashboard" || mode === "floor") && attachments.length === 0 && latestPrompt.trim();
+    !agentScope &&
+    !projectContext &&
+    (mode === "dashboard" || mode === "floor") &&
+    attachments.length === 0 &&
+    latestPrompt.trim();
   let questionEmbedding: number[] | null = null;
   let questionEmbeddingTokens = 0;
   if (cacheCandidate && (await isEmbeddingAvailable(config))) {
@@ -223,7 +337,6 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      let settled = false;
       const emit = (event: string, data: unknown) => controller.enqueue(sse(event, data));
 
       void (async () => {
@@ -263,12 +376,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           if (cachedHit) {
             const settlement = await settleAiTurn({
               businessId: session.businessId,
-              reservation,
+              requestId,
+              config,
               usage: { inputTokens: questionEmbeddingTokens, outputTokens: 0 },
-              inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-              outputTokenRialPerMillion: config.outputTokenRialPerMillion,
+              costUsd: null,
+              cacheHit: true,
+              attribution: {
+                requestType: "chat",
+                model: config.model,
+                conversationId,
+                locationId,
+                userId: session.sub,
+                metadata: { mode, cached: true },
+              },
             });
-            settled = true;
 
             if (conversationId) {
               await appendMessage({
@@ -283,7 +404,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               proposedAction: null,
               auditId: null,
               conversationId,
-              costRial: settlement.chargedRial + settlement.overageRial,
+              costRial: settlement.chargedRial,
               cached: true,
               cacheNotice: cachedHit.notice,
             });
@@ -307,28 +428,61 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             messages: withAttachmentContext(messages, preparedAttachments),
             attachments: preparedAttachments,
             allowActions,
+            // Phase D — when the turn runs as a custom agent, restrict the read
+            // tools to its allowlist and the proposable actions to its action
+            // list. Both are re-checked in runAgentTurn, so a hand-crafted
+            // response naming an out-of-scope action is refused, not applied.
+            toolAllowlist: agentScope ? agentScope.toolAllowlist : undefined,
+            actionTypes: agentScope ? agentScope.actionTypes : undefined,
+            // Phase F pt.2 — a non-agent project turn also offers the
+            // project-scoped action(s); runAgentTurn re-checks the enum.
+            projectScoped: Boolean(activeProjectId) && !agentScope,
             stream: {
               onDelta: (content) => emit("delta", { content }),
               onToolCalls: () => emit("reset", {}),
             },
           });
-          // Phase 38b — when the platform prices turns from the gateway and
-          // the gateway reported this turn's cost, that figure (plus the
-          // platform margin) is the settlement. Null — direct vendor, costing
-          // off, no figure reported — falls back to the token rates below.
-          const gatewayPricing = await resolveGatewayTurnPricing(
-            reply.costUsd,
-            config.revenueMarginPercent,
-          );
+
+          // Phase F pt.2 — a project-scoped proposal is addressed by the AMBIENT
+          // project id, which the model never sees. Inject the resolved id into
+          // the payload here so the confirm card, the audit and the apply call
+          // all target this project and no other. The action was only offered
+          // when activeProjectId was set, so this is the id it belongs to.
+          if (
+            reply.proposedAction &&
+            ACTION_CATALOG[reply.proposedAction.type]?.projectScoped &&
+            activeProjectId
+          ) {
+            reply.proposedAction = {
+              ...reply.proposedAction,
+              payload: {
+                ...reply.proposedAction.payload,
+                projectId: activeProjectId,
+                // The memory came from the assistant, tagged so the project page
+                // can show its provenance. A human's own memory posts 'user'.
+                source: "ai",
+              },
+            };
+          }
+          // Phase B — settle the REAL cost against the platform wallet. The
+          // gateway's reported USD (plus the platform margin) is preferred;
+          // the token rates are the fallback when the gateway did not price
+          // the turn. No reservation was held, so this is the only debit.
           const settlement = await settleAiTurn({
             businessId: session.businessId,
-            reservation,
+            requestId,
+            config,
             usage: reply.usage,
-            inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-            outputTokenRialPerMillion: config.outputTokenRialPerMillion,
-            gatewayPricing,
+            costUsd: reply.costUsd,
+            attribution: {
+              requestType: "chat",
+              model: config.model,
+              conversationId,
+              locationId,
+              userId: session.sub,
+              metadata: { mode },
+            },
           });
-          settled = true;
 
           const auditId = reply.proposedAction
             ? await createAiActionAudit({
@@ -340,27 +494,48 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               })
             : null;
 
+          // Phase E — persist the assistant turn, then attach a typed input
+          // request to it when the model raised one. The request row links back
+          // to this message so the transcript and the still-open card stay in
+          // one join.
+          let inputRequestId: string | null = null;
           if (conversationId) {
-            await appendMessage({
+            const messageId = await appendMessage({
               conversationId,
               role: "assistant",
               content: reply.content,
               proposal: reply.proposedAction,
-            }).catch((err) => console.error("ai conversation persistence failed", err));
+            }).catch((err) => {
+              console.error("ai conversation persistence failed", err);
+              return null;
+            });
+            if (reply.inputRequest && messageId) {
+              const created = await createInputRequest({
+                conversationId,
+                messageId,
+                spec: reply.inputRequest,
+              }).catch((err) => {
+                console.error("ai input request persistence failed", err);
+                return null;
+              });
+              inputRequestId = created?.id ?? null;
+            }
           }
 
           // Wave 7 — cache the answer only when the turn was provably
           // read-only: no proposal and nothing outside the mode's read tools.
           // `storeCachedAnswer` re-checks the same gate, so a future edit to
-          // this route cannot forget it.
+          // this route cannot forget it. Phase E — an input-request turn is
+          // interactive and per-user, never cached: it is treated like a
+          // proposal for the cache gate.
           const readToolNames = toolDefinitions(mode, { hasAttachment: false })
-            .filter((tool) => tool.function.name !== "propose_action")
+            .filter((tool) => tool.function.name !== "propose_action" && tool.function.name !== "request_input")
             .map((tool) => tool.function.name);
           const toolsUsed = reply.toolCalls.map((call) => call.name);
           const turnShape = {
             mode,
             toolsUsed,
-            proposedAction: Boolean(reply.proposedAction),
+            proposedAction: Boolean(reply.proposedAction) || Boolean(reply.inputRequest),
             readToolNames,
           };
           if (questionEmbedding && isCacheableTurn(turnShape)) {
@@ -390,22 +565,23 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           emit("done", {
             content: reply.content,
             proposedAction: reply.proposedAction,
+            // Phase E — the typed input request (spec + its persisted id), so
+            // the client can render the card and submit an answer against it.
+            inputRequest: reply.inputRequest
+              ? { id: inputRequestId, spec: reply.inputRequest }
+              : null,
             auditId,
             conversationId,
             // What this turn actually cost, so the client can say so under the
             // reply. It replaces the pre-send estimate card, which charged the
             // user an extra round trip and a tap to show a *guess*.
-            costRial: settlement.chargedRial + settlement.overageRial,
+            costRial: settlement.chargedRial,
           });
         } catch (err) {
-          if (!settled) {
-            await cancelAiTurnReservation({
-              businessId: session.businessId,
-              reservation,
-              reason: err instanceof Error ? err.message : "unknown_error",
-            }).catch((cancelError) => console.error("AI credit reservation refund failed", cancelError));
-          }
-
+          // Phase B — no reservation to refund. A turn that failed before the
+          // provider answered cost nothing, so nothing is settled; a turn that
+          // failed after already paying upstream has (in the happy path) been
+          // settled above. Nothing to undo here.
           if (err instanceof AiError) {
             emit("error", { error: err.code, message: err.message });
           } else {

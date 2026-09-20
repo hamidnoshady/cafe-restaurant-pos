@@ -30,6 +30,14 @@ name: test
 
 on:
   workflow_dispatch:
+    inputs:
+      record_baselines:
+        description: >-
+          Re-record the visual baselines and upload them as an artifact instead
+          of comparing. Use only for a reviewed, intended design change; the
+          images still have to be committed and looked at in the diff.
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: [main]
@@ -71,8 +79,8 @@ jobs:
     name: type check
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -83,8 +91,8 @@ jobs:
     name: unit tests
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -95,8 +103,8 @@ jobs:
     name: production build
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -114,8 +122,8 @@ jobs:
       DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -171,8 +179,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -205,8 +213,8 @@ jobs:
       TZ: Asia/Tehran
       SEED_OWNER_PASSWORD: owner1234
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -249,9 +257,25 @@ jobs:
           echo "--- server log ---"; cat server.log 2>/dev/null || true
           exit 1
       - name: Visual regression
+        if: ${{ inputs.record_baselines != true }}
         run: |
           set -o pipefail
           npm run test:visual 2>&1 | tee visual-output.log
+      # Recording runs only when explicitly asked for on a manual dispatch, so
+      # no ordinary PR or push can quietly re-record its way to green. The
+      # images are uploaded, never committed by CI — a baseline is an approval,
+      # and approving it is a human's job.
+      - name: Record visual baselines (manual, opt-in)
+        if: ${{ inputs.record_baselines == true }}
+        run: |
+          set -o pipefail
+          npm run test:visual:update 2>&1 | tee visual-output.log
+      - name: Upload re-recorded baselines
+        if: ${{ inputs.record_baselines == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: docs/design/visual/*.png
       - name: Publish visual regression summary
         if: always()
         run: |
@@ -268,7 +292,7 @@ jobs:
         run: cat server.log || true
       - name: Upload diffs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: visual-diffs
           path: docs/design/visual/__diff__/

@@ -54,6 +54,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const result = await mergeCustomers(session.businessId, winnerId, loserId, {
     mergedBy: session.fullName,
+    // The stable membership id alongside the display name: a name can be
+    // corrected later, and an audit row for an irreversible operation has to
+    // stay resolvable to the person who performed it.
+    mergedByUserId: session.sub,
   });
   if (!result) return NextResponse.json({ error: "customer_not_found" }, { status: 404 });
   return NextResponse.json({ merge: result });

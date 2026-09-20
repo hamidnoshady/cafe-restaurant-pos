@@ -15,6 +15,21 @@ import type { Duplex } from "stream";
 import { parse } from "url";
 import { WebSocketServer } from "ws";
 
+const port = Number(process.env.PORT) || 3000;
+const dev = process.env.NODE_ENV !== "production";
+
+if (!dev && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
+  // `next build` positively selects the production config and writes it into
+  // this traced manifest. Next's generated standalone server sets the same
+  // variable before loading `next`; our WebSocket-aware custom server must do
+  // likewise. Without it, Next tries to reload next.config.ts and its untraced
+  // build-only webpack package, so a packaged desktop cannot start.
+  const requiredFilesPath = path.join(process.cwd(), ".next", "required-server-files.json");
+  const requiredFiles = JSON.parse(fs.readFileSync(requiredFilesPath, "utf8")) as { config?: unknown };
+  if (!requiredFiles.config) throw new Error(`${requiredFilesPath} contains no standalone Next config`);
+  process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(requiredFiles.config);
+}
+
 // `require`, not `import`: Next's own require-hook (which wires up the
 // AsyncLocalStorage polyfill app-render needs) only runs on a CJS require of
 // the package; importing it as an ESM module under tsx skips that hook and
@@ -43,8 +58,6 @@ if (process.env.NODE_ENV === "production" && !process.env.__NEXT_PRIVATE_STANDAL
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const next = require("next") as typeof import("next").default;
 
-const port = Number(process.env.PORT) || 3000;
-const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
@@ -77,12 +90,14 @@ app.prepare().then(async () => {
   const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
   const { assertRlsEffective, closeDatabasePool } = await import("./src/lib/db");
   const { describeDeploymentRole } = await import("./src/lib/deployment-role");
-  const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runWebsiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS } = await import("./src/lib/website/billing-service");
   const { runMediaBillingTick } = await import("./src/lib/media-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
   const { runWebsiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/website/sync-service");
+  const { runCrmScoringTick, CRM_SCORING_TICK_INTERVAL_MS } = await import(
+    "./src/lib/crm-scoring-freshness"
+  );
   const { runCmsControlTick } = await import("./src/lib/cms/platform-sync");
   const { inPlatformScope } = await import("./src/lib/cms/platform-control-service");
   const { runHolooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/pull-service");
@@ -96,6 +111,55 @@ app.prepare().then(async () => {
   // boots exactly as before.
   const { installObservability, shipHttpEvent, flushObservability } = await import("./src/lib/observability");
   installObservability();
+
+  // A dropped client connection must never take the POS down.
+  //
+  // `[Error: aborted] { code: 'ECONNRESET' }` is what Node emits when a
+  // browser navigates away, a waiter's tablet leaves wifi, or the platform
+  // edge recycles an idle keep-alive socket mid-response. Nothing in the
+  // request pipeline owns that error — Next's handler has already returned —
+  // so it lands on `uncaughtException`, where the default behaviour (and the
+  // observability tap's flush-and-exit) killed the container. Production logs
+  // showed the till going down at 23:23 for exactly this reason.
+  //
+  // Registering a listener here is also what stops Node's default fatal
+  // handler from firing at all, so this must be installed unconditionally —
+  // installObservability() above is a no-op when no collector is configured.
+  const { isBenignNetworkError, describeNetworkError } = await import("./src/lib/network-errors");
+
+  // Rate-limit the log line: a flapping mobile client can produce hundreds a
+  // minute, and "the network is unreliable" only needs saying occasionally.
+  let droppedConnections = 0;
+  let lastDroppedLogAt = 0;
+  const noteDroppedConnection = (error: unknown) => {
+    droppedConnections += 1;
+    const now = Date.now();
+    if (now - lastDroppedLogAt < 60_000) return;
+    lastDroppedLogAt = now;
+    console.warn(
+      `> client connection dropped: ${describeNetworkError(error)}` +
+        (droppedConnections > 1 ? ` (${droppedConnections} since start)` : ""),
+    );
+  };
+
+  process.on("uncaughtException", (error) => {
+    if (isBenignNetworkError(error)) {
+      noteDroppedConnection(error);
+      return;
+    }
+    // Anything else is a real bug: print it and let the platform restart us
+    // rather than serve from a process in an unknown state.
+    console.error("> FATAL: uncaughtException:", error);
+    void flushObservability().finally(() => process.exit(1));
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    if (isBenignNetworkError(reason)) {
+      noteDroppedConnection(reason);
+      return;
+    }
+    console.error("> unhandledRejection:", reason);
+  });
 
   const { assertSecurePosture } = await import("./src/lib/deployment-posture");
   const { deploymentRole } = await import("./src/lib/deployment-role");
@@ -174,12 +238,12 @@ app.prepare().then(async () => {
     runServerSyncTick().catch((err) => console.error("server-sync tick failed:", err));
   scheduleBackgroundTick(serverSyncTick, SERVER_SYNC_INTERVAL_MS, 20_000);
 
-  // Phase 18: subscriptions grant their monthly credits in a tenant-scoped
-  // transaction. The service discovers due businesses under the documented
-  // platform bypass, then re-enters each one with withTenant before writing.
-  const aiSubscriptionTick = () =>
-    runAiSubscriptionRenewalTick().catch((err) => console.error("AI subscription renewal tick failed:", err));
-  scheduleBackgroundTick(aiSubscriptionTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS, 60_000);
+  // Phase J removed the Phase 18 AI subscription renewal tick: the legacy
+  // credit-subscription system (ai_business_billing / ai_credit_ledger /
+  // ai_subscription_plans) it fed was retired by Phase B's wallet cutover, and
+  // its tables are dropped in migration 0164. AI spend now debits the canonical
+  // business wallet directly (ai-wallet-billing.ts), so there is no monthly
+  // credit grant to schedule.
 
   // Phase 18b Wave 4: opt-in proactive AI jobs. The service enumerates
   // businesses only under the documented platform bypass and then wraps each
@@ -203,6 +267,18 @@ app.prepare().then(async () => {
   const websiteSyncTick = () =>
     runWebsiteSyncTick().catch((err) => console.error("website sync tick failed:", err));
   scheduleBackgroundTick(websiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS, 100_000);
+
+  // Migration 0157: keep RFM scores fresh. RFM is a whole-population quintile
+  // calculation, so it can never run on the checkout path — a busy Friday
+  // would make the till wait on a full scan of every customer and every order,
+  // and a failure in a reporting calculation would fail the sale itself.
+  // Instead, checkout marks the business dirty (one row) and this tick does
+  // the scanning. It also rescores daily regardless of activity, because
+  // recency decays with the calendar: a shop closed for Nowruz must not return
+  // to scores frozen at the moment it shut.
+  const crmScoringTick = () =>
+    runCrmScoringTick().catch((err) => console.error("CRM scoring tick failed:", err));
+  scheduleBackgroundTick(crmScoringTick, CRM_SCORING_TICK_INTERVAL_MS, 120_000);
 
   // Migration 0138: a platform website's monthly fee. The service reads the
   // due list under the platform bypass and charges each business inside
@@ -298,6 +374,16 @@ app.prepare().then(async () => {
   const requestListener = (req: IncomingMessage, res: ServerResponse) => {
     const t0 = Date.now();
     const parsed = parse(req.url ?? "/", true);
+    // Own the per-request error events too, so the common case never even
+    // reaches the process-level handler above.
+    req.on("error", (error: unknown) => {
+      if (isBenignNetworkError(error)) noteDroppedConnection(error);
+      else console.error("> request stream error:", error);
+    });
+    res.on("error", (error: unknown) => {
+      if (isBenignNetworkError(error)) noteDroppedConnection(error);
+      else console.error("> response stream error:", error);
+    });
     res.on("finish", () => {
       // Only noteworthy requests get shipped: a status >= 400 (something
       // broke) or a response over a second slow (something is about to).
@@ -329,10 +415,30 @@ app.prepare().then(async () => {
         )
       : createHttpServer(requestListener);
 
+  // `clientError` fires for malformed requests and for sockets that reset
+  // during the header phase — before any request object exists.
+  server.on("clientError", (error: NodeJS.ErrnoException, socket: Duplex) => {
+    if (!isBenignNetworkError(error)) console.error("> client error:", error);
+    if (!socket.destroyed && socket.writable) {
+      socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+    }
+    socket.destroy();
+  });
+
   const wss = new WebSocketServer({ noServer: true });
+  wss.on("error", (error) => {
+    if (!isBenignNetworkError(error)) console.error("> WebSocket server error:", error);
+  });
 
   server.on("upgrade", async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const { pathname } = parse(req.url ?? "/", true);
+
+    // An upgrade socket is raw: without this, a tablet that drops mid-handshake
+    // emits ECONNRESET with no listener and crashes the process.
+    socket.on("error", (error: unknown) => {
+      if (isBenignNetworkError(error)) noteDroppedConnection(error);
+      else console.error("> upgrade socket error:", error);
+    });
 
     if (pathname !== "/ws") {
       app.getUpgradeHandler()(req, socket, head);

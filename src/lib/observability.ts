@@ -34,6 +34,8 @@
  * docs/openobserve.md for deployment, alerting recipes, and retention.
  */
 
+import { isBenignNetworkError, describeNetworkError } from "./network-errors";
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -246,10 +248,29 @@ export function installObservability(): void {
     };
   }
   process.on("uncaughtException", (err) => {
+    // A client that hung up is not a reason to kill a POS mid-service. These
+    // surface here (rather than on a socket listener) because Node has nobody
+    // else to give them to; see src/lib/network-errors.ts.
+    if (isBenignNetworkError(err)) {
+      shipEvent({
+        level: "warn",
+        logger: "process",
+        message: `dropped client connection: ${describeNetworkError(err)}`,
+      });
+      return;
+    }
     shipEvent({ level: "fatal", logger: "process", message: `uncaughtException: ${stringifyArg(err)}` });
     void flush().finally(() => process.exit(1));
   });
   process.on("unhandledRejection", (reason) => {
+    if (isBenignNetworkError(reason)) {
+      shipEvent({
+        level: "warn",
+        logger: "process",
+        message: `dropped client connection: ${describeNetworkError(reason)}`,
+      });
+      return;
+    }
     shipEvent({ level: "error", logger: "process", message: `unhandledRejection: ${stringifyArg(reason)}` });
   });
   // A beacon per boot makes "did the new deploy come up, from which host?"

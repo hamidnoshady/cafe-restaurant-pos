@@ -1,8 +1,8 @@
 /**
  * Phase 18b Wave 5 — a transparent, conservative cost preview for a user
- * assistant turn. This never reserves or spends credit; the normal turn still
- * reserves the platform-configured maximum atomically before it contacts a
- * provider.
+ * assistant turn. This never spends credit; the normal turn settles its real
+ * cost against the platform wallet after the provider answers (Phase B), and a
+ * pre-request affordability gate blocks a turn the wallet cannot afford.
  */
 import { buildSystemPrompt, toolDefinitions, type AgentMode, type PromptContext } from "./ai";
 import { calculateAiUsageCostRial, estimateTokens, type AiUsageRates } from "./ai-billing";

@@ -263,6 +263,7 @@ export async function buildPairingSnapshot(
     accountRes,
     catRes,
     itemRes,
+    mediaAssetRes,
     modifierGroupRes,
     modifierRes,
     itemModifierRes,
@@ -335,16 +336,44 @@ export async function buildPairingSnapshot(
         sku: string | null;
         price: string;
         image_url: string | null;
+        image_media_id: string | null;
         is_active: boolean;
         sort_order: number;
       }>(
-        `SELECT id, category_id, name, description, sku, price, image_url, is_active, sort_order
+        `SELECT id, category_id, name, description, sku, price, image_url, image_media_id,
+                is_active, sort_order
            FROM menu_items WHERE location_id = $1 ORDER BY sort_order, name`,
         [locationId],
       ),
-      query<{ id: string; name: string; min_select: number; max_select: number }>(
-        `SELECT id, name, min_select, max_select
-           FROM modifier_groups WHERE location_id = $1 ORDER BY created_at, id`,
+      // v4: the media rows this branch's menu actually points at. Minimal
+      // replication — metadata only; the bytes are fetched from this server
+      // on demand, so pairing never stalls on image payloads.
+      query<{
+        id: string;
+        kind: string;
+        file_name: string;
+        mime_type: string;
+        byte_size: string;
+        storage_key: string;
+        sha256: string;
+      }>(
+        `SELECT DISTINCT ma.id, ma.kind, ma.file_name, ma.mime_type,
+                ma.byte_size::text AS byte_size, ma.storage_key, ma.sha256
+           FROM media_assets ma
+           JOIN menu_items mi ON mi.image_media_id = ma.id
+          WHERE mi.location_id = $1`,
+        [locationId],
+      ),
+      query<{
+        id: string;
+        name: string;
+        min_select: number;
+        max_select: number;
+        is_active: boolean;
+        sort_order: number;
+      }>(
+        `SELECT id, name, min_select, max_select, is_active, sort_order
+           FROM modifier_groups WHERE location_id = $1 ORDER BY sort_order, name, id`,
         [locationId],
       ),
       query<{
@@ -359,8 +388,16 @@ export async function buildPairingSnapshot(
            FROM modifiers WHERE location_id = $1 ORDER BY group_id, sort_order, name`,
         [locationId],
       ),
-      query<{ menu_item_id: string; modifier_group_id: string }>(
-        `SELECT mm.menu_item_id, mm.modifier_group_id
+      query<{
+        menu_item_id: string;
+        modifier_group_id: string;
+        min_select_override: number | null;
+        max_select_override: number | null;
+        sort_order: number;
+        is_active: boolean;
+      }>(
+        `SELECT mm.menu_item_id, mm.modifier_group_id, mm.min_select_override,
+                mm.max_select_override, mm.sort_order, mm.is_active
            FROM menu_item_modifier_groups mm
            JOIN menu_items mi ON mi.id = mm.menu_item_id
           WHERE mi.location_id = $1`,
@@ -483,14 +520,26 @@ export async function buildPairingSnapshot(
         // would silently round sufficiently large Rial values.
         price: i.price,
         imageUrl: i.image_url,
+        imageMediaId: i.image_media_id,
         isActive: i.is_active,
         sortOrder: i.sort_order,
+      })),
+      mediaAssets: mediaAssetRes.rows.map((asset) => ({
+        id: asset.id,
+        kind: asset.kind,
+        fileName: asset.file_name,
+        mimeType: asset.mime_type,
+        byteSize: asset.byte_size,
+        storageKey: asset.storage_key,
+        sha256: asset.sha256,
       })),
       modifierGroups: modifierGroupRes.rows.map((group) => ({
         id: group.id,
         name: group.name,
         minSelect: group.min_select,
         maxSelect: group.max_select,
+        isActive: group.is_active,
+        sortOrder: group.sort_order,
       })),
       modifiers: modifierRes.rows.map((modifier) => ({
         id: modifier.id,
@@ -503,6 +552,10 @@ export async function buildPairingSnapshot(
       itemModifierGroups: itemModifierRes.rows.map((link) => ({
         menuItemId: link.menu_item_id,
         modifierGroupId: link.modifier_group_id,
+        minSelectOverride: link.min_select_override,
+        maxSelectOverride: link.max_select_override,
+        sortOrder: link.sort_order,
+        isActive: link.is_active,
       })),
     },
     diningTables: diningRes.rows.map((table) => ({

@@ -481,3 +481,79 @@ describe("Phase 38b gateway cost capture", () => {
     expect(tools.length).toBeGreaterThan(1);
   });
 });
+
+describe("Phase F pt.2 — project-scoped action gating in runAgentTurn", () => {
+  // A fresh Response per call — a Response body can only be read once.
+  const projectMemoryCall = () =>
+    providerReply({
+      content: null,
+      tool_calls: [
+        {
+          id: "mem",
+          type: "function",
+          function: {
+            name: "propose_action",
+            arguments: JSON.stringify({
+              type: "project.memory.add",
+              title: "به‌خاطر بسپار",
+              summary: "نکته را در حافظهٔ پروژه ثبت کن",
+              payload: { content: "مالک تومان را رند می‌کند" },
+            }),
+          },
+        },
+      ],
+    });
+
+  it("accepts project.memory.add when the turn is project-scoped", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(projectMemoryCall());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      businessId: "biz-1",
+      promptContext: { mode: "dashboard", projectScoped: true },
+      messages: [{ role: "user", content: "این را به خاطر بسپار" }],
+      executeReadTool: vi.fn(),
+      projectScoped: true,
+    });
+
+    expect(reply.proposedAction?.type).toBe("project.memory.add");
+    // The model supplies only content; the ambient project id is injected by
+    // the route, not here.
+    expect(reply.proposedAction?.payload).not.toHaveProperty("projectId");
+    // The action was actually offered to the model.
+    const firstPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const propose = firstPayload.tools.find(
+      (tool: { function: { name: string } }) => tool.function.name === "propose_action",
+    );
+    expect(propose.function.parameters.properties.type.enum).toContain("project.memory.add");
+  });
+
+  it("refuses a crafted project.memory.add when the turn is NOT project-scoped", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(projectMemoryCall())
+      .mockResolvedValueOnce(providerReply({ content: "چیزی برای ثبت نبود." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      businessId: "biz-1",
+      promptContext: { mode: "dashboard" },
+      messages: [{ role: "user", content: "این را به خاطر بسپار" }],
+      executeReadTool: vi.fn(),
+      // no projectScoped
+    });
+
+    // The action was never offered, so a hand-crafted call is treated as an
+    // unknown tool and the turn continues to a plain answer.
+    expect(reply.proposedAction).toBeNull();
+    const firstPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const propose = firstPayload.tools.find(
+      (tool: { function: { name: string } }) => tool.function.name === "propose_action",
+    );
+    expect(propose.function.parameters.properties.type.enum).not.toContain("project.memory.add");
+  });
+});

@@ -33,9 +33,10 @@ import { getConnection, wooClientFor, type ConnectionRow } from "./connections-s
 import { listMappings, localIdForRemote, mergeMappingMeta, upsertMapping } from "./mapping-service";
 import { wooAmountToRial } from "./woo-money";
 import { writeIntegrationAudit } from "./audit";
-import { phoneE164 } from "../phone";
-import { phoneMatchKeys, phoneMatchSql } from "../parties-service";
-import { syncCustomerPhone } from "../crm-service";
+import {
+  partyForExternalCustomer,
+  reconcileExternalIdentity,
+} from "../crm-external-identity";
 import {
   inferWooProductType,
   isSellableWooProduct,
@@ -386,173 +387,133 @@ export async function upsertCustomerFromWoo(
   connection: ConnectionRow,
   customer: WooCustomer,
 ): Promise<"created" | "updated"> {
-  const businessId = connection.business_id;
-  const name =
-    `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim() || customer.email || `Customer #${customer.id}`;
-  const phone = customer.billing?.phone?.trim() || null;
-  const address = customer.billing?.address_1?.trim() || null;
-  const email = customer.email?.trim().toLowerCase() || null;
-  const e164 = phoneE164(phone);
-
-  const existing = await localIdForRemote(businessId, connection.id, "customer", String(customer.id));
-  if (existing) {
-    await query(
-      `UPDATE parties SET name = $3, phone = $4, phone_e164 = $5, email = COALESCE($6, email), address = $7, updated_at = now()
-        WHERE id = $1 AND business_id = $2`,
-      [existing, businessId, name, phone, e164, email, address],
-    );
-    // Phase 24 Wave 3 — this statement writes the plaintext phone, so the 0125
-    // trigger has just invalidated the row's ciphertext and derived columns.
-    // Re-derive them now rather than leaving the row to the next backfill run:
-    // an integration sync is exactly when a customer's number changes, and the
-    // window where they cannot be found by phone should not last until
-    // somebody remembers to run a script.
-    await syncCustomerPhone(businessId, existing, phone);
-    return "updated";
-  }
-
-  // Match on the canonical phone before creating: a shopper who already has
-  // a record from a counter sale must not become a second person because
-  // they typed «۰۹۱۲…» in the checkout once.
-  if (e164) {
-    const keys = await phoneMatchKeys(businessId, phone);
-    const { rows: byPhone } = await query<{ id: string }>(
-      `SELECT id FROM parties
-        WHERE business_id = $1 AND ${phoneMatchSql("", "$2", "$3")} AND merged_into_id IS NULL
-        ORDER BY created_at LIMIT 1`,
-      [businessId, keys.bidx, keys.e164],
-    );
-    if (byPhone[0]) {
-      await upsertMapping(businessId, connection.id, "customer", String(customer.id), byPhone[0].id);
-      await query(
-        `UPDATE parties SET address = COALESCE($3, address), email = COALESCE($4, email), updated_at = now()
-          WHERE id = $1 AND business_id = $2`,
-        [byPhone[0].id, businessId, address, email],
-      );
-      return "updated";
-    }
-  }
-  if (email) {
-    const { rows: byEmail } = await query<{ id: string }>(
-      `SELECT id FROM parties
-        WHERE business_id = $1 AND lower(email) = $2 AND merged_into_id IS NULL
-        ORDER BY created_at LIMIT 1`,
-      [businessId, email],
-    );
-    if (byEmail[0]) {
-      await upsertMapping(businessId, connection.id, "customer", String(customer.id), byEmail[0].id);
-      await query(
-        `UPDATE parties SET phone = COALESCE($3, phone), phone_e164 = COALESCE($4, phone_e164), address = COALESCE($5, address), updated_at = now()
-          WHERE id = $1 AND business_id = $2`,
-        [byEmail[0].id, businessId, phone, e164, address],
-      );
-      if (phone) await syncCustomerPhone(businessId, byEmail[0].id, phone);
-      return "updated";
-    }
-  }
-
-  const { rows } = await query<{ id: string }>(
-    `INSERT INTO parties (business_id, name, phone, phone_e164, email, address)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [businessId, name, phone, e164, email, address],
+  const result = await reconcileExternalIdentity(
+    {
+      businessId: connection.business_id,
+      connectionId: connection.id,
+      provider: "woocommerce",
+      remoteId: String(customer.id),
+      name:
+        `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim() ||
+        customer.email ||
+        `Customer #${customer.id}`,
+      email: customer.email ?? null,
+      phone: customer.billing?.phone ?? null,
+      address: customer.billing?.address_1 ?? null,
+      payload: customer as unknown as Record<string, unknown>,
+    },
+    // A customer sync is an explicit "import these people" operation, so
+    // creating the ones we do not have is the point of it.
+    { allowCreate: true, actor: "همگام‌سازی فروشگاه" },
   );
-  // The invalidation trigger is BEFORE UPDATE only — an INSERT that knows
-  // nothing about encryption leaves a row with no ciphertext at all, which the
-  // backfill would eventually fix. Do it now, for the same reason as above.
-  await syncCustomerPhone(businessId, rows[0].id, phone);
-  await upsertMapping(businessId, connection.id, "customer", String(customer.id), rows[0].id);
-  return "created";
+
+  // Keep the legacy mapping row in step. `integration_mappings` is still what
+  // the push side and the Holoo bridge read, and the merge registry now moves
+  // it, so it must not fall behind the profile.
+  if (result.partyId) {
+    await upsertMapping(
+      connection.business_id,
+      connection.id,
+      "customer",
+      String(customer.id),
+      result.partyId,
+    );
+  }
+
+  return result.created ? "created" : "updated";
 }
 
 /**
- * Resolve or create the local customer an order belongs to.
+ * Resolve the local customer an order belongs to — or **null** when nobody can
+ * honestly say who that is.
  *
- * Guest checkout (`customer_id: 0`) is the common case in WooCommerce, so the
- * billing phone and email are matched before anything is created. Linking the
- * order is what puts online sales into the CRM's timeline, the RFM scoring
- * population and the Growth app's segments — none of which could see a Woo
- * order's buyer before, because the import only wrote their name into a note.
+ * Null is a supported, deliberate answer. The previous implementation could
+ * not return one: faced with two customers sharing a billing phone it took the
+ * older record, so an order was always attributed to *somebody*, and when that
+ * somebody was wrong nothing anywhere said so. The purchase then entered the
+ * wrong person's history, their RFM score, and every segment and campaign
+ * built on it.
+ *
+ * Now an ambiguous buyer parks the external profile in the reconciliation
+ * queue and the order imports unattributed. The revenue still posts — the sale
+ * happened and the ledger must show it — it simply is not claimed by a named
+ * customer until a human claims it. A visible gap beats an invisible error.
  */
 export async function resolveOrderCustomerId(
   connection: ConnectionRow,
-  order: { customer_id?: number; billing?: { phone?: string; email?: string; first_name?: string; last_name?: string; address_1?: string; city?: string } },
+  order: {
+    customer_id?: number;
+    billing?: {
+      phone?: string;
+      email?: string;
+      first_name?: string;
+      last_name?: string;
+      address_1?: string;
+      city?: string;
+    };
+  },
 ): Promise<string | null> {
   const businessId = connection.business_id;
   const remoteCustomerId = Number(order.customer_id ?? 0) || 0;
 
+  // A registered shopper: the store's own id is the strongest identifier
+  // there is, and if it is already mapped there is no identity question.
   if (remoteCustomerId > 0) {
-    const mapped = await localIdForRemote(businessId, connection.id, "customer", String(remoteCustomerId));
-    if (mapped) return mapped;
-  }
-
-  const e164 = phoneE164(order.billing?.phone ?? null);
-  const email = order.billing?.email?.trim().toLowerCase() || null;
-  if (e164) {
-    const keys = await phoneMatchKeys(businessId, order.billing?.phone ?? null);
-    const { rows } = await query<{ id: string }>(
-      `SELECT id FROM parties WHERE business_id = $1 AND ${phoneMatchSql("", "$2", "$3")} AND merged_into_id IS NULL
-        ORDER BY created_at LIMIT 1`,
-      [businessId, keys.bidx, keys.e164],
-    );
-    if (rows[0]) {
-      if (remoteCustomerId > 0) {
-        await upsertMapping(businessId, connection.id, "customer", String(remoteCustomerId), rows[0].id);
-      }
-      // Fill in what this order knows and the record did not. COALESCE, not
-      // an overwrite: a checkout that typed a work address must not replace
-      // the one the shop already had.
-      await query(
-        `UPDATE parties
-            SET email = COALESCE($3, email),
-                address = COALESCE($4, address),
-                updated_at = now()
-          WHERE id = $1 AND business_id = $2`,
-        [rows[0].id, businessId, email ?? null, order.billing?.address_1?.trim() || null],
-      );
-      return rows[0].id;
-    }
-  }
-
-  if (email) {
-    const { rows } = await query<{ id: string }>(
-      `SELECT id FROM parties WHERE business_id = $1 AND lower(email) = $2 AND merged_into_id IS NULL
-        ORDER BY created_at LIMIT 1`,
-      [businessId, email],
-    );
-    if (rows[0]) {
-      if (remoteCustomerId > 0) {
-        await upsertMapping(businessId, connection.id, "customer", String(remoteCustomerId), rows[0].id);
-      }
-      return rows[0].id;
-    }
-  }
-
-  // Nobody matches. A guest with no phone and no email is not a person this
-  // system can identify, and inventing a customer row for them would fill the
-  // CRM with empty records — the note on the order already carries the name.
-  const hasIdentity = Boolean(e164 || email || remoteCustomerId > 0);
-  if (!hasIdentity) return null;
-
-  const name = `${order.billing?.first_name ?? ""} ${order.billing?.last_name ?? ""}`.trim();
-  if (!name && !e164 && !email) return null;
-
-  const { rows } = await query<{ id: string }>(
-    `INSERT INTO parties (business_id, name, phone, phone_e164, email, address)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [
+    const mapped = await partyForExternalCustomer(
       businessId,
-      name || email || "مشتری آنلاین",
-      order.billing?.phone?.trim() || null,
-      e164,
-      email ?? null,
-      order.billing?.address_1?.trim() || null,
-    ],
-  );
-  await syncCustomerPhone(businessId, rows[0].id, order.billing?.phone?.trim() || null);
-  if (remoteCustomerId > 0) {
-    await upsertMapping(businessId, connection.id, "customer", String(remoteCustomerId), rows[0].id);
+      connection.id,
+      String(remoteCustomerId),
+    );
+    if (mapped) return mapped;
+    const legacy = await localIdForRemote(businessId, connection.id, "customer", String(remoteCustomerId));
+    if (legacy) return legacy;
   }
-  return rows[0].id;
+
+  const phone = order.billing?.phone?.trim() || null;
+  const email = order.billing?.email?.trim().toLowerCase() || null;
+  const name = `${order.billing?.first_name ?? ""} ${order.billing?.last_name ?? ""}`.trim();
+
+  // A guest with no phone, no email and no store account is not a person this
+  // system can identify. The order keeps their name in its note; inventing a
+  // customer record would add a ghost nobody can ever match or contact.
+  if (remoteCustomerId === 0 && !phone && !email) return null;
+
+  const result = await reconcileExternalIdentity(
+    {
+      businessId,
+      connectionId: connection.id,
+      provider: "woocommerce",
+      // Guests have no store id, so the profile is keyed by what identifies
+      // them — otherwise every guest checkout would collide on the same row.
+      remoteId: remoteCustomerId > 0 ? String(remoteCustomerId) : `guest:${phone ?? email}`,
+      name,
+      email,
+      phone,
+      address: order.billing?.address_1 ?? null,
+      payload: { billing: order.billing ?? {} },
+    },
+    {
+      // A buyer who matches nobody is not ambiguous — they are new, and
+      // creating their record is what puts online sales into the customer
+      // file, the RFM population and Growth's segments. The bug being fixed
+      // here was never "creates customers"; it was "picks one when it cannot
+      // tell", and `reconcileExternalIdentity` handles that by parking the
+      // profile instead of guessing.
+      //
+      // Creation is still refused when there is nothing to identify the person
+      // by (no phone, no email, no name) — see `insufficient_identity`. A
+      // record nobody can ever match, deduplicate or contact is not a
+      // customer, it is a ghost, and the order's note already carries the name.
+      allowCreate: true,
+      actor: "دریافت سفارش",
+    },
+  );
+
+  if (result.partyId && remoteCustomerId > 0) {
+    await upsertMapping(businessId, connection.id, "customer", String(remoteCustomerId), result.partyId);
+  }
+
+  return result.partyId;
 }
 
 // ---------------------------------------------------------------------------

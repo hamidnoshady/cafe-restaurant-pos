@@ -10,22 +10,37 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ACTION_CATALOG, type ProposedAction } from "@/lib/ai";
+import type { InputRequestSpec, InputResponse } from "@/lib/ai-input-protocol";
 import {
   MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_PDF_BYTES,
   MAX_ATTACHMENTS,
 } from "@/lib/ai-attachment-limits";
 import type { AiTaskId } from "@/lib/ai-tasks";
+import { agentIdForTurn } from "@/lib/ai-custom-agents";
 import { applyProposalRequest } from "./apply-proposal";
 import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 
 export type AssistantMode = "wizard" | "dashboard" | "floor";
+
+/** Phase E — a typed input request attached to an assistant turn. */
+export interface AiInputRequestState {
+  /** The persisted request id; null when the turn was not persisted. */
+  id: string | null;
+  spec: InputRequestSpec;
+  /** Set once the user answered, so the card locks and shows the answer. */
+  answered?: boolean;
+  /** Set once the user dismissed the card without answering. */
+  dismissed?: boolean;
+}
 
 export interface AiChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   proposal?: ProposedAction | null;
+  /** Phase E — a structured input request the assistant raised this turn. */
+  inputRequest?: AiInputRequestState | null;
   auditId?: string | null;
   applied?: boolean;
   /** Actual Rial charged for this turn, shown quietly once it finishes. */
@@ -67,7 +82,7 @@ export const uid = (): string => crypto.randomUUID();
 
 export const CHAT_ERROR: Record<string, string> = {
   ai_credit_required:
-    "اعتبار هوش مصنوعی برای یک پاسخ جدید کافی نیست. از صفحهٔ اعتبار درخواست شارژ ثبت کنید.",
+    "اعتبار کیف پول برای استفاده از هوش مصنوعی کافی نیست. از صفحهٔ اعتبار و شارژ، کیف پول را شارژ کنید.",
   ai_unavailable: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است.",
   feature_disabled: "دستیار هوشمند برای این کسب‌وکار فعال نیست.",
   ai_auth: "اتصال سراسری سرویس هوش مصنوعی نیاز به بررسی مدیر پلتفرم دارد.",
@@ -113,6 +128,21 @@ interface ConversationMessagePayload {
   role: "user" | "assistant";
   content: string;
   proposal: ProposedAction | null;
+  inputRequest?: { id: string; spec: InputRequestSpec; status: string } | null;
+}
+
+/** Reads the `inputRequest` block off a done event or a loaded message. */
+function parseInputRequestPayload(raw: unknown): AiInputRequestState | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const spec = obj.spec as InputRequestSpec | undefined;
+  if (!spec || typeof spec !== "object" || typeof spec.kind !== "string") return null;
+  return {
+    id: typeof obj.id === "string" ? obj.id : null,
+    spec,
+    answered: obj.status === "answered",
+    dismissed: obj.status === "cancelled",
+  };
 }
 
 export interface UseAiChatOptions {
@@ -120,6 +150,13 @@ export interface UseAiChatOptions {
   currentStep?: string | null;
   /** Called whenever the active conversation id changes (new turn, load, reset). */
   onConversationIdChange?: (id: string | null) => void;
+  /**
+   * Phase F — when set, a NEW conversation started from this hook is linked to
+   * this project, so its turns are shaped by the project's instruction, notes
+   * and memory. Ignored once a conversation already exists (resuming keeps the
+   * project the conversation already carries).
+   */
+  projectId?: string | null;
 }
 
 /** The shape returned by `useAiChat` — shared by the chat panel and the assistant's own nav. */
@@ -129,6 +166,7 @@ export function useAiChat({
   mode,
   currentStep,
   onConversationIdChange,
+  projectId = null,
 }: UseAiChatOptions) {
   const router = useRouter();
   const canPropose = mode === "wizard" || mode === "dashboard";
@@ -142,6 +180,12 @@ export function useAiChat({
   const [actionsAllowed, setActionsAllowed] = useState(true);
   const [task, setTask] = useState<AiTaskId>("general");
   const [customTask, setCustomTask] = useState("");
+  // Phase I — the business-defined custom agent this dashboard turn runs as.
+  // null = the full dashboard assistant (or, inside a project, its pinned
+  // default). The backend resolves a request-level agentId every turn and it
+  // always wins, so the picker can change the lens mid-conversation. Only
+  // dashboard mode runs as an agent; the value is ignored otherwise.
+  const [agentId, setAgentId] = useState<string | null>(null);
 
   /** Removes one attachment, or all of them when no id is given. */
   function clearAttachment(id?: string) {
@@ -252,6 +296,7 @@ export function useAiChat({
           role: message.role,
           content: message.content,
           proposal: canPropose ? message.proposal : null,
+          inputRequest: parseInputRequestPayload(message.inputRequest),
         })),
       );
       setConversation(id);
@@ -269,9 +314,9 @@ export function useAiChat({
    * "برآورد هزینه … شروع پاسخ" card, so every single message — including
    * "سلام" — cost the user an extra round trip and an extra tap before the
    * assistant would say anything. That is not how a chat behaves, and the card
-   * was not buying the safety it looked like it was: `/api/ai/chat` does its
-   * own credit reservation against `config.maxTurnRial` and refuses when there
-   * is no credit, entirely independently of this call.
+   * was not buying the safety it looked like it was: `/api/ai/chat` runs its
+   * own wallet affordability gate against `config.maxTurnRial` and refuses
+   * when the wallet cannot afford AI, entirely independently of this call.
    *
    * So the estimate is gone from the send path and the *actual* charge is shown
    * under the reply once the turn settles, which is both truthful and free.
@@ -356,6 +401,7 @@ export function useAiChat({
             ? ((payload.proposedAction as ProposedAction | null | undefined) ??
               null)
             : null,
+          inputRequest: parseInputRequestPayload(payload.inputRequest),
           auditId: typeof payload.auditId === "string" ? payload.auditId : null,
           costRial: typeof payload.costRial === "number" ? payload.costRial : null,
           cacheNotice:
@@ -386,6 +432,9 @@ export function useAiChat({
           mode,
           currentStep: currentStep ?? null,
           conversationId,
+          // Only meaningful when starting a new conversation; the backend
+          // ignores it for an existing one.
+          projectId: conversationId ? undefined : projectId ?? undefined,
           messages: history.map((message) => ({
             role: message.role,
             content: message.content,
@@ -396,6 +445,9 @@ export function useAiChat({
           })),
           task,
           customTask: customTask.trim() || undefined,
+          // Only dashboard mode runs as a custom agent; the backend refuses a
+          // disabled/unknown id rather than silently widening the turn.
+          agentId: agentIdForTurn(mode, agentId),
           allowActions: actionsAllowed,
           bypassCache: bypassCache === true,
         }),
@@ -539,6 +591,80 @@ export function useAiChat({
     );
   }
 
+  /**
+   * Phase E — the user answered a structured input card. The response is
+   * submitted to be re-validated against the stored spec; on success the card
+   * locks and the returned plain-text message (labels, not ids) is sent as the
+   * next chat turn, so the model reads exactly what the user saw. The card is
+   * marked answered optimistically and rolled back if the submit fails.
+   */
+  async function submitInputRequest(message: AiChatMessage, response: InputResponse) {
+    const request = message.inputRequest;
+    if (!request || request.answered || request.dismissed || busy) return;
+    if (!request.id || !conversationId) {
+      toast.error("این درخواست دیگر در دسترس نیست.");
+      return;
+    }
+    setMessages((current) =>
+      current.map((item) =>
+        item.id === message.id && item.inputRequest
+          ? { ...item, inputRequest: { ...item.inputRequest, answered: true } }
+          : item,
+      ),
+    );
+    try {
+      const res = await fetch(
+        `/api/ai/conversations/${conversationId}/input-requests/${request.id}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ response }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        modelMessage?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.modelMessage) {
+        throw new Error(data.error ?? "submit_failed");
+      }
+      await startStream(data.modelMessage);
+    } catch (error) {
+      // Roll the card back so the user can try again.
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === message.id && item.inputRequest
+            ? { ...item, inputRequest: { ...item.inputRequest, answered: false } }
+            : item,
+        ),
+      );
+      toast.error(
+        error instanceof Error && error.message === "already_answered"
+          ? "به این پرسش قبلاً پاسخ داده شده است."
+          : "ثبت پاسخ ممکن نشد. دوباره تلاش کنید.",
+      );
+    }
+  }
+
+  /** Dismiss an input card without answering it. */
+  function dismissInputRequest(message: AiChatMessage) {
+    const request = message.inputRequest;
+    if (!request) return;
+    if (request.id && conversationId) {
+      void fetch(
+        `/api/ai/conversations/${conversationId}/input-requests/${request.id}`,
+        { method: "DELETE" },
+      ).catch(() => {});
+    }
+    setMessages((current) =>
+      current.map((item) =>
+        item.id === message.id && item.inputRequest
+          ? { ...item, inputRequest: { ...item.inputRequest, dismissed: true } }
+          : item,
+      ),
+    );
+  }
+
   return {
     canPropose,
     messages,
@@ -558,6 +684,8 @@ export function useAiChat({
     setTask,
     customTask,
     setCustomTask,
+    agentId,
+    setAgentId,
     ensureGreeting,
     startNewConversation,
     loadConversation,
@@ -566,5 +694,7 @@ export function useAiChat({
     askAgain,
     applyProposal,
     dismissProposal,
+    submitInputRequest,
+    dismissInputRequest,
   };
 }

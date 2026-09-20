@@ -1,23 +1,27 @@
 import { query } from "./db";
-
-export interface MenuItemPatchInput {
-  categoryId?: string;
-  name?: string;
-  price?: number;
-  description?: string | null;
-  sku?: string | null;
-  imageUrl?: string | null;
-  /** The catalogue photo: a media_assets id from «کتابخانهٔ رسانه» (migration 0149). */
-  imageMediaId?: string | null;
-  sortOrder?: number;
-  isActive?: boolean;
-  targetMarginPercent?: number | null;
-}
+import type { PoolClient } from "pg";
+import { businessIdForLocation } from "./plan-limits";
+import {
+  assertAttachmentSatisfiable,
+  assertGroupBoundsSatisfiable,
+  assertModifierRemovalSafe,
+} from "./menu-modifier-integrity";
+import { DEFAULT_SELECTION_BOUNDS, resolveSelectionBounds } from "./modifier-selection";
+import type {
+  CategoryCreateInput,
+  CategoryPatchInput,
+  MenuItemCreateInput,
+  ModifierCreateInput,
+  ModifierGroupCreateInput,
+  ModifierGroupPatchInput,
+} from "./menu-validation";
+import type { MenuItemPatchInput, ModifierPatchInput } from "./menu-validation";
 
 /**
- * The location-scoped menu tree shared by the authenticated dashboard and the
- * public API. Keeping the location explicit is what prevents an API key for
- * one branch from reading a sibling branch's menu.
+ * The location-scoped menu tree shared by the authenticated dashboard, the
+ * public API and the offline pairing snapshot. Keeping the location explicit
+ * is what prevents an API key for one branch from reading a sibling branch's
+ * menu.
  */
 export async function getMenuTree(locationId: string) {
   const [{ rows: categories }, { rows: items }, { rows: modifierGroups }, { rows: modifiers }, { rows: links }] =
@@ -31,7 +35,7 @@ export async function getMenuTree(locationId: string) {
         [locationId],
       ),
       query(
-        "SELECT id, name, min_select, max_select FROM modifier_groups WHERE location_id = $1 ORDER BY name",
+        "SELECT id, name, min_select, max_select, is_active, sort_order FROM modifier_groups WHERE location_id = $1 ORDER BY sort_order, name",
         [locationId],
       ),
       query(
@@ -39,7 +43,10 @@ export async function getMenuTree(locationId: string) {
         [locationId],
       ),
       query(
-        "SELECT mimg.menu_item_id, mimg.modifier_group_id FROM menu_item_modifier_groups mimg JOIN menu_items mi ON mi.id = mimg.menu_item_id WHERE mi.location_id = $1",
+        `SELECT mimg.menu_item_id, mimg.modifier_group_id, mimg.min_select_override, mimg.max_select_override, mimg.sort_order, mimg.is_active
+           FROM menu_item_modifier_groups mimg JOIN menu_items mi ON mi.id = mimg.menu_item_id
+          WHERE mi.location_id = $1
+          ORDER BY mimg.sort_order`,
         [locationId],
       ),
     ]);
@@ -47,20 +54,208 @@ export async function getMenuTree(locationId: string) {
   return { categories, items, modifierGroups, modifiers, itemModifierGroups: links };
 }
 
-export type UpdateMenuItemResult =
-  | { ok: true }
-  | { ok: false; error: "bad_request" | "missing_fields" | "item_not_found" | "category_not_found" | "invalid_margin"; status: number };
+// ---------------------------------------------------------------------------
+// Shared plumbing
+// ---------------------------------------------------------------------------
+
+export type ServiceResult = { ok: true } | { ok: false; error: string; status: number };
+
+function isUniqueViolation(err: unknown, constraint: string): boolean {
+  return (
+    err instanceof Error &&
+    "code" in err &&
+    (err as { code?: string }).code === "23505" &&
+    (err as { constraint?: string }).constraint === constraint
+  );
+}
 
 /**
- * Applies the same allowlisted menu-item update used by the dashboard. Values
- * never become SQL identifiers, and both the item and any new category are
- * constrained to the supplied branch.
+ * `true` when another item of this branch already carries the SKU. The
+ * partial unique index (0165) is the race-proof backstop; this check is what
+ * gives the operator a named error instead of a 500.
  */
+async function skuTakenBy(
+  locationId: string,
+  sku: string,
+  exceptItemId: string | null,
+): Promise<boolean> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM menu_items
+      WHERE location_id = $1 AND sku = $2 AND ($3::uuid IS NULL OR id <> $3)
+      LIMIT 1`,
+    [locationId, sku, exceptItemId],
+  );
+  return rows.length > 0;
+}
+
+/** The media asset must be this business's own image — scoped by business_id explicitly, not by ambient RLS. */
+async function isValidImageMedia(
+  businessId: string,
+  mediaId: string,
+): Promise<boolean> {
+  const { rows } = await query<{ id: string }>(
+    "SELECT id FROM media_assets WHERE id = $1 AND business_id = $2 AND kind = 'image'",
+    [mediaId, businessId],
+  );
+  return rows.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Categories
+// ---------------------------------------------------------------------------
+
+/** Creates a category; `defaultTaxRate` is applied when the caller sent none. */
+export async function createCategory(
+  locationId: string,
+  input: CategoryCreateInput,
+  defaultTaxRate: number,
+): Promise<ServiceResult & { id?: string }> {
+  const { rows: dup } = await query(
+    "SELECT id FROM menu_categories WHERE location_id = $1 AND name = $2",
+    [locationId, input.name],
+  );
+  if (dup.length > 0) return { ok: false, error: "category_exists", status: 409 };
+
+  try {
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO menu_categories (location_id, name, tax_rate, sort_order, is_active)
+       SELECT $1, $2, $3,
+              COALESCE($4::int, (SELECT COALESCE(MAX(mc.sort_order) + 1, 0)
+                                   FROM menu_categories mc WHERE mc.location_id = $1)),
+              $5
+       RETURNING id`,
+      [
+        locationId,
+        input.name,
+        input.taxRate ?? defaultTaxRate,
+        input.sortOrder ?? null,
+        input.isActive ?? true,
+      ],
+    );
+    return { ok: true, id: rows[0].id };
+  } catch (err) {
+    // Two simultaneous «افزودن» taps both passed the check above; the index
+    // (0165) keeps the data clean and this turns the loser into the same
+    // named answer rather than a 500.
+    if (isUniqueViolation(err, "uq_menu_categories_location_name")) {
+      return { ok: false, error: "category_exists", status: 409 };
+    }
+    throw err;
+  }
+}
+
+export async function updateCategory(
+  locationId: string,
+  id: string,
+  input: CategoryPatchInput,
+): Promise<ServiceResult> {
+  const { rows: existing } = await query<{ id: string }>(
+    "SELECT id FROM menu_categories WHERE id = $1 AND location_id = $2",
+    [id, locationId],
+  );
+  if (!existing[0]) return { ok: false, error: "category_not_found", status: 404 };
+
+  if (input.name !== undefined) {
+    const { rows: dup } = await query(
+      "SELECT id FROM menu_categories WHERE location_id = $1 AND name = $2 AND id <> $3",
+      [locationId, input.name, id],
+    );
+    if (dup.length > 0) return { ok: false, error: "category_exists", status: 409 };
+  }
+
+  const fields: string[] = [];
+  const values: unknown[] = [id];
+  let i = 1;
+  const set = (column: string, value: unknown) => {
+    fields.push(`${column} = $${++i}`);
+    values.push(value);
+  };
+  if (input.name !== undefined) set("name", input.name);
+  // Only fields actually present are written, so patching a name can never
+  // silently reset a category-specific tax rate back to the default.
+  if (input.taxRate !== undefined) set("tax_rate", input.taxRate);
+  if (input.sortOrder !== undefined) set("sort_order", input.sortOrder);
+  if (input.isActive !== undefined) set("is_active", input.isActive);
+
+  try {
+    await query(`UPDATE menu_categories SET ${fields.join(", ")} WHERE id = $1`, values);
+    return { ok: true };
+  } catch (err) {
+    if (isUniqueViolation(err, "uq_menu_categories_location_name")) {
+      return { ok: false, error: "category_exists", status: 409 };
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Menu items
+// ---------------------------------------------------------------------------
+
+export async function createMenuItem(
+  locationId: string,
+  businessId: string | undefined,
+  input: MenuItemCreateInput,
+): Promise<ServiceResult & { id?: string }> {
+  // Callers inside a tenant-scoped request pass the business id straight
+  // through; background callers (autopilot) may only know the location.
+  const resolvedBusinessId = businessId ?? (await businessIdForLocation(locationId));
+  if (input.imageMediaId && resolvedBusinessId) {
+    if (!(await isValidImageMedia(resolvedBusinessId, input.imageMediaId))) {
+      return { ok: false, error: "invalid_media", status: 400 };
+    }
+  }
+  const { rows: cat } = await query<{ id: string }>(
+    "SELECT id FROM menu_categories WHERE id = $1 AND location_id = $2",
+    [input.categoryId, locationId],
+  );
+  if (cat.length === 0) return { ok: false, error: "category_not_found", status: 404 };
+
+  if (input.sku && (await skuTakenBy(locationId, input.sku, null))) {
+    return { ok: false, error: "sku_exists", status: 409 };
+  }
+
+  try {
+    // Absent sortOrder → appended after the category's existing rows, the
+    // same COALESCE(MAX+1) placement the original route used.
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO menu_items
+         (location_id, category_id, name, description, sku, price, image_url, image_media_id, sort_order, is_active)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8,
+              COALESCE($9::int, (SELECT COALESCE(MAX(mi.sort_order) + 1, 0)
+                                   FROM menu_items mi
+                                  WHERE mi.location_id = $1 AND mi.category_id = $2)),
+              $10
+       RETURNING id`,
+      [
+        locationId,
+        input.categoryId,
+        input.name,
+        input.description ?? null,
+        input.sku ?? null,
+        input.price,
+        input.imageUrl ?? null,
+        input.imageMediaId ?? null,
+        input.sortOrder ?? null,
+        input.isActive ?? true,
+      ],
+    );
+    return { ok: true, id: rows[0].id };
+  } catch (err) {
+    if (isUniqueViolation(err, "uq_menu_items_location_sku")) {
+      return { ok: false, error: "sku_exists", status: 409 };
+    }
+    throw err;
+  }
+}
+
 export async function updateMenuItem(
   locationId: string,
   id: string,
   body: MenuItemPatchInput,
-): Promise<UpdateMenuItemResult> {
+  businessId?: string,
+): Promise<ServiceResult> {
+  const resolvedBusinessId = businessId ?? (await businessIdForLocation(locationId));
   const { rows: existing } = await query<{ id: string }>(
     "SELECT id FROM menu_items WHERE id = $1 AND location_id = $2",
     [id, locationId],
@@ -68,12 +263,19 @@ export async function updateMenuItem(
   if (!existing[0]) return { ok: false, error: "item_not_found", status: 404 };
 
   if (body.categoryId !== undefined) {
-    if (typeof body.categoryId !== "string") return { ok: false, error: "bad_request", status: 400 };
     const { rows: category } = await query(
       "SELECT id FROM menu_categories WHERE id = $1 AND location_id = $2",
       [body.categoryId, locationId],
     );
     if (category.length === 0) return { ok: false, error: "category_not_found", status: 404 };
+  }
+  if (body.sku && (await skuTakenBy(locationId, body.sku, id))) {
+    return { ok: false, error: "sku_exists", status: 409 };
+  }
+  if (body.imageMediaId && resolvedBusinessId) {
+    if (!(await isValidImageMedia(resolvedBusinessId, body.imageMediaId))) {
+      return { ok: false, error: "invalid_media", status: 400 };
+    }
   }
 
   const fields: string[] = [];
@@ -86,108 +288,239 @@ export async function updateMenuItem(
   };
 
   if (body.categoryId !== undefined) set("category_id", body.categoryId);
-  if (body.name !== undefined) {
-    if (typeof body.name !== "string") return { ok: false, error: "missing_fields", status: 400 };
-    const name = body.name.trim();
-    if (!name) return { ok: false, error: "missing_fields", status: 400 };
-    set("name", name);
-  }
-  if (body.price !== undefined) {
-    const price = Number(body.price);
-    if (!Number.isSafeInteger(price) || price < 0) return { ok: false, error: "missing_fields", status: 400 };
-    set("price", price);
-  }
-  if (body.description !== undefined) {
-    if (body.description !== null && typeof body.description !== "string") return { ok: false, error: "bad_request", status: 400 };
-    set("description", body.description?.trim() || null);
-  }
-  if (body.sku !== undefined) {
-    if (body.sku !== null && typeof body.sku !== "string") return { ok: false, error: "bad_request", status: 400 };
-    set("sku", body.sku?.trim() || null);
-  }
-  if (body.imageUrl !== undefined) {
-    if (body.imageUrl !== null && typeof body.imageUrl !== "string") return { ok: false, error: "bad_request", status: 400 };
-    set("image_url", body.imageUrl?.trim() || null);
-  }
-  if (body.imageMediaId !== undefined) {
-    if (body.imageMediaId !== null && typeof body.imageMediaId !== "string") return { ok: false, error: "bad_request", status: 400 };
-    if (body.imageMediaId) {
-      // The asset must be this business's own image. RLS already scopes the
-      // read; the explicit kind check keeps a PDF from becoming a menu photo.
-      const { rows: media } = await query(
-        "SELECT id FROM media_assets WHERE id = $1 AND kind = 'image'",
-        [body.imageMediaId],
-      );
-      if (media.length === 0) return { ok: false, error: "bad_request", status: 400 };
-    }
-    set("image_media_id", body.imageMediaId || null);
-  }
-  if (body.sortOrder !== undefined) set("sort_order", Number(body.sortOrder) || 0);
-  if (body.isActive !== undefined) set("is_active", Boolean(body.isActive));
+  if (body.name !== undefined) set("name", body.name);
+  if (body.price !== undefined) set("price", body.price);
+  if (body.description !== undefined) set("description", body.description);
+  if (body.sku !== undefined) set("sku", body.sku);
+  if (body.imageUrl !== undefined) set("image_url", body.imageUrl);
+  if (body.imageMediaId !== undefined) set("image_media_id", body.imageMediaId);
+  if (body.sortOrder !== undefined) set("sort_order", body.sortOrder);
+  if (body.isActive !== undefined) set("is_active", body.isActive);
   if (body.targetMarginPercent !== undefined) {
-    if (body.targetMarginPercent === null) {
-      set("target_margin_percent", null);
-    } else {
-      const margin = Number(body.targetMarginPercent);
-      if (!Number.isFinite(margin) || margin < 0 || margin >= 100) {
-        return { ok: false, error: "invalid_margin", status: 400 };
-      }
-      set("target_margin_percent", margin);
-    }
+    set("target_margin_percent", body.targetMarginPercent);
   }
 
   if (fields.length === 0) return { ok: false, error: "bad_request", status: 400 };
 
   set("updated_at", new Date());
-  const result = await query(
-    "UPDATE menu_items SET " + fields.join(", ") + " WHERE id = $1 AND location_id = $2",
-    values,
+  try {
+    const result = await query(
+      "UPDATE menu_items SET " + fields.join(", ") + " WHERE id = $1 AND location_id = $2",
+      values,
+    );
+    if (result.rowCount !== 1) return { ok: false, error: "item_not_found", status: 404 };
+    return { ok: true };
+  } catch (err) {
+    if (isUniqueViolation(err, "uq_menu_items_location_sku")) {
+      return { ok: false, error: "sku_exists", status: 409 };
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Modifier groups
+// ---------------------------------------------------------------------------
+
+export async function createModifierGroup(
+  locationId: string,
+  input: ModifierGroupCreateInput,
+): Promise<ServiceResult & { id?: string }> {
+  const bounds = resolveSelectionBounds(DEFAULT_SELECTION_BOUNDS, input);
+  if (!bounds) return { ok: false, error: "missing_fields", status: 400 };
+
+  try {
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO modifier_groups (location_id, name, min_select, max_select, sort_order, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [
+        locationId,
+        input.name,
+        bounds.min,
+        bounds.max,
+        input.sortOrder ?? 0,
+        input.isActive ?? true,
+      ],
+    );
+    return { ok: true, id: rows[0].id };
+  } catch (err) {
+    if (isUniqueViolation(err, "uq_modifier_groups_location_name")) {
+      return { ok: false, error: "group_name_exists", status: 409 };
+    }
+    throw err;
+  }
+}
+
+export async function updateModifierGroup(
+  locationId: string,
+  id: string,
+  input: ModifierGroupPatchInput,
+): Promise<ServiceResult> {
+  const { rows: existing } = await query<{
+    id: string;
+    min_select: number;
+    max_select: number;
+    is_active: boolean;
+  }>(
+    "SELECT id, min_select, max_select, is_active FROM modifier_groups WHERE id = $1 AND location_id = $2",
+    [id, locationId],
   );
-  if (result.rowCount !== 1) return { ok: false, error: "item_not_found", status: 404 };
-  return { ok: true };
+  const group = existing[0];
+  if (!group) return { ok: false, error: "group_not_found", status: 404 };
+
+  if (input.name !== undefined) {
+    const { rows: dup } = await query(
+      "SELECT id FROM modifier_groups WHERE location_id = $1 AND name = $2 AND id <> $3 AND is_active",
+      [locationId, input.name, id],
+    );
+    if (dup.length > 0) return { ok: false, error: "group_name_exists", status: 409 };
+  }
+
+  const bounds =
+    input.minSelect !== undefined || input.maxSelect !== undefined
+      ? resolveSelectionBounds(
+          { min: group.min_select, max: group.max_select },
+          input,
+        )
+      : null;
+  if (
+    (input.minSelect !== undefined || input.maxSelect !== undefined) &&
+    bounds === null
+  ) {
+    return { ok: false, error: "missing_fields", status: 400 };
+  }
+
+  const becomingActive = input.isActive === true && !group.is_active;
+  const boundsChanging =
+    bounds !== null && (bounds.min !== group.min_select || bounds.max !== group.max_select);
+
+  // A group that is (or is becoming) offered for sale must stay satisfiable
+  // for every item that carries it — resolved through each item's own
+  // overrides, which is why this cannot be a plain CHECK constraint.
+  if ((group.is_active || becomingActive) && (boundsChanging || becomingActive)) {
+    const nextBounds = bounds ?? { min: group.min_select, max: group.max_select };
+    const check = await assertGroupBoundsSatisfiable(locationId, id, nextBounds, {
+      assumeActive: becomingActive,
+    });
+    if (!check.ok) return check;
+  }
+
+  const fields: string[] = [];
+  const values: unknown[] = [id];
+  let i = 1;
+  const set = (column: string, value: unknown) => {
+    fields.push(`${column} = $${++i}`);
+    values.push(value);
+  };
+  if (input.name !== undefined) set("name", input.name);
+  if (input.minSelect !== undefined && bounds) set("min_select", bounds.min);
+  if (input.maxSelect !== undefined && bounds) set("max_select", bounds.max);
+  if (input.sortOrder !== undefined) set("sort_order", input.sortOrder);
+  if (input.isActive !== undefined) set("is_active", input.isActive);
+  if (fields.length === 0) return { ok: false, error: "bad_request", status: 400 };
+
+  try {
+    await query(`UPDATE modifier_groups SET ${fields.join(", ")} WHERE id = $1`, values);
+    return { ok: true };
+  } catch (err) {
+    if (isUniqueViolation(err, "uq_modifier_groups_location_name")) {
+      return { ok: false, error: "group_name_exists", status: 409 };
+    }
+    throw err;
+  }
 }
 
-export interface ModifierPatchInput {
-  groupId?: unknown;
-  name?: unknown;
-  priceDelta?: unknown;
-  sortOrder?: unknown;
-  isActive?: unknown;
+// ---------------------------------------------------------------------------
+// Modifiers (add-on options)
+// ---------------------------------------------------------------------------
+
+export async function createModifier(
+  locationId: string,
+  input: ModifierCreateInput,
+): Promise<ServiceResult & { id?: string }> {
+  const { rows: group } = await query<{ id: string }>(
+    "SELECT id FROM modifier_groups WHERE id = $1 AND location_id = $2",
+    [input.groupId, locationId],
+  );
+  if (group.length === 0) return { ok: false, error: "group_not_found", status: 404 };
+
+  const { rows: dup } = await query(
+    "SELECT id FROM modifiers WHERE group_id = $1 AND name = $2 AND is_active",
+    [input.groupId, input.name],
+  );
+  if (dup.length > 0) return { ok: false, error: "modifier_exists", status: 409 };
+
+  try {
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO modifiers (location_id, group_id, name, price_delta, sort_order, is_active)
+       SELECT $1, $2, $3, $4,
+              COALESCE($5::int, (SELECT COALESCE(MAX(m.sort_order) + 1, 0)
+                                   FROM modifiers m WHERE m.group_id = $2)),
+              $6
+       RETURNING id`,
+      [
+        locationId,
+        input.groupId,
+        input.name,
+        input.priceDelta ?? 0,
+        input.sortOrder ?? null,
+        input.isActive ?? true,
+      ],
+    );
+    return { ok: true, id: rows[0].id };
+  } catch (err) {
+    if (isUniqueViolation(err, "uq_modifiers_group_name")) {
+      return { ok: false, error: "modifier_exists", status: 409 };
+    }
+    throw err;
+  }
 }
 
-export type UpdateModifierResult =
-  | { ok: true }
-  | {
-      ok: false;
-      error: "bad_request" | "missing_fields" | "modifier_not_found" | "group_not_found";
-      status: number;
-    };
-
-/**
- * Allowlisted update of a single modifier (an "افزودنی" on the menu screen),
- * including moving it to a different modifier group.
- *
- * A move is a re-parent and nothing more: closed orders carry their own
- * name/price snapshot in order_item_modifiers, so no history moves with it. What
- * does change is where the addon is offered, since it is groups — not
- * modifiers — that menu items are linked to.
- *
- * The moved row lands at the end of the target group: the sort_order it held
- * among its old siblings says nothing about where it belongs among its new ones,
- * and reusing it would silently interleave. An explicit `sortOrder` in the same
- * patch still wins. Both the modifier and the target group are constrained to
- * the supplied branch, so a move can never pull a group in from another one.
- */
 export async function updateModifier(
   locationId: string,
   id: string,
   body: ModifierPatchInput,
-): Promise<UpdateModifierResult> {
-  const { rows: existing } = await query<{ group_id: string }>(
-    "SELECT group_id FROM modifiers WHERE id = $1 AND location_id = $2",
+): Promise<ServiceResult> {
+  const { rows: existing } = await query<{ group_id: string; is_active: boolean }>(
+    "SELECT group_id, is_active FROM modifiers WHERE id = $1 AND location_id = $2",
     [id, locationId],
   );
   if (!existing[0]) return { ok: false, error: "modifier_not_found", status: 404 };
+
+  /** A patch naming the group the modifier is already in changes nothing, but isn't an error. */
+  let groupChecked = false;
+  let movingGroups = false;
+
+  if (body.groupId !== undefined) {
+    const { rows: group } = await query(
+      "SELECT id FROM modifier_groups WHERE id = $1 AND location_id = $2",
+      [body.groupId, locationId],
+    );
+    if (group.length === 0) return { ok: false, error: "group_not_found", status: 404 };
+    groupChecked = true;
+    movingGroups = body.groupId !== existing[0].group_id;
+    if (movingGroups && body.name !== undefined) {
+      const { rows: dup } = await query(
+        "SELECT id FROM modifiers WHERE group_id = $1 AND name = $2 AND is_active AND id <> $3",
+        [body.groupId, body.name, id],
+      );
+      if (dup.length > 0) return { ok: false, error: "modifier_exists", status: 409 };
+    }
+  }
+  if (!movingGroups && body.name !== undefined) {
+    const { rows: dup } = await query(
+      "SELECT id FROM modifiers WHERE group_id = $1 AND name = $2 AND is_active AND id <> $3",
+      [existing[0].group_id, body.name, id],
+    );
+    if (dup.length > 0) return { ok: false, error: "modifier_exists", status: 409 };
+  }
+
+  // Taking the last active option away from a required group would make the
+  // group impossible — refuse before the write, naming the rule.
+  if (body.isActive === false && existing[0].is_active) {
+    const removal = await assertModifierRemovalSafe(locationId, id);
+    if (!removal.ok) return removal;
+  }
 
   const fields: string[] = [];
   const values: unknown[] = [id, locationId];
@@ -198,51 +531,266 @@ export async function updateModifier(
     values.push(value);
   };
 
-  /** A patch naming the group the modifier is already in changes nothing, but isn't an error. */
-  let groupChecked = false;
-
-  if (body.groupId !== undefined) {
-    if (typeof body.groupId !== "string" || !body.groupId) {
-      return { ok: false, error: "bad_request", status: 400 };
-    }
-    const { rows: group } = await query(
-      "SELECT id FROM modifier_groups WHERE id = $1 AND location_id = $2",
-      [body.groupId, locationId],
-    );
-    if (group.length === 0) return { ok: false, error: "group_not_found", status: 404 };
-    groupChecked = true;
-    if (body.groupId !== existing[0].group_id) {
-      set("group_id", body.groupId);
-      if (body.sortOrder === undefined) {
-        fields.push(
-          "sort_order = (SELECT COALESCE(MAX(sibling.sort_order) + 1, 0) FROM modifiers sibling" +
-            " WHERE sibling.group_id = $" + parameterIndex + ")",
-        );
-      }
+  if (movingGroups) {
+    set("group_id", body.groupId);
+    if (body.sortOrder === undefined) {
+      fields.push(
+        "sort_order = (SELECT COALESCE(MAX(sibling.sort_order) + 1, 0) FROM modifiers sibling" +
+          " WHERE sibling.group_id = $" + parameterIndex + ")",
+      );
     }
   }
-  if (body.name !== undefined) {
-    if (typeof body.name !== "string") return { ok: false, error: "missing_fields", status: 400 };
-    const name = body.name.trim();
-    if (!name) return { ok: false, error: "missing_fields", status: 400 };
-    set("name", name);
-  }
-  if (body.priceDelta !== undefined) {
-    const priceDelta = Number(body.priceDelta);
-    if (!Number.isSafeInteger(priceDelta)) return { ok: false, error: "missing_fields", status: 400 };
-    set("price_delta", priceDelta);
-  }
-  if (body.sortOrder !== undefined) set("sort_order", Number(body.sortOrder) || 0);
-  if (body.isActive !== undefined) set("is_active", Boolean(body.isActive));
+  if (body.name !== undefined) set("name", body.name);
+  if (body.priceDelta !== undefined) set("price_delta", body.priceDelta);
+  if (body.sortOrder !== undefined) set("sort_order", body.sortOrder);
+  if (body.isActive !== undefined) set("is_active", body.isActive);
 
   if (fields.length === 0) {
     return groupChecked ? { ok: true } : { ok: false, error: "bad_request", status: 400 };
   }
 
-  const result = await query(
-    "UPDATE modifiers SET " + fields.join(", ") + " WHERE id = $1 AND location_id = $2",
+  try {
+    const result = await query(
+      "UPDATE modifiers SET " + fields.join(", ") + " WHERE id = $1 AND location_id = $2",
+      values,
+    );
+    if (result.rowCount !== 1) return { ok: false, error: "modifier_not_found", status: 404 };
+    return { ok: true };
+  } catch (err) {
+    if (isUniqueViolation(err, "uq_modifiers_group_name")) {
+      return { ok: false, error: "modifier_exists", status: 409 };
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Item ↔ group attachments
+// ---------------------------------------------------------------------------
+
+export async function attachModifierGroupToItem(
+  locationId: string,
+  menuItemId: string,
+  modifierGroupId: string,
+  overrides: {
+    minSelectOverride?: number | null;
+    maxSelectOverride?: number | null;
+    sortOrder?: number;
+  } = {},
+): Promise<ServiceResult> {
+  const { rows } = await query(
+    `SELECT 1 FROM menu_items WHERE id = $1 AND location_id = $3
+     UNION ALL
+     SELECT 1 FROM modifier_groups WHERE id = $2 AND location_id = $3`,
+    [menuItemId, modifierGroupId, locationId],
+  );
+  if (rows.length !== 2) return { ok: false, error: "not_found", status: 404 };
+
+  // A required group attached with fewer active options than its min would be
+  // unorderable from the moment it appears.
+  const check = await assertAttachmentSatisfiable(
+    locationId,
+    menuItemId,
+    modifierGroupId,
+    overrides,
+  );
+  if (!check.ok) return check;
+
+  await query(
+    `INSERT INTO menu_item_modifier_groups
+       (menu_item_id, modifier_group_id, min_select_override, max_select_override, sort_order, is_active)
+     SELECT $1, $2, $3, $4,
+            COALESCE($5::int, (SELECT COALESCE(MAX(l.sort_order) + 1, 0)
+                                 FROM menu_item_modifier_groups l WHERE l.menu_item_id = $1)),
+            true
+     ON CONFLICT (menu_item_id, modifier_group_id) DO UPDATE
+       SET min_select_override = EXCLUDED.min_select_override,
+           max_select_override = EXCLUDED.max_select_override,
+           sort_order = EXCLUDED.sort_order,
+           is_active = true`,
+    [
+      menuItemId,
+      modifierGroupId,
+      overrides.minSelectOverride ?? null,
+      overrides.maxSelectOverride ?? null,
+      overrides.sortOrder ?? null,
+    ],
+  );
+  return { ok: true };
+}
+
+export async function detachModifierGroupFromItem(
+  locationId: string,
+  menuItemId: string,
+  modifierGroupId: string,
+): Promise<ServiceResult> {
+  const { rows } = await query(
+    `SELECT 1 FROM menu_items WHERE id = $1 AND location_id = $3
+     UNION ALL
+     SELECT 1 FROM modifier_groups WHERE id = $2 AND location_id = $3`,
+    [menuItemId, modifierGroupId, locationId],
+  );
+  if (rows.length !== 2) return { ok: false, error: "not_found", status: 404 };
+
+  await query(
+    "DELETE FROM menu_item_modifier_groups WHERE menu_item_id = $1 AND modifier_group_id = $2",
+    [menuItemId, modifierGroupId],
+  );
+  return { ok: true };
+}
+
+/** Re-configures one item's attachment (per-item bounds / order / on-off). */
+export async function updateItemModifierGroup(
+  locationId: string,
+  menuItemId: string,
+  modifierGroupId: string,
+  input: {
+    minSelectOverride?: number | null;
+    maxSelectOverride?: number | null;
+    sortOrder?: number;
+    isActive?: boolean;
+  },
+): Promise<ServiceResult> {
+  const { rows: existing } = await query<{
+    min_select_override: number | null;
+    max_select_override: number | null;
+  }>(
+    `SELECT mimg.min_select_override, mimg.max_select_override
+       FROM menu_item_modifier_groups mimg
+       JOIN menu_items mi ON mi.id = mimg.menu_item_id
+      WHERE mimg.menu_item_id = $1 AND mimg.modifier_group_id = $2 AND mi.location_id = $3`,
+    [menuItemId, modifierGroupId, locationId],
+  );
+  if (!existing[0]) return { ok: false, error: "not_found", status: 404 };
+
+  const nextOverrides = {
+    minSelectOverride:
+      input.minSelectOverride !== undefined
+        ? input.minSelectOverride
+        : existing[0].min_select_override,
+    maxSelectOverride:
+      input.maxSelectOverride !== undefined
+        ? input.maxSelectOverride
+        : existing[0].max_select_override,
+  };
+
+  if (input.isActive !== false) {
+    // Keeping the attachment offered: the resolved bounds must stay
+    // satisfiable against the group's active options.
+    const check = await assertAttachmentSatisfiable(
+      locationId,
+      menuItemId,
+      modifierGroupId,
+      nextOverrides,
+    );
+    if (!check.ok) return check;
+  }
+
+  const fields: string[] = [];
+  const values: unknown[] = [menuItemId, modifierGroupId];
+  let i = 2;
+  const set = (column: string, value: unknown) => {
+    fields.push(`${column} = $${++i}`);
+    values.push(value);
+  };
+  if (input.minSelectOverride !== undefined) set("min_select_override", input.minSelectOverride);
+  if (input.maxSelectOverride !== undefined) set("max_select_override", input.maxSelectOverride);
+  if (input.sortOrder !== undefined) set("sort_order", input.sortOrder);
+  if (input.isActive !== undefined) set("is_active", input.isActive);
+  if (fields.length === 0) return { ok: false, error: "bad_request", status: 400 };
+
+  await query(
+    `UPDATE menu_item_modifier_groups SET ${fields.join(", ")}
+      WHERE menu_item_id = $1 AND modifier_group_id = $2`,
     values,
   );
-  if (result.rowCount !== 1) return { ok: false, error: "modifier_not_found", status: 404 };
+  return { ok: true };
+}
+
+/**
+ * Deleting a group destroys its options (CASCADE) and leaves order history on
+ * snapshots. When any of its options have ever been sold, the destructive
+ * path is refused here and the group is disabled instead — the same
+ * deactivate-not-delete rule items, categories and modifiers already follow.
+ */
+export async function deleteModifierGroup(
+  locationId: string,
+  id: string,
+): Promise<ServiceResult & { deactivated?: boolean }> {
+  const { rows: group } = await query<{ id: string }>(
+    "SELECT id FROM modifier_groups WHERE id = $1 AND location_id = $2",
+    [id, locationId],
+  );
+  if (!group[0]) return { ok: false, error: "group_not_found", status: 404 };
+
+  const { rows: refs } = await query(
+    `SELECT 1 FROM order_item_modifiers oim
+       JOIN modifiers m ON m.id = oim.modifier_id
+      WHERE m.group_id = $1 LIMIT 1`,
+    [id],
+  );
+  if (refs.length > 0) {
+    await query("UPDATE modifier_groups SET is_active = false WHERE id = $1", [id]);
+    return { ok: true, deactivated: true };
+  }
+  await query("DELETE FROM modifier_groups WHERE id = $1", [id]);
+  return { ok: true, deactivated: false };
+}
+
+/** Guard for the modifier DELETE route: deactivating must stay satisfiable. */
+export async function deleteModifier(
+  locationId: string,
+  id: string,
+): Promise<ServiceResult & { deactivated?: boolean }> {
+  const { rows: refs } = await query(
+    "SELECT id FROM order_item_modifiers WHERE modifier_id = $1 LIMIT 1",
+    [id],
+  );
+  if (refs.length > 0) {
+    const check = await assertModifierRemovalSafe(locationId, id);
+    if (!check.ok) return check;
+    await query("UPDATE modifiers SET is_active = false WHERE id = $1", [id]);
+    return { ok: true, deactivated: true };
+  }
+  // Unreferenced: still refuse when the group's items depend on this option.
+  const check = await assertModifierRemovalSafe(locationId, id);
+  if (!check.ok) return check;
+  await query("DELETE FROM modifiers WHERE id = $1", [id]);
+  return { ok: true, deactivated: false };
+}
+
+// ---------------------------------------------------------------------------
+// Import helper (transaction-scoped)
+// ---------------------------------------------------------------------------
+
+/**
+ * Attaches `groupId` to `itemId` inside an import transaction, with the same
+ * satisfiability rule the interactive attach enforces.
+ */
+export async function attachGroupInTransaction(
+  client: PoolClient,
+  locationId: string,
+  menuItemId: string,
+  modifierGroupId: string,
+  overrides: { minSelectOverride: number | null; maxSelectOverride: number | null },
+): Promise<ServiceResult> {
+  const check = await assertAttachmentSatisfiable(
+    locationId,
+    menuItemId,
+    modifierGroupId,
+    overrides,
+    { client: client as unknown as { query: PoolClient["query"] } },
+  );
+  if (!check.ok) return check;
+  await client.query(
+    `INSERT INTO menu_item_modifier_groups
+       (menu_item_id, modifier_group_id, min_select_override, max_select_override, is_active)
+     VALUES ($1, $2, $3, $4, true)
+     ON CONFLICT (menu_item_id, modifier_group_id) DO UPDATE
+       SET min_select_override = EXCLUDED.min_select_override,
+           max_select_override = EXCLUDED.max_select_override,
+           is_active = true`,
+    [menuItemId, modifierGroupId, overrides.minSelectOverride, overrides.maxSelectOverride],
+  );
   return { ok: true };
 }

@@ -53,7 +53,7 @@ import {
 import { isAssistantSurface } from "@/lib/assistant-route";
 import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
-import { appForModule, type AppKey } from "@/lib/apps";
+import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { ACCOUNTING_SECTION_ICONS } from "@/app/(app)/accounting/accounting-icons";
@@ -149,11 +149,31 @@ const SIDEBAR_KEYBOARD_STEP = 16;
  * never gated.
  */
 const WORKSPACE_APP_LAUNCHERS: readonly {
-  key: AppKey;
+  // `ai` is not an `AppKey` (its module is unassigned in apps.ts, so it is
+  // never gated or badged by app availability), so the key union carries it
+  // explicitly. «اتصال‌های فنی» is no longer a launcher here — it renders from
+  // its own `connectionsHref` slot below.
+  key: AppKey | "ai";
   label: string;
   icon: LucideIcon;
   hrefs: readonly string[];
 }[] = [
+  {
+    // Phase I — the AI Workspace is a first-class launcher, not a URL-only
+    // surface. The flat nav deliberately drops the `ai` entry in the workspace
+    // shell (it is a product launched from the rail, like Growth), but until
+    // now no rail launcher replaced it, so `/ai` was reachable only by typing
+    // the address. This entry closes that gap: «دستیار هوشمند» sits beside
+    // حسابداری in «برنامه‌ها» and opens the workspace's own shell (chat plus the
+    // section sub-nav: ایجنت‌ها، همکاران، اتوماسیون‌ها، فعالیت، دانش، مصرف).
+    // `ai` is not an `AppKey` (its module is unassigned in apps.ts, so it is
+    // never gated or badged by app availability), which is why the key union
+    // carries it explicitly.
+    key: "ai",
+    label: "دستیار هوشمند",
+    icon: SparklesIcon,
+    hrefs: ["/ai"],
+  },
   {
     key: "accounting",
     label: "حسابداری",
@@ -445,7 +465,9 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
         ...launcher,
         href,
         active: isActive(pathname, href),
-        appState: stateByApp.get(launcher.key),
+        // `ai` is not an `AppKey`, so it has no app-availability state to badge;
+        // `stateByApp` is keyed by `AppKey` only.
+        appState: isAppKey(launcher.key) ? stateByApp.get(launcher.key) : undefined,
       },
     ];
   });

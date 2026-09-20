@@ -206,15 +206,19 @@ jobs:
       - name: Final size report and budgets
         id: sizes
         run: |
+          $ErrorActionPreference = "Stop"
+          function Add-GitHubOutput([string]$line) {
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "$line`n", (New-Object System.Text.UTF8Encoding($false)))
+          }
           node scripts/report-desktop-size.mjs --output=desktop-size-report.md
           $exe = Get-ChildItem electron/dist -File -Filter *.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $exe) { throw "NSIS installer missing" }
           $unpacked = (Get-ChildItem electron/dist/win-unpacked -Recurse -File | Measure-Object Length -Sum).Sum
           $installerMiB = [math]::Round($exe.Length / 1MB, 1)
           $installedMiB = [math]::Round($unpacked / 1MB, 1)
-          "installer=$installerMiB" >> $env:GITHUB_OUTPUT
-          "installed=$installedMiB" >> $env:GITHUB_OUTPUT
-          "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          Add-GitHubOutput "installer=$installerMiB"
+          Add-GitHubOutput "installed=$installedMiB"
+          Add-GitHubOutput "name=$($exe.Name)"
           Write-Host "::notice title=Desktop package sizes::Installer $installerMiB MiB; unpacked installed payload $installedMiB MiB"
           if ($exe.Length -gt 175MB) { throw "Installer $installerMiB MiB exceeds the 175 MiB release baseline" }
           if ($unpacked -gt 600MB) { throw "Installed payload $installedMiB MiB exceeds 600 MiB budget" }
@@ -261,11 +265,12 @@ jobs:
           INSTALLER: ${{ steps.sizes.outputs.installer }}
           INSTALLED: ${{ steps.sizes.outputs.installed }}
         run: |
-          @"
+          $summary = @"
           ## Business Suite Windows package
 
           - Installer: **$env:NAME** — **$env:INSTALLER MiB**
           - Unpacked installed payload: **$env:INSTALLED MiB**
           - Runtime: Next standalone trace + bundled custom server; no root node_modules
           - Acceptance: packaged executable initialized PostgreSQL UTF-8, migrated, passed RLS boot, bootstrapped through the real API, authenticated, stopped, restarted and retained data
-          "@ >> $env:GITHUB_STEP_SUMMARY
+          "@
+          [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$summary`n", (New-Object System.Text.UTF8Encoding($false)))

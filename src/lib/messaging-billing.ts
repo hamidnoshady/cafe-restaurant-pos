@@ -2,9 +2,10 @@
  * Phase 37 Wave 1 — database operations for platform-owned message config and
  * metered SMS/email credits.
  *
- * Mirrors Phase 18's AI platform billing (src/lib/ai-billing-service.ts): the
- * platform holds the provider relationship, the business never pastes a key,
- * and every balance is the SUM of a signed ledger — never a writable column.
+ * Mirrors what Phase 18's AI platform billing did (the since-removed
+ * src/lib/ai-billing-service.ts, retired in Phase J): the platform holds the
+ * provider relationship, the business never pastes a key, and every balance is
+ * the SUM of a signed ledger — never a writable column.
  *
  * Three ownership rules govern the SQL:
  *   * Platform-wide configuration is a `platform_*` singleton administered in
@@ -13,7 +14,8 @@
  *     current tenant scope, or under `withoutTenantScope` when the console is
  *     administering a *named* business across tenants.
  *   * The reservation contract (max-reserve → settle/refund) is the atomic one
- *     from `ai-billing-service.ts`, so two ticks cannot spend the same credit.
+ *     the retired `ai-billing-service.ts` used, so two ticks cannot spend the
+ *     same credit.
  */
 import { randomUUID } from "node:crypto";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";

@@ -85,8 +85,26 @@ describe("production deployment runtime", () => {
 
   it("serializes modifier reads made on one transaction client", async () => {
     const fake = nonQueueingClient((sql) => {
+      // resolveLineModifiers re-reads the menu item itself (availability and
+      // its category's) before resolving the add-on selection.
+      if (sql.includes("FROM menu_items")) {
+        return [{
+          id: "item-1",
+          name: "Latte",
+          price: "850000",
+          is_active: true,
+          category_is_active: true,
+          tax_rate: "9",
+        }];
+      }
       if (sql.includes("menu_item_modifier_groups")) {
-        return [{ modifier_group_id: "group-1" }];
+        return [{
+          menu_item_id: "item-1",
+          modifier_group_id: "group-1",
+          min_select_override: null,
+          max_select_override: null,
+          is_active: true,
+        }];
       }
       if (sql.includes("FROM modifiers")) {
         return [{
@@ -97,7 +115,7 @@ describe("production deployment runtime", () => {
           is_active: true,
         }];
       }
-      return [{ id: "group-1", min_select: 0, max_select: 2 }];
+      return [{ id: "group-1", is_active: true, min_select: 0, max_select: 2 }];
     });
 
     const result = await resolveLineModifiers(
@@ -108,7 +126,8 @@ describe("production deployment runtime", () => {
     );
 
     expect(result).toMatchObject({ ok: true });
-    expect(fake.calls()).toHaveLength(3);
+    // menu_items → modifier_groups → links → modifiers, awaited in order.
+    expect(fake.calls()).toHaveLength(4);
     expect(fake.maxConcurrent()).toBe(1);
   });
 });

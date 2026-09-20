@@ -38,6 +38,14 @@ export interface BusinessInfo {
   address: string | null;
   phone: string | null;
   receiptFooter?: string | null;
+  /**
+   * The business's effective feature flags, so selling screens can align
+   * their offer with what the domain layer will accept (a POS with
+   * `delivery: false` never shows the delivery tab). Absent while loading or
+   * on an older server — callers treat "unknown" as "allowed" and let the
+   * server's refusal be the last word.
+   */
+  features?: Record<string, boolean>;
 }
 
 /** Business/location name + contact info for the printed receipt header. */

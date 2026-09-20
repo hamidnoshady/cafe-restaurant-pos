@@ -19,7 +19,9 @@ import {
   LayoutDashboardIcon,
   ListChecksIcon,
   SettingsIcon,
+  SproutIcon,
   ShieldCheckIcon,
+  StoreIcon,
   TargetIcon,
   UserSearchIcon,
   UsersIcon,
@@ -56,6 +58,12 @@ export const CRM_NAV_ITEMS: readonly CrmNavItem[] = [
     icon: ContactIcon,
   },
   {
+    key: "leads",
+    label: "سرنخ‌ها",
+    description: "پرس‌وجوهایی که هنوز مشتری نشده‌اند",
+    icon: SproutIcon,
+  },
+  {
     key: "segments",
     label: "بخش‌بندی",
     description: "گروه‌های پویا بر پایهٔ رفتار خرید",
@@ -84,6 +92,12 @@ export const CRM_NAV_ITEMS: readonly CrmNavItem[] = [
     label: "اشخاص تکراری",
     description: "یافتن و ادغام پرونده‌های دوتایی",
     icon: CopyCheckIcon,
+  },
+  {
+    key: "reconciliation",
+    label: "تطبیق فروشگاه آنلاین",
+    description: "خریدارانی که هنوز به پرونده‌ای وصل نشده‌اند",
+    icon: StoreIcon,
   },
   {
     key: "consent",

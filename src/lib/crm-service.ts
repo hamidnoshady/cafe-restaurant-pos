@@ -24,8 +24,8 @@
  *    it.
  */
 
-import { query, withTenant } from "./db";
-import { getCustomerArBalance } from "./ar-service";
+import { query, withTenant, withTenantTransaction } from "./db";
+import { customerFinancialSummary } from "./crm-accounting-contract";
 import { businessToday } from "./business-day-service";
 import { getBusinessDek } from "./business-keys";
 import { encryptOptional, phoneBlindIndex, phoneKind, phoneLast4 } from "./field-crypto";
@@ -45,7 +45,29 @@ import {
 } from "./crm-shared";
 import { daysBetween, lifetimeValue, scorePopulation, type CustomerRfmInput, type RfmScore } from "./crm-scoring";
 import type { LifecycleStage } from "./crm-scoring";
+import {
+  movedPartyReferences,
+  partyReferenceKey,
+  partyReferenceLabels,
+  previewPartyReferences,
+  type PartyReference,
+} from "./party-merge-references";
+import { recordCrmAudit } from "./crm-audit-service";
 import { isUuid } from "./uuid";
+
+/**
+ * A merge was asked to move a reference the live schema cannot support.
+ *
+ * Thrown rather than swallowed: a merge is irreversible, so a reference that
+ * was declared as needing to move and then could not is a reason to refuse the
+ * whole operation, not a reason to finish it with one table left behind.
+ */
+export class PartyMergeBlockedError extends Error {
+  constructor(readonly references: readonly string[]) {
+    super(`party_merge_blocked:${references.join(",")}`);
+    this.name = "PartyMergeBlockedError";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // The customer file
@@ -100,6 +122,10 @@ export interface CustomerFile {
     receivableRial: number;
     /** False when the chart of accounts has no A/R account yet. */
     hasLedger: boolean;
+    /** The part of the balance past its due date. */
+    overdueRial: number;
+    /** Oldest aging bucket holding anything — «بیش از ۹۰ روز» and the like. */
+    oldestBucketLabel: string | null;
   };
 }
 
@@ -154,8 +180,16 @@ export async function getCustomerFile(
             AND status IN ('open', 'in_progress', 'waiting')
        ) oc ON true
        LEFT JOIN LATERAL (
-         SELECT count(*)::int AS open_deals FROM crm_deals
-          WHERE customer_id = c.id AND business_id = $1 AND stage NOT IN ('won', 'lost')
+         -- Keyed on the stage row's outcome, not on the legacy stage text.
+         -- A business that renamed its stages or added its own still gets a
+         -- correct open count; matching on the string 'won' would miss a
+         -- custom winning stage entirely and overstate the open pipeline.
+         -- COALESCE covers deals written before migration 0157, which have a
+         -- stage string but no stage_id yet.
+         SELECT count(*)::int AS open_deals FROM crm_deals d
+          LEFT JOIN crm_pipeline_stages st ON st.id = d.stage_id
+          WHERE d.customer_id = c.id AND d.business_id = $1
+            AND COALESCE(st.outcome, d.stage) NOT IN ('won', 'lost')
        ) od ON true
       WHERE c.business_id = $1 AND c.id = $2
         AND c.roles && ARRAY['customer']::text[]`,
@@ -165,10 +199,11 @@ export async function getCustomerFile(
   if (!row) return null;
 
   const today = await businessToday(businessId);
-  // Ask the books rather than recomputing. `hasLedger` is false when the
-  // business has no A/R account yet, which is a real state for a cash-only
-  // cafe — distinct from "has an account and owes nothing".
-  const arBalance = await getCustomerArBalance(businessId, customerId);
+  // Ask the books rather than recomputing, through the CRM's read-only
+  // accounting contract. `available` is false when the business has no A/R
+  // account yet, which is a real state for a cash-only cafe — distinct from
+  // "has an account and owes nothing", and the UI must not render it as ۰.
+  const arBalance = await customerFinancialSummary(businessId, customerId);
   const lastPurchaseDate = (row.lastPurchaseDate as string | null) ?? null;
   const firstPurchaseDate = (row.firstPurchaseDate as string | null) ?? null;
   const orderCount = Number(row.orderCount ?? 0);
@@ -216,8 +251,12 @@ export async function getCustomerFile(
       scoredAt: (row.rfmScoredAt as string | null) ?? null,
     },
     accounting: {
-      receivableRial: arBalance.balance,
-      hasLedger: arBalance.hasLedger,
+      receivableRial: arBalance.balanceRial,
+      hasLedger: arBalance.available,
+      // The collections signal. Owing money is normal; owing money that is
+      // past due is the thing a person looking at this file needs to see.
+      overdueRial: arBalance.overdueRial,
+      oldestBucketLabel: arBalance.oldestBucketLabel,
     },
   };
 }
@@ -245,7 +284,8 @@ export async function listCustomerNotes(
   const { rows } = await query<CustomerNote>(
     `SELECT ${NOTE_COLUMNS} FROM customer_notes
       WHERE business_id = $1 AND customer_id = $2
-      ORDER BY is_pinned DESC, created_at DESC`,
+      -- id last, so notes written in the same second keep a stable order.
+      ORDER BY is_pinned DESC, created_at DESC, id`,
     [businessId, customerId],
   );
   return rows;
@@ -438,7 +478,10 @@ export async function listConsentEvents(
         AND c.is_active
         AND c.merged_into_id IS NULL
       WHERE ${where}
-      ORDER BY e.created_at DESC
+      -- e.id breaks ties: a consent change and its audit row share a
+      -- timestamp, and an unstable order makes the history read differently
+      -- on each refresh.
+      ORDER BY e.created_at DESC, e.id
       LIMIT $${params.length}`,
     params,
   );
@@ -641,34 +684,146 @@ export async function findDuplicates(
 export interface MergePreview {
   winner: { id: string; name: string };
   loser: { id: string; name: string };
+  /** Counts keyed by table name; label them with `moveLabels`. */
   moves: Record<string, number>;
+  /**
+   * Persian labels for the `moves` keys, sent with the preview rather than
+   * restated in the dialog. The screen used to keep its own map of nine
+   * labels while the merge touched more than twenty tables, so an owner
+   * confirming an irreversible action saw a silent subset of it.
+   */
+  moveLabels: Record<string, string>;
   /** The consent the merged record will end up with, and why. */
   resultingConsent: { smsConsent: boolean; marketingConsent: boolean };
   resultingTags: string[];
 }
 
-/** Reference counts for the merge preview — «چه چیزی به کجا می‌رود». */
+/**
+ * Build the SQL that re-points one declared reference at the winner.
+ *
+ * Derived from the registry rather than hand-written per table, because a
+ * hand-written list is exactly what fell behind every time the platform grew a
+ * customer-linked table. Both tenancy shapes are covered: a table with its own
+ * `business_id`, and a branch-scoped table that reaches the tenant through
+ * `locations`. Table and column names come from a frozen in-repo constant, never
+ * from a request, so there is no interpolation of untrusted text here.
+ */
+function partyReferenceFilter(reference: PartyReference, alias: string): string {
+  // `filterSql` is a constant from party-merge-references.ts with `{t}` where
+  // the alias goes. It narrows a shared table to the rows that really hold a
+  // party id — `integration_mappings.local_id` is a party only on
+  // customer-kind rows, and moving a product mapping would corrupt the
+  // catalogue.
+  if (!reference.filterSql) return "";
+  return ` AND (${reference.filterSql.replaceAll("{t}", alias)})`;
+}
+
+function movePartyReferenceSql(reference: PartyReference): string {
+  if (reference.scope === "location") {
+    return `UPDATE ${reference.table} t SET ${reference.column} = $3
+              FROM locations l
+             WHERE l.id = t.location_id AND l.business_id = $1
+               AND t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
+  }
+  return `UPDATE ${reference.table} AS t SET ${reference.column} = $3
+           WHERE t.business_id = $1 AND t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
+}
+
+/**
+ * Statements that clear the loser's rows which cannot survive the move.
+ *
+ * Two shapes, both *declared* in the registry rather than discovered by
+ * catching a constraint violation:
+ *
+ * - **self-edges**: a relationship A→B where B is the winner would become B→B,
+ *   which the table's own CHECK forbids;
+ * - **collisions**: a row the winner already has an equivalent of, under the
+ *   table's unique key. The winner's copy is kept — it belongs to the record
+ *   the business chose to survive.
+ *
+ * Run before the UPDATE, so the move itself can never abort halfway. A merge
+ * that fails partway through is the worst available outcome: the operation is
+ * irreversible and there is nothing to roll forward to.
+ */
+function prunePartyReferenceSql(reference: PartyReference): string[] {
+  const statements: string[] = [];
+  if (reference.scope !== "business") return statements;
+  const filter = partyReferenceFilter(reference, "t");
+
+  if (reference.selfEdgeColumn) {
+    statements.push(
+      `DELETE FROM ${reference.table} AS t
+        WHERE t.business_id = $1 AND t.${reference.column} = $2
+          AND t.${reference.selfEdgeColumn} = $3${filter}`,
+    );
+  }
+  if (reference.uniqueWithSql && reference.uniqueWithSql.length > 0) {
+    const match = reference.uniqueWithSql.map((column) => `w.${column} = t.${column}`).join(" AND ");
+    statements.push(
+      `DELETE FROM ${reference.table} AS t
+        WHERE t.business_id = $1 AND t.${reference.column} = $2${filter}
+          AND EXISTS (
+            SELECT 1 FROM ${reference.table} w
+             WHERE w.business_id = $1 AND w.${reference.column} = $3 AND ${match}
+          )`,
+    );
+  }
+  return statements;
+}
+
+/** The same shape, as a COUNT — used by the preview and by the moved tally. */
+function countPartyReferenceSql(reference: PartyReference): string {
+  if (reference.scope === "location") {
+    return `SELECT count(*)::text AS count FROM ${reference.table} t
+              JOIN locations l ON l.id = t.location_id AND l.business_id = $1
+             WHERE t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
+  }
+  return `SELECT count(*)::text AS count FROM ${reference.table} AS t
+           WHERE t.business_id = $1 AND t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
+}
+
+/**
+ * Reference counts for the merge preview — «چه چیزی به کجا می‌رود».
+ *
+ * Only the references the registry marks `preview` are itemised: an owner
+ * confirming a destructive merge needs to see orders, money and open work, not
+ * every internal join. The counts are keyed by table so the UI can label them
+ * from the same registry the service moved them with.
+ */
 async function countReferences(
   businessId: string,
   customerId: string,
 ): Promise<Record<string, number>> {
-  const { rows } = await query<Record<string, string>>(
-    `SELECT
-       (SELECT count(*) FROM orders o JOIN locations l ON l.id = o.location_id
-         WHERE o.customer_id = $2 AND l.business_id = $1)::text AS orders,
-       (SELECT count(*) FROM customer_points WHERE customer_id = $2 AND business_id = $1)::text AS points,
-       (SELECT count(*) FROM reservations r JOIN locations l ON l.id = r.location_id
-         WHERE r.customer_id = $2 AND l.business_id = $1)::text AS reservations,
-       (SELECT count(*) FROM ar_receipts WHERE customer_id = $2 AND business_id = $1)::text AS receipts,
-       (SELECT count(*) FROM customer_notes WHERE customer_id = $2 AND business_id = $1)::text AS notes,
-       (SELECT count(*) FROM crm_activities WHERE customer_id = $2 AND business_id = $1)::text AS activities,
-       (SELECT count(*) FROM crm_deals WHERE customer_id = $2 AND business_id = $1)::text AS deals,
-       (SELECT count(*) FROM crm_cases WHERE customer_id = $2 AND business_id = $1)::text AS cases,
-       (SELECT count(*) FROM crm_consent_events WHERE customer_id = $2 AND business_id = $1)::text AS consent_events`,
-    [businessId, customerId],
-  );
-  const row = rows[0] ?? {};
-  return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value ?? 0)]));
+  const references = previewPartyReferences();
+  // Sequential, not Promise.all. This runs inside the merge transaction, where
+  // every statement shares one pinned client, and a single pg client cannot
+  // execute concurrent queries — firing them in parallel makes them queue
+  // anyway while emitting a deprecation warning, and on older drivers
+  // interleaves them incorrectly. Two dozen fast COUNTs in sequence is not the
+  // bottleneck in an operation that is already rewriting twenty tables.
+  const counts: number[] = [];
+  for (const reference of references) {
+    try {
+      const { rows } = await query<{ count: string }>(countPartyReferenceSql(reference), [
+        businessId,
+        customerId,
+      ]);
+      counts.push(Number(rows[0]?.count ?? 0));
+    } catch {
+      // A table that does not exist on this install (an industry table in a
+      // trade that never had it) must not take the preview down. The merge
+      // itself tolerates the same thing, for the same reason.
+      counts.push(0);
+    }
+  }
+
+  const result: Record<string, number> = {};
+  references.forEach((reference, index) => {
+    // Registry order, and one entry per table even when two columns of the
+    // same table are previewed.
+    result[reference.table] = (result[reference.table] ?? 0) + counts[index];
+  });
+  return result;
 }
 
 export async function previewMerge(
@@ -698,6 +853,7 @@ export async function previewMerge(
     winner: { id: winner.id, name: winner.name },
     loser: { id: loser.id, name: loser.name },
     moves: await countReferences(businessId, loserId),
+    moveLabels: partyReferenceLabels(),
     resultingConsent: {
       // Intersection, not union — see mergeConsent's doc comment.
       smsConsent: mergeConsent(winner.sms_consent, loser.sms_consent),
@@ -717,8 +873,15 @@ export interface MergeResult {
  * Merge two customer records.
  *
  * What it does, in one transaction:
- * - repoints every reference (orders, points, reservations, AR receipts, notes,
- *   activities, deals, cases, consent events) at the winner;
+ * - repoints **every reference the registry classifies as `move`** at the
+ *   winner — orders, receipts, cheques, instalments, loyalty, message
+ *   recipients, reservations, repairs, layaway, gold accounts, notes,
+ *   activities, deals, cases, consent events, relationships, custom field
+ *   values, external store profiles and the integration customer mappings.
+ *   The list lives in `party-merge-references.ts` and is checked against
+ *   PostgreSQL's own foreign-key metadata by an integration test, so a new
+ *   customer-linked table cannot be forgotten the way the WooCommerce mapping
+ *   was: it fails the suite until somebody states what a merge should do;
  * - unions the tags, **intersects** the consent, and fills any field the winner
  *   left blank from the loser;
  * - archives the loser (`is_active = false`, `merged_into_id = winner`) rather
@@ -740,11 +903,21 @@ export async function mergeCustomers(
   businessId: string,
   winnerId: string,
   loserId: string,
-  options: { mergedBy?: string } = {},
+  options: { mergedBy?: string; mergedByUserId?: string | null } = {},
 ): Promise<MergeResult | null> {
   if (winnerId === loserId) return null;
 
-  return withTenant(businessId, async () => {
+  // Captured inside the transaction, read after it, so the audit line can
+  // name the two records without a second lookup against rows that are now
+  // archived.
+  let winnerName = "";
+  let loserName = "";
+
+  // Transactional. A merge locks both records, moves twenty-odd references
+  // and archives the loser; a failure partway through is the worst available
+  // outcome because the operation is irreversible. The FOR UPDATE below also
+  // only means anything inside a transaction.
+  const result = await withTenantTransaction(businessId, async () => {
     const { rows } = await query<{
       id: string;
       name: string;
@@ -777,42 +950,53 @@ export async function mergeCustomers(
     // A record that already lost a merge must not be merged again — that would
     // produce a chain whose history is unreadable.
     if (!winner || !loser || loser.merged_into_id || winner.merged_into_id) return null;
+    winnerName = winner.name;
+    loserName = loser.name;
 
     const moved = await countReferences(businessId, loserId);
 
-    // Re-point references. Each is scoped by business_id (or by the location's
-    // business) so a merge can never reach across tenants even if ids leaked.
-    await query(
-      `UPDATE orders o SET customer_id = $3
-         FROM locations l WHERE l.id = o.location_id AND l.business_id = $1 AND o.customer_id = $2`,
-      [businessId, loserId, winnerId],
-    );
-    await query(
-      `UPDATE reservations r SET customer_id = $3
-         FROM locations l WHERE l.id = r.location_id AND l.business_id = $1 AND r.customer_id = $2`,
-      [businessId, loserId, winnerId],
-    );
-    for (const table of [
-      "customer_points",
-      "ar_receipts",
-      "customer_notes",
-      "crm_activities",
-      "crm_deals",
-      "crm_cases",
-      "crm_consent_events",
-    ]) {
-      await query(
-        `UPDATE ${table} SET customer_id = $3 WHERE business_id = $1 AND customer_id = $2`,
-        [businessId, loserId, winnerId],
-      );
+    // Re-point every reference the registry classifies as `move`. Driving this
+    // from `PARTY_REFERENCES` rather than from a list written here is the whole
+    // fix: the hand-written version fell one table behind every integration the
+    // platform grew, and the symptom was silent — a WooCommerce customer
+    // mapping left pointing at the archived loser, so the next webhook resolved
+    // an online order onto a customer who no longer exists.
+    //
+    // Each statement is scoped by `business_id` (or by the location's business),
+    // so a merge can never reach across tenants even if ids leaked into a
+    // request. Table and column names come from the frozen registry constant,
+    // never from input.
+    const unsupported: string[] = [];
+    for (const reference of movedPartyReferences()) {
+      try {
+        // Clear what cannot survive the move first (self-edges, rows the
+        // winner already has under a unique key), so the UPDATE itself cannot
+        // abort a merge halfway through.
+        for (const statement of prunePartyReferenceSql(reference)) {
+          await query(statement, [businessId, loserId, winnerId]);
+        }
+        await query(movePartyReferenceSql(reference), [businessId, loserId, winnerId]);
+      } catch (error) {
+        // A table that does not exist on this install is fine — industry tables
+        // (repairs, gold accounts, layaway) only exist for the trades that have
+        // them, and the registry is platform-wide. Anything else is a real
+        // failure and must abort the merge rather than leave it half-applied:
+        // a partially merged customer is worse than an unmerged one.
+        const code = (error as { code?: string }).code;
+        if (code === "42P01") continue; // undefined_table
+        if (code === "42703") {
+          // undefined_column — the registry names a column this schema has not
+          // got. Record it and fail, rather than silently skipping a reference
+          // somebody declared as needing to move.
+          unsupported.push(partyReferenceKey(reference.table, reference.column));
+          continue;
+        }
+        throw error;
+      }
     }
-    // Repair tickets are location-scoped like orders, and only exist for the
-    // trades that have them; the UPDATE is a no-op elsewhere.
-    await query(
-      `UPDATE repair_tickets rt SET customer_id = $3
-         FROM locations l WHERE l.id = rt.location_id AND l.business_id = $1 AND rt.customer_id = $2`,
-      [businessId, loserId, winnerId],
-    );
+    if (unsupported.length > 0) {
+      throw new PartyMergeBlockedError(unsupported);
+    }
 
     // Field-level merge: union the tags, intersect the consent, and fill the
     // winner's empty fields from the loser (a blank is not a decision).
@@ -911,6 +1095,26 @@ export async function mergeCustomers(
 
     return { winnerId, loserId, moved };
   });
+
+  if (!result) return null;
+
+  // Outside the transaction, deliberately. A merge is irreversible and has
+  // already been committed by this point; a failed audit insert must not be
+  // able to roll it back. `recordCrmAudit` swallows its own errors for the
+  // same reason.
+  await recordCrmAudit({
+    businessId,
+    kind: "party.merged",
+    entityType: "party",
+    entityId: result.winnerId,
+    partyId: result.winnerId,
+    summary: `ادغام پروندهٔ مشتری در «${winnerName}»`,
+    detail: { loserId: result.loserId, loserName, moved: result.moved },
+    actorUserId: options.mergedByUserId ?? null,
+    actorName: options.mergedBy ?? "",
+  });
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1253,7 +1457,10 @@ export async function listActivities(
                CASE WHEN a.completed_at IS NULL THEN a.due_at END ASC,
                -- Done work reads as history: most recently finished first.
                a.completed_at DESC NULLS LAST,
-               a.created_at DESC
+               a.created_at DESC,
+               -- Total order. Bulk-created activities share a timestamp, and
+               -- without this they shuffle between identical requests.
+               a.id
       LIMIT $${params.length}`,
     params,
   );
@@ -1436,7 +1643,12 @@ export async function listDeals(
     `SELECT ${DEAL_COLUMNS} FROM crm_deals d
        LEFT JOIN parties c ON c.id = d.customer_id
       WHERE ${where}
-      ORDER BY d.updated_at DESC
+      -- d.id breaks ties. Without it the sort is only a partial order, and
+      -- Postgres may return equal-timestamped rows in any sequence it likes:
+      -- two deals created by the same import, or seeded together, swap places
+      -- between identical requests. On the kanban that reorders cards for no
+      -- reason, and it made the crm-deals visual baseline flake.
+      ORDER BY d.updated_at DESC, d.id
       LIMIT $${params.length}`,
     params,
   );
@@ -1618,7 +1830,8 @@ export async function listCases(
       WHERE ${where}
       ORDER BY
         CASE k.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-        k.opened_at DESC
+        k.opened_at DESC,
+        k.id
       LIMIT $${params.length}`,
     params,
   );

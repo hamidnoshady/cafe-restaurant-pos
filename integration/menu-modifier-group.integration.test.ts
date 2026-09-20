@@ -30,6 +30,7 @@ let db: Client;
 
 /** Imported after DATABASE_URL is pointed at the scratch DB. */
 let menuService: typeof import("../src/lib/menu-service");
+let menuValidation: typeof import("../src/lib/menu-validation");
 let dbLib: typeof import("../src/lib/db");
 
 let businessId = "";
@@ -80,9 +81,18 @@ async function readModifier(id: string) {
   return rows[0];
 }
 
-/** The route's call, inside the tenant scope every request runs in. */
+/**
+ * The route's call, inside the tenant scope every request runs in: the body is
+ * validated exactly as PATCH /api/menu/modifiers/[id] validates it, then the
+ * service runs. Calling the service with an unvalidated body would skip the
+ * layer that trims names and rejects non-string ids.
+ */
 function patch(locationId: string, id: string, body: Record<string, unknown>) {
-  return dbLib.withTenant(businessId, () => menuService.updateModifier(locationId, id, body));
+  return dbLib.withTenant(businessId, async () => {
+    const parsed = menuValidation.validateModifierPatch(body);
+    if (!parsed.ok) return { ok: false as const, error: parsed.error, status: 400 };
+    return menuService.updateModifier(locationId, id, parsed.value);
+  });
 }
 
 beforeAll(async () => {
@@ -100,6 +110,7 @@ beforeAll(async () => {
 
   process.env.DATABASE_URL = urlFor(databaseName);
   menuService = await import("../src/lib/menu-service");
+  menuValidation = await import("../src/lib/menu-validation");
   dbLib = await import("../src/lib/db");
 
   db = new Client({ connectionString: urlFor(databaseName) });

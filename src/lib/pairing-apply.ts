@@ -245,6 +245,27 @@ async function insertAccounts(
 }
 
 async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+  // v4: media rows first — menu_items.image_media_id points at them, and the
+  // bytes stay on the central server. The local /api/media/[id]/file fetches
+  // on demand and the tile falls back to its placeholder when it cannot.
+  if (snapshot.menu.mediaAssets.length > 0) {
+    await client.query(
+      `INSERT INTO media_assets
+         (id, business_id, kind, file_name, mime_type, byte_size, storage_key, sha256)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::bigint[], $7::text[], $8::text[])`,
+      [
+        snapshot.menu.mediaAssets.map((a) => a.id),
+        snapshot.menu.mediaAssets.map(() => snapshot.business.id),
+        snapshot.menu.mediaAssets.map((a) => a.kind),
+        snapshot.menu.mediaAssets.map((a) => a.fileName),
+        snapshot.menu.mediaAssets.map((a) => a.mimeType),
+        snapshot.menu.mediaAssets.map((a) => a.byteSize),
+        snapshot.menu.mediaAssets.map((a) => a.storageKey),
+        snapshot.menu.mediaAssets.map((a) => a.sha256),
+      ],
+    );
+  }
+
   if (snapshot.menu.categories.length > 0) {
     await client.query(
       `INSERT INTO menu_categories (id, location_id, name, sort_order, is_active)
@@ -262,8 +283,9 @@ async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promis
   if (snapshot.menu.items.length > 0) {
     await client.query(
       `INSERT INTO menu_items
-         (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
-       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::boolean[], $10::integer[])`,
+         (id, location_id, category_id, name, description, sku, price, image_url, image_media_id,
+          is_active, sort_order)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::uuid[], $10::boolean[], $11::integer[])`,
       [
         snapshot.menu.items.map((i) => i.id),
         snapshot.menu.items.map(() => snapshot.location.id),
@@ -273,6 +295,7 @@ async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promis
         snapshot.menu.items.map((i) => i.sku),
         snapshot.menu.items.map((i) => i.price),
         snapshot.menu.items.map((i) => i.imageUrl),
+        snapshot.menu.items.map((i) => i.imageMediaId),
         snapshot.menu.items.map((i) => i.isActive),
         snapshot.menu.items.map((i) => i.sortOrder),
       ],
@@ -281,14 +304,16 @@ async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promis
 
   if (snapshot.menu.modifierGroups.length > 0) {
     await client.query(
-      `INSERT INTO modifier_groups (id, location_id, name, min_select, max_select)
-       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::integer[], $5::integer[])`,
+      `INSERT INTO modifier_groups (id, location_id, name, min_select, max_select, is_active, sort_order)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::integer[], $5::integer[], $6::boolean[], $7::integer[])`,
       [
         snapshot.menu.modifierGroups.map((group) => group.id),
         snapshot.menu.modifierGroups.map(() => snapshot.location.id),
         snapshot.menu.modifierGroups.map((group) => group.name),
         snapshot.menu.modifierGroups.map((group) => group.minSelect),
         snapshot.menu.modifierGroups.map((group) => group.maxSelect),
+        snapshot.menu.modifierGroups.map((group) => group.isActive),
+        snapshot.menu.modifierGroups.map((group) => group.sortOrder),
       ],
     );
   }
@@ -311,11 +336,16 @@ async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promis
 
   if (snapshot.menu.itemModifierGroups.length > 0) {
     await client.query(
-      `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
-       SELECT * FROM UNNEST($1::uuid[], $2::uuid[])`,
+      `INSERT INTO menu_item_modifier_groups
+         (menu_item_id, modifier_group_id, min_select_override, max_select_override, sort_order, is_active)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::integer[], $4::integer[], $5::integer[], $6::boolean[])`,
       [
         snapshot.menu.itemModifierGroups.map((link) => link.menuItemId),
         snapshot.menu.itemModifierGroups.map((link) => link.modifierGroupId),
+        snapshot.menu.itemModifierGroups.map((link) => link.minSelectOverride),
+        snapshot.menu.itemModifierGroups.map((link) => link.maxSelectOverride),
+        snapshot.menu.itemModifierGroups.map((link) => link.sortOrder),
+        snapshot.menu.itemModifierGroups.map((link) => link.isActive),
       ],
     );
   }

@@ -41,6 +41,8 @@ import { getCustomerFile } from "./crm-service";
 import { customerTimeline } from "./customer-timeline-service";
 import { listSegmentsWithCounts, previewSegment } from "./crm-segments-service";
 import { listWebsitePostsTool, listWebsiteProductsTool, websiteStatusTool } from "./website/content-service";
+import { listMessageCampaigns, listMessageTemplates } from "./message-campaigns-service";
+import { CAMPAIGN_CHANNELS, type CampaignChannel } from "./campaign-channels";
 import { WEBSITE_ERROR_LABELS } from "./website/adapter";
 import {
   describeSegment,
@@ -1376,6 +1378,56 @@ export async function runReadTool(
     case "get_website_status":
       return { ok: true, data: await websiteStatusTool(businessId) };
 
+    // Phase C — the two messaging reads that feed messaging.campaign.create.
+    // Both list the business's own rows; the campaign create action still runs
+    // through the role-guarded /api/messaging route when a human applies it.
+    case "list_message_templates": {
+      const channel =
+        typeof args.channel === "string" && (CAMPAIGN_CHANNELS as readonly string[]).includes(args.channel)
+          ? (args.channel as CampaignChannel)
+          : undefined;
+      const templates = await listMessageTemplates(businessId, channel);
+      return {
+        ok: true,
+        data: cap(
+          templates.map((t) => ({
+            templateId: t.id,
+            channel: t.channel,
+            name: t.name,
+            subject: t.subject,
+            body: t.body,
+            createdAt: t.createdAt,
+          })),
+          50,
+        ),
+      };
+    }
+
+    case "list_message_campaigns": {
+      const campaigns = await listMessageCampaigns(businessId);
+      return {
+        ok: true,
+        data: cap(
+          campaigns.map((c) => ({
+            campaignId: c.id,
+            name: c.name,
+            channel: c.channel,
+            status: c.status,
+            templateId: c.templateId,
+            segmentId: c.segmentId,
+            totalRecipients: c.totalRecipients,
+            sentCount: c.sentCount,
+            deliveredCount: c.deliveredCount,
+            failedCount: c.failedCount,
+            createdAt: c.createdAt,
+            startedAt: c.startedAt,
+            completedAt: c.completedAt,
+          })),
+          50,
+        ),
+      };
+    }
+
     case "get_at_risk_customers":
       return { ok: true, data: await atRiskCustomers(businessId, args) };
 
@@ -1553,4 +1605,6 @@ export const READ_TOOL_NAMES = new Set([
   "list_website_posts",
   "list_website_products",
   "get_website_status",
+  "list_message_templates",
+  "list_message_campaigns",
 ]);

@@ -227,16 +227,28 @@ async function copyMenuStructure(
     name: string;
     min_select: number;
     max_select: number;
+    is_active: boolean;
+    sort_order: number;
   }>(
-    "SELECT id, name, min_select, max_select FROM modifier_groups WHERE location_id = $1",
+    "SELECT id, name, min_select, max_select, is_active, sort_order FROM modifier_groups WHERE location_id = $1",
     [fromLocationId],
   );
   const groupIdMap = new Map<string, string>();
   for (const group of groups) {
+    // is_active/sort_order (0165) travel with the group: a copied menu whose
+    // groups came back online or reordered themselves would not match what
+    // the source branch sells.
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO modifier_groups (location_id, name, min_select, max_select)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [toLocationId, group.name, group.min_select, group.max_select],
+      `INSERT INTO modifier_groups (location_id, name, min_select, max_select, is_active, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [
+        toLocationId,
+        group.name,
+        group.min_select,
+        group.max_select,
+        group.is_active,
+        group.sort_order,
+      ],
     );
     groupIdMap.set(group.id, rows[0].id);
   }
@@ -294,20 +306,26 @@ async function copyMenuStructure(
     sku: string | null;
     price: string;
     image_url: string | null;
+    image_media_id: string | null;
     is_active: boolean;
     sort_order: number;
     target_margin_percent: string | null;
   }>(
-    `SELECT id, category_id, name, description, sku, price, image_url, is_active, sort_order,
-            target_margin_percent
+    `SELECT id, category_id, name, description, sku, price, image_url, image_media_id,
+            is_active, sort_order, target_margin_percent
        FROM menu_items WHERE location_id = $1`,
     [fromLocationId],
   );
   const { rows: allLinks } = await client.query<{
     menu_item_id: string;
     modifier_group_id: string;
+    min_select_override: number | null;
+    max_select_override: number | null;
+    sort_order: number;
+    is_active: boolean;
   }>(
-    `SELECT mg.menu_item_id, mg.modifier_group_id
+    `SELECT mg.menu_item_id, mg.modifier_group_id, mg.min_select_override,
+            mg.max_select_override, mg.sort_order, mg.is_active
        FROM menu_item_modifier_groups mg
        JOIN menu_items mi ON mg.menu_item_id = mi.id
       WHERE mi.location_id = $1`,
@@ -323,6 +341,10 @@ async function copyMenuStructure(
     const skus: (string | null)[] = [];
     const prices: string[] = [];
     const imageUrls: (string | null)[] = [];
+    // The catalogue photo (0149) points at a media_assets row in the shared
+    // business library — cloning a branch must keep the picture on the tile,
+    // not leave every copied item faceless.
+    const imageMediaIds: (string | null)[] = [];
     const isActives: boolean[] = [];
     const sortOrders: number[] = [];
     // The per-item margin override (0035) is part of how the item is priced,
@@ -346,6 +368,7 @@ async function copyMenuStructure(
       skus.push(item.sku);
       prices.push(item.price);
       imageUrls.push(item.image_url);
+      imageMediaIds.push(item.image_media_id);
       isActives.push(item.is_active);
       sortOrders.push(item.sort_order);
       targetMargins.push(item.target_margin_percent);
@@ -353,9 +376,9 @@ async function copyMenuStructure(
 
     await client.query(
       `INSERT INTO menu_items
-         (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order,
-          target_margin_percent)
-       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::boolean[], $10::int[], $11::numeric[])`,
+         (id, location_id, category_id, name, description, sku, price, image_url, image_media_id,
+          is_active, sort_order, target_margin_percent)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::uuid[], $10::boolean[], $11::int[], $12::numeric[])`,
       [
         itemIds,
         locationIds,
@@ -365,6 +388,7 @@ async function copyMenuStructure(
         skus,
         prices,
         imageUrls,
+        imageMediaIds,
         isActives,
         sortOrders,
         targetMargins,
@@ -373,6 +397,13 @@ async function copyMenuStructure(
 
     const linkItemIds: string[] = [];
     const linkGroupIds: string[] = [];
+    // Per-item bounds overrides and the 0165 columns ride along with the
+    // link: without them an item cloned as "0–1 milk" would suddenly demand
+    // the group default ("1–3") at the new branch.
+    const linkMinOverrides: (number | null)[] = [];
+    const linkMaxOverrides: (number | null)[] = [];
+    const linkSortOrders: number[] = [];
+    const linkIsActives: boolean[] = [];
 
     for (const link of allLinks) {
       const newItemId = itemIdMap.get(link.menu_item_id);
@@ -381,14 +412,27 @@ async function copyMenuStructure(
 
       linkItemIds.push(newItemId);
       linkGroupIds.push(newGroupId);
+      linkMinOverrides.push(link.min_select_override);
+      linkMaxOverrides.push(link.max_select_override);
+      linkSortOrders.push(link.sort_order);
+      linkIsActives.push(link.is_active);
     }
 
     if (linkItemIds.length > 0) {
       await client.query(
-        `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
-         SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
+        `INSERT INTO menu_item_modifier_groups
+           (menu_item_id, modifier_group_id, min_select_override, max_select_override,
+            sort_order, is_active)
+         SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::int[], $4::int[], $5::int[], $6::boolean[])
          ON CONFLICT DO NOTHING`,
-        [linkItemIds, linkGroupIds],
+        [
+          linkItemIds,
+          linkGroupIds,
+          linkMinOverrides,
+          linkMaxOverrides,
+          linkSortOrders,
+          linkIsActives,
+        ],
       );
     }
   }

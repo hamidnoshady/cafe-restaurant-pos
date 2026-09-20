@@ -9,6 +9,24 @@
 export const PROJECT_INSTRUCTION_CHAR_LIMIT = 4000;
 
 /**
+ * Phase F — project memory. A memory is a short, standing FACT the assistant
+ * carries for this project, not a document: the length cap keeps the prompt
+ * context bounded, and the entry cap keeps a runaway "remember this too" loop
+ * from crowding out the actual conversation. Both are enforced server-side.
+ */
+export const PROJECT_MEMORY_CHAR_LIMIT = 500;
+export const PROJECT_MEMORY_MAX_ENTRIES = 50;
+
+/**
+ * Phase F pt.3 — project tasks. A task title is a single line of work, so it is
+ * capped tighter than a memory fact; the open-task cap keeps the prompt context
+ * (which lists open tasks) bounded and a runaway "add a task too" loop in check.
+ * Both are enforced server-side.
+ */
+export const PROJECT_TASK_CHAR_LIMIT = 200;
+export const PROJECT_TASK_MAX_OPEN = 50;
+
+/**
  * Pure: computes the total character weight of a project's instructions and
  * note titles. The limit is enforced server-side before save, and the client
  * shows the remaining budget.

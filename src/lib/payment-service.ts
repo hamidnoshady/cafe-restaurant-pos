@@ -9,6 +9,7 @@ import { getOnlinePlatformsConfig } from "./online-platforms-service";
 import { commissionAmountFor } from "./online-platforms-calculation";
 import { lockOpenOrder } from "./order-lock";
 import { rialBigInt, rialText, type RialText } from "./inventory-exact";
+import { markScoringDirtyIn } from "./crm-scoring-freshness";
 import { earnPoints } from "./loyalty-service";
 
 export const PAYMENT_METHODS = [
@@ -184,6 +185,13 @@ export async function completeOrderPayment(
     }
   }
   await client.query(`UPDATE inventory_events SET posting_status = 'posted' WHERE id = $1`, [inventoryEventId]);
+
+  // A completed sale changes what this business's RFM scores are derived from.
+  // Marking it is one tiny upsert of one row — deliberately not a rescore:
+  // RFM is a whole-population quintile calculation, and running it here would
+  // put a full scan of every customer and every order on the path of taking
+  // money. The background tick picks this up (crm-scoring-freshness.ts).
+  await markScoringDirtyIn(client, businessId);
 
   return { amount, tipAmount, duplicate: false };
 }

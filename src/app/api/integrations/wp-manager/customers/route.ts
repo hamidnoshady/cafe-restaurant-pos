@@ -3,7 +3,15 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { wpStoreCustomers } from "@/lib/integrations/wp-manager-service";
 
-/** The customers mirrored from one store, joined to their local CRM record. */
+/**
+ * The customers mirrored from one store, joined to their local CRM record.
+ *
+ * The page/pageSize the response echoes are the *resolved* ones — the service
+ * counts first and clamps an out-of-range page onto the last page that has
+ * rows — so a client that asked for page 13 of a 2-page result is told which
+ * page it actually got (`page`) and that it was moved (`clamped`), instead of
+ * being handed an empty list next to a total of zero.
+ */
 export const GET = withTenantScope(async (request: Request) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
@@ -17,10 +25,13 @@ export const GET = withTenantScope(async (request: Request) => {
   const connection = await getConnection(session.businessId, connectionId);
   if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const { customers, total, page: currentPage, pageSize: currentPageSize } = await wpStoreCustomers(
-    session.businessId,
-    connectionId,
-    { page, pageSize, search },
-  );
-  return NextResponse.json({ customers, total, page: currentPage, pageSize: currentPageSize });
+  const result = await wpStoreCustomers(session.businessId, connectionId, { page, pageSize, search });
+  return NextResponse.json({
+    customers: result.customers,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+    totalPages: result.totalPages,
+    clamped: result.clamped,
+  });
 });

@@ -18,7 +18,7 @@
 
 import { isIndustry, type Industry } from "./industries";
 
-export const PAIRING_SNAPSHOT_VERSION = 3;
+export const PAIRING_SNAPSHOT_VERSION = 4;
 
 /**
  * Explicit contract for what pairing seeds and what continuing sync does (or
@@ -76,8 +76,32 @@ export interface SnapshotMenuItem {
   /** Integer Rial as a decimal string, preserving PostgreSQL bigint exactly. */
   price: string;
   imageUrl: string | null;
+  /**
+   * v4. The catalogue photo from the business media library (0149). The row
+   * itself travels in `menu.mediaAssets`; the *bytes* do not — the local
+   * install fetches them from the central server on demand and shows the
+   * placeholder when it cannot.
+   */
+  imageMediaId: string | null;
   isActive: boolean;
   sortOrder: number;
+}
+
+/**
+ * v4. Minimal replication of a media_assets row — just enough for the local
+ * install to satisfy the foreign key, serve the right content type and know
+ * where the bytes live. The file itself is pulled from the server lazily, so
+ * pairing never stalls on image bytes.
+ */
+export interface SnapshotMediaAsset {
+  id: string;
+  kind: string;
+  fileName: string;
+  mimeType: string;
+  /** bigint as a decimal string. */
+  byteSize: string;
+  storageKey: string;
+  sha256: string;
 }
 
 export interface SnapshotModifierGroup {
@@ -85,6 +109,9 @@ export interface SnapshotModifierGroup {
   name: string;
   minSelect: number;
   maxSelect: number;
+  /** v4 (0165): a group can be parked inactive or reordered at the source. */
+  isActive: boolean;
+  sortOrder: number;
 }
 
 export interface SnapshotModifier {
@@ -177,9 +204,19 @@ export interface PairingSnapshot {
   menu: {
     categories: SnapshotMenuCategory[];
     items: SnapshotMenuItem[];
+    /** v4: only the assets the menu's items actually reference. */
+    mediaAssets: SnapshotMediaAsset[];
     modifierGroups: SnapshotModifierGroup[];
     modifiers: SnapshotModifier[];
-    itemModifierGroups: Array<{ menuItemId: string; modifierGroupId: string }>;
+    itemModifierGroups: Array<{
+      menuItemId: string;
+      modifierGroupId: string;
+      /** v4: per-item bounds overrides and the 0165 link columns. */
+      minSelectOverride: number | null;
+      maxSelectOverride: number | null;
+      sortOrder: number;
+      isActive: boolean;
+    }>;
   };
   diningTables: SnapshotDiningTable[];
   inventory: {
@@ -305,6 +342,19 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
   const menu = raw.menu;
   if (!isObject(menu)) return fail;
   if (!Array.isArray(menu.categories) || !Array.isArray(menu.items)) return fail;
+  if (!Array.isArray(menu.mediaAssets)) return fail;
+  const mediaAssetIds = new Set<string>();
+  for (const asset of menu.mediaAssets) {
+    if (!isObject(asset)) return fail;
+    if (!isUuid(asset.id)) return fail;
+    if (typeof asset.kind !== "string" || !asset.kind) return fail;
+    if (typeof asset.fileName !== "string" || !asset.fileName) return fail;
+    if (typeof asset.mimeType !== "string" || !asset.mimeType) return fail;
+    if (!isNonNegativeIntegerString(asset.byteSize)) return fail;
+    if (typeof asset.storageKey !== "string" || !asset.storageKey) return fail;
+    if (typeof asset.sha256 !== "string" || !asset.sha256) return fail;
+    mediaAssetIds.add(asset.id);
+  }
   const categoryIds = new Set<string>();
   for (const category of menu.categories) {
     if (!isObject(category)) return fail;
@@ -327,6 +377,12 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
     if (!isNullableString(item.sku)) return fail;
     if (!isNonNegativeIntegerString(item.price)) return fail;
     if (!isNullableString(item.imageUrl)) return fail;
+    if (item.imageMediaId !== null && !isUuid(item.imageMediaId)) return fail;
+    // A dangling media reference would violate the FK on insert; the asset
+    // rows must ride along in the same snapshot.
+    if (typeof item.imageMediaId === "string" && !mediaAssetIds.has(item.imageMediaId)) {
+      return fail;
+    }
     if (typeof item.isActive !== "boolean") return fail;
     if (!Number.isInteger(item.sortOrder)) return fail;
     menuItemIds.add(item.id);
@@ -340,6 +396,7 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
     if (!isObject(group) || !isUuid(group.id) || typeof group.name !== "string" || !group.name) return fail;
     if (!isIntegerAtLeastZero(group.minSelect) || !isIntegerAtLeastOne(group.maxSelect)) return fail;
     if (group.minSelect > group.maxSelect) return fail;
+    if (typeof group.isActive !== "boolean" || !Number.isInteger(group.sortOrder)) return fail;
     modifierGroupIds.add(group.id);
   }
   const modifierIds = new Set<string>();
@@ -350,9 +407,18 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
     if (typeof modifier.isActive !== "boolean" || !Number.isInteger(modifier.sortOrder)) return fail;
     modifierIds.add(modifier.id);
   }
+  const isNullableInteger = (v: unknown): v is number | null =>
+    v === null || (typeof v === "number" && Number.isInteger(v) && v >= 0);
   for (const link of menu.itemModifierGroups) {
     if (!isObject(link) || !isUuid(link.menuItemId) || !isUuid(link.modifierGroupId)) return fail;
     if (!menuItemIds.has(link.menuItemId) || !modifierGroupIds.has(link.modifierGroupId)) return fail;
+    if (!isNullableInteger(link.minSelectOverride) || !isNullableInteger(link.maxSelectOverride)) return fail;
+    if (
+      link.minSelectOverride !== null &&
+      link.maxSelectOverride !== null &&
+      link.minSelectOverride > link.maxSelectOverride
+    ) return fail;
+    if (!Number.isInteger(link.sortOrder) || typeof link.isActive !== "boolean") return fail;
   }
 
   if (!Array.isArray(raw.diningTables)) return fail;

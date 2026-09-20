@@ -55,6 +55,37 @@ export type AgingBucket = "current" | "d31_60" | "d61_90" | "over90";
 
 export const AGING_BUCKETS: AgingBucket[] = ["current", "d31_60", "d61_90", "over90"];
 
+/**
+ * The Persian label for each bucket.
+ *
+ * Here rather than in each screen because the A/R table, the A/P table and the
+ * CRM's customer file all name these buckets, and three private copies of the
+ * same four strings is three chances for «بیش از ۹۰ روز» to become «۹۰+ روز»
+ * on one screen and not the others. A customer reading two screens should not
+ * have to work out whether they mean the same thing.
+ */
+export const AGING_BUCKET_LABELS: Record<AgingBucket, string> = {
+  current: "جاری (۰-۳۰ روز)",
+  d31_60: "۳۱-۶۰ روز",
+  d61_90: "۶۱-۹۰ روز",
+  over90: "بیش از ۹۰ روز",
+};
+
+/**
+ * The oldest bucket holding anything — the collections signal.
+ *
+ * Returns null when nothing is overdue. `current` is money owed but not yet
+ * late, which is a normal state and deliberately not reported as a problem.
+ */
+export function oldestOverdueBucket(
+  summary: Partial<Record<AgingBucket, number>>,
+): AgingBucket | null {
+  if ((summary.over90 ?? 0) > 0) return "over90";
+  if ((summary.d61_90 ?? 0) > 0) return "d61_90";
+  if ((summary.d31_60 ?? 0) > 0) return "d31_60";
+  return null;
+}
+
 /** 0-30 days old = current, then 30-day buckets out to 90+. */
 export function bucketForAge(ageDays: number): AgingBucket {
   if (ageDays <= 30) return "current";

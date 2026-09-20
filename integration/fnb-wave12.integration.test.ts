@@ -94,9 +94,11 @@ beforeEach(async () => {
 });
 
 async function makeMenuItem(price: number, targetMargin: number | null) {
+  // 0165 made (location, category name) unique — a real menu cannot hold two
+  // «Drinks» — so each generated item gets its own category.
   const category = await db.query<{ id: string }>(
-    "INSERT INTO menu_categories (location_id, name) VALUES ($1, 'Drinks') RETURNING id",
-    [loc.id],
+    "INSERT INTO menu_categories (location_id, name) VALUES ($1, $2) RETURNING id",
+    [loc.id, `Drinks ${randomUUID().slice(0, 8)}`],
   );
   const menu = await db.query<{ id: string }>(
     `INSERT INTO menu_items (location_id, category_id, name, price, target_margin_percent)
