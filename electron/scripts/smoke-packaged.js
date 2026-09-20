@@ -68,5 +68,15 @@ function launch(name, bootstrap) {
   console.log(`Packaged desktop smoke passed. Persistent test data: ${userData}`);
 })().catch((error) => {
   console.error(error);
+  // GitHub's public job page exposes annotations even when raw Actions logs
+  // require authentication. Keep the root cause visible to package reviewers.
+  if (process.env.GITHUB_ACTIONS === "true") {
+    const annotation = String(error?.stack || error)
+      .slice(0, 8_000)
+      .replaceAll("%", "%25")
+      .replaceAll("\r", "%0D")
+      .replaceAll("\n", "%0A");
+    console.error(`::error title=Packaged desktop smoke failed::${annotation}`);
+  }
   process.exit(1);
 });
