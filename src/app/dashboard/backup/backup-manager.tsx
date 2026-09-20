@@ -750,10 +750,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
         </div>
         <Field label="تعداد نسخه‌های محلی نگه‌داشته‌شده" hint="نسخه‌های قدیمی‌تر خودکار حذف می‌شوند">
           <PersianNumberInput
-            type="number"
             dir="ltr"
-            min={1}
-            max={365}
             className={inputClass}
             value={config.localRetention}
             onChange={(e) => setConfig({ ...config, localRetention: Number(e.target.value) })}
@@ -823,10 +820,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
               </Field>
               <Field label="تعداد نسخه‌های ابری نگه‌داشته‌شده">
                 <PersianNumberInput
-                  type="number"
                   dir="ltr"
-                  min={1}
-                  max={365}
                   className={inputClass}
                   value={cloud.retention}
                   onChange={(e) => setCloud({ retention: Number(e.target.value) })}

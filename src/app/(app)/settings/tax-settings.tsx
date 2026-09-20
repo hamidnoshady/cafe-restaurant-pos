@@ -125,8 +125,6 @@ export function TaxSettings({ industry = "food_service" }: { industry?: Industry
                 className={`${inputClass} ps-9`}
                 dir="ltr"
                 inputMode="decimal"
-                min={0}
-                max={100}
                 aria-label="درصد مالیات پیش‌فرض"
                 value={defaultRate}
                 onChange={(e) => { setSaved(false); setDefaultRate(e.target.value); }}
@@ -159,8 +157,6 @@ export function TaxSettings({ industry = "food_service" }: { industry?: Industry
                       className={`${inputClass} ps-9`}
                       dir="ltr"
                       inputMode="decimal"
-                      min={0}
-                      max={100}
                       aria-label={`نرخ مالیات دستهٔ ${category.name}`}
                       value={rates[category.id] ?? ""}
                       onChange={(e) => { setSaved(false); setRates((current) => ({ ...current, [category.id]: e.target.value })); }}
