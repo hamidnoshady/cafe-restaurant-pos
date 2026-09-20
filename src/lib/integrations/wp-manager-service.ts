@@ -149,14 +149,60 @@ export interface WpStoreCustomersPage {
   customers: WpStoreCustomerRow[];
   /** All matched mappings, including the ones past the returned page. */
   total: number;
+  /**
+   * The page actually returned. May differ from the page requested: an
+   * out-of-range request is clamped onto the last page that has rows, so the
+   * caller can echo a page number that agrees with the rows beside it.
+   */
   page: number;
   pageSize: number;
+  /** `ceil(total / pageSize)`, at least 1 — so the UI never derives it twice. */
+  totalPages: number;
+  /** True when the requested page was past the end and had to be clamped. */
+  clamped: boolean;
 }
 
 export interface WpStoreCustomerOptions {
   page?: number;
   pageSize?: number;
   search?: string;
+}
+
+export const WP_CUSTOMERS_MIN_PAGE_SIZE = 10;
+export const WP_CUSTOMERS_MAX_PAGE_SIZE = 100;
+export const WP_CUSTOMERS_DEFAULT_PAGE_SIZE = 25;
+
+/** Clamp a requested page size into the supported window. */
+export function wpCustomersPageSize(requested: number | undefined): number {
+  const raw = Math.floor(Number(requested ?? WP_CUSTOMERS_DEFAULT_PAGE_SIZE));
+  // NaN is "the caller sent nonsense" → the default. Infinity is "the caller
+  // wants everything" → the ceiling, not the default: silently handing back 25
+  // rows for `pageSize=Infinity` is the same class of surprise as the window
+  // count this function exists to replace.
+  if (Number.isNaN(raw)) return WP_CUSTOMERS_DEFAULT_PAGE_SIZE;
+  return Math.min(WP_CUSTOMERS_MAX_PAGE_SIZE, Math.max(WP_CUSTOMERS_MIN_PAGE_SIZE, raw));
+}
+
+/**
+ * Resolve the page that will actually be read.
+ *
+ * Pure, and unit-tested, because this is the half that was wrong: the old code
+ * derived the total from `count(*) OVER ()` on the *page* query, so an OFFSET
+ * past the end returned zero rows — and therefore no window row to read the
+ * count from — and the screen reported «۰ مشتری» for a store that plainly had
+ * customers on page 1. Narrowing a search while sitting on page 4 hit exactly
+ * that. Count first, clamp second, then read the page.
+ */
+export function wpCustomersPageWindow(
+  requestedPage: number | undefined,
+  pageSize: number,
+  total: number,
+): { page: number; offset: number; totalPages: number; clamped: boolean } {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const raw = Math.floor(Number(requestedPage ?? 1));
+  const asked = Number.isFinite(raw) && raw >= 1 ? raw : 1;
+  const page = Math.min(asked, totalPages);
+  return { page, offset: (page - 1) * pageSize, totalPages, clamped: page !== asked };
 }
 
 /**
@@ -169,25 +215,55 @@ export interface WpStoreCustomerOptions {
  * falls back to the mapping's own update time: a store that only ever
  * pull-syncs (REST scheduled pulls, plugin exports) has no `customer.*`
  * inbox events, and without the fallback the column was blank for exactly
- * those stores. Pagination is server-side; `total` is the *full* matched
- * count so the UI can say «صفحه ۲ از N» without downloading the whole CRM.
+ * those stores.
+ *
+ * **Two queries, deliberately.** `total` comes from its own `COUNT(*)` over
+ * the same filter rather than from a `count(*) OVER ()` window on the page
+ * query. A window count only exists on rows that were returned, so an OFFSET
+ * past the last page produced `total = 0` — a store with 300 mapped customers
+ * claiming to have none, purely because the caller was on page 13. With the
+ * count known first the page is clamped onto the last page that has rows, and
+ * the caller is told (`clamped`) so it can correct its own state.
  */
 export async function wpStoreCustomers(
   businessId: string,
   connectionId: string,
   options: WpStoreCustomerOptions = {},
 ): Promise<WpStoreCustomersPage> {
-  const page = Math.max(1, Math.floor(options.page ?? 1));
-  const pageSize = Math.min(100, Math.max(10, Math.floor(options.pageSize ?? 25)));
-  const offset = (page - 1) * pageSize;
+  const pageSize = wpCustomersPageSize(options.pageSize);
   const search = options.search?.trim().slice(0, 200) ?? "";
-  const params: unknown[] = [businessId, connectionId, pageSize, offset];
-  const searchSql = search
-    ? (() => {
-        params.push(`%${search}%`);
-        return `AND (m.remote_id ILIKE $${params.length} OR c.name ILIKE $${params.length} OR c.phone ILIKE $${params.length} OR c.email ILIKE $${params.length})`;
-      })()
-    : "";
+
+  // One filter, spelled once, used by both the count and the page. `%`/`_`
+  // typed by a user are literals, not wildcards.
+  const filterParams: unknown[] = [businessId, connectionId];
+  let searchSql = "";
+  if (search) {
+    const escaped = search.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+    filterParams.push(`%${escaped}%`);
+    const n = `$${filterParams.length}`;
+    searchSql =
+      `AND (m.remote_id ILIKE ${n} ESCAPE '\\' OR c.name ILIKE ${n} ESCAPE '\\'` +
+      ` OR c.phone ILIKE ${n} ESCAPE '\\' OR c.email ILIKE ${n} ESCAPE '\\')`;
+  }
+  const fromWhere = `
+       FROM integration_mappings m
+       LEFT JOIN parties c ON c.id = m.local_id
+      WHERE m.business_id = $1 AND m.connection_id = $2
+        AND m.connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
+        AND m.entity_type = 'customer'
+        ${searchSql}`;
+
+  const { rows: countRows } = await query<{ total: string }>(
+    `SELECT count(*)::text AS total ${fromWhere}`,
+    filterParams,
+  );
+  const total = Number(countRows[0]?.total ?? 0);
+  const { page, offset, totalPages, clamped } = wpCustomersPageWindow(options.page, pageSize, total);
+
+  if (total === 0) {
+    return { customers: [], total: 0, page: 1, pageSize, totalPages: 1, clamped: false };
+  }
+
   const { rows } = await query<{
     remote_id: string;
     local_id: string;
@@ -196,7 +272,6 @@ export async function wpStoreCustomers(
     email: string | null;
     orders_count: string;
     last_seen: string | null;
-    total_count: string;
   }>(
     `SELECT m.remote_id, m.local_id::text,
             COALESCE(c.name, '') AS name,
@@ -215,17 +290,11 @@ export async function wpStoreCustomers(
                   AND w.event_topic LIKE 'customer.%'
                   AND w.remote_id = m.remote_id),
               m.updated_at
-            )::text AS last_seen,
-            count(*) OVER ()::text AS total_count
-       FROM integration_mappings m
-       LEFT JOIN parties c ON c.id = m.local_id
-      WHERE m.business_id = $1 AND m.connection_id = $2
-        AND m.connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
-        AND m.entity_type = 'customer'
-        ${searchSql}
+            )::text AS last_seen
+     ${fromWhere}
       ORDER BY name, m.remote_id
-      LIMIT $3 OFFSET $4`,
-    params,
+      LIMIT $${filterParams.length + 1} OFFSET $${filterParams.length + 2}`,
+    [...filterParams, pageSize, offset],
   );
   return {
     customers: rows.map((r) => ({
@@ -237,9 +306,11 @@ export async function wpStoreCustomers(
       ordersCount: Number(r.orders_count),
       lastSeen: r.last_seen,
     })),
-    total: Number(rows[0]?.total_count ?? 0),
+    total,
     page,
     pageSize,
+    totalPages,
+    clamped,
   };
 }
 

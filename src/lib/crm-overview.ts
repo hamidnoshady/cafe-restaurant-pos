@@ -11,9 +11,9 @@
  *   the same business-day bucketing and the same completed-only rule the
  *   segments and the sales reports use, so the CRM cannot disagree with the
  *   sales report next to it. The store-credit figure is the *ledger's* 2410
- *   balance, reconstructed from `journal_lines` exactly as the trial balance
- *   reconstructs it — the app writes no money of its own, so the one money
- *   number it shows is borrowed from the books rather than recomputed.
+ *   balance, read through Accounting's own service — the app writes no money
+ *   of its own and reconstructs none, so the one money number it shows is
+ *   borrowed from the books rather than recomputed.
  * - **Windows are rolling**, not calendar months, so a figure means the same
  *   thing on any day it is opened.
  */
@@ -22,10 +22,16 @@ import { query } from "./db";
 import { mobileReachableSql, phonePairKeySql } from "./parties-service";
 import { businessToday } from "./business-day-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
-import { accountBalanceText } from "./growth-shared";
+import { wellKnownAccountBalance } from "./ar-service";
 import { previousWindow, rollingWindow, type DealStage } from "./crm-shared";
 import { retentionBetween, stageDistribution, type LifecycleStage } from "./crm-scoring";
 import { customerPurchasePopulation, scoredPopulation } from "./crm-service";
+
+/**
+ * How many segment *names* the overview card previews. Never the total — the
+ * total is a separate uncapped count, see `CrmOverview["segments"]`.
+ */
+export const SEGMENT_PREVIEW_LIMIT = 20;
 
 export interface CrmOverview {
   window: { from: string; to: string };
@@ -74,6 +80,11 @@ export interface CrmOverview {
     medianResolutionHours: number | null;
   };
   tasks: { open: number; overdue: number; dueToday: number };
+  /**
+   * `total` is every live segment (uncapped `COUNT(*)`); `names` is only the
+   * handful the card prints. They are deliberately two different numbers —
+   * conflating them is what made a business with 40 segments read «۲۰».
+   */
   segments: { total: number; names: string[] };
   topCustomers: { id: string; name: string; totalSpentRial: string; orderCount: number; stage: string }[];
   duplicates: number;
@@ -90,8 +101,9 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
     { rows: pipelineRows },
     { rows: caseRows },
     { rows: taskRows },
-    { rows: segmentRows },
-    { rows: creditRows },
+    { rows: segmentTotalRows },
+    { rows: segmentNameRows },
+    storeCreditBalance,
     { rows: retentionRows },
     { rows: duplicateRows },
     { rows: scoredAtRows },
@@ -179,23 +191,27 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
         WHERE a.business_id = $1`,
       [businessId, today],
     ),
-    query<{ name: string }>(
-      `SELECT name FROM customer_segments
-        WHERE business_id = $1 AND archived_at IS NULL ORDER BY name LIMIT 20`,
+    // The total and the preview names are two different questions, and they
+    // must be asked separately. A single `SELECT name … LIMIT 20` whose
+    // `rows.length` was then used as the total reported «۲۰ بخش‌بندی» to every
+    // business that had more than twenty — the cap on the *display* list
+    // silently became the cap on the *count*. The count is uncapped; only the
+    // names the card prints are limited.
+    query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM customer_segments
+        WHERE business_id = $1 AND archived_at IS NULL`,
       [businessId],
     ),
-    // The ledger's own 2410 balance, the same reconstruction the trial balance
-    // performs. The CRM posts nothing, so this number is the books' number.
-    query<{ type: string; debit: string; credit: string }>(
-      `SELECT a.type::text,
-              coalesce(sum(jl.debit), 0)::text AS debit,
-              coalesce(sum(jl.credit), 0)::text AS credit
-         FROM accounts a
-         LEFT JOIN journal_lines jl ON jl.account_id = a.id
-        WHERE a.business_id = $1 AND a.code = $2
-        GROUP BY a.type`,
-      [businessId, WELL_KNOWN_CODES.storeCreditPayable],
+    query<{ name: string }>(
+      `SELECT name FROM customer_segments
+        WHERE business_id = $1 AND archived_at IS NULL ORDER BY name LIMIT $2`,
+      [businessId, SEGMENT_PREVIEW_LIMIT],
     ),
+    // The ledger's own 2410 balance, read through Accounting's service rather
+    // than reconstructed here. The CRM posts nothing and computes nothing
+    // about money; the one money figure on this screen is the books' figure,
+    // fetched from the app that owns it.
+    wellKnownAccountBalance(businessId, WELL_KNOWN_CODES.storeCreditPayable),
     query<{ period: string; customer_id: string }>(
       `SELECT CASE WHEN app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes)
                         BETWEEN $2::date AND $3::date
@@ -266,9 +282,10 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
   const openDeals = deals.filter((deal) => deal.stage !== "won" && deal.stage !== "lost");
 
   const consentTotal = n(consent, "total");
-  const storeCredit = creditRows[0]
-    ? accountBalanceText(creditRows[0].type, creditRows[0].debit, creditRows[0].credit)
-    : "0";
+  // null means the business has no chart of accounts yet, which shows as zero
+  // credit outstanding — there are no store-credit liabilities if there is no
+  // ledger to record them in.
+  const storeCredit = String(storeCreditBalance ?? 0);
 
   const customerCount = purchases.length;
   const sumBigInt = (values: string[]) => values.reduce((sum, value) => sum + BigInt(value), 0n).toString();
@@ -334,7 +351,10 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       overdue: n(tasks, "overdue"),
       dueToday: n(tasks, "due_today"),
     },
-    segments: { total: segmentRows.length, names: segmentRows.map((row) => row.name) },
+    segments: {
+      total: Number(segmentTotalRows[0]?.total ?? 0),
+      names: segmentNameRows.map((row) => row.name),
+    },
     topCustomers: [...purchases]
       .sort((a, b) => {
         const difference = BigInt(b.totalSpentRial) - BigInt(a.totalSpentRial);

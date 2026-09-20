@@ -16,6 +16,8 @@
  * - `cases` is floor work too: the person who hears the complaint is the person
  *   at the counter, and a service desk a cashier cannot open is a service desk
  *   that never gets used.
+ * - `leads` is management: an unconverted enquiry carries a revenue
+ *   expectation and an owner, and converting one creates a customer record.
  * - `overview`, `segments`, `deals`, `duplicates` and `consent` are management.
  *   Segments and consent decide who gets *messaged*, duplicates *destroys*
  *   records irreversibly, deals carry revenue expectations, and the overview
@@ -31,11 +33,16 @@ export const CRM_SECTION_KEYS = [
   "overview",
   "directory",
   "persons",
+  "leads",
   "segments",
   "deals",
   "activities",
   "cases",
   "duplicates",
+  // Deciding who an anonymous online shopper is attaches their whole purchase
+  // history to a named person, so it sits with the management sections rather
+  // than on the floor.
+  "reconciliation",
   "consent",
   // The CRM's *own* settings. `/settings` is the platform settings area;
   // `/crm/settings` configures this app (duplicate matching, consent defaults,
