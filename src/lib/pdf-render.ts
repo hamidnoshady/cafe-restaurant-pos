@@ -10,6 +10,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { chromium, type Browser } from "playwright-core";
+import { chromiumLaunchArgs, findChromiumExecutable } from "./chromium-executable";
 
 const FONT_PATH = join(process.cwd(), "src", "app", "fonts", "Vazirmatn-Variable.woff2");
 let fontDataUri: string | null = null;
@@ -31,12 +32,13 @@ let browserPromise: Promise<Browser> | null = null;
 
 function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    // No bundled browser download with playwright-core — point it at a
-    // Chromium install. In this sandbox that's the pre-installed one; a
-    // real deploy sets PDF_CHROMIUM_PATH to wherever
-    // `npx playwright install chromium` (or a system Chromium/Chrome) landed.
-    const executablePath = process.env.PDF_CHROMIUM_PATH || "/opt/pw-browsers/chromium";
-    browserPromise = chromium.launch({ executablePath, args: ["--no-sandbox"] });
+    browserPromise = chromium.launch({
+      executablePath: findChromiumExecutable(),
+      args: chromiumLaunchArgs(),
+    });
+    browserPromise.catch(() => {
+      browserPromise = null;
+    });
   }
   return browserPromise;
 }

@@ -92,17 +92,12 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "definition, since the token exists precisely to mint the first one there",
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
   "server-sync/pull":
-    "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
-    "falling back to the legacy global REMOTE_SYNC_TOKEN if ALLOW_LEGACY_SYNC_TOKEN is set; not a session",
+    "server-to-server — authenticated by a site/location credential (legacy business/global tokens remain migration-only); not a session",
   "server-sync/push":
-    "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
-    "falling back to the legacy global REMOTE_SYNC_TOKEN if ALLOW_LEGACY_SYNC_TOKEN is set; not a session",
+    "server-to-server — authenticated by a site/location credential and constrained to its location (legacy tokens remain migration-only); not a session",
   "server-sync/update-check":
-    "server-to-server — authenticated by a per-business bearer token (server_sync_tokens) only, " +
-    "deliberately no legacy REMOTE_SYNC_TOKEN fallback; not a session",
-  "server-sync/update-token":
-    "server-to-server — authenticated by a per-business bearer token (server_sync_tokens) only, " +
-    "deliberately no legacy REMOTE_SYNC_TOKEN fallback; not a session",
+    "server-to-server — authenticated by a site or legacy business credential only; no global-token fallback and no session",
+
   // Migration 0132 — the platform's own server-to-server channel, for the same
   // reason as the sync ones: the caller is another deployment, mid-migration, with
   // no session here and no business to be a member of. The credential is a bearer

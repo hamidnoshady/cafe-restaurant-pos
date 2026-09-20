@@ -12,9 +12,10 @@
  * `next start`/the custom server; `__dirname` is unreliable once Next bundles
  * a route handler).
  */
-import { existsSync, readFileSync } from "fs";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { chromium, type Browser } from "playwright-core";
+import { chromiumLaunchArgs, findChromiumExecutable } from "../chromium-executable";
 
 const FONT_PATH = join(process.cwd(), "src", "app", "fonts", "Vazirmatn-Variable.woff2");
 let fontDataUri: string | null = null;
@@ -35,56 +36,12 @@ function withEmbeddedFont(html: string): string {
 
 let browserPromise: Promise<Browser> | null = null;
 
-/**
- * Find a Chromium/Chrome/Edge to render with. No bundled browser download
- * with playwright-core (deliberately light), so the search order is: the
- * explicit env override, then the browsers a server realistically already
- * has — the very Chrome/Edge the dashboard is open in on Windows, the system
- * Chromium on Linux — then the sandbox default. `PRINT_CHROMIUM_PATH` wins
- * for anyone who set it; `PDF_CHROMIUM_PATH` follows.
- */
-function findChromium(): string {
-  const fromEnv = process.env.PRINT_CHROMIUM_PATH || process.env.PDF_CHROMIUM_PATH;
-  if (fromEnv) return fromEnv;
-
-  const candidates =
-    process.platform === "win32"
-      ? [
-          join(process.env["ProgramFiles"] ?? "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
-          join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
-          join(process.env["LocalAppData"] ?? "", "Google", "Chrome", "Application", "chrome.exe"),
-          join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Microsoft", "Edge", "Application", "msedge.exe"),
-          join(process.env["ProgramFiles"] ?? "C:\\Program Files", "Microsoft", "Edge", "Application", "msedge.exe"),
-        ]
-      : process.platform === "darwin"
-        ? [
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-          ]
-        : [
-            "/opt/pw-browsers/chromium",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-            "/usr/bin/google-chrome",
-            "/usr/bin/google-chrome-stable",
-            "/usr/bin/microsoft-edge",
-          ];
-  for (const path of candidates) {
-    try {
-      if (path && existsSync(path)) return path;
-    } catch {
-      // inaccessible path — keep looking
-    }
-  }
-  // Nothing found: fall back to the sandbox default so the launch error
-  // names a concrete path rather than an empty string.
-  return "/opt/pw-browsers/chromium";
-}
-
 function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = chromium.launch({ executablePath: findChromium(), args: ["--no-sandbox"] });
+    browserPromise = chromium.launch({
+      executablePath: findChromiumExecutable(),
+      args: chromiumLaunchArgs(),
+    });
     // A failed launch must not poison every later print with the same
     // rejected promise — reset so the next job retries the launch.
     browserPromise.catch(() => {

@@ -182,6 +182,36 @@ describe("applySyncEvent — idempotency and conflict resolution against real ro
     expect(seRows[0].count).toBe("1");
   });
 
+  it("never reports an ambiguous, unmarked inbox event as successfully applied", async () => {
+    const clientEventId = randomUUID();
+    const occurredAt = new Date().toISOString();
+    await dbLib.withTenant(bizA.id, () =>
+      dbLib.query(
+        `INSERT INTO sync_events
+           (location_id, client_event_id, event_type, payload, occurred_at, actor_user_id, actor_role)
+         VALUES ($1, $2, 'order_item.status', $3, $4, 'u1', 'kitchen')`,
+        [bizA.locationId, clientEventId, { itemId: bizA.itemId, status: "preparing" }, occurredAt],
+      ),
+    );
+
+    const replay = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(bizA.locationId, { userId: "u1", role: "kitchen" }, {
+        clientEventId,
+        type: "order_item.status",
+        occurredAt,
+        payload: { itemId: bizA.itemId, status: "preparing" },
+      }),
+    );
+    expect(replay).toMatchObject({
+      ok: false,
+      duplicate: true,
+      error: "event_outcome_pending",
+    });
+
+    const { rows } = await db.query<{ status: string }>("SELECT status FROM order_items WHERE id = $1", [bizA.itemId]);
+    expect(rows[0].status).toBe("sent");
+  });
+
   it("a stale transition is flagged as a conflict and never mutates the row", async () => {
     // Legitimately progress sent -> preparing -> ready first (two kitchen bumps).
     await dbLib.withTenant(bizA.id, () =>
@@ -263,6 +293,48 @@ function statusEvent(locationId: string, itemId: string, status: string) {
     actorRole: "kitchen",
   };
 }
+
+describe("runServerPush — remote outcomes", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function seedPushEvent(): Promise<string> {
+    const clientEventId = randomUUID();
+    const result = await dbLib.withTenant(bizA.id, () =>
+      syncEvents.applySyncEvent(bizA.locationId, { userId: "u1", role: "kitchen" }, {
+        clientEventId,
+        type: "order_item.status",
+        occurredAt: new Date().toISOString(),
+        payload: { itemId: bizA.itemId, status: "preparing" },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    return clientEventId;
+  }
+
+  it("advances only after the remote confirms the matching domain outcome", async () => {
+    const clientEventId = await seedPushEvent();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      results: [{ clientEventId, ok: true }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const result = await dbLib.withTenant(bizA.id, () => serverSync.runServerPush(bizA.id));
+    expect(result).toEqual({ status: "ok", pushed: 1 });
+    const state = await dbLib.withTenant(bizA.id, () => serverSync.getServerSyncState(bizA.id));
+    expect(state.lastPushedEventId).toBeGreaterThan(0);
+  });
+
+  it("does not advance past a remote apply failure", async () => {
+    const clientEventId = await seedPushEvent();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      results: [{ clientEventId, ok: false, error: "event_outcome_pending" }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const result = await dbLib.withTenant(bizA.id, () => serverSync.runServerPush(bizA.id));
+    expect(result).toEqual({ status: "error", error: "remote_apply_failed: event_outcome_pending" });
+    const state = await dbLib.withTenant(bizA.id, () => serverSync.getServerSyncState(bizA.id));
+    expect(state.lastPushedEventId).toBeNull();
+  });
+});
 
 describe("/api/server-sync/push and /pull — cross-business isolation", () => {
   it("applies a batch scoped entirely to the token's own business", async () => {

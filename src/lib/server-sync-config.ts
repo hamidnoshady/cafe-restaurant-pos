@@ -19,6 +19,10 @@ export interface ServerSyncConfig {
   enabled: boolean;
   /** How many events to push/pull per batch (default 100) */
   batchSize?: number;
+  /** Set by desktop pairing; scopes credentials and events to one site. */
+  siteDeviceId?: string;
+  siteDevicePublicId?: string;
+  locationId?: string;
 }
 
 export interface ServerSyncConfigUpdateInput {
@@ -80,5 +84,16 @@ export function resolveConfigUpdate(
   }
   if (enabled && (!remoteUrl || !token)) return { ok: false, error: "missing_fields" };
 
-  return { ok: true, config: { remoteUrl, token, enabled, batchSize } };
+  return {
+    ok: true,
+    config: {
+      remoteUrl,
+      token,
+      enabled,
+      batchSize,
+      ...(existing?.siteDeviceId ? { siteDeviceId: existing.siteDeviceId } : {}),
+      ...(existing?.siteDevicePublicId ? { siteDevicePublicId: existing.siteDevicePublicId } : {}),
+      ...(existing?.locationId ? { locationId: existing.locationId } : {}),
+    },
+  };
 }

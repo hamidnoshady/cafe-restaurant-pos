@@ -101,6 +101,25 @@ function hashSyncToken(token: string): string {
  */
 export async function setServerSyncConfig(businessId: string, config: ServerSyncConfig): Promise<void> {
   await setSetting(businessId, SETTING_KEYS.serverSyncConfig, config);
+  if (config.siteDeviceId) {
+    if (config.token) {
+      await query(
+        `INSERT INTO site_sync_credentials (site_device_id, business_id, token_hash, rotated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (site_device_id) DO UPDATE
+           SET token_hash = EXCLUDED.token_hash, rotated_at = now()`,
+        [config.siteDeviceId, businessId, hashSyncToken(config.token)],
+      );
+    } else {
+      await query(`DELETE FROM site_sync_credentials WHERE site_device_id = $1 AND business_id = $2`, [
+        config.siteDeviceId,
+        businessId,
+      ]);
+    }
+    return;
+  }
+  // Compatibility for pre-site-device installations and manually configured
+  // non-desktop peers. New desktop pairings never enter this singular table.
   if (config.token) {
     await query(
       `INSERT INTO server_sync_tokens (business_id, token_hash, updated_at)
@@ -119,13 +138,41 @@ export async function setServerSyncConfig(businessId: string, config: ServerSync
  * chosen — the token *is* how a business gets identified here — the same
  * bypass category as resolving a login email across businesses.
  */
+export interface SyncCredentialIdentity {
+  businessId: string;
+  siteDeviceId: string | null;
+  locationId: string | null;
+}
+
+export async function resolveSyncCredential(token: string): Promise<SyncCredentialIdentity | null> {
+  return withoutTenantScope("server-sync-auth", async () => {
+    const site = await query<{ business_id: string; site_device_id: string; location_id: string }>(
+      `SELECT c.business_id, c.site_device_id, d.location_id
+         FROM site_sync_credentials c
+         JOIN site_devices d ON d.id = c.site_device_id AND d.business_id = c.business_id
+        WHERE c.token_hash = $1 AND d.status = 'active' AND d.revoked_at IS NULL`,
+      [hashSyncToken(token)],
+    );
+    if (site.rows[0]) {
+      await query(`UPDATE site_devices SET last_seen_at = now() WHERE id = $1`, [site.rows[0].site_device_id]);
+      return {
+        businessId: site.rows[0].business_id,
+        siteDeviceId: site.rows[0].site_device_id,
+        locationId: site.rows[0].location_id,
+      };
+    }
+    const legacy = await query<{ business_id: string }>(
+      `SELECT business_id FROM server_sync_tokens WHERE token_hash = $1`,
+      [hashSyncToken(token)],
+    );
+    return legacy.rows[0]
+      ? { businessId: legacy.rows[0].business_id, siteDeviceId: null, locationId: null }
+      : null;
+  });
+}
+
 export async function resolveBusinessBySyncToken(token: string): Promise<string | null> {
-  const { rows } = await withoutTenantScope("server-sync-auth", () =>
-    query<{ business_id: string }>(`SELECT business_id FROM server_sync_tokens WHERE token_hash = $1`, [
-      hashSyncToken(token),
-    ]),
-  );
-  return rows[0]?.business_id ?? null;
+  return (await resolveSyncCredential(token))?.businessId ?? null;
 }
 
 /**
@@ -206,24 +253,35 @@ export async function listServerSyncDeadLetters(businessId: string, limit = 50):
 }
 
 export interface PairedSite {
-  /** When this business's sync token was last issued or rotated. */
+  /** Most recent credential issue/rotation among active site devices. */
   tokenSetAt: string;
-  /** Most recent inbound push/pull this business saw, or null if none yet. */
+  /** Most recent authenticated request among active site devices. */
   lastSeenAt: string | null;
   lastSeenStatus: "ok" | "error" | "skipped" | null;
+  deviceCount: number;
+  locationCount: number;
 }
 
-/**
- * What a *central* server can say about the site paired to this business.
- *
- * Singular, not a list, because that is what the schema models:
- * `server_sync_tokens` is keyed by `business_id` (migration 0033), so one
- * paired install per business is the design, and setServerSyncConfig replaces
- * the row rather than appending. Returns null when nothing is paired yet.
- */
+/** Aggregate status for a central server's independently managed site devices. */
 export async function getPairedSite(businessId: string): Promise<PairedSite | null> {
-  const [tokenRes, logRes] = await Promise.all([
-    query<{ updated_at: string }>(`SELECT updated_at FROM server_sync_tokens WHERE business_id = $1`, [businessId]),
+  const [siteRes, logRes] = await Promise.all([
+    query<{
+      token_set_at: string;
+      last_seen_at: string | null;
+      device_count: string;
+      location_count: string;
+    }>(
+      `SELECT max(c.rotated_at)::text AS token_set_at,
+              max(d.last_seen_at)::text AS last_seen_at,
+              count(*)::text AS device_count,
+              count(DISTINCT d.location_id)::text AS location_count
+         FROM site_devices d
+         JOIN site_sync_credentials c
+           ON c.site_device_id = d.id AND c.business_id = d.business_id
+        WHERE d.business_id = $1 AND d.status = 'active' AND d.revoked_at IS NULL
+       HAVING count(*) > 0`,
+      [businessId],
+    ),
     query<{ attempted_at: string; status: "ok" | "error" | "skipped" }>(
       `SELECT attempted_at, status FROM server_sync_log
         WHERE business_id = $1
@@ -233,11 +291,14 @@ export async function getPairedSite(businessId: string): Promise<PairedSite | nu
     ),
   ]);
 
-  if (!tokenRes.rows[0]) return null;
+  const site = siteRes.rows[0];
+  if (!site) return null;
   return {
-    tokenSetAt: tokenRes.rows[0].updated_at,
-    lastSeenAt: logRes.rows[0]?.attempted_at ?? null,
+    tokenSetAt: site.token_set_at,
+    lastSeenAt: site.last_seen_at,
     lastSeenStatus: logRes.rows[0]?.status ?? null,
+    deviceCount: Number(site.device_count),
+    locationCount: Number(site.location_count),
   };
 }
 
@@ -254,6 +315,8 @@ type SyncEventRow = {
   occurred_at: string;
   actor_user_id: string;
   actor_role: string;
+  site_device_id: string | null;
+  schema_version: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -303,8 +366,8 @@ export async function runServerPush(businessId: string): Promise<PushResult> {
   try {
     const { rows: r } = await query<SyncEventRow>(
       `SELECT se.id, se.location_id, se.client_event_id, se.event_type,
-              se.payload, se.occurred_at,
-              se.actor_user_id, se.actor_role
+              se.payload, se.occurred_at, se.actor_user_id, se.actor_role,
+              se.site_device_id, se.schema_version
          FROM sync_events se
          JOIN locations l ON l.id = se.location_id
         WHERE l.business_id = $1
@@ -312,9 +375,10 @@ export async function runServerPush(businessId: string): Promise<PushResult> {
           AND se.applied_at IS NOT NULL
           AND se.error IS NULL
           AND (se.origin IS NULL OR se.origin = 'local')
+          AND ($4::uuid IS NULL OR se.location_id = $4::uuid)
         ORDER BY se.id
         LIMIT $3`,
-      [businessId, afterId, batchSize],
+      [businessId, afterId, batchSize, config.locationId ?? null],
     );
     rows = r;
   } catch (err) {
@@ -338,6 +402,10 @@ export async function runServerPush(businessId: string): Promise<PushResult> {
     locationId: r.location_id,
     actorUserId: r.actor_user_id,
     actorRole: r.actor_role,
+    businessId,
+    siteDeviceId: config.siteDeviceId ?? r.site_device_id,
+    schemaVersion: r.schema_version,
+    origin: "site",
   }));
 
   const url = `${config.remoteUrl.trim().replace(/\/+$/, "")}/api/server-sync/push`;
@@ -354,11 +422,31 @@ export async function runServerPush(businessId: string): Promise<PushResult> {
     if (!res.ok) {
       return fail(`remote_rejected: HTTP ${res.status}`);
     }
+    const body = (await res.json()) as {
+      results?: Array<{ clientEventId?: string; ok?: boolean; conflict?: boolean; error?: string }>;
+    };
+    if (!Array.isArray(body.results) || body.results.length !== rows.length) {
+      return fail("remote_rejected: invalid result set");
+    }
+    for (let index = 0; index < rows.length; index += 1) {
+      const result = body.results[index];
+      if (result.clientEventId !== rows[index].client_event_id) {
+        return fail("remote_rejected: mismatched result order");
+      }
+      // A conflict is a terminal, explicitly recorded outcome. Any other
+      // apply failure (including an ambiguous in-progress outcome) must stop
+      // the high-water mark rather than silently dropping a domain mutation.
+      if (!result.ok && !result.conflict) {
+        return fail(`remote_apply_failed: ${result.error || "unknown"}`);
+      }
+    }
   } catch (err) {
     return fail(`unreachable: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  const lastId = rows[rows.length - 1].id;
+  // PostgreSQL bigint values arrive from node-postgres as strings even though
+  // the persisted settings contract uses JSON numbers.
+  const lastId = Number(rows[rows.length - 1].id);
   const s = await getServerSyncState(businessId);
   await setSetting(businessId, SETTING_KEYS.serverSyncState, {
     ...s,
@@ -392,6 +480,10 @@ interface RemoteEvent {
   locationId: string;
   actorUserId: string;
   actorRole: string;
+  businessId?: string;
+  siteDeviceId?: string | null;
+  schemaVersion?: number;
+  origin?: string;
 }
 
 /**
@@ -466,6 +558,7 @@ export async function runServerPull(businessId: string): Promise<PullResult> {
         { userId: e.actorUserId, role: e.actorRole as import("./auth").Role },
         input,
         "remote",
+        { siteDeviceId: e.siteDeviceId ?? null, schemaVersion: e.schemaVersion ?? 1 },
       );
     } catch (err) {
       // Don't abort the batch — a single bad event shouldn't block the rest —

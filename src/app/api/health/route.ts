@@ -37,6 +37,11 @@ export function GET() {
       // check: a healthy response from the previous container is not mistaken
       // for proof that the newly published image went live.
       version: process.env.APP_IMAGE_SHA || "unknown",
+      // Present only in the standalone desktop process. Electron compares this
+      // nonce before opening its BrowserWindow, so a different process that
+      // happens to answer on the configured port is never mistaken for this
+      // installation's backend.
+      ...(process.env.DESKTOP_INSTANCE_ID ? { instanceId: process.env.DESKTOP_INSTANCE_ID } : {}),
       at: new Date().toISOString(),
     },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },

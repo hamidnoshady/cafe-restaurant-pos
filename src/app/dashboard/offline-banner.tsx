@@ -3,19 +3,30 @@
 import { toPersianDigits } from "@/lib/digits";
 import { useOfflineQueue } from "./offline-queue";
 
-/** Persistent status strip shown on every dashboard page while offline or while queued actions await sync. */
+/** Distinguishes LAN/server availability from the optional outbound cloud link. */
 export function OfflineBanner() {
-  const { pendingCount, isOnline } = useOfflineQueue();
-  if (isOnline && pendingCount === 0) return null;
+  const { pendingCount, connectionState } = useOfflineQueue();
+  const localUnavailable = connectionState.localServer === "local_server_unreachable";
+  const cloudPaused = connectionState.cloudSync === "cloud_sync_paused";
+  if (!localUnavailable && !cloudPaused && pendingCount === 0) return null;
+
+  let message: string;
+  let className: string;
+  if (localUnavailable) {
+    message = "سرور محلی در دسترس نیست — فقط عملیات‌های پشتیبانی‌شده در این دستگاه ذخیره می‌شوند؛ سایر تغییرها تا بازگشت اتصال مسدودند.";
+    className = "bg-destructive/10 text-destructive";
+  } else if (pendingCount > 0) {
+    message = "سرور محلی متصل است؛ اقدام‌های ذخیره‌شده در حال ارسال هستند.";
+    className = "bg-primary/10 text-primary";
+  } else {
+    message = "سرور محلی و عملیات کسب‌وکار فعال است؛ همگام‌سازی ابری موقتاً متوقف شده و پس از بازگشت اینترنت خودکار ادامه می‌یابد.";
+    className = "bg-amber-500/10 text-amber-800 dark:text-amber-200";
+  }
 
   return (
-    <div
-      className={`px-4 py-2 text-center text-sm font-medium ${
-        isOnline ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
-      }`}
-    >
-      {!isOnline ? "اتصال به سرور قطع است — عملیات‌ها ذخیره می‌شوند و پس از اتصال مجدد ارسال خواهند شد." : "در حال همگام‌سازی…"}
-      {pendingCount > 0 ? ` (${toPersianDigits(pendingCount)} مورد در صف)` : ""}
+    <div className={`px-4 py-2 text-center text-sm font-medium ${className}`}>
+      {message}
+      {pendingCount > 0 ? ` (${toPersianDigits(pendingCount)} اقدام در صف محلی)` : ""}
     </div>
   );
 }

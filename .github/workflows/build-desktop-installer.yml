@@ -1,51 +1,42 @@
-# Builds the standalone Windows desktop installer (the Business Suite `.exe`).
-#
-# This is deliberately separate from `test.yml`: producing an installer is
-# slow (electron-builder downloads Electron, packs a ~1 GB payload and
-# compresses an NSIS archive), and nothing about an unrelated pull request
-# needs it. It now runs automatically, but only when the desktop shell is
-# actually being worked on — `pull_request` and `push` to `main` are scoped
-# with `paths:` to `electron/**` and `windows/**`, so a PR that never touches
-# those folders never pays this cost. `workflow_dispatch` still exists for a
-# manual, versioned release build (the `version` input below only applies
-# there — the automatic runs never bump `electron/package.json`'s version).
-#
-# It can only run on Windows: electron-builder produces the NSIS installer with
-# Windows-only tooling (`rcedit` stamps the icon and version onto the exe), so
-# the job runs on the GitHub-hosted `windows-latest` runner.
-#
-# The build order matters and is not obvious: `electron/package.json` lists the
-# repository's `../.next`, `../src`, `../node_modules` and friends under
-# `extraResources`, so the **root Next.js app must be built first** and the root
-# `node_modules` must exist. A packaged app whose `.next` is missing or stale
-# fails at launch, not at build time.
-#
-# Full background, including the packaging constraints that will re-break this:
-# docs/standalone-desktop-app.md
 name: build-desktop-installer
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Installer version (X.Y.Z). Leave empty to keep electron/package.json as-is.'
+        description: 'Installer version (X.Y.Z); empty keeps electron/package.json'
         type: string
         required: false
   pull_request:
     paths:
       - 'electron/**'
-      - 'windows/**'
+      - 'src/**'
+      - 'public/**'
+      - 'migrations/**'
+      - 'scripts/build-desktop-runtime.mjs'
+      - 'scripts/report-desktop-size.mjs'
+      - 'scripts/desktop/**'
+      - 'server.ts'
+      - 'next.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-desktop-installer.yml'
   push:
     branches: [main]
     paths:
       - 'electron/**'
-      - 'windows/**'
+      - 'src/**'
+      - 'public/**'
+      - 'migrations/**'
+      - 'scripts/build-desktop-runtime.mjs'
+      - 'scripts/report-desktop-size.mjs'
+      - 'scripts/desktop/**'
+      - 'server.ts'
+      - 'next.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-desktop-installer.yml'
 
-# Manual (`workflow_dispatch`) runs are a release action and queue on a single
-# global group — an installer is a release artifact, so a queued run is
-# cheaper than sorting out which of two concurrent ones to ship. Automatic PR
-# builds get their own per-ref group instead, so two unrelated PRs (or a new
-# push superseding an old one on the same PR) don't queue behind each other.
 concurrency:
   group: build-desktop-installer-${{ github.event_name == 'workflow_dispatch' && 'release' || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
@@ -58,17 +49,14 @@ defaults:
     shell: powershell
 
 env:
-  NODE_OPTIONS: --max-old-space-size=3072
-  # `next build` does not read .env, and the build imports modules that refuse a
-  # placeholder secret. Throwaway, build-only — the installed app generates its
-  # own real secret on first launch (electron/main.js).
+  NODE_OPTIONS: --max-old-space-size=4096
   JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
 
 jobs:
   build:
-    name: package the Windows installer
+    name: packaged Windows end-to-end
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
@@ -77,100 +65,115 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Set the installer version
+      - name: Set installer version
         if: inputs.version != ''
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          $ErrorActionPreference = "Stop"
-          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+$') {
-            Write-Error "Version must be X.Y.Z, got '$env:VERSION'."
-            exit 1
-          }
-          $path = "electron/package.json"
-          # Rewritten as text rather than via ConvertTo-Json: that would reorder
-          # and reformat the whole manifest, including the large `build` block.
-          $json = Get-Content -LiteralPath $path -Raw -Encoding UTF8
-          # The instance overload is the one that takes a replacement *count*;
-          # the static [regex]::Replace's fourth argument is RegexOptions, so
-          # passing 1 there would mean IgnoreCase and rewrite every "version"
-          # key in the file — including the ones inside the `build` block.
-          $rx = New-Object System.Text.RegularExpressions.Regex '("version"\s*:\s*")[^"]+(")'
-          $updated = $rx.Replace($json, "`${1}$env:VERSION`${2}", 1)
-          if ($updated -eq $json) {
-            Write-Error "Could not find a version field in $path."
-            exit 1
-          }
-          [IO.File]::WriteAllText((Resolve-Path $path), $updated)
-          Write-Host "electron/package.json version -> $env:VERSION"
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Version must be X.Y.Z" }
+          npm pkg set "version=$env:VERSION" --prefix electron
 
-      # extraResources pulls ../node_modules and ../.next into the payload, so
-      # the root app has to be installed and built before packaging.
-      - name: Install root dependencies
+      - name: Install application dependencies
         run: npm ci
 
-      - name: Build the Next.js app
+      - name: Production dependency vulnerability gate
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Security posture unit tests
+        run: npx vitest run src/lib/desktop-runtime-posture.test.ts src/lib/desktop-network-interfaces.test.ts src/lib/chromium-executable.test.ts
+
+      - name: Build Next production application
         run: npm run build
 
-      - name: Install Electron dependencies
+      - name: Build positively selected desktop runtime
+        run: npm run desktop:runtime
+
+      - name: Install Electron production/build dependencies
         working-directory: electron
         run: npm ci
 
-      # `predist` (scripts/prepare-wincodesign-cache.js) runs automatically here
-      # and works around electron-builder's winCodeSign extraction failure on a
-      # non-elevated Windows account without Developer Mode.
-      - name: Build the installer
+      - name: Audit Electron production dependencies
+        working-directory: electron
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify staged runtime and canonical icon
+        working-directory: electron
+        run: npm run verify:runtime
+
+      - name: Pre-package size report
+        run: node scripts/report-desktop-size.mjs --output=desktop-size-before-package.md
+
+      - name: Build NSIS installer and win-unpacked runtime
         working-directory: electron
         run: npm run dist
 
-      - name: Locate the installer
-        id: artifact
+      - name: Assert one Windows PostgreSQL payload and no foreign payload
+        run: |
+          $root = "electron/dist/win-unpacked"
+          $postgres = @(Get-ChildItem $root -Recurse -File -Filter postgres.exe)
+          $initdb = @(Get-ChildItem $root -Recurse -File -Filter initdb.exe)
+          if ($postgres.Count -ne 1) { throw "Expected exactly one postgres.exe, found $($postgres.Count)" }
+          if ($initdb.Count -ne 1) { throw "Expected exactly one initdb.exe, found $($initdb.Count)" }
+          $foreign = @(Get-ChildItem $root -Recurse -Directory | Where-Object { $_.FullName -match '@embedded-postgres[\\/](linux|darwin)-' })
+          if ($foreign.Count) { throw "Foreign PostgreSQL payload found: $($foreign.FullName -join ', ')" }
+          $rootModules = Get-ChildItem "$root/resources/desktop-runtime/node_modules" -ErrorAction Stop
+          if (Test-Path "$root/resources/desktop-runtime/node_modules/typescript") { throw "TypeScript leaked into runtime" }
+          if (Test-Path "$root/resources/desktop-runtime/.next/cache") { throw ".next/cache leaked into runtime" }
+          Write-Host "PostgreSQL payload: $($postgres[0].FullName)"
+
+      - name: Run actual packaged desktop twice with clean user data
+        working-directory: electron
+        run: node scripts/smoke-packaged.js
+
+      - name: Final size report and budgets
+        id: sizes
         run: |
           $ErrorActionPreference = "Stop"
-          # Windows PowerShell 5.1's `Out-File -Encoding utf8` writes a UTF-8
-          # BOM, and the runner parses these files byte-for-byte: a BOM ends up
-          # inside the first key name, so `steps.<id>.outputs.<key>` silently
-          # resolves to empty. Append BOM-free bytes instead.
           function Add-GitHubOutput([string]$line) {
+            # Windows PowerShell 5.1's >> writes UTF-16; Actions command files
+            # require UTF-8. Append without a BOM so every key is readable.
             [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "$line`n", (New-Object System.Text.UTF8Encoding($false)))
           }
-          $exe = Get-ChildItem -Path electron/dist -Filter *.exe -File |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-          if (-not $exe) {
-            Write-Error "electron-builder produced no .exe in electron/dist. If it failed while packing the NSIS archive, check docs/standalone-desktop-app.md — the win-unpacked/ folder can exist even when the installer does not."
-            exit 1
-          }
-          $sizeMb = [math]::Round($exe.Length / 1MB, 1)
-          Write-Host "installer: $($exe.Name) ($sizeMb MB)"
+          node scripts/report-desktop-size.mjs --output=desktop-size-report.md
+          $exe = Get-ChildItem electron/dist -File -Filter *.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $exe) { throw "NSIS installer missing" }
+          $unpacked = (Get-ChildItem electron/dist/win-unpacked -Recurse -File | Measure-Object Length -Sum).Sum
+          $installerMiB = [math]::Round($exe.Length / 1MB, 1)
+          $installedMiB = [math]::Round($unpacked / 1MB, 1)
+          Add-GitHubOutput "installer=$installerMiB"
+          Add-GitHubOutput "installed=$installedMiB"
           Add-GitHubOutput "name=$($exe.Name)"
-          Add-GitHubOutput "size=$sizeMb"
+          if ($exe.Length -gt 350MB) { throw "Installer $installerMiB MiB exceeds 350 MiB budget" }
+          if ($unpacked -gt 600MB) { throw "Installed payload $installedMiB MiB exceeds 600 MiB budget" }
 
-      - name: Upload the installer
+      - name: Upload installer
         uses: actions/upload-artifact@v7
         with:
           name: business-suite-desktop-installer
           path: electron/dist/*.exe
           if-no-files-found: error
 
-      - name: Tell the human what to do next
+      - name: Upload desktop size reports
+        uses: actions/upload-artifact@v7
+        with:
+          name: business-suite-desktop-size-report
+          path: |
+            desktop-size-before-package.md
+            desktop-size-report.md
+          if-no-files-found: error
+
+      - name: Job summary
         env:
-          NAME: ${{ steps.artifact.outputs.name }}
-          SIZE: ${{ steps.artifact.outputs.size }}
+          NAME: ${{ steps.sizes.outputs.name }}
+          INSTALLER: ${{ steps.sizes.outputs.installer }}
+          INSTALLED: ${{ steps.sizes.outputs.installed }}
         run: |
-          @"
-          ## Desktop installer built
+          $summary = @"
+          ## Business Suite Windows package
 
-          **$env:NAME** ($env:SIZE MB)
-
-          1. Download **business-suite-desktop-installer** from this run's artifacts.
-          2. Give the ``.exe`` to the cafe PC and double-click it — nothing else needs installing.
-
-          The installer is **unsigned**, so Windows SmartScreen warns that the publisher is
-          unknown on first run. That is expected until a code-signing certificate exists
-          (see docs/standalone-desktop-app.md).
-          "@ | ForEach-Object {
-            # BOM-free, like GITHUB_OUTPUT above — the summary is rendered as
-            # markdown and a BOM shows up as a stray glyph before the heading.
-            [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$_`n", (New-Object System.Text.UTF8Encoding($false)))
-          }
+          - Installer: **$env:NAME** — **$env:INSTALLER MiB**
+          - Unpacked installed payload: **$env:INSTALLED MiB**
+          - Runtime: Next standalone trace + bundled custom server; no root node_modules
+          - Acceptance: packaged executable initialized PostgreSQL UTF-8, migrated, passed RLS boot, bootstrapped through the real API, authenticated, stopped, restarted and retained data
+          "@
+          [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$summary`n", (New-Object System.Text.UTF8Encoding($false)))

@@ -127,16 +127,47 @@ describe("pairing round trip", () => {
         `INSERT INTO menu_categories (location_id, name, sort_order) VALUES ($1, $2, 0) RETURNING id`,
         [created.locationId, "نوشیدنی گرم"],
       );
-      await query(
-        `INSERT INTO menu_items (location_id, category_id, name, price) VALUES ($1, $2, $3, $4)`,
+      const menuItem = await query<{ id: string }>(
+        `INSERT INTO menu_items (location_id, category_id, name, price) VALUES ($1, $2, $3, $4) RETURNING id`,
         [created.locationId, rows[0].id, "اسپرسو", 850_000],
+      );
+      const modifierGroup = await query<{ id: string }>(
+        `INSERT INTO modifier_groups (location_id, name, min_select, max_select)
+         VALUES ($1, 'نوع شیر', 0, 1) RETURNING id`,
+        [created.locationId],
+      );
+      const modifier = await query<{ id: string }>(
+        `INSERT INTO modifiers (location_id, group_id, name, price_delta)
+         VALUES ($1, $2, 'شیر جو', 120000) RETURNING id`,
+        [created.locationId, modifierGroup.rows[0].id],
+      );
+      await query(
+        `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id) VALUES ($1, $2)`,
+        [menuItem.rows[0].id, modifierGroup.rows[0].id],
+      );
+      const inventory = await query<{ id: string }>(
+        `INSERT INTO inventory_items (location_id, name, unit, reorder_level)
+         VALUES ($1, 'دانه قهوه', 'g', 1000) RETURNING id`,
+        [created.locationId],
+      );
+      await query(
+        `INSERT INTO menu_item_ingredients (menu_item_id, inventory_item_id, quantity) VALUES ($1, $2, 18)`,
+        [menuItem.rows[0].id, inventory.rows[0].id],
+      );
+      await query(
+        `INSERT INTO modifier_ingredients (modifier_id, inventory_item_id, quantity_delta) VALUES ($1, $2, 1)`,
+        [modifier.rows[0].id, inventory.rows[0].id],
+      );
+      await query(
+        `INSERT INTO dining_tables (location_id, name, capacity) VALUES ($1, 'میز ۱', 4)`,
+        [created.locationId],
       );
     });
 
     const platformAdminId = await createPlatformAdmin();
 
     const issued = await withoutTenantScope("platform", () =>
-      issuePairingCode(created.businessId, platformAdminId),
+      issuePairingCode(created.businessId, platformAdminId, created.locationId),
     );
     expect("code" in issued).toBe(true);
     if (!("code" in issued)) return;
@@ -177,6 +208,22 @@ describe("pairing round trip", () => {
       expect(items.rows[0].name).toBe("اسپرسو");
       expect(Number(items.rows[0].price)).toBe(850_000);
 
+      const masterData = await query<{ modifiers: string; inventory: string; tables: string; methods: string }>(
+        `SELECT
+           (SELECT count(*) FROM modifiers)::text AS modifiers,
+           (SELECT count(*) FROM inventory_items)::text AS inventory,
+           (SELECT count(*) FROM dining_tables)::text AS tables,
+           (SELECT count(*) FROM payment_methods WHERE business_id = $1)::text AS methods`,
+        [applied.businessId],
+      );
+      expect(Number(masterData.rows[0].modifiers)).toBe(1);
+      expect(Number(masterData.rows[0].inventory)).toBe(1);
+      expect(Number(masterData.rows[0].tables)).toBe(1);
+      expect(Number(masterData.rows[0].methods)).toBeGreaterThan(0);
+      expect(snapshot.dataClassification.notYetReplicated).toContain(
+        "journal entries, fiscal periods, bank reconciliation, payroll, tax filings, and accounting documents",
+      );
+
       const accounts = await query<{ n: string }>(
         `SELECT count(*) AS n FROM accounts WHERE business_id = $1`,
         [applied.businessId],
@@ -197,10 +244,15 @@ describe("pairing round trip", () => {
       expect(progress.rows[0].value.completedAt).toBeTruthy();
 
       const syncTokens = await query<{ n: string }>(
-        `SELECT count(*) AS n FROM server_sync_tokens WHERE business_id = $1`,
+        `SELECT count(*) AS n FROM site_sync_credentials WHERE business_id = $1`,
         [applied.businessId],
       );
       expect(Number(syncTokens.rows[0].n)).toBe(1);
+      const sites = await query<{ location_id: string; status: string }>(
+        `SELECT location_id, status FROM site_devices WHERE business_id = $1`,
+        [applied.businessId],
+      );
+      expect(sites.rows).toEqual([{ location_id: applied.locationId, status: "active" }]);
     });
   }, 120_000);
 });
@@ -224,7 +276,7 @@ describe("pairing code lifecycle", () => {
     const adminId = await createPlatformAdmin();
 
     const issued = await withoutTenantScope("platform", () =>
-      issuePairingCode(created.businessId, adminId),
+      issuePairingCode(created.businessId, adminId, created.locationId),
     );
     if (!("code" in issued)) throw new Error("expected a code");
 
@@ -237,7 +289,7 @@ describe("pairing code lifecycle", () => {
     // Re-issuing replaces rather than accumulates: the partial unique index
     // allows only one live code, so this must succeed.
     const reissued = await withoutTenantScope("platform", () =>
-      issuePairingCode(created.businessId, adminId),
+      issuePairingCode(created.businessId, adminId, created.locationId),
     );
     expect("code" in reissued).toBe(true);
   }, 120_000);

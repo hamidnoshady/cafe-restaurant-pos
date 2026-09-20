@@ -905,9 +905,9 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   are the DB-touching exception and aren't unit-tested directly.
 - `migrations/NNNN_*.sql` — forward-only, applied in filename order by `scripts/migrate.ts`.
 - `scripts/*.ts` — standalone CLI tasks run with `npx tsx` (migrate, seed, backup/restore,
-  role provisioning, perf benchmarks, …) rather than through a route handler; some run inside
-  the running container itself (e.g. `check-app-update.ts`, invoked via `docker compose exec`
-  by the on-site launcher — see the README's "On-site deployment" section).
+  role provisioning, perf benchmarks, …) rather than through a route handler. The Windows
+  package bundles only the explicitly required migration/runtime-role entrypoints; it does not
+  ship the source scripts or a TypeScript runtime.
 - **Warehouse counting** — barcode assignment and label printing for F&B live under the
   «بارکد و لیبل» tab of `/accounting/inventory` (`/api/inventory/barcodes*`), and the retail
   physical count under `/accounting/inventory` (`/api/stock/counts*`). Both inherit an existing

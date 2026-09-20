@@ -12,8 +12,9 @@
  * without exposing transparent corners, which is why icon-square.svg exists
  * alongside the rounded icon.svg used for the "any" purpose and favicon.
  *
- * The generated windows/cafe-pos.ico also supplies the same platform mark to
- * legacy Windows launchers and the current Business Suite desktop installer.
+ * public/favicon.ico is also the canonical icon used by the Electron/NSIS
+ * build. Keeping it under public avoids depending on the removed Docker-era
+ * top-level windows directory.
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -74,14 +75,12 @@ async function main() {
     icoSizes.map(async (size) => ({ size, png: await renderPng(ICON_SVG, size) })),
   );
   const ico = buildIco(icoFrames);
-  writeFileSync(join(ROOT, "windows/cafe-pos.ico"), ico);
   // Browsers still request /favicon.ico even when the metadata points at the
-  // SVG/PNG set; serving the same ICO from public/ answers that request with
-  // the real icon instead of a 404.
+  // SVG/PNG set; Electron Builder uses this exact file too.
   writeFileSync(join(ROOT, "public/favicon.ico"), ico);
 
   console.log("Generated: public/icon-192.png, public/icon-512.png, public/apple-touch-icon.png,");
-  console.log("           public/icon-maskable-512.png, public/favicon.ico, windows/cafe-pos.ico");
+  console.log("           public/icon-maskable-512.png, public/favicon.ico");
 }
 
 main().catch((err) => {

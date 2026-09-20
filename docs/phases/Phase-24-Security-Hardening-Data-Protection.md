@@ -391,7 +391,7 @@ Two behaviour changes:
 
 1. **The default flips to deny**, re-enabled only by `ALLOW_LEGACY_SYNC_TOKEN=1`. This is safe:
    pairing has minted per-business tokens since Phase 17, `server-sync/update-check` and
-   `update-token` already run with no fallback at all, and `server-sync-settings.tsx:405-408`
+   the site-scoped server-sync routes already run with no session fallback
    already shows a red banner to any deployment still on the legacy path.
 2. **Even when re-enabled, the shared token may not act for a business that has its own.** After
    `eventsBusinessId` is resolved (`push/route.ts:103`), a legacy-authenticated request for a
@@ -811,9 +811,9 @@ halfway under a forward-only regime.
 - `docker-compose.local.yml` stops publishing 3000 (`ports:` becomes `expose:`) and gains a
   `caddy` service publishing 443, with a committed `Caddyfile` using **`tls internal`** —
   Caddy's own local CA auto-issues for the site hostname and prints a root certificate to
-  install on each phone, tablet and till. Chosen over mkcert because the Docker installer's
-  entire premise (`windows/Install-CafePOS.ps1`) is that a non-technical operator never opens a
-  terminal; mkcert remains the documented manual path for the Electron standalone. The file's
+  install on each phone, tablet and till. This describes the historical Docker deployment;
+  the current Electron desktop uses its own certificate manager and Local Devices onboarding.
+  The file's
   now-obsolete `NOTE on HTTPS:` header comment is deleted when this lands.
 - `POS_LOCAL_HOST` (e.g. `pos.cafe.lan`) wired to `WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGIN`, with
   router-DNS and hosts-file guidance. A hostname is mandatory rather than cosmetic: **WebAuthn's

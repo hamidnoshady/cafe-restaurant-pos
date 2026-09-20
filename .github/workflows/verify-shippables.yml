@@ -12,7 +12,7 @@
 #
 # Triggers: `workflow_dispatch` (run it by hand before either release build),
 # plus `pull_request` and `push` to `main`, scoped with `paths:` to only the
-# folders this workflow actually checks (`electron/`, `windows/`,
+# folders this workflow actually checks (`electron/`, desktop build scripts,
 # `public/windows/`, `wordpress-plugin/`). That keeps it "active" exactly
 # when someone is developing the desktop shell, the print connector, or the
 # WordPress plugin — a PR touching only `src/` never runs it, the same way
@@ -28,14 +28,28 @@ on:
   pull_request:
     paths:
       - 'electron/**'
-      - 'windows/**'
+      - 'src/**'
+      - 'migrations/**'
+      - 'scripts/build-desktop-runtime.mjs'
+      - 'scripts/desktop/**'
+      - 'server.ts'
+      - 'next.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
   push:
     branches: [main]
     paths:
       - 'electron/**'
-      - 'windows/**'
+      - 'src/**'
+      - 'migrations/**'
+      - 'scripts/build-desktop-runtime.mjs'
+      - 'scripts/desktop/**'
+      - 'server.ts'
+      - 'next.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
 
@@ -61,61 +75,50 @@ jobs:
         with:
           node-version: 20
 
-      # electron-builder is never invoked here (that is the release build's
-      # job, and it is slow); this only proves the manifest and lockfile the
-      # release build depends on are installable and internally consistent.
-      - name: Electron dependencies resolve on Windows
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Production dependency vulnerability gate
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Desktop production posture tests
+        run: npx vitest run src/lib/desktop-runtime-posture.test.ts src/lib/desktop-network-interfaces.test.ts src/lib/chromium-executable.test.ts
+
+      - name: Build production app and staged desktop runtime
+        env:
+          JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
+        run: |
+          npm run build
+          npm run desktop:runtime
+
+      - name: Install Electron dependencies for this platform
         working-directory: electron
         run: npm ci --ignore-scripts
+
+      - name: Audit Electron production dependencies
+        working-directory: electron
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Electron sources parse
         run: |
           $ErrorActionPreference = "Stop"
-          $files = @(
-            "electron/main.js",
-            "electron/preload.js",
-            "electron/scripts/prepare-wincodesign-cache.js"
-          )
+          $files = Get-ChildItem electron -Recurse -File -Filter *.js |
+            Where-Object { $_.FullName -notmatch '[\\/]node_modules[\\/]' }
           foreach ($f in $files) {
-            node --check $f
-            if ($LASTEXITCODE -ne 0) { Write-Host "::error file=$f::does not parse"; exit 1 }
-            Write-Host "ok  $f"
+            node --check $f.FullName
+            if ($LASTEXITCODE -ne 0) { throw "$($f.FullName) does not parse" }
           }
 
-      # Both of these are documented in docs/standalone-desktop-app.md as
-      # "packaging constraints that will re-break this if changed". They look
-      # like harmless cleanups in a diff, and each one produced an installer
-      # that failed only at launch or only at the final packaging step.
-      - name: Packaging constraints still hold
+      - name: New positive runtime constraints hold
+        working-directory: electron
+        run: npm run verify:runtime
+
+      - name: Staged runtime stays below pre-package budget
         run: |
-          $ErrorActionPreference = "Stop"
-          $pkg = Get-Content -LiteralPath electron/package.json -Raw | ConvertFrom-Json
-          $nodeModules = $pkg.build.extraResources | Where-Object { $_.from -eq "../node_modules" }
-          if (-not $nodeModules) {
-            Write-Host "::error::electron/package.json no longer copies ../node_modules into the payload; server.ts cannot boot without it."
-            exit 1
-          }
-
-          # The Linux/darwin Postgres builds carry libpq.so symlinks. 7-Zip
-          # aborts the NSIS archive on them *after* win-unpacked/ exists, so
-          # the build looks fine and only the .exe is missing.
-          $filter = @($nodeModules.filter)
-          if (-not ($filter -match '@embedded-postgres/\{linux,darwin\}')) {
-            Write-Host "::error::The @embedded-postgres/{linux,darwin}-* exclusion is missing from electron/package.json extraResources. See docs/standalone-desktop-app.md constraint 4."
-            exit 1
-          }
-          # A `**/`-prefixed exclusion also strips next/dist/lib/typescript,
-          # which Next needs at runtime to read next.config.ts.
-          # An exact prefix test, not a wildcard match: `-like "!**/*"` would
-          # also match every legitimate `!pkg{,/**}` entry (the `**` and `*`
-          # are wildcards), and fail the build on a correct manifest.
-          $bad = $filter | Where-Object { $_.StartsWith('!**/') }
-          if ($bad) {
-            Write-Host "::error::extraResources filter uses a '**/' exclusion ($bad); it also strips nested packages Next.js needs at runtime. See docs/standalone-desktop-app.md constraint 2."
-            exit 1
-          }
-
-          Write-Host "packaging constraints ok"
+          $bytes = (Get-ChildItem .desktop-runtime -Recurse -File | Measure-Object Length -Sum).Sum
+          $mib = [math]::Round($bytes / 1MB, 1)
+          Write-Host "staged desktop runtime: $mib MiB"
+          if ($bytes -gt 200MB) { throw "Staged runtime $mib MiB exceeds 200 MiB budget" }
 
   plugin:
     name: WordPress plugin

@@ -2268,16 +2268,10 @@ export interface ClientVersionStatus {
 }
 
 /**
- * Per-business self-update status (AppUpdateStatus, src/lib/app-update.ts —
- * settings key SETTING_KEYS.appUpdateStatus) across every business, so the
- * platform can see at a glance which café installs are current and which
- * have fallen behind.
- *
- * Only covers installs with server-sync configured against this VPS (the
- * Docker on-site path, which is what actually reports a version at all). A
- * fully standalone desktop install with no VPS connection has no channel to
- * report through — it simply won't appear here. That's a real, current gap,
- * not a bug — see docs/standalone-desktop-app.md.
+ * Per-business manual release-version status (AppUpdateStatus,
+ * src/lib/app-update.ts) across connected sites. This is visibility only: no
+ * update is downloaded or executed. A fully offline desktop has no reporting
+ * channel and therefore does not appear here.
  */
 export async function clientVersionCompliance(): Promise<ClientVersionStatus[]> {
   const { rows } = await withoutTenantScope("platform", () =>
