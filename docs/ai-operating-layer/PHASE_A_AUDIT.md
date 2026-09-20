@@ -1188,3 +1188,55 @@ The engines and the shell existed; the front door did not.
   (+2 / +1 file). Live smoke against embedded PG: authenticated `/dashboard`
   renders the rail with «دستیار هوشمند» as the first «برنامه‌ها» launcher (href
   `/ai`), ahead of حسابداری; all seven `/ai/*` routes return 200.
+
+## 6j. Phase J — DELIVERED (drop legacy AI billing schema + code, M10)
+
+Phase B's wallet cutover (migration 0153) replaced the Phase 18 AI credit
+system with debits against the canonical `business_wallets` from LiteLLM's real
+reported cost. 0153 was additive by design — it kept the legacy tables readable
+so the cutover could be reconciled in production before anything was destroyed
+(migration map row **M10** gated the drop on "wallet cutover proven"). With that
+sign-off given, Phase J retires the legacy schema and its now-dead code.
+
+- **Destructive migration 0164.** Drops `ai_top_up_requests`,
+  `ai_credit_ledger`, `ai_credit_packages`, `ai_business_billing`,
+  `ai_subscription_plans` (from 0039). A DB-level audit first confirmed all five
+  had **zero rows**, **no inbound foreign keys from any surviving table** (the
+  only FKs point among the five themselves), and **no dependent views**. CASCADE
+  resolves the intra-group FKs. Never dropped in the same step as its
+  replacement — the wallet arrived 11 migrations earlier (0153).
+- **Dead code removed.** `src/lib/ai-billing-service.ts` is deleted in full:
+  `reserveAiTurn` / `cancelAiTurnReservation` / the legacy `settleAiTurn`,
+  `getAiBusinessBilling`, `listRecentAiLedger`, `createAiTopUpRequest`,
+  `grantAiCredits`, `assignAiSubscription`, `runAiSubscriptionRenewalTick`,
+  `listAiSubscriptionPlans` / `saveAiSubscriptionPlan`,
+  `listPlatformAiBusinesses` / `listPlatformAiTopUpRequests` /
+  `reviewAiTopUpRequest` / `listPlatformAiCosting`, and the
+  `AiInsufficientCreditError` / `AiTopUpStateError` classes — all verified to
+  have no live callers on the merged tree (the live `settleAiTurn` callers
+  import the wallet-based one from `ai-wallet-billing.ts`). The single still-live
+  export, the `AiGatewayTurnPricing` **type**, was relocated to `ai-gateway.ts`
+  (the framework-free gateway pricing shapes) and `ai-gateway-service.ts` now
+  imports it from there.
+- **Renewal tick removed.** `server.ts` no longer schedules the Phase 18 AI
+  subscription renewal tick (it fed the dropped `ai_business_billing`).
+- **Housekeeping.** `ai_credit_packages` / `ai_subscription_plans` removed from
+  `EXEMPT_TABLES`; stale doc comments in `tenant-tables.ts` and
+  `messaging-billing.ts` refreshed to describe the retired service in the past
+  tense.
+- **Verification.** `tsc` clean; full unit suite **5073 tests / 352 files**;
+  integration — tenant-isolation, migrations (fresh apply + the 0011→latest
+  upgrade path), MCP connector, and both wallet-billing suites — **72/72**; a
+  fresh database applies all **200** migrations and re-migrate is a no-op;
+  production build succeeds.
+
+> **Note on the CI repair done alongside Phase J.** The branch was 119 commits
+> behind `main`, so the PR's checks ran `main`'s newer `test.yml` and failed on
+> three jobs. Merging `main` in fixed the *design-checks* job (it runs
+> `primitive-lint.test.ts`, a file the stale branch lacked) and surfaced two
+> more real issues that were fixed in the same pass: the AI Usage dashboard now
+> composes the approved `KpiCard`/`DataTable` primitives `primitive-lint` began
+> enforcing, and migration **0163** restores `'mcp'` to
+> `ai_action_audit_source_check` — this program's 0155 had redefined that
+> constraint on a pre-MCP base and silently dropped `'mcp'`, breaking every
+> MCP-authorised write once main's connector merged in.
