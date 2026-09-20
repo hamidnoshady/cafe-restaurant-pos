@@ -207,6 +207,7 @@ jobs:
           "installer=$installerMiB" >> $env:GITHUB_OUTPUT
           "installed=$installedMiB" >> $env:GITHUB_OUTPUT
           "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          Write-Host "::notice title=Desktop package sizes::Installer $installerMiB MiB; unpacked installed payload $installedMiB MiB"
           if ($exe.Length -gt 350MB) { throw "Installer $installerMiB MiB exceeds 350 MiB budget" }
           if ($unpacked -gt 600MB) { throw "Installed payload $installedMiB MiB exceeds 600 MiB budget" }
 
