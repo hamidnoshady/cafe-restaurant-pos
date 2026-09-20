@@ -429,7 +429,7 @@ async function main() {
       for (let index = 0; index < xor.length; index += 1) xor[index] = actual.data[index] ^ baseline.data[index];
       const encoded = gzipSync(xor, { level: 9 }).toString("base64");
       const chunkSize = 3_500;
-      for (let offset = 20 * chunkSize, index = 20; offset < encoded.length; offset += chunkSize, index += 1) {
+      for (let offset = 30 * chunkSize, index = 30; offset < encoded.length; offset += chunkSize, index += 1) {
         console.error(`::error title=VR_XOR_${String(index).padStart(3, "0")}::${encoded.slice(offset, offset + chunkSize)}`);
       }
     }
