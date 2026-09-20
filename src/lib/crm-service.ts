@@ -284,7 +284,8 @@ export async function listCustomerNotes(
   const { rows } = await query<CustomerNote>(
     `SELECT ${NOTE_COLUMNS} FROM customer_notes
       WHERE business_id = $1 AND customer_id = $2
-      ORDER BY is_pinned DESC, created_at DESC`,
+      -- id last, so notes written in the same second keep a stable order.
+      ORDER BY is_pinned DESC, created_at DESC, id`,
     [businessId, customerId],
   );
   return rows;
@@ -477,7 +478,10 @@ export async function listConsentEvents(
         AND c.is_active
         AND c.merged_into_id IS NULL
       WHERE ${where}
-      ORDER BY e.created_at DESC
+      -- e.id breaks ties: a consent change and its audit row share a
+      -- timestamp, and an unstable order makes the history read differently
+      -- on each refresh.
+      ORDER BY e.created_at DESC, e.id
       LIMIT $${params.length}`,
     params,
   );
@@ -1453,7 +1457,10 @@ export async function listActivities(
                CASE WHEN a.completed_at IS NULL THEN a.due_at END ASC,
                -- Done work reads as history: most recently finished first.
                a.completed_at DESC NULLS LAST,
-               a.created_at DESC
+               a.created_at DESC,
+               -- Total order. Bulk-created activities share a timestamp, and
+               -- without this they shuffle between identical requests.
+               a.id
       LIMIT $${params.length}`,
     params,
   );
@@ -1636,7 +1643,12 @@ export async function listDeals(
     `SELECT ${DEAL_COLUMNS} FROM crm_deals d
        LEFT JOIN parties c ON c.id = d.customer_id
       WHERE ${where}
-      ORDER BY d.updated_at DESC
+      -- d.id breaks ties. Without it the sort is only a partial order, and
+      -- Postgres may return equal-timestamped rows in any sequence it likes:
+      -- two deals created by the same import, or seeded together, swap places
+      -- between identical requests. On the kanban that reorders cards for no
+      -- reason, and it made the crm-deals visual baseline flake.
+      ORDER BY d.updated_at DESC, d.id
       LIMIT $${params.length}`,
     params,
   );
@@ -1818,7 +1830,8 @@ export async function listCases(
       WHERE ${where}
       ORDER BY
         CASE k.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-        k.opened_at DESC
+        k.opened_at DESC,
+        k.id
       LIMIT $${params.length}`,
     params,
   );
