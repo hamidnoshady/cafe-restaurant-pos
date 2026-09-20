@@ -92,7 +92,10 @@ async function stageExternalNextEntrypoints(serverBundlePath) {
     if (trace.warnings.size > 0) {
       throw new Error(`Next runtime entry trace warnings: ${[...trace.warnings].map(String).join("; ")}`);
     }
-    for (const relative of trace.fileList) {
+    for (const tracedPath of trace.fileList) {
+      // @vercel/nft returns native separators, so Windows traces use `\\`.
+      // Normalize before applying the allowlist and joining the staged path.
+      const relative = tracedPath.replace(/\\/g, "/");
       if (!relative.startsWith("node_modules/next/")) continue;
       const destination = path.join(outDir, relative);
       await mkdir(path.dirname(destination), { recursive: true });

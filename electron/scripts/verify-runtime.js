@@ -40,9 +40,15 @@ for (const relative of [
 ]) requirePath(relative);
 
 const runtimeRequire = createRequire(path.join(runtime, "package.json"));
+const stagedNextRoot = path.join(runtime, "node_modules", "next");
 for (const specifier of ["next/headers", "next/navigation", "next/server"]) {
   const resolved = runtimeRequire.resolve(specifier);
-  if (!resolved.startsWith(path.join(runtime, "node_modules", "next") + path.sep)) {
+  const relativeToStagedNext = path.relative(stagedNextRoot, resolved);
+  if (
+    relativeToStagedNext === ".." ||
+    relativeToStagedNext.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeToStagedNext)
+  ) {
     fail(`${specifier} escapes the staged Next package: ${resolved}`);
     continue;
   }
