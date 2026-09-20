@@ -57,9 +57,10 @@ on:
       - 'wordpress-plugin/**'
       - '.github/workflows/verify-shippables.yml'
 
-# Deduplicate PR-synchronize and Arena-push events for the same review head.
+# Keep PR and Arena-push groups distinct. Cancelling the fallback run leaves
+# cancelled check contexts attached to the same review commit.
 concurrency:
-  group: verify-shippables-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: verify-shippables-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

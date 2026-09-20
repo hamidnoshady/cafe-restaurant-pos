@@ -44,10 +44,11 @@ on:
   push:
     branches: [main, 'arena/**']
 
-# PR and Arena-push events for the same head share one group, so the fallback
-# trigger preserves coverage without running the full Windows suite twice.
+# A newer manual run on the same ref supersedes one still in flight. Keep PR
+# and Arena-push groups distinct: cancelling one creates failed/cancelled check
+# contexts on the shared commit even when the surviving suite passes.
 concurrency:
-  group: test-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
