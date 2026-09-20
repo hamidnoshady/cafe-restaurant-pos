@@ -74,8 +74,8 @@ jobs:
     name: desktop shell
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
 
@@ -131,7 +131,7 @@ jobs:
     name: WordPress plugin
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # WordPress reads the version from three places and they must agree:
       # the `Version:` header (what the plugins screen shows), the
@@ -250,7 +250,7 @@ jobs:
     name: Windows print connector
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # This .ps1 file is downloaded and executed on a cafe PC. Nothing
       # else in the repo executes it, so a syntax error ships silently and

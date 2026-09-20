@@ -57,7 +57,7 @@ jobs:
     timeout-minutes: 150
     environment: windows-production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Fail closed when protected release configuration is absent
         env:
@@ -88,13 +88,13 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
 
       - name: Download immutable organization-controlled PostgreSQL tools artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: postgresql-16-windows-x64-client-tools
           path: ${{ runner.temp }}\postgresql-tools-artifact
@@ -104,7 +104,7 @@ jobs:
 
       - name: Download aggregated external acceptance evidence
         if: inputs.acceptance_run_id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-acceptance-evidence-${{ inputs.version }}
           path: ${{ runner.temp }}\release-acceptance
@@ -255,7 +255,7 @@ jobs:
           node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:GITHUB_SHA --version=${{ inputs.version }} --production
 
       - name: Upload verified signed production release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: business-suite-windows-${{ inputs.version }}-signed
           if-no-files-found: error
@@ -273,7 +273,7 @@ jobs:
 
       - name: Upload readiness diagnostics when release is blocked
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: business-suite-windows-${{ inputs.version }}-blocked-readiness
           if-no-files-found: warn

@@ -59,7 +59,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, physical-receipt-printer]
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate request and send through loopback connector
         env:
           PRINTER: ${{ inputs.printer_name }}
@@ -68,7 +68,7 @@ jobs:
           $code = "BS-${{ github.run_id }}-${{ github.run_attempt }}"
           .\scripts\accept-physical-printer.ps1 -PrinterName $env:PRINTER -AcceptanceCode $code -OutputPath physical-printer-delivery.json
       - name: Upload payload-free diagnostics and challenge
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: physical-printer-challenge
           if-no-files-found: error
@@ -79,7 +79,7 @@ jobs:
     if: inputs.mode == 'confirm'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate confirmation inputs
         env:
           HARNESS_RUN_ID: ${{ inputs.harness_run_id }}
@@ -90,7 +90,7 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:PRINTED_CODE)) { throw "printed_code is required in confirm mode" }
           if ($env:EVIDENCE_URL -notmatch '^https://') { throw "evidence_url must be HTTPS" }
       - name: Download challenge diagnostics
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: physical-printer-challenge
           path: challenge
@@ -120,7 +120,7 @@ jobs:
             checks = @('loopback-only', 'origin-restricted', 'raw-spool-submission', 'physical-output-witnessed')
           } | ConvertTo-Json -Depth 8 | Set-Content physical-printer-evidence.json -Encoding UTF8
       - name: Upload physical acceptance evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: physical-printer-evidence-${{ inputs.version }}
           path: physical-printer-evidence.json

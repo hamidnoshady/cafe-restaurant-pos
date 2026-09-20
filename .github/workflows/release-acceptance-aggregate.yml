@@ -45,13 +45,13 @@ jobs:
     name: bind acceptance evidence to one candidate
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
 
       - name: Download Windows Server package evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: business-suite-desktop-size-report
           path: evidence\windows-server
@@ -59,7 +59,7 @@ jobs:
           run-id: ${{ inputs.windows_server_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download retail Windows 11 evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-11-release-evidence-${{ inputs.version }}
           path: evidence\windows-11
@@ -67,7 +67,7 @@ jobs:
           run-id: ${{ inputs.windows_11_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download physical printer evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: physical-printer-evidence-${{ inputs.version }}
           path: evidence\printer
@@ -75,7 +75,7 @@ jobs:
           run-id: ${{ inputs.physical_printer_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download Android real-device evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: android-real-device-evidence-${{ inputs.version }}
           path: evidence\android
@@ -83,7 +83,7 @@ jobs:
           run-id: ${{ inputs.android_real_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download iOS real-device evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ios-real-device-evidence-${{ inputs.version }}
           path: evidence\ios
@@ -124,7 +124,7 @@ jobs:
         run: node scripts/generate-release-readiness.mjs --evidence=release-acceptance-evidence.json --output=release-readiness-preview.json --markdown=release-readiness-preview.md --commit=${{ inputs.candidate_commit }} --version=${{ inputs.version }}
 
       - name: Upload aggregate for final production release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-acceptance-evidence-${{ inputs.version }}
           if-no-files-found: error

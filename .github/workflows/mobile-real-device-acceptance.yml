@@ -41,8 +41,8 @@ jobs:
     name: validate real-device security evidence
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
       - name: Reject incomplete manual acceptance and sensitive evidence
@@ -69,7 +69,7 @@ jobs:
           } | ConvertTo-Json -Depth 8 | Set-Content mobile-acceptance-input.json -Encoding UTF8
           node scripts/validate-mobile-acceptance.mjs --input=mobile-acceptance-input.json --output=mobile-real-device-evidence.json
       - name: Upload payload-free real-device evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.platform }}-evidence-${{ inputs.version }}
           path: mobile-real-device-evidence.json

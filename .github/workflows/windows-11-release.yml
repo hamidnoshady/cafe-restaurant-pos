@@ -60,8 +60,8 @@ jobs:
     runs-on: [self-hosted, Windows, X64, retail-windows-11]
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
 
@@ -91,7 +91,7 @@ jobs:
           "profiles=$categories" >> $env:GITHUB_OUTPUT
 
       - name: Download signed candidate
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.candidate_artifact }}
           path: ${{ runner.temp }}\suite-candidate
@@ -100,7 +100,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download prior signed release
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.previous_artifact }}
           path: ${{ runner.temp }}\suite-previous
@@ -213,7 +213,7 @@ jobs:
 
       - name: Upload retail evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-11-release-evidence-${{ inputs.version }}
           if-no-files-found: warn
