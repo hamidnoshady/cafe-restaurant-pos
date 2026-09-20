@@ -6,6 +6,7 @@ import {
   issueDesktopCode,
   revokeDesktopCode,
 } from "@/lib/desktop-link-service";
+import { revokeSiteDevice, rotateSiteCredential } from "@/lib/site-device-service";
 
 /**
  * Owner self-service for connecting a desktop install to this business.
@@ -51,7 +52,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "not_central_server" }, { status: 409 });
   }
 
-  const result = await issueDesktopCode(session.businessId, session.platformUserId ?? null, request.headers);
+  let body: { locationId?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const locationId = body.locationId?.trim();
+  if (!locationId) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+
+  const result = await issueDesktopCode(
+    session.businessId,
+    session.platformUserId ?? null,
+    request.headers,
+    locationId,
+  );
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 409 });
 
   const response = NextResponse.json(
@@ -61,6 +76,42 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   // The plaintext code exists only in this response.
   response.headers.set("Cache-Control", "no-store");
   return response;
+});
+
+export const PATCH = withTenantScope(async (request: NextRequest) => {
+  const { session, error } = await requireRole("owner");
+  if (error) return error;
+  if (deploymentRole() !== "central") {
+    return NextResponse.json({ error: "not_central_server" }, { status: 409 });
+  }
+
+  let body: { deviceId?: string; action?: "rotate" | "revoke" };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const deviceId = body.deviceId?.trim();
+  if (!deviceId || (body.action !== "rotate" && body.action !== "revoke")) {
+    return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  }
+
+  if (body.action === "rotate") {
+    const result = await rotateSiteCredential(session.businessId, deviceId, session.sub);
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.error === "device_not_found" ? 404 : 409 },
+      );
+    }
+    const response = NextResponse.json({ token: result.token, device: result.device });
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  }
+
+  const result = await revokeSiteDevice(session.businessId, deviceId, session.sub);
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 404 });
+  return NextResponse.json({ ok: true, alreadyRevoked: result.alreadyRevoked });
 });
 
 export const DELETE = withTenantScope(async (request: NextRequest) => {

@@ -1,5 +1,7 @@
 node_modules/
 .next/
+.desktop-runtime/
+desktop-size-report.md
 backups/
 # Build output lives at the repo root. These patterns are anchored with a
 # leading slash because the unanchored form matches a directory of that name at

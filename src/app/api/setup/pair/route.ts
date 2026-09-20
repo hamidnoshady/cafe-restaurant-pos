@@ -83,7 +83,10 @@ export async function POST(request: NextRequest) {
       remoteResponse = await fetch(`${remoteUrl}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({
+          code,
+          deviceName: process.env.DESKTOP_DEVICE_NAME || "Windows Business Suite",
+        }),
         signal: AbortSignal.timeout(REDEEM_TIMEOUT_MS),
       });
     } catch {

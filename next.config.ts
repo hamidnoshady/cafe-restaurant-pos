@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Electron packages this traced production tree, never the repository's
+  // development node_modules. The custom WebSocket/background server is
+  // bundled separately by scripts/build-desktop-runtime.mjs.
+  output: "standalone",
   async headers() {
     const commonHeaders = [
       { key: "X-Content-Type-Options", value: "nosniff" },

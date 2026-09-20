@@ -19,9 +19,9 @@ import { getPairedSite } from "@/lib/server-sync";
  * Owner-only: configure the bidirectional server-to-server sync target
  * (the peer server's URL + shared bearer token) and read current sync status.
  *
- * On the café laptop this points at the VPS (https://pos.eshobe.com); the
- * same token must be set as REMOTE_SYNC_TOKEN in the VPS's environment so its
- * /api/server-sync/push and /pull endpoints accept the laptop's requests.
+ * On a Windows site this points at the paired cloud origin. Pairing installs a
+ * unique, location-scoped site credential; `REMOTE_SYNC_TOKEN` is only a
+ * disabled-by-default migration fallback and is not used for new sites.
  *
  * Since Phase 23 Wave 2 the response also carries the install's deployment
  * role, because the two roles need different screens: a central server has

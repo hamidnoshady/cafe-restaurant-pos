@@ -33,11 +33,26 @@ interface PairingCodeSummary {
   state: "valid" | "code_expired" | "code_already_redeemed" | "code_revoked";
 }
 
+interface SiteDeviceView {
+  id: string;
+  publicId: string;
+  locationId: string;
+  locationName: string;
+  displayName: string;
+  status: "active" | "disabled" | "revoked";
+  createdAt: string;
+  lastSeenAt: string | null;
+  revokedAt: string | null;
+  credentialRotatedAt: string | null;
+}
+
 interface DesktopView {
   address: string;
   codes: PairingCodeSummary[];
   ttlHours: number;
   role: "central" | "site";
+  locations: Array<{ id: string; name: string }>;
+  devices: SiteDeviceView[];
 }
 
 const STATE_LABELS: Record<PairingCodeSummary["state"], { label: string; className: string }> = {
@@ -99,12 +114,15 @@ export function DesktopPanel() {
   const [notice, setNotice] = useState("");
   /** The plaintext code, held only until this component unmounts — it is never retrievable again. */
   const [issued, setIssued] = useState("");
+  const [rotatedCredential, setRotatedCredential] = useState<{ deviceId: string; token: string } | null>(null);
+  const [locationId, setLocationId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     const { ok, data } = await api<DesktopView & { error?: string }>("/api/connections/desktop");
     if (ok) {
       setView(data);
+      setLocationId((current) => current || data.locations?.[0]?.id || "");
       setError("");
     } else {
       setError(errorMessage(data.error) || "بارگذاری اطلاعات اتصال ممکن نشد.");
@@ -122,6 +140,7 @@ export function DesktopPanel() {
     setNotice("");
     const { ok, data } = await api<{ code?: string; error?: string }>("/api/connections/desktop", {
       method: "POST",
+      body: JSON.stringify({ locationId }),
     });
     setBusy(false);
     if (!ok || !data.code) {
@@ -157,6 +176,39 @@ export function DesktopPanel() {
     await load();
   }
 
+  async function manageDevice(device: SiteDeviceView, action: "rotate" | "revoke") {
+    const warning =
+      action === "rotate"
+        ? `اعتبارنامهٔ فعلی «${device.displayName}» فوراً از کار می‌افتد. پس از چرخش باید مقدار تازه را روی همان نصب محلی ذخیره کنید. ادامه می‌دهید؟`
+        : `دستگاه «${device.displayName}» به‌طور غیرقابل‌بازگشت لغو می‌شود و دیگر همگام نخواهد شد. ادامه می‌دهید؟`;
+    if (!window.confirm(warning)) return;
+
+    setBusy(true);
+    setError("");
+    setNotice("");
+    setRotatedCredential(null);
+    const { ok, data } = await api<{ token?: string; error?: string }>("/api/connections/desktop", {
+      method: "PATCH",
+      body: JSON.stringify({ deviceId: device.id, action }),
+    });
+    setBusy(false);
+    if (!ok) {
+      setError(
+        data.error === "device_not_active"
+          ? "این دستگاه فعال نیست و اعتبارنامهٔ آن قابل چرخش نیست."
+          : errorMessage(data.error) || "تغییر وضعیت دستگاه ممکن نشد.",
+      );
+      return;
+    }
+    if (action === "rotate" && data.token) {
+      setRotatedCredential({ deviceId: device.id, token: data.token });
+      setNotice("اعتبارنامه چرخید. مقدار تازه فقط همین یک بار نمایش داده می‌شود؛ آن را فوراً روی نصب محلی ذخیره کنید.");
+    } else {
+      setNotice("دستگاه و اعتبارنامهٔ آن لغو شد.");
+    }
+    await load();
+  }
+
   if (loading) return <LoadingSkeleton rows={3} />;
 
   // A site install (the café laptop itself) is the thing that *redeems* a
@@ -187,6 +239,21 @@ export function DesktopPanel() {
         {notice ? <InfoBox>{notice}</InfoBox> : null}
 
         <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor="desktop-pair-location">شعبهٔ این سرور ویندوز</label>
+            <select
+              id="desktop-pair-location"
+              value={locationId}
+              onChange={(event) => setLocationId(event.target.value)}
+              disabled={busy || Boolean(issued)}
+              className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm"
+            >
+              {(view?.locations ?? []).map((location) => (
+                <option key={location.id} value={location.id}>{location.name}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">هر شعبه هویت و اعتبارنامهٔ مستقل و قابل لغو دارد؛ انتخاب خودکار «اولین شعبه» انجام نمی‌شود.</p>
+          </div>
           <CopyRow
             label="۱. آدرس سرور"
             value={view?.address ?? ""}
@@ -206,7 +273,7 @@ export function DesktopPanel() {
                 کد یک‌بارمصرف است و پس از ساخت فقط همین یک بار نمایش داده می‌شود. ساخت کد تازه، کد فعال قبلی
                 را لغو می‌کند.
               </p>
-              <PrimaryButton onClick={generate} disabled={busy}>
+              <PrimaryButton onClick={generate} disabled={busy || !locationId}>
                 {busy ? "در حال ساخت…" : "ساخت کد اتصال"}
               </PrimaryButton>
             </div>
@@ -221,6 +288,66 @@ export function DesktopPanel() {
             همگام‌سازی سرور با سرور است و بعد از اتصال، خودکار تنظیم می‌شود.
           </p>
         </div>
+      </SectionCard>
+
+      <SectionCard title="سرورهای ویندوز متصل">
+        <p className="mb-4 text-sm leading-6 text-muted-foreground">
+          هر ردیف یک هویت مستقل و محدود به همان شعبه است. چرخش، اعتبارنامهٔ قبلی را فوراً باطل می‌کند؛ لغو نیز
+          دائمی است و سابقهٔ دستگاه را برای حسابرسی نگه می‌دارد.
+        </p>
+        {!view || view.devices.length === 0 ? (
+          <p className="text-sm text-muted-foreground">هنوز دستگاهی با موفقیت متصل نشده است.</p>
+        ) : (
+          <ul className="space-y-3">
+            {view.devices.map((device) => {
+              const active = device.status === "active";
+              return (
+                <li key={device.id} className="rounded-xl border border-border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{device.displayName}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        شعبه: {device.locationName} • شناسه: <code dir="ltr">{device.publicId}</code>
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        اتصال: {device.lastSeenAt ? formatDateTime(device.lastSeenAt) : "هنوز ارتباطی ثبت نشده"}
+                        {device.credentialRotatedAt ? ` • چرخش اعتبارنامه: ${formatDateTime(device.credentialRotatedAt)}` : ""}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        active
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {active ? "فعال" : device.status === "revoked" ? "لغوشده" : "غیرفعال"}
+                    </span>
+                  </div>
+                  {rotatedCredential?.deviceId === device.id ? (
+                    <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-500/10">
+                      <CopyRow
+                        label="اعتبارنامهٔ تازه — فقط همین یک بار"
+                        value={rotatedCredential.token}
+                        hint="در تنظیمات سرور راه دورِ نصب محلی ذخیره کنید"
+                      />
+                    </div>
+                  ) : null}
+                  {active ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <SecondaryButton onClick={() => manageDevice(device, "rotate")} disabled={busy}>
+                        چرخش اعتبارنامه
+                      </SecondaryButton>
+                      <SecondaryButton onClick={() => manageDevice(device, "revoke")} disabled={busy}>
+                        لغو دستگاه
+                      </SecondaryButton>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </SectionCard>
 
       <SectionCard title="کدهای صادرشده">

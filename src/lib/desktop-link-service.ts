@@ -17,8 +17,15 @@
  * DB-touching, so no direct unit test per repo convention; the pure pieces it
  * leans on (`connection-code.ts`, `pairing-codes.ts`) have their own.
  */
-import { issuePairingCode, listPairingCodes, revokePairingCode, type PairingCodeSummary } from "./pairing-service";
+import {
+  issuePairingCode,
+  listPairingCodes,
+  listPairingLocations,
+  revokePairingCode,
+  type PairingCodeSummary,
+} from "./pairing-service";
 import { PAIRING_CODE_TTL_HOURS } from "./pairing-codes";
+import { listSiteDevices, type SiteDeviceView } from "./site-device-service";
 
 export { PAIRING_CODE_TTL_HOURS };
 export type { PairingCodeSummary };
@@ -40,6 +47,9 @@ export interface DesktopLinkView {
   codes: PairingCodeSummary[];
   /** How long a freshly issued code stays redeemable, so the panel can say so. */
   ttlHours: number;
+  locations: Array<{ id: string; name: string }>;
+  /** Independently revocable site identities created by successful redemptions. */
+  devices: SiteDeviceView[];
 }
 
 /**
@@ -60,16 +70,23 @@ export function originFromHeaders(headers: Headers): string {
 }
 
 export async function getDesktopLinkView(businessId: string, headers: Headers): Promise<DesktopLinkView> {
+  const [codes, locations, devices] = await Promise.all([
+    listPairingCodes(businessId),
+    listPairingLocations(businessId),
+    listSiteDevices(businessId),
+  ]);
   return {
     address: originFromHeaders(headers),
-    codes: await listPairingCodes(businessId),
+    codes,
+    locations,
+    devices,
     ttlHours: PAIRING_CODE_TTL_HOURS,
   };
 }
 
 export type IssueDesktopCodeResult =
   | { ok: true; code: string; address: string; summary: PairingCodeSummary }
-  | { ok: false; error: "no_location" };
+  | { ok: false; error: "no_location" | "invalid_location" };
 
 /**
  * Issue a code for this business and return it with the address it is
@@ -83,8 +100,9 @@ export async function issueDesktopCode(
   businessId: string,
   platformUserId: string | null,
   headers: Headers,
+  locationId: string,
 ): Promise<IssueDesktopCodeResult> {
-  const issued = await issuePairingCode(businessId, platformUserId);
+  const issued = await issuePairingCode(businessId, platformUserId, locationId);
   if ("error" in issued) return { ok: false, error: issued.error };
   return { ok: true, code: issued.code, address: originFromHeaders(headers), summary: issued.summary };
 }

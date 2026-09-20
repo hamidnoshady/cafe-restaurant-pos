@@ -45,7 +45,7 @@ const STATUS_BY_ERROR: Record<string, number> = {
  * hashes, so it must never be cached or logged.
  */
 export async function handlePairingRedeem(request: NextRequest): Promise<NextResponse> {
-  let body: { code?: string };
+  let body: { code?: string; deviceName?: string };
   try {
     body = await request.json();
   } catch {
@@ -55,7 +55,8 @@ export async function handlePairingRedeem(request: NextRequest): Promise<NextRes
   const code = body.code?.trim();
   if (!code) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
 
-  const result = await redeemPairingCode(code, clientIp(request));
+  const deviceName = typeof body.deviceName === "string" ? body.deviceName : "Windows Business Suite";
+  const result = await redeemPairingCode(code, clientIp(request), deviceName);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: STATUS_BY_ERROR[result.error] ?? 400 });
   }

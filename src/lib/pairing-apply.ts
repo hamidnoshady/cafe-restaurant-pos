@@ -72,9 +72,33 @@ export async function applyPairingSnapshot(
         ],
       );
 
+      await client.query(
+        `INSERT INTO site_devices (id, business_id, location_id, public_id, display_name)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          snapshot.siteDevice.id,
+          snapshot.business.id,
+          snapshot.location.id,
+          snapshot.siteDevice.publicId,
+          snapshot.siteDevice.displayName,
+        ],
+      );
+      await client.query(
+        `INSERT INTO site_sync_credentials (site_device_id, business_id, token_hash)
+         VALUES ($1, $2, $3)`,
+        [
+          snapshot.siteDevice.id,
+          snapshot.business.id,
+          createHash("sha256").update(snapshot.syncToken).digest("hex"),
+        ],
+      );
+
       const ownerIds = await insertUsers(client, snapshot);
       await insertAccounts(client, snapshot);
       await insertMenu(client, snapshot);
+      await insertDiningTables(client, snapshot);
+      await insertInventory(client, snapshot);
+      await insertPaymentMethods(client, snapshot);
       await insertSettings(client, snapshot, remoteUrl);
       await insertFeatures(client, snapshot);
 
@@ -251,9 +275,142 @@ async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promis
         snapshot.menu.items.map((i) => i.imageUrl),
         snapshot.menu.items.map((i) => i.isActive),
         snapshot.menu.items.map((i) => i.sortOrder),
-      ]
+      ],
     );
   }
+
+  if (snapshot.menu.modifierGroups.length > 0) {
+    await client.query(
+      `INSERT INTO modifier_groups (id, location_id, name, min_select, max_select)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::integer[], $5::integer[])`,
+      [
+        snapshot.menu.modifierGroups.map((group) => group.id),
+        snapshot.menu.modifierGroups.map(() => snapshot.location.id),
+        snapshot.menu.modifierGroups.map((group) => group.name),
+        snapshot.menu.modifierGroups.map((group) => group.minSelect),
+        snapshot.menu.modifierGroups.map((group) => group.maxSelect),
+      ],
+    );
+  }
+
+  if (snapshot.menu.modifiers.length > 0) {
+    await client.query(
+      `INSERT INTO modifiers (id, location_id, group_id, name, price_delta, is_active, sort_order)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::bigint[], $6::boolean[], $7::integer[])`,
+      [
+        snapshot.menu.modifiers.map((modifier) => modifier.id),
+        snapshot.menu.modifiers.map(() => snapshot.location.id),
+        snapshot.menu.modifiers.map((modifier) => modifier.groupId),
+        snapshot.menu.modifiers.map((modifier) => modifier.name),
+        snapshot.menu.modifiers.map((modifier) => modifier.priceDelta),
+        snapshot.menu.modifiers.map((modifier) => modifier.isActive),
+        snapshot.menu.modifiers.map((modifier) => modifier.sortOrder),
+      ],
+    );
+  }
+
+  if (snapshot.menu.itemModifierGroups.length > 0) {
+    await client.query(
+      `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[])`,
+      [
+        snapshot.menu.itemModifierGroups.map((link) => link.menuItemId),
+        snapshot.menu.itemModifierGroups.map((link) => link.modifierGroupId),
+      ],
+    );
+  }
+}
+
+async function insertDiningTables(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+  if (snapshot.diningTables.length === 0) return;
+  await client.query(
+    `INSERT INTO dining_tables (id, location_id, name, zone, capacity, sort_order, is_active)
+     SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::integer[], $6::integer[], $7::boolean[])`,
+    [
+      snapshot.diningTables.map((table) => table.id),
+      snapshot.diningTables.map(() => snapshot.location.id),
+      snapshot.diningTables.map((table) => table.name),
+      snapshot.diningTables.map((table) => table.zone),
+      snapshot.diningTables.map((table) => table.capacity),
+      snapshot.diningTables.map((table) => table.sortOrder),
+      snapshot.diningTables.map((table) => table.isActive),
+    ],
+  );
+}
+
+async function insertInventory(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+  if (snapshot.inventory.items.length > 0) {
+    await client.query(
+      `INSERT INTO inventory_items
+         (id, location_id, name, sku, unit, reorder_level, avg_cost, purchase_unit,
+          purchase_unit_factor, carrying_value_rial, is_produced, is_active)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[],
+                           $6::numeric[], $7::numeric[], $8::text[], $9::numeric[], $10::bigint[],
+                           $11::boolean[], $12::boolean[])`,
+      [
+        snapshot.inventory.items.map((item) => item.id),
+        snapshot.inventory.items.map(() => snapshot.location.id),
+        snapshot.inventory.items.map((item) => item.name),
+        snapshot.inventory.items.map((item) => item.sku),
+        snapshot.inventory.items.map((item) => item.unit),
+        snapshot.inventory.items.map((item) => item.reorderLevel),
+        snapshot.inventory.items.map((item) => item.averageCost),
+        snapshot.inventory.items.map((item) => item.purchaseUnit),
+        snapshot.inventory.items.map((item) => item.purchaseUnitFactor),
+        snapshot.inventory.items.map((item) => item.carryingValueRial),
+        snapshot.inventory.items.map((item) => item.isProduced),
+        snapshot.inventory.items.map((item) => item.isActive),
+      ],
+    );
+  }
+
+  if (snapshot.inventory.menuIngredients.length > 0) {
+    await client.query(
+      `INSERT INTO menu_item_ingredients (menu_item_id, inventory_item_id, quantity)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::numeric[])`,
+      [
+        snapshot.inventory.menuIngredients.map((ingredient) => ingredient.menuItemId),
+        snapshot.inventory.menuIngredients.map((ingredient) => ingredient.inventoryItemId),
+        snapshot.inventory.menuIngredients.map((ingredient) => ingredient.quantity),
+      ],
+    );
+  }
+
+  if (snapshot.inventory.modifierIngredients.length > 0) {
+    await client.query(
+      `INSERT INTO modifier_ingredients (modifier_id, inventory_item_id, quantity_delta)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::numeric[])`,
+      [
+        snapshot.inventory.modifierIngredients.map((ingredient) => ingredient.modifierId),
+        snapshot.inventory.modifierIngredients.map((ingredient) => ingredient.inventoryItemId),
+        snapshot.inventory.modifierIngredients.map((ingredient) => ingredient.quantityDelta),
+      ],
+    );
+  }
+}
+
+async function insertPaymentMethods(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+  if (snapshot.paymentMethods.length === 0) return;
+  await client.query(
+    `INSERT INTO payment_methods
+       (id, business_id, code, name, settlement, sort_order, is_active, is_builtin, opens_drawer, requires_reference)
+     SELECT id, $1, code, name, settlement::payment_method, sort_order, is_active, is_builtin, opens_drawer, requires_reference
+       FROM UNNEST($2::uuid[], $3::text[], $4::text[], $5::text[], $6::integer[],
+                   $7::boolean[], $8::boolean[], $9::boolean[], $10::boolean[])
+         AS input(id, code, name, settlement, sort_order, is_active, is_builtin, opens_drawer, requires_reference)`,
+    [
+      snapshot.business.id,
+      snapshot.paymentMethods.map((method) => method.id),
+      snapshot.paymentMethods.map((method) => method.code),
+      snapshot.paymentMethods.map((method) => method.name),
+      snapshot.paymentMethods.map((method) => method.settlement),
+      snapshot.paymentMethods.map((method) => method.sortOrder),
+      snapshot.paymentMethods.map((method) => method.isActive),
+      snapshot.paymentMethods.map((method) => method.isBuiltin),
+      snapshot.paymentMethods.map((method) => method.opensDrawer),
+      snapshot.paymentMethods.map((method) => method.requiresReference),
+    ],
+  );
 }
 
 /**
@@ -291,7 +448,15 @@ async function insertSettings(
     [SETTING_KEYS.deploymentMode, { mode: "connected", pairedAt }],
     [
       SETTING_KEYS.serverSyncConfig,
-      { remoteUrl, token: snapshot.syncToken, enabled: false, batchSize: 100 },
+      {
+        remoteUrl,
+        token: snapshot.syncToken,
+        enabled: false,
+        batchSize: 100,
+        siteDeviceId: snapshot.siteDevice.id,
+        siteDevicePublicId: snapshot.siteDevice.publicId,
+        locationId: snapshot.location.id,
+      },
     ],
     [
       SETTING_KEYS.wizardProgress,
@@ -312,19 +477,9 @@ async function insertSettings(
     );
   }
 
-  // The bearer token this install will present to the server. Stored hashed,
-  // exactly as setServerSyncConfig would — inlined here because that helper
-  // runs its own query() outside this transaction, and a half-applied pairing
-  // must be impossible.
-  await client.query(
-    `INSERT INTO server_sync_tokens (business_id, token_hash, updated_at)
-     VALUES ($1, $2, now())
-     ON CONFLICT (business_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, updated_at = now()`,
-    [
-      snapshot.business.id,
-      createHash("sha256").update(snapshot.syncToken).digest("hex"),
-    ],
-  );
+  // The site-scoped credential row is inserted with the site identity above.
+  // It intentionally does not touch legacy server_sync_tokens, whose
+  // business-primary-key shape cannot represent several locations.
 }
 
 /**

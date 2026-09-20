@@ -80,7 +80,8 @@ let flushing = false;
  * the probe there avoids a guaranteed-failing request every few seconds.
  */
 export async function probeServer(): Promise<boolean> {
-  if (typeof navigator !== "undefined" && !navigator.onLine) return false;
+  // Never short-circuit on navigator.onLine: a phone can have no Internet and
+  // still have a perfectly healthy route to the Business Suite PC over Wi-Fi.
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
@@ -102,7 +103,8 @@ export async function probeServer(): Promise<boolean> {
 /** Sends every queued action to the server in FIFO order; removes what the server accepted (applied or a flagged conflict — either way there's nothing left to retry). */
 export async function flushQueue(): Promise<void> {
   if (flushing) return;
-  if (typeof navigator !== "undefined" && !navigator.onLine) return;
+  // The queue targets this origin (usually the LAN PC), not the Internet.
+  // navigator.onLine=false must not suppress a flush while local Wi-Fi works.
   const db = getOfflineDb();
   const pending = await db.pendingActions.orderBy("createdAt").toArray();
   if (pending.length === 0) return;
@@ -132,9 +134,28 @@ export async function flushQueue(): Promise<void> {
   }
 }
 
-export function useOfflineQueue(): { pendingCount: number; isOnline: boolean } {
+export type LocalServerState = "local_server_connected" | "local_server_unreachable";
+export type InternetState = "internet_available" | "internet_unavailable" | "internet_unknown";
+export type CloudSyncState =
+  | "cloud_sync_connected"
+  | "cloud_sync_connecting"
+  | "cloud_sync_paused"
+  | "cloud_sync_not_configured";
+
+export interface ConnectionState {
+  localServer: LocalServerState;
+  internet: InternetState;
+  cloudSync: CloudSyncState;
+  pendingActions: number;
+  syncError: boolean;
+}
+
+export function useOfflineQueue(): { pendingCount: number; isOnline: boolean; connectionState: ConnectionState } {
   const [pendingCount, setPendingCount] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
+  const [internet, setInternet] = useState<InternetState>("internet_unknown");
+  const [cloudSync, setCloudSync] = useState<CloudSyncState>("cloud_sync_not_configured");
+  const [syncError, setSyncError] = useState(false);
 
   const refreshCount = useCallback(() => {
     void getOfflineDb().pendingActions.count().then(setPendingCount);
@@ -145,25 +166,49 @@ export function useOfflineQueue(): { pendingCount: number; isOnline: boolean } {
     refreshCount();
     listeners.add(refreshCount);
 
-    // The probe, not `navigator.onLine`, decides what the banner says — see
-    // probeServer() above for why the browser's own flag is not enough. The
-    // flag is still used as a *trigger*, because it fires the instant the NIC
-    // comes back and saves waiting out the poll interval.
     async function refreshOnlineState() {
       const reachable = await probeServer();
       if (cancelled) return;
       setIsOnline(reachable);
-      if (reachable) await flushQueue();
+      if (!reachable) {
+        // navigator.onLine only contributes to Internet state. It never decides
+        // whether the same-origin local server can be reached.
+        setInternet(navigator.onLine ? "internet_unknown" : "internet_unavailable");
+        return;
+      }
+      await flushQueue();
+      try {
+        const response = await fetch("/api/connection/status", { cache: "no-store" });
+        if (!response.ok) return;
+        const body = (await response.json()) as { cloudSync?: string; error?: string | null };
+        if (body.cloudSync === "connected") {
+          setCloudSync("cloud_sync_connected");
+          setInternet("internet_available");
+          setSyncError(false);
+        } else if (body.cloudSync === "connecting") {
+          setCloudSync("cloud_sync_connecting");
+          setInternet(navigator.onLine ? "internet_unknown" : "internet_unavailable");
+          setSyncError(false);
+        } else if (body.cloudSync === "paused") {
+          setCloudSync("cloud_sync_paused");
+          setInternet(navigator.onLine ? "internet_unknown" : "internet_unavailable");
+          setSyncError(Boolean(body.error));
+        } else {
+          setCloudSync("cloud_sync_not_configured");
+          setInternet(navigator.onLine ? "internet_unknown" : "internet_unavailable");
+          setSyncError(false);
+        }
+      } catch {
+        // The health request succeeded, so this is not a local-server outage.
+        // Keep cloud state conservative until the next probe.
+      }
     }
 
-    function onOnline() {
+    function onNetworkChange() {
       void refreshOnlineState();
     }
-    function onOffline() {
-      setIsOnline(false);
-    }
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onNetworkChange);
+    window.addEventListener("offline", onNetworkChange);
 
     void refreshOnlineState();
     const interval = setInterval(() => void refreshOnlineState(), 15_000);
@@ -171,13 +216,23 @@ export function useOfflineQueue(): { pendingCount: number; isOnline: boolean } {
     return () => {
       cancelled = true;
       listeners.delete(refreshCount);
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onNetworkChange);
+      window.removeEventListener("offline", onNetworkChange);
       clearInterval(interval);
     };
   }, [refreshCount]);
 
-  return { pendingCount, isOnline };
+  return {
+    pendingCount,
+    isOnline,
+    connectionState: {
+      localServer: isOnline ? "local_server_connected" : "local_server_unreachable",
+      internet,
+      cloudSync,
+      pendingActions: pendingCount,
+      syncError,
+    },
+  };
 }
 
 export type { PendingAction };

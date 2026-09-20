@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, withTenant, withoutTenantScope } from "@/lib/db";
-import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch, legacySyncToken } from "@/lib/server-sync";
+import { recordLegacyTokenUsage, resolveSyncCredential, tokensMatch, legacySyncToken } from "@/lib/server-sync";
 
 /**
  * Server-to-server pull endpoint (Phase 11).
@@ -26,6 +26,8 @@ type SyncEventRow = {
   occurred_at: Date;
   actor_user_id: string | null;
   actor_role: string | null;
+  site_device_id: string | null;
+  schema_version: number;
 };
 
 export async function GET(request: NextRequest) {
@@ -35,7 +37,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
 
-  let businessId = await resolveBusinessBySyncToken(bearer);
+  const credential = await resolveSyncCredential(bearer);
+  let businessId = credential?.businessId ?? null;
   let usedLegacyToken = false;
   if (!businessId) {
     const legacy = legacySyncToken();
@@ -73,15 +76,17 @@ export async function GET(request: NextRequest) {
     if (usedLegacyToken) await recordLegacyTokenUsage(businessId!);
     const result = await query<SyncEventRow>(
       `SELECT se.id, se.location_id, se.client_event_id, se.event_type,
-              se.payload, se.occurred_at, se.actor_user_id, se.actor_role
+              se.payload, se.occurred_at, se.actor_user_id, se.actor_role,
+              se.site_device_id, se.schema_version
          FROM sync_events se
         WHERE se.id > $1
           AND se.applied_at IS NOT NULL
           AND se.error IS NULL
           AND (se.origin IS NULL OR se.origin = 'local')
+          AND ($3::uuid IS NULL OR se.location_id = $3::uuid)
         ORDER BY se.id
         LIMIT $2`,
-      [after, limit],
+      [after, limit, credential?.locationId ?? null],
     );
     return result.rows;
   });
@@ -95,6 +100,10 @@ export async function GET(request: NextRequest) {
     occurredAt: r.occurred_at instanceof Date ? r.occurred_at.toISOString() : r.occurred_at,
     actorUserId: r.actor_user_id ?? "",
     actorRole: r.actor_role ?? "cashier",
+    businessId,
+    siteDeviceId: r.site_device_id,
+    schemaVersion: r.schema_version,
+    origin: "cloud",
   }));
 
   return NextResponse.json({ events });

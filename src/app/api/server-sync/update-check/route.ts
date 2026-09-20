@@ -7,10 +7,9 @@ import { buildUpdateCheckResponse } from "@/lib/app-update";
  * GitHub API call — so it's cheap enough for the local laptop's 30s sync
  * tick to poll purely for dashboard visibility (see app-update.ts).
  *
- * Requires a real per-business sync token. Unlike push/pull this
- * deliberately has NO legacy REMOTE_SYNC_TOKEN fallback: a business's own
- * token is what proves an Owner actually paired this laptop, and update
- * distribution is a more sensitive capability than ordinary data sync.
+ * Requires a real site or migration-era per-business credential. Unlike
+ * push/pull this has no global-token fallback. The response contains only the
+ * running version: no download location, registry credential, or executable.
  */
 export async function GET(request: NextRequest) {
   const auth = request.headers.get("authorization");

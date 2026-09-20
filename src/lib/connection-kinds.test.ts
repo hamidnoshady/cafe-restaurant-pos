@@ -15,6 +15,7 @@ describe("visibleConnectionKinds", () => {
     // first.
     expect(visibleConnectionKinds({ role: "owner" }).map((k) => k.key)).toEqual([
       "desktop",
+      "local_devices",
       "woocommerce",
       "website",
       "holoo",
