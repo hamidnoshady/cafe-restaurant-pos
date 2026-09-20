@@ -70,6 +70,13 @@ import {
 import { ModifierBadges } from "../modifier-badges";
 import { isTableOccupied, isTableUnavailable } from "@/lib/pos-selection";
 import {
+  buildRestaurantMenuIndex,
+  toRestaurantMenu,
+  type MenuTreePayload,
+  type RestaurantMenuData,
+  type RestaurantMenuItem,
+} from "@/lib/restaurant-menu";
+import {
   ModifierPicker,
   type ModifierGroupWithModifiers,
 } from "../modifier-picker";
@@ -198,31 +205,14 @@ interface PaymentRow {
   payment_method_name: string | null;
 }
 
-interface MenuItem {
-  id: string;
-  category_id: string | null;
-  name: string;
-  price: string | number;
-  is_active: boolean;
-}
-
-interface MenuData {
-  items: MenuItem[];
-  modifierGroups: {
-    id: string;
-    name: string;
-    min_select: number;
-    max_select: number;
-  }[];
-  modifiers: {
-    id: string;
-    group_id: string;
-    name: string;
-    price_delta: string | number;
-    is_active: boolean;
-  }[];
-  itemModifierGroups: { menu_item_id: string; modifier_group_id: string }[];
-}
+/**
+ * The add-item panel consumes the canonical shared menu model
+ * (restaurant-menu.ts) — the same rows, bounds resolution and ordering the
+ * POS and the waiter screen sell from, so an add-on offered on one screen is
+ * offered identically on the others.
+ */
+type MenuItem = RestaurantMenuItem;
+type MenuData = RestaurantMenuData;
 
 /** Which line the add-on picker is open for, and in which mode. */
 type PickerTarget =
@@ -418,11 +408,17 @@ export function OrderDetailModal({
 
   useEffect(() => {
     if (!open || menu) return;
-    void api<MenuData>("/api/menu")
+    void api<MenuTreePayload>("/api/menu")
       .then(({ ok, data }) =>
-        setMenu(ok ? data : { items: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] }),
+        setMenu(
+          ok
+            ? toRestaurantMenu(data)
+            : { categories: [], items: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] },
+        ),
       )
-      .catch(() => setMenu({ items: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] }));
+      .catch(() =>
+        setMenu({ categories: [], items: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] }),
+      );
   }, [menu, open]);
 
   useEffect(() => {
@@ -523,19 +519,14 @@ export function OrderDetailModal({
     return true;
   }
 
+  const menuIndex = useMemo(
+    () => (menu ? buildRestaurantMenuIndex(menu) : null),
+    [menu],
+  );
+
+  /** The add-on groups this item offers — resolved through the shared index. */
   function attachedGroups(menuItemId: string): ModifierGroupWithModifiers[] {
-    if (!menu) return [];
-    const groupIds = menu.itemModifierGroups
-      .filter((link) => link.menu_item_id === menuItemId)
-      .map((link) => link.modifier_group_id);
-    return menu.modifierGroups
-      .filter((group) => groupIds.includes(group.id))
-      .map((group) => ({
-        ...group,
-        modifiers: menu.modifiers.filter(
-          (m) => m.group_id === group.id && m.is_active,
-        ),
-      }));
+    return menuIndex?.groupsByItem.get(menuItemId) ?? [];
   }
 
   function startAddItem() {
@@ -805,7 +796,7 @@ export function OrderDetailModal({
   }
 
   const editable = canEdit && order?.status === "open";
-  const activeItems = menu?.items.filter((i) => i.is_active) ?? [];
+  const activeItems = menu?.items.filter((i) => i.isActive) ?? [];
   const amendable = canAmendClosed && order?.status === "completed";
   const liveItems = items.filter((it) => it.status !== "voided");
   // Voided lines are the order's history — including the ones an add-on edit

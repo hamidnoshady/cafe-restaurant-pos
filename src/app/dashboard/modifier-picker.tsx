@@ -19,14 +19,15 @@ import {
 } from "@/lib/modifier-display";
 import { MODIFIER_TONE, type ModifierTone } from "./modifier-badges";
 import { inputClass } from "./ui";
+import { MAX_ORDER_LINE_QUANTITY } from "@/lib/order-quantity";
+import type { RestaurantGroupView } from "@/lib/restaurant-menu";
 
-export interface ModifierGroupWithModifiers {
-  id: string;
-  name: string;
-  min_select: number;
-  max_select: number;
-  modifiers: { id: string; name: string; price_delta: string | number }[];
-}
+/**
+ * A group as one menu item offers it — the canonical shared view
+ * (restaurant-menu.ts), so the cashier, the waiter and the open-order editor
+ * pick add-ons against the exact same resolved bounds.
+ */
+export type ModifierGroupWithModifiers = RestaurantGroupView;
 
 /** Buckets already-chosen add-on ids back into their groups, honouring each group's max_select. */
 function initialSelection(
@@ -39,7 +40,7 @@ function initialSelection(
     const picked = group.modifiers
       .filter((modifier) => chosen.has(modifier.id))
       .map((modifier) => modifier.id)
-      .slice(0, group.max_select);
+      .slice(0, group.maxSelect);
     if (picked.length > 0) selection[group.id] = picked;
   }
   return selection;
@@ -111,7 +112,7 @@ export function ModifierPicker({
   function toggle(group: ModifierGroupWithModifiers, modifierId: string) {
     setSelected((prev) => {
       const current = prev[group.id] ?? [];
-      if (group.max_select === 1) {
+      if (group.maxSelect === 1) {
         return {
           ...prev,
           [group.id]: current.includes(modifierId) ? [] : [modifierId],
@@ -123,7 +124,7 @@ export function ModifierPicker({
           [group.id]: current.filter((id) => id !== modifierId),
         };
       }
-      if (current.length >= group.max_select) return prev;
+      if (current.length >= group.maxSelect) return prev;
       return { ...prev, [group.id]: [...current, modifierId] };
     });
   }
@@ -137,7 +138,7 @@ export function ModifierPicker({
             ? [
                 {
                   name: modifier.name,
-                  priceDelta: Number(modifier.price_delta),
+                  priceDelta: modifier.priceDelta,
                 },
               ]
             : [];
@@ -155,8 +156,8 @@ export function ModifierPicker({
   const canConfirm = groups.every((group) =>
     isModifierGroupSatisfied(
       (selected[group.id] ?? []).length,
-      group.min_select,
-      group.max_select,
+      group.minSelect,
+      group.maxSelect,
     ),
   );
 
@@ -180,8 +181,8 @@ export function ModifierPicker({
             const groupSelection = selected[group.id] ?? [];
             const satisfied = isModifierGroupSatisfied(
               groupSelection.length,
-              group.min_select,
-              group.max_select,
+              group.minSelect,
+              group.maxSelect,
             );
             return (
               <fieldset
@@ -194,26 +195,26 @@ export function ModifierPicker({
                   </span>
                   <span
                     className={`inline-flex items-center rounded-xl px-2 py-0.5 text-[11px] font-bold ${
-                      group.min_select > 0 && !satisfied
+                      group.minSelect > 0 && !satisfied
                         ? "bg-destructive/10 text-destructive"
                         : `${palette.surface} border ${palette.accent}`
                     }`}
                   >
-                    {modifierGroupRuleLabel(group.min_select, group.max_select)}
+                    {modifierGroupRuleLabel(group.minSelect, group.maxSelect)}
                   </span>
                 </legend>
                 <p className="mb-2 mt-1 px-1 text-[11px] text-muted-foreground">
                   {modifierGroupProgressLabel(
                     groupSelection.length,
-                    group.max_select,
+                    group.maxSelect,
                   )}
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {group.modifiers.map((modifier) => {
                     const isOn = groupSelection.includes(modifier.id);
                     const atCeiling =
-                      !isOn && groupSelection.length >= group.max_select;
-                    const delta = Number(modifier.price_delta);
+                      !isOn && groupSelection.length >= group.maxSelect;
+                    const delta = modifier.priceDelta;
                     return (
                       <button
                         key={modifier.id}
@@ -282,8 +283,14 @@ export function ModifierPicker({
                 <button
                   type="button"
                   aria-label="افزایش تعداد"
+                  disabled={count >= MAX_ORDER_LINE_QUANTITY}
                   onClick={() => setCount((value) => value + 1)}
-                  className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-input text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
+                  className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-input text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+                  title={
+                    count >= MAX_ORDER_LINE_QUANTITY
+                      ? `حداکثر تعداد هر ردیف ${MAX_ORDER_LINE_QUANTITY} است`
+                      : undefined
+                  }
                 >
                   <PlusIcon className="size-5" aria-hidden="true" />
                 </button>
