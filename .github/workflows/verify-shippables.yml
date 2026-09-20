@@ -38,8 +38,10 @@ on:
       - 'package-lock.json'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
+  # GitHub suppresses PR-synchronize events created by the Arena GitHub App.
+  # Keep shipped-runtime checks active on those branch pushes as well.
   push:
-    branches: [main]
+    branches: [main, 'arena/**']
     paths:
       - 'electron/**'
       - 'src/**'

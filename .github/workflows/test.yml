@@ -39,8 +39,10 @@ on:
         type: boolean
         default: false
   pull_request:
+  # GitHub suppresses PR-synchronize events created by the Arena GitHub App.
+  # Run the same required suite on Arena branch pushes so review cannot bypass it.
   push:
-    branches: [main]
+    branches: [main, 'arena/**']
 
 # A newer manual run on the same ref supersedes one still in flight.
 concurrency:
