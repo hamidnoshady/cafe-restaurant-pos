@@ -57,8 +57,9 @@ on:
       - 'wordpress-plugin/**'
       - '.github/workflows/verify-shippables.yml'
 
+# Deduplicate PR-synchronize and Arena-push events for the same review head.
 concurrency:
-  group: verify-shippables-${{ github.ref }}
+  group: verify-shippables-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
