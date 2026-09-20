@@ -76,6 +76,55 @@ app.prepare().then(async () => {
   const { installObservability, shipHttpEvent, flushObservability } = await import("./src/lib/observability");
   installObservability();
 
+  // A dropped client connection must never take the POS down.
+  //
+  // `[Error: aborted] { code: 'ECONNRESET' }` is what Node emits when a
+  // browser navigates away, a waiter's tablet leaves wifi, or the platform
+  // edge recycles an idle keep-alive socket mid-response. Nothing in the
+  // request pipeline owns that error — Next's handler has already returned —
+  // so it lands on `uncaughtException`, where the default behaviour (and the
+  // observability tap's flush-and-exit) killed the container. Production logs
+  // showed the till going down at 23:23 for exactly this reason.
+  //
+  // Registering a listener here is also what stops Node's default fatal
+  // handler from firing at all, so this must be installed unconditionally —
+  // installObservability() above is a no-op when no collector is configured.
+  const { isBenignNetworkError, describeNetworkError } = await import("./src/lib/network-errors");
+
+  // Rate-limit the log line: a flapping mobile client can produce hundreds a
+  // minute, and "the network is unreliable" only needs saying occasionally.
+  let droppedConnections = 0;
+  let lastDroppedLogAt = 0;
+  const noteDroppedConnection = (error: unknown) => {
+    droppedConnections += 1;
+    const now = Date.now();
+    if (now - lastDroppedLogAt < 60_000) return;
+    lastDroppedLogAt = now;
+    console.warn(
+      `> client connection dropped: ${describeNetworkError(error)}` +
+        (droppedConnections > 1 ? ` (${droppedConnections} since start)` : ""),
+    );
+  };
+
+  process.on("uncaughtException", (error) => {
+    if (isBenignNetworkError(error)) {
+      noteDroppedConnection(error);
+      return;
+    }
+    // Anything else is a real bug: print it and let the platform restart us
+    // rather than serve from a process in an unknown state.
+    console.error("> FATAL: uncaughtException:", error);
+    void flushObservability().finally(() => process.exit(1));
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    if (isBenignNetworkError(reason)) {
+      noteDroppedConnection(reason);
+      return;
+    }
+    console.error("> unhandledRejection:", reason);
+  });
+
   const { assertSecurePosture } = await import("./src/lib/deployment-posture");
   const { deploymentRole } = await import("./src/lib/deployment-role");
   assertSecurePosture(deploymentRole(), process.env.BIND_ADDR ?? "0.0.0.0", process.env.ALLOW_INSECURE_LAN === "1");
@@ -278,6 +327,16 @@ app.prepare().then(async () => {
   const requestListener = (req: any, res: any) => {
     const t0 = Date.now();
     const parsed = parse(req.url ?? "/", true);
+    // Own the per-request error events too, so the common case never even
+    // reaches the process-level handler above.
+    req.on("error", (error: unknown) => {
+      if (isBenignNetworkError(error)) noteDroppedConnection(error);
+      else console.error("> request stream error:", error);
+    });
+    res.on("error", (error: unknown) => {
+      if (isBenignNetworkError(error)) noteDroppedConnection(error);
+      else console.error("> response stream error:", error);
+    });
     res.on("finish", () => {
       // Only noteworthy requests get shipped: a status >= 400 (something
       // broke) or a response over a second slow (something is about to).
@@ -309,10 +368,30 @@ app.prepare().then(async () => {
         )
       : createHttpServer(requestListener);
 
+  // `clientError` fires for malformed requests and for sockets that reset
+  // during the header phase — before any request object exists.
+  server.on("clientError", (error: NodeJS.ErrnoException, socket: Duplex) => {
+    if (!isBenignNetworkError(error)) console.error("> client error:", error);
+    if (!socket.destroyed && socket.writable) {
+      socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+    }
+    socket.destroy();
+  });
+
   const wss = new WebSocketServer({ noServer: true });
+  wss.on("error", (error) => {
+    if (!isBenignNetworkError(error)) console.error("> WebSocket server error:", error);
+  });
 
   server.on("upgrade", async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const { pathname } = parse(req.url ?? "/", true);
+
+    // An upgrade socket is raw: without this, a tablet that drops mid-handshake
+    // emits ECONNRESET with no listener and crashes the process.
+    socket.on("error", (error: unknown) => {
+      if (isBenignNetworkError(error)) noteDroppedConnection(error);
+      else console.error("> upgrade socket error:", error);
+    });
 
     if (pathname !== "/ws") {
       app.getUpgradeHandler()(req, socket, head);
