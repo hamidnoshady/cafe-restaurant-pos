@@ -145,6 +145,98 @@ export async function listCustomerBalances(businessId: string): Promise<Customer
   return [...byCustomer.values()].filter((c) => c.balance !== 0).sort((a, b) => b.balance - a.balance);
 }
 
+/**
+ * The canonical "which customer does this A/R line belong to?" SQL.
+ *
+ * Exported as a fragment because there are two legitimate shapes for the same
+ * question and neither can be expressed in terms of the other:
+ *
+ * - **One customer at a time** — `getCustomerArBalance`, for a customer file.
+ * - **Every customer at once, as a CTE** — the segment engine, which joins A/R
+ *   against tens of thousands of parties and cannot call a per-customer
+ *   function without turning one query into an N+1 over the whole directory.
+ *
+ * What must not vary is the *attribution*, and that is the hard part: an A/R
+ * line names a customer through the order, the receipt or the cheque that
+ * caused it, and closed-order corrections arrive through `order_amendments`
+ * pointing at the original order. Miss the amendment bridge and a corrected
+ * invoice silently detaches from its customer. Since that logic lives here,
+ * in the app that owns the ledger, a segment and a customer file cannot come
+ * to different conclusions about the same debt.
+ *
+ * `$1` is the business id. The caller supplies the account filter.
+ */
+export const AR_CUSTOMER_ATTRIBUTION_SQL = `
+  FROM journal_lines jl
+  JOIN journal_entries je ON je.id = jl.entry_id
+  LEFT JOIN order_amendments am
+         ON je.source_type = 'order_amendment' AND am.id = je.source_id
+  LEFT JOIN orders o
+         ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
+  LEFT JOIN ar_receipts r
+         ON je.source_type = 'ar_receipt' AND r.id = je.source_id
+  LEFT JOIN cheques ch
+         ON je.source_type = 'cheque' AND ch.id = je.source_id`;
+
+/** The customer-id expression that goes with {@link AR_CUSTOMER_ATTRIBUTION_SQL}. */
+export const AR_CUSTOMER_ID_SQL = "COALESCE(o.customer_id, r.customer_id, ch.customer_id)";
+
+/**
+ * A ready-made CTE body giving every customer's A/R balance in one pass.
+ *
+ * For callers that need the whole directory's balances inside a larger query —
+ * the segment engine, principally. Same attribution as every other A/R number
+ * in the system, because it is literally the same SQL.
+ */
+export function arBalanceByCustomerSql(accountCode: string): string {
+  return `SELECT ${AR_CUSTOMER_ID_SQL} AS customer_id,
+                 coalesce(sum(jl.debit - jl.credit), 0)::bigint AS ar_balance
+          ${AR_CUSTOMER_ATTRIBUTION_SQL}
+          JOIN accounts a ON a.id = jl.account_id
+           WHERE je.business_id = $1
+             AND a.business_id = $1
+             AND a.code = '${accountCode}'
+             AND ${AR_CUSTOMER_ID_SQL} IS NOT NULL
+           GROUP BY ${AR_CUSTOMER_ID_SQL}`;
+}
+
+/**
+ * The signed balance of one well-known account, as the trial balance computes
+ * it.
+ *
+ * Exists so screens outside Accounting — the CRM overview's store-credit
+ * figure, principally — can show a ledger number without writing their own
+ * `journal_lines` aggregation. The sign convention (assets and expenses are
+ * debit-positive, everything else credit-positive) is the one piece of this
+ * that is easy to get backwards, and getting it backwards renders a liability
+ * as a negative asset.
+ *
+ * Returns null when the account does not exist, which is different from zero:
+ * a business that has never configured a chart of accounts has no answer, and
+ * "۰ ریال اعتبار" is a claim it cannot support.
+ */
+export async function wellKnownAccountBalance(
+  businessId: string,
+  accountCode: string,
+): Promise<number | null> {
+  const { rows } = await query<{ type: string; debit: string; credit: string }>(
+    `SELECT a.type::text,
+            coalesce(sum(jl.debit), 0)::text AS debit,
+            coalesce(sum(jl.credit), 0)::text AS credit
+       FROM accounts a
+       LEFT JOIN journal_lines jl ON jl.account_id = a.id
+      WHERE a.business_id = $1 AND a.code = $2
+      GROUP BY a.type`,
+    [businessId, accountCode],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const debit = BigInt(row.debit);
+  const credit = BigInt(row.credit);
+  const signed = row.type === "asset" || row.type === "expense" ? debit - credit : credit - debit;
+  return Number(signed);
+}
+
 export interface CustomerArBalance {
   /** Positive means the customer owes the business. */
   balance: number;
@@ -165,14 +257,11 @@ export async function getCustomerArBalance(businessId: string, customerId: strin
   if (!accountId) return { balance: 0, hasLedger: false };
 
   const { rows } = await query<{ debit: string; credit: string }>(
+    // Same attribution fragment the segment engine uses, so one customer's
+    // file and a segment built on «بدهکار» can never disagree.
     `SELECT COALESCE(SUM(jl.debit), 0)::text AS debit, COALESCE(SUM(jl.credit), 0)::text AS credit
-       FROM journal_lines jl
-       JOIN journal_entries je ON je.id = jl.entry_id
-       LEFT JOIN order_amendments am ON je.source_type = 'order_amendment' AND am.id = je.source_id
-       LEFT JOIN orders o ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
-       LEFT JOIN ar_receipts r ON je.source_type = 'ar_receipt' AND r.id = je.source_id
-       LEFT JOIN cheques ch ON je.source_type = 'cheque' AND ch.id = je.source_id
-      WHERE je.business_id = $1 AND jl.account_id = $2 AND COALESCE(o.customer_id, r.customer_id, ch.customer_id) = $3`,
+     ${AR_CUSTOMER_ATTRIBUTION_SQL}
+      WHERE je.business_id = $1 AND jl.account_id = $2 AND ${AR_CUSTOMER_ID_SQL} = $3`,
     [businessId, accountId, customerId],
   );
   return { balance: Number(rows[0]?.debit ?? 0) - Number(rows[0]?.credit ?? 0), hasLedger: true };

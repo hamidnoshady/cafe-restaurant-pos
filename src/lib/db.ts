@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool, type PoolClient } from "pg";
 import {
   businessScope,
@@ -174,11 +175,71 @@ export async function closeDatabasePool(): Promise<void> {
   if (globalForPg.pgPool === pool) globalForPg.pgPool = undefined;
 }
 
+/**
+ * The client a surrounding `withTenantTransaction` has pinned, if any.
+ *
+ * AsyncLocalStorage rather than a module variable, for the same reason the
+ * tenant scope uses one: concurrent requests share this module, and a plain
+ * variable would leak one request's open transaction into another's queries.
+ */
+const pinnedClient = new AsyncLocalStorage<PoolClient>();
+
+function runPinned<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
+  return pinnedClient.run(client, fn);
+}
+
+/**
+ * Run one statement.
+ *
+ * Inside `withTenantTransaction` this goes to that transaction's pinned
+ * client, so every statement in the callback shares one connection and one
+ * transaction. Everywhere else it takes a connection from the pool per call,
+ * which is the right default for the overwhelmingly common single-statement
+ * case.
+ */
 export async function query<T extends Record<string, unknown> = Record<string, unknown>>(
   text: string,
   params?: unknown[],
 ) {
+  const pinned = pinnedClient.getStore();
+  if (pinned) return runOnPinnedClient<T>(pinned, text, params);
   return getPool().query<T>(text, params as never);
+}
+
+/**
+ * Serialise statements issued on a transaction's pinned client.
+ *
+ * A single pg client cannot run two queries at once. Inside a transaction,
+ * `Promise.all([query(...), query(...)])` therefore does not parallelise
+ * anything — it emits a deprecation warning and, on some driver versions,
+ * interleaves the results onto the wrong promises. Rather than leave that as a
+ * rule everyone has to remember, the calls are chained here: correctness is
+ * structural, and the worst case is the sequential execution the caller would
+ * have got anyway.
+ *
+ * Outside a transaction nothing is serialised — parallel reads across pooled
+ * connections are genuinely parallel and are left alone.
+ */
+const pinnedQueues = new WeakMap<PoolClient, Promise<unknown>>();
+
+function runOnPinnedClient<T extends Record<string, unknown>>(
+  client: PoolClient,
+  text: string,
+  params?: unknown[],
+) {
+  const previous = pinnedQueues.get(client) ?? Promise.resolve();
+  // `.catch` on the tail, not on the returned promise: one statement failing
+  // must not stop later ones from being scheduled (the caller decides whether
+  // to abort), but it also must not leave an unhandled rejection behind.
+  const next = previous.then(
+    () => client.query<T>(text, params as never),
+    () => client.query<T>(text, params as never),
+  );
+  pinnedQueues.set(
+    client,
+    next.catch(() => undefined),
+  );
+  return next;
 }
 
 /**
@@ -198,6 +259,74 @@ export async function withTenant<T>(
   return runInTenantScope(
     businessScope(businessId, options.locationId ?? null, options.userId ?? null),
     fn,
+  );
+}
+
+/**
+ * Run `fn` inside ONE database transaction, scoped to one business.
+ *
+ * ## Why this exists, and what it fixes
+ *
+ * `withTenant` establishes the RLS scope but is **not** a transaction. Every
+ * `query()` inside it checks out its own connection from the pool, so a
+ * sequence of writes is a sequence of independent autocommits: a failure
+ * halfway leaves the earlier ones committed, and — the part that bites
+ * hardest — `SELECT ... FOR UPDATE` releases its lock the instant that one
+ * statement's connection goes back to the pool.
+ *
+ * That makes a lock-then-check-then-write guard silently useless. Two
+ * simultaneous requests both take the lock (sequentially, each on its own
+ * connection), both see the pre-write state, and both proceed. It is the
+ * classic double-submit: two customers created from one "convert" click, two
+ * receipts for one payment.
+ *
+ * Inside this helper, `query()` is redirected to a single pinned client
+ * wrapped in `BEGIN`/`COMMIT`, so `FOR UPDATE` holds for the whole callback
+ * and a throw rolls everything back. Call sites need no change beyond swapping
+ * `withTenant` for `withTenantTransaction`.
+ *
+ * ## When to use which
+ *
+ * - Read-only work, or a single write: `withTenant` is correct and cheaper —
+ *   it does not hold a connection for the duration.
+ * - Two or more writes that must all happen or none: this.
+ * - Any `FOR UPDATE` / `pg_advisory_xact_lock` guard: **this**, always. Those
+ *   constructs are defined in terms of a transaction and mean nothing outside
+ *   one.
+ */
+export async function withTenantTransaction<T>(
+  businessId: string,
+  fn: () => Promise<T>,
+  options: { locationId?: string | null; userId?: string | null } = {},
+): Promise<T> {
+  return withTenant(
+    businessId,
+    async () => {
+      // The pool's connect hook stamps the tenant scope onto this client, so
+      // RLS applies inside the transaction exactly as it does outside.
+      const client = await getPool().connect();
+      const previous = pinnedClient.getStore();
+      try {
+        await client.query("BEGIN");
+        const result = await runPinned(client, fn);
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        // Roll back on any throw. A failed ROLLBACK (a connection that already
+        // died) must not mask the original error, which is the one that
+        // explains what went wrong.
+        try {
+          await client.query("ROLLBACK");
+        } catch {
+          // Intentionally ignored — see above.
+        }
+        throw error;
+      } finally {
+        void previous;
+        client.release();
+      }
+    },
+    options,
   );
 }
 

@@ -62,21 +62,20 @@ interface MergePreview {
   winner: { id: string; name: string };
   loser: { id: string; name: string };
   moves: Record<string, number>;
+  /**
+   * Labels come from the server, not from a map kept here.
+   *
+   * This screen used to hold its own list of nine labels while the merge
+   * actually touched more than twenty tables, so anything without a label —
+   * cheques, instalments, the online-store mapping — was invisible in the
+   * confirmation dialog. For an irreversible action, showing a silent subset
+   * of the consequences is worse than showing a raw table name, so the labels
+   * now travel with the counts from the single registry that defines both.
+   */
+  moveLabels: Record<string, string>;
   resultingConsent: { smsConsent: boolean; marketingConsent: boolean };
   resultingTags: string[];
 }
-
-const MOVE_LABELS: Record<string, string> = {
-  orders: "سفارش/فاکتور",
-  points: "تراکنش امتیاز",
-  reservations: "رزرو",
-  receipts: "رسید دریافت",
-  notes: "یادداشت",
-  activities: "کار و پیگیری",
-  deals: "معامله",
-  cases: "تیکت",
-  consent_events: "رویداد رضایت",
-};
 
 export function DuplicatesSection() {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
@@ -295,7 +294,7 @@ function MergeDialog({
                   {moved.map(([key, count]) => (
                     <li key={key}>
                       <StatusBadge tone="neutral">
-                        {MOVE_LABELS[key] ?? key}: {formatPersianNumber(count)}
+                        {preview.moveLabels?.[key] ?? key}: {formatPersianNumber(count)}
                       </StatusBadge>
                     </li>
                   ))}

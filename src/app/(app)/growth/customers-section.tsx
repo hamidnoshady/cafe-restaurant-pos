@@ -166,6 +166,13 @@ export function GrowthCustomersSection({
 
   // The pinned record is shown once: at the top when this page does not already
   // contain it, in place when it does.
+  //
+  // `rows` is the *canonical display collection* — both the desktop table and
+  // the mobile card list read it. They used to disagree: the table rendered the
+  // raw `customers` page while only the phone list rendered `rows`, so a
+  // customer deep-linked from Accounting (`?customer=…`) whose record lives on
+  // another page of the result set was simply missing on a desktop, while the
+  // same URL worked on a phone. Pinned-row logic must have exactly one reader.
   const rows = useMemo(() => {
     const list = customers ?? [];
     if (!pinned || list.some((customer) => customer.id === pinned.id)) return list;
@@ -254,7 +261,7 @@ export function GrowthCustomersSection({
                 {canManage ? <Th>عملیات</Th> : null}
               </DataTableHead>
               <DataTableBody>
-                {customers.map((customer) => (
+                {rows.map((customer) => (
                   <DataTableRow key={customer.id} selected={customer.id === selectedCustomerId}>
                     <Td>
                       <Link

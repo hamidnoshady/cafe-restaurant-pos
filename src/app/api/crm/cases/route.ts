@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { listCases, upsertCase } from "@/lib/crm-service";
+import { caseSlaSummary } from "@/lib/crm-case-service";
 import {
   isCasePriority,
   isCaseStatus,
@@ -20,6 +21,13 @@ import {
  * Priority drives a target response time (`CASE_PRIORITY_TARGET_HOURS`), not a
  * contractual SLA — a café signs none. It exists so «کدام شکایت معطل مانده؟»
  * has an answer that does not require reading every ticket.
+ *
+ * That answer subtracts time spent **waiting on the customer**. A case parked
+ * for four days because the shopper never sent their order number is not a
+ * failure of the team, and counting it as one makes the whole report ignorable
+ * — and makes "never ask the customer anything" the fastest way to protect the
+ * number. `waitingOnCustomer` is reported as its own figure, never folded into
+ * `breached`.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.partiesView);
@@ -32,7 +40,13 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     status: status && isCaseStatus(status) ? (status as CaseStatus) : undefined,
     openOnly: search.get("open") === "1",
   });
-  return NextResponse.json({ cases });
+  return NextResponse.json({
+    cases,
+    // Alongside the list, because the list alone cannot show it: the SLA
+    // position depends on accumulated waiting time, which no single row
+    // renders.
+    sla: await caseSlaSummary(session.businessId),
+  });
 });
 
 interface CaseBody {
