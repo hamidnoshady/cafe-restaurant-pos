@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { fileURLToPath } = require("node:url");
 
 const root = path.resolve(__dirname, "..", "..");
 const runtime = path.join(root, ".desktop-runtime");
@@ -15,12 +16,16 @@ function requirePath(relative) {
   if (!fs.existsSync(path.join(runtime, relative))) fail(`missing ${relative}`);
 }
 
-for (const relative of [
-  "package.json",
-  "runtime-build.json",
+const compiledEntries = [
   "bin/server.cjs",
   "bin/migrate.cjs",
   "bin/derive-runtime-database-url.cjs",
+];
+
+for (const relative of [
+  "package.json",
+  "runtime-build.json",
+  ...compiledEntries,
   ".next/BUILD_ID",
   ".next/static",
   "public/sw.js",
@@ -28,6 +33,24 @@ for (const relative of [
   "public/windows/cafe-pos-print-connector.ps1",
   "migrations/0001_foundation.sql",
 ]) requirePath(relative);
+
+const bundleDependencyUrl = "file:///C:/__desktop_bundle_dependency__.ts";
+try {
+  // This check runs on Windows in both desktop workflows, where a file URL
+  // without a drive letter throws ERR_INVALID_FILE_URL_PATH before migrations.
+  fileURLToPath(bundleDependencyUrl);
+} catch (error) {
+  fail(`compiled import.meta replacement is invalid on ${process.platform}: ${error.message}`);
+}
+for (const relative of compiledEntries) {
+  const compiled = fs.readFileSync(path.join(runtime, relative), "utf8");
+  if (!compiled.includes(bundleDependencyUrl)) {
+    fail(`${relative} does not use the portable import.meta replacement`);
+  }
+  if (compiled.includes("file:///__desktop_bundle_dependency__.ts")) {
+    fail(`${relative} still contains the Windows-invalid import.meta replacement`);
+  }
+}
 
 for (const relative of ["scripts", "next.config.ts", "tsconfig.json", ".next/cache", "coverage", "test-results", ".git"]) {
   if (fs.existsSync(path.join(runtime, relative))) fail(`forbidden staged path ${relative}`);

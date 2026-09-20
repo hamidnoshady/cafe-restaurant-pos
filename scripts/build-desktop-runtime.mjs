@@ -52,8 +52,10 @@ async function compile(entryPoint, outfile) {
     // Imported CLI modules contain direct-execution guards. In CJS output an
     // unbound import.meta.url becomes undefined and fileURLToPath throws before
     // our compiled entry can call main(). A stable non-entry URL keeps every
-    // imported guard false without retaining a TypeScript loader.
-    define: { "import.meta.url": JSON.stringify("file:///__desktop_bundle_dependency__.ts") },
+    // imported guard false without retaining a TypeScript loader. It includes a
+    // drive letter because Node's Windows fileURLToPath rejects POSIX-only
+    // file:/// paths; POSIX accepts this as /C:/..., so one value is portable.
+    define: { "import.meta.url": JSON.stringify("file:///C:/__desktop_bundle_dependency__.ts") },
     metafile: true,
     external: ["next", "next/*", "pg-native", "bufferutil", "utf-8-validate"],
     logLevel: "warning",
