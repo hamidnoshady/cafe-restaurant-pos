@@ -62,10 +62,16 @@ harness pins everything that can move:
   `aria-busy="true"` skeleton while fetching, so the harness waits for those to
   clear, then for `document.fonts.ready` (Vazirmatn reflows text if it is early).
 
-Per-pixel tolerance is 0.3% of pixels, with a per-channel threshold of 64/255 and
+Per-pixel tolerance is 0.5% of pixels, with a per-channel threshold of 64/255 and
 a symmetric two-pixel neighbourhood check. That absorbs CI font antialiasing and
 sub-pixel glyph shifts while still failing on real structural changes — a wrong
 colour, missing content, or a shifted card moves whole percent, not tenths.
+(0.3% held until 2026-09-20, when a runner-side library update pushed the
+untouched, densest-text screen `crm-deals` to 0.36% — measured while the same
+commit rendered byte-identical under the baseline-recording Chromium. 0.5%
+clears the measured noise ceiling without approaching the structural floor; see
+the comment on `MAX_DIFF_RATIO`. A failure between 0.3% and 0.5% deserves its
+diff image opened before assuming either way.)
 
 ## Reviewing a failure — read this before touching a baseline
 

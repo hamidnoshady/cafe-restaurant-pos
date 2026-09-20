@@ -63,9 +63,19 @@ import {
   missingCheckoutRequirement,
   requiresTableSelection,
   searchPosMenuItems,
+  warmPosItemSearchCache,
   type PosCheckoutRequirement,
   type PosTable,
 } from "@/lib/pos-selection";
+import {
+  buildRestaurantMenuIndex,
+  toRestaurantMenu,
+  type MenuTreePayload,
+  type RestaurantGroupView,
+  type RestaurantMenuItem,
+  type RestaurantMenuData,
+} from "@/lib/restaurant-menu";
+import { MenuItemImage } from "../menu-item-image";
 import {
   formatModifierDelta,
   linePriceBreakdown,
@@ -97,43 +107,14 @@ import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { cardClass } from "../page-chrome";
 import { safeRandomId } from "@/lib/client-id";
 
-interface Category {
-  id: string;
-  name: string;
-  tax_rate: string | number;
-  is_active: boolean;
-}
-interface Item {
-  id: string;
-  category_id: string | null;
-  name: string;
-  price: string | number;
-  is_active: boolean;
-}
-interface ModifierGroup {
-  id: string;
-  name: string;
-  min_select: number;
-  max_select: number;
-}
-interface Modifier {
-  id: string;
-  group_id: string;
-  name: string;
-  price_delta: string | number;
-  is_active: boolean;
-}
-interface ItemGroupLink {
-  menu_item_id: string;
-  modifier_group_id: string;
-}
-interface MenuData {
-  categories: Category[];
-  items: Item[];
-  modifierGroups: ModifierGroup[];
-  modifiers: Modifier[];
-  itemModifierGroups: ItemGroupLink[];
-}
+/**
+ * The menu is the canonical shared model (restaurant-menu.ts): the POS, the
+ * waiter screen and the menu manager all consume the same rows, the same
+ * per-item bounds resolution and the same image fallback. No more
+ * screen-local redefinitions that quietly dropped SKU/image fields.
+ */
+type MenuData = RestaurantMenuData;
+type Item = RestaurantMenuItem;
 interface Courier {
   id: string;
   name: string;
@@ -277,26 +258,28 @@ export function PosScreen({
 
   const load = useCallback(() => {
     setIsRefreshing(true);
+    // Couriers are fetched separately (below) and only while the delivery
+    // order type is actually offered: `/api/couriers` is gated on the
+    // `delivery` feature, and a till that cannot sell delivery must not ask
+    // for the courier list at all — the 403 used to read as a load error.
     Promise.all([
-      api<MenuData>("/api/menu"),
+      api<MenuTreePayload>("/api/menu"),
       api<{ tables: PosTable[] }>("/api/tables"),
-      api<{ couriers: Courier[] }>("/api/couriers"),
     ])
-      .then(([menuRes, tablesRes, couriersRes]) => {
+      .then(([menuRes, tablesRes]) => {
         if (menuRes.ok) {
-          setMenu(menuRes.data);
+          const menu = toRestaurantMenu(menuRes.data);
+          setMenu(menu);
           setActiveCategory(
             (current) =>
               current ||
-              menuRes.data.categories.find((category) => category.is_active)
-                ?.id ||
+              menu.categories.find((category) => category.isActive)?.id ||
               "",
           );
         }
         if (tablesRes.ok) setTables(tablesRes.data.tables);
-        if (couriersRes.ok) setCouriers(couriersRes.data.couriers);
         setLoadError(
-          !menuRes.ok || !tablesRes.ok || !couriersRes.ok
+          !menuRes.ok || !tablesRes.ok
             ? "بخشی از اطلاعات صندوق به‌روز نشد. داده‌های موجود حفظ شده‌اند."
             : "",
         );
@@ -342,26 +325,60 @@ export function PosScreen({
     };
   }, [customerQuery]);
 
-  const activeCategories = useMemo(
-    () => menu?.categories.filter((category) => category.is_active) ?? [],
+  /**
+   * Delivery is an entitlement, and the domain layer refuses a delivery order
+   * for a business whose `delivery` feature is off (order-mutations.ts). The
+   * till aligns with it: no delivery tab, and the courier list is never
+   * requested. While `business.features` has not loaded yet the tab stays
+   * available — the server's `feature_disabled` refusal is the last word.
+   */
+  const deliveryEnabled = business.features?.delivery !== false;
+
+  const menuIndex = useMemo(
+    () => (menu ? buildRestaurantMenuIndex(menu) : null),
     [menu],
   );
+  const activeCategories = menuIndex?.activeCategories ?? [];
 
-  // ⚡ Bolt: Separate static data operations (filtering and map creation) into distinct useMemo
-  // so they are not recalculated on every search query tick.
+  // The courier list is only worth a request while a delivery sale is
+  // actually being placed — and only when the business may deliver at all.
+  useEffect(() => {
+    if (!deliveryEnabled || orderType !== "delivery") return;
+    let cancelled = false;
+    api<{ couriers: Courier[] }>("/api/couriers")
+      .then(({ ok, data }) => {
+        if (!cancelled && ok) setCouriers(data.couriers);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [deliveryEnabled, orderType]);
+
+  // A delivery sale already on screen when the feature turns out to be off
+  // falls back to takeaway rather than submitting something the domain
+  // would refuse.
+  useEffect(() => {
+    if (!deliveryEnabled && orderType === "delivery") setOrderType("takeaway");
+  }, [deliveryEnabled, orderType]);
+
+  // ⚡ Bolt: Separate static data operations (filtering and map creation) into
+  // distinct useMemo so they are not recalculated on every search query tick.
+  // Only sellable items (active, categorized) reach the search model, which
+  // now carries each item's SKU so the code search the box promises works.
   const posItems = useMemo(
     () =>
       menu?.items.filter(
-        (item): item is Item & { category_id: string } =>
-          item.category_id !== null,
+        (item): item is Item & { categoryId: string } =>
+          item.isActive && item.categoryId !== null,
       ) ?? [],
     [menu],
   );
+  useEffect(() => {
+    warmPosItemSearchCache(posItems);
+  }, [posItems]);
 
-  const itemsById = useMemo(
-    () => new Map(menu?.items.map((item) => [item.id, item]) ?? []),
-    [menu],
-  );
+  const itemsById = menuIndex?.itemsById ?? new Map<string, Item>();
 
   const visibleProducts = useMemo(() => {
     if (!menu) return [];
@@ -456,67 +473,20 @@ export function PosScreen({
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
   }, [activeCategories, cart.length, checkoutIntent, hasOpenOverlay]);
 
-  // ⚡ Bolt: Extract grouping logic into a useMemo map to prevent O(N * M) operations
-  // inside the visibleProducts rendering loop. This caches the modifier groups per item
-  // so the lookup is O(1) during render instead of filtering three arrays per product.
-  const attachedGroupsMap = useMemo(() => {
-    const map = new Map<
-      string,
-      (ModifierGroup & { modifiers: Modifier[] })[]
-    >();
-    if (!menu) return map;
-
-    // First group active modifiers by group_id
-    const modifiersByGroup = new Map<string, Modifier[]>();
-    for (const m of menu.modifiers) {
-      if (!m.is_active) continue;
-      let arr = modifiersByGroup.get(m.group_id);
-      if (!arr) {
-        arr = [];
-        modifiersByGroup.set(m.group_id, arr);
-      }
-      arr.push(m);
-    }
-
-    // Build the resolved groups keyed by group_id
-    const resolvedGroupsById = new Map<
-      string,
-      ModifierGroup & { modifiers: Modifier[] }
-    >();
-    for (const g of menu.modifierGroups) {
-      resolvedGroupsById.set(g.id, {
-        ...g,
-        modifiers: modifiersByGroup.get(g.id) ?? [],
-      });
-    }
-
-    // Finally, group those resolved groups by item_id
-    for (const link of menu.itemModifierGroups) {
-      const resolved = resolvedGroupsById.get(link.modifier_group_id);
-      if (!resolved) continue;
-
-      let arr = map.get(link.menu_item_id);
-      if (!arr) {
-        arr = [];
-        map.set(link.menu_item_id, arr);
-      }
-      arr.push(resolved);
-    }
-
-    return map;
-  }, [menu]);
-
+  /**
+   * The add-on groups an item offers, pre-resolved once per menu load by the
+   * shared index: per-item bounds (override → group default), only active
+   * groups actively attached, options ordered the way the manager laid them
+   * out. O(1) per tile; no per-render filtering of three arrays.
+   */
   const attachedGroups = useCallback(
-    (itemId: string): (ModifierGroup & { modifiers: Modifier[] })[] => {
-      return attachedGroupsMap.get(itemId) ?? [];
-    },
-    [attachedGroupsMap],
+    (itemId: string): RestaurantGroupView[] =>
+      menuIndex?.groupsByItem.get(itemId) ?? [],
+    [menuIndex],
   );
 
   function categoryTaxRate(categoryId: string | null): number {
-    return Number(
-      menu?.categories.find((c) => c.id === categoryId)?.tax_rate ?? 0,
-    );
+    return menuIndex?.categoriesById.get(categoryId ?? "")?.taxRate ?? 0;
   }
 
   /**
@@ -535,17 +505,23 @@ export function PosScreen({
     key?: string,
   ): CartUiLine {
     const units = Math.max(1, Math.round(quantity));
+    // The picker only hands back ids it displayed, so every one resolves; a
+    // menu reload between pick and confirm still degrades to a lookup over
+    // the modifier list rather than a crash at the till.
+    const allModifiers = new Map(
+      (menu?.modifiers ?? []).map((m) => [m.id, m]),
+    );
     const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
-      const modifier = menu!.modifiers.find((m) => m.id === id)!;
-      return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
+      const modifier = allModifiers.get(id)!;
+      return { name: modifier.name, priceDelta: modifier.priceDelta };
     });
     return {
       key: key ?? `${item.id}-${safeRandomId()}`,
       menuItemId: item.id,
       name: item.name,
-      unitPrice: Number(item.price),
+      unitPrice: item.price,
       quantity: units,
-      taxRatePercent: categoryTaxRate(item.category_id),
+      taxRatePercent: categoryTaxRate(item.categoryId),
       modifierIds: [...selectedModifierIds].sort(),
       modifiers,
       note,
@@ -616,9 +592,8 @@ export function PosScreen({
       setCart((prev) => stepLastLineForItem(prev, item.id, -1));
       return;
     }
-    const requiresConfiguration = attachedGroups(item.id).some(
-      (group) => group.min_select > 0,
-    );
+    const requiresConfiguration =
+      menuIndex?.requiresConfigurationByItem.get(item.id) ?? false;
     const decision = decideTilePlus(cart, item.id, requiresConfiguration);
     if (decision.type === "configure") {
       setPickerItem(item);
@@ -638,6 +613,10 @@ export function PosScreen({
    * the two are only ever asked for together.
    */
   function changeOrderType(next: OrderType) {
+    // A disabled delivery feature is enforced by the domain; the tab is gone,
+    // and this guard keeps a stale keyboard shortcut or a cached state from
+    // selecting it anyway.
+    if (next === "delivery" && !deliveryEnabled) return;
     setOrderType(next);
     if (next !== "dine_in") {
       setTableId("");
@@ -1348,9 +1327,8 @@ export function PosScreen({
         >
           {visibleProducts.map(({ item, categoryLabel }, index) => {
             const inCart = cartCountsByItem.get(item.id) ?? 0;
-            const requiresConfiguration = attachedGroups(item.id).some(
-              (group) => group.min_select > 0,
-            );
+            const requiresConfiguration =
+              menuIndex?.requiresConfigurationByItem.get(item.id) ?? false;
             const plusDecision = decideTilePlus(
               cart,
               item.id,
@@ -1404,6 +1382,27 @@ export function PosScreen({
                   }
                 >
                   {/*
+                    The catalogue photo rides above the text — but only when
+                    the item actually has one. A photo-less item renders the
+                    compact tile it always was (name + category + price),
+                    rather than a tall gray placeholder box; a photo that
+                    exists but cannot load (offline, media storage down) still
+                    keeps the band, so a present picture never reflows the
+                    grid. A fixed-height band means the tile never shifts when
+                    the image arrives; loading is lazy so a long menu paints
+                    instantly.
+                  */}
+                  {item.imageMediaId || item.imageUrl ? (
+                    <span className="block h-20 w-full overflow-hidden rounded-lg md:h-24">
+                      <MenuItemImage
+                        mediaId={item.imageMediaId}
+                        url={item.imageUrl}
+                        className="size-full"
+                        iconClassName="size-6"
+                      />
+                    </span>
+                  ) : null}
+                  {/*
                     Name, category and price each own a full row. They used to
                     share it with a 40px badge, which at the widths a tile
                     actually gets beside the cart panel meant «نوشیدنی گ…» and a
@@ -1416,9 +1415,14 @@ export function PosScreen({
                   <div className="mt-3">
                     <span className="block truncate text-xs text-muted-foreground">
                       {categoryLabel}
+                      {item.sku ? (
+                        <span dir="ltr" className="ms-1.5 opacity-80">
+                          · {item.sku}
+                        </span>
+                      ) : null}
                     </span>
                     <span className="mt-1 block text-base font-bold text-amber-700 dark:text-amber-300">
-                      {money.format(Number(item.price))}
+                      {money.format(item.price)}
                     </span>
                   </div>
                 </button>
@@ -1520,7 +1524,7 @@ export function PosScreen({
       >
         <div className="shrink-0 border-b border-border/80 p-4">
           <ErrorBox>{error}</ErrorBox>
-          <OrderTypeTabs value={orderType} onChange={changeOrderType} />
+          <OrderTypeTabs value={orderType} onChange={changeOrderType} deliveryEnabled={deliveryEnabled} />
           {orderType === "dine_in" ? (
             <>
               <TableField
@@ -1808,7 +1812,7 @@ export function PosScreen({
           {/* One scroll region keeps the cart usable on short phone screens. */}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="border-b border-border p-4">
-              <OrderTypeTabs value={orderType} onChange={changeOrderType} />
+              <OrderTypeTabs value={orderType} onChange={changeOrderType} deliveryEnabled={deliveryEnabled} />
               {orderType === "dine_in" ? (
                 <>
                   <TableField
@@ -2501,17 +2505,24 @@ const ORDER_TYPE_TABS: { value: OrderType; label: string }[] = [
 function OrderTypeTabs({
   value,
   onChange,
+  deliveryEnabled = true,
 }: {
   value: OrderType;
   onChange: (next: OrderType) => void;
+  /** The domain refuses delivery orders when the feature is off; the till does not offer the tab. */
+  deliveryEnabled?: boolean;
 }) {
+  const tabs = deliveryEnabled
+    ? ORDER_TYPE_TABS
+    : ORDER_TYPE_TABS.filter((tab) => tab.value !== "delivery");
   return (
     <div
-      className="mb-3 grid grid-cols-3 gap-2 text-sm font-medium"
+      className="mb-3 grid gap-2 text-sm font-medium"
+      style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
       role="group"
       aria-label="نوع سفارش"
     >
-      {ORDER_TYPE_TABS.map((tab) => (
+      {tabs.map((tab) => (
         <button
           key={tab.value}
           type="button"

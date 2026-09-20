@@ -72,6 +72,14 @@ const ERROR_MESSAGES: Record<string, string> = {
     missing_fields: "فیلدهای الزامی را پر کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
+    // خطاهای فروش (order-cart.ts / order-line-modifiers.ts /
+    // menu-modifier-integrity.ts). سایر کدهای فروش — item_not_found،
+    // invalid_item، invalid_modifier، invalid_modifier_selection و
+    // feature_disabled — بالاتر در همین جدول تعریف شده‌اند.
+    duplicate_modifier: "این افزودنی قبلاً برای همین آیتم انتخاب شده است.",
+    item_not_available: "این آیتم یا دستهٔ آن در منو فعال نیست.",
+    modifier_group_unsatisfiable:
+      "این گروه افزودنی با گزینه‌های فعال فعلی قابل انتخاب نیست؛ با مدیر منو تماس بگیرید.",
     campaign_audience_limit_exceeded:
       "این بخش بیش از سقف ارسال یک‌باره مخاطب دارد. برای ارسال کامل، بخش مشتریان را کوچک‌تر کنید.",
     campaign_has_no_recipients:

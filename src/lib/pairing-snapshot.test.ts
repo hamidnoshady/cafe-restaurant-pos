@@ -53,13 +53,36 @@ function validSnapshot(): PairingSnapshot {
           sku: null,
           price: "850000",
           imageUrl: null,
+          imageMediaId: "99999999-9999-9999-9999-999999999999",
           isActive: true,
           sortOrder: 0,
         },
       ],
-      modifierGroups: [],
+      mediaAssets: [
+        {
+          id: "99999999-9999-9999-9999-999999999999",
+          kind: "image",
+          fileName: "espresso.jpg",
+          mimeType: "image/jpeg",
+          byteSize: "10240",
+          storageKey: "media/11111111-1111-1111-1111-111111111111/99999999-9999-9999-9999-999999999999/file",
+          sha256: "a".repeat(64),
+        },
+      ],
+      modifierGroups: [
+        { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", name: "شیر", minSelect: 0, maxSelect: 1, isActive: true, sortOrder: 0 },
+      ],
       modifiers: [],
-      itemModifierGroups: [],
+      itemModifierGroups: [
+        {
+          menuItemId: "66666666-6666-6666-6666-666666666666",
+          modifierGroupId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          minSelectOverride: null,
+          maxSelectOverride: 1,
+          sortOrder: 0,
+          isActive: true,
+        },
+      ],
     },
     diningTables: [],
     inventory: { items: [], menuIngredients: [], modifierIngredients: [] },
@@ -166,6 +189,59 @@ describe("validateSnapshot", () => {
     expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
   });
 
+  it("rejects an item whose photo references an asset that did not travel", () => {
+    // menu_items.image_media_id is a real foreign key; a dangling reference
+    // would abort the whole pairing transaction at insert time with a raw
+    // PG error instead of this clean refusal.
+    const s = validSnapshot();
+    s.menu.items[0].imageMediaId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
+  });
+
+  it("rejects a v4 snapshot that omits the mediaAssets array", () => {
+    const s = validSnapshot() as unknown as { menu: Record<string, unknown> };
+    delete s.menu.mediaAssets;
+    expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
+  });
+
+  it("carries the photo reference and its asset row together", () => {
+    const s = validSnapshot();
+    const result = validateSnapshot(s);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.snapshot.menu.items[0].imageMediaId).toBe(
+        "99999999-9999-9999-9999-999999999999",
+      );
+      expect(result.snapshot.menu.mediaAssets[0].fileName).toBe("espresso.jpg");
+    }
+  });
+
+  it("rejects link overrides where the per-item min exceeds the max", () => {
+    const s = validSnapshot();
+    s.menu.itemModifierGroups[0].minSelectOverride = 2;
+    s.menu.itemModifierGroups[0].maxSelectOverride = 1;
+    expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
+  });
+
+  it("accepts link overrides and the 0165 group columns", () => {
+    const s = validSnapshot();
+    s.menu.modifierGroups[0].isActive = false;
+    s.menu.modifierGroups[0].sortOrder = 3;
+    s.menu.itemModifierGroups[0].minSelectOverride = 0;
+    s.menu.itemModifierGroups[0].maxSelectOverride = 1;
+    s.menu.itemModifierGroups[0].sortOrder = 2;
+    s.menu.itemModifierGroups[0].isActive = false;
+    expect(validateSnapshot(s).ok).toBe(true);
+  });
+
+  it("rejects a link whose isActive or sortOrder is missing", () => {
+    const s = validSnapshot() as unknown as {
+      menu: { itemModifierGroups: Array<Record<string, unknown>> };
+    };
+    delete s.menu.itemModifierGroups[0].sortOrder;
+    expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
+  });
+
   it("rejects a sync token that is too short to be a real secret", () => {
     const s = validSnapshot();
     s.syncToken = "short";
@@ -175,7 +251,7 @@ describe("validateSnapshot", () => {
   it("accepts empty accounts, menu and settings — a business may be freshly provisioned", () => {
     const s = validSnapshot();
     s.accounts = [];
-    s.menu = { categories: [], items: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] };
+    s.menu = { categories: [], items: [], mediaAssets: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] };
     s.settings = [];
     expect(validateSnapshot(s).ok).toBe(true);
   });

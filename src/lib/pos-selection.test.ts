@@ -7,26 +7,41 @@ import {
   normalizePosSearchText,
   requiresTableSelection,
   searchPosMenuItems,
+  warmPosItemSearchCache,
+  type PosSearchCategory,
+  type PosSearchMenuItem,
 } from "./pos-selection";
 
-const categories = [
-  { id: "hot", name: "نوشیدنی گرم", is_active: true },
-  { id: "cold", name: "نوشیدنی سرد", is_active: true },
-  { id: "hidden", name: "مخفی", is_active: false },
+const categories: PosSearchCategory[] = [
+  { id: "hot", name: "نوشیدنی گرم", taxRate: 10, isActive: true, sortOrder: 0 },
+  { id: "cold", name: "نوشیدنی سرد", taxRate: 10, isActive: true, sortOrder: 1 },
+  { id: "hidden", name: "مخفی", taxRate: 0, isActive: false, sortOrder: 2 },
 ];
 
-const items = [
-  { id: "tea", category_id: "hot", name: "چای ۱۲", is_active: true },
-  { id: "latte", category_id: "hot", name: "لاته", is_active: true },
-  { id: "cola", category_id: "cold", name: "کولا", is_active: true },
-  { id: "water", category_id: "cold", name: "آب", is_active: false },
-  {
-    id: "secret",
-    category_id: "hidden",
-    name: "نوشیدنی ویژه",
-    is_active: true,
+const item = (
+  base: Pick<PosSearchMenuItem, "id" | "categoryId" | "name"> & {
+    isActive: boolean;
+    sku?: string | null;
   },
+): PosSearchMenuItem => ({
+  description: null,
+  sku: null,
+  price: 100_000,
+  imageUrl: null,
+  imageMediaId: null,
+  sortOrder: 0,
+  targetMarginPercent: null,
+  ...base,
+});
+
+const items: PosSearchMenuItem[] = [
+  item({ id: "tea", categoryId: "hot", name: "چای ۱۲", isActive: true }),
+  item({ id: "latte", categoryId: "hot", name: "لاته", isActive: true, sku: "HOT-LATTE" }),
+  item({ id: "cola", categoryId: "cold", name: "کولا", isActive: true, sku: "CLD-۱" }),
+  item({ id: "water", categoryId: "cold", name: "آب", isActive: false }),
+  item({ id: "secret", categoryId: "hidden", name: "نوشیدنی ویژه", isActive: true }),
 ];
+warmPosItemSearchCache(items);
 
 const tables = [
   { id: "t1", name: "میز ۱", capacity: 2, status: "seated" },
@@ -48,21 +63,38 @@ describe("POS selection helpers", () => {
         query: "   ",
       }),
     ).toEqual([
-      {
-        id: "tea",
-        category_id: "hot",
-        name: "چای ۱۲",
-        is_active: true,
-        categoryLabel: "نوشیدنی گرم",
-      },
-      {
-        id: "latte",
-        category_id: "hot",
-        name: "لاته",
-        is_active: true,
-        categoryLabel: "نوشیدنی گرم",
-      },
+      { ...items[0], categoryLabel: "نوشیدنی گرم" },
+      { ...items[1], categoryLabel: "نوشیدنی گرم" },
     ]);
+  });
+
+  it("finds an item by its SKU, with Persian digits normalized", () => {
+    const byLatinSku = searchPosMenuItems({
+      categories,
+      items,
+      selectedCategoryId: "hot",
+      query: "hot-latte",
+    });
+    expect(byLatinSku.map((row) => row.id)).toEqual(["latte"]);
+
+    const byPersianDigitSku = searchPosMenuItems({
+      categories,
+      items,
+      selectedCategoryId: "hot",
+      query: "cld-۱",
+    });
+    expect(byPersianDigitSku.map((row) => row.id)).toEqual(["cola"]);
+  });
+
+  it("does not leak an inactive item through its SKU", () => {
+    expect(
+      searchPosMenuItems({
+        categories,
+        items,
+        selectedCategoryId: "cold",
+        query: "آب",
+      }),
+    ).toEqual([]);
   });
 
   it("finds active POS products across categories by normalized product or category name", () => {
@@ -73,15 +105,7 @@ describe("POS selection helpers", () => {
         selectedCategoryId: "hot",
         query: "نوشيدني سرد",
       }),
-    ).toEqual([
-      {
-        id: "cola",
-        category_id: "cold",
-        name: "کولا",
-        is_active: true,
-        categoryLabel: "نوشیدنی سرد",
-      },
-    ]);
+    ).toEqual([{ ...items[2], categoryLabel: "نوشیدنی سرد" }]);
   });
 
   it("blocks global cashier shortcuts for editable focus and open dialogs", () => {

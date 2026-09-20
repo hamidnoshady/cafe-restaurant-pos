@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { type MenuItemPatchInput, updateMenuItem } from "@/lib/menu-service";
+import { updateMenuItem } from "@/lib/menu-service";
+import { validateMenuItemPatch } from "@/lib/menu-validation";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
-async function ownedItem(session: SessionPayload, id: string) {
-  const location = await resolveActiveLocation(session);
-  if (!location) return null;
+async function ownedItem(locationId: string, id: string) {
   const { rows } = await query<{ id: string }>(
     "SELECT id FROM menu_items WHERE id = $1 AND location_id = $2",
-    [id, location.id],
+    [id, locationId],
   );
-  return rows[0] ? location : null;
+  return rows[0] != null;
 }
 
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -19,17 +18,22 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedItem(session, id);
-  if (!location) return NextResponse.json({ error: "item_not_found" }, { status: 404 });
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+  if (!(await ownedItem(location.id, id)))
+    return NextResponse.json({ error: "item_not_found" }, { status: 404 });
 
-  let body: MenuItemPatchInput;
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const result = await updateMenuItem(location.id, id, body);
+  const input = validateMenuItemPatch(body);
+  if (!input.ok) return NextResponse.json({ error: input.error }, { status: 400 });
+
+  const result = await updateMenuItem(location.id, id, input.value, session.businessId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true });
 });
@@ -40,8 +44,10 @@ export const DELETE = withTenantScope(async (_request: NextRequest, context: { p
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedItem(session, id);
-  if (!location) return NextResponse.json({ error: "item_not_found" }, { status: 404 });
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+  if (!(await ownedItem(location.id, id)))
+    return NextResponse.json({ error: "item_not_found" }, { status: 404 });
 
   const { rows: refs } = await query("SELECT id FROM order_items WHERE menu_item_id = $1 LIMIT 1", [id]);
   if (refs.length > 0) {
