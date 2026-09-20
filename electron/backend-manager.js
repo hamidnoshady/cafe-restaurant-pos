@@ -102,15 +102,19 @@ function runNodeScript(executable, appDir, relativePath, env, logger, capture = 
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
+    let stderr = "";
     child.stdout.on("data", (chunk) => {
       if (capture) stdout += chunk;
       else logger.childOutput(relativePath, chunk);
     });
-    child.stderr.on("data", (chunk) => logger.childOutput(relativePath, chunk, "warn"));
+    child.stderr.on("data", (chunk) => {
+      stderr = `${stderr}${chunk}`.slice(-8_000);
+      logger.childOutput(relativePath, chunk, "warn");
+    });
     child.once("error", reject);
     child.once("exit", (code) => {
       if (code === 0) resolve(capture ? stdout.trim() : undefined);
-      else reject(new Error(`${relativePath} exited with code ${code}`));
+      else reject(new Error(`${relativePath} exited with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
     });
   });
 }

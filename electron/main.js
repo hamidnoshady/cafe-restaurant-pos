@@ -188,7 +188,7 @@ if (!gotSingleInstanceLock) {
     let logTail = "";
     try {
       const text = require("node:fs").readFileSync(logger.path, "utf8");
-      logTail = text.slice(-16_384);
+      logTail = text.slice(-6_000);
     } catch {}
     require("node:fs").writeFileSync(marker, JSON.stringify({
       ok: false,
