@@ -13,6 +13,18 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), "business-suite-packaged-
 function launch(name, bootstrap) {
   const marker = path.join(userData, `${name}.json`);
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (message) => {
+      if (settled) return;
+      settled = true;
+      let diagnostic = "";
+      if (fs.existsSync(marker)) diagnostic = `\n${fs.readFileSync(marker, "utf8")}`;
+      else {
+        const log = path.join(userData, "logs", "desktop.log");
+        if (fs.existsSync(log)) diagnostic = `\nDesktop log tail:\n${fs.readFileSync(log, "utf8").slice(-16_384)}`;
+      }
+      reject(new Error(`${message}${diagnostic}`));
+    };
     const child = spawn(executable, [`--user-data-dir=${userData}`], {
       env: {
         ...process.env,
@@ -24,14 +36,18 @@ function launch(name, bootstrap) {
     });
     const timer = setTimeout(() => {
       spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true });
-      reject(new Error(`${name} packaged launch timed out`));
-    }, 180_000);
-    child.once("error", reject);
+      fail(`${name} packaged launch timed out after 5 minutes`);
+    }, 300_000);
+    child.once("error", (error) => fail(`${name} could not start: ${error.message}`));
     child.once("exit", (code) => {
       clearTimeout(timer);
-      if (code !== 0) return reject(new Error(`${name} packaged launch exited ${code}`));
-      if (!fs.existsSync(marker)) return reject(new Error(`${name} did not write its smoke marker`));
-      resolve(JSON.parse(fs.readFileSync(marker, "utf8")));
+      if (code !== 0) return fail(`${name} packaged launch exited ${code}`);
+      if (!fs.existsSync(marker)) return fail(`${name} did not write its smoke marker`);
+      const result = JSON.parse(fs.readFileSync(marker, "utf8"));
+      if (!result.ok) return fail(`${name} reported a failed smoke marker`);
+      if (settled) return;
+      settled = true;
+      resolve(result);
     });
   });
 }
