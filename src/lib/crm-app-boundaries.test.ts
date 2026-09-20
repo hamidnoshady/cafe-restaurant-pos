@@ -219,6 +219,58 @@ describe("merge stays human-only and irreversible-safe", () => {
     ).toEqual([]);
   });
 
+  it("keeps CRM client components off the server-only services", () => {
+    // A `"use client"` file importing a service that imports `./db` pulls `pg`
+    // into the browser bundle, and the build fails with `Can't resolve 'fs'` —
+    // a message that names node_modules and not the import that caused it.
+    // `crm-shared.ts` exists for the vocabulary both halves need; this keeps
+    // the next component from reaching past it.
+    //
+    // tsc cannot catch this: the types are perfectly valid, and the failure is
+    // a bundler concern that only surfaces during `next build`.
+    const serverOnly = new Set(
+      crmLibFiles()
+        .filter(({ source }) => /from "\.\/db"/.test(source))
+        .map(({ name }) => name.replace(/\.ts$/, "")),
+    );
+
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!entry.name.endsWith(".tsx") && !entry.name.endsWith(".ts")) continue;
+        if (entry.name.endsWith(".test.ts") || entry.name.endsWith(".test.tsx")) continue;
+        const raw = readFileSync(full, "utf8");
+        if (!/^\s*["']use client["']/m.test(raw)) continue;
+        const source = code(raw);
+        for (const service of serverOnly) {
+          // `import type` is erased before bundling, so a type-only reference
+          // to a server module is free. Only a value import pulls the runtime
+          // in — that is the one that breaks the build.
+          const valueImport = new RegExp(
+            `import\\s+(?!type\\s)[^;]*?from "@/lib/${service}"`,
+            "s",
+          );
+          if (valueImport.test(source)) {
+            offenders.push(`${full.slice(full.indexOf("src/"))} → ${service}`);
+          }
+        }
+      }
+    };
+    walk(fileURLToPath(new URL("../app/(app)/crm", import.meta.url)).replace(/\/$/, ""));
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : `These client components import a server-only CRM service; move the shared vocabulary into crm-shared.ts:\n  ${offenders.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
   it("drives reference moves from the registry, not a hand-written list", () => {
     // The hand-written list fell one table behind every feature that linked
     // something to a customer, and the symptom was silent.

@@ -500,3 +500,75 @@ export function previousWindow(window: { from: string; to: string }): { from: st
   priorFrom.setUTCDate(priorFrom.getUTCDate() - (lengthDays - 1));
   return { from: priorFrom.toISOString().slice(0, 10), to: priorTo.toISOString().slice(0, 10) };
 }
+
+// ---------------------------------------------------------------------------
+// Party relationships
+// ---------------------------------------------------------------------------
+
+/**
+ * How one party can be connected to another.
+ *
+ * Here rather than in `crm-relationship-service.ts` because the customer
+ * file's relationships card is a client component: importing the service for
+ * its labels would drag `pg` into the browser bundle, which is the exact
+ * failure this file exists to prevent.
+ *
+ * The list mirrors the CHECK constraint on `crm_party_relationships.kind` in
+ * migration 0157. Adding a kind means changing both, in a new migration.
+ */
+export const RELATIONSHIP_KINDS = [
+  "contact_of",
+  "decision_maker",
+  "billing_contact",
+  "purchasing_contact",
+  "owner_of",
+  "household",
+  "referred_by",
+  "parent_organization",
+  "branch_of",
+] as const;
+export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
+
+export const RELATIONSHIP_LABELS: Record<RelationshipKind, string> = {
+  contact_of: "رابط",
+  decision_maker: "تصمیم‌گیرنده",
+  billing_contact: "رابط مالی",
+  purchasing_contact: "رابط خرید",
+  owner_of: "مالک",
+  household: "هم‌خانواده",
+  referred_by: "معرفی‌شده توسط",
+  parent_organization: "سازمان مادر",
+  branch_of: "شعبهٔ",
+};
+
+/** The inverse label, for rendering an edge from the other end. */
+export const RELATIONSHIP_INVERSE_LABELS: Record<RelationshipKind, string> = {
+  contact_of: "رابط دارد",
+  decision_maker: "تصمیم‌گیرنده دارد",
+  billing_contact: "رابط مالی دارد",
+  purchasing_contact: "رابط خرید دارد",
+  owner_of: "متعلق به",
+  household: "هم‌خانواده",
+  referred_by: "معرفی کرده",
+  parent_organization: "زیرمجموعه دارد",
+  branch_of: "شعبه دارد",
+};
+
+export interface PartyRelationship extends Record<string, unknown> {
+  id: string;
+  fromPartyId: string;
+  fromName: string;
+  toPartyId: string;
+  toName: string;
+  kind: RelationshipKind;
+  roleTitle: string;
+  isPrimary: boolean;
+  note: string;
+  /** True when this row was read from the `to` party's point of view. */
+  inverse: boolean;
+  createdAt: string;
+}
+
+export function isRelationshipKind(value: unknown): value is RelationshipKind {
+  return typeof value === "string" && (RELATIONSHIP_KINDS as readonly string[]).includes(value);
+}

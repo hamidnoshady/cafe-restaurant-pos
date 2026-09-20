@@ -42,44 +42,22 @@
 import { query, withTenantTransaction } from "./db";
 import { recordCrmAudit } from "./crm-audit-service";
 import { isUuid } from "./uuid";
+import {
+  RELATIONSHIP_KINDS,
+  RELATIONSHIP_LABELS,
+  isRelationshipKind,
+  type PartyRelationship,
+  type RelationshipKind,
+} from "./crm-shared";
 
-export const RELATIONSHIP_KINDS = [
-  "contact_of",
-  "decision_maker",
-  "billing_contact",
-  "purchasing_contact",
-  "owner_of",
-  "household",
-  "referred_by",
-  "parent_organization",
-  "branch_of",
-] as const;
-export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
-
-export const RELATIONSHIP_LABELS: Record<RelationshipKind, string> = {
-  contact_of: "رابط",
-  decision_maker: "تصمیم‌گیرنده",
-  billing_contact: "رابط مالی",
-  purchasing_contact: "رابط خرید",
-  owner_of: "مالک",
-  household: "هم‌خانواده",
-  referred_by: "معرفی‌شده توسط",
-  parent_organization: "سازمان مادر",
-  branch_of: "شعبهٔ",
-};
-
-/** The inverse label, for rendering an edge from the other end. */
-export const RELATIONSHIP_INVERSE_LABELS: Record<RelationshipKind, string> = {
-  contact_of: "رابط دارد",
-  decision_maker: "تصمیم‌گیرنده دارد",
-  billing_contact: "رابط مالی دارد",
-  purchasing_contact: "رابط خرید دارد",
-  owner_of: "متعلق به",
-  household: "هم‌خانواده",
-  referred_by: "معرفی کرده",
-  parent_organization: "زیرمجموعه دارد",
-  branch_of: "شعبه دارد",
-};
+export {
+  RELATIONSHIP_KINDS,
+  RELATIONSHIP_LABELS,
+  RELATIONSHIP_INVERSE_LABELS,
+  isRelationshipKind,
+  type RelationshipKind,
+  type PartyRelationship,
+} from "./crm-shared";
 
 /**
  * Kinds that mean the same thing in both directions.
@@ -89,25 +67,6 @@ export const RELATIONSHIP_INVERSE_LABELS: Record<RelationshipKind, string> = {
  * one of the two files — which is exactly the file somebody will be looking at.
  */
 const SYMMETRIC_KINDS: readonly RelationshipKind[] = ["household"];
-
-export interface PartyRelationship extends Record<string, unknown> {
-  id: string;
-  fromPartyId: string;
-  fromName: string;
-  toPartyId: string;
-  toName: string;
-  kind: RelationshipKind;
-  roleTitle: string;
-  isPrimary: boolean;
-  note: string;
-  /** True when this row was read from the `to` party's point of view. */
-  inverse: boolean;
-  createdAt: string;
-}
-
-export function isRelationshipKind(value: unknown): value is RelationshipKind {
-  return typeof value === "string" && (RELATIONSHIP_KINDS as readonly string[]).includes(value);
-}
 
 /**
  * Every relationship touching one party, from both ends.
