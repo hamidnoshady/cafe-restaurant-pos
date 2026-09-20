@@ -56,7 +56,6 @@ app.prepare().then(async () => {
   const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
   const { assertRlsEffective, closeDatabasePool } = await import("./src/lib/db");
   const { describeDeploymentRole } = await import("./src/lib/deployment-role");
-  const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runWebsiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS } = await import("./src/lib/website/billing-service");
   const { runMediaBillingTick } = await import("./src/lib/media-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
@@ -154,12 +153,12 @@ app.prepare().then(async () => {
     runServerSyncTick().catch((err) => console.error("server-sync tick failed:", err));
   scheduleBackgroundTick(serverSyncTick, SERVER_SYNC_INTERVAL_MS, 20_000);
 
-  // Phase 18: subscriptions grant their monthly credits in a tenant-scoped
-  // transaction. The service discovers due businesses under the documented
-  // platform bypass, then re-enters each one with withTenant before writing.
-  const aiSubscriptionTick = () =>
-    runAiSubscriptionRenewalTick().catch((err) => console.error("AI subscription renewal tick failed:", err));
-  scheduleBackgroundTick(aiSubscriptionTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS, 60_000);
+  // Phase J removed the Phase 18 AI subscription renewal tick: the legacy
+  // credit-subscription system (ai_business_billing / ai_credit_ledger /
+  // ai_subscription_plans) it fed was retired by Phase B's wallet cutover, and
+  // its tables are dropped in migration 0164. AI spend now debits the canonical
+  // business wallet directly (ai-wallet-billing.ts), so there is no monthly
+  // credit grant to schedule.
 
   // Phase 18b Wave 4: opt-in proactive AI jobs. The service enumerates
   // businesses only under the documented platform bypass and then wraps each
