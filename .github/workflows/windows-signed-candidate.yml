@@ -297,7 +297,8 @@ jobs:
           @{ schemaVersion=1; version=$env:RELEASE_VERSION; commit=$env:CANDIDATE_COMMIT; installerSha256=$installerSha256; checks=$checks } | ConvertTo-Json -Depth 12 | Set-Content release-evidence.json -Encoding UTF8
           node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:CANDIDATE_COMMIT --version=$env:RELEASE_VERSION --installer-sha256=$installerSha256
           $readiness = Get-Content release-readiness.json -Raw | ConvertFrom-Json
-          if ($readiness.productionEligible) { throw "A signed candidate cannot be production eligible before external acceptance" }
+          if ($readiness.productionEligible -or $readiness.status -cne 'FAIL') { throw "A signed candidate cannot be production eligible before external acceptance" }
+          if ($readiness.commit -cne $env:CANDIDATE_COMMIT -or $readiness.version -cne $env:RELEASE_VERSION -or $readiness.installerSha256 -cne $installerSha256) { throw "Signed-candidate readiness is not bound to this commit, version and installer" }
 
       - name: Upload verified signed candidate for external acceptance
         uses: actions/upload-artifact@v7

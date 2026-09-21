@@ -54,17 +54,19 @@ describe("candidate-bound external release evidence", () => {
     expect(readiness).toContain("ref: ${{ inputs.candidate_commit }}");
     expect(readiness).toContain("CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}");
     expect(readiness).toContain("--commit=$env:CANDIDATE_COMMIT");
+    expect(readiness).toContain("candidate_installer_sha256 is required for the production gate");
     expect(production).toContain("candidate_commit:");
     expect(production).toContain("ref: ${{ inputs.candidate_commit }}");
     expect(production).toContain("-CandidateCommit $env:CANDIDATE_COMMIT");
     expect(production).toContain("commit=$env:CANDIDATE_COMMIT");
     expect(production).toContain("signatureVerificationSha256");
     expect(production).toContain("without rebuilding");
+    expect(production).toContain("$candidateReadiness.installerSha256 -cne $installerHash");
     expect(production).toContain("installerSha256 -cne $env:PROMOTION_INSTALLER_SHA256");
     expect(production).not.toContain("npm run dist --prefix electron");
     expect(signedCandidate).toContain("npm run dist --prefix electron");
     expect(signedCandidate).toContain("signed-candidate");
-    expect(signedCandidate).toContain("productionEligible) { throw");
+    expect(signedCandidate).toContain("$readiness.productionEligible -or $readiness.status -cne 'FAIL'");
     expect(windows11).toContain("candidate_commit:");
     expect(windows11).toContain("previous_version:");
     expect(windows11).toContain("Assert-ProvenanceArtifact");
@@ -245,6 +247,45 @@ describe("candidate-bound external release evidence", () => {
     ]);
     expect(result.code).toBe(1);
     const report = JSON.parse(await fs.readFile(outputPath, "utf8"));
+    expect(report.checks.find((check: { id: string }) => check.id === "windows-11-retail").state)
+      .toBe("MANUAL ACCEPTANCE REQUIRED");
+  });
+
+  it("blocks acceptance evidence for a different signed installer", async () => {
+    const directory = await temporaryDirectory();
+    const config = JSON.parse(await fs.readFile(path.join(root, "config/release-readiness.json"), "utf8"));
+    const commit = "e".repeat(40);
+    const version = "2.0.0";
+    const installerSha256 = "f".repeat(64);
+    const evidencePath = path.join(directory, "evidence.json");
+    const outputPath = path.join(directory, "readiness.json");
+    const markdownPath = path.join(directory, "readiness.md");
+    const checks = Object.fromEntries(config.checks.map((check: { id: string; artifactBound?: boolean }) => [check.id, {
+      configured: true,
+      status: "PASS",
+      commit,
+      version,
+      executedAt: new Date().toISOString(),
+      evidenceUrl: `https://evidence.invalid/${check.id}`,
+      platform: "acceptance fixture",
+      ...(check.artifactBound === true ? {
+        installerSha256: check.id === "windows-11-retail" ? "0".repeat(64) : installerSha256,
+      } : {}),
+    }]));
+    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, installerSha256, checks }));
+
+    const result = await runNode("scripts/generate-release-readiness.mjs", [
+      `--evidence=${evidencePath}`,
+      `--output=${outputPath}`,
+      `--markdown=${markdownPath}`,
+      `--commit=${commit}`,
+      `--version=${version}`,
+      `--installer-sha256=${installerSha256}`,
+      "--production",
+    ]);
+    expect(result.code).toBe(1);
+    const report = JSON.parse(await fs.readFile(outputPath, "utf8"));
+    expect(report.productionEligible).toBe(false);
     expect(report.checks.find((check: { id: string }) => check.id === "windows-11-retail").state)
       .toBe("MANUAL ACCEPTANCE REQUIRED");
   });

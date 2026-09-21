@@ -142,7 +142,7 @@ jobs:
             if (-not $item -or $item.status -cne 'PASS' -or $item.commit -cne $env:CANDIDATE_COMMIT) { throw "Candidate internal check $id is not a candidate-bound PASS" }
             if ($id -eq 'authenticode' -and ($item.version -cne $env:RELEASE_VERSION -or $item.installerSha256 -cne $installerHash)) { throw 'Authenticode evidence is not bound to this version and installer' }
           }
-          if ($candidateReadiness.productionEligible -or $candidateReadiness.commit -cne $env:CANDIDATE_COMMIT -or $candidateReadiness.version -cne $env:RELEASE_VERSION) { throw 'Signed-candidate readiness has an invalid scope or eligibility claim' }
+          if ($candidateReadiness.productionEligible -or $candidateReadiness.commit -cne $env:CANDIDATE_COMMIT -or $candidateReadiness.version -cne $env:RELEASE_VERSION -or $candidateReadiness.installerSha256 -cne $installerHash) { throw 'Signed-candidate readiness has an invalid scope or eligibility claim' }
 
           $preflightRoot = Join-Path $env:RUNNER_TEMP 'promotion-signature-preflight'
           New-Item -ItemType Directory -Path $preflightRoot -Force | Out-Null
