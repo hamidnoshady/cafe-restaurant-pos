@@ -159,7 +159,13 @@ jobs:
           if ($initdb.Count -ne 1) { Stop-ShapeCheck "Expected exactly one initdb.exe, found $($initdb.Count): $($initdb.FullName -join ', ')" }
           $foreign = @(Get-ChildItem $root -Recurse -Directory | Where-Object { $_.FullName -match '@embedded-postgres[\\/](linux|darwin)-' })
           if ($foreign.Count) { Stop-ShapeCheck "Foreign PostgreSQL payload found: $($foreign.FullName -join ', ')" }
-          if (-not (Test-Path "$root/resources/desktop-runtime/node_modules")) { Stop-ShapeCheck "Positive desktop runtime node_modules is missing" }
+          foreach ($required in @(
+            "resources/desktop-runtime/bin/server.cjs",
+            "resources/desktop-runtime/.next/BUILD_ID",
+            "resources/desktop-runtime/node_modules/next/server.js"
+          )) {
+            if (-not (Test-Path "$root/$required")) { Stop-ShapeCheck "Positive desktop runtime file is missing: $required" }
+          }
           if (Test-Path "$root/resources/desktop-runtime/node_modules/typescript") { Stop-ShapeCheck "TypeScript leaked into runtime" }
           if (Test-Path "$root/resources/desktop-runtime/.next/cache") { Stop-ShapeCheck ".next/cache leaked into runtime" }
           Write-Host "PostgreSQL payload: $($postgres[0].FullName)"

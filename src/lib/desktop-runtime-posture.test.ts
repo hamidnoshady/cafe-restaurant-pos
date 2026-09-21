@@ -39,6 +39,11 @@ describe("packaged desktop production posture", () => {
     expect(electronVersion).toMatch(/^\d+\.\d+\.\d+$/);
     expect(Number.parseInt(electronVersion.split(".")[0], 10)).toBeGreaterThanOrEqual(44);
     expect(desktopLock.packages["node_modules/electron"].version).toBe(electronVersion);
+    expect(desktopManifest.build.extraResources).toContainEqual({
+      from: "../.desktop-runtime/node_modules",
+      to: "desktop-runtime/node_modules",
+      filter: ["**/*"],
+    });
     expect(runtimeBuilder).toContain('target: "node24"');
     expect(runtimeBuilder).toContain('engines: { node: ">=24" }');
   });

@@ -112,6 +112,13 @@ if (resources.some((entry) => entry.from === "../node_modules" || entry.to === "
 if (!resources.some((entry) => entry.from === "../.desktop-runtime" && entry.to === "desktop-runtime")) {
   fail("electron-builder does not package the positive runtime stage");
 }
+if (!resources.some((entry) =>
+  entry.from === "../.desktop-runtime/node_modules" &&
+  entry.to === "desktop-runtime/node_modules" &&
+  Array.isArray(entry.filter) && entry.filter.includes("**/*")
+)) {
+  fail("electron-builder does not explicitly package the positive runtime dependency tree");
+}
 if (!resources.some((entry) => entry.from === "../.desktop-assets/postgresql-tools" && entry.to === "postgresql-tools")) {
   fail("electron-builder does not package the controlled PostgreSQL client-tools stage");
 }

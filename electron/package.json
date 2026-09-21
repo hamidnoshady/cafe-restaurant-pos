@@ -62,6 +62,13 @@
         "to": "desktop-runtime"
       },
       {
+        "from": "../.desktop-runtime/node_modules",
+        "to": "desktop-runtime/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "../.desktop-assets/postgresql-tools",
         "to": "postgresql-tools"
       }
