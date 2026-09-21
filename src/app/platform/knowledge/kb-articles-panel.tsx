@@ -12,6 +12,7 @@
  * operator writes is what «مرکز آموزش» shows in either selected theme.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import {
   BookOpenIcon,
   EyeIcon,
@@ -616,8 +617,10 @@ function ArticleEditor({
                   />
                 </Field>
                 <Field label="ترتیب در دسته">
-                  <input
-                    type="number"
+                  <PersianNumberInput
+                    inputMode="numeric"
+                    allowDecimal={false}
+                    allowNegative={false}
                     dir="ltr"
                     value={sortOrder}
                     onChange={(e) => setSortOrder(Number(e.target.value) || 0)}

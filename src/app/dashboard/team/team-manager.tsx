@@ -24,7 +24,7 @@ import {
 } from "@/lib/permissions";
 import { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin } from "@/lib/pin-policy";
 import { roleLabel } from "@/lib/role-labels";
-import { toPersianDigits } from "@/lib/digits";
+import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { partyScopeFor } from "@/lib/parties-scopes";
@@ -36,7 +36,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { LoadingSkeleton, SectionCard } from "../page-chrome";
 import { PartiesSection } from "../parties/parties-section";
@@ -684,15 +683,13 @@ function CredentialsEditorDialog({
             label={`رمز عددی جدید (${toPersianDigits(PIN_MIN_LENGTH)} تا ${toPersianDigits(PIN_MAX_LENGTH)} رقم)`}
             hint="در هر شعبه باید یکتا باشد."
           >
-            <PersianNumberInput
+            <input
               className={`${inputClass} w-48 text-center tracking-[0.25em]`}
               dir="ltr"
               inputMode="numeric"
-              grouping={false}
-              allowNegative={false}
               maxLength={PIN_MAX_LENGTH}
               value={pin}
-              onChange={(e) => setPin(e.target.value)}
+              onChange={(e) => setPin(toLatinDigits(e.target.value).replace(/[^0-9]/g, ""))}
             />
           </Field>
         ) : null}
@@ -929,15 +926,13 @@ function AddStaffSection({
           label={`رمز عددی (${toPersianDigits(PIN_MIN_LENGTH)} تا ${toPersianDigits(PIN_MAX_LENGTH)} رقم)`}
           hint="در هر شعبه باید یکتا باشد."
         >
-          <PersianNumberInput
+          <input
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
-            grouping={false}
-            allowNegative={false}
             maxLength={PIN_MAX_LENGTH}
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
+            onChange={(e) => setPin(toLatinDigits(e.target.value).replace(/[^0-9]/g, ""))}
           />
         </Field>
         <Field

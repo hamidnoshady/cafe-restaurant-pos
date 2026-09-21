@@ -1,44 +1,85 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { requireRole, withTenantScope } from "@/lib/auth";
+import {
+  attachModifierGroupToItem,
+  detachModifierGroupFromItem,
+  updateItemModifierGroup,
+} from "@/lib/menu-service";
+import {
+  validateItemModifierGroupAttach,
+  validateItemModifierGroupPatch,
+} from "@/lib/menu-validation";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
-async function validatePair(session: SessionPayload, menuItemId: string, modifierGroupId: string) {
-  const location = await resolveActiveLocation(session);
-  if (!location) return false;
-  const { rows } = await query(
-    `SELECT 1 FROM menu_items WHERE id = $1 AND location_id = $3
-     UNION ALL
-     SELECT 1 FROM modifier_groups WHERE id = $2 AND location_id = $3`,
-    [menuItemId, modifierGroupId, location.id],
-  );
-  return rows.length === 2;
-}
-
-/** Attach a modifier group to a menu item. */
+/**
+ * Attach a modifier group to a menu item (optionally with per-item selection
+ * bounds), re-configure an existing attachment, or detach one.
+ *
+ * A required group cannot be attached with fewer active options than its
+ * resolved min — that would create an item no till can ever sell — and the
+ * same rule guards every later re-configuration.
+ */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { menuItemId?: string; modifierGroupId?: string };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  const { menuItemId, modifierGroupId } = body;
+
+  const input = validateItemModifierGroupAttach(body);
+  if (!input.ok) return NextResponse.json({ error: input.error }, { status: 400 });
+
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+
+  const result = await attachModifierGroupToItem(
+    location.id,
+    input.value.menuItemId,
+    input.value.modifierGroupId,
+    {
+      minSelectOverride: input.value.minSelectOverride ?? null,
+      maxSelectOverride: input.value.maxSelectOverride ?? null,
+      sortOrder: input.value.sortOrder,
+    },
+  );
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+  return NextResponse.json({ ok: true });
+});
+
+/** Re-configure one item's attachment: per-item bounds, order, on/off. */
+export const PATCH = withTenantScope(async (request: NextRequest) => {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const menuItemId = typeof body.menuItemId === "string" ? body.menuItemId : null;
+  const modifierGroupId = typeof body.modifierGroupId === "string" ? body.modifierGroupId : null;
   if (!menuItemId || !modifierGroupId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
-  if (!(await validatePair(session, menuItemId, modifierGroupId))) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
 
-  await query(
-    `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
-     VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-    [menuItemId, modifierGroupId],
+  const input = validateItemModifierGroupPatch(body);
+  if (!input.ok) return NextResponse.json({ error: input.error }, { status: 400 });
+
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+
+  const result = await updateItemModifierGroup(
+    location.id,
+    menuItemId,
+    modifierGroupId,
+    input.value,
   );
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true });
 });
 
@@ -52,13 +93,11 @@ export const DELETE = withTenantScope(async (request: NextRequest) => {
   if (!menuItemId || !modifierGroupId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
-  if (!(await validatePair(session, menuItemId, modifierGroupId))) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
 
-  await query(
-    "DELETE FROM menu_item_modifier_groups WHERE menu_item_id = $1 AND modifier_group_id = $2",
-    [menuItemId, modifierGroupId],
-  );
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+
+  const result = await detachModifierGroupFromItem(location.id, menuItemId, modifierGroupId);
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true });
 });

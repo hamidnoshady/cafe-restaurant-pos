@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { CheckCircle2Icon, Loader2Icon, PlusIcon, Trash2Icon, WalletIcon, XCircleIcon } from "lucide-react";
 import { formatJalali } from "@/lib/jalali";
-import { toLatinDigits, toPersianDigits } from "@/lib/digits";
+import { normalizeNumericText, toPersianDigits } from "@/lib/digits";
 import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass, PlatformPageSkeleton, useCan } from "../ui";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 
@@ -119,8 +119,10 @@ export default function PlatformBillingPage() {
     setError("");
     const form = new FormData(ev.currentTarget);
     const name = String(form.get("name") ?? "").trim();
-    const priceToman = Number(toLatinDigits(String(form.get("priceToman") ?? "0")));
-    const creditToman = Number(toLatinDigits(String(form.get("creditToman") ?? "0")));
+    // FormData reads the localized DOM text, unlike the component's React
+    // change event. Normalize grouping and digit glyphs before conversion.
+    const priceToman = Number(normalizeNumericText(String(form.get("priceToman") ?? "0"), { allowDecimal: false, allowNegative: false }));
+    const creditToman = Number(normalizeNumericText(String(form.get("creditToman") ?? "0"), { allowDecimal: false, allowNegative: false }));
     if (!name || priceToman <= 0 || creditToman <= 0) {
       setError("نام بسته، مبلغ پرداختی و مبلغ اعتبار الزامی است.");
       return;

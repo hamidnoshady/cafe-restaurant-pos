@@ -502,6 +502,81 @@ describe("the consent register", () => {
   });
 });
 
+describe("segment member counts", () => {
+  it("counts the same batched on the list page as one at a time", async () => {
+    // The list page evaluates every segment in a single pass over the customer
+    // base, instead of re-scanning the whole order history once per segment.
+    // That is an execution-strategy change, so the only thing that matters is
+    // that it did not become a *semantics* change: each segment must still get
+    // exactly the count it gets on its own.
+    const quiet = await makeCustomer(biz.id, "کم‌خرید", { phone: "+989120000101" });
+    const busy = await makeCustomer(biz.id, "پرخرید", { phone: "+989120000102" });
+    await makeSale(biz.locationId, biz.id, quiet, 100_000, 5);
+    for (let i = 0; i < 4; i += 1) {
+      await makeSale(biz.locationId, biz.id, busy, 300_000, 3 + i);
+    }
+
+    const definitions: Record<string, Parameters<typeof segmentsService.previewSegment>[1]> = {
+      "همهٔ مشتریان": {},
+      "حداقل ۳ خرید": { all: [{ field: "orderCount", op: "gte", value: 3 }] },
+      "حداقل ۱ خرید": { all: [{ field: "orderCount", op: "gte", value: 1 }] },
+      "پرخرج": { all: [{ field: "totalSpentRial", op: "gte", value: 500_000 }] },
+    };
+
+    for (const [name, definition] of Object.entries(definitions)) {
+      await segmentsService.createSegment(biz.id, { name, definition: definition! });
+    }
+
+    const batched = await segmentsService.listSegmentsWithCounts(biz.id);
+    expect(batched.length).toBeGreaterThanOrEqual(Object.keys(definitions).length);
+
+    for (const segment of batched) {
+      const alone = await segmentsService.countSegment(biz.id, segment.id);
+      expect(
+        segment.memberCount,
+        `«${segment.name}» counted ${segment.memberCount} on the list page but ${alone} on its own`,
+      ).toBe(alone);
+    }
+
+    // And the counts are real, not uniformly zero — a batched query that
+    // returned nothing at all would otherwise satisfy the equality above.
+    const atLeastOne = batched.find((segment) => segment.name === "حداقل ۱ خرید");
+    expect(atLeastOne?.memberCount).toBeGreaterThanOrEqual(2);
+  }, 60_000);
+
+  it("survives one unparsable definition without losing the other counts", async () => {
+    // A definition stored by an older version can reference a field that no
+    // longer exists. That segment must degrade to an unknown count on its own,
+    // not take the list page — or the other segments' counts — down with it.
+    const buyer = await makeCustomer(biz.id, "خریدار سالم", { phone: "+989120000103" });
+    await makeSale(biz.locationId, biz.id, buyer, 150_000, 2);
+
+    const healthy = await segmentsService.createSegment(biz.id, {
+      name: "سالم",
+      definition: { all: [{ field: "orderCount", op: "gte", value: 1 }] },
+    });
+    const broken = await segmentsService.createSegment(biz.id, {
+      name: "خراب",
+      definition: { all: [{ field: "orderCount", op: "gte", value: 1 }] },
+    });
+    // Write the unparsable definition straight to the column, because the
+    // service's validation exists precisely to stop this being creatable now.
+    await db.query(
+      `UPDATE customer_segments
+          SET definition = '{"all":[{"field":"fieldThatWasRemoved","op":"gte","value":1}]}'::jsonb
+        WHERE business_id = $1 AND id = $2`,
+      [biz.id, broken!.id],
+    );
+
+    const counts = await segmentsService.listSegmentsWithCounts(biz.id);
+    const healthyRow = counts.find((segment) => segment.id === healthy!.id);
+    const brokenRow = counts.find((segment) => segment.id === broken!.id);
+
+    expect(brokenRow?.memberCount).toBe(0);
+    expect(healthyRow?.memberCount).toBeGreaterThanOrEqual(1);
+  }, 60_000);
+});
+
 describe("tenant isolation", () => {
   it("keeps one business's CRM entirely invisible to another", async () => {
     const mine = await makeCustomer(biz.id, "مشتری من");

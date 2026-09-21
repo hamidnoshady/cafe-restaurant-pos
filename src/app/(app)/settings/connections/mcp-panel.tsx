@@ -306,8 +306,6 @@ export function McpPanel() {
           <PersianNumberInput
             className={inputClass}
             dir="ltr"
-            type="number"
-            min={1}
             placeholder="مدت اعتبار به روز (خالی = بدون انقضا)"
             value={expiresInDays}
             onChange={(e) => setExpiresInDays(e.target.value)}

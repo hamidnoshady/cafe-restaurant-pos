@@ -12,11 +12,13 @@
 import { useRouter } from "next/navigation";
 import { CrmOverviewSection } from "./overview-section";
 import { DirectorySection } from "./directory-section";
+import { LeadsSection } from "./leads-section";
 import { SegmentsSection } from "./segments-section";
 import { DealsSection } from "./deals-section";
 import { ActivitiesSection } from "./activities-section";
 import { CasesSection } from "./cases-section";
 import { DuplicatesSection } from "./duplicates-section";
+import { ReconciliationSection } from "./reconciliation-section";
 import { ConsentSection } from "./consent-section";
 import { CrmSettingsSection } from "./settings-section";
 import { crmSectionHref, type CrmSectionKey } from "./crm-routes";
@@ -42,11 +44,13 @@ export function CrmSection({
   if (section === "overview") return <CrmOverviewSection onGoToSection={goToSection} />;
   if (section === "directory")
     return <DirectorySection role={role} permissions={permissions} />;
+  if (section === "leads") return <LeadsSection />;
   if (section === "segments") return <SegmentsSection />;
   if (section === "deals") return <DealsSection />;
   if (section === "activities") return <ActivitiesSection />;
   if (section === "cases") return <CasesSection role={role} />;
   if (section === "duplicates") return <DuplicatesSection />;
+  if (section === "reconciliation") return <ReconciliationSection />;
   if (section === "settings") return <CrmSettingsSection />;
   return <ConsentSection />;
 }

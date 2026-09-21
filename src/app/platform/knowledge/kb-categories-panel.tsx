@@ -13,6 +13,7 @@
  * 409 codes surface as the panel's own messages via errorMessage.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import {
   ChevronDownIcon,
   FolderPlusIcon,
@@ -392,8 +393,10 @@ function CategoryEditor({
             </select>
           </Field>
           <Field label="ترتیب نمایش" hint="عدد کوچک‌تر، بالاتر در فهرست.">
-            <input
-              type="number"
+            <PersianNumberInput
+              inputMode="numeric"
+              allowDecimal={false}
+              allowNegative={false}
               dir="ltr"
               value={sortOrder}
               onChange={(e) => setSortOrder(Number(e.target.value) || 0)}

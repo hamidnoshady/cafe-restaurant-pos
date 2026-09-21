@@ -9,6 +9,7 @@
 import { getPool, query } from "./db";
 import { invalidateTodayForBusiness } from "./ai-answer-cache";
 import { createDeliveryForOrder } from "./delivery-service";
+import { isFeatureEnabled } from "./features";
 import {
   resolveCartItems,
   resolveLineModifiers,
@@ -20,6 +21,7 @@ import {
   type DiscountInput,
   type OrderTotals,
 } from "./orders";
+import { MAX_ORDER_LINE_QUANTITY } from "./order-quantity";
 import { recomputeOrderTotals } from "./order-totals";
 import { lockOpenOrder } from "./order-lock";
 import { ensureSessionForTable } from "./table-session-service";
@@ -196,6 +198,18 @@ export async function createOrder(
       (await monthlyOrderCount(businessId)) >= limits.monthlyOrderLimit
     ) {
       return { ok: false, error: "monthly_order_limit_exceeded", status: 403 };
+    }
+  }
+
+  // Delivery is an entitlement, not merely a screen: `/api/orders` can create
+  // a `type: "delivery"` order directly, so the route-prefix feature gate on
+  // `/api/deliveries` never sees it. Refusing it here — inside the domain
+  // mutation both the HTTP route and the offline queue's replay call — is
+  // what makes a disabled `delivery` feature hold for the POS UI, the orders
+  // API, offline replays and any direct service invocation alike.
+  if (input.type === "delivery" && businessId) {
+    if (!(await isFeatureEnabled(businessId, "delivery"))) {
+      return { ok: false, error: "feature_disabled", status: 403 };
     }
   }
 
@@ -502,7 +516,7 @@ export async function addItemsToOrder(
   }
 }
 
-const MAX_LINE_QTY = 50;
+const MAX_LINE_QTY = MAX_ORDER_LINE_QUANTITY;
 
 /**
  * Why the old line is voided rather than edited, in the audit trail itself.

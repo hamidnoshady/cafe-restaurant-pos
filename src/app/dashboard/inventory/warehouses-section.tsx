@@ -11,8 +11,7 @@
 import { PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { toPersianDigits } from "@/lib/digits";
+import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
@@ -361,7 +360,7 @@ function AddWarehouseForm({ onCreated }: { onCreated: () => void | Promise<void>
           <input className={inputClass} value={address} onChange={(event) => setAddress(event.target.value)} maxLength={500} autoComplete="street-address" />
         </Field>
         <Field label="تلفن (اختیاری)">
-          <PersianNumberInput className={inputClass} dir="ltr" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="۰۲۱…" maxLength={32} autoComplete="tel" />
+          <input className={inputClass} dir="ltr" inputMode="tel" value={phone} onChange={(event) => setPhone(toLatinDigits(event.target.value))} placeholder="۰۲۱…" maxLength={32} autoComplete="tel" />
         </Field>
         <div className="flex items-end sm:col-span-2">
           <Button type="submit" disabled={busy || !name.trim()} size="lg" className="w-full px-5 font-semibold">

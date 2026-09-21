@@ -75,6 +75,9 @@ app.prepare().then(async () => {
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
   const { runWebsiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/website/sync-service");
+  const { runCrmScoringTick, CRM_SCORING_TICK_INTERVAL_MS } = await import(
+    "./src/lib/crm-scoring-freshness"
+  );
   const { runCmsControlTick } = await import("./src/lib/cms/platform-sync");
   const { inPlatformScope } = await import("./src/lib/cms/platform-control-service");
   const { runHolooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/pull-service");
@@ -245,6 +248,18 @@ app.prepare().then(async () => {
   const websiteSyncTick = () =>
     runWebsiteSyncTick().catch((err) => console.error("website sync tick failed:", err));
   scheduleBackgroundTick(websiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS, 100_000);
+
+  // Migration 0157: keep RFM scores fresh. RFM is a whole-population quintile
+  // calculation, so it can never run on the checkout path — a busy Friday
+  // would make the till wait on a full scan of every customer and every order,
+  // and a failure in a reporting calculation would fail the sale itself.
+  // Instead, checkout marks the business dirty (one row) and this tick does
+  // the scanning. It also rescores daily regardless of activity, because
+  // recency decays with the calendar: a shop closed for Nowruz must not return
+  // to scores frozen at the moment it shut.
+  const crmScoringTick = () =>
+    runCrmScoringTick().catch((err) => console.error("CRM scoring tick failed:", err));
+  scheduleBackgroundTick(crmScoringTick, CRM_SCORING_TICK_INTERVAL_MS, 120_000);
 
   // Migration 0138: a platform website's monthly fee. The service reads the
   // due list under the platform bypass and charges each business inside

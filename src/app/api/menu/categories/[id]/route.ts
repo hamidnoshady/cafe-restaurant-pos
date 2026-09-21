@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { updateCategory } from "@/lib/menu-service";
+import { validateCategoryPatch } from "@/lib/menu-validation";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
-async function ownedCategory(session: SessionPayload, id: string) {
-  const location = await resolveActiveLocation(session);
-  if (!location) return null;
+async function ownedCategory(locationId: string, id: string) {
   const { rows } = await query<{ id: string }>(
     "SELECT id FROM menu_categories WHERE id = $1 AND location_id = $2",
-    [id, location.id],
+    [id, locationId],
   );
-  return rows[0] ? location : null;
+  return rows[0] != null;
 }
 
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -18,56 +18,38 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedCategory(session, id);
-  if (!location) return NextResponse.json({ error: "category_not_found" }, { status: 404 });
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+  if (!(await ownedCategory(location.id, id)))
+    return NextResponse.json({ error: "category_not_found" }, { status: 404 });
 
-  let body: { name?: string; taxRate?: number; sortOrder?: number; isActive?: boolean };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  let i = 1;
+  const input = validateCategoryPatch(body);
+  if (!input.ok) return NextResponse.json({ error: input.error }, { status: 400 });
 
-  if (body.name !== undefined) {
-    const name = body.name.trim();
-    if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
-    fields.push(`name = $${++i}`);
-    values.push(name);
-  }
-  if (body.taxRate !== undefined) {
-    const rate = Number(body.taxRate);
-    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
-      return NextResponse.json({ error: "invalid_rate" }, { status: 400 });
-    }
-    fields.push(`tax_rate = $${++i}`);
-    values.push(rate);
-  }
-  if (body.sortOrder !== undefined) {
-    fields.push(`sort_order = $${++i}`);
-    values.push(Number(body.sortOrder) || 0);
-  }
-  if (body.isActive !== undefined) {
-    fields.push(`is_active = $${++i}`);
-    values.push(Boolean(body.isActive));
-  }
-  if (fields.length === 0) return NextResponse.json({ error: "bad_request" }, { status: 400 });
-
-  await query(`UPDATE menu_categories SET ${fields.join(", ")} WHERE id = $1`, [id, ...values]);
+  const result = await updateCategory(location.id, id, input.value);
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true });
 });
 
-/** Categories with items are deactivated, not deleted, so historical orders keep their references. */
+/**
+ * Categories with items are deactivated, not deleted, so historical orders keep their references.
+ */
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedCategory(session, id);
-  if (!location) return NextResponse.json({ error: "category_not_found" }, { status: 404 });
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+  if (!(await ownedCategory(location.id, id)))
+    return NextResponse.json({ error: "category_not_found" }, { status: 404 });
 
   const { rows: items } = await query("SELECT id FROM menu_items WHERE category_id = $1 LIMIT 1", [id]);
   if (items.length > 0) {

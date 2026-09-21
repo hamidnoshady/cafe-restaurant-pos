@@ -170,9 +170,6 @@ export default function BackupStepPage() {
           <PersianNumberInput
             className="w-32 rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary"
             dir="ltr"
-            type="number"
-            min={1}
-            max={365}
             value={localRetention}
             onChange={(e) => setLocalRetention(Number(e.target.value))}
           />

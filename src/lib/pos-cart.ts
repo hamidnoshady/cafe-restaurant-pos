@@ -1,6 +1,12 @@
 /**
  * Pure cart-line operations for the till.
  *
+ * Every quantity change honours the one ceiling the server enforces
+ * (order-quantity.ts): the steppers cannot build a line the submit would
+ * reject, and a merge that would overflow the ceiling stays two lines
+ * instead — each one legal on its own.
+ *
+ * The till.*
  * A cart line is *one configuration* of a menu item — a given menu item can sit
  * on several lines, one per distinct add-on/note combination. «دو قهوه، یکی با
  * شکلات و یکی بدون آن» is therefore two lines, each with its own quantity and
@@ -19,6 +25,8 @@
  * Everything here is a plain function over the cart array and is unit-tested;
  * the component only wires these into state.
  */
+
+import { MAX_ORDER_LINE_QUANTITY } from "./order-quantity";
 
 /** The fields two lines must share to count as the same sellable configuration. */
 export interface PosCartLineConfig {
@@ -70,6 +78,13 @@ export function addOrMergeLine(
     sameLineConfig(line, incoming),
   );
   if (existingIndex === -1) return [...lines, incoming];
+  const target = lines[existingIndex];
+  // A merge that would push the line past the server's ceiling stays two
+  // lines — each individually valid — rather than one the submit would
+  // reject. The cashier still sees every unit they scanned.
+  if (target.quantity + incoming.quantity > MAX_ORDER_LINE_QUANTITY) {
+    return [...lines, incoming];
+  }
   return lines.map((line, index) =>
     index === existingIndex
       ? { ...line, quantity: line.quantity + incoming.quantity }
@@ -97,6 +112,12 @@ export function upsertLine(
   const mergeIndex = remaining.findIndex((line) =>
     sameLineConfig(line, updated),
   );
+  if (mergeIndex !== -1 && remaining[mergeIndex].quantity + updated.quantity > MAX_ORDER_LINE_QUANTITY) {
+    // Same overflow rule as addOrMergeLine: keep the lines apart.
+    const next = [...remaining];
+    next.splice(Math.min(currentIndex, next.length), 0, updated);
+    return next;
+  }
   if (mergeIndex === -1) {
     // Keep the edited line where it stood; rebuild without reordering.
     const next = [...remaining];
@@ -123,7 +144,12 @@ export function stepLineQuantity(
   return lines.flatMap((line) => {
     if (line.key !== key) return [line];
     const nextQuantity = line.quantity + delta;
-    return nextQuantity <= 0 ? [] : [{ ...line, quantity: nextQuantity }];
+    if (nextQuantity <= 0) return [];
+    // The server refuses a line above its ceiling whatever the client sends;
+    // the stepper simply refuses to build one. The caller surfaces the
+    // «حداکثر تعداد» message when it tries anyway.
+    if (nextQuantity > MAX_ORDER_LINE_QUANTITY) return [line];
+    return [{ ...line, quantity: nextQuantity }];
   });
 }
 

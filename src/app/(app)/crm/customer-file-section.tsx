@@ -50,6 +50,7 @@ import type { CustomerFile } from "@/lib/crm-service";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
 import { canViewCrmSection, crmCustomerHref, crmSectionHref } from "./crm-routes";
+import { CustomerRelationshipsCard } from "./customer-relationships-card";
 
 interface Note {
   id: string;
@@ -447,6 +448,12 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
           )}
         </SectionCard>
       </div>
+
+      <CustomerRelationshipsCard
+        customerId={customerId}
+        // A merged file is a tombstone; its links belong to the winner.
+        canManage={canViewCrmSection(role, "directory") && !isMerged}
+      />
 
       <SectionCard
         title="تاریخچهٔ ارتباط"
