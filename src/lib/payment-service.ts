@@ -34,11 +34,14 @@ export interface CompleteOrderPaymentInput {
   /** The branch's business date, supplied by the route that resolved the branch. */
   businessDate?: string;
   receivedBy: string | null;
+  /** Caller-owned domain idempotency identity (for offline/server sync). */
+  idempotencyKey?: string | null;
 }
 
 export interface CompleteOrderPaymentResult {
   amount: RialText;
   tipAmount: number;
+  duplicate?: boolean;
 }
 
 /**
@@ -60,7 +63,22 @@ export async function completeOrderPayment(
     tipAmount = 0,
     businessDate,
     receivedBy,
+    idempotencyKey,
   } = input;
+  const effectKey = `order-payment:${idempotencyKey || orderId}`;
+  if (idempotencyKey) {
+    const prior = await client.query<{ total: string; tip_amount: number }>(
+      `SELECT o.total::text AS total, o.tip_amount
+         FROM inventory_events ie
+         JOIN orders o ON o.id=ie.source_id AND o.location_id=ie.location_id
+        WHERE ie.business_id=$1 AND ie.location_id=$2 AND ie.idempotency_key=$3
+          AND ie.source_type='order' AND ie.posting_status='posted'`,
+      [businessId, locationId, effectKey],
+    );
+    if (prior.rows[0]) {
+      return { amount: rialText(prior.rows[0].total), tipAmount: prior.rows[0].tip_amount, duplicate: true };
+    }
+  }
   const locked = await lockOpenOrder(client, locationId, orderId);
   if (!locked.ok) {
     throw Object.assign(new Error(locked.error), { code: locked.error, status: locked.status });
@@ -84,9 +102,9 @@ export async function completeOrderPayment(
   const { rows: eventRows } = await client.query<{ id: string }>(
     `INSERT INTO inventory_events
        (business_id, location_id, event_type, source_type, source_id, created_by, idempotency_key, costing_version)
-       VALUES ($1, $2, 'sale_consumption', 'order', $3, $4, 'order-payment:' || $5, 2)
+       VALUES ($1, $2, 'sale_consumption', 'order', $3, $4, $5, 2)
        RETURNING id`,
-    [businessId, locationId, orderId, receivedBy, orderId],
+    [businessId, locationId, orderId, receivedBy, effectKey],
   );
   const inventoryEventId = eventRows[0].id;
   const amount = rialText(locked.order.total);
@@ -175,7 +193,7 @@ export async function completeOrderPayment(
   // money. The background tick picks this up (crm-scoring-freshness.ts).
   await markScoringDirtyIn(client, businessId);
 
-  return { amount, tipAmount };
+  return { amount, tipAmount, duplicate: false };
 }
 
 export function paymentErrorDetails(error: unknown): { error: string; status: number } | null {

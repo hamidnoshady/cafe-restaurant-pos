@@ -53,7 +53,8 @@ export function PlatformSecretField({
   className?: string;
 }) {
   const [editing, setEditing] = React.useState(!configured);
-  const inputId = id ?? React.useId();
+  const generatedId = React.useId();
+  const inputId = id ?? generatedId;
 
   // Not configured and no staged clear → always in edit mode.
   const showInput = editing || !configured;

@@ -338,7 +338,10 @@ export function PosScreen({
     () => (menu ? buildRestaurantMenuIndex(menu) : null),
     [menu],
   );
-  const activeCategories = menuIndex?.activeCategories ?? [];
+  const activeCategories = useMemo(
+    () => menuIndex?.activeCategories ?? [],
+    [menuIndex],
+  );
 
   // The courier list is only worth a request while a delivery sale is
   // actually being placed — and only when the business may deliver at all.
@@ -378,7 +381,10 @@ export function PosScreen({
     warmPosItemSearchCache(posItems);
   }, [posItems]);
 
-  const itemsById = menuIndex?.itemsById ?? new Map<string, Item>();
+  const itemsById = useMemo(
+    () => menuIndex?.itemsById ?? new Map<string, Item>(),
+    [menuIndex],
+  );
 
   const visibleProducts = useMemo(() => {
     if (!menu) return [];
@@ -669,7 +675,7 @@ export function PosScreen({
                 : Number(discountValue) || 0,
           }
         : { type: null },
-    [discountType, discountValue],
+    [discountType, discountValue, money],
   );
   const cartLines: CartLine[] = useMemo(
     () =>

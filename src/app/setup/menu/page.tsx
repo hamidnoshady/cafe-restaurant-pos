@@ -4,7 +4,7 @@ import { SetupDataSkeleton } from "../ui";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
@@ -36,7 +36,7 @@ interface Item {
 export default function MenuStep() {
   const router = useRouter();
   const industry = useSetupIndustry();
-  const steps = stepsFor(industry);
+  const steps = useMemo(() => stepsFor(industry), [industry]);
   // The menu (menu_items/menu_categories) is an F&B-only concept -- a
   // jewelry business landing here belongs at whatever step actually
   // follows it in their flow.
@@ -50,7 +50,7 @@ export default function MenuStep() {
 
   useEffect(() => {
     if (!available) router.replace(skipToPath("menu", steps));
-  }, [available]);
+  }, [available, router, steps]);
 
   // manual entry state
   const [newCategory, setNewCategory] = useState("");

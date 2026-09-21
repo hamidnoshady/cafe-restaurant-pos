@@ -53,7 +53,7 @@ function useWidgetData(config: Record<string, unknown>) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [configKey]);
   return data;
 }

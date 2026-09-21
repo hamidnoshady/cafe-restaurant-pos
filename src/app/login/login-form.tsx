@@ -416,7 +416,7 @@ function PinLogin() {
     if (res.ok) {
       if (data.phoneVerification && data.phoneToken) {
         // PIN proven, phone step owed. `otp` — a number is on file (unproven,
-        // or proven with a closed window): send to it straight away. 
+        // or proven with a closed window): send to it straight away.
         // `set_phone` — nothing on file: ask for the number first.
         setPinPending({ token: data.phoneToken, maskedPhone: data.maskedPhone ?? null });
         if (data.phoneVerification === "otp") {
@@ -865,7 +865,7 @@ function EmployeeAvatar({
   }, [employee.photoUrl]);
 
   if (employee.photoUrl && !photoFailed) {
-    // eslint-disable-next-line @next/next/no-img-element
+
     return (
       <span className={`${dims} relative inline-block shrink-0 overflow-hidden rounded-full`}>
         {!photoLoaded ? <Skeleton aria-hidden="true" className="absolute inset-0 size-full rounded-full" /> : null}

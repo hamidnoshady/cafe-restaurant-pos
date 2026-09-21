@@ -49,9 +49,6 @@ export function MenuItemImage({
   }
 
   return (
-    /* eslint-disable-next-line @next/next/no-img-element -- the app's media
-       proxy serves tenant-scoped bytes; next/image adds nothing for a
-       fixed-size tile and complicates the offline desktop runtime. */
     <img
       src={src}
       alt={alt}

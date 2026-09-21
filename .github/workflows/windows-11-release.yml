@@ -1,0 +1,325 @@
+name: windows-11-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Candidate version (X.Y.Z)'
+        required: true
+        type: string
+      candidate_commit:
+        description: 'Full release-candidate Git commit SHA'
+        required: true
+        type: string
+      candidate_run_id:
+        description: 'windows-signed-candidate run containing the exact signed candidate'
+        required: true
+        type: string
+      previous_run_id:
+        description: 'Run containing the prior signed release for update acceptance'
+        required: true
+        type: string
+      previous_version:
+        description: 'Prior signed release version (X.Y.Z)'
+        required: true
+        type: string
+      previous_artifact:
+        description: 'Exact prior signed or signed-candidate artifact name; provenance and signatures are revalidated'
+        required: true
+        type: string
+      uac_cancellation_evidence_url:
+        description: 'Evidence URL showing optional firewall UAC was cancelled and desktop mode remained usable'
+        required: true
+        type: string
+
+concurrency:
+  group: windows-11-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: powershell
+
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
+  CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+  PREVIOUS_VERSION: ${{ inputs.previous_version }}
+
+jobs:
+  infrastructure:
+    name: retail Windows 11 infrastructure status
+    runs-on: windows-latest
+    steps:
+      - name: Report non-fallback runner status
+        env:
+          CONFIGURED: ${{ vars.WINDOWS_11_RUNNER_CONFIGURED }}
+        run: |
+          if ($env:CONFIGURED -ne "true") {
+            Write-Host "::error title=Retail Windows 11 NOT CONFIGURED::Set WINDOWS_11_RUNNER_CONFIGURED=true only after registering a non-administrator self-hosted runner with labels self-hosted, Windows, X64, retail-windows-11. This workflow will not fall back to windows-latest/Windows Server."
+            throw "Retail Windows 11 acceptance infrastructure is NOT CONFIGURED"
+          }
+
+  retail-windows-11:
+    name: retail Windows 11 clean-state lifecycle
+    needs: infrastructure
+    runs-on: [self-hosted, Windows, X64, retail-windows-11]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Prove retail Windows 11 and ordinary-user execution
+        id: platform
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          $productType = (Get-CimInstance Win32_OperatingSystem).ProductType
+          $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          if ($os.Caption -notmatch 'Windows 11') { throw "Non-fallback check failed: $($os.Caption) is not retail Windows 11" }
+          if ($productType -ne 1) { throw "Non-fallback check failed: ProductType=$productType is not a workstation OS" }
+          if ($admin) { throw "Runner account is elevated; acceptance requires an ordinary non-administrator user" }
+          "caption=$($os.Caption)" >> $env:GITHUB_OUTPUT
+          "build=$($os.BuildNumber)" >> $env:GITHUB_OUTPUT
+          Write-Host "Retail platform: $($os.Caption), build $($os.BuildNumber), ProductType=$productType, non-admin=$(-not $admin)"
+
+      - name: Verify real network profile posture
+        id: network
+        run: |
+          $profiles = @(Get-NetConnectionProfile | Where-Object { $_.IPv4Connectivity -ne 'Disconnected' -or $_.IPv6Connectivity -ne 'Disconnected' })
+          if (-not $profiles.Count) { throw "No active Windows network profile" }
+          $public = @($profiles | Where-Object NetworkCategory -eq 'Public')
+          $private = @($profiles | Where-Object { $_.NetworkCategory -in @('Private','DomainAuthenticated') })
+          if ($public.Count) { throw "Active Public profile is not accepted for local-device gateway testing: $($public.Name -join ', ')" }
+          if (-not $private.Count) { throw "A Private or DomainAuthenticated profile is required" }
+          $categories = (($profiles | ForEach-Object { [string]$_.NetworkCategory } | Sort-Object -Unique) -join ',')
+          "profiles=$categories" >> $env:GITHUB_OUTPUT
+
+      - name: Require successful authoritative source workflows
+        env:
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          PREVIOUS_RUN_ID: ${{ inputs.previous_run_id }}
+        run: |
+          if ($env:CANDIDATE_RUN_ID -notmatch '^\d+$' -or $env:PREVIOUS_RUN_ID -notmatch '^\d+$') { throw "Candidate and previous run ids must be numeric" }
+          $headers = @{ Authorization = "Bearer $env:ACTIONS_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $candidateRun = Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:CANDIDATE_RUN_ID" -Headers $headers
+          $previousRun = Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:PREVIOUS_RUN_ID" -Headers $headers
+          if ($candidateRun.name -cne 'windows-signed-candidate' -or $candidateRun.event -cne 'workflow_dispatch' -or $candidateRun.conclusion -cne 'success') { throw "candidate_run_id is not a successful windows-signed-candidate dispatch" }
+          if ($previousRun.name -notin @('windows-signed-candidate','windows-production-release') -or $previousRun.event -cne 'workflow_dispatch' -or $previousRun.conclusion -cne 'success') { throw "previous_run_id is not a successful signed candidate or production release dispatch" }
+          if ($candidateRun.head_sha -cne $env:CANDIDATE_COMMIT) { throw "Signed-candidate workflow definition came from $($candidateRun.head_sha), not $env:CANDIDATE_COMMIT" }
+          if ($previousRun.head_sha -notmatch '^[0-9a-f]{40}$') { throw "Prior signed workflow has no full head SHA" }
+          "PREVIOUS_WORKFLOW_COMMIT=$($previousRun.head_sha)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Download signed candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: business-suite-windows-${{ inputs.version }}-signed-candidate
+          path: ${{ runner.temp }}\suite-candidate
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download prior signed release
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.previous_artifact }}
+          path: ${{ runner.temp }}\suite-previous
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.previous_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bind acceptance to candidate and prior provenance
+        id: candidate
+        run: |
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Candidate version must be X.Y.Z" }
+          if ($env:PREVIOUS_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Previous version must be X.Y.Z" }
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if ($env:GITHUB_SHA -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:GITHUB_SHA does not match candidate $env:CANDIDATE_COMMIT" }
+          if ([version]$env:PREVIOUS_VERSION -ge [version]$env:RELEASE_VERSION) { throw "Previous version must be lower than the candidate version" }
+          $checkedOutCommit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $checkedOutCommit -cne $env:CANDIDATE_COMMIT) { throw "Checked-out commit $checkedOutCommit does not match candidate $env:CANDIDATE_COMMIT" }
+
+          $candidateProvenanceFile = Get-ChildItem "${{ runner.temp }}\suite-candidate" -Recurse -File -Filter release-provenance.json | Select-Object -First 1
+          $previousProvenanceFile = Get-ChildItem "${{ runner.temp }}\suite-previous" -Recurse -File -Filter release-provenance.json | Select-Object -First 1
+          if (-not $candidateProvenanceFile) { throw "Candidate release-provenance.json is missing" }
+          if (-not $previousProvenanceFile) { throw "Previous release-provenance.json is missing" }
+          $candidateProvenance = Get-Content $candidateProvenanceFile.FullName -Raw | ConvertFrom-Json
+          $previousProvenance = Get-Content $previousProvenanceFile.FullName -Raw | ConvertFrom-Json
+          if ($candidateProvenance.version -cne $env:RELEASE_VERSION) { throw "Candidate version $($candidateProvenance.version) does not match $env:RELEASE_VERSION" }
+          if ($candidateProvenance.commit -cne $env:CANDIDATE_COMMIT) { throw "Candidate provenance commit $($candidateProvenance.commit) does not match $env:CANDIDATE_COMMIT" }
+          if ($previousProvenance.version -cne $env:PREVIOUS_VERSION) { throw "Previous version $($previousProvenance.version) does not match $env:PREVIOUS_VERSION" }
+          if ($previousProvenance.commit -notmatch '^[0-9a-f]{40}$') { throw "Previous provenance has no full Git commit SHA" }
+          if ($previousProvenance.commit -cne $env:PREVIOUS_WORKFLOW_COMMIT) { throw "Prior signed workflow definition commit $env:PREVIOUS_WORKFLOW_COMMIT does not match provenance $($previousProvenance.commit)" }
+          if ($previousProvenance.commit -ceq $env:CANDIDATE_COMMIT) { throw "Update acceptance requires a prior candidate commit" }
+
+          function Assert-ProvenanceArtifact([object]$provenance, [string]$artifactRoot, [string]$expectedVersion, [string]$expectedCommit, [string]$label) {
+            $installers = @(Get-ChildItem $artifactRoot -Recurse -File -Filter "Business Suite Setup *.exe")
+            if ($installers.Count -ne 1) { throw "Expected exactly one $label installer; found $($installers.Count)" }
+            $installer = $installers[0]
+            $expectedName = "Business Suite Setup $expectedVersion.exe"
+            if ($installer.Name -cne $expectedName) { throw "$label installer $($installer.Name) does not match $expectedName" }
+            $rows = @($provenance.artifacts | Where-Object { $_.name -ceq $installer.Name })
+            if ($rows.Count -ne 1) { throw "$label provenance does not contain exactly one installer row" }
+            $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($rows[0].sha256 -cne $hash -or [long]($rows[0].bytes) -ne $installer.Length) { throw "$label installer does not match release provenance" }
+
+            $statusFiles = @(Get-ChildItem $artifactRoot -Recurse -File -Filter windows-signing-status.json)
+            $verificationFiles = @(Get-ChildItem $artifactRoot -Recurse -File -Filter windows-signature-verification.json)
+            if ($statusFiles.Count -ne 1 -or $verificationFiles.Count -ne 1) { throw "$label signing reports are missing or ambiguous" }
+            $statusHash = (Get-FileHash -LiteralPath $statusFiles[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $verificationHash = (Get-FileHash -LiteralPath $verificationFiles[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($statusHash -cne $provenance.signingStatusSha256 -or $verificationHash -cne $provenance.signatureVerificationSha256) { throw "$label signing reports do not match release provenance" }
+            $status = Get-Content $statusFiles[0].FullName -Raw | ConvertFrom-Json
+            $verification = Get-Content $verificationFiles[0].FullName -Raw | ConvertFrom-Json
+            if ($status.commit -cne $expectedCommit -or $status.status -cne 'SIGNED - VERIFICATION REQUIRED') { throw "$label signing status is not bound to the expected commit" }
+            if (-not $verification.passed -or $verification.mode -cne 'signed' -or $verification.commit -cne $expectedCommit) { throw "$label signature verification is not a passing result for the expected commit" }
+            $verifiedInstaller = @($verification.artifacts | Where-Object id -eq 'nsis-installer')
+            if ($verifiedInstaller.Count -ne 1 -or $verifiedInstaller[0].sha256 -cne $hash -or [long]($verifiedInstaller[0].bytes) -ne $installer.Length) { throw "$label verified installer does not match the downloaded installer" }
+          }
+          Assert-ProvenanceArtifact $candidateProvenance "${{ runner.temp }}\suite-candidate" $env:RELEASE_VERSION $env:CANDIDATE_COMMIT "Candidate"
+          Assert-ProvenanceArtifact $previousProvenance "${{ runner.temp }}\suite-previous" $env:PREVIOUS_VERSION $previousProvenance.commit "Previous"
+          $candidateInstallerRow = @($candidateProvenance.artifacts | Where-Object { $_.name -ceq "Business Suite Setup $env:RELEASE_VERSION.exe" })
+          if ($candidateInstallerRow.Count -ne 1 -or $candidateInstallerRow[0].sha256 -notmatch '^[0-9a-f]{64}$') { throw "Candidate provenance has no valid installer SHA-256" }
+          "commit=$env:CANDIDATE_COMMIT" >> $env:GITHUB_OUTPUT
+          "previous_commit=$($previousProvenance.commit)" >> $env:GITHUB_OUTPUT
+          "installer_sha256=$($candidateInstallerRow[0].sha256)" >> $env:GITHUB_OUTPUT
+
+      - name: Verify both downloaded installers before execution
+        env:
+          WINDOWS_EXPECTED_SIGNER: ${{ vars.WINDOWS_EXPECTED_SIGNER }}
+          PREVIOUS_COMMIT: ${{ steps.candidate.outputs.previous_commit }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_EXPECTED_SIGNER)) { throw "NOT CONFIGURED: WINDOWS_EXPECTED_SIGNER" }
+          $candidateInstallers = @(Get-ChildItem "${{ runner.temp }}\suite-candidate" -Recurse -File -Filter "Business Suite Setup *.exe")
+          $previousInstallers = @(Get-ChildItem "${{ runner.temp }}\suite-previous" -Recurse -File -Filter "Business Suite Setup *.exe")
+          if ($candidateInstallers.Count -ne 1) { throw "Expected exactly one candidate installer; found $($candidateInstallers.Count)" }
+          if ($previousInstallers.Count -ne 1) { throw "Expected exactly one previous installer; found $($previousInstallers.Count)" }
+          $candidateInstaller = $candidateInstallers[0]
+          $previousInstaller = $previousInstallers[0]
+          $preflightRoot = Join-Path "${{ runner.temp }}" "signature-preflight"
+          $candidateRoot = Join-Path $preflightRoot "candidate"
+          $previousRoot = Join-Path $preflightRoot "previous"
+          New-Item -ItemType Directory -Path $candidateRoot, $previousRoot -Force | Out-Null
+          Copy-Item -LiteralPath $candidateInstaller.FullName -Destination $candidateRoot
+          Copy-Item -LiteralPath $previousInstaller.FullName -Destination $previousRoot
+          .\scripts\verify-windows-signatures.ps1 -ArtifactRoot $candidateRoot -ManifestPath config\windows-installer-signing-manifest.json -Mode signed -ExpectedSigner $env:WINDOWS_EXPECTED_SIGNER -CandidateCommit $env:CANDIDATE_COMMIT -OutputPath candidate-installer-signatures.json
+          .\scripts\verify-windows-signatures.ps1 -ArtifactRoot $previousRoot -ManifestPath config\windows-installer-signing-manifest.json -Mode signed -ExpectedSigner $env:WINDOWS_EXPECTED_SIGNER -CandidateCommit $env:PREVIOUS_COMMIT -OutputPath previous-installer-signatures.json
+
+      - name: Assert dedicated clean state
+        run: |
+          $root = Join-Path $env:LOCALAPPDATA "BusinessSuiteRetailAcceptance"
+          $install = Join-Path $root "installed"
+          $data = Join-Path $root "data"
+          if (Test-Path $root) { throw "Clean-state acceptance root already exists: $root. Preserve it for diagnosis, then explicitly remove it before a new run." }
+          if (Get-Process "Business Suite" -ErrorAction SilentlyContinue) { throw "Business Suite is already running" }
+          New-Item -ItemType Directory -Path $root | Out-Null
+          "ACCEPTANCE_ROOT=$root" >> $env:GITHUB_ENV
+          "INSTALL_DIR=$install" >> $env:GITHUB_ENV
+          "USER_DATA=$data" >> $env:GITHUB_ENV
+
+      - name: Install prior release without elevation and launch twice
+        run: |
+          $installer = Get-ChildItem "${{ runner.temp }}\suite-previous" -Recurse -File -Filter "Business Suite Setup *.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Prior installer is missing" }
+          $process = Start-Process $installer.FullName -ArgumentList "/S", "/D=$env:INSTALL_DIR" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Prior installer failed: $($process.ExitCode)" }
+          $env:DESKTOP_EXECUTABLE = Join-Path $env:INSTALL_DIR "Business Suite.exe"
+          $env:DESKTOP_SMOKE_USER_DATA = $env:USER_DATA
+          $env:GITHUB_ACTIONS = "true"
+          node electron/scripts/smoke-packaged.js
+
+      - name: Abrupt-stop recovery acceptance
+        run: |
+          $exe = Join-Path $env:INSTALL_DIR "Business Suite.exe"
+          $process = Start-Process $exe -ArgumentList "--user-data-dir=$env:USER_DATA" -PassThru
+          Start-Sleep -Seconds 15
+          taskkill /pid $process.Id /t /f | Out-Null
+          Start-Sleep -Seconds 5
+          $env:DESKTOP_EXECUTABLE = $exe
+          $env:DESKTOP_SMOKE_USER_DATA = $env:USER_DATA
+          $env:GITHUB_ACTIONS = "true"
+          node electron/scripts/smoke-packaged.js
+
+      - name: In-place update to signed candidate and persistence acceptance
+        run: |
+          $installer = Get-ChildItem "${{ runner.temp }}\suite-candidate" -Recurse -File -Filter "Business Suite Setup *.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Candidate installer is missing" }
+          $process = Start-Process $installer.FullName -ArgumentList "/S", "/D=$env:INSTALL_DIR" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Candidate update failed: $($process.ExitCode)" }
+          $env:DESKTOP_EXECUTABLE = Join-Path $env:INSTALL_DIR "Business Suite.exe"
+          $env:DESKTOP_SMOKE_USER_DATA = $env:USER_DATA
+          $env:GITHUB_ACTIONS = "true"
+          node electron/scripts/smoke-packaged.js
+
+      - name: Verify installed candidate Authenticode and RFC3161 timestamp
+        env:
+          WINDOWS_EXPECTED_SIGNER: ${{ vars.WINDOWS_EXPECTED_SIGNER }}
+        run: |
+          $verification = Join-Path $env:ACCEPTANCE_ROOT "signature-root"
+          New-Item -ItemType Directory -Path "$verification\win-unpacked" -Force | Out-Null
+          Copy-Item (Join-Path $env:INSTALL_DIR "Business Suite.exe") "$verification\win-unpacked\Business Suite.exe"
+          Copy-Item (Get-ChildItem "${{ runner.temp }}\suite-candidate" -Recurse -File -Filter "Business Suite Setup *.exe" | Select-Object -First 1).FullName $verification
+          .\scripts\verify-windows-signatures.ps1 -ArtifactRoot $verification -Mode signed -ExpectedSigner $env:WINDOWS_EXPECTED_SIGNER -CandidateCommit $env:CANDIDATE_COMMIT -OutputPath windows-11-signatures.json
+
+      - name: Record optional UAC-cancellation evidence without weakening desktop mode
+        env:
+          UAC_EVIDENCE: ${{ inputs.uac_cancellation_evidence_url }}
+        run: |
+          if ($env:UAC_EVIDENCE -notmatch '^https://') { throw "UAC cancellation requires an HTTPS evidence URL from this retail acceptance session" }
+          if (-not (Test-Path (Join-Path $env:INSTALL_DIR "Business Suite.exe"))) { throw "Desktop mode did not remain installed after optional UAC cancellation" }
+          Write-Host "Manual retail evidence: $env:UAC_EVIDENCE"
+
+      - name: Uninstall while preserving persistent data
+        run: |
+          $uninstaller = Get-ChildItem $env:INSTALL_DIR -File | Where-Object { $_.Name -match 'uninstall' -and $_.Extension -eq '.exe' } | Select-Object -First 1
+          if (-not $uninstaller) { throw "Uninstaller missing" }
+          $process = Start-Process $uninstaller.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Uninstaller failed: $($process.ExitCode)" }
+          Start-Sleep -Seconds 3
+          if (Test-Path (Join-Path $env:INSTALL_DIR "Business Suite.exe")) { throw "Application executable remains after uninstall" }
+          if (-not (Test-Path $env:USER_DATA)) { throw "Persistent data was deleted by uninstall" }
+          if (-not (Test-Path (Join-Path $env:USER_DATA "pgdata"))) { throw "PostgreSQL data did not survive uninstall" }
+
+      - name: Write retail evidence
+        if: success()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PREVIOUS_COMMIT: ${{ steps.candidate.outputs.previous_commit }}
+          INSTALLER_SHA256: ${{ steps.candidate.outputs.installer_sha256 }}
+        run: |
+          [ordered]@{
+            schemaVersion = 1
+            checkId = "windows-11-retail"
+            status = "PASS"
+            version = $env:RELEASE_VERSION
+            commit = $env:CANDIDATE_COMMIT
+            installerSha256 = $env:INSTALLER_SHA256
+            previousVersion = $env:PREVIOUS_VERSION
+            previousCommit = $env:PREVIOUS_COMMIT
+            executedAt = [DateTime]::UtcNow.ToString("o")
+            evidenceUrl = $env:RUN_URL
+            platform = "${{ steps.platform.outputs.caption }} build ${{ steps.platform.outputs.build }}"
+            networkProfiles = "${{ steps.network.outputs.profiles }}"
+            ordinaryUser = $true
+            checks = @("candidate-and-prior-provenance", "pre-execution-authenticode", "clean-state", "non-elevated-install", "two-launch", "private-network-profile", "abrupt-stop-recovery", "in-place-update", "installed-candidate-authenticode", "uac-cancellation-evidence", "uninstall", "data-preserved")
+          } | ConvertTo-Json -Depth 6 | Set-Content windows-11-release-evidence.json -Encoding UTF8
+
+      - name: Upload retail evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-11-release-evidence-${{ inputs.version }}
+          if-no-files-found: warn
+          path: |
+            windows-11-release-evidence.json
+            candidate-installer-signatures.json
+            previous-installer-signatures.json
+            windows-11-signatures.json

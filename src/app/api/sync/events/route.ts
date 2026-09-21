@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { applySyncEvent, type SyncEventInput, type SyncEventType } from "@/lib/sync-events";
+import { applySyncEvent, type SyncEventInput } from "@/lib/sync-events";
+import { syncEventDefinition } from "@/lib/sync-event-registry";
 
 /**
  * Offline-queue flush endpoint (Phase 5): a client that queued actions in
@@ -33,14 +34,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "too_many_events" }, { status: 400 });
   }
 
-  const VALID_TYPES: SyncEventType[] = ["order.create", "order.add_items", "order_item.status"];
   for (const e of events) {
     if (
       typeof e.clientEventId !== "string" ||
       !e.clientEventId ||
       typeof e.occurredAt !== "string" ||
       !e.type ||
-      !VALID_TYPES.includes(e.type) ||
+      !syncEventDefinition(e.type, 1)?.legacy ||
       typeof e.payload !== "object" ||
       e.payload === null
     ) {

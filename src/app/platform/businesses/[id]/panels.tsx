@@ -46,7 +46,7 @@ export function BusinessDetailsPanel() {
     if (!business) return;
     setName(business.name);
     setTimezone(business.timezone);
-  }, [business?.id, business?.name, business?.timezone]);
+  }, [business]);
 
   if (!business) return null;
   const changed = name.trim() !== business.name || timezone.trim() !== business.timezone;
@@ -140,7 +140,7 @@ export function IndustryPanel() {
   useEffect(() => {
     setSaved(null);
     if (business) setIndustry(business.industry);
-  }, [business?.id, business?.industry]);
+  }, [business]);
 
   if (!business) return null;
   const changed = industry !== business.industry;
@@ -253,7 +253,7 @@ export function SubdomainPanel() {
   useEffect(() => {
     if (business) setSubdomain(business.subdomain);
     setSaved(false);
-  }, [business?.id, business?.subdomain]);
+  }, [business]);
 
   if (!business) return null;
   const trimmed = subdomain.trim().toLowerCase();
@@ -369,7 +369,7 @@ export function PlanPanel() {
 
   useEffect(() => {
     if (business) setPlan(business.plan);
-  }, [business?.id, business?.plan]);
+  }, [business]);
 
   if (!business) return null;
 
@@ -467,11 +467,11 @@ export function UsagePanel() {
       `/api/platform/businesses/${business.id}/usage`,
     );
     if (ok) setUsage(data.usage);
-  }, [business?.id, version]);
+  }, [business]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, version]);
 
   if (!business) return null;
 
@@ -533,11 +533,11 @@ export function FeaturesPanel() {
     );
     if (ok) setFeatures(data.features);
     else setError(errorMessage(data.error));
-  }, [business?.id, version]);
+  }, [business]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, version]);
 
   if (!business) return null;
   const bizId = business.id;
@@ -655,11 +655,11 @@ export function ImpersonationPanel() {
     );
     if (ok) setGrants(data.grants);
     else setError(errorMessage(data.error));
-  }, [business?.id, version]);
+  }, [business]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, version]);
 
   if (!business) return null;
 

@@ -338,7 +338,7 @@ function MfaHandoverCard({
 
       {mfa.totpQr ? (
         <div className="mb-4 flex justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img
             src={mfa.totpQr}
             alt="کد QR ورود دومرحله‌ای"

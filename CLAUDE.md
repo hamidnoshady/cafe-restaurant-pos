@@ -144,7 +144,7 @@ a Linux container image. Four things follow, and each one is load-bearing:
   on files nobody edited) and any `.mjs` whose first line is a shebang (`SyntaxError: Invalid or
   unexpected token`, reported against the *importing* test). Don't remove it.
 - **`publish.yml` builds a Linux image, so it runs on Ubuntu.** The image is
-  `FROM node:20-alpine`; hosted `ubuntu-latest` runners provide Docker with the Linux
+  `FROM node:24-alpine`; hosted `ubuntu-latest` runners provide Docker with the Linux
   backend and buildx out of the box, which `docker/build-push-action` needs. Don't move it
   back to a Windows runner — hosted Windows runners cannot run a Linux-containers daemon.
 

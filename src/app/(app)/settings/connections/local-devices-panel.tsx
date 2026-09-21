@@ -21,6 +21,11 @@ interface GatewayStatus {
   port: number;
   url: string | null;
   caDownloadUrl: string | null;
+  onboardingPort: number;
+  onboardingScope: "ca-certificate-only";
+  onboardingDownloads: number;
+  lastOnboardingDownloadAt: string | null;
+  tlsDiagnostics: { count: number; last: { code: string; message: string; at: string } | null };
   addressActive: boolean;
   certificate: {
     exists: boolean;
@@ -69,6 +74,7 @@ export function LocalDevicesPanel() {
   const [notice, setNotice] = useState("");
   const [siteQr, setSiteQr] = useState("");
   const [caQr, setCaQr] = useState("");
+  const [mobilePlatform, setMobilePlatform] = useState<"android" | "ios">("android");
 
   const refresh = useCallback(async () => {
     if (!bridge) return;
@@ -141,7 +147,8 @@ export function LocalDevicesPanel() {
           <div><dt className="text-muted-foreground">سرور داخلی</dt><dd><State ok={true} yes="فعال روی حلقهٔ محلی" no="غیرفعال" /></dd></div>
           <div><dt className="text-muted-foreground">دسترسی موبایل</dt><dd><State ok={Boolean(status?.running)} yes="HTTPS فعال" no="غیرفعال" /></dd></div>
           <div><dt className="text-muted-foreground">فایروال ویندوز</dt><dd><State ok={Boolean(status?.firewall.installed)} yes="قانون شبکهٔ Private فعال" no="قانون فعال نیست" /></dd></div>
-          <div><dt className="text-muted-foreground">پورت درگاه</dt><dd dir="ltr" className="font-mono">{status?.port ?? 8443}</dd></div>
+          <div><dt className="text-muted-foreground">پورت امن برنامه</dt><dd dir="ltr" className="font-mono">HTTPS/WSS {status?.port ?? 8443}</dd></div>
+          <div><dt className="text-muted-foreground">پورت دریافت CA</dt><dd dir="ltr" className="font-mono">HTTP {status?.onboardingPort ?? 8444} (certificate only)</dd></div>
           <div><dt className="text-muted-foreground">گواهی</dt><dd><State ok={Boolean(status?.certificate.exists)} yes="ساخته شده" no="ساخته نشده" /></dd></div>
         </dl>
         {status?.enabled && !status.addressActive ? (
@@ -190,36 +197,70 @@ export function LocalDevicesPanel() {
           <SecondaryButton onClick={() => void bridge.localGateway.openLogs()}>بازکردن گزارش‌ها</SecondaryButton>
         </div>
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
-          درخواست دسترسی مدیر ویندوز فقط برای افزودن یا حذف قانون ورودی TCP همین پورت، روی پروفایل Private، برای همین برنامه و محدودهٔ LocalSubnet است. PostgreSQL و Print Connector هرگز در فایروال باز نمی‌شوند.
+          درخواست دسترسی مدیر ویندوز فقط برای افزودن یا حذف قانون ورودی دو پورت درگاه امن و دریافت عمومی CA، روی پروفایل Private، برای همین برنامه و محدودهٔ LocalSubnet است. پورت HTTP فقط فایل عمومی CA را از یک نشانی موقت می‌دهد و هیچ صفحه، API، کوکی یا WebSocket ندارد. PostgreSQL و Print Connector هرگز در فایروال باز نمی‌شوند.
         </p>
       </SectionCard>
 
       {status?.running && status.url ? (
-        <SectionCard title="اتصال تلفن یا تبلت">
-          <div className="grid gap-6 md:grid-cols-[240px_1fr]">
-            <div className="rounded-xl border bg-white p-2">{siteQr ? <img src={siteQr} alt="QR نشانی سرور محلی" width={220} height={220} /> : null}</div>
-            <div className="space-y-3">
-              <p className="text-sm">ابتدا گواهی محلی را روی دستگاه نصب و به آن اعتماد کنید، سپس QR بزرگ را اسکن کنید.</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <code dir="ltr" className="select-all rounded-lg border bg-muted/40 px-3 py-2 text-sm">{status.url}</code>
-                <SecondaryButton onClick={() => void copy(status.url)}>کپی نشانی</SecondaryButton>
-              </div>
+        <SectionCard title="اتصال امن تلفن یا تبلت">
+          <div className="mb-4 flex gap-2" role="tablist" aria-label="سیستم‌عامل تلفن">
+            <SecondaryButton onClick={() => setMobilePlatform("android")} aria-pressed={mobilePlatform === "android"}>Android</SecondaryButton>
+            <SecondaryButton onClick={() => setMobilePlatform("ios")} aria-pressed={mobilePlatform === "ios"}>iPhone / iPad</SecondaryButton>
+          </div>
+
+          <div className="rounded-xl border border-amber-300/60 bg-amber-50/60 p-4 text-sm leading-6 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
+            هشدار گواهی را رد یا دور نزنید. ابتدا CA را نصب کنید، اثر انگشت SHA-256 را با همین صفحه تطبیق دهید و فقط وقتی HTTPS بدون هشدار باز شد وارد حساب شوید.
+          </div>
+
+          <div className="mt-5 grid gap-6 md:grid-cols-[190px_1fr]">
+            <div className="rounded-xl border bg-white p-2">{caQr ? <img src={caQr} alt="QR دریافت فقط فایل CA محلی" width={170} height={170} /> : null}</div>
+            <div className="space-y-3 text-sm">
+              <h3 className="font-semibold">۱. دریافت و نصب گواهی ریشه</h3>
               <p className="text-xs leading-6 text-muted-foreground">
-                Android: فایل CA را نصب کنید و برای VPN و برنامه‌ها به آن اعتماد دهید. iOS/iPadOS: Profile را نصب کنید، سپس در Settings → General → About → Certificate Trust Settings اعتماد کامل را روشن کنید. تبلت ویندوز: گواهی را در Trusted Root Certification Authorities نصب کنید.
+                این QR عمداً از یک پورت HTTP جداگانه فقط فایل عمومی CA را می‌دهد؛ آن پورت هیچ صفحهٔ برنامه، API، کوکی، رمز یا WebSocket ارائه نمی‌کند و نشانی آن با هر راه‌اندازی درگاه تغییر می‌کند.
+              </p>
+              {mobilePlatform === "android" ? (
+                <ol className="list-decimal space-y-1 pr-5 text-xs leading-6">
+                  <li>QR را اسکن و فایل <span dir="ltr" className="font-mono">business-suite-local-ca.crt</span> را دریافت کنید.</li>
+                  <li>Settings → Security &amp; privacy → More security settings → Install a certificate → CA certificate را باز کنید (نام منو بسته به سازنده متفاوت است).</li>
+                  <li>گواهی را برای CA برنامه‌ها نصب کنید؛ اگر دستگاه سازمانی نصب CA را منع می‌کند، با مدیر دستگاه تماس بگیرید و محدودیت را دور نزنید.</li>
+                </ol>
+              ) : (
+                <ol className="list-decimal space-y-1 pr-5 text-xs leading-6">
+                  <li>QR را در Safari اسکن کنید و اجازهٔ دریافت Profile را بدهید.</li>
+                  <li>Settings → General → VPN &amp; Device Management → Downloaded Profile را باز و Profile را نصب کنید.</li>
+                  <li>Settings → General → About → Certificate Trust Settings را باز و Full Trust را فقط برای Business Suite Local CA روشن کنید.</li>
+                </ol>
+              )}
+              <p className="text-xs">اثر انگشت مورد انتظار را پیش از اعتماد تطبیق دهید:</p>
+              <code dir="ltr" className="block break-all rounded border bg-muted/40 p-2 text-xs">{status.certificate.caFingerprint || "—"}</code>
+              <div className="flex flex-wrap gap-2">
+                <SecondaryButton onClick={() => void copy(status.certificate.caFingerprint || null)}>کپی اثر انگشت</SecondaryButton>
+                <SecondaryButton onClick={() => void bridge.localGateway.showCaCertificate()}>نمایش فایل CA در ویندوز</SecondaryButton>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                دریافت‌های این نشست: {status.onboardingDownloads.toLocaleString("fa-IR")}{status.lastOnboardingDownloadAt ? ` — آخرین دریافت ${new Date(status.lastOnboardingDownloadAt).toLocaleTimeString("fa-IR")}` : ""}
               </p>
             </div>
           </div>
-          <div className="mt-6 border-t pt-5">
-            <h3 className="mb-2 text-sm font-semibold">گواهی ریشهٔ محلی</h3>
-            <div className="flex flex-wrap items-center gap-4">
-              {caQr ? <div className="rounded-lg border bg-white p-2"><img src={caQr} alt="QR دریافت گواهی محلی" width={160} height={160} /></div> : null}
-              <div className="min-w-0 space-y-2 text-xs">
-                <p>اثر انگشت CA:</p>
-                <code dir="ltr" className="block break-all rounded border bg-muted/40 p-2">{status.certificate.caFingerprint || "—"}</code>
-                <SecondaryButton onClick={() => void bridge.localGateway.showCaCertificate()}>نمایش فایل گواهی در ویندوز</SecondaryButton>
+
+          <div className="mt-6 grid gap-6 border-t pt-5 md:grid-cols-[240px_1fr]">
+            <div className="rounded-xl border bg-white p-2">{siteQr ? <img src={siteQr} alt="QR نشانی HTTPS سرور محلی" width={220} height={220} /> : null}</div>
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">۲. بازکردن برنامه فقط با HTTPS</h3>
+              <p className="text-sm">پس از نصب و اعتماد به CA، این QR را اسکن کنید. قفل امن مرورگر باید بدون هشدار نمایش داده شود.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code dir="ltr" className="select-all rounded-lg border bg-muted/40 px-3 py-2 text-sm">{status.url}</code>
+                <SecondaryButton onClick={() => void copy(status.url)}>کپی نشانی HTTPS</SecondaryButton>
               </div>
+              <p className="text-xs leading-6 text-muted-foreground">برای ورود، Pairing دستگاه و هم‌زمانی زنده فقط همین درگاه HTTPS/WSS استفاده می‌شود. تلفن هرگز مستقیماً به PostgreSQL، پورت داخلی برنامه یا Print Connector وصل نمی‌شود.</p>
             </div>
           </div>
+          {status.tlsDiagnostics.last ? (
+            <div className="mt-4"><ErrorBox>
+              آخرین تلاش TLS در {new Date(status.tlsDiagnostics.last.at).toLocaleTimeString("fa-IR")} ناموفق بود ({status.tlsDiagnostics.last.code}). معمولاً CA هنوز نصب/Trusted نشده یا IP گواهی با شبکهٔ فعلی یکسان نیست. هشدار مرورگر را رد نکنید؛ مراحل بالا را بررسی و در صورت تغییر شبکه گواهی درگاه را بازسازی کنید.
+            </ErrorBox></div>
+          ) : null}
         </SectionCard>
       ) : null}
 

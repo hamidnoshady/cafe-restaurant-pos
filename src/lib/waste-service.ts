@@ -32,6 +32,7 @@ export interface RecordedWaste {
   inventoryEventId: string;
   /** Integer Rial as exact text — what the consumed layers actually cost. */
   postedCost: RialText;
+  duplicate?: boolean;
 }
 
 export interface RecordWasteParams {
@@ -42,6 +43,8 @@ export interface RecordWasteParams {
   reason: WasteReason;
   note: string | null;
   createdBy: string | null;
+  /** Caller-owned domain idempotency identity (sync client_event_id). */
+  idempotencyKey?: string | null;
 }
 
 /**
@@ -52,10 +55,25 @@ export async function recordWasteInTransaction(
   client: PoolClient,
   params: RecordWasteParams,
 ): Promise<RecordedWaste> {
+  if (params.idempotencyKey) {
+    const prior = await client.query<{ id: string; posted_cost: string }>(
+      `SELECT ie.id,
+              COALESCE((SELECT sum(sm.cost_value_rial)::text FROM stock_movements sm
+                         WHERE sm.inventory_event_id=ie.id),'0') AS posted_cost
+         FROM inventory_events ie
+        WHERE ie.business_id=$1 AND ie.idempotency_key=$2`,
+      [params.businessId, `waste:${params.idempotencyKey}`],
+    );
+    if (prior.rows[0]) {
+      return { inventoryEventId: prior.rows[0].id, postedCost: prior.rows[0].posted_cost as RialText, duplicate: true };
+    }
+  }
   const { rows: events } = await client.query<{ id: string }>(
-    `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,created_by,metadata,costing_version)
-     VALUES($1,$2,'waste','waste',$3,jsonb_build_object('reason',$4::text),2) RETURNING id`,
-    [params.businessId, params.locationId, params.createdBy, params.reason],
+    `INSERT INTO inventory_events
+       (business_id,location_id,event_type,source_type,created_by,metadata,costing_version,idempotency_key)
+     VALUES($1,$2,'waste','waste',$3,jsonb_build_object('reason',$4::text),2,$5) RETURNING id`,
+    [params.businessId, params.locationId, params.createdBy, params.reason,
+      params.idempotencyKey ? `waste:${params.idempotencyKey}` : null],
   );
   const eventId = events[0].id;
   await client.query("UPDATE inventory_events SET source_id=id WHERE id=$1", [eventId]);
@@ -92,7 +110,7 @@ export async function recordWasteInTransaction(
   });
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
 
-  return { inventoryEventId: eventId, postedCost: result.postedCost };
+  return { inventoryEventId: eventId, postedCost: result.postedCost, duplicate: false };
 }
 
 /** The same write, opening and owning its own transaction. */

@@ -165,7 +165,7 @@ export default function ObservabilityPage() {
       setError(errorMessage(logsRes.data?.error ?? "observability_unreachable"));
       setHealth(healthRes.ok ? healthRes.data : null);
     }
-  }, [enabled, rangeIdx, level, q]);
+  }, [enabled, rangeIdx, level, q, rows.length]);
 
   useEffect(() => {
     if (!enabled) return;

@@ -106,7 +106,7 @@ export function WpCustomersSection() {
       setCustomers([]);
       setLoadError(true);
     }
-  }, []);
+  }, [page, pageSize, query]);
 
   useEffect(() => {
     selectedRef.current = selectedId;

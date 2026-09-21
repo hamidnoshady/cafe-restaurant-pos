@@ -3,6 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import {
   getServerSyncConfig,
   getServerSyncState,
+  getSyncDomainDiagnostics,
   listServerSyncDeadLetters,
   setServerSyncConfig,
 } from "@/lib/server-sync";
@@ -14,6 +15,7 @@ import {
 import { getAppUpdateStatus } from "@/lib/app-update";
 import { deploymentRole, platformBaseUrl } from "@/lib/deployment-role";
 import { getPairedSite } from "@/lib/server-sync";
+import { publicSyncEventRegistry } from "@/lib/sync-event-registry";
 
 /**
  * Owner-only: configure the bidirectional server-to-server sync target
@@ -33,10 +35,11 @@ export const GET = withTenantScope(async () => {
   if (error) return error;
 
   const role = deploymentRole();
-  const [config, syncState, deadLetters, appUpdateStatus, pairedSite] = await Promise.all([
+  const [config, syncState, deadLetters, domainDiagnostics, appUpdateStatus, pairedSite] = await Promise.all([
     getServerSyncConfig(session.businessId),
     getServerSyncState(session.businessId),
     listServerSyncDeadLetters(session.businessId),
+    getSyncDomainDiagnostics(session.businessId),
     getAppUpdateStatus(session.businessId),
     role === "central" ? getPairedSite(session.businessId) : Promise.resolve(null),
   ]);
@@ -63,6 +66,8 @@ export const GET = withTenantScope(async () => {
     pairedSite,
     syncState,
     deadLetters,
+    domainDiagnostics,
+    eventRegistry: publicSyncEventRegistry(),
     appUpdateStatus,
   });
 });

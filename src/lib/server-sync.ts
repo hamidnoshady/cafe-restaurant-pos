@@ -23,9 +23,9 @@
  * State (high-water marks) is stored under SETTING_KEYS.serverSyncState.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
-import { query, withTenant, withoutTenantScope } from "./db";
+import { getPool, query, withTenant, withoutTenantScope } from "./db";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
-import { applySyncEvent, type SyncEventInput, type SyncEventType } from "./sync-events";
+import { applySyncEvent, reconcileDeferredSyncEvents, type SyncEventInput, type SyncEventType } from "./sync-events";
 import type { ServerSyncConfig } from "./server-sync-config";
 import { refreshAppUpdateStatus } from "./app-update";
 
@@ -214,7 +214,8 @@ export interface ServerSyncDeadLetter {
   locationId: string;
   clientEventId: string;
   eventType: string;
-  payload: Record<string, unknown>;
+  /** SHA-256 only; diagnostics never expose the business payload. */
+  payloadSha256: string;
   error: string;
   createdAt: string;
 }
@@ -246,10 +247,156 @@ export async function listServerSyncDeadLetters(businessId: string, limit = 50):
     locationId: r.location_id,
     clientEventId: r.client_event_id,
     eventType: r.event_type,
-    payload: r.payload,
+    payloadSha256: createHash("sha256").update(JSON.stringify(r.payload)).digest("hex"),
     error: r.error,
     createdAt: r.created_at,
   }));
+}
+
+
+
+export interface SyncDomainDiagnostic {
+  clientEventId: string;
+  eventType: string;
+  schemaVersion: number;
+  status: "deferred" | "applied" | "dead_lettered";
+  effectType: string | null;
+  effectId: string | null;
+  errorCode: string | null;
+  attempts: number;
+  updatedAt: string;
+}
+
+export interface SyncDomainDeadLetterDiagnostic {
+  id: number;
+  clientEventId: string;
+  eventType: string;
+  schemaVersion: number | null;
+  payloadSha256: string;
+  errorCode: string;
+  status: "open" | "resolved" | "discarded";
+  retryCount: number;
+  lastSeenAt: string;
+}
+
+/** Owner diagnostics deliberately omit event payloads, results and credentials. */
+export async function getSyncDomainDiagnostics(
+  businessId: string,
+  limit = 50,
+): Promise<{
+  counts: { deferred: number; applied: number; deadLettered: number; openDeadLetters: number };
+  recent: SyncDomainDiagnostic[];
+  deadLetters: SyncDomainDeadLetterDiagnostic[];
+}> {
+  const safeLimit = Math.min(Math.max(1, limit), 200);
+  const [counts, effects, dead] = await Promise.all([
+    query<{ deferred: string; applied: string; dead_lettered: string; open_dead_letters: string }>(
+      `SELECT
+         (SELECT count(*) FROM sync_domain_effects WHERE business_id=$1 AND status='deferred')::text deferred,
+         (SELECT count(*) FROM sync_domain_effects WHERE business_id=$1 AND status='applied')::text applied,
+         (SELECT count(*) FROM sync_domain_effects WHERE business_id=$1 AND status='dead_lettered')::text dead_lettered,
+         (SELECT count(*) FROM sync_event_dead_letters WHERE business_id=$1 AND status='open')::text open_dead_letters`,
+      [businessId],
+    ),
+    query<{
+      client_event_id: string; event_type: string; schema_version: number; status: SyncDomainDiagnostic["status"];
+      effect_type: string | null; effect_id: string | null; error_code: string | null; attempts: number; updated_at: string;
+    }>(
+      `SELECT client_event_id::text,event_type,schema_version,status,effect_type,effect_id,error_code,attempts,updated_at::text
+         FROM sync_domain_effects WHERE business_id=$1 ORDER BY updated_at DESC LIMIT $2`,
+      [businessId, safeLimit],
+    ),
+    query<{
+      id: number; client_event_id: string; event_type: string; schema_version: number | null; payload_sha256: string;
+      error_code: string; status: SyncDomainDeadLetterDiagnostic["status"]; retry_count: number; last_seen_at: string;
+    }>(
+      `SELECT id,client_event_id,event_type,schema_version,payload_sha256,error_code,status,retry_count,last_seen_at::text
+         FROM sync_event_dead_letters WHERE business_id=$1 ORDER BY last_seen_at DESC LIMIT $2`,
+      [businessId, safeLimit],
+    ),
+  ]);
+  const count = counts.rows[0];
+  return {
+    counts: {
+      deferred: Number(count?.deferred ?? 0),
+      applied: Number(count?.applied ?? 0),
+      deadLettered: Number(count?.dead_lettered ?? 0),
+      openDeadLetters: Number(count?.open_dead_letters ?? 0),
+    },
+    recent: effects.rows.map((row) => ({
+      clientEventId: row.client_event_id,
+      eventType: row.event_type,
+      schemaVersion: row.schema_version,
+      status: row.status,
+      effectType: row.effect_type,
+      effectId: row.effect_id,
+      errorCode: row.error_code,
+      attempts: row.attempts,
+      updatedAt: row.updated_at,
+    })),
+    deadLetters: dead.rows.map((row) => ({
+      id: Number(row.id),
+      clientEventId: row.client_event_id,
+      eventType: row.event_type,
+      schemaVersion: row.schema_version,
+      payloadSha256: row.payload_sha256,
+      errorCode: row.error_code,
+      status: row.status,
+      retryCount: row.retry_count,
+      lastSeenAt: row.last_seen_at,
+    })),
+  };
+}
+
+
+
+export async function updateSyncDeadLetter(
+  businessId: string,
+  deadLetterId: number,
+  action: "retry" | "discard",
+  actorId: string,
+  note: string | null,
+): Promise<boolean> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const row = await client.query<{ client_event_id: string; location_id: string | null }>(
+      `SELECT client_event_id,location_id FROM sync_event_dead_letters
+        WHERE id=$1 AND business_id=$2 AND status='open' FOR UPDATE`,
+      [deadLetterId, businessId],
+    );
+    if (!row.rows[0]) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    if (action === "retry") {
+      await client.query(
+        `UPDATE sync_domain_effects SET status='deferred',error_code=NULL,updated_at=now()
+          WHERE business_id=$1 AND client_event_id=$2::uuid`,
+        [businessId, row.rows[0].client_event_id],
+      );
+      if (row.rows[0].location_id) {
+        await client.query(
+          `UPDATE sync_events SET error=NULL,dead_lettered_at=NULL,deferred_until=now()
+            WHERE location_id=$1 AND client_event_id=$2::uuid`,
+          [row.rows[0].location_id, row.rows[0].client_event_id],
+        );
+      }
+    }
+    await client.query(
+      `UPDATE sync_event_dead_letters
+          SET status=$3,resolved_at=now(),resolved_by=$4,resolution_note=$5
+        WHERE id=$1 AND business_id=$2`,
+      [deadLetterId, businessId, action === "retry" ? "resolved" : "discarded", actorId, note?.slice(0, 500) || null],
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export interface PairedSite {
@@ -423,7 +570,14 @@ export async function runServerPush(businessId: string): Promise<PushResult> {
       return fail(`remote_rejected: HTTP ${res.status}`);
     }
     const body = (await res.json()) as {
-      results?: Array<{ clientEventId?: string; ok?: boolean; conflict?: boolean; error?: string }>;
+      results?: Array<{
+        clientEventId?: string;
+        ok?: boolean;
+        conflict?: boolean;
+        deferred?: boolean;
+        deadLettered?: boolean;
+        error?: string;
+      }>;
     };
     if (!Array.isArray(body.results) || body.results.length !== rows.length) {
       return fail("remote_rejected: invalid result set");
@@ -436,7 +590,12 @@ export async function runServerPush(businessId: string): Promise<PushResult> {
       // A conflict is a terminal, explicitly recorded outcome. Any other
       // apply failure (including an ambiguous in-progress outcome) must stop
       // the high-water mark rather than silently dropping a domain mutation.
-      if (!result.ok && !result.conflict) {
+      if (result.deferred) {
+        return fail(`remote_dependency_deferred: ${result.error || "unknown"}`);
+      }
+      // A dead letter is a terminal, durable remote outcome. Advancing is safe:
+      // the operator can inspect/reconcile it there and retries cannot apply it.
+      if (!result.ok && !result.conflict && !result.deadLettered) {
         return fail(`remote_apply_failed: ${result.error || "unknown"}`);
       }
     }
@@ -474,7 +633,7 @@ export type PullResult =
 interface RemoteEvent {
   id: number;
   clientEventId: string;
-  type: SyncEventType;
+  type: string;
   occurredAt: string;
   payload: Record<string, unknown>;
   locationId: string;
@@ -553,13 +712,16 @@ export async function runServerPull(businessId: string): Promise<PullResult> {
       payload: e.payload,
     };
     try {
-      await applySyncEvent(
+      const applied = await applySyncEvent(
         e.locationId,
         { userId: e.actorUserId, role: e.actorRole as import("./auth").Role },
         input,
         "remote",
         { siteDeviceId: e.siteDeviceId ?? null, schemaVersion: e.schemaVersion ?? 1 },
       );
+      if (!applied.ok && !applied.deferred && !applied.deadLettered && !applied.conflict) {
+        throw new Error(applied.error ?? "apply_failed");
+      }
     } catch (err) {
       // Don't abort the batch — a single bad event shouldn't block the rest —
       // but the high-water mark below still advances past it, so record it
@@ -615,9 +777,12 @@ export async function runServerSyncTick(): Promise<void> {
       console.error(`server-sync push failed for business ${row.business_id}:`, err);
     }
     try {
-      await withTenant(row.business_id, () => runServerPull(row.business_id));
+      await withTenant(row.business_id, async () => {
+        await runServerPull(row.business_id);
+        await reconcileDeferredSyncEvents(row.business_id);
+      });
     } catch (err) {
-      console.error(`server-sync pull failed for business ${row.business_id}:`, err);
+      console.error(`server-sync pull/reconciliation failed for business ${row.business_id}:`, err);
     }
     try {
       // Dashboard visibility only — no credential involved. See app-update.ts.

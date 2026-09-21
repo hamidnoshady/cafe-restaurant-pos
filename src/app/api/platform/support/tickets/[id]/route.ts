@@ -54,7 +54,7 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
         body.assignedAdminId === null || typeof body.assignedAdminId === "string"
           ? (body.assignedAdminId as string | null)
           : undefined,
-      ipAddress: (request as any).ip ?? clientIpFrom(request.headers, 0),
+      ipAddress: clientIpFrom(request.headers, 0),
       userAgent: request.headers.get("user-agent"),
     });
     return NextResponse.json({ ticket });

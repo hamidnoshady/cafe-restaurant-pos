@@ -118,11 +118,11 @@ export function AppAvailabilityEditor({
     const { ok, data } = await api<{ apps: AppAvailabilityRow[]; error?: string }>(endpoint);
     if (ok) apply(data.apps);
     else setError(errorMessage(data.error));
-  }, [endpoint, apply, refreshKey]);
+  }, [endpoint, apply]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   async function save(app: AppKey, body: Record<string, unknown>) {
     setPending(app);

@@ -181,6 +181,26 @@ if (!gotSingleInstanceLock) {
     return cleanupStarted;
   }
 
+  function writeSmokeFailure(error) {
+    const marker = process.env.DESKTOP_SMOKE_MARKER;
+    if (!marker) return;
+    const stage = error?.stage || "startup";
+    let logTail = "";
+    try {
+      const text = require("node:fs").readFileSync(logger.path, "utf8");
+      logTail = text.slice(-6_000);
+    } catch {}
+    require("node:fs").writeFileSync(marker, JSON.stringify({
+      ok: false,
+      stage,
+      error: error?.message || String(error),
+      cause: error?.cause?.message || null,
+      stack: error?.stack || null,
+      logPath: logger.path,
+      logTail,
+    }, null, 2));
+  }
+
   async function showStartupFailure(error) {
     const stage = error?.stage || "startup";
     logger.error(`Fatal desktop startup failure at ${stage}`, error);
@@ -218,11 +238,9 @@ if (!gotSingleInstanceLock) {
         return;
       } catch (error) {
         await cleanup();
-        // CI has nobody to dismiss a recovery dialog. Exit immediately so the
-        // packaged smoke test reports the real startup stage and log output
-        // instead of hiding the failure behind its outer three-minute timeout.
         if (process.env.DESKTOP_SMOKE_MARKER) {
-          logger.error(`Packaged smoke startup failed at ${error?.stage || "startup"}`, error);
+          logger.error(`Packaged smoke failed at ${error?.stage || "startup"}`, error);
+          writeSmokeFailure(error);
           quitting = true;
           app.exit(1);
           return;

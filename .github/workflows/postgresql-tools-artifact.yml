@@ -1,0 +1,236 @@
+name: postgresql-tools-artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_mode:
+        description: 'Controlled input source'
+        type: choice
+        required: true
+        default: official-source-build
+        options:
+          - official-source-build
+          - protected-artifact
+  pull_request:
+    paths:
+      - '.github/workflows/postgresql-tools-artifact.yml'
+      - 'scripts/build-postgresql-tools-from-source.ps1'
+      - 'scripts/stage-postgresql-tools.mjs'
+      - 'scripts/accept-packaged-pg-tools.mjs'
+      - 'scripts/accept-packaged-restore.ts'
+
+concurrency:
+  group: postgresql-tools-artifact-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: powershell
+
+env:
+  PG_SOURCE_VERSION: '16.15'
+  PG_SOURCE_URL: https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.gz
+  PG_SOURCE_SHA256: 4f200ca23dfb120ff9838f13ce06014aad1d3c432d16ee9f93ab2000c0eeef7b
+  ZLIB_SOURCE_VERSION: '1.3.2'
+  ZLIB_SOURCE_URL: https://zlib.net/zlib-1.3.2.tar.gz
+  ZLIB_SOURCE_SHA256: bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+  PG_TOOLS_SOURCE_URL: ${{ vars.PG_TOOLS_SOURCE_URL }}
+  PG_TOOLS_PROVENANCE_URL: ${{ vars.PG_TOOLS_PROVENANCE_URL }}
+  PG_TOOLS_ALLOWED_HOST: ${{ vars.PG_TOOLS_ALLOWED_HOST }}
+  PG_TOOLS_ARTIFACT_SHA256: ${{ vars.PG_TOOLS_ARTIFACT_SHA256 }}
+  PGPORT: '55432'
+  DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
+
+jobs:
+  verify-controlled-source-build:
+    if: github.event_name == 'pull_request'
+    name: build and execute pinned-source PostgreSQL tools
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Download exact official PostgreSQL and zlib sources
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri $env:PG_SOURCE_URL -OutFile "$env:RUNNER_TEMP\postgresql-source.tar.gz" -MaximumRedirection 0
+          Invoke-WebRequest -Uri $env:ZLIB_SOURCE_URL -OutFile "$env:RUNNER_TEMP\zlib-source.tar.gz" -MaximumRedirection 0
+          $actual = (Get-FileHash "$env:RUNNER_TEMP\postgresql-source.tar.gz" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:PG_SOURCE_SHA256) { throw "Pinned PostgreSQL source SHA-256 mismatch: $actual" }
+          $actualZlib = (Get-FileHash "$env:RUNNER_TEMP\zlib-source.tar.gz" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualZlib -cne $env:ZLIB_SOURCE_SHA256) { throw "Pinned zlib source SHA-256 mismatch: $actualZlib" }
+
+      - name: Build minimal Windows x64 client tools from pinned source
+        run: |
+          try {
+            .\scripts\build-postgresql-tools-from-source.ps1 `
+              -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
+              -SourceSha256 $env:PG_SOURCE_SHA256 `
+              -ZlibSourceArchive "$env:RUNNER_TEMP\zlib-source.tar.gz" `
+              -ZlibSourceSha256 $env:ZLIB_SOURCE_SHA256 `
+              -PostgresVersion $env:PG_SOURCE_VERSION `
+              -ZlibVersion $env:ZLIB_SOURCE_VERSION `
+              -OutputDirectory controlled-input `
+              -Organization "${{ github.repository_owner }}"
+          } catch {
+            $detail = $_.Exception.Message.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Controlled PostgreSQL source build failed::$detail"
+            throw
+          }
+          $result = Get-Content controlled-input\source-build.json -Raw | ConvertFrom-Json
+          "PG_TOOLS_ARTIFACT_SHA256=$($result.artifactSha256)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Execute allowlist, provenance, hash and version validator
+        env:
+          PG_TOOLS_ARCHIVE: ${{ github.workspace }}\controlled-input\postgresql-16-windows-x64-client-tools.zip
+          PG_TOOLS_PROVENANCE: ${{ github.workspace }}\controlled-input\provenance.json
+        run: node scripts/stage-postgresql-tools.mjs --require
+
+      - name: Install test dependencies and start disposable PostgreSQL 16
+        env:
+          PGDATA: ${{ runner.temp }}\source-tools-pgdata
+        run: |
+          npm ci
+          npm run db:dev:start
+          npm run db:migrate
+
+      - name: Execute custom-format, corruption and safe-swap acceptance
+        env:
+          PG_TOOLS_DIR: ${{ github.workspace }}\.desktop-assets\postgresql-tools
+        run: |
+          # Windows PowerShell wraps native stderr as ErrorRecord; keep it in
+          # the captured diagnostics and handle the authoritative exit codes.
+          $ErrorActionPreference = 'Continue'
+          $lines = @(node scripts/accept-packaged-pg-tools.mjs 2>&1 | Tee-Object -FilePath packaged-pg-tools-acceptance.log)
+          $toolExit = $LASTEXITCODE
+          if ($toolExit -ne 0) {
+            $detail = ((@($lines | Select-Object -Last 60) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A'))
+            Write-Host "::error title=Packaged PostgreSQL tools acceptance failed::$detail"
+            throw "Packaged PostgreSQL tools acceptance failed"
+          }
+          $lines = @(npx tsx scripts/accept-packaged-restore.ts 2>&1 | Tee-Object -FilePath packaged-restore-acceptance.log)
+          $restoreExit = $LASTEXITCODE
+          if ($restoreExit -ne 0) {
+            $detail = ((@($lines | Select-Object -Last 60) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A'))
+            Write-Host "::error title=Packaged restore acceptance failed::$detail"
+            throw "Packaged restore acceptance failed"
+          }
+
+      - name: Stop disposable PostgreSQL
+        if: always()
+        continue-on-error: true
+        env:
+          PGDATA: ${{ runner.temp }}\source-tools-pgdata
+        run: npm run db:dev:stop
+
+      - name: Upload controlled-source build evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: postgresql-tools-source-build-evidence-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            controlled-input/provenance.json
+            controlled-input/source-build.json
+            controlled-input/source-build.log
+            .desktop-assets/postgresql-tools/provenance.json
+            packaged-pg-tools-acceptance.json
+            packaged-restore-acceptance.json
+            packaged-pg-tools-acceptance.log
+            packaged-restore-acceptance.log
+
+  validate-and-publish:
+    if: github.event_name == 'workflow_dispatch'
+    name: validate controlled PostgreSQL 16 client payload
+    runs-on: windows-latest
+    environment: postgresql-tools
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Build from exact official source
+        if: inputs.source_mode == 'official-source-build'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri $env:PG_SOURCE_URL -OutFile "$env:RUNNER_TEMP\postgresql-source.tar.gz" -MaximumRedirection 0
+          Invoke-WebRequest -Uri $env:ZLIB_SOURCE_URL -OutFile "$env:RUNNER_TEMP\zlib-source.tar.gz" -MaximumRedirection 0
+          .\scripts\build-postgresql-tools-from-source.ps1 `
+            -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
+            -SourceSha256 $env:PG_SOURCE_SHA256 `
+            -ZlibSourceArchive "$env:RUNNER_TEMP\zlib-source.tar.gz" `
+            -ZlibSourceSha256 $env:ZLIB_SOURCE_SHA256 `
+            -PostgresVersion $env:PG_SOURCE_VERSION `
+            -ZlibVersion $env:ZLIB_SOURCE_VERSION `
+            -OutputDirectory controlled-input `
+            -Organization "${{ github.repository_owner }}"
+          $result = Get-Content controlled-input\source-build.json -Raw | ConvertFrom-Json
+          "PG_TOOLS_ARTIFACT_SHA256=$($result.artifactSha256)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Download only from the protected organization host
+        if: inputs.source_mode == 'protected-artifact'
+        env:
+          ARTIFACT_BEARER: ${{ secrets.PG_TOOLS_ARTIFACT_BEARER }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:PG_TOOLS_ARTIFACT_SHA256 -notmatch '^[0-9a-f]{64}$') { throw 'PG_TOOLS_ARTIFACT_SHA256 is not configured' }
+          if ([string]::IsNullOrWhiteSpace($env:PG_TOOLS_ALLOWED_HOST)) { throw 'PG_TOOLS_ALLOWED_HOST is not configured' }
+          $archiveUri = [Uri]$env:PG_TOOLS_SOURCE_URL
+          $provenanceUri = [Uri]$env:PG_TOOLS_PROVENANCE_URL
+          foreach ($uri in @($archiveUri, $provenanceUri)) {
+            if ($uri.Scheme -ne 'https' -or $uri.Host -cne $env:PG_TOOLS_ALLOWED_HOST) {
+              throw "Refusing non-allowlisted PostgreSQL tools source: $($uri.Scheme)://$($uri.Host)"
+            }
+          }
+          $headers = @{}
+          if (-not [string]::IsNullOrWhiteSpace($env:ARTIFACT_BEARER)) { $headers.Authorization = "Bearer $env:ARTIFACT_BEARER" }
+          New-Item -ItemType Directory -Path controlled-input | Out-Null
+          Invoke-WebRequest -Uri $archiveUri -Headers $headers -OutFile controlled-input\postgresql-16-windows-x64-client-tools.zip -MaximumRedirection 0
+          Invoke-WebRequest -Uri $provenanceUri -Headers $headers -OutFile controlled-input\provenance.json -MaximumRedirection 0
+          $actual = (Get-FileHash controlled-input\postgresql-16-windows-x64-client-tools.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:PG_TOOLS_ARTIFACT_SHA256) { throw "Pinned SHA-256 mismatch: $actual" }
+
+      - name: Execute staging validator and exact tool version checks
+        env:
+          PG_TOOLS_ARCHIVE: ${{ github.workspace }}\controlled-input\postgresql-16-windows-x64-client-tools.zip
+          PG_TOOLS_PROVENANCE: ${{ github.workspace }}\controlled-input\provenance.json
+        run: node scripts/stage-postgresql-tools.mjs --require
+
+      - name: Write immutable artifact attestation
+        run: |
+          $runtime = Get-Content .desktop-assets\postgresql-tools\provenance.json -Raw | ConvertFrom-Json
+          if ($runtime.status -ne 'verified' -or $runtime.postgresMajor -ne 16) { throw 'Staged tools did not verify as PostgreSQL 16' }
+          $sourceHost = if ("${{ inputs.source_mode }}" -eq 'official-source-build') { 'ftp.postgresql.org + zlib.net (pinned official sources)' } else { $env:PG_TOOLS_ALLOWED_HOST }
+          [ordered]@{
+            schemaVersion = 1
+            status = 'PASS'
+            commit = $env:GITHUB_SHA
+            sourceMode = "${{ inputs.source_mode }}"
+            sourceHost = $sourceHost
+            artifactSha256 = $env:PG_TOOLS_ARTIFACT_SHA256
+            postgresVersion = $runtime.postgresVersion
+            organization = $runtime.artifact.organization
+            generatedAt = [DateTime]::UtcNow.ToString('o')
+          } | ConvertTo-Json -Depth 5 | Set-Content controlled-input\validation.json -Encoding UTF8
+
+      - name: Upload immutable controlled input for release packaging
+        uses: actions/upload-artifact@v7
+        with:
+          name: postgresql-16-windows-x64-client-tools
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            controlled-input/postgresql-16-windows-x64-client-tools.zip
+            controlled-input/provenance.json
+            controlled-input/source-build.json
+            controlled-input/validation.json

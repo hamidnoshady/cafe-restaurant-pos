@@ -12,7 +12,8 @@
  * actually succeeded) is a no-op: the DO NOTHING branch below reports the
  * event's original outcome instead of re-applying it.
  */
-import { query } from "./db";
+import { createHash } from "node:crypto";
+import { getPool, query, type PoolClient } from "./db";
 import { broadcast } from "./realtime";
 import type { Role } from "./auth";
 import type { CartItemInput } from "./order-cart";
@@ -21,12 +22,14 @@ import type { DiscountInput } from "./orders";
 import { classifyStatusReplay } from "./offline-sync";
 import type { OrderItemStatus } from "./order-item-status";
 import { recordCoworkerEvent } from "./ai-coworker-events";
+import { applySyncDomainHandler, SyncPayloadError, syncErrorCode } from "./sync-domain-handlers";
+import { syncEventDefinition, type SyncEventDefinition, type SyncEventType } from "./sync-event-registry";
 
-export type SyncEventType = "order.create" | "order.add_items" | "order_item.status";
+export type { SyncEventType } from "./sync-event-registry";
 
 export interface SyncEventInput {
   clientEventId: string;
-  type: SyncEventType;
+  type: string;
   /** when the client actually took the action, ISO — used for audit only; replay order is server-arrival order. */
   occurredAt: string;
   payload: Record<string, unknown>;
@@ -39,6 +42,10 @@ export interface SyncEventResult {
   duplicate?: boolean;
   /** a legitimate two-device conflict (see offline-sync.ts), not an error the client should retry */
   conflict?: boolean;
+  /** Prerequisite was absent; reconciliation may retry without partial effects. */
+  deferred?: boolean;
+  /** Terminal poison/unknown event was safely recorded for administration. */
+  deadLettered?: boolean;
   error?: string;
   data?: unknown;
 }
@@ -181,7 +188,7 @@ async function dispatch(
  * client queued them — order matters for "add items to an order that was
  * itself just queued".
  */
-export async function applySyncEvent(
+async function applyLegacySyncEvent(
   locationId: string,
   actor: { userId: string; role: Role },
   event: SyncEventInput,
@@ -244,4 +251,376 @@ export async function applySyncEvent(
     await query("UPDATE sync_events SET error = $2 WHERE id = $1", [inserted[0].id, code]);
     return { clientEventId: event.clientEventId, ok: false, error: code };
   }
+}
+
+
+interface TransactionalSyncMetadata {
+  siteDeviceId?: string | null;
+  schemaVersion?: number;
+  /** Deterministic integration-test failure point; never accepted from HTTP. */
+  failureInjection?: "after_domain_effect";
+}
+
+function payloadDigest(payload: Record<string, unknown>): string {
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
+
+const TERMINAL_SYNC_DOMAIN_ERRORS = new Set([
+  "already_reversed",
+  "count_layer_settled",
+  "count_not_reversible",
+  "count_stock_consumed",
+  "duplicate_item",
+  "insufficient_transfer_layers",
+  "insufficient_transfer_stock",
+  "invalid_customer_return",
+  "invalid_item",
+  "invalid_quantity",
+  "invalid_return_cost_basis",
+  "invalid_supplier_return",
+  "invalid_transfer",
+  "invalid_transfer_status",
+  "invalid_transition",
+  "inventory_exact_cutover_required",
+  "no_items",
+  "periodic_system_unsupported",
+  "purchase_total_mismatch",
+  "received_transfer_requires_reverse_transfer",
+  "refund_exceeds_payment",
+  "stock_count_reversal_inconsistent",
+  "supplier_required",
+  "supplier_return_lot_not_found",
+  "supplier_return_lot_required",
+  "supplier_return_value_exceeds_carrying_value",
+  "transfer_already_cancelled",
+  "transfer_already_received",
+  "transfer_already_shipped",
+]);
+
+export function classifySyncDomainError(
+  error: unknown,
+  definition: SyncEventDefinition,
+): "deferred" | "terminal" | "transient" {
+  const code = syncErrorCode(error);
+  if (definition.dependencyErrors.includes(code)) return "deferred";
+  if (error instanceof SyncPayloadError || TERMINAL_SYNC_DOMAIN_ERRORS.has(code)) return "terminal";
+  // SQLSTATEs, network codes, programming exceptions and every unrecognised
+  // failure roll back the transaction and remain retryable. They must never be
+  // converted into a durable poison/dead-letter outcome merely because an
+  // infrastructure failure happened during application.
+  return "transient";
+}
+
+async function eventScope(
+  client: PoolClient,
+  locationId: string,
+  actor: { userId: string; role: Role },
+  siteDeviceId: string | null,
+): Promise<{ businessId: string; error: string | null }> {
+  const location = await client.query<{ business_id: string }>(
+    "SELECT business_id FROM locations WHERE id=$1",
+    [locationId],
+  );
+  const businessId = location.rows[0]?.business_id;
+  if (!businessId) return { businessId: "", error: "unknown_location" };
+
+  if (siteDeviceId) {
+    const device = await client.query(
+      `SELECT 1 FROM site_devices
+        WHERE id=$1 AND business_id=$2 AND location_id=$3
+          AND status='active' AND revoked_at IS NULL`,
+      [siteDeviceId, businessId, locationId],
+    );
+    if (device.rowCount !== 1) return { businessId, error: "site_identity_mismatch" };
+  }
+
+  const user = await client.query<{ role: Role }>(
+    `SELECT u.role::text AS role
+       FROM users u
+      WHERE u.id=$1::uuid AND u.business_id=$2 AND u.is_active
+        AND (u.location_id IS NULL OR u.location_id=$3
+             OR EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id=u.id AND ul.location_id=$3))`,
+    [actor.userId, businessId, locationId],
+  );
+  if (!user.rows[0] || user.rows[0].role !== actor.role) return { businessId, error: "actor_identity_mismatch" };
+  return { businessId, error: null };
+}
+
+async function recordDeadLetter(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    siteDeviceId: string | null;
+    event: SyncEventInput;
+    schemaVersion: number;
+    error: string;
+    syncEventId: string;
+  },
+): Promise<void> {
+  await client.query(
+    `UPDATE sync_events
+        SET error=$2, dead_lettered_at=now(), attempt_count=attempt_count+1, last_attempt_at=now()
+      WHERE id=$1`,
+    [params.syncEventId, params.error],
+  );
+  await client.query(
+    `INSERT INTO sync_domain_effects
+       (business_id,location_id,site_device_id,client_event_id,event_type,schema_version,status,error_code)
+     VALUES($1,$2,$3,$4,$5,$6,'dead_lettered',$7)
+     ON CONFLICT (business_id,client_event_id) DO UPDATE
+       SET status='dead_lettered',error_code=EXCLUDED.error_code,attempts=sync_domain_effects.attempts+1,updated_at=now()`,
+    [params.businessId, params.locationId, params.siteDeviceId, params.event.clientEventId,
+      params.event.type, params.schemaVersion, params.error],
+  );
+  await client.query(
+    `INSERT INTO sync_event_dead_letters
+       (business_id,location_id,site_device_id,client_event_id,event_type,schema_version,payload_sha256,error_code)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (business_id,client_event_id,event_type,schema_version) DO UPDATE
+       SET error_code=EXCLUDED.error_code,status='open',last_seen_at=now(),
+           retry_count=sync_event_dead_letters.retry_count+1,
+           resolved_at=NULL,resolved_by=NULL,resolution_note=NULL`,
+    [params.businessId, params.locationId, params.siteDeviceId, params.event.clientEventId,
+      params.event.type, params.schemaVersion, payloadDigest(params.event.payload), params.error],
+  );
+}
+
+async function applyTransactionalSyncEvent(
+  locationId: string,
+  actor: { userId: string; role: Role },
+  event: SyncEventInput,
+  origin: "local" | "remote",
+  metadata: TransactionalSyncMetadata,
+): Promise<SyncEventResult> {
+  const schemaVersion = metadata.schemaVersion ?? 1;
+  const definition = syncEventDefinition(event.type, schemaVersion);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const scope = await eventScope(client, locationId, actor, metadata.siteDeviceId ?? null);
+    if (!scope.businessId) {
+      await client.query("ROLLBACK");
+      return { clientEventId: event.clientEventId, ok: false, error: scope.error ?? "unknown_location" };
+    }
+
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO sync_events
+         (location_id,client_event_id,event_type,payload,occurred_at,actor_user_id,actor_role,
+          origin,site_device_id,schema_version,attempt_count,last_attempt_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,now())
+       ON CONFLICT (location_id,client_event_id) DO NOTHING RETURNING id`,
+      [locationId, event.clientEventId, event.type, JSON.stringify(event.payload), event.occurredAt,
+        actor.userId, actor.role, origin, metadata.siteDeviceId ?? null, schemaVersion],
+    );
+    let syncEventId = inserted.rows[0]?.id;
+    if (!syncEventId) {
+      const prior = await client.query<{
+        id: string;
+        event_type: string;
+        schema_version: number;
+        applied_at: string | null;
+        error: string | null;
+      }>(
+        `SELECT id,event_type,schema_version,applied_at::text,error
+           FROM sync_events WHERE location_id=$1 AND client_event_id=$2 FOR UPDATE`,
+        [locationId, event.clientEventId],
+      );
+      const row = prior.rows[0];
+      if (!row || row.event_type !== event.type || row.schema_version !== schemaVersion) {
+        await client.query("ROLLBACK");
+        return { clientEventId: event.clientEventId, ok: false, duplicate: true, error: "event_identity_mismatch" };
+      }
+      syncEventId = row.id;
+      const effect = await client.query<{ status: string; result: unknown; error_code: string | null }>(
+        "SELECT status,result,error_code FROM sync_domain_effects WHERE business_id=$1 AND client_event_id=$2 FOR UPDATE",
+        [scope.businessId, event.clientEventId],
+      );
+      if (effect.rows[0]?.status === "applied") {
+        await client.query("COMMIT");
+        return { clientEventId: event.clientEventId, ok: true, duplicate: true, data: effect.rows[0].result };
+      }
+      if (effect.rows[0]?.status === "dead_lettered") {
+        await client.query("COMMIT");
+        return { clientEventId: event.clientEventId, ok: false, duplicate: true, deadLettered: true, error: effect.rows[0].error_code ?? "dead_lettered" };
+      }
+      await client.query(
+        "UPDATE sync_events SET attempt_count=attempt_count+1,last_attempt_at=now(),deferred_until=NULL WHERE id=$1",
+        [syncEventId],
+      );
+    }
+
+    if (!definition || definition.legacy) {
+      const error = definition ? "transactional_handler_mismatch" : "unknown_event_version";
+      await recordDeadLetter(client, {
+        businessId: scope.businessId,
+        locationId,
+        siteDeviceId: metadata.siteDeviceId ?? null,
+        event,
+        schemaVersion,
+        error,
+        syncEventId,
+      });
+      await client.query("COMMIT");
+      return { clientEventId: event.clientEventId, ok: false, deadLettered: true, error };
+    }
+
+    if (scope.error || !definition.roles.includes(actor.role)) {
+      const error = scope.error ?? "forbidden";
+      await recordDeadLetter(client, {
+        businessId: scope.businessId,
+        locationId,
+        siteDeviceId: metadata.siteDeviceId ?? null,
+        event,
+        schemaVersion,
+        error,
+        syncEventId,
+      });
+      await client.query("COMMIT");
+      return { clientEventId: event.clientEventId, ok: false, deadLettered: true, error };
+    }
+
+    await client.query(
+      `INSERT INTO sync_domain_effects
+         (business_id,location_id,site_device_id,client_event_id,event_type,schema_version,status,error_code)
+       VALUES($1,$2,$3,$4,$5,$6,'deferred',NULL)
+       ON CONFLICT (business_id,client_event_id) DO UPDATE
+         SET attempts=sync_domain_effects.attempts+1,updated_at=now(),error_code=NULL`,
+      [scope.businessId, locationId, metadata.siteDeviceId ?? null, event.clientEventId, event.type, schemaVersion],
+    );
+
+    await client.query("SAVEPOINT sync_domain_apply");
+    try {
+      const effect = await applySyncDomainHandler({
+        client,
+        businessId: scope.businessId,
+        locationId,
+        actor,
+        clientEventId: event.clientEventId,
+        payload: event.payload,
+        definition,
+      });
+      if (metadata.failureInjection === "after_domain_effect") throw new Error("injected_sync_failure_after_domain_effect");
+      await client.query("RELEASE SAVEPOINT sync_domain_apply");
+      await client.query(
+        `UPDATE sync_domain_effects
+            SET status='applied',effect_type=$3,effect_id=$4,result=$5,error_code=NULL,
+                applied_at=now(),updated_at=now()
+          WHERE business_id=$1 AND client_event_id=$2`,
+        [scope.businessId, event.clientEventId, effect.effectType, effect.effectId,
+          effect.result ? JSON.stringify(effect.result) : null],
+      );
+      await client.query(
+        "UPDATE sync_events SET applied_at=now(),error=NULL,deferred_until=NULL WHERE id=$1",
+        [syncEventId],
+      );
+      await client.query("COMMIT");
+      return { clientEventId: event.clientEventId, ok: true, data: effect.result };
+    } catch (error) {
+      await client.query("ROLLBACK TO SAVEPOINT sync_domain_apply");
+      const code = syncErrorCode(error);
+      const disposition = classifySyncDomainError(error, definition);
+      if (disposition === "deferred") {
+        await client.query(
+          `UPDATE sync_domain_effects
+              SET status='deferred',error_code=$3,updated_at=now()
+            WHERE business_id=$1 AND client_event_id=$2`,
+          [scope.businessId, event.clientEventId, code],
+        );
+        await client.query(
+          "UPDATE sync_events SET error=NULL,deferred_until=now()+interval '30 seconds' WHERE id=$1",
+          [syncEventId],
+        );
+        await client.query("COMMIT");
+        return { clientEventId: event.clientEventId, ok: false, deferred: true, error: code };
+      }
+      if (disposition === "terminal") {
+        await recordDeadLetter(client, {
+          businessId: scope.businessId,
+          locationId,
+          siteDeviceId: metadata.siteDeviceId ?? null,
+          event,
+          schemaVersion,
+          error: code,
+          syncEventId,
+        });
+        await client.query("COMMIT");
+        return { clientEventId: event.clientEventId, ok: false, deadLettered: true, error: code };
+      }
+      throw error;
+    }
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    return { clientEventId: event.clientEventId, ok: false, error: syncErrorCode(error) };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Version-aware entry point. Legacy order queue events retain their established
+ * conflict behaviour; every financial/inventory definition is atomically
+ * applied with its inbox/effect record and cannot partially post.
+ */
+export async function applySyncEvent(
+  locationId: string,
+  actor: { userId: string; role: Role },
+  event: SyncEventInput,
+  origin: "local" | "remote" = "local",
+  metadata: TransactionalSyncMetadata = {},
+): Promise<SyncEventResult> {
+  const definition = syncEventDefinition(event.type, metadata.schemaVersion ?? 1);
+  if (definition?.legacy) {
+    return applyLegacySyncEvent(locationId, actor, event, origin, metadata);
+  }
+  return applyTransactionalSyncEvent(locationId, actor, event, origin, metadata);
+}
+
+
+/** Retry dependency-deferred events after their prerequisite may have arrived. */
+export async function reconcileDeferredSyncEvents(
+  businessId: string,
+  limit = 100,
+): Promise<{ attempted: number; applied: number; deferred: number; deadLettered: number; failed: number }> {
+  const { rows } = await query<{
+    location_id: string;
+    client_event_id: string;
+    event_type: string;
+    payload: Record<string, unknown>;
+    occurred_at: Date | string;
+    actor_user_id: string;
+    actor_role: Role;
+    origin: "local" | "remote";
+    site_device_id: string | null;
+    schema_version: number;
+  }>(
+    `SELECT se.location_id,se.client_event_id,se.event_type,se.payload,se.occurred_at,
+            se.actor_user_id,se.actor_role,se.origin,se.site_device_id,se.schema_version
+       FROM sync_events se JOIN locations l ON l.id=se.location_id
+       JOIN sync_domain_effects e ON e.business_id=l.business_id AND e.client_event_id=se.client_event_id
+      WHERE l.business_id=$1 AND e.status='deferred' AND se.error IS NULL
+        AND se.applied_at IS NULL AND (se.deferred_until IS NULL OR se.deferred_until<=now())
+      ORDER BY se.id LIMIT $2`,
+    [businessId, Math.min(Math.max(1, limit), 500)],
+  );
+  const summary = { attempted: rows.length, applied: 0, deferred: 0, deadLettered: 0, failed: 0 };
+  for (const row of rows) {
+    const result = await applySyncEvent(
+      row.location_id,
+      { userId: row.actor_user_id, role: row.actor_role },
+      {
+        clientEventId: row.client_event_id,
+        type: row.event_type,
+        occurredAt: row.occurred_at instanceof Date ? row.occurred_at.toISOString() : row.occurred_at,
+        payload: row.payload,
+      },
+      row.origin,
+      { siteDeviceId: row.site_device_id, schemaVersion: row.schema_version },
+    );
+    if (result.ok) summary.applied += 1;
+    else if (result.deferred) summary.deferred += 1;
+    else if (result.deadLettered) summary.deadLettered += 1;
+    else summary.failed += 1;
+  }
+  return summary;
 }

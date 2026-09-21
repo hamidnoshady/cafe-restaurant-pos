@@ -39,6 +39,16 @@ for (const relative of [
   "migrations/0001_foundation.sql",
 ]) requirePath(relative);
 
+const buildNodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
+if (!Number.isInteger(buildNodeMajor) || buildNodeMajor < 24) {
+  fail(`desktop runtime must be built and verified with supported Node.js 24+, found ${process.versions.node}`);
+}
+const pinnedElectron = electronPackage.devDependencies?.electron || "";
+const electronMajor = Number.parseInt(pinnedElectron.split(".")[0], 10);
+if (!/^\d+\.\d+\.\d+$/.test(pinnedElectron) || !Number.isInteger(electronMajor) || electronMajor < 44) {
+  fail(`Electron must be exactly pinned to a supported 44+ release, found ${pinnedElectron || "missing"}`);
+}
+
 const runtimeRequire = createRequire(path.join(runtime, "package.json"));
 const stagedNextRoot = path.join(runtime, "node_modules", "next");
 for (const specifier of ["next/headers", "next/navigation", "next/server"]) {
@@ -95,12 +105,35 @@ for (const packageName of ["typescript", "tsx", "vitest", "tailwindcss", "@vites
   if (fs.existsSync(path.join(runtime, "node_modules", packageName))) fail(`development dependency ${packageName} is staged`);
 }
 
+if (JSON.stringify(electronPackage.build.electronLanguages) !== JSON.stringify(["en-US", "fa"])) {
+  fail("Electron must package only the product's English and Persian Chromium locales");
+}
 const resources = electronPackage.build.extraResources || [];
 if (resources.some((entry) => entry.from === "../node_modules" || entry.to === "app/node_modules")) {
   fail("electron-builder still bulk-copies root node_modules");
 }
 if (!resources.some((entry) => entry.from === "../.desktop-runtime" && entry.to === "desktop-runtime")) {
   fail("electron-builder does not package the positive runtime stage");
+}
+if (!resources.some((entry) =>
+  entry.from === "../.desktop-runtime/node_modules" &&
+  entry.to === "desktop-runtime/node_modules" &&
+  Array.isArray(entry.filter) && entry.filter.includes("**/*")
+)) {
+  fail("electron-builder does not explicitly package the positive runtime dependency tree");
+}
+if (!resources.some((entry) => entry.from === "../.desktop-assets/postgresql-tools" && entry.to === "postgresql-tools")) {
+  fail("electron-builder does not package the controlled PostgreSQL client-tools stage");
+}
+const pgToolsManifestPath = path.join(root, ".desktop-assets", "postgresql-tools", "provenance.json");
+if (!fs.existsSync(pgToolsManifestPath)) {
+  fail("PostgreSQL tools staging status is absent; run desktop:stage-pg-tools");
+} else {
+  const pgTools = JSON.parse(fs.readFileSync(pgToolsManifestPath, "utf8"));
+  if (!["verified", "not-configured"].includes(pgTools.status)) fail("PostgreSQL tools staging status is invalid");
+  if (process.env.REQUIRE_PACKAGED_PG_TOOLS === "1" && pgTools.status !== "verified") {
+    fail("release packaging requires verified PostgreSQL client tools");
+  }
 }
 const icon = path.resolve(root, "electron", electronPackage.build.win.icon);
 if (!fs.existsSync(icon)) fail(`installer icon does not exist: ${icon}`);
@@ -119,5 +152,8 @@ if (process.platform === "win32") {
 
 const manifest = JSON.parse(fs.readFileSync(path.join(runtime, "package.json"), "utf8"));
 if (manifest.desktopRuntime?.format !== 1) fail("runtime manifest format is invalid");
+if (manifest.engines?.node !== ">=24") {
+  fail(`runtime manifest must require supported Node.js 24+, found ${manifest.engines?.node || "missing"}`);
+}
 
 if (!process.exitCode) console.log("Desktop runtime shape is valid.");

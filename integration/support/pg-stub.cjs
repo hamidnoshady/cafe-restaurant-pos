@@ -171,6 +171,10 @@ async function restore(argv) {
 
 const mode = process.argv[2];
 const rest = process.argv.slice(3);
+if (rest.includes("--version")) {
+  process.stdout.write(`${mode === "dump" ? "pg_dump" : "pg_restore"} (PostgreSQL) 16.14\n`);
+  process.exit(0);
+}
 const run =
   mode === "dump" ? dump(rest) : mode === "restore" ? restore(rest) : Promise.reject(new Error(`unknown mode ${mode}`));
 run.catch((err) => {

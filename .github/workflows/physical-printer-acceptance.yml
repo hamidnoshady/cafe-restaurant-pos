@@ -1,0 +1,162 @@
+name: physical-printer-acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'print sends a challenge; confirm turns a witnessed challenge into evidence'
+        required: true
+        type: choice
+        options: [print, confirm]
+      version:
+        description: 'Release version under acceptance'
+        required: true
+        type: string
+      candidate_commit:
+        description: 'Full release-candidate Git commit SHA'
+        required: true
+        type: string
+      printer_name:
+        description: 'Exact physical Windows printer queue (print mode)'
+        required: false
+        type: string
+      harness_run_id:
+        description: 'Print-mode workflow run id (confirm mode)'
+        required: false
+        type: string
+      printed_code:
+        description: 'Code physically visible on the receipt (confirm mode)'
+        required: false
+        type: string
+      evidence_url:
+        description: 'HTTPS photo/session evidence URL showing the physical output (confirm mode)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  infrastructure:
+    name: physical printer infrastructure status
+    if: inputs.mode == 'print'
+    runs-on: windows-latest
+    steps:
+      - name: Refuse virtual-printer fallback
+        env:
+          CONFIGURED: ${{ vars.PHYSICAL_PRINTER_RUNNER_CONFIGURED }}
+        run: |
+          if ($env:CONFIGURED -ne "true") {
+            Write-Host "::error title=Physical printer NOT CONFIGURED::Register a Windows runner attached to a real receipt printer with labels self-hosted, Windows, X64, physical-receipt-printer. Virtual PDF/XPS queues are explicitly rejected."
+            throw "Physical printer infrastructure is NOT CONFIGURED"
+          }
+
+  print:
+    name: connector to physical spool challenge
+    if: inputs.mode == 'print'
+    needs: infrastructure
+    runs-on: [self-hosted, Windows, X64, physical-receipt-printer]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+      - name: Validate request and send through loopback connector
+        env:
+          PRINTER: ${{ inputs.printer_name }}
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          WORKFLOW_COMMIT: ${{ github.sha }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PRINTER)) { throw "printer_name is required in print mode" }
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if ($env:WORKFLOW_COMMIT -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:WORKFLOW_COMMIT does not match candidate $env:CANDIDATE_COMMIT" }
+          $code = "BS-${{ github.run_id }}-${{ github.run_attempt }}"
+          .\scripts\accept-physical-printer.ps1 -PrinterName $env:PRINTER -AcceptanceCode $code -ReleaseVersion $env:VERSION -CandidateCommit $env:CANDIDATE_COMMIT -OutputPath physical-printer-delivery.json
+      - name: Upload payload-free diagnostics and challenge
+        uses: actions/upload-artifact@v7
+        with:
+          name: physical-printer-challenge
+          if-no-files-found: error
+          path: physical-printer-delivery.json
+
+  confirm:
+    name: witnessed physical output evidence
+    if: inputs.mode == 'confirm'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+      - name: Validate confirmation inputs
+        env:
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HARNESS_RUN_ID: ${{ inputs.harness_run_id }}
+          PRINTED_CODE: ${{ inputs.printed_code }}
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          WORKFLOW_COMMIT: ${{ github.sha }}
+        run: |
+          if ($env:HARNESS_RUN_ID -notmatch '^\d+$') { throw "harness_run_id is required in confirm mode" }
+          if ([string]::IsNullOrWhiteSpace($env:PRINTED_CODE)) { throw "printed_code is required in confirm mode" }
+          if ($env:EVIDENCE_URL -notmatch '^https://') { throw "evidence_url must be HTTPS" }
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "version must be a release version" }
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if ($env:WORKFLOW_COMMIT -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:WORKFLOW_COMMIT does not match candidate $env:CANDIDATE_COMMIT" }
+          $headers = @{ Authorization = "Bearer $env:ACTIONS_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $harnessRun = Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:HARNESS_RUN_ID" -Headers $headers
+          if ($harnessRun.name -cne 'physical-printer-acceptance' -or $harnessRun.event -cne 'workflow_dispatch' -or $harnessRun.conclusion -cne 'success') { throw "harness_run_id is not a successful physical-printer print dispatch" }
+          if ($harnessRun.head_sha -cne $env:CANDIDATE_COMMIT) { throw "Printer challenge workflow definition came from $($harnessRun.head_sha), not $env:CANDIDATE_COMMIT" }
+      - name: Download challenge diagnostics
+        uses: actions/download-artifact@v8
+        with:
+          name: physical-printer-challenge
+          path: challenge
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.harness_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bind witness to delivered challenge
+        env:
+          PRINTED_CODE: ${{ inputs.printed_code }}
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          $delivery = Get-Content challenge\physical-printer-delivery.json -Raw | ConvertFrom-Json
+          if ($delivery.connectorDelivery -ne 'PASS') { throw "Harness delivery did not pass" }
+          if ($delivery.acceptanceCode -cne $env:PRINTED_CODE) { throw "Witnessed code does not match the delivered challenge" }
+          if ($delivery.version -cne $env:VERSION) { throw "Printer challenge version $($delivery.version) does not match $env:VERSION" }
+          if ($delivery.commit -cne $env:CANDIDATE_COMMIT) { throw "Printer challenge commit $($delivery.commit) does not match candidate $env:CANDIDATE_COMMIT" }
+          if ($delivery.gateway.connectorSourceSha256 -notmatch '^[0-9a-f]{64}$') { throw "Printer challenge has no connector source SHA-256" }
+          $candidateConnectorSpec = '{0}:{1}' -f $env:CANDIDATE_COMMIT, 'public/windows/cafe-pos-print-connector.ps1'
+          $candidateConnectorGitBlob = (git rev-parse $candidateConnectorSpec).Trim()
+          if ($LASTEXITCODE -ne 0 -or $delivery.gateway.connectorSourceGitBlob -cne $candidateConnectorGitBlob) { throw "Printer challenge did not execute the connector from candidate $env:CANDIDATE_COMMIT" }
+          [ordered]@{
+            schemaVersion = 1
+            checkId = 'physical-printer'
+            status = 'PASS'
+            version = $env:VERSION
+            commit = $env:CANDIDATE_COMMIT
+            executedAt = [DateTime]::UtcNow.ToString('o')
+            evidenceUrl = $env:EVIDENCE_URL
+            workflowEvidenceUrl = $env:RUN_URL
+            platform = 'Real Windows receipt printer via loopback connector and Windows spooler'
+            acceptanceCode = $delivery.acceptanceCode
+            connectorSourceSha256 = $delivery.gateway.connectorSourceSha256
+            connectorSourceGitBlob = $candidateConnectorGitBlob
+            printer = $delivery.printer
+            checks = @('candidate-connector-source', 'exclusive-process-ownership', 'loopback-only', 'origin-restricted', 'raw-spool-submission', 'physical-output-witnessed')
+          } | ConvertTo-Json -Depth 8 | Set-Content physical-printer-evidence.json -Encoding UTF8
+      - name: Upload physical acceptance evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: physical-printer-evidence-${{ inputs.version }}
+          path: physical-printer-evidence.json
+          if-no-files-found: error

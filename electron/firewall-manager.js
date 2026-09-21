@@ -50,7 +50,7 @@ class FirewallManager {
     const script = [
       `$ErrorActionPreference = 'Stop'`,
       `Get-NetFirewallRule -DisplayName ${psQuote(RULE_NAME)} -ErrorAction SilentlyContinue | Remove-NetFirewallRule`,
-      `New-NetFirewallRule -DisplayName ${psQuote(RULE_NAME)} -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${Number(port)} -Profile Private -RemoteAddress LocalSubnet -Program ${psQuote(executable)} | Out-Null`,
+      `New-NetFirewallRule -DisplayName ${psQuote(RULE_NAME)} -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${Number(port)},${Number(port) + 1} -Profile Private -RemoteAddress LocalSubnet -Program ${psQuote(executable)} | Out-Null`,
     ].join("; ");
     try {
       await runPowerShell(script, true);

@@ -4,7 +4,7 @@
  * PATCH /api/inventory/purchases/[id] so the route handlers and an unattended
  * autopilot run share one implementation rather than two that can drift.
  */
-import { getPool, query } from "./db";
+import { getPool, query, type PoolClient } from "./db";
 import { preparePurchaseLines, purchaseDateOrNull, type PurchaseItemInput } from "./purchase-lines";
 
 export class PurchaseServiceError extends Error {
@@ -17,16 +17,21 @@ export class PurchaseServiceError extends Error {
   }
 }
 
-export async function createDraftPurchase(input: {
+export interface CreateDraftPurchaseInput {
   locationId: string;
   supplierId?: string | null;
   note?: string;
   purchaseDate?: string | null;
   items: PurchaseItemInput[];
   createdBy: string | null;
-}): Promise<{ id: string; total: string }> {
+}
+
+export async function createDraftPurchaseInTransaction(
+  client: PoolClient,
+  input: CreateDraftPurchaseInput,
+): Promise<{ id: string; total: string }> {
   if (input.supplierId) {
-    const { rows: supplier } = await query("SELECT id FROM suppliers WHERE id = $1 AND location_id = $2", [
+    const { rows: supplier } = await client.query("SELECT id FROM suppliers WHERE id = $1 AND location_id = $2", [
       input.supplierId,
       input.locationId,
     ]);
@@ -34,32 +39,33 @@ export async function createDraftPurchase(input: {
   }
 
   const purchaseDate = purchaseDateOrNull(input.purchaseDate);
-  const { lines, total } = await preparePurchaseLines(input.items, input.locationId);
+  const { lines, total } = await preparePurchaseLines(input.items, input.locationId, client);
+  const { rows: purchaseRows } = await client.query<{ id: string }>(
+    `INSERT INTO purchases (location_id, supplier_id, status, total, note, purchase_date, created_by)
+     VALUES ($1, $2, 'draft', $3, $4,
+             COALESCE($5::date, (SELECT app_business_date(now(), l.timezone, l.business_day_start_minutes)
+                                   FROM locations l WHERE l.id = $1)),
+             $6) RETURNING id`,
+    [input.locationId, input.supplierId || null, total, input.note?.trim() || null, purchaseDate, input.createdBy],
+  );
+  const purchaseId = purchaseRows[0].id;
+  for (const line of lines) {
+    await client.query(
+      `INSERT INTO purchase_items (purchase_id, inventory_item_id, quantity, unit_cost, extended_cost)
+       VALUES ($1, $2, $3, $4::numeric / $3::numeric, $4)`,
+      [purchaseId, line.inventoryItemId, line.baseQty, line.totalCost],
+    );
+  }
+  return { id: purchaseId, total };
+}
 
+export async function createDraftPurchase(input: CreateDraftPurchaseInput): Promise<{ id: string; total: string }> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    // No date entered means today *at the branch*, not at the server — and
-    // "today" is the branch's business day, so a delivery signed for at 01:00
-    // during a night service is dated the day that service belongs to.
-    const { rows: purchaseRows } = await client.query<{ id: string }>(
-      `INSERT INTO purchases (location_id, supplier_id, status, total, note, purchase_date, created_by)
-       VALUES ($1, $2, 'draft', $3, $4,
-               COALESCE($5::date, (SELECT app_business_date(now(), l.timezone, l.business_day_start_minutes)
-                                     FROM locations l WHERE l.id = $1)),
-               $6) RETURNING id`,
-      [input.locationId, input.supplierId || null, total, input.note?.trim() || null, purchaseDate, input.createdBy],
-    );
-    const purchaseId = purchaseRows[0].id;
-    for (const line of lines) {
-      await client.query(
-        `INSERT INTO purchase_items (purchase_id, inventory_item_id, quantity, unit_cost, extended_cost)
-         VALUES ($1, $2, $3, $4::numeric / $3::numeric, $4)`,
-        [purchaseId, line.inventoryItemId, line.baseQty, line.totalCost],
-      );
-    }
+    const result = await createDraftPurchaseInTransaction(client, input);
     await client.query("COMMIT");
-    return { id: purchaseId, total };
+    return result;
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

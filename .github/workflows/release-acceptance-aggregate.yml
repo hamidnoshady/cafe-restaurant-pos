@@ -1,0 +1,173 @@
+name: release-acceptance-aggregate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version shared by all physical/retail evidence'
+        required: true
+        type: string
+      candidate_commit:
+        description: 'Full candidate Git commit SHA'
+        required: true
+        type: string
+      windows_server_run_id:
+        description: 'Passing build-desktop-installer run id for this commit'
+        required: true
+        type: string
+      windows_11_run_id:
+        description: 'Passing windows-11-release run id'
+        required: true
+        type: string
+      physical_printer_run_id:
+        description: 'Passing physical-printer confirm-mode run id'
+        required: true
+        type: string
+      android_real_run_id:
+        description: 'Passing Android real-device evidence run id'
+        required: true
+        type: string
+      ios_real_run_id:
+        description: 'Passing iOS real-device evidence run id'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  aggregate:
+    name: bind acceptance evidence to one candidate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Require successful authoritative evidence workflows
+        env:
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          WORKFLOW_COMMIT: ${{ github.sha }}
+          WINDOWS_SERVER_RUN: ${{ inputs.windows_server_run_id }}
+          WINDOWS_11_RUN: ${{ inputs.windows_11_run_id }}
+          PRINTER_RUN: ${{ inputs.physical_printer_run_id }}
+          ANDROID_RUN: ${{ inputs.android_real_run_id }}
+          IOS_RUN: ${{ inputs.ios_real_run_id }}
+        run: |
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if ($env:WORKFLOW_COMMIT -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:WORKFLOW_COMMIT does not match candidate $env:CANDIDATE_COMMIT" }
+          $expected = @(
+            @{ runId=$env:WINDOWS_SERVER_RUN; workflow='build-desktop-installer' },
+            @{ runId=$env:WINDOWS_11_RUN; workflow='windows-11-release' },
+            @{ runId=$env:PRINTER_RUN; workflow='physical-printer-acceptance' },
+            @{ runId=$env:ANDROID_RUN; workflow='mobile-real-device-acceptance' },
+            @{ runId=$env:IOS_RUN; workflow='mobile-real-device-acceptance' }
+          )
+          $headers = @{ Authorization = "Bearer $env:ACTIONS_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          foreach ($entry in $expected) {
+            if ($entry.runId -notmatch '^\d+$') { throw "Evidence run id must be numeric" }
+            $run = Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/runs/$($entry.runId)" -Headers $headers
+            if ($run.name -cne $entry.workflow -or $run.conclusion -cne 'success') { throw "Run $($entry.runId) is not a successful $($entry.workflow) workflow" }
+            if ($entry.workflow -ne 'build-desktop-installer' -and $run.event -cne 'workflow_dispatch') { throw "Run $($entry.runId) is not an authoritative manual acceptance dispatch" }
+            if ($run.head_sha -cne $env:CANDIDATE_COMMIT) { throw "Run $($entry.runId) workflow definition came from $($run.head_sha), not $env:CANDIDATE_COMMIT" }
+          }
+
+      - name: Download Windows Server package evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: business-suite-desktop-size-report
+          path: evidence\windows-server
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.windows_server_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download retail Windows 11 evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-11-release-evidence-${{ inputs.version }}
+          path: evidence\windows-11
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.windows_11_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download physical printer evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: physical-printer-evidence-${{ inputs.version }}
+          path: evidence\printer
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.physical_printer_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download Android real-device evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: android-real-device-evidence-${{ inputs.version }}
+          path: evidence\android
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.android_real_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download iOS real-device evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: ios-real-device-evidence-${{ inputs.version }}
+          path: evidence\ios
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ios_real_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate scope, version and commit and write aggregate
+        env:
+          VERSION: ${{ inputs.version }}
+          COMMIT: ${{ inputs.candidate_commit }}
+        run: |
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "version must be a release version" }
+          if ($env:COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          $files = [ordered]@{
+            'windows-server-package' = 'evidence\windows-server\windows-server-package-evidence.json'
+            'windows-11-retail' = 'evidence\windows-11\windows-11-release-evidence.json'
+            'physical-printer' = 'evidence\printer\physical-printer-evidence.json'
+            'android-real-device' = 'evidence\android\mobile-real-device-evidence.json'
+            'ios-real-device' = 'evidence\ios\mobile-real-device-evidence.json'
+          }
+          $checks = [ordered]@{}
+          foreach ($entry in $files.GetEnumerator()) {
+            if (-not (Test-Path -LiteralPath $entry.Value)) { throw "Missing evidence file: $($entry.Value)" }
+            $value = Get-Content -LiteralPath $entry.Value -Raw | ConvertFrom-Json
+            if ($value.checkId -ne $entry.Key -or $value.status -ne 'PASS') { throw "$($entry.Key) evidence is not a matching PASS" }
+            if ($entry.Key -in @('windows-11-retail','physical-printer','android-real-device','ios-real-device') -and $value.version -ne $env:VERSION) {
+              throw "$($entry.Key) evidence version $($value.version) does not match $env:VERSION"
+            }
+            if ($value.commit -ne $env:COMMIT) {
+              throw "$($entry.Key) evidence commit $($value.commit) does not match $env:COMMIT"
+            }
+            if ($entry.Key -eq 'windows-11-retail' -and $value.installerSha256 -notmatch '^[0-9a-f]{64}$') {
+              throw "windows-11-retail evidence is not bound to an installer SHA-256"
+            }
+            $value | Add-Member -NotePropertyName configured -NotePropertyValue $true -Force
+            $checks[$entry.Key] = $value
+          }
+          $installerSha256 = $checks['windows-11-retail'].installerSha256
+          [ordered]@{ schemaVersion=1; version=$env:VERSION; commit=$env:COMMIT; installerSha256=$installerSha256; checks=$checks } | ConvertTo-Json -Depth 14 | Set-Content release-acceptance-evidence.json -Encoding UTF8
+
+      - name: Generate readiness preview (production internals are expected to remain NOT CONFIGURED here)
+        env:
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+        run: node scripts/generate-release-readiness.mjs --evidence=release-acceptance-evidence.json --output=release-readiness-preview.json --markdown=release-readiness-preview.md --commit=$env:CANDIDATE_COMMIT --version=$env:VERSION
+
+      - name: Upload aggregate for final production release
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-acceptance-evidence-${{ inputs.version }}
+          if-no-files-found: error
+          path: |
+            release-acceptance-evidence.json
+            release-readiness-preview.json
+            release-readiness-preview.md

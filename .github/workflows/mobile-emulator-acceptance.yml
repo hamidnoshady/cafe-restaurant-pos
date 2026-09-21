@@ -1,0 +1,132 @@
+name: mobile-emulator-acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'electron/certificate-manager.js'
+      - 'electron/gateway-manager.js'
+      - 'electron/firewall-manager.js'
+      - 'src/app/(app)/settings/connections/local-devices-panel.tsx'
+      - 'src/lib/desktop-gateway-isolation.test.ts'
+      - 'scripts/mobile-trust-fixture.cjs'
+      - 'scripts/accept-android-emulator.sh'
+      - '.github/workflows/mobile-emulator-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  gateway-boundary:
+    name: HTTPS/CA-only boundary automation
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify TLS trust, isolated CA bootstrap and no HTTP app proxy
+        run: npx vitest run src/lib/desktop-gateway-isolation.test.ts
+
+  android-emulator:
+    name: Android 11 emulator HTTPS and WSS trust
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install certificate fixture dependency only
+        working-directory: electron
+        run: npm ci --ignore-scripts
+      - name: Start host trust fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/mobile-android"
+          nohup node scripts/mobile-trust-fixture.cjs --address=10.0.2.2 --bind=0.0.0.0 --output-dir="$RUNNER_TEMP/mobile-android" > "$RUNNER_TEMP/mobile-android/server.log" 2>&1 &
+          echo "FIXTURE_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do test -f "$RUNNER_TEMP/mobile-android/fixture.json" && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/mobile-android/server.log"; exit 1
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Boot emulator, install fixture CA and prove Chrome HTTPS/WSS
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -writable-system
+          disable-animations: true
+          # Keep the action input POSIX-sh simple and run the acceptance logic
+          # in an explicitly parsed Bash script with command-level diagnostics.
+          script: bash scripts/accept-android-emulator.sh
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-emulator-trust-evidence
+          path: |
+            ${{ runner.temp }}/mobile-android/fixture.json
+            ${{ runner.temp }}/mobile-android/browser-result.json
+            ${{ runner.temp }}/mobile-android/server.log
+          if-no-files-found: warn
+
+  ios-simulator:
+    name: iOS simulator HTTPS and WSS trust
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install certificate fixture dependency only
+        working-directory: electron
+        run: npm ci --ignore-scripts
+      - name: Start host trust fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/mobile-ios"
+          nohup node scripts/mobile-trust-fixture.cjs --address=127.0.0.1 --bind=127.0.0.1 --output-dir="$RUNNER_TEMP/mobile-ios" > "$RUNNER_TEMP/mobile-ios/server.log" 2>&1 &
+          echo "FIXTURE_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do test -f "$RUNNER_TEMP/mobile-ios/fixture.json" && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/mobile-ios/server.log"; exit 1
+      - name: Boot iPhone simulator, install CA and prove Safari HTTPS/WSS
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j | node -e '
+            let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+              const all=JSON.parse(s).devices; const device=Object.values(all).flat().find(d=>d.name.startsWith("iPhone") && d.isAvailable); if(!device) process.exit(2); console.log(device.udid);
+            })')
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::simulator boot failed ($rc)"; exit $rc; }
+          # simctl's keychain API expects a DER certificate. The gateway's
+          # downloadable/onboarding CA remains PEM; convert only the test copy.
+          openssl x509 -in "$RUNNER_TEMP/mobile-ios/gateway-certificates/business-suite-local-ca.crt" -outform DER -out "$RUNNER_TEMP/mobile-ios/gateway-certificates/business-suite-local-ca.cer"
+          xcrun simctl keychain "$UDID" add-root-cert "$RUNNER_TEMP/mobile-ios/gateway-certificates/business-suite-local-ca.cer" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::CA installation failed ($rc)"; exit $rc; }
+          xcrun simctl openurl "$UDID" 'https://127.0.0.1:9443/acceptance?platform=ios-simulator' || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::Safari openurl failed ($rc)"; exit $rc; }
+          for i in $(seq 1 45); do
+            if grep -q '"completed": true' "$RUNNER_TEMP/mobile-ios/browser-result.json"; then
+              cat "$RUNNER_TEMP/mobile-ios/browser-result.json"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/mobile-ios/server.log"
+          cat "$RUNNER_TEMP/mobile-ios/browser-result.json"
+          exit 1
+      - name: Upload simulator evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-trust-evidence
+          path: |
+            ${{ runner.temp }}/mobile-ios/fixture.json
+            ${{ runner.temp }}/mobile-ios/browser-result.json
+            ${{ runner.temp }}/mobile-ios/server.log
+          if-no-files-found: warn

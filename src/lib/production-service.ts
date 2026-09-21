@@ -428,6 +428,7 @@ export interface RecordedProductionRun {
   conversionCostRial: RialText;
   totalCostRial: RialText;
   unitCostRial: string;
+  duplicate?: boolean;
 }
 
 /**
@@ -453,8 +454,35 @@ export async function recordProductionRun(
     conversionCostRial?: RialText | null;
     note: string | null;
     createdBy: string | null;
+    /** Caller-owned domain idempotency identity (for sync retries). */
+    idempotencyKey?: string | null;
   },
 ): Promise<RecordedProductionRun> {
+  const domainKey = params.idempotencyKey ? `production-sync:${params.idempotencyKey}` : null;
+  if (domainKey) {
+    const prior = await client.query<{
+      id: string;
+      material_cost_rial: string;
+      conversion_cost_rial: string;
+      total_cost_rial: string;
+      output_quantity: string;
+    }>(
+      `SELECT id,material_cost_rial::text,conversion_cost_rial::text,total_cost_rial::text,output_quantity::text
+         FROM production_runs WHERE business_id=$1 AND idempotency_key=$2`,
+      [params.businessId, domainKey],
+    );
+    if (prior.rows[0]) {
+      const row = prior.rows[0];
+      return {
+        id: row.id,
+        materialCostRial: rialText(row.material_cost_rial),
+        conversionCostRial: rialText(row.conversion_cost_rial),
+        totalCostRial: rialText(row.total_cost_rial),
+        unitCostRial: new Decimal(row.total_cost_rial).div(new Decimal(row.output_quantity)).toDecimalPlaces(9).toFixed(),
+        duplicate: true,
+      };
+    }
+  }
   const { rows: formulas } = await client.query<{
     id: string;
     output_inventory_item_id: string;
@@ -498,10 +526,11 @@ export async function recordProductionRun(
     `INSERT INTO inventory_events
        (business_id, location_id, event_type, source_type, source_id, created_by, costing_version,
         idempotency_key, metadata)
-     VALUES ($1,$2,'production','production',$3::uuid,$4,2,'production-run:' || $3::uuid::text,
+     VALUES ($1,$2,'production','production',$3::uuid,$4,2,$6,
              jsonb_build_object('formulaId',$5::text))
      RETURNING id`,
-    [params.businessId, params.locationId, runId, params.createdBy, params.formulaId],
+    [params.businessId, params.locationId, runId, params.createdBy, params.formulaId,
+      domainKey ? `inventory-event:${domainKey}` : `production-run:${runId}`],
   );
   const eventId = events[0].id;
 
@@ -510,7 +539,7 @@ export async function recordProductionRun(
        (id, business_id, location_id, formula_id, output_inventory_item_id, batches, output_quantity,
         material_cost_rial, conversion_cost_rial, total_cost_rial, note, produced_by,
         inventory_event_id, idempotency_key)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$8,$9,$10,$11,'production-run:' || $1::uuid::text)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$8,$9,$10,$11,$12)`,
     [
       runId,
       params.businessId,
@@ -523,6 +552,7 @@ export async function recordProductionRun(
       params.note,
       params.createdBy,
       eventId,
+      domainKey ?? `production-run:${runId}`,
     ],
   );
 

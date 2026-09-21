@@ -366,7 +366,7 @@ export function OrderDetailModal({
     } finally {
       if (requestId === loadRequest.current) setOrderLoaded(true);
     }
-  }, [orderId]);
+  }, [money, orderId]);
 
   // A closed dialog holds no order: reopening on a different row must never
   // flash the previous order's lines while the fetch is in flight.
@@ -404,7 +404,7 @@ export function OrderDetailModal({
       cancelled = true;
       loadRequest.current += 1;
     };
-  }, [load, open]);
+  }, [load, open, paymentMethods]);
 
   useEffect(() => {
     if (!open || menu) return;

@@ -49,7 +49,7 @@ async function compile(entryPoint, outfile) {
     bundle: true,
     platform: "node",
     format: "cjs",
-    target: "node20",
+    target: "node24",
     sourcemap: false,
     legalComments: "none",
     // Imported CLI modules contain direct-execution guards. In CJS output an
@@ -163,7 +163,7 @@ async function main() {
     name: "business-suite-desktop-runtime",
     private: true,
     version: sourcePackage.version,
-    engines: { node: ">=20" },
+    engines: { node: ">=24" },
     desktopRuntime: {
       format: 1,
       server: "bin/server.cjs",

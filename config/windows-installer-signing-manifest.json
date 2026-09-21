@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "description": "Pre-execution Authenticode verification for a downloaded Windows installer.",
+  "required": [
+    {
+      "id": "nsis-installer",
+      "pattern": "Business Suite Setup *.exe",
+      "exactly": 1
+    }
+  ]
+}

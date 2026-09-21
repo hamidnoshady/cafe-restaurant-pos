@@ -438,7 +438,6 @@ export default function ProjectDetailPage() {
                     <li key={file.id} className="overflow-hidden rounded-xl border border-border/80 bg-card">
                       <a href={`/api/media/${file.id}/file`} target="_blank" rel="noreferrer" className="block">
                         {file.kind === "image" ? (
-                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={`/api/media/${file.id}/file`}
                             alt={file.fileName}

@@ -176,7 +176,7 @@ export function VisionCountPanel({
                         key={p.id}
                         className="group relative overflow-hidden rounded-xl border border-border bg-card"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        { }
                         <img
                           src={p.imageDataUrl}
                           alt={`برچسب تصویری ${item.name}`}
@@ -237,7 +237,7 @@ export function VisionCountPanel({
             <ul className="divide-y divide-border rounded-lg border border-border">
               {scans.slice(0, 6).map((s) => (
                 <li key={s.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  { }
                   <img
                     src={s.imageDataUrl}
                     alt={`تصویر شمارش ${s.itemName}`}

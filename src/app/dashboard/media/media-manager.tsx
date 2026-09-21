@@ -369,7 +369,7 @@ export function MediaManager() {
               >
                 <span className="relative block aspect-square w-full overflow-hidden bg-muted">
                   {asset.kind === "image" && asset.mimeType !== "image/svg+xml" ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+
                     <img
                       src={`/api/media/${asset.id}/file`}
                       alt={asset.fileName}
@@ -545,7 +545,7 @@ function AssetDrawer({
 
         {asset.kind === "image" && asset.mimeType !== "image/svg+xml" ? (
           <div className="mb-4 overflow-hidden rounded-xl border border-border bg-muted">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={`/api/media/${asset.id}/file`} alt={asset.fileName} className="mx-auto max-h-72 object-contain" />
           </div>
         ) : (

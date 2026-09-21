@@ -67,7 +67,9 @@ const targets = [
   ["Packaged resources", "electron/dist/win-unpacked/resources"],
   ["app.asar", "electron/dist/win-unpacked/resources/app.asar"],
   ["app.asar.unpacked", "electron/dist/win-unpacked/resources/app.asar.unpacked"],
+  ["PostgreSQL client tools", ".desktop-assets/postgresql-tools"],
   ["Packaged staged runtime", "electron/dist/win-unpacked/resources/desktop-runtime"],
+  ["Packaged PostgreSQL client tools", "electron/dist/win-unpacked/resources/postgresql-tools"],
 ];
 const measured = await Promise.all(targets.map(async ([label, relative]) => ({ label, relative, bytes: await bytes(path.join(root, relative)) })));
 const roots = [path.join(root, ".desktop-runtime"), path.join(root, "electron", "dist", "win-unpacked")].filter(existsSync);

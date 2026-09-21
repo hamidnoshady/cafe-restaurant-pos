@@ -76,7 +76,9 @@ function createCertificateManager(userDataDir, logger) {
     cert.publicKey = keys.publicKey;
     cert.serialNumber = serial();
     cert.validity.notBefore = new Date(Date.now() - 5 * 60_000);
-    cert.validity.notAfter = new Date(Date.now() + 825 * 24 * 60 * 60_000);
+    // Apple and Chromium enforce the modern 398-day maximum for publicly
+    // trusted-style TLS server leaves even when onboarding a private local CA.
+    cert.validity.notAfter = new Date(Date.now() + 397 * 24 * 60 * 60_000);
     cert.setSubject([
       { name: "commonName", value: normalized[0] || "business-suite.local" },
       { name: "organizationName", value: "Business Suite Local Installation" },

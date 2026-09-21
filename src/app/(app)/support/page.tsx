@@ -553,7 +553,6 @@ function TicketDetailPanel({
                 download={`ticket-${ticket.id}-${message.id}.jpg`}
                 className="mt-2 block overflow-hidden rounded-lg border border-border/80 bg-card"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={message.attachment}
                   alt="پیوست تیکت"
@@ -577,7 +576,6 @@ function TicketDetailPanel({
       <div className="space-y-2 border-t border-border/80 p-4">
         {attachment ? (
           <div className="relative overflow-hidden rounded-lg border border-border/80">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={attachment}
               alt="پیوست در حال ارسال"
@@ -803,7 +801,6 @@ function NewTicketDialog({
 
           {attachment ? (
             <div className="relative overflow-hidden rounded-lg border border-border/80">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={attachment}
                 alt="پیوست تیکت"

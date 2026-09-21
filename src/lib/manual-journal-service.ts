@@ -360,7 +360,7 @@ export async function approveDraft(params: {
  * one (an order payment, a purchase receipt, …) already has its own
  * correction flow (a void, a refund, a return).
  */
-export async function reverseEntry(params: {
+export interface ReverseManualEntryParams {
   businessId: string;
   /** Kept for API compatibility; the reversal uses the original entry's location. */
   locationId: string | null;
@@ -368,71 +368,68 @@ export async function reverseEntry(params: {
   actorId: string;
   memo?: string | null;
   entryDate?: string | null;
-}): Promise<{ entryId: string }> {
+}
+
+export async function reverseEntryInTransaction(
+  client: PoolClient,
+  params: ReverseManualEntryParams,
+): Promise<{ entryId: string }> {
   const entryDate = normalizeEntryDate(params.entryDate);
+  const { rows: entryRows } = await client.query<{
+    id: string;
+    location_id: string | null;
+    source_type: string | null;
+    memo: string | null;
+    reverses_entry_id: string | null;
+    reversed_at: string | null;
+  }>(
+    `SELECT id, location_id, source_type, memo, reverses_entry_id, reversed_at::text AS reversed_at
+       FROM journal_entries
+      WHERE id = $1 AND business_id = $2
+      FOR UPDATE`,
+    [params.entryId, params.businessId],
+  );
+  const original = entryRows[0];
+  if (!original) throw new ManualJournalError("entry_not_found", 404);
+  if (original.source_type !== "manual") throw new ManualJournalError("not_reversible", 409);
+  if (original.reverses_entry_id) throw new ManualJournalError("cannot_reverse_a_reversal", 409);
+  if (original.reversed_at) throw new ManualJournalError("already_reversed", 409);
+
+  const { rows: lineRows } = await client.query<{ account_id: string; debit: string; credit: string }>(
+    `SELECT account_id, debit::text AS debit, credit::text AS credit
+       FROM journal_lines WHERE entry_id = $1 ORDER BY id`,
+    [params.entryId],
+  );
+  if (lineRows.length === 0) throw new ManualJournalError("entry_has_no_lines", 409);
+
+  const entryId = await postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: original.location_id,
+    entryDate,
+    memo:
+      (typeof params.memo === "string" ? params.memo.trim() : "") ||
+      `برگشت سند: ${original.memo ?? ""}`.trim(),
+    sourceType: "manual",
+    sourceId: null,
+    createdBy: params.actorId,
+    lines: lineRows.map((line) => ({
+      accountId: line.account_id,
+      debit: line.credit as RialText,
+      credit: line.debit as RialText,
+    })),
+  });
+  await client.query("UPDATE journal_entries SET reverses_entry_id = $2 WHERE id = $1", [entryId, params.entryId]);
+  await client.query("UPDATE journal_entries SET reversed_at = now(), reversed_by = $2 WHERE id = $1", [params.entryId, params.actorId]);
+  return { entryId: entryId! };
+}
+
+export async function reverseEntry(params: ReverseManualEntryParams): Promise<{ entryId: string }> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const { rows: entryRows } = await client.query<{
-      id: string;
-      location_id: string | null;
-      source_type: string | null;
-      memo: string | null;
-      reverses_entry_id: string | null;
-      reversed_at: string | null;
-    }>(
-      `SELECT id, location_id, source_type, memo, reverses_entry_id, reversed_at::text AS reversed_at
-         FROM journal_entries
-        WHERE id = $1 AND business_id = $2
-        FOR UPDATE`,
-      [params.entryId, params.businessId],
-    );
-    const original = entryRows[0];
-    if (!original) throw new ManualJournalError("entry_not_found", 404);
-    if (original.source_type !== "manual")
-      throw new ManualJournalError("not_reversible", 409);
-    if (original.reverses_entry_id)
-      throw new ManualJournalError("cannot_reverse_a_reversal", 409);
-    if (original.reversed_at)
-      throw new ManualJournalError("already_reversed", 409);
-
-    const { rows: lineRows } = await client.query<{
-      account_id: string;
-      debit: string;
-      credit: string;
-    }>(
-      `SELECT account_id, debit::text AS debit, credit::text AS credit FROM journal_lines WHERE entry_id = $1 ORDER BY id`,
-      [params.entryId],
-    );
-    if (lineRows.length === 0)
-      throw new ManualJournalError("entry_has_no_lines", 409);
-
-    const entryId = await postExactJournalEntry(client, {
-      businessId: params.businessId,
-      locationId: original.location_id,
-      entryDate,
-      memo:
-        (typeof params.memo === "string" ? params.memo.trim() : "") ||
-        `برگشت سند: ${original.memo ?? ""}`.trim(),
-      sourceType: "manual",
-      sourceId: null,
-      createdBy: params.actorId,
-      lines: lineRows.map((l) => ({
-        accountId: l.account_id,
-        debit: l.credit as RialText,
-        credit: l.debit as RialText,
-      })),
-    });
-    await client.query(
-      `UPDATE journal_entries SET reverses_entry_id = $2 WHERE id = $1`,
-      [entryId, params.entryId],
-    );
-    await client.query(
-      `UPDATE journal_entries SET reversed_at = now(), reversed_by = $2 WHERE id = $1`,
-      [params.entryId, params.actorId],
-    );
+    const result = await reverseEntryInTransaction(client, params);
     await client.query("COMMIT");
-    return { entryId: entryId! };
+    return result;
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

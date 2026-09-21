@@ -7,7 +7,7 @@
  * Other upgrade requests (e.g. Next's dev-mode HMR websocket) are handed off
  * to Next's own upgrade handler so `next dev` keeps working normally.
  */
-import { createServer as createHttpServer, type IncomingMessage } from "http";
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "http";
 import { createServer as createHttpsServer } from "https";
 import fs from "fs";
 import path from "path";
@@ -35,6 +35,26 @@ if (!dev && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
 // the package; importing it as an ESM module under tsx skips that hook and
 // crashes on first render ("AsyncLocalStorage accessed in runtime where it
 // is not available").
+// A custom server does not execute Next's generated standalone/server.js,
+// which normally injects this already-resolved config. Without it, Next tries
+// to load its build-time webpack hook; that can appear to work in a source
+// checkout by falling through to the parent development node_modules, then
+// fail in the positively staged installer where that parent correctly does
+// not exist. Read the generated runtime metadata before constructing Next.
+if (process.env.NODE_ENV === "production" && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
+  try {
+    const metadata = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), ".next", "required-server-files.json"), "utf8"),
+    ) as { config?: { output?: string } };
+    if (metadata.config?.output === "standalone") {
+      process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(metadata.config);
+    }
+  } catch {
+    // Non-standalone/custom production deployments keep Next's normal config
+    // discovery behavior and receive its normal error if configuration fails.
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const next = require("next") as typeof import("next").default;
 
@@ -162,8 +182,7 @@ app.prepare().then(async () => {
     initialDelayMs: number,
   ) => {
     const run = () => {
-      let task: Promise<void>;
-      task = Promise.resolve()
+      const task: Promise<void> = Promise.resolve()
         .then(tick)
         .then(() => undefined)
         .catch((error) => console.error("unexpected background tick failure:", error))
@@ -352,7 +371,7 @@ app.prepare().then(async () => {
     runMessagingTick().catch((err) => console.error("messaging tick failed:", err));
   scheduleBackgroundTick(messagingTick, MESSAGE_TICK_INTERVAL_MS, 35_000);
 
-  const requestListener = (req: any, res: any) => {
+  const requestListener = (req: IncomingMessage, res: ServerResponse) => {
     const t0 = Date.now();
     const parsed = parse(req.url ?? "/", true);
     // Own the per-request error events too, so the common case never even

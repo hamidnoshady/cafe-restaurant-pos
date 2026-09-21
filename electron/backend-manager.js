@@ -20,6 +20,36 @@ function isInitialised(dataDir) {
   return fs.existsSync(path.join(dataDir, "PG_VERSION"));
 }
 
+function quoteIdentifier(value) {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+/**
+ * A restore swaps databases by name and keeps the original under this prefix
+ * until the replacement validates. If Windows/process interruption lands in
+ * the tiny interval where `pos` has no name, recover the preserved original
+ * instead of creating an empty database.
+ */
+async function recoverInterruptedRestore(client, target, logger) {
+  const prefix = `${target}_restore_original_`;
+  const state = await client.query(
+    "SELECT datname FROM pg_database WHERE datname = $1 OR datname LIKE $2 ORDER BY datname DESC",
+    [target, `${prefix}%`],
+  );
+  const targetExists = state.rows.some((row) => row.datname === target);
+  const recoveries = state.rows.filter((row) => row.datname.startsWith(prefix));
+  if (targetExists) {
+    if (recoveries.length) logger.warn("A preserved pre-restore database remains available for recovery", { databases: recoveries.map((row) => row.datname) });
+    return false;
+  }
+  const recovery = recoveries[0]?.datname;
+  if (!recovery) return false;
+  await client.query(`ALTER DATABASE ${quoteIdentifier(recovery)} RENAME TO ${quoteIdentifier(target)}`);
+  await client.query(`ALTER DATABASE ${quoteIdentifier(target)} WITH ALLOW_CONNECTIONS true`);
+  logger.warn("Recovered the original database after an interrupted restore", { recovery, target });
+  return true;
+}
+
 function canListen(host, port) {
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -76,28 +106,17 @@ function postgresStartStrategy(platform = process.platform) {
 }
 
 function pgCtlStartArguments(dataDir, logPath, port) {
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error(`Invalid PostgreSQL port: ${port}`);
-  }
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`Invalid PostgreSQL port: ${port}`);
   return [
-    "start",
-    "-D", dataDir,
-    "-l", logPath,
-    "-w",
-    "-t", "90",
-    // pg_ctl's -p means "postgres executable", not TCP port. Server options
-    // belong in one -o argument. These values are generated internally rather
-    // than accepted from user input because pg_ctl interprets this string.
+    "start", "-D", dataDir, "-l", logPath, "-w", "-t", "90",
+    // pg_ctl's -p means postgres executable; server options belong in -o.
     "-o", `-p ${port} -c listen_addresses=127.0.0.1`,
   ];
 }
 
 function runLoggedCommand(executable, args, logger, name) {
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const child = spawn(executable, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let settled = false;
     const finish = (callback, value) => {
       if (settled) return;
@@ -145,15 +164,19 @@ function runNodeScript(executable, appDir, relativePath, env, logger, capture = 
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
+    let stderr = "";
     child.stdout.on("data", (chunk) => {
       if (capture) stdout += chunk;
       else logger.childOutput(relativePath, chunk);
     });
-    child.stderr.on("data", (chunk) => logger.childOutput(relativePath, chunk, "warn"));
+    child.stderr.on("data", (chunk) => {
+      stderr = `${stderr}${chunk}`.slice(-8_000);
+      logger.childOutput(relativePath, chunk, "warn");
+    });
     child.once("error", reject);
     child.once("exit", (code) => {
       if (code === 0) resolve(capture ? stdout.trim() : undefined);
-      else reject(new Error(`${relativePath} exited with code ${code}`));
+      else reject(new Error(`${relativePath} exited with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
     });
   });
 }
@@ -248,24 +271,16 @@ class BackendManager {
     const logDir = this.logger.dir || path.join(this.app.getPath("userData"), "logs");
     const logPath = path.join(logDir, "postgres.log");
     fs.mkdirSync(logDir, { recursive: true });
-    // pg_ctl appends to -l. Keep each launch's diagnostics unambiguous and
-    // bounded; desktop.log retains the lifecycle history separately.
     fs.writeFileSync(logPath, "", { encoding: "utf8", mode: 0o600 });
     try {
       await runLoggedCommand(pgCtl, pgCtlStartArguments(dataDir, logPath, port), this.logger, "pg_ctl start");
     } catch (error) {
       let postgresOutput = "";
       try {
-        const contents = fs.readFileSync(logPath, "utf8");
-        postgresOutput = contents.slice(-16_384).trim();
-      } catch {
-        // The pg_ctl error remains useful when no server log was created.
-      }
+        postgresOutput = fs.readFileSync(logPath, "utf8").slice(-16_384).trim();
+      } catch {}
       if (postgresOutput) this.logger.childOutput("postgres", postgresOutput, "warn");
-      throw new Error(
-        `PostgreSQL pg_ctl startup failed${postgresOutput ? `: ${postgresOutput}` : "."}`,
-        { cause: error },
-      );
+      throw new Error(`PostgreSQL pg_ctl startup failed${postgresOutput ? `: ${postgresOutput}` : "."}`, { cause: error });
     }
   }
 
@@ -304,10 +319,8 @@ class BackendManager {
       if (firstRun) await this.pg.initialise();
       postgresStage = "postgres-start";
       if (postgresStartStrategy() === "pg_ctl") {
-        // postgres.exe refuses every Windows token that carries the local
-        // Administrators group, including GitHub's runner and ordinary users
-        // who launch the app elevated. pg_ctl uses PostgreSQL's native
-        // CreateRestrictedProcess path before starting the postmaster.
+        // pg_ctl uses PostgreSQL's restricted-process path for Windows tokens
+        // carrying the local Administrators group, while remaining non-elevated.
         await this.startPostgresWithPgCtl(dataDir, config.pgPort);
       } else {
         await this.pg.start();
@@ -320,8 +333,9 @@ class BackendManager {
     try {
       const client = this.pg.getPgClient("postgres", "127.0.0.1");
       await client.connect();
+      await recoverInterruptedRestore(client, "pos", this.logger);
       const found = await client.query("SELECT 1 FROM pg_database WHERE datname = 'pos'");
-      if (found.rows.length === 0) await client.query("CREATE DATABASE pos");
+      if (found.rows.length === 0) await client.query("CREATE DATABASE pos ENCODING 'UTF8'");
       await client.end();
     } catch (error) {
       throw new StartupError("database-create", "The local pos database could not be created.", error);
@@ -349,20 +363,35 @@ class BackendManager {
     }
 
     const appUrl = `http://127.0.0.1:${config.appPort}`;
-    const serverEnv = desktopServerEnvironment(config, runtimeUrl, superuserUrl, this.app.getVersion());
+    const pgToolsDir = this.app.isPackaged
+      ? path.join(process.resourcesPath, "postgresql-tools")
+      : path.join(__dirname, "..", ".desktop-assets", "postgresql-tools");
+    const emergencyBackupDir = path.join(userDataDir, "emergency-backups");
+    const serverEnv = desktopServerEnvironment(config, runtimeUrl, superuserUrl, this.app.getVersion(), {
+      pgToolsDir,
+      emergencyBackupDir,
+    });
     this.server = spawn(process.execPath, [path.join(runtimeDir, "bin", "server.cjs")], {
       cwd: runtimeDir,
       env: childEnvironment(serverEnv),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let serverStderr = "";
     this.server.stdout.on("data", (chunk) => this.logger.childOutput("server", chunk));
-    this.server.stderr.on("data", (chunk) => this.logger.childOutput("server", chunk, "warn"));
+    this.server.stderr.on("data", (chunk) => {
+      serverStderr = `${serverStderr}${chunk}`.slice(-8_000);
+      this.logger.childOutput("server", chunk, "warn");
+    });
     this.server.once("error", (error) => this.logger.error("Application server process error", error));
     try {
       await waitForServerReady(appUrl, config.instanceId, 90_000, this.server);
     } catch (error) {
-      throw new StartupError("server-readiness", "The application server did not pass its identity-aware health check.", error);
+      const detail = serverStderr.trim();
+      const cause = detail
+        ? new Error(`${error instanceof Error ? error.message : String(error)}\n${detail}`)
+        : error;
+      throw new StartupError("server-readiness", "The application server did not pass its identity-aware health check.", cause);
     }
     this.logger.info("Desktop backend is ready", { appUrl, instanceId: config.instanceId });
     return { appUrl, config, configPath: this.configPath, userDataDir };
@@ -378,12 +407,11 @@ class BackendManager {
     const dataDir = path.join(this.app.getPath("userData"), "pgdata");
     try {
       const pgCtl = await this.pgControlPath();
-      await runLoggedCommand(
-        pgCtl,
-        ["stop", "-D", dataDir, "-m", "fast", "-w", "-t", "30"],
-        this.logger,
-        "pg_ctl stop",
-      );
+      await new Promise((resolve, reject) => {
+        const child = spawn(pgCtl, ["stop", "-D", dataDir, "-m", "fast", "-w", "-t", "30"], { windowsHide: true });
+        child.once("error", reject);
+        child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`pg_ctl exited ${code}`)));
+      });
     } catch (error) {
       this.logger.warn("Graceful pg_ctl shutdown failed; using embedded fallback", error);
       await this.pg.stop().catch((stopError) => this.logger.error("PostgreSQL fallback stop failed", stopError));
@@ -416,4 +444,5 @@ module.exports = {
   desktopServerEnvironment,
   postgresStartStrategy,
   pgCtlStartArguments,
+  recoverInterruptedRestore,
 };

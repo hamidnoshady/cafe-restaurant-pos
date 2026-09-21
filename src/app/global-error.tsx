@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import localFont from "next/font/local";
+import Link from "next/link";
 import { CircleAlertIcon } from "lucide-react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { cardClass } from "@/app/dashboard/page-chrome";
@@ -60,12 +61,12 @@ export default function GlobalError({
                 >
                   تلاش دوباره
                 </button>
-                <a
+                <Link
                   href="/"
                   className="w-full rounded-lg border border-input py-2.5 text-center text-sm font-semibold transition hover:bg-primary/10 outline-none focus-visible:ring focus-visible:ring-ring/50"
                 >
                   بازگشت به صفحهٔ اصلی
-                </a>
+                </Link>
               </div>
             </div>
           </main>

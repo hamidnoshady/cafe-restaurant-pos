@@ -222,7 +222,7 @@ export function JalaliDatePicker({
                   onClick={() => pick(d)}
                   aria-label={`${toPersianDigits(d)} ${JALALI_MONTHS[view.jm - 1]} ${toPersianDigits(view.jy)}`}
                   aria-current={isToday ? "date" : undefined}
-                  aria-selected={isSelected || undefined}
+                  aria-pressed={isSelected || undefined}
                   className={`flex h-8 items-center justify-center rounded-lg text-sm transition-colors ${
                     isSelected
                       ? "bg-primary font-semibold text-primary-foreground"

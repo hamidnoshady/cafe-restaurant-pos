@@ -69,6 +69,32 @@ interface DeadLetter {
   createdAt: string;
 }
 
+interface DomainDiagnostics {
+  counts: { deferred: number; applied: number; deadLettered: number; openDeadLetters: number };
+  recent: Array<{
+    clientEventId: string;
+    eventType: string;
+    schemaVersion: number;
+    status: "deferred" | "applied" | "dead_lettered";
+    effectType: string | null;
+    effectId: string | null;
+    errorCode: string | null;
+    attempts: number;
+    updatedAt: string;
+  }>;
+  deadLetters: Array<{
+    id: number;
+    clientEventId: string;
+    eventType: string;
+    schemaVersion: number | null;
+    payloadSha256: string;
+    errorCode: string;
+    status: "open" | "resolved" | "discarded";
+    retryCount: number;
+    lastSeenAt: string;
+  }>;
+}
+
 interface AppUpdateStatusView {
   checkedAt: string;
   currentVersion: string;
@@ -110,6 +136,7 @@ export function ServerSyncPanel() {
   const [pairedSite, setPairedSite] = useState<PairedSiteView | null>(null);
   const [syncState, setSyncState] = useState<StateView | null>(null);
   const [deadLetters, setDeadLetters] = useState<DeadLetter[]>([]);
+  const [domainDiagnostics, setDomainDiagnostics] = useState<DomainDiagnostics | null>(null);
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatusView | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -143,6 +170,7 @@ export function ServerSyncPanel() {
       pairedSite: PairedSiteView | null;
       syncState: StateView;
       deadLetters: DeadLetter[];
+      domainDiagnostics: DomainDiagnostics;
       appUpdateStatus: AppUpdateStatusView | null;
       error?: string;
     }>("/api/server-sync/config");
@@ -153,6 +181,7 @@ export function ServerSyncPanel() {
       setPairedSite(data.pairedSite ?? null);
       setSyncState(data.syncState);
       setDeadLetters(data.deadLetters ?? []);
+      setDomainDiagnostics(data.domainDiagnostics ?? null);
       setAppUpdateStatus(data.appUpdateStatus ?? null);
       setRemoteUrl(data.config?.remoteUrl ?? "");
       setOverriding(false);
@@ -242,6 +271,22 @@ export function ServerSyncPanel() {
     await load();
   }
 
+  async function reconcile(action: "retry-deferred" | "retry-dead-letter" | "discard-dead-letter", id?: number) {
+    setBusy(true);
+    setError("");
+    const { ok, data } = await api<{ error?: string }>("/api/server-sync/reconcile", {
+      method: "POST",
+      body: JSON.stringify({ action, id }),
+    });
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessage(data.error));
+      return;
+    }
+    setNotice("عملیات آشتی‌سازی انجام شد.");
+    await load();
+  }
+
   if (loading) {
     return <LoadingSkeleton rows={3} />;
   }
@@ -277,7 +322,14 @@ export function ServerSyncPanel() {
           )}
         </SectionCard>
 
-        <SyncStatusPanels syncState={syncState} appUpdateStatus={appUpdateStatus} deadLetters={deadLetters} />
+        <SyncStatusPanels
+          syncState={syncState}
+          appUpdateStatus={appUpdateStatus}
+          deadLetters={deadLetters}
+          domainDiagnostics={domainDiagnostics}
+          busy={busy}
+          onReconcile={reconcile}
+        />
       </div>
     );
   }
@@ -390,7 +442,14 @@ export function ServerSyncPanel() {
         </form>
       </SectionCard>
 
-      <SyncStatusPanels syncState={syncState} appUpdateStatus={appUpdateStatus} deadLetters={deadLetters} />
+      <SyncStatusPanels
+        syncState={syncState}
+        appUpdateStatus={appUpdateStatus}
+        deadLetters={deadLetters}
+        domainDiagnostics={domainDiagnostics}
+        busy={busy}
+        onReconcile={reconcile}
+      />
     </div>
   );
 }
@@ -404,10 +463,16 @@ function SyncStatusPanels({
   syncState,
   appUpdateStatus,
   deadLetters,
+  domainDiagnostics,
+  busy,
+  onReconcile,
 }: {
   syncState: StateView | null;
   appUpdateStatus: AppUpdateStatusView | null;
   deadLetters: DeadLetter[];
+  domainDiagnostics: DomainDiagnostics | null;
+  busy: boolean;
+  onReconcile: (action: "retry-deferred" | "retry-dead-letter" | "discard-dead-letter", id?: number) => Promise<void>;
 }) {
   return (
     <>
@@ -463,7 +528,72 @@ function SyncStatusPanels({
         </SectionCard>
       ) : null}
 
-      <SectionCard title="رویدادهای ناموفق">
+      {domainDiagnostics ? (
+        <SectionCard title="آشتی‌سازی اثرهای مالی و موجودی">
+          <p className="mb-3 text-sm text-muted-foreground">
+            فقط شناسه، نوع، نسخه، کد خطا و هش محتوای رویداد نمایش داده می‌شود؛ payload و اعتبارنامه‌ها هرگز در این
+            صفحه برگردانده نمی‌شوند.
+          </p>
+          <div className="grid gap-x-8 sm:grid-cols-2">
+            <div>
+              <StatusRow label="اعمال‌شده" value={toPersianDigits(String(domainDiagnostics.counts.applied))} />
+              <StatusRow label="در انتظار پیش‌نیاز" value={toPersianDigits(String(domainDiagnostics.counts.deferred))} />
+            </div>
+            <div>
+              <StatusRow label="نامهٔ مرده" value={toPersianDigits(String(domainDiagnostics.counts.deadLettered))} />
+              <StatusRow label="باز و نیازمند بررسی" value={toPersianDigits(String(domainDiagnostics.counts.openDeadLetters))} />
+            </div>
+          </div>
+          <div className="mt-3">
+            <SecondaryButton onClick={() => void onReconcile("retry-deferred")} disabled={busy || domainDiagnostics.counts.deferred === 0}>
+              تلاش دوباره برای رویدادهای معوق
+            </SecondaryButton>
+          </div>
+          {domainDiagnostics.recent.length > 0 ? (
+            <div className="mt-4 overflow-hidden rounded-lg border">
+              <div className="border-b bg-muted/30 px-3 py-2 text-xs font-semibold">آخرین اثرهای دامنه</div>
+              {domainDiagnostics.recent.slice(0, 10).map((effect) => (
+                <div key={effect.clientEventId} className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-xs last:border-b-0">
+                  <div className="min-w-0">
+                    <span className="font-medium" dir="ltr">{effect.eventType}@{effect.schemaVersion}</span>
+                    <span className="mr-2 text-muted-foreground" dir="ltr">{effect.effectType ? `${effect.effectType}:${effect.effectId ?? "—"}` : effect.errorCode ?? "—"}</span>
+                  </div>
+                  <span className={effect.status === "applied" ? "text-emerald-700 dark:text-emerald-300" : effect.status === "deferred" ? "text-amber-700 dark:text-amber-300" : "text-destructive"}>
+                    {effect.status === "applied" ? "اعمال شد" : effect.status === "deferred" ? `معوق — تلاش ${toPersianDigits(String(effect.attempts))}` : "نامهٔ مرده"}
+                    {" — "}{formatTime(effect.updatedAt)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {domainDiagnostics.deadLetters.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              {domainDiagnostics.deadLetters.filter((letter) => letter.status === "open").map((letter) => (
+                <div key={letter.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium" dir="ltr">{letter.eventType}@{letter.schemaVersion ?? "?"}</span>
+                    <span className="text-xs text-muted-foreground">{formatTime(letter.lastSeenAt)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-destructive" dir="ltr">{letter.errorCode}</p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground" dir="ltr">
+                    sha256:{letter.payloadSha256}
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <SecondaryButton onClick={() => void onReconcile("retry-dead-letter", letter.id)} disabled={busy}>
+                      تلاش دوباره
+                    </SecondaryButton>
+                    <SecondaryButton onClick={() => void onReconcile("discard-dead-letter", letter.id)} disabled={busy}>
+                      بایگانی
+                    </SecondaryButton>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </SectionCard>
+      ) : null}
+
+      <SectionCard title="رویدادهای ناموفق قدیمی">
         <p className="mb-4 text-sm text-muted-foreground">
           رویدادهایی که هنگام دریافت از سرور مرکزی اعمال نشدند و برای بررسی نگه داشته شده‌اند.
         </p>

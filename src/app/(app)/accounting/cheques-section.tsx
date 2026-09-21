@@ -475,7 +475,7 @@ export function ChequesSection({
       return 0;
     });
     return out;
-  }, [cheques, deferredQuery, statusFilter, bankFilter, sortBy]);
+  }, [cheques, searchIndex, deferredQuery, statusFilter, bankFilter, sortBy]);
 
   // KPIs
   const kpis = useMemo(() => {

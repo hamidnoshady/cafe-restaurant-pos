@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "predist": "node scripts/prepare-wincodesign-cache.js",
-    "dist": "npm run verify:runtime && electron-builder",
+    "dist": "npm run verify:runtime && electron-builder --config scripts/windows-signing-config.js",
     "verify:runtime": "node scripts/verify-runtime.js",
     "size": "node ../scripts/report-desktop-size.mjs --output=dist/desktop-size-report.md"
   },
@@ -17,12 +17,16 @@
     "node-forge": "^1.4.0"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron": "44.4.3",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.cafepos.desktop",
     "productName": "Business Suite",
+    "electronLanguages": [
+      "en-US",
+      "fa"
+    ],
     "asar": true,
     "asarUnpack": [
       "node_modules/**"
@@ -60,7 +64,21 @@
       {
         "from": "../.desktop-runtime",
         "to": "desktop-runtime"
+      },
+      {
+        "from": "../.desktop-runtime/node_modules",
+        "to": "desktop-runtime/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../.desktop-assets/postgresql-tools",
+        "to": "postgresql-tools"
       }
     ]
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

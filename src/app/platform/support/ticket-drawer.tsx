@@ -224,7 +224,7 @@ export function SupportTicketDrawer({
                         download={`ticket-${ticket.id}-${message.id}.jpg`}
                         className="mt-2 block overflow-hidden rounded-lg border border-border bg-muted"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        { }
                         <img src={message.attachment} alt="پیوست تیکت" className="max-h-44 w-full object-contain" />
                       </a>
                     ) : null}

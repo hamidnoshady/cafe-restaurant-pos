@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, ErrorBox, errorMessage, InfoBox, PrimaryButton, SetupDataSkeleton, StepShell } from "../ui";
 import { nextPath, skipToPath, stepsFor } from "../steps";
 import { useSetupIndustry } from "../industry-context";
@@ -102,7 +102,7 @@ const SYSTEM_OPTIONS: Array<{ value: System; title: string; example: string }> =
 export default function CostingStep() {
   const router = useRouter();
   const industry = useSetupIndustry();
-  const steps = stepsFor(industry);
+  const steps = useMemo(() => stepsFor(industry), [industry]);
   // Costing (FIFO/weighted-average for inventory_items) is an F&B-only
   // concept -- a jewelry business landing here (a stale link, the back
   // button) belongs at whatever step actually follows it in their flow.
@@ -133,7 +133,7 @@ export default function CostingStep() {
       })
       .catch(() => setError("بارگذاری روش قیمت‌گذاری ممکن نشد."))
       .finally(() => setLoaded(true));
-  }, [available, router]);
+  }, [available, router, steps]);
 
   if (!available) return null;
   if (!loaded) return <SetupDataSkeleton rows={2} />;
