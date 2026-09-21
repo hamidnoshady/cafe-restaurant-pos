@@ -68,6 +68,7 @@ jobs:
 
       - name: Fail closed when protected release configuration is absent
         env:
+          WORKFLOW_COMMIT: ${{ github.sha }}
           CSC_LINK: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'pfx' && secrets.WINDOWS_CSC_LINK || '' }}
           CSC_KEY_PASSWORD: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'pfx' && secrets.WINDOWS_CSC_KEY_PASSWORD || '' }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && secrets.AZURE_SUBSCRIPTION_ID || '' }}
@@ -78,6 +79,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Version must be X.Y.Z" }
           if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if ($env:WORKFLOW_COMMIT -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:WORKFLOW_COMMIT does not match candidate $env:CANDIDATE_COMMIT" }
           $checkedOutCommit = (git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or $checkedOutCommit -cne $env:CANDIDATE_COMMIT) { throw "Checked-out commit $checkedOutCommit does not match candidate $env:CANDIDATE_COMMIT" }
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PROVIDER)) { throw "NOT CONFIGURED: WINDOWS_SIGNING_PROVIDER" }

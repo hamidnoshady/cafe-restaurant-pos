@@ -54,6 +54,8 @@ jobs:
           node-version: 24
 
       - name: Validate immutable promotion inputs
+        env:
+          WORKFLOW_COMMIT: ${{ github.sha }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be X.Y.Z' }
@@ -61,6 +63,7 @@ jobs:
           if ($env:CANDIDATE_RUN_ID -notmatch '^\d+$') { throw 'candidate_run_id must be a workflow run id' }
           if ($env:ACCEPTANCE_RUN_ID -notmatch '^\d+$') { throw 'acceptance_run_id must be a workflow run id' }
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_EXPECTED_SIGNER)) { throw 'NOT CONFIGURED: WINDOWS_EXPECTED_SIGNER' }
+          if ($env:WORKFLOW_COMMIT -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:WORKFLOW_COMMIT does not match candidate $env:CANDIDATE_COMMIT" }
           $checkedOutCommit = (git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or $checkedOutCommit -cne $env:CANDIDATE_COMMIT) { throw "Checked-out commit $checkedOutCommit does not match candidate $env:CANDIDATE_COMMIT" }
 
@@ -73,6 +76,8 @@ jobs:
           $acceptanceRun = Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:ACCEPTANCE_RUN_ID" -Headers $headers
           if ($candidateRun.name -cne 'windows-signed-candidate' -or $candidateRun.event -cne 'workflow_dispatch' -or $candidateRun.conclusion -cne 'success') { throw 'candidate_run_id is not a successful windows-signed-candidate dispatch' }
           if ($acceptanceRun.name -cne 'release-acceptance-aggregate' -or $acceptanceRun.event -cne 'workflow_dispatch' -or $acceptanceRun.conclusion -cne 'success') { throw 'acceptance_run_id is not a successful release-acceptance-aggregate dispatch' }
+          if ($candidateRun.head_sha -cne $env:CANDIDATE_COMMIT) { throw "Signed-candidate workflow definition came from $($candidateRun.head_sha), not $env:CANDIDATE_COMMIT" }
+          if ($acceptanceRun.head_sha -cne $env:CANDIDATE_COMMIT) { throw "Acceptance workflow definition came from $($acceptanceRun.head_sha), not $env:CANDIDATE_COMMIT" }
 
       - name: Download the previously built signed candidate
         uses: actions/download-artifact@v8

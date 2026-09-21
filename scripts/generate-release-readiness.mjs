@@ -11,12 +11,21 @@ const markdownPath = path.resolve(arg("markdown", "release-readiness.md"));
 const production = process.argv.includes("--production");
 const expectedCommit = arg("commit", process.env.GITHUB_SHA || "");
 const expectedVersion = arg("version", "");
+const requestedInstallerSha256 = arg("installer-sha256", "");
 
 const config = JSON.parse(await fs.readFile(configPath, "utf8"));
 const evidence = JSON.parse(await fs.readFile(evidencePath, "utf8").catch(() => "{}"));
-const expectedInstallerSha256 = arg("installer-sha256", evidence.installerSha256 || "");
+const expectedInstallerSha256 = requestedInstallerSha256 || evidence.installerSha256 || "";
 if (config.schemaVersion !== 1 || !Array.isArray(config.checks)) throw new Error("invalid readiness configuration");
+if (evidence.schemaVersion !== 1 || !evidence.checks || typeof evidence.checks !== "object" || Array.isArray(evidence.checks)) {
+  throw new Error("invalid release evidence envelope");
+}
+if (expectedCommit && !/^[0-9a-f]{40}$/.test(expectedCommit)) throw new Error("invalid expected candidate commit");
+if (expectedVersion && !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(expectedVersion)) throw new Error("invalid expected release version");
 if (expectedInstallerSha256 && !/^[0-9a-f]{64}$/.test(expectedInstallerSha256)) throw new Error("invalid expected installer SHA-256");
+if (production && (!expectedCommit || !expectedVersion || !requestedInstallerSha256)) {
+  throw new Error("production readiness requires explicit commit, version and installer SHA-256 arguments");
+}
 
 const validClaim = new Set(["PASS", "FAIL"]);
 const validEvidenceUrl = (value) => {
@@ -34,9 +43,9 @@ const results = config.checks.map((check) => {
   const item = evidence.checks?.[check.id];
   let state;
   let reason;
-  if (!item || item.configured === false) {
+  if (!item || typeof item !== "object" || Array.isArray(item) || item.configured !== true) {
     state = "NOT CONFIGURED";
-    reason = item?.reason || "No configured evidence source was supplied.";
+    reason = (item && typeof item === "object" && !Array.isArray(item) && item.reason) || "No configured evidence source was supplied.";
   } else if (!validClaim.has(item.status)) {
     state = check.kind === "external" ? "MANUAL ACCEPTANCE REQUIRED" : "FAIL";
     reason = item.reason || "Configured check has no valid PASS/FAIL result.";

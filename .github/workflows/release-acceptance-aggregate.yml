@@ -55,12 +55,16 @@ jobs:
       - name: Require successful authoritative evidence workflows
         env:
           ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          WORKFLOW_COMMIT: ${{ github.sha }}
           WINDOWS_SERVER_RUN: ${{ inputs.windows_server_run_id }}
           WINDOWS_11_RUN: ${{ inputs.windows_11_run_id }}
           PRINTER_RUN: ${{ inputs.physical_printer_run_id }}
           ANDROID_RUN: ${{ inputs.android_real_run_id }}
           IOS_RUN: ${{ inputs.ios_real_run_id }}
         run: |
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if ($env:WORKFLOW_COMMIT -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:WORKFLOW_COMMIT does not match candidate $env:CANDIDATE_COMMIT" }
           $expected = @(
             @{ runId=$env:WINDOWS_SERVER_RUN; workflow='build-desktop-installer' },
             @{ runId=$env:WINDOWS_11_RUN; workflow='windows-11-release' },
@@ -74,6 +78,7 @@ jobs:
             $run = Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/runs/$($entry.runId)" -Headers $headers
             if ($run.name -cne $entry.workflow -or $run.conclusion -cne 'success') { throw "Run $($entry.runId) is not a successful $($entry.workflow) workflow" }
             if ($entry.workflow -ne 'build-desktop-installer' -and $run.event -cne 'workflow_dispatch') { throw "Run $($entry.runId) is not an authoritative manual acceptance dispatch" }
+            if ($run.head_sha -cne $env:CANDIDATE_COMMIT) { throw "Run $($entry.runId) workflow definition came from $($run.head_sha), not $env:CANDIDATE_COMMIT" }
           }
 
       - name: Download Windows Server package evidence

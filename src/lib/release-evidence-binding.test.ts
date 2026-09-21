@@ -44,19 +44,28 @@ describe("candidate-bound external release evidence", () => {
 
     expect(mobile).toContain("candidate_commit:");
     expect(mobile).toContain("ref: ${{ inputs.candidate_commit }}");
+    expect(mobile).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
     expect(mobile).toContain("commit = $env:CANDIDATE_COMMIT");
     expect(printer).toContain("candidate_commit:");
     expect(printer).toContain("ref: ${{ inputs.candidate_commit }}");
+    expect(printer).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
+    expect(printer).toContain("$harnessRun.head_sha -cne $env:CANDIDATE_COMMIT");
     expect(printer).toContain("commit = $env:CANDIDATE_COMMIT");
     expect(aggregate).toContain("ref: ${{ inputs.candidate_commit }}");
+    expect(aggregate).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
+    expect(aggregate).toContain("$run.head_sha -cne $env:CANDIDATE_COMMIT");
     expect(aggregate).toContain("Require successful authoritative evidence workflows");
     expect(aggregate).toContain("if ($value.commit -ne $env:COMMIT)");
     expect(readiness).toContain("ref: ${{ inputs.candidate_commit }}");
     expect(readiness).toContain("CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}");
+    expect(readiness).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
     expect(readiness).toContain("--commit=$env:CANDIDATE_COMMIT");
     expect(readiness).toContain("candidate_installer_sha256 is required for the production gate");
     expect(production).toContain("candidate_commit:");
     expect(production).toContain("ref: ${{ inputs.candidate_commit }}");
+    expect(production).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
+    expect(production).toContain("$candidateRun.head_sha -cne $env:CANDIDATE_COMMIT");
+    expect(production).toContain("$acceptanceRun.head_sha -cne $env:CANDIDATE_COMMIT");
     expect(production).toContain("-CandidateCommit $env:CANDIDATE_COMMIT");
     expect(production).toContain("commit=$env:CANDIDATE_COMMIT");
     expect(production).toContain("signatureVerificationSha256");
@@ -66,10 +75,13 @@ describe("candidate-bound external release evidence", () => {
     expect(production).not.toContain("npm run dist --prefix electron");
     expect(signedCandidate).toContain("npm run dist --prefix electron");
     expect(signedCandidate).toContain("signed-candidate");
+    expect(signedCandidate).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
     expect(signedCandidate).toContain("$readiness.productionEligible -or $readiness.status -cne 'FAIL'");
     expect(windows11).toContain("candidate_commit:");
     expect(windows11).toContain("previous_version:");
     expect(windows11).toContain("Assert-ProvenanceArtifact");
+    expect(windows11).toContain("$candidateRun.head_sha -cne $env:CANDIDATE_COMMIT");
+    expect(windows11).toContain("$previousProvenance.commit -cne $env:PREVIOUS_WORKFLOW_COMMIT");
     expect(windows11).toContain("signing reports do not match release provenance");
     expect(windows11).toContain("windows-installer-signing-manifest.json");
     expect(windows11).toContain("-CandidateCommit $env:CANDIDATE_COMMIT");
@@ -174,6 +186,7 @@ describe("candidate-bound external release evidence", () => {
       `--markdown=${markdownPath}`,
       `--commit=${commit}`,
       `--version=${version}`,
+      `--installer-sha256=${"f".repeat(64)}`,
       "--production",
     ]);
     expect(result.code).toBe(0);
@@ -209,6 +222,7 @@ describe("candidate-bound external release evidence", () => {
       `--markdown=${markdownPath}`,
       `--commit=${commit}`,
       `--version=${version}`,
+      `--installer-sha256=${"f".repeat(64)}`,
       "--production",
     ]);
     expect(result.code).toBe(1);
@@ -243,6 +257,7 @@ describe("candidate-bound external release evidence", () => {
       `--markdown=${markdownPath}`,
       `--commit=${commit}`,
       `--version=${version}`,
+      `--installer-sha256=${"f".repeat(64)}`,
       "--production",
     ]);
     expect(result.code).toBe(1);
@@ -290,6 +305,57 @@ describe("candidate-bound external release evidence", () => {
       .toBe("MANUAL ACCEPTANCE REQUIRED");
   });
 
+  it("requires an explicit installer identity for production mode", async () => {
+    const directory = await temporaryDirectory();
+    const evidencePath = path.join(directory, "evidence.json");
+    await fs.writeFile(evidencePath, JSON.stringify({
+      schemaVersion: 1,
+      installerSha256: "f".repeat(64),
+      checks: {},
+    }));
+
+    const result = await runNode("scripts/generate-release-readiness.mjs", [
+      `--evidence=${evidencePath}`,
+      `--output=${path.join(directory, "readiness.json")}`,
+      `--markdown=${path.join(directory, "readiness.md")}`,
+      `--commit=${"e".repeat(40)}`,
+      "--version=2.0.0",
+      "--production",
+    ]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("requires explicit commit, version and installer SHA-256");
+  });
+
+  it("does not treat truthy configured values as configured evidence", async () => {
+    const directory = await temporaryDirectory();
+    const evidencePath = path.join(directory, "evidence.json");
+    const outputPath = path.join(directory, "readiness.json");
+    await fs.writeFile(evidencePath, JSON.stringify({
+      schemaVersion: 1,
+      checks: {
+        "automated-core": {
+          configured: "true",
+          status: "PASS",
+          commit: "e".repeat(40),
+          executedAt: new Date().toISOString(),
+          evidenceUrl: "https://evidence.invalid/automated-core",
+        },
+      },
+    }));
+
+    const result = await runNode("scripts/generate-release-readiness.mjs", [
+      `--evidence=${evidencePath}`,
+      `--output=${outputPath}`,
+      `--markdown=${path.join(directory, "readiness.md")}`,
+      `--commit=${"e".repeat(40)}`,
+      "--version=2.0.0",
+    ]);
+    expect(result.code).toBe(0);
+    const report = JSON.parse(await fs.readFile(outputPath, "utf8"));
+    expect(report.checks.find((check: { id: string }) => check.id === "automated-core").state)
+      .toBe("NOT CONFIGURED");
+  });
+
   it("blocks Authenticode evidence signed for another release version", async () => {
     const directory = await temporaryDirectory();
     const config = JSON.parse(await fs.readFile(path.join(root, "config/release-readiness.json"), "utf8"));
@@ -316,6 +382,7 @@ describe("candidate-bound external release evidence", () => {
       `--markdown=${markdownPath}`,
       `--commit=${commit}`,
       `--version=${version}`,
+      `--installer-sha256=${"f".repeat(64)}`,
       "--production",
     ]);
     expect(result.code).toBe(1);

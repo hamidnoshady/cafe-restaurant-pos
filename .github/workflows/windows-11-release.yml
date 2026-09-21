@@ -105,6 +105,7 @@ jobs:
         env:
           ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
           PREVIOUS_RUN_ID: ${{ inputs.previous_run_id }}
         run: |
           if ($env:CANDIDATE_RUN_ID -notmatch '^\d+$' -or $env:PREVIOUS_RUN_ID -notmatch '^\d+$') { throw "Candidate and previous run ids must be numeric" }
@@ -113,6 +114,9 @@ jobs:
           $previousRun = Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:PREVIOUS_RUN_ID" -Headers $headers
           if ($candidateRun.name -cne 'windows-signed-candidate' -or $candidateRun.event -cne 'workflow_dispatch' -or $candidateRun.conclusion -cne 'success') { throw "candidate_run_id is not a successful windows-signed-candidate dispatch" }
           if ($previousRun.name -notin @('windows-signed-candidate','windows-production-release') -or $previousRun.event -cne 'workflow_dispatch' -or $previousRun.conclusion -cne 'success') { throw "previous_run_id is not a successful signed candidate or production release dispatch" }
+          if ($candidateRun.head_sha -cne $env:CANDIDATE_COMMIT) { throw "Signed-candidate workflow definition came from $($candidateRun.head_sha), not $env:CANDIDATE_COMMIT" }
+          if ($previousRun.head_sha -notmatch '^[0-9a-f]{40}$') { throw "Prior signed workflow has no full head SHA" }
+          "PREVIOUS_WORKFLOW_COMMIT=$($previousRun.head_sha)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Download signed candidate
         uses: actions/download-artifact@v8
@@ -138,6 +142,7 @@ jobs:
           if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Candidate version must be X.Y.Z" }
           if ($env:PREVIOUS_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Previous version must be X.Y.Z" }
           if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if ($env:GITHUB_SHA -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:GITHUB_SHA does not match candidate $env:CANDIDATE_COMMIT" }
           if ([version]$env:PREVIOUS_VERSION -ge [version]$env:RELEASE_VERSION) { throw "Previous version must be lower than the candidate version" }
           $checkedOutCommit = (git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or $checkedOutCommit -cne $env:CANDIDATE_COMMIT) { throw "Checked-out commit $checkedOutCommit does not match candidate $env:CANDIDATE_COMMIT" }
@@ -152,6 +157,7 @@ jobs:
           if ($candidateProvenance.commit -cne $env:CANDIDATE_COMMIT) { throw "Candidate provenance commit $($candidateProvenance.commit) does not match $env:CANDIDATE_COMMIT" }
           if ($previousProvenance.version -cne $env:PREVIOUS_VERSION) { throw "Previous version $($previousProvenance.version) does not match $env:PREVIOUS_VERSION" }
           if ($previousProvenance.commit -notmatch '^[0-9a-f]{40}$') { throw "Previous provenance has no full Git commit SHA" }
+          if ($previousProvenance.commit -cne $env:PREVIOUS_WORKFLOW_COMMIT) { throw "Prior signed workflow definition commit $env:PREVIOUS_WORKFLOW_COMMIT does not match provenance $($previousProvenance.commit)" }
           if ($previousProvenance.commit -ceq $env:CANDIDATE_COMMIT) { throw "Update acceptance requires a prior candidate commit" }
 
           function Assert-ProvenanceArtifact([object]$provenance, [string]$artifactRoot, [string]$expectedVersion, [string]$expectedCommit, [string]$label) {

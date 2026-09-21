@@ -56,6 +56,7 @@ jobs:
           PLATFORM: ${{ inputs.platform }}
           VERSION: ${{ inputs.version }}
           CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          WORKFLOW_COMMIT: ${{ github.sha }}
           DEVICE_METADATA: ${{ inputs.device_metadata_json }}
           CA_FINGERPRINT: ${{ inputs.ca_fingerprint }}
           EVIDENCE_URL: ${{ inputs.evidence_url }}
@@ -64,6 +65,7 @@ jobs:
           $metadata = $env:DEVICE_METADATA | ConvertFrom-Json
           $checks = $env:CHECKS | ConvertFrom-Json
           if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if ($env:WORKFLOW_COMMIT -cne $env:CANDIDATE_COMMIT) { throw "Workflow definition commit $env:WORKFLOW_COMMIT does not match candidate $env:CANDIDATE_COMMIT" }
           [ordered]@{
             checkId = $env:PLATFORM
             version = $env:VERSION
