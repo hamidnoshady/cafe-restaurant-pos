@@ -18,8 +18,20 @@ if (($printer.Name + " " + $printer.DriverName + " " + $printer.PortName) -match
 if ($printer.PrinterStatus -in @('Offline', 'Error')) { throw "Printer is $($printer.PrinterStatus)" }
 
 $origin = "https://physical-printer.acceptance.invalid"
-$connector = (Resolve-Path "public/windows/cafe-pos-print-connector.ps1").Path
+$checkedOutCommit = (git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $checkedOutCommit -cne $CandidateCommit) {
+  throw "Checked-out connector commit $checkedOutCommit does not match candidate $CandidateCommit"
+}
+$connectorRelativePath = 'public/windows/cafe-pos-print-connector.ps1'
+$connector = (Resolve-Path $connectorRelativePath).Path
+git diff --quiet -- $connectorRelativePath
+if ($LASTEXITCODE -ne 0) { throw "Candidate connector working tree file was modified after checkout" }
 $connectorSha256 = (Get-FileHash -LiteralPath $connector -Algorithm SHA256).Hash.ToLowerInvariant()
+$connectorSourceSpec = '{0}:{1}' -f $CandidateCommit, $connectorRelativePath
+$connectorSourceGitBlob = (git rev-parse $connectorSourceSpec).Trim()
+if ($LASTEXITCODE -ne 0 -or $connectorSourceGitBlob -notmatch '^[0-9a-f]{40,64}$') {
+  throw "Unable to resolve the candidate connector Git blob"
+}
 $existingListeners = @(Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction SilentlyContinue)
 if ($existingListeners.Count -gt 0) {
   throw "Port 9123 already has a listener (PID(s): $($existingListeners.OwningProcess -join ', ')). Stop the installed connector so acceptance cannot accidentally test stale code."
@@ -85,6 +97,7 @@ try {
     gateway = [ordered]@{
       connectorVersion = 3
       connectorSourceSha256 = $connectorSha256
+      connectorSourceGitBlob = $connectorSourceGitBlob
       connectorProcessId = $process.Id
       binding = @($listeners | ForEach-Object LocalAddress)
       originRestriction = 'PASS'

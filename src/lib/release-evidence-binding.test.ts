@@ -51,11 +51,14 @@ describe("candidate-bound external release evidence", () => {
     expect(printer).toContain("ref: ${{ inputs.candidate_commit }}");
     expect(printer).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
     expect(printer).toContain("$harnessRun.head_sha -cne $env:CANDIDATE_COMMIT");
-    expect(printer).toContain("$delivery.gateway.connectorSourceSha256 -cne $candidateConnectorSha256");
+    expect(printer).toContain("$delivery.gateway.connectorSourceGitBlob -cne $candidateConnectorGitBlob");
     expect(printer).toContain("commit = $env:CANDIDATE_COMMIT");
+    expect(printerHarness).toContain("$checkedOutCommit -cne $CandidateCommit");
+    expect(printerHarness).toContain("Candidate connector working tree file was modified after checkout");
     expect(printerHarness).toContain("Port 9123 already has a listener");
     expect(printerHarness).toContain("$_.OwningProcess -ne $process.Id");
     expect(printerHarness).toContain("connectorSourceSha256 = $connectorSha256");
+    expect(printerHarness).toContain("connectorSourceGitBlob = $connectorSourceGitBlob");
     expect(aggregate).toContain("ref: ${{ inputs.candidate_commit }}");
     expect(aggregate).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
     expect(aggregate).toContain("$run.head_sha -cne $env:CANDIDATE_COMMIT");
