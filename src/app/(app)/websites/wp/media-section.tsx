@@ -19,8 +19,18 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
-import { EmptyState, SectionCard, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import {
+  api,
+  ErrorBox,
+  errorMessageOrRaw,
+  InfoBox,
+  inputClass,
+} from "@/app/dashboard/ui";
+import {
+  EmptyState,
+  SectionCard,
+  SectionCardSkeleton,
+} from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import {
@@ -79,7 +89,11 @@ function MediaGallerySkeleton() {
       className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6"
     >
       {Array.from({ length: 8 }, (_, index) => (
-        <div key={index} aria-hidden="true" className="overflow-hidden rounded-xl border border-border">
+        <div
+          key={index}
+          aria-hidden="true"
+          className="overflow-hidden rounded-xl border border-border"
+        >
           <Skeleton className="aspect-square w-full rounded-none" />
           <div className="space-y-2 p-3">
             <Skeleton className="h-3.5 w-4/5" />
@@ -92,14 +106,22 @@ function MediaGallerySkeleton() {
   );
 }
 
-function EmptyMedia({ filtered, onClear }: { filtered: boolean; onClear: () => void }) {
+function EmptyMedia({
+  filtered,
+  onClear,
+}: {
+  filtered: boolean;
+  onClear: () => void;
+}) {
   return (
     <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-4 py-10 text-center">
       <span className="grid size-12 place-items-center rounded-2xl bg-amber-100/70 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
         <ImageIcon aria-hidden="true" className="size-6" />
       </span>
       <h3 className="mt-3 text-sm font-semibold text-foreground">
-        {filtered ? "رسانه‌ای با این فیلتر پیدا نشد" : "هنوز رسانه‌ای همگام نشده است"}
+        {filtered
+          ? "رسانه‌ای با این فیلتر پیدا نشد"
+          : "هنوز رسانه‌ای همگام نشده است"}
       </h3>
       <p className="mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
         {filtered
@@ -118,7 +140,14 @@ function EmptyMedia({ filtered, onClear }: { filtered: boolean; onClear: () => v
 function MediaPreview({ row }: { row: MediaRow }) {
   const [failed, setFailed] = useState(false);
   const kind = wpMediaKindForMime(row.mimeType);
-  const Icon = kind === "video" ? VideoIcon : kind === "audio" ? Music2Icon : kind === "document" ? FileTextIcon : ImageIcon;
+  const Icon =
+    kind === "video"
+      ? VideoIcon
+      : kind === "audio"
+        ? Music2Icon
+        : kind === "document"
+          ? FileTextIcon
+          : ImageIcon;
 
   if (kind === "image" && row.mediaUrl && !failed) {
     return (
@@ -140,11 +169,15 @@ function MediaPreview({ row }: { row: MediaRow }) {
   return (
     <div
       role="img"
-      aria-label={failed ? "پیش‌نمایش تصویر در دسترس نیست" : KIND_SINGULAR_LABELS[kind]}
+      aria-label={
+        failed ? "پیش‌نمایش تصویر در دسترس نیست" : KIND_SINGULAR_LABELS[kind]
+      }
       className="flex size-full flex-col items-center justify-center gap-2 bg-muted/70 px-2 text-center text-muted-foreground"
     >
       <FallbackIcon aria-hidden="true" className="size-8" />
-      {failed ? <span className="text-[10px] leading-4">پیش‌نمایش در دسترس نیست</span> : null}
+      {failed ? (
+        <span className="text-[10px] leading-4">پیش‌نمایش در دسترس نیست</span>
+      ) : null}
     </div>
   );
 }
@@ -153,9 +186,10 @@ function MediaTile({ row }: { row: MediaRow }) {
   const kind = wpMediaKindForMime(row.mimeType);
   const rawTitle = row.title.trim();
   const generatedTitle = rawTitle === `attachment #${row.remoteId}`;
-  const title = generatedTitle || !rawTitle
-    ? `رسانهٔ ${toPersianDigits(row.remoteId)}`
-    : toPersianDigits(rawTitle);
+  const title =
+    generatedTitle || !rawTitle
+      ? `رسانهٔ ${toPersianDigits(row.remoteId)}`
+      : toPersianDigits(rawTitle);
 
   return (
     <article className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
@@ -163,7 +197,10 @@ function MediaTile({ row }: { row: MediaRow }) {
         <MediaPreview row={row} />
       </div>
       <div className="p-3">
-        <h3 className="truncate text-sm font-medium text-foreground" title={title}>
+        <h3
+          className="truncate text-sm font-medium text-foreground"
+          title={title}
+        >
           {title}
         </h3>
         <p className="mt-1 truncate text-[11px] text-muted-foreground">
@@ -175,7 +212,11 @@ function MediaTile({ row }: { row: MediaRow }) {
             به‌روزرسانی: {formatJalali(row.remoteUpdatedAt, { withTime: true })}
           </p>
         ) : null}
-        {row.altText ? <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">متن جایگزین: {row.altText}</p> : null}
+        {row.altText ? (
+          <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">
+            متن جایگزین: {row.altText}
+          </p>
+        ) : null}
         {row.mediaUrl ? (
           <Button asChild variant="outline" size="lg" className="mt-3 w-full">
             <a href={row.mediaUrl} target="_blank" rel="noopener noreferrer">
@@ -211,9 +252,11 @@ export function WpMediaSection() {
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
 
-
   useEffect(() => {
-    const handle = window.setTimeout(() => setSearchQuery(searchInput.trim()), 300);
+    const handle = window.setTimeout(
+      () => setSearchQuery(searchInput.trim()),
+      300,
+    );
     return () => window.clearTimeout(handle);
   }, [searchInput]);
 
@@ -236,14 +279,20 @@ export function WpMediaSection() {
         offset: String(offset),
       });
       if (searchQuery) params.set("search", searchQuery);
-      const response = await api<MediaResponse>(`/api/integrations/wp-manager/content?${params}`, {
-        signal: controller.signal,
-      });
+      const response = await api<MediaResponse>(
+        `/api/integrations/wp-manager/content?${params}`,
+        {
+          signal: controller.signal,
+        },
+      );
       if (response.aborted || request !== listRequestRef.current) return;
       setLoadingMore(false);
       if (!response.ok) {
         if (!append) setRows([]);
-        setLoadError(errorMessageOrRaw(response.data?.error) || "خواندن رسانه‌های فروشگاه ناموفق بود.");
+        setLoadError(
+          errorMessageOrRaw(response.data?.error) ||
+            "خواندن رسانه‌های فروشگاه ناموفق بود.",
+        );
         return;
       }
 
@@ -277,17 +326,21 @@ export function WpMediaSection() {
     setSyncBusy(true);
     setSyncError("");
     setNotice("");
-    const response = await api<{ queued?: boolean; total?: number; error?: string }>(
-      "/api/integrations/wp-manager/content",
-      {
-        method: "POST",
-        body: JSON.stringify({ connectionId }),
-      },
-    );
+    const response = await api<{
+      queued?: boolean;
+      total?: number;
+      error?: string;
+    }>("/api/integrations/wp-manager/content", {
+      method: "POST",
+      body: JSON.stringify({ connectionId }),
+    });
     setSyncBusy(false);
     if (connectionId !== selectedIdRef.current) return;
     if (!response.ok) {
-      setSyncError(errorMessageOrRaw(response.data?.error) || "همگام‌سازی رسانه‌ها ناموفق بود.");
+      setSyncError(
+        errorMessageOrRaw(response.data?.error) ||
+          "همگام‌سازی رسانه‌ها ناموفق بود.",
+      );
       return;
     }
 
@@ -298,7 +351,9 @@ export function WpMediaSection() {
       return;
     }
 
-    setNotice(`همگام‌سازی انجام شد و ${toPersianDigits(response.data.total ?? 0)} مورد از وردپرس دریافت شد.`);
+    setNotice(
+      `همگام‌سازی انجام شد و ${toPersianDigits(response.data.total ?? 0)} مورد از وردپرس دریافت شد.`,
+    );
     await load(connectionId);
   }
 
@@ -308,14 +363,22 @@ export function WpMediaSection() {
     setKind("all");
   }
 
-  if (connections === null) return <SectionCardSkeleton rows={6} label="در حال خواندن فروشگاه‌های متصل" />;
+  if (connections === null)
+    return (
+      <SectionCardSkeleton rows={6} label="در حال خواندن فروشگاه‌های متصل" />
+    );
 
   if (connections.length === 0) {
     return (
-      <SectionCard title="کتابخانهٔ رسانه‌های وردپرس" description="تصاویر، ویدئوها، فایل‌های صوتی و سندهای سایت در این بخش دیده می‌شوند.">
+      <SectionCard
+        title="کتابخانهٔ رسانه‌های وردپرس"
+        description="تصاویر، ویدئوها، فایل‌های صوتی و سندهای سایت در این بخش دیده می‌شوند."
+      >
         <EmptyState>هنوز فروشگاه وردپرسی متصل نشده است.</EmptyState>
         <Button asChild className="mt-4">
-          <Link href="/settings/connections?tab=woocommerce">اتصال فروشگاه</Link>
+          <Link href="/settings/connections?tab=woocommerce">
+            اتصال فروشگاه
+          </Link>
         </Button>
       </SectionCard>
     );
@@ -339,21 +402,35 @@ export function WpMediaSection() {
               <RefreshCwIcon aria-hidden="true" className="size-4" />
               تازه‌سازی فهرست
             </Button>
-            <Button disabled={!selectedId || syncBusy} onClick={() => void syncContent()}>
+            <Button
+              disabled={!selectedId || syncBusy}
+              onClick={() => void syncContent()}
+            >
               <RefreshCwIcon aria-hidden="true" className="size-4" />
               {syncBusy ? "در حال درخواست…" : "همگام‌سازی با وردپرس"}
             </Button>
           </div>
         }
       >
-        <ConnectionPicker embedded connections={connections} value={selectedId} onChange={setSelectedId} />
+        <ConnectionPicker
+          embedded
+          connections={connections}
+          value={selectedId}
+          onChange={setSelectedId}
+        />
         <div className="mt-4 grid gap-4 border-t border-border/80 pt-4 lg:grid-cols-[minmax(16rem,1fr)_minmax(0,2fr)] lg:items-end">
           <div>
-            <label htmlFor="wp-media-search" className="mb-1.5 block text-sm font-medium text-foreground">
+            <label
+              htmlFor="wp-media-search"
+              className="mb-1.5 block text-sm font-medium text-foreground"
+            >
               جستجو در رسانه‌ها
             </label>
             <div className="relative">
-              <SearchIcon aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon
+                aria-hidden="true"
+                className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
               <input
                 id="wp-media-search"
                 type="search"
@@ -361,14 +438,25 @@ export function WpMediaSection() {
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
                 placeholder="عنوان، نامک یا نوع فایل…"
+                aria-label="جستجوی عنوان، نامک یا نوع فایل"
               />
             </div>
           </div>
           <div>
-            <p className="mb-1.5 text-sm font-medium text-foreground">نوع فایل</p>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="فیلتر نوع رسانه">
+            <p className="mb-1.5 text-sm font-medium text-foreground">
+              نوع فایل
+            </p>
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label="فیلتر نوع رسانه"
+            >
               {WP_MEDIA_KINDS.map((value) => (
-                <FilterChip key={value} selected={kind === value} onClick={() => setKind(value)}>
+                <FilterChip
+                  key={value}
+                  selected={kind === value}
+                  onClick={() => setKind(value)}
+                >
                   {KIND_LABELS[value]}
                 </FilterChip>
               ))}
@@ -410,14 +498,18 @@ export function WpMediaSection() {
             {loadError ? (
               <div className="mt-5 border-t border-border/80 pt-4">
                 <ErrorBox>{loadError}</ErrorBox>
-                <Button variant="outline" onClick={() => void load(selectedId, shown, true)}>
+                <Button
+                  variant="outline"
+                  onClick={() => void load(selectedId, shown, true)}
+                >
                   تلاش دوباره برای ادامهٔ فهرست
                 </Button>
               </div>
             ) : shown < total ? (
               <div className="mt-5 flex flex-col items-center gap-2 border-t border-border/80 pt-4">
                 <p className="text-xs text-muted-foreground">
-                  نمایش {toPersianDigits(shown)} از {toPersianDigits(total)} فایل
+                  نمایش {toPersianDigits(shown)} از {toPersianDigits(total)}{" "}
+                  فایل
                 </p>
                 <Button
                   variant="outline"

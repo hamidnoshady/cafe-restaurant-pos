@@ -59,7 +59,11 @@ export function SectionsPanel() {
       setRows(data.sections);
       setError("");
     } else {
-      setError(data.error === "forbidden" ? "دسترسی شما برای این صفحه کافی نیست." : "خطای غیرمنتظره. دوباره تلاش کنید.");
+      setError(
+        data.error === "forbidden"
+          ? "دسترسی شما برای این صفحه کافی نیست."
+          : "خطای غیرمنتظره. دوباره تلاش کنید.",
+      );
     }
   }, []);
 
@@ -92,15 +96,18 @@ export function SectionsPanel() {
     if (!editing) return;
     setBusy(true);
     setFormError("");
-    const { ok, data } = await api<{ error?: string }>("/api/platform/knowledge", {
-      method: "PUT",
-      body: JSON.stringify({
-        section: editing.section,
-        url,
-        is_active: isActive,
-        notes,
-      }),
-    });
+    const { ok, data } = await api<{ error?: string }>(
+      "/api/platform/knowledge",
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          section: editing.section,
+          url,
+          is_active: isActive,
+          notes,
+        }),
+      },
+    );
     setBusy(false);
     if (!ok) {
       setFormError(
@@ -120,9 +127,12 @@ export function SectionsPanel() {
     if (!row.url) return;
     setBusy(true);
     if (row.is_active) {
-      await api(`/api/platform/knowledge?section=${encodeURIComponent(row.section)}`, {
-        method: "DELETE",
-      });
+      await api(
+        `/api/platform/knowledge?section=${encodeURIComponent(row.section)}`,
+        {
+          method: "DELETE",
+        },
+      );
     } else {
       // Re-activate the stored URL by re-saving it.
       await api("/api/platform/knowledge", {
@@ -162,6 +172,7 @@ export function SectionsPanel() {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="جست‌وجو در بخش‌ها…"
+            aria-label="جست‌وجو در بخش‌ها"
             className={`${inputClass} ps-9`}
           />
         </div>
@@ -180,18 +191,30 @@ export function SectionsPanel() {
             <thead className="bg-card text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 text-start font-medium">بخش</th>
-                <th className="px-4 py-3 text-start font-medium">صفحهٔ آموزشی</th>
+                <th className="px-4 py-3 text-start font-medium">
+                  صفحهٔ آموزشی
+                </th>
                 <th className="px-4 py-3 text-start font-medium">وضعیت</th>
-                <th className="px-4 py-3 text-start font-medium">به‌روزرسانی</th>
-                {canManage ? <th className="px-4 py-3 text-start font-medium">عملیات</th> : null}
+                <th className="px-4 py-3 text-start font-medium">
+                  به‌روزرسانی
+                </th>
+                {canManage ? (
+                  <th className="px-4 py-3 text-start font-medium">عملیات</th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
               {(visible ?? []).map((row) => (
-                <tr key={row.section} className="border-t border-border align-top">
+                <tr
+                  key={row.section}
+                  className="border-t border-border align-top"
+                >
                   <td className="px-4 py-3">
                     <p className="font-medium text-foreground">{row.label}</p>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground" dir="ltr">
+                    <p
+                      className="mt-0.5 text-[11px] text-muted-foreground"
+                      dir="ltr"
+                    >
                       {row.route}
                     </p>
                   </td>
@@ -205,7 +228,10 @@ export function SectionsPanel() {
                         dir="ltr"
                       >
                         <span className="truncate">{row.url}</span>
-                        <ExternalLinkIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                        <ExternalLinkIcon
+                          className="size-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
                       </a>
                     ) : (
                       <span className="text-muted-foreground">ثبت نشده</span>
@@ -226,13 +252,22 @@ export function SectionsPanel() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(row.updated_at)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {fmtDate(row.updated_at)}
+                  </td>
                   {canManage ? (
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => openEditor(row)}>
+                        <Button
+                          variant="ghost"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => openEditor(row)}
+                        >
                           <span className="inline-flex items-center gap-1.5">
-                            <PencilIcon className="size-3.5" aria-hidden="true" />
+                            <PencilIcon
+                              className="size-3.5"
+                              aria-hidden="true"
+                            />
                             ویرایش
                           </span>
                         </Button>
@@ -316,7 +351,10 @@ export function SectionsPanel() {
                 <Button variant="ghost" onClick={() => setEditing(null)}>
                   انصراف
                 </Button>
-                <Button onClick={() => void save()} disabled={busy || !url.trim()}>
+                <Button
+                  onClick={() => void save()}
+                  disabled={busy || !url.trim()}
+                >
                   {busy ? "در حال ذخیره…" : "ذخیره"}
                 </Button>
               </div>

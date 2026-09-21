@@ -20,7 +20,14 @@ import {
   SendIcon,
   Trash2Icon,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { formatJalali } from "@/lib/jalali";
@@ -36,7 +43,15 @@ import {
   isTicketOpen,
 } from "@/lib/support-tickets";
 import { api, ErrorBox } from "@/app/dashboard/ui";
-import { PageHeader, PageShell, SectionCard, EmptyState, LoadingSkeleton, StatusBadge, cardClass } from "@/app/dashboard/page-chrome";
+import {
+  PageHeader,
+  PageShell,
+  SectionCard,
+  EmptyState,
+  LoadingSkeleton,
+  StatusBadge,
+  cardClass,
+} from "@/app/dashboard/page-chrome";
 
 interface SupportTicket {
   id: string;
@@ -78,10 +93,14 @@ interface SupportTicketDetail extends SupportTicket {
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return toPersianDigits(formatJalali(iso, { withTime: true, withMonthName: true }));
+  return toPersianDigits(
+    formatJalali(iso, { withTime: true, withMonthName: true }),
+  );
 }
 
-function statusTone(status: string): "active" | "positive" | "neutral" | "danger" {
+function statusTone(
+  status: string,
+): "active" | "positive" | "neutral" | "danger" {
   if (status === "resolved" || status === "closed") return "positive";
   if (status === "waiting_customer") return "active";
   return "neutral";
@@ -101,7 +120,10 @@ export default function SupportPage() {
   const [newOpen, setNewOpen] = useState(false);
 
   const load = useCallback(async () => {
-    const { ok, data } = await api<{ tickets?: SupportTicket[]; error?: string }>("/api/support/tickets?limit=500");
+    const { ok, data } = await api<{
+      tickets?: SupportTicket[];
+      error?: string;
+    }>("/api/support/tickets?limit=500");
     if (ok) {
       setTickets(data.tickets ?? []);
       setError(null);
@@ -119,7 +141,12 @@ export default function SupportPage() {
     return (tickets ?? []).filter((ticket) => {
       if (status && ticket.status !== status) return false;
       if (!needle) return true;
-      return [ticket.subject, ticket.locationName, ticket.assignedAdminName, ticket.lastMessagePreview]
+      return [
+        ticket.subject,
+        ticket.locationName,
+        ticket.assignedAdminName,
+        ticket.lastMessagePreview,
+      ]
         .filter(Boolean)
         .join(" ")
         .toLocaleLowerCase()
@@ -142,18 +169,25 @@ export default function SupportPage() {
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
-    const { ok, data } = await api<{ ticket?: SupportTicketDetail; error?: string }>(`/api/support/tickets/${id}`);
+    const { ok, data } = await api<{
+      ticket?: SupportTicketDetail;
+      error?: string;
+    }>(`/api/support/tickets/${id}`);
     setDetailLoading(false);
     if (ok && data.ticket) setDetail(data.ticket);
     else setDetailError(data.error ?? "خطای غیرمنتظره. دوباره تلاش کنید.");
   }, []);
 
-  const selectedSummary = visible.find((ticket) => ticket.id === selectedId) ?? null;
+  const selectedSummary =
+    visible.find((ticket) => ticket.id === selectedId) ?? null;
 
   const refreshAfterChange = useCallback(async () => {
     await load();
     if (selectedId) {
-      const { ok, data } = await api<{ ticket?: SupportTicketDetail; error?: string }>(`/api/support/tickets/${selectedId}`);
+      const { ok, data } = await api<{
+        ticket?: SupportTicketDetail;
+        error?: string;
+      }>(`/api/support/tickets/${selectedId}`);
       if (ok && data.ticket) setDetail(data.ticket);
     }
   }, [load, selectedId]);
@@ -165,7 +199,11 @@ export default function SupportPage() {
         description="سؤالی دارید یا مشکلی پیش آمده؟ تیکت بسازید؛ تیم پشتیبانی در همین گفت‌وگو پاسخ می‌دهد."
         actions={
           <>
-            <Button variant="outline" onClick={() => void load()} className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => void load()}
+              className="gap-2"
+            >
               <RefreshCwIcon aria-hidden="true" className="size-4" />
               تازه‌سازی
             </Button>
@@ -181,23 +219,34 @@ export default function SupportPage() {
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="تیکت‌های باز" value={stats.open} hint="در انتظار پیگیری" />
-        <Stat label="در انتظار پاسخ شما" value={stats.waitingMe} hint="پاسخ پشتیبانی آمده است" highlight={stats.waitingMe > 0} />
+        <Stat
+          label="در انتظار پاسخ شما"
+          value={stats.waitingMe}
+          hint="پاسخ پشتیبانی آمده است"
+          highlight={stats.waitingMe > 0}
+        />
         <Stat label="حل‌شده" value={stats.resolved} hint="در مجموع" />
         <Stat label="کل تیکت‌ها" value={stats.total} hint="از ابتدا" />
       </div>
 
       <SectionCard
         title="تیکت‌های من"
-        description={tickets ? `${toPersianDigits(visible.length)} تیکت` : undefined}
+        description={
+          tickets ? `${toPersianDigits(visible.length)} تیکت` : undefined
+        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-0">
-              <SearchIcon aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon
+                aria-hidden="true"
+                className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
               <input
                 type="search"
                 value={q}
                 onChange={(event) => setQ(event.target.value)}
                 placeholder="جست‌وجو در تیکت‌ها…"
+                aria-label="جست‌وجو در تیکت‌ها"
                 className="w-56 rounded-lg border border-input bg-transparent py-1.5 ps-9 pe-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50"
               />
             </div>
@@ -218,7 +267,11 @@ export default function SupportPage() {
         }
       >
         {tickets === null ? (
-          <LoadingSkeleton rows={4} label="در حال بارگذاری تیکت‌ها" className="p-4 sm:p-5" />
+          <LoadingSkeleton
+            rows={4}
+            label="در حال بارگذاری تیکت‌ها"
+            className="p-4 sm:p-5"
+          />
         ) : visible.length === 0 ? (
           <div className="p-4 sm:p-5">
             <EmptyState>
@@ -244,16 +297,26 @@ export default function SupportPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-foreground">{ticket.subject}</p>
+                      <p className="truncate font-semibold text-foreground">
+                        {ticket.subject}
+                      </p>
                       <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                         <span>{ticket.locationName ?? "کسب‌وکار"}</span>
                         <span>•</span>
-                        <span>{TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}</span>
-                        {ticket.assignedAdminName ? <span>• {ticket.assignedAdminName}</span> : null}
+                        <span>
+                          {TICKET_CATEGORY_LABELS[
+                            ticket.category as keyof typeof TICKET_CATEGORY_LABELS
+                          ] ?? ticket.category}
+                        </span>
+                        {ticket.assignedAdminName ? (
+                          <span>• {ticket.assignedAdminName}</span>
+                        ) : null}
                       </p>
                     </div>
                     <StatusBadge tone={statusTone(ticket.status)}>
-                      {TICKET_STATUS_LABELS[ticket.status as keyof typeof TICKET_STATUS_LABELS] ?? ticket.status}
+                      {TICKET_STATUS_LABELS[
+                        ticket.status as keyof typeof TICKET_STATUS_LABELS
+                      ] ?? ticket.status}
                     </StatusBadge>
                   </div>
                   <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">
@@ -307,12 +370,22 @@ function Stat({
   highlight?: boolean;
 }) {
   return (
-    <div className={cn(cardClass, "p-4", highlight && "border-amber-400/60 dark:border-amber-500/50")}>
+    <div
+      className={cn(
+        cardClass,
+        "p-4",
+        highlight && "border-amber-400/60 dark:border-amber-500/50",
+      )}
+    >
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-2xl font-bold tabular-nums ${highlight ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}>
+      <p
+        className={`mt-1 text-2xl font-bold tabular-nums ${highlight ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}
+      >
         {toPersianDigits(value)}
       </p>
-      {hint ? <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p> : null}
+      {hint ? (
+        <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -348,7 +421,9 @@ function TicketDetailPanel({
     return (
       <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center text-muted-foreground">
         <InboxIcon aria-hidden="true" className="mb-3 size-8" />
-        <p className="text-sm">برای دیدن گفت‌وگو و ارسال پاسخ، یک تیکت را انتخاب کنید.</p>
+        <p className="text-sm">
+          برای دیدن گفت‌وگو و ارسال پاسخ، یک تیکت را انتخاب کنید.
+        </p>
       </div>
     );
   }
@@ -379,7 +454,10 @@ function TicketDetailPanel({
     if (!text) return;
     setSending(true);
     setActionError(null);
-    const { ok, data } = await api<{ message?: SupportMessage; error?: string }>(`/api/support/tickets/${summary!.id}/messages`, {
+    const { ok, data } = await api<{
+      message?: SupportMessage;
+      error?: string;
+    }>(`/api/support/tickets/${summary!.id}/messages`, {
       method: "POST",
       body: JSON.stringify({ body: text, attachment }),
     });
@@ -396,7 +474,10 @@ function TicketDetailPanel({
   async function toggleClosed() {
     setActionError(null);
     const next = open ? "closed" : "open";
-    const { ok, data } = await api<{ ticket?: SupportTicketDetail; error?: string }>(`/api/support/tickets/${summary!.id}`, {
+    const { ok, data } = await api<{
+      ticket?: SupportTicketDetail;
+      error?: string;
+    }>(`/api/support/tickets/${summary!.id}`, {
       method: "PATCH",
       body: JSON.stringify({ status: next }),
     });
@@ -409,16 +490,24 @@ function TicketDetailPanel({
       <div className="flex items-start justify-between gap-3 border-b border-border/80 p-4">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">گفت‌وگوی تیکت</p>
-          <p className="mt-1 truncate font-semibold text-foreground">{ticket.subject}</p>
+          <p className="mt-1 truncate font-semibold text-foreground">
+            {ticket.subject}
+          </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <StatusBadge tone={statusTone(ticket.status)}>
-              {TICKET_STATUS_LABELS[ticket.status as keyof typeof TICKET_STATUS_LABELS] ?? ticket.status}
+              {TICKET_STATUS_LABELS[
+                ticket.status as keyof typeof TICKET_STATUS_LABELS
+              ] ?? ticket.status}
             </StatusBadge>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {TICKET_PRIORITY_LABELS[ticket.priority as keyof typeof TICKET_PRIORITY_LABELS] ?? ticket.priority}
+              {TICKET_PRIORITY_LABELS[
+                ticket.priority as keyof typeof TICKET_PRIORITY_LABELS
+              ] ?? ticket.priority}
             </span>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}
+              {TICKET_CATEGORY_LABELS[
+                ticket.category as keyof typeof TICKET_CATEGORY_LABELS
+              ] ?? ticket.category}
             </span>
             {ticket.assignedAdminName ? (
               <span className="rounded-full bg-teal-500/10 px-2 py-0.5 text-xs text-teal-700 dark:text-teal-300">
@@ -427,7 +516,12 @@ function TicketDetailPanel({
             ) : null}
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose} aria-label="بستن گفت‌وگو">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          aria-label="بستن گفت‌وگو"
+        >
           بستن
         </Button>
       </div>
@@ -444,24 +538,33 @@ function TicketDetailPanel({
           >
             <p className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
               <span className="font-medium text-foreground">
-                {message.authorType === "member" ? (message.userName ?? "شما") : (message.adminName ?? "تیم پشتیبانی")}
+                {message.authorType === "member"
+                  ? (message.userName ?? "شما")
+                  : (message.adminName ?? "تیم پشتیبانی")}
               </span>
               <span>{fmtDate(message.createdAt)}</span>
             </p>
-            <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{message.body}</p>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+              {message.body}
+            </p>
             {message.attachment ? (
               <a
                 href={message.attachment}
                 download={`ticket-${ticket.id}-${message.id}.jpg`}
                 className="mt-2 block overflow-hidden rounded-lg border border-border/80 bg-card"
               >
-                { }
-                <img src={message.attachment} alt="پیوست تیکت" className="max-h-44 w-full object-contain" />
+                <img
+                  src={message.attachment}
+                  alt="پیوست تیکت"
+                  className="max-h-44 w-full object-contain"
+                />
               </a>
             ) : null}
           </div>
         ))}
-        {!detail && loading ? <LoadingSkeleton rows={2} compact label="در حال بارگذاری گفت‌وگو" /> : null}
+        {!detail && loading ? (
+          <LoadingSkeleton rows={2} compact label="در حال بارگذاری گفت‌وگو" />
+        ) : null}
         {detail && detail.messages.length === 0 ? (
           <p className="text-xs text-muted-foreground">هنوز پیامی نیست.</p>
         ) : null}
@@ -473,9 +576,18 @@ function TicketDetailPanel({
       <div className="space-y-2 border-t border-border/80 p-4">
         {attachment ? (
           <div className="relative overflow-hidden rounded-lg border border-border/80">
-            { }
-            <img src={attachment} alt="پیوست در حال ارسال" className="max-h-40 w-full object-cover" />
-            <Button type="button" variant="destructive" size="sm" onClick={() => setAttachment(null)} className="absolute end-2 top-2">
+            <img
+              src={attachment}
+              alt="پیوست در حال ارسال"
+              className="max-h-40 w-full object-cover"
+            />
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => setAttachment(null)}
+              className="absolute end-2 top-2"
+            >
               <Trash2Icon aria-hidden="true" />
               حذف
             </Button>
@@ -484,22 +596,47 @@ function TicketDetailPanel({
         <textarea
           value={reply}
           onChange={(event) => setReply(event.target.value)}
-          placeholder={open ? "پاسخ یا توضیح جدید…" : "تیکت بسته است؛ با ارسال پیام دوباره باز می‌شود."}
+          placeholder={
+            open
+              ? "پاسخ یا توضیح جدید…"
+              : "تیکت بسته است؛ با ارسال پیام دوباره باز می‌شود."
+          }
           rows={3}
           className="w-full min-w-0 resize-y rounded-lg border border-input bg-transparent px-3 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 md:text-sm"
         />
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickFile} />
-            <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={pickFile}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileRef.current?.click()}
+              className="gap-2"
+            >
               <PaperclipIcon aria-hidden="true" className="size-4" />
               پیوست تصویر
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void toggleClosed()}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void toggleClosed()}
+            >
               {open ? "بستن تیکت" : "بازکردن دوباره"}
             </Button>
           </div>
-          <Button onClick={() => void sendReply()} disabled={sending || !reply.trim()} className="gap-2">
+          <Button
+            onClick={() => void sendReply()}
+            disabled={sending || !reply.trim()}
+            className="gap-2"
+          >
             <SendIcon aria-hidden="true" className="size-4" />
             {sending ? "در حال ارسال…" : "ارسال"}
           </Button>
@@ -559,7 +696,10 @@ function NewTicketDialog({
       return;
     }
     setSubmitting(true);
-    const { ok, data } = await api<{ ticket?: SupportTicketDetail; error?: string }>("/api/support/tickets", {
+    const { ok, data } = await api<{
+      ticket?: SupportTicketDetail;
+      error?: string;
+    }>("/api/support/tickets", {
       method: "POST",
       body: JSON.stringify({
         subject: subject.trim(),
@@ -590,7 +730,10 @@ function NewTicketDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <LifeBuoyIcon aria-hidden="true" className="size-5 text-teal-600 dark:text-teal-400" />
+            <LifeBuoyIcon
+              aria-hidden="true"
+              className="size-5 text-teal-600 dark:text-teal-400"
+            />
             تیکت جدید
           </DialogTitle>
           <DialogDescription>
@@ -658,26 +801,49 @@ function NewTicketDialog({
 
           {attachment ? (
             <div className="relative overflow-hidden rounded-lg border border-border/80">
-              { }
-              <img src={attachment} alt="پیوست تیکت" className="max-h-44 w-full object-cover" />
-              <Button type="button" variant="destructive" size="sm" onClick={() => setAttachment(null)} className="absolute end-2 top-2">
+              <img
+                src={attachment}
+                alt="پیوست تیکت"
+                className="max-h-44 w-full object-cover"
+              />
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => setAttachment(null)}
+                className="absolute end-2 top-2"
+              >
                 <Trash2Icon aria-hidden="true" />
                 حذف تصویر
               </Button>
             </div>
           ) : (
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickFile} />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={pickFile}
+            />
           )}
         </div>
 
         <DialogFooter showCloseButton>
           {!attachment ? (
-            <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileRef.current?.click()}
+            >
               <PaperclipIcon aria-hidden="true" className="size-4" />
               پیوست تصویر
             </Button>
           ) : null}
-          <Button type="button" onClick={() => void submit()} disabled={submitting}>
+          <Button
+            type="button"
+            onClick={() => void submit()}
+            disabled={submitting}
+          >
             {submitting ? "در حال ارسال…" : "ثبت تیکت"}
           </Button>
         </DialogFooter>
