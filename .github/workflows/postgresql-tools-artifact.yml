@@ -96,6 +96,9 @@ jobs:
         env:
           PG_TOOLS_DIR: ${{ github.workspace }}\.desktop-assets\postgresql-tools
         run: |
+          # Windows PowerShell wraps native stderr as ErrorRecord; keep it in
+          # the captured diagnostics and handle the authoritative exit codes.
+          $ErrorActionPreference = 'Continue'
           $lines = @(node scripts/accept-packaged-pg-tools.mjs 2>&1 | Tee-Object -FilePath packaged-pg-tools-acceptance.log)
           $toolExit = $LASTEXITCODE
           if ($toolExit -ne 0) {
