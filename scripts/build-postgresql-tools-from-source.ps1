@@ -61,14 +61,16 @@ $config->{ldap} = 0;
 
   $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/Installer/vswhere.exe"
   if (-not (Test-Path -LiteralPath $vswhere)) { throw "Visual Studio locator is unavailable" }
+  $vsInstall = (& $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1).Trim()
+  if ([string]::IsNullOrWhiteSpace($vsInstall) -or -not (Test-Path -LiteralPath (Join-Path $vsInstall "Common7/Tools/VsDevCmd.bat"))) {
+    throw "Visual Studio with the x64 C++ build tools is unavailable"
+  }
   Write-BuildTrace "Visual Studio locator found; invoking PostgreSQL MSVC build"
   $buildCmd = Join-Path $temp "build-postgresql-client.cmd"
   $buildText = @"
 @echo off
 setlocal
-for /f "usebackq tokens=*" %%I in (`"$vswhere" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
-if not defined VSINSTALL exit /b 21
-call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=x64 -host_arch=x64
+call "$vsInstall\Common7\Tools\VsDevCmd.bat" -no_logo -arch=x64 -host_arch=x64
 if errorlevel 1 exit /b 22
 where perl >nul 2>nul
 if errorlevel 1 exit /b 23
