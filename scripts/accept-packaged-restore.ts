@@ -18,10 +18,6 @@ const toolsDir = process.env.PG_TOOLS_DIR;
 if (!databaseUrl || !toolsDir) throw new Error("DATABASE_URL and PG_TOOLS_DIR are required");
 const pgDump = path.join(toolsDir, "bin", process.platform === "win32" ? "pg_dump.exe" : "pg_dump");
 const pgRestore = path.join(toolsDir, "bin", process.platform === "win32" ? "pg_restore.exe" : "pg_restore");
-const work = await fs.mkdtemp(path.join(os.tmpdir(), "suite-restore-acceptance-"));
-const dump = path.join(work, "snapshot.dump");
-const corrupt = path.join(work, "corrupt.dump");
-const emergencyDir = path.join(work, "emergency");
 const reportPath = path.resolve(process.env.PACKAGED_RESTORE_REPORT || "packaged-restore-acceptance.json");
 
 async function sql<T extends Record<string, unknown> = Record<string, unknown>>(text: string, values: unknown[] = []) {
@@ -42,9 +38,14 @@ async function expectFailure(operation: () => Promise<unknown>, fragment?: strin
   throw new Error("Expected restore operation to fail");
 }
 
-const checks: string[] = [];
-try {
-  await sql(`
+async function main() {
+  const work = await fs.mkdtemp(path.join(os.tmpdir(), "suite-restore-acceptance-"));
+  const dump = path.join(work, "snapshot.dump");
+  const corrupt = path.join(work, "corrupt.dump");
+  const emergencyDir = path.join(work, "emergency");
+  const checks: string[] = [];
+  try {
+    await sql(`
     DROP SCHEMA IF EXISTS restore_acceptance CASCADE;
     CREATE SCHEMA restore_acceptance;
     CREATE TABLE restore_acceptance.parent (
@@ -132,6 +133,12 @@ try {
   };
   await fs.writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`Packaged restore acceptance passed (${checks.length} checks).`);
-} finally {
-  await fs.rm(work, { recursive: true, force: true });
+  } finally {
+    await fs.rm(work, { recursive: true, force: true });
+  }
 }
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
