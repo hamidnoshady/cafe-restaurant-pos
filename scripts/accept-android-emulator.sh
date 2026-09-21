@@ -40,18 +40,44 @@ wait_for_android_boot() {
   return 1
 }
 
+ensure_adb_root() {
+  local phase=$1
+  local attempt output uid
+
+  # android-emulator-runner reports boot completion before adbd has always
+  # settled. `adb root` can therefore race a short offline/restarting window
+  # even on the same API 30 userdebug image that supports root. Retry only that
+  # transport transition and prove the resulting daemon identity; never mask a
+  # production image that consistently refuses root.
+  for attempt in $(seq 1 12); do
+    timeout 30 adb wait-for-device >/dev/null 2>&1 || true
+    output=$(timeout 30 adb root 2>&1) || true
+    timeout 30 adb wait-for-device >/dev/null 2>&1 || true
+    uid=$(adb shell id -u 2>/dev/null | tr -d '\r' || true)
+    if [[ "$uid" == "0" ]]; then
+      printf 'adb root ready during %s (attempt %s): %s\n' "$phase" "$attempt" "$output"
+      return 0
+    fi
+    printf '::notice file=scripts/accept-android-emulator.sh,title=Android trust fixture::%s: adb root attempt %s/12 not ready (%s; uid=%s)\n' "$phase" "$attempt" "$output" "${uid:-unavailable}"
+    sleep 5
+  done
+
+  printf '::error file=scripts/accept-android-emulator.sh,title=Android trust fixture::%s: adb did not become root after bounded retries\n' "$phase"
+  return 1
+}
+
 CA_CERT="$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt"
 RESULT="$RUNNER_TEMP/mobile-android/browser-result.json"
 SERVER_LOG="$RUNNER_TEMP/mobile-android/server.log"
 
-adb root
+ensure_adb_root "initial emulator boot"
 # API 29/30 writable-system images can boot-loop when adb disable-verity is
 # used alone. Disable Android Verified Boot verification before rebooting, then
 # let adb remount create the writable overlay.
 adb shell avbctl disable-verification
 adb reboot
 wait_for_android_boot "post-AVB reboot"
-adb root
+ensure_adb_root "post-AVB reboot"
 adb remount
 
 HASH=$(openssl x509 -in "$CA_CERT" -subject_hash_old -noout)
