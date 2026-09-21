@@ -134,6 +134,8 @@ jobs:
           if ($delivery.acceptanceCode -cne $env:PRINTED_CODE) { throw "Witnessed code does not match the delivered challenge" }
           if ($delivery.version -cne $env:VERSION) { throw "Printer challenge version $($delivery.version) does not match $env:VERSION" }
           if ($delivery.commit -cne $env:CANDIDATE_COMMIT) { throw "Printer challenge commit $($delivery.commit) does not match candidate $env:CANDIDATE_COMMIT" }
+          $candidateConnectorSha256 = (Get-FileHash -LiteralPath 'public\windows\cafe-pos-print-connector.ps1' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($delivery.gateway.connectorSourceSha256 -cne $candidateConnectorSha256) { throw "Printer challenge did not execute the connector from candidate $env:CANDIDATE_COMMIT" }
           [ordered]@{
             schemaVersion = 1
             checkId = 'physical-printer'
@@ -145,8 +147,9 @@ jobs:
             workflowEvidenceUrl = $env:RUN_URL
             platform = 'Real Windows receipt printer via loopback connector and Windows spooler'
             acceptanceCode = $delivery.acceptanceCode
+            connectorSourceSha256 = $candidateConnectorSha256
             printer = $delivery.printer
-            checks = @('loopback-only', 'origin-restricted', 'raw-spool-submission', 'physical-output-witnessed')
+            checks = @('candidate-connector-source', 'exclusive-process-ownership', 'loopback-only', 'origin-restricted', 'raw-spool-submission', 'physical-output-witnessed')
           } | ConvertTo-Json -Depth 8 | Set-Content physical-printer-evidence.json -Encoding UTF8
       - name: Upload physical acceptance evidence
         uses: actions/upload-artifact@v7

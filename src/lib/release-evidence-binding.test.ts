@@ -34,6 +34,7 @@ describe("candidate-bound external release evidence", () => {
   it("requires candidate commit binding throughout the external evidence workflows", async () => {
     const mobile = await fs.readFile(path.join(root, ".github/workflows/mobile-real-device-acceptance.yml"), "utf8");
     const printer = await fs.readFile(path.join(root, ".github/workflows/physical-printer-acceptance.yml"), "utf8");
+    const printerHarness = await fs.readFile(path.join(root, "scripts/accept-physical-printer.ps1"), "utf8");
     const aggregate = await fs.readFile(path.join(root, ".github/workflows/release-acceptance-aggregate.yml"), "utf8");
     const readiness = await fs.readFile(path.join(root, ".github/workflows/release-readiness.yml"), "utf8");
     const production = await fs.readFile(path.join(root, ".github/workflows/windows-production-release.yml"), "utf8");
@@ -50,7 +51,11 @@ describe("candidate-bound external release evidence", () => {
     expect(printer).toContain("ref: ${{ inputs.candidate_commit }}");
     expect(printer).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
     expect(printer).toContain("$harnessRun.head_sha -cne $env:CANDIDATE_COMMIT");
+    expect(printer).toContain("$delivery.gateway.connectorSourceSha256 -cne $candidateConnectorSha256");
     expect(printer).toContain("commit = $env:CANDIDATE_COMMIT");
+    expect(printerHarness).toContain("Port 9123 already has a listener");
+    expect(printerHarness).toContain("$_.OwningProcess -ne $process.Id");
+    expect(printerHarness).toContain("connectorSourceSha256 = $connectorSha256");
     expect(aggregate).toContain("ref: ${{ inputs.candidate_commit }}");
     expect(aggregate).toContain("WORKFLOW_COMMIT: ${{ github.sha }}");
     expect(aggregate).toContain("$run.head_sha -cne $env:CANDIDATE_COMMIT");

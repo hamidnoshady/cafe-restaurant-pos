@@ -19,10 +19,16 @@ if ($printer.PrinterStatus -in @('Offline', 'Error')) { throw "Printer is $($pri
 
 $origin = "https://physical-printer.acceptance.invalid"
 $connector = (Resolve-Path "public/windows/cafe-pos-print-connector.ps1").Path
+$connectorSha256 = (Get-FileHash -LiteralPath $connector -Algorithm SHA256).Hash.ToLowerInvariant()
+$existingListeners = @(Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction SilentlyContinue)
+if ($existingListeners.Count -gt 0) {
+  throw "Port 9123 already has a listener (PID(s): $($existingListeners.OwningProcess -join ', ')). Stop the installed connector so acceptance cannot accidentally test stale code."
+}
 $process = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $connector, '-AllowedOrigin', $origin) -PassThru -WindowStyle Hidden
 try {
   $healthy = $false
   foreach ($attempt in 1..30) {
+    if ($process.HasExited) { throw "Candidate print connector exited before becoming healthy (exit $($process.ExitCode))" }
     try {
       $health = Invoke-RestMethod -Uri 'http://127.0.0.1:9123/health' -TimeoutSec 2
       if ($health.ok -and $health.version -eq 3) { $healthy = $true; break }
@@ -33,6 +39,8 @@ try {
   $listeners = @(Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction Stop)
   $nonLoopback = @($listeners | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') })
   if ($nonLoopback) { throw "Print connector escaped loopback: $($nonLoopback.LocalAddress -join ', ')" }
+  $foreignListeners = @($listeners | Where-Object { $_.OwningProcess -ne $process.Id })
+  if ($foreignListeners) { throw "Port 9123 is not owned by the candidate connector process $($process.Id)" }
 
   try {
     Invoke-RestMethod -Uri 'http://127.0.0.1:9123/printers/windows' -Headers @{ Origin = 'https://evil.invalid' } -TimeoutSec 5 | Out-Null
@@ -76,6 +84,8 @@ try {
     }
     gateway = [ordered]@{
       connectorVersion = 3
+      connectorSourceSha256 = $connectorSha256
+      connectorProcessId = $process.Id
       binding = @($listeners | ForEach-Object LocalAddress)
       originRestriction = 'PASS'
       rawSpoolSubmission = 'PASS'
