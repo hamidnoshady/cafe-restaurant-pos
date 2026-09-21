@@ -75,7 +75,7 @@ if errorlevel 1 exit /b 22
 where perl >nul 2>nul
 if errorlevel 1 exit /b 23
 cd /d "$sourceRoot"
-set "MSBFLAGS=/m"
+set "MSBFLAGS=/m /p:Platform=x64"
 perl src\tools\msvc\build.pl Release pg_dump
 if errorlevel 1 exit /b 24
 perl src\tools\msvc\build.pl Release pg_restore
