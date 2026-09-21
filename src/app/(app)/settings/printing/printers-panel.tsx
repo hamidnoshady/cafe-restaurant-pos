@@ -99,11 +99,14 @@ export function PrintersPanel({
  */
 function ConnectorHint() {
   const [missing, setMissing] = useState(false);
+  const [outdated, setOutdated] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void connectorHealth().then((result) => {
-      if (!cancelled) setMissing(!result.ok);
+      if (cancelled) return;
+      setMissing(!result.ok);
+      setOutdated(result.error === "connector_outdated");
     });
     return () => {
       cancelled = true;
@@ -113,7 +116,9 @@ function ConnectorHint() {
   if (!missing) return null;
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-100/60 px-3 py-3 text-sm leading-6 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-      چاپ سخت‌افزاری به «رابط چاپ» روی همین کامپیوتر نیاز دارد؛ هنگام افزودن چاپگر، دکمهٔ نصب یک‌بار کلی آن نمایش داده می‌شود.
+      {outdated
+        ? "نسخهٔ «رابط چاپ» این کامپیوتر قدیمی است؛ هنگام افزودن چاپگر، دکمهٔ به‌روزرسانی یک‌بار کلی آن نمایش داده می‌شود."
+        : "چاپ سخت‌افزاری به «رابط چاپ» روی همین کامپیوتر نیاز دارد؛ هنگام افزودن چاپگر، دکمهٔ نصب یک‌بار کلی آن نمایش داده می‌شود."}
     </div>
   );
 }

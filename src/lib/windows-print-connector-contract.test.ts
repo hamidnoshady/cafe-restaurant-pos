@@ -14,10 +14,21 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { CONNECTOR_PROTOCOL_VERSION, CONNECTOR_RELEASE } from "./printing/connector-release";
 import { buildWindowsPrintConnectorInstaller } from "./windows-print-connector";
 
 function source(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
+}
+
+/** The spec a tenant at https://shop.example.com receives when the platform base is the same origin. */
+function installerFor(origin: string, downloadBase?: string): string {
+  return buildWindowsPrintConnectorInstaller({
+    allowedOrigins: [origin],
+    downloadUrl: `${downloadBase ?? origin}/windows/cafe-pos-print-connector.ps1`,
+    minVersion: CONNECTOR_PROTOCOL_VERSION,
+    release: CONNECTOR_RELEASE,
+  });
 }
 
 const connector = source("public/windows/cafe-pos-print-connector.ps1");
@@ -49,21 +60,26 @@ describe("browser ↔ connector protocol alignment", () => {
   });
 
   it("the client knows the connector's protocol version", () => {
-    expect(client).toContain("CONNECTOR_VERSION = 3");
+    expect(client).toContain("CONNECTOR_PROTOCOL_VERSION");
     expect(connector).toContain("version = 3");
+    expect(CONNECTOR_PROTOCOL_VERSION).toBe(3);
+  });
+
+  it("the client and the connector agree on the release identifier", () => {
+    expect(connector).toContain(`release = "${CONNECTOR_RELEASE}"`);
   });
 });
 
 describe("installer ↔ connector alignment", () => {
   it("extracts a complete PowerShell setup payload from the downloaded command file", () => {
-    const commandFile = buildWindowsPrintConnectorInstaller("https://shop.example.com");
+    const commandFile = installerFor("https://shop.example.com");
     const marker = "# CAFE_POS_INSTALLER_PAYLOAD";
     const markerOffset = commandFile.indexOf(marker);
 
     expect(markerOffset).toBeGreaterThan(0);
     expect(commandFile.indexOf(marker, markerOffset + marker.length)).toBe(-1);
     const payload = commandFile.slice(markerOffset + marker.length);
-    expect(payload).toContain("$origin = 'https://shop.example.com'");
+    expect(payload).toContain("$allowedOrigin = 'https://shop.example.com'");
     expect(payload).toContain("Invoke-WebRequest");
     expect(payload).toContain('SpecialFolders.Item("Startup")');
     expect(payload).toContain("Start-Process");
@@ -72,10 +88,22 @@ describe("installer ↔ connector alignment", () => {
     expect(payload.trimEnd()).toMatch(/exit 1\s*}\s*$/);
   });
 
+  it("the installer verifies the payload with the marker the connector file carries", () => {
+    const installer = installerFor("https://shop.example.com");
+    expect(installer).toContain("$payloadMarker = '# CAFE_POS_PRINT_CONNECTOR_V3'");
+    expect(connector.startsWith("# CAFE_POS_PRINT_CONNECTOR_V3")).toBe(true);
+  });
+
   it("the installer's download URL matches the file served from public/windows", () => {
-    const installer = buildWindowsPrintConnectorInstaller("https://shop.example.com");
+    const installer = installerFor("https://shop.example.com");
     expect(installer).toContain("/windows/cafe-pos-print-connector.ps1");
     expect(connector).toContain("Cafe POS Windows Print Connector (protocol v3)");
+  });
+
+  it("the installer's health gate accepts the protocol the connector reports", () => {
+    const installer = installerFor("https://shop.example.com");
+    expect(installer).toContain("$minVersion = 3");
+    expect(connector).toContain("version = 3");
   });
 });
 

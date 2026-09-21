@@ -156,3 +156,32 @@ export async function listSubdomainAliases(businessId: string): Promise<Array<{ 
   );
   return rows.map((r) => ({ alias: r.alias, createdAt: r.created_at }));
 }
+
+/**
+ * The full set of host labels that legitimately name one business: its current
+ * subdomain plus every alias left over from a rename. Used by the print
+ * connector installer to build the connector's allowed-origin set — a browser
+ * may still reach the POS through an alias during a rename cutover, and the
+ * connector's CORS policy must match what the deployment itself serves rather
+ * than what an installer request claims.
+ *
+ * Tenant-scoped by the caller, like every authenticated settings read.
+ */
+export async function listBusinessHostLabels(
+  businessId: string,
+): Promise<{ subdomain: string; aliases: string[] } | null> {
+  const { rows } = await query<{ subdomain: string | null; aliases: unknown }>(
+    `SELECT b.subdomain::text AS subdomain,
+            COALESCE(
+              (SELECT jsonb_agg(a.alias ORDER BY a.created_at) FROM business_subdomain_aliases a WHERE a.business_id = b.id),
+              '[]'::jsonb
+            ) AS aliases
+       FROM businesses b
+      WHERE b.id = $1`,
+    [businessId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const aliases = Array.isArray(row.aliases) ? row.aliases.map(String).filter(Boolean) : [];
+  return { subdomain: row.subdomain ?? "", aliases };
+}

@@ -19,17 +19,18 @@ import type { KitchenTicketData } from "../kitchen-ticket-template";
 import { renderLabelHtml, type LabelData } from "../label-template";
 import type { PaperKey } from "../print-template";
 import type { ReceiptData } from "../receipt-template";
+import { CONNECTOR_PROTOCOL_VERSION, CONNECTOR_PORT } from "./connector-release";
 import { classifyDeliveryError, type PrinterErrorCode } from "./errors";
 import type { PrintJob } from "./render-service";
 import type { PrinterTarget } from "./types";
 
 export type { PrintJob } from "./render-service";
 
-/** The connector protocol version this client speaks. */
-const CONNECTOR_VERSION = 3;
+/** The connector protocol version this client speaks — shared with the installer and docs. */
+const CONNECTOR_VERSION = CONNECTOR_PROTOCOL_VERSION;
 
 function connectorBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_PRINT_CONNECTOR_URL || "http://127.0.0.1:9123";
+  return process.env.NEXT_PUBLIC_PRINT_CONNECTOR_URL || `http://127.0.0.1:${CONNECTOR_PORT}`;
 }
 
 // A cloud page must not hammer a missing loopback service: one failed health
@@ -59,7 +60,17 @@ export interface ConnectorHealth {
   ok: boolean;
   service?: string;
   version?: number;
+  release?: string;
   platform?: string;
+  /** The primary origin the connector serves (kept from protocol v3). */
+  allowedOrigin?: string;
+  /** Every origin the connector serves — primary plus aliases (release 3.1+). */
+  allowedOrigins?: string[];
+  printSubsystem?: {
+    winspool?: string;
+    networkDiscovery?: string;
+    spooler?: string;
+  };
 }
 
 async function callConnector<T = { ok: boolean }>(
