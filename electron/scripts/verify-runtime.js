@@ -105,6 +105,9 @@ for (const packageName of ["typescript", "tsx", "vitest", "tailwindcss", "@vites
   if (fs.existsSync(path.join(runtime, "node_modules", packageName))) fail(`development dependency ${packageName} is staged`);
 }
 
+if (JSON.stringify(electronPackage.build.electronLanguages) !== JSON.stringify(["en-US", "fa"])) {
+  fail("Electron must package only the product's English and Persian Chromium locales");
+}
 const resources = electronPackage.build.extraResources || [];
 if (resources.some((entry) => entry.from === "../node_modules" || entry.to === "app/node_modules")) {
   fail("electron-builder still bulk-copies root node_modules");

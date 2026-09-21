@@ -23,6 +23,10 @@
   "build": {
     "appId": "com.cafepos.desktop",
     "productName": "Business Suite",
+    "electronLanguages": [
+      "en-US",
+      "fa"
+    ],
     "asar": true,
     "asarUnpack": [
       "node_modules/**"

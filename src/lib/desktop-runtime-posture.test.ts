@@ -36,6 +36,7 @@ describe("packaged desktop production posture", () => {
 
     expect(rootManifest.engines.node).toBe(">=24");
     expect(desktopManifest.engines.node).toBe(">=24");
+    expect(desktopManifest.build.electronLanguages).toEqual(["en-US", "fa"]);
     expect(electronVersion).toMatch(/^\d+\.\d+\.\d+$/);
     expect(Number.parseInt(electronVersion.split(".")[0], 10)).toBeGreaterThanOrEqual(44);
     expect(desktopLock.packages["node_modules/electron"].version).toBe(electronVersion);
