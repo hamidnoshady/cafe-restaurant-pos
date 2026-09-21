@@ -245,7 +245,22 @@ jobs:
           if ($installer.Length -gt ($budgetMiB * 1MB)) { throw "Installer $installerMiB MiB exceeds reviewed budget $budgetMiB MiB" }
           if ($installed -gt 600MB) { throw "Installed payload exceeds 600 MiB" }
           if ($runtime -gt 200MB) { throw "Positive runtime exceeds 200 MiB" }
-          [ordered]@{ installerMiB=$installerMiB; baselineMiB=175; approvedBudgetMiB=$budgetMiB; postgresqlToolsMiB=$toolsMiB; exceptionReason=$exception } | ConvertTo-Json | Set-Content windows-size-gate.json -Encoding UTF8
+          [ordered]@{
+            schemaVersion = 1
+            installerBytes = $installer.Length
+            installerMiB = $installerMiB
+            installerBaselineMiB = 175
+            approvedInstallerBudgetMiB = $budgetMiB
+            installedBytes = $installed
+            installedMiB = [math]::Round($installed/1MB,1)
+            installedBudgetMiB = 600
+            runtimeBytes = $runtime
+            runtimeMiB = [math]::Round($runtime/1MB,1)
+            runtimeBudgetMiB = 200
+            postgresqlToolsBytes = $tools
+            postgresqlToolsMiB = $toolsMiB
+            exceptionReason = $exception
+          } | ConvertTo-Json | Set-Content windows-size-gate.json -Encoding UTF8
 
       - name: Generate release checksums and provenance
         run: |
