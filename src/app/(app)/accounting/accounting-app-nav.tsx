@@ -86,7 +86,6 @@ export function AccountingAppNav({
   search = "",
   navItems = [],
   onNavigate,
-  workspaceShell,
 }: AppShellNavProps) {
   const groups = accountingWorkspaceGroups({ role, navItems });
 
@@ -124,21 +123,17 @@ export function AccountingAppNav({
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="منوی حسابداری" className="space-y-3">
-        {workspaceShell ? (
-          <>
-            <SidebarMenu className="space-y-1.5">
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
-                  <Link href={backHref} onClick={onNavigate}>
-                    <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
-                    <span className={NAV_LABEL_CLASS}>{backLabel}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-            <div aria-hidden="true" className="border-t border-border/80" />
-          </>
-        ) : null}
+        <SidebarMenu className="space-y-1.5">
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
+              <Link href={backHref} onClick={onNavigate}>
+                <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
+                <span className={NAV_LABEL_CLASS}>{backLabel}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <div aria-hidden="true" className="border-t border-border/80" />
 
         {groups.map((group) => {
           if (group.entries.length === 0) return null;

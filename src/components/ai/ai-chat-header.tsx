@@ -28,9 +28,11 @@ export function AiChatHeader({
   onNewChat,
   onClose,
 }: AiChatHeaderProps) {
+  // The assistant's full-page surface is the dashboard chat home; a
+  // conversation id deep-links straight into that thread there.
   const fullPageHref = conversationId
-    ? `/ai?conversation=${conversationId}`
-    : "/ai";
+    ? `/dashboard?conversation=${conversationId}`
+    : "/dashboard";
 
   const modeLabel =
     mode === "wizard"

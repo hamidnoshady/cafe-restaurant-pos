@@ -46,13 +46,13 @@ describe("appForModule", () => {
     expect(appForModule("website")).toBe("website");
   });
 
-  it("treats the assistant, the workspace shell and the connections hub as not-apps", () => {
-    // The assistant is the chat *home*, not an app in the rail, the
-    // workspace is the shell around the apps — and the «اتصال‌های فنی» hub
-    // is a technical utility of the shell, never listed in the platform
-    // switchboard. None of the three is a content area.
+  it("treats the assistant and the connections hub as not-apps", () => {
+    // The assistant is the chat *home*, not an app in the rail — and the
+    // «اتصال‌های فنی» hub is a technical utility of the shell, never listed
+    // in the platform switchboard. Neither is a content area. (There is no
+    // `workspace` module key at all: the shell needs no gateable module now
+    // that it is the product's only shell.)
     expect(appForModule("ai")).toBeNull();
-    expect(appForModule("workspace")).toBeNull();
     expect(appForModule("connections")).toBeNull();
     expect(appForModule("settings")).toBeNull();
   });
@@ -60,7 +60,6 @@ describe("appForModule", () => {
   it("keeps every other module in exactly one app", () => {
     const assigned = MODULE_KEYS.filter((module) => appForModule(module) !== null);
     expect(assigned).not.toContain("ai");
-    expect(assigned).not.toContain("workspace");
     for (const module of assigned) {
       expect(APP_KEYS, module).toContain(appForModule(module));
     }
@@ -172,7 +171,6 @@ describe("unassignedModules", () => {
   it("marks only the shell modules as intentionally not apps", () => {
     const unassigned = unassignedModules();
     expect(unassigned).toContain("ai");
-    expect(unassigned).toContain("workspace");
     // The «اتصال‌های فنی» hub is a shell utility: its module stays
     // unassigned so the availability gate can never lock it.
     expect(unassigned).toContain("connections");

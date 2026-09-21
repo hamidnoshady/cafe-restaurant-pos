@@ -34,15 +34,36 @@ function DropdownMenuTrigger({
 function DropdownMenuContent({
   className,
   align = "start",
+  dir,
   sideOffset = 4,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content> & {
+  /**
+   * The panel's writing direction, restated on the portaled DOM node.
+   *
+   * Radix deliberately omits `dir` from Content's props — the popper and the
+   * arrow-key logic read the direction from the *root's* `dir` prop through
+   * context (so `<DropdownMenu dir="rtl">` is still required for RTL
+   * geometry). What the root cannot do is put a `dir` attribute on the
+   * node the portal mounts next to `<body>`, and an RTL menu that is ever
+   * ported somewhere the document's `<html dir>` is not inherited renders
+   * left-reading without one. This prop closes that DOM half: it is forwarded
+   * as a plain attribute — Radix's own direction handling is untouched.
+   */
+  dir?: "ltr" | "rtl";
+}) {
+  // Radix's Content *type* omits `dir`, but the runtime spreads every rest
+  // prop onto the div — so the attribute reaches the DOM exactly as written.
+  // (The cast is the type gap only: `PopperContentProps` ultimately carries
+  // every div attribute; `dir` is the one Radix purposely reserves.)
+  const dirAttribute = (dir ? { dir } : {}) as typeof props;
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         align={align}
+        {...dirAttribute}
         className={cn("z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
         {...props}
       />

@@ -41,8 +41,11 @@ CLAUDE.md. Don't assume the everyday English sense:
   "section" they mean those **items in apps**. App availability / enable-and-disable in
   the super-admin console (migration 0128) is **per app**, never per section; a section
   follows its owning app's state. Don't add a per-section enable/disable table.
-- **AI assistant** = the platform's main page: `/dashboard` (workspace on) and
-  `/dashboard/ai`. Not MCP, coworker jobs, or autopilot unless those are named.
+- **AI assistant** = the platform's main page: `/dashboard` itself — the assistant is
+  the dashboard for every tenant (the old `workspace` flag is retired; `/overview`,
+  `/ai`, `/dashboard/overview` and `/dashboard/ai` are compat redirects, and its
+  management sections open at `/dashboard?aiPanel=<key>`). Not MCP, coworker jobs,
+  or autopilot unless those are named.
 - **Website management** = **both** website systems inside the single `website` app: Eshobe CMS (`/websites/cms`) and WP / Woo management (`/websites/wp`). They are peer managers behind one app door; never fold one into the other, and don't default “website management” to only the CMS.
 
 ## Accounting is the primary workspace

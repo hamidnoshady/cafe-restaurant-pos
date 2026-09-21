@@ -528,7 +528,7 @@ async function executeAutomationRun(input: {
         severity: "important",
         title: `اتوماسیون «${automation.name}»: در انتظار تأیید شما`,
         body: decision.reasonFa,
-        url: "/ai",
+        url: "/dashboard",
         dedupeKey: notificationDedupeKey("ai.automation.pending", runId),
         payload: { runId, automationId: automation.id },
       });
@@ -593,7 +593,7 @@ async function executeAutomationRun(input: {
       severity: "important",
       title: `اتوماسیون «${automation.name}»: اجرا ناموفق بود`,
       body: result.errorCode ?? "execution_failed",
-      url: "/ai",
+      url: "/dashboard",
       dedupeKey: notificationDedupeKey("ai.automation.failed", runId),
       payload: { runId, automationId: automation.id },
     });
@@ -614,7 +614,7 @@ async function executeAutomationRun(input: {
       severity: "important",
       title: `اتوماسیون «${automation.name}»: اجرا ناموفق بود`,
       body: message.slice(0, 200),
-      url: "/ai",
+      url: "/dashboard",
       dedupeKey: notificationDedupeKey("ai.automation.failed", runId),
       payload: { runId, automationId: automation.id },
     });

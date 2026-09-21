@@ -7,7 +7,6 @@ import {
   ArmchairIcon,
   BarChart3Icon,
   BookOpenIcon,
-  BotIcon,
   CalendarDaysIcon,
   CalculatorIcon,
   CheckIcon,
@@ -26,10 +25,8 @@ import {
   MessageSquareIcon,
   MessageSquarePlusIcon,
   PackageIcon,
-  PlugIcon,
   SettingsIcon,
   ShoppingCartIcon,
-  SparklesIcon,
   TrendingUpIcon,
   TruckIcon,
   UsersIcon,
@@ -53,7 +50,7 @@ import {
 import { isAssistantSurface } from "@/lib/assistant-route";
 import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
-import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
+import { appForModule, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { ACCOUNTING_SECTION_ICONS } from "@/app/(app)/accounting/accounting-icons";
@@ -130,7 +127,7 @@ const SIDEBAR_KEYBOARD_STEP = 16;
 
 
 /**
- * The apps the workspace rail launches, in rail order — plus the one hub.
+ * The apps the workspace rail launches, in rail order.
  *
  * A table rather than a block of markup per app: the rail is the front door to
  * every app in the platform, so adding one (the CRM, and whatever follows it)
@@ -144,36 +141,16 @@ const SIDEBAR_KEYBOARD_STEP = 16;
  * nav list is already filtered for all three) are considered, which is what
  * makes an app disappear from the rail for a business that does not have it.
  *
- * The last entry is not an app: «اتصال‌های فنی» is the shell's technical hub
- * (src/lib/apps.ts), launched from the rail like an app but never badged and
- * never gated.
+ * Neither the assistant nor the technical-connections hub is a launcher: the
+ * assistant IS the rail's home («گفت‌وگوی جدید» above opens it), and
+ * «اتصال‌های فنی» lives on the platform user menu, not beside the apps.
  */
 const WORKSPACE_APP_LAUNCHERS: readonly {
-  // `ai` is not an `AppKey` (its module is unassigned in apps.ts, so it is
-  // never gated or badged by app availability), so the key union carries it
-  // explicitly. «اتصال‌های فنی» is no longer a launcher here — it renders from
-  // its own `connectionsHref` slot below.
-  key: AppKey | "ai";
+  key: AppKey;
   label: string;
   icon: LucideIcon;
   hrefs: readonly string[];
 }[] = [
-  {
-    // Phase I — the AI Workspace is a first-class launcher, not a URL-only
-    // surface. The flat nav deliberately drops the `ai` entry in the workspace
-    // shell (it is a product launched from the rail, like Growth), but until
-    // now no rail launcher replaced it, so `/ai` was reachable only by typing
-    // the address. This entry closes that gap: «دستیار هوشمند» sits beside
-    // حسابداری in «برنامه‌ها» and opens the workspace's own shell (chat plus the
-    // section sub-nav: ایجنت‌ها، همکاران، اتوماسیون‌ها، فعالیت، دانش، مصرف).
-    // `ai` is not an `AppKey` (its module is unassigned in apps.ts, so it is
-    // never gated or badged by app availability), which is why the key union
-    // carries it explicitly.
-    key: "ai",
-    label: "دستیار هوشمند",
-    icon: SparklesIcon,
-    hrefs: ["/ai"],
-  },
   {
     key: "accounting",
     label: "حسابداری",
@@ -183,7 +160,7 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     // only the fallback for a member whose role cannot open the accounting
     // pages or the reports at all; the old `/dashboard/ledger` address stays
     // as a preference-list entry for any surface still holding it.
-    hrefs: ["/accounting/overview", "/accounting/financial-reports", "/accounting/reports", "/overview"],
+    hrefs: ["/accounting/overview", "/accounting/financial-reports", "/accounting/reports"],
   },
   {
     key: "growth",
@@ -259,14 +236,6 @@ interface SidebarProps {
   /** From the business's industry profile — a jewellery shop is not «کافه و رستوران». */
   brandTitle: string;
   brandSubtitle: string;
-  /**
-   * Phase 35 Wave 2 — which shell the business is entitled to. `"workspace"`
-   * shows the rail (New chat / Projects / apps / recent threads) on the chat
-   * home and the projects surface; everywhere else the shell falls back to the
-   * classic flat sidebar, so entering an app feels like the main product the
-   * business already knows. `"classic"` is the flat nav, unchanged.
-   */
-  variant?: "classic" | "workspace";
   /** The business's industry. */
   industry?: Industry;
 }
@@ -331,12 +300,10 @@ function SidebarNavigation({
   navItems,
   role,
   pathname,
-  showWorkspaceHome = false,
 }: {
   navItems: NavItem[];
   role: string;
   pathname: string;
-  showWorkspaceHome?: boolean;
 }) {
   const { setOpenMobile } = useSidebar();
   const search = useSearchParams();
@@ -376,26 +343,24 @@ function SidebarNavigation({
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="ناوبری اصلی" className="space-y-3">
-        {showWorkspaceHome ? (
-          <>
-            <SidebarMenu className="space-y-1.5">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={pathname === "/dashboard"}
-                  tooltip="بازگشت به میز کار"
-                  className={BACK_TO_WORKSPACE_BUTTON_CLASS}
-                >
-                  <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
-                    <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
-                    <span className={NAV_LABEL_CLASS}>بازگشت به میز کار</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-            <div aria-hidden="true" className="border-t border-border/80" />
-          </>
-        ) : null}
+        {/* The flat business nav never forgets where home is: «میز کار» is the
+            dashboard chat, one tap away from every business surface. */}
+        <SidebarMenu className="space-y-1.5">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname === "/dashboard"}
+              tooltip="بازگشت به میز کار"
+              className={BACK_TO_WORKSPACE_BUTTON_CLASS}
+            >
+              <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
+                <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
+                <span className={NAV_LABEL_CLASS}>بازگشت به میز کار</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <div aria-hidden="true" className="border-t border-border/80" />
 
         {groups.map((group) => {
           if (group.entries.length === 0) return null;
@@ -456,7 +421,6 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
     const owner = appForModule(item.module);
     if (owner && !stateByApp.has(owner)) stateByApp.set(owner, item.appState);
   }
-  const connectionsHref = hrefs.includes("/settings/connections") ? "/settings/connections" : null;
   const launchers = WORKSPACE_APP_LAUNCHERS.flatMap((launcher) => {
     const href = launcher.hrefs.find((candidate) => hrefs.includes(candidate));
     if (!href) return [];
@@ -465,9 +429,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
         ...launcher,
         href,
         active: isActive(pathname, href),
-        // `ai` is not an `AppKey`, so it has no app-availability state to badge;
-        // `stateByApp` is keyed by `AppKey` only.
-        appState: isAppKey(launcher.key) ? stateByApp.get(launcher.key) : undefined,
+        appState: stateByApp.get(launcher.key),
       },
     ];
   });
@@ -551,23 +513,10 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
           </div>
         ) : null}
 
-        {connectionsHref ? (
-          <SidebarMenu className="space-y-1.5">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={isActive(pathname, connectionsHref)}
-                tooltip="اتصال‌های فنی"
-                className={APP_NAV_BUTTON_CLASS}
-              >
-                <Link href={connectionsHref}>
-                  <PlugIcon aria-hidden="true" className="size-5 shrink-0" />
-                  <span className={NAV_LABEL_CLASS}>اتصال‌های فنی</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        ) : null}
+        {/* «اتصال‌های فنی» used to render here as a seventh rail row. It is a
+            shell utility, not an app, and its door is the platform user menu
+            (the footer menu lists it beside حقوق اشتراک و تنظیمات کسب‌وکار);
+            the row is gone rather than a second door to the same hub. */}
 
         <div className="group-data-[state=collapsed]/sidebar:hidden">
           {/* AiRecentConversations already filters to dashboard-mode threads and
@@ -866,7 +815,6 @@ function AppShellNavigation({
   role,
   pathname,
   navItems,
-  workspaceShell,
 }: {
   nav: (props: AppShellNavProps) => React.ReactElement;
   shell: AppShellDef;
@@ -874,7 +822,6 @@ function AppShellNavigation({
   pathname: string;
   /** The business nav, for an app menu that arranges business pages (Accounting). */
   navItems: NavItem[];
-  workspaceShell: boolean;
 }) {
   const { setOpenMobile } = useSidebar();
   const search = useSearchParams();
@@ -887,7 +834,6 @@ function AppShellNavigation({
       // Flattened, so a child page (لیست قیمت under محصولات) can be adopted by
       // an app's menu as well as its parent.
       navItems={flattenNav(navItems)}
-      workspaceShell={workspaceShell}
       onNavigate={() => setOpenMobile(false)}
     />
   );
@@ -1155,7 +1101,6 @@ export function DashboardSidebar({
   fullName,
   brandTitle,
   brandSubtitle,
-  variant = "classic",
 }: SidebarProps) {
   const pathname = usePathname();
   const [preference, setPreference] = useState<DashboardSidebarPreference>("expanded");
@@ -1166,18 +1111,10 @@ export function DashboardSidebar({
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(null);
   const [draggingWidth, setDraggingWidth] = useState(false);
   const mode = tabletMode ? (tabletExpanded ? "expanded" : "collapsed") : resolveSidebarMode(pathname, preference);
-  // The assistant surfaces (the `/ai` page and, with the workspace
-  // shell, the chat home `/dashboard`) have their own in-app nav
-  // (conversations/projects) and a pinned composer, so the customizable mobile
-  // bottom bar and the global mobile header stand aside there rather than being
-  // stacked under or over the assistant's own chrome.
-  const workspaceShell = variant === "workspace";
-  const assistantRoute = isAssistantSurface(pathname, workspaceShell);
-  // On the dedicated assistant page the assistant renders its own header and a
-  // nav toggle (the conversations/projects drawer), so the dashboard's global
-  // mobile header would only duplicate it. The workspace chat home keeps the
-  // global header — its hamburger is the only way to reach the rail on a phone.
-  const assistantPage = pathname === "/ai" || pathname.startsWith("/ai/");
+  // The assistant surface — the chat home `/dashboard` — pins its composer to
+  // the viewport's foot, so the customizable mobile bottom bar stands aside
+  // there rather than covering it.
+  const assistantRoute = isAssistantSurface(pathname);
   // Sub-sections included, so a pinned child page survives the "is this still
   // visible to me?" filter the bottom bar runs on every render.
   const availableHrefs = flattenNav(navItems).map((item) => item.href);
@@ -1185,24 +1122,19 @@ export function DashboardSidebar({
   // Everywhere else the sidebar is an app's nav: either the app that owns the
   // route has a shell of its own (رشد و بازاریابی), or it is the business's flat
   // nav, which is what the accounting suite is.
-  const showWorkspaceRail =
-    workspaceShell && (pathname === "/dashboard" || pathname.startsWith("/projects"));
+  const showWorkspaceRail = pathname === "/dashboard" || pathname.startsWith("/projects");
   // The app whose routes own the sidebar slot, if this route is one of them.
   // `app-shells.ts` is the registry, so adding a separate app never means
   // editing this file again.
   const appShell = appShellForSlot(pathname, showWorkspaceRail);
-  // «رشد و بازاریابی» and «دستیار هوشمند» are not entries in the business's flat
-  // nav when the workspace shell is on: they are separate products launched from
-  // the rail, and the growth app now carries its own main menu. Listing them
-  // alongside حسابداری and گزارش‌ها is what made a separate app read as a page of
-  // accounting. In the classic shell, with no rail to launch from, the growth
-  // entry stays — it is the only door into the app.
-  const appNavItems =
-    workspaceShell && !showWorkspaceRail
-      ? navItems.filter(
-          (item) => item.module !== "ai" && !(item.href && isInsideAnyAppShell(item.href)),
-        )
-      : navItems;
+  // The app homes («رشد و بازاریابی», «ارتباط با مشتری», «مدیریت وب‌سایت») are
+  // not entries in the business's flat nav: they are separate products launched
+  // from the rail, each carrying its own main menu. Listing them alongside
+  // حسابداری and گزارش‌ها is what made a separate app read as a page of
+  // accounting.
+  const appNavItems = showWorkspaceRail
+    ? navItems
+    : navItems.filter((item) => !(item.href && isInsideAnyAppShell(item.href)));
 
   useEffect(() => {
     setPreference(window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === "collapsed" ? "collapsed" : "expanded");
@@ -1285,7 +1217,7 @@ export function DashboardSidebar({
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
       <CloseDrawerOnNavigate pathname={pathname} />
-      {!assistantPage ? <MobileDashboardHeader navItems={navItems} pathname={pathname} /> : null}
+      <MobileDashboardHeader navItems={navItems} pathname={pathname} />
       <Sidebar
         side="right"
         className={`border-border/80 bg-card text-foreground ${draggingWidth ? "transition-none" : ""}`}
@@ -1305,14 +1237,12 @@ export function DashboardSidebar({
             role={role}
             pathname={pathname}
             navItems={navItems}
-            workspaceShell={workspaceShell}
           />
         ) : (
           <SidebarNavigation
             navItems={navItems}
             role={role}
             pathname={pathname}
-            showWorkspaceHome={workspaceShell}
           />
         )}
         <DashboardSidebarFooter

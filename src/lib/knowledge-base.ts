@@ -43,7 +43,6 @@ export interface KnowledgeSection {
  * trades' screens (only one of the last four is ever visible to a business).
  */
 export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
-  { key: "overview", label: "نمای کلی", route: "/overview" },
   { key: "pos", label: "فروش (صندوق)", route: ACCOUNTING_WORKSPACE_HREFS.pos },
   { key: "orders", label: "سفارش‌ها", route: "/accounting/orders" },
   { key: "customers", label: "مشتریان", route: "/crm/directory" },
@@ -56,7 +55,9 @@ export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
   { key: "connections", label: "اتصال‌های فنی", route: "/settings/connections" },
   { key: "website", label: "وب‌سایت", route: "/websites" },
   { key: "projects", label: "پروژه‌ها", route: "/projects" },
-  { key: "ai", label: "دستیار هوشمند", route: "/ai" },
+  // The assistant is not a section of the learning centre's route table: it
+  // is the workspace home itself (`/dashboard`), covered by no pathname in
+  // this list — the chat home carries its own in-context guidance instead.
   { key: "kitchen", label: "آشپزخانه", route: ACCOUNTING_WORKSPACE_HREFS.kitchen },
   { key: "floor", label: "نقشهٔ سالن", route: ACCOUNTING_WORKSPACE_HREFS.floor },
   { key: "waiter", label: "میزهای من", route: "/accounting/waiter" },

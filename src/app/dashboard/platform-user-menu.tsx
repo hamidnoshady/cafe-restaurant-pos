@@ -30,6 +30,13 @@
  *    becomes the avatar button — and it must still open the menu rather than
  *    only widening the rail, since sign-out lives in here.
  *
+ * RTL is also deliberate here rather than inherited-by-accident. Nothing wraps
+ * the app in Radix's `DirectionProvider`, so the popper and its arrow-key
+ * logic would compute logical alignment as LTR out of the box; `dir="rtl"` on
+ * the root puts them on the document's real direction, and the portaled
+ * content restates it so the panel renders as right-reading Persian even if
+ * it is ever mounted where the document's `<html dir>` is not inherited.
+ *
  * The entries themselves come from `platform-user-menu.ts`, framework-free and
  * unit-tested, so what the menu *contains* is checkable without mounting any
  * of this.
@@ -93,7 +100,7 @@ export function PlatformUserMenu({
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu dir="rtl" open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         {compact ? (
           <button
@@ -127,12 +134,25 @@ export function PlatformUserMenu({
         viewport, which is what a short mobile drawer does. The width follows
         the trigger in the expanded rail and needs a floor of its own next to
         the 36px avatar.
+
+        `align="start"` is the RTL-correct choice, and it only means anything
+        because the root above carries `dir="rtl"`: with the rail on the
+        physical right edge of the viewport, logical start IS the physical
+        right, so the panel's right edge sits flush with the rail and the menu
+        opens leftward into the screen — nothing hangs past the right edge of
+        the viewport. Kept blindly as `align="end"`, the same geometry would
+        pin the panel's physical-left edge instead and could project it past
+        the right side on a narrow screen. The restated `dir` on the portaled
+        content is the half of this that the popper logic does not already
+        get from the root.
       */}
       <DropdownMenuContent
         side="top"
-        align="end"
+        align="start"
         sideOffset={8}
-        className="min-w-56 p-1.5"
+        collisionPadding={8}
+        dir="rtl"
+        className="min-w-56 p-1.5 text-right"
         aria-label="منوی حساب کاربری"
       >
         {items.map((item) => {

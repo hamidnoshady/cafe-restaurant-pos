@@ -103,9 +103,10 @@ const JOURNEY: readonly string[] = [
   settingsTabHref("team"),
   "/settings/profile",
   "/settings/connections",
-  // The workspace's own pages, each a top-level route now.
-  "/overview",
-  "/ai",
+  // The workspace's own pages at top-level routes. The old `/overview` and
+  // `/ai` addresses are not here: both are retired (the quick-report
+  // dashboard and the second AI application) and now forward to `/dashboard`
+  // — asserted among the legacy redirects below instead.
   "/media",
   "/knowledge",
   "/support",
@@ -264,9 +265,11 @@ describe("the legacy addresses", () => {
     ["/dashboard/connections", "/settings/connections"],
     // The final wave: the workspace's own pages and the last flat dashboard
     // pages. Every one of them is a middleware 308 now — no page.tsx remains
-    // under /dashboard except the home itself.
-    ["/dashboard/overview", "/overview"],
-    ["/dashboard/ai", "/ai"],
+    // under /dashboard except the home itself. The two retired homes — the
+    // old quick-report dashboard and the standalone AI application — resolve
+    // back onto the one home rather than onto a successor page.
+    ["/dashboard/overview", "/dashboard"],
+    ["/dashboard/ai", "/dashboard"],
     ["/dashboard/media", "/media"],
     ["/dashboard/knowledge", "/knowledge"],
     ["/dashboard/knowledge/a/pos-basics", "/knowledge/a/pos-basics"],

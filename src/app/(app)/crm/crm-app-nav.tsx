@@ -31,10 +31,11 @@ import {
 import { crmNavItemsForRole } from "./crm-nav";
 import { crmSectionHref, isCrmSectionPathname } from "./crm-routes";
 
-export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }: AppShellNavProps) {
+export function CrmAppNav({ shell, role, pathname, onNavigate }: AppShellNavProps) {
   const items = crmNavItemsForRole(role);
-  const backHref = workspaceShell ? "/dashboard" : "/accounting/overview";
-  const backLabel = workspaceShell ? "بازگشت به میز کار" : "بازگشت به داشبورد";
+  // «میز کار» is the one home: the dashboard chat, whatever shell flags used to say.
+  const backHref = "/dashboard";
+  const backLabel = "بازگشت به میز کار";
 
   return (
     <SidebarContent className="px-3 py-4">

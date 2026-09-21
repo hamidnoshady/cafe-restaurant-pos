@@ -23,6 +23,7 @@
  */
 
 import { partyDirectoryHref } from "./party-directory";
+import { aiPanelHref, isAiPanelSectionKey } from "./ai-panel";
 import {
   accountingDirectoryViewForLegacySection,
   accountingSectionForLegacyTab,
@@ -37,13 +38,15 @@ export const DASHBOARD_HOME = "/dashboard";
  * The workspace's own pages, each at a top-level public URL.
  *
  * These used to live under `/dashboard/<page>`; the dashboard route tree now
- * holds exactly one page — `/dashboard` itself — and everything else is a
- * top-level route (or an app section). The old addresses are middleware
- * redirects in `LEGACY_PREFIX_MAP` below, so no bookmark ever 404s.
+ * holds exactly one page — `/dashboard` itself, the assistant chat home — and
+ * everything else is a top-level route (or an app section). The old addresses
+ * are middleware redirects in `LEGACY_PREFIX_MAP` below, so no bookmark ever
+ * 404s. `/overview` and `/ai` once stood beside these as top-level routes;
+ * both are retired (the old quick-report dashboard and the second AI
+ * application), and their addresses now resolve to `/dashboard` itself — see
+ * `legacyAssistantTarget`.
  */
 export const WORKSPACE_TOP_HREFS = {
-  overview: "/overview",
-  ai: "/ai",
   media: "/media",
   knowledge: "/knowledge",
   support: "/support",
@@ -161,8 +164,10 @@ const LEGACY_PREFIX_MAP: readonly (readonly [string, string])[] = [
   ["/dashboard/accounting", "/accounting"],
   // The workspace's own pages, now top-level routes. `knowledge` first serves
   // its own prefix; the two older aliases (`guides`, `help`) grew into it.
-  ["/dashboard/overview", WORKSPACE_TOP_HREFS.overview],
-  ["/dashboard/ai", WORKSPACE_TOP_HREFS.ai],
+  // `/dashboard/overview` and `/dashboard/ai` are deliberately NOT rows here:
+  // their targets depend on the path suffix (an AI section name), so
+  // `legacyAssistantTarget` answers them the way `legacyLedgerTarget` answers
+  // the old tabbed ledger page.
   ["/dashboard/media", WORKSPACE_TOP_HREFS.media],
   ["/dashboard/knowledge", WORKSPACE_TOP_HREFS.knowledge],
   ["/dashboard/support", WORKSPACE_TOP_HREFS.support],
@@ -311,19 +316,54 @@ function legacyWpTarget(pathname: string, search: string): string {
 }
 
 /**
+ * The retired second homes of the assistant and the old quick-report
+ * dashboard. Both resolve to the one home — `/dashboard`, the assistant chat —
+ * and nowhere else:
+ *
+ *  - `/dashboard/overview` was the old operational dashboard the `workspace`
+ *    rollout replaced. It once forwarded to `/overview`; now that the
+ *    quick-report dashboard is gone entirely, it lands on the chat home
+ *    itself. It never had sub-paths, so only the exact address maps.
+ *  - `/dashboard/ai` was the assistant's own address while `/dashboard` was
+ *    still the old dashboard. A section suffix names an assistant management
+ *    section, which now opens as the chat home's panel (`/dashboard/ai/agents`
+ *    → `/dashboard?aiPanel=agents`, the same address the `ai-panel.ts`
+ *    registry gives out). An unknown suffix degrades to the chat home rather
+ *    than to a 404: a URL that used to work never becomes a dead end.
+ *
+ * The visitor's query string survives via `withSearch`, so a
+ * `?conversation=` deep link still opens its thread after the hop.
+ */
+function legacyAssistantTarget(pathname: string, search: string): string {
+  if (pathname === "/dashboard/overview") return withSearch("/dashboard", search);
+  const rest = pathname.slice("/dashboard/ai".length).replace(/^\//, "");
+  const [first] = rest.split("/");
+  const canonical = isAiPanelSectionKey(first) ? aiPanelHref(first) : "/dashboard";
+  return withSearch(canonical, search);
+}
+
+/**
  * The full redirect target for a legacy URL, query string preserved.
  *
  * `search` is the raw `?a=b` string (empty when there is none), exactly as
  * `URL.search` gives it, so a deep link's parameters survive the move.
  */
 export function legacyRedirectTarget(pathname: string, search = ""): string | null {
-  // The two old addresses whose targets depend on more than the path: the
-  // tabbed ledger page and the standalone WordPress manager.
+  // The three old addresses whose targets depend on more than the path: the
+  // tabbed ledger page, the standalone WordPress manager, and the retired
+  // assistant/overview homes.
   if (pathname === "/dashboard/ledger" || pathname.startsWith("/dashboard/ledger/")) {
     return legacyLedgerTarget(search);
   }
   if (pathname === "/dashboard/wp" || pathname.startsWith("/dashboard/wp/")) {
     return legacyWpTarget(pathname, search);
+  }
+  if (
+    pathname === "/dashboard/overview" ||
+    pathname === "/dashboard/ai" ||
+    pathname.startsWith("/dashboard/ai/")
+  ) {
+    return legacyAssistantTarget(pathname, search);
   }
   const canonical = canonicalPathForLegacy(pathname);
   return canonical === null ? null : withSearch(canonical, search);

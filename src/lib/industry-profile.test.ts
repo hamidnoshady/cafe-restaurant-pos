@@ -81,10 +81,9 @@ describe("module sets", () => {
       )
         continue;
       // Phase 35 module keys that exist but are not yet wired into any industry:
-      // `workspace` is the ecosystem shell (feature-flag gated), and `website`/
-      // `messaging` get their pages in phases 37–38. `crm` left this list in
-      // Phase 36, which built the app.
-      if (module === "workspace" || module === "website" || module === "messaging") continue;
+      // `messaging` gets its pages in a later phase, and `website` left this
+      // list alongside `crm` once the phases that built the apps shipped.
+      if (module === "website" || module === "messaging") continue;
       expect(modules, module).toContain(module);
     }
   });
@@ -213,13 +212,12 @@ describe("defaultDisabledFeatures", () => {
 
 describe("Phase 35 module keys", () => {
   it("declares the ecosystem and future-phase keys without assigning them to any industry yet", () => {
-    // These keys exist so the app registry (src/lib/apps.ts) can give them a
-    // place, but this one is not wired into a trade yet: `workspace` is the
-    // ecosystem shell (feature-flag gated) and `messaging` gets its pages in a
-    // later phase. Locking this prevents a profile from silently gaining it
-    // and changing module-gated routing. `crm` and `website` graduated out of
-    // this list once built — see the tests below.
-    const futureKeys = ["workspace", "messaging"] as const;
+    // This key exists so the app registry (src/lib/apps.ts) can give it a
+    // place, but it is not wired into a trade yet: `messaging` gets its pages
+    // in a later phase. Locking this prevents a profile from silently gaining
+    // it and changing module-gated routing. `crm` and `website` graduated out
+    // of this list once built — see the tests below.
+    const futureKeys = ["messaging"] as const;
     for (const key of futureKeys) {
       expect(MODULE_KEYS, key).toContain(key);
       for (const industry of INDUSTRIES) {
