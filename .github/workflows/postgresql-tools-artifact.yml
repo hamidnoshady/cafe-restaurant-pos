@@ -96,8 +96,17 @@ jobs:
         env:
           PG_TOOLS_DIR: ${{ github.workspace }}\.desktop-assets\postgresql-tools
         run: |
-          node scripts/accept-packaged-pg-tools.mjs
-          npx tsx scripts/accept-packaged-restore.ts
+          function Invoke-Acceptance([string]$Name, [scriptblock]$Command) {
+            $lines = @(& $Command 2>&1 | Tee-Object -FilePath "$Name.log")
+            if ($LASTEXITCODE -ne 0) {
+              $tail = @($lines | Select-Object -Last 60) -join "`n"
+              $detail = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Host "::error title=$Name failed::$detail"
+              throw "$Name failed"
+            }
+          }
+          Invoke-Acceptance 'packaged-pg-tools-acceptance' { node scripts/accept-packaged-pg-tools.mjs }
+          Invoke-Acceptance 'packaged-restore-acceptance' { npx tsx scripts/accept-packaged-restore.ts }
 
       - name: Stop disposable PostgreSQL
         if: always()
@@ -120,6 +129,8 @@ jobs:
             .desktop-assets/postgresql-tools/provenance.json
             packaged-pg-tools-acceptance.json
             packaged-restore-acceptance.json
+            packaged-pg-tools-acceptance.log
+            packaged-restore-acceptance.log
 
   validate-and-publish:
     if: github.event_name == 'workflow_dispatch'
