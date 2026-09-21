@@ -27,6 +27,22 @@ const windowsSigningConfig = require("../../electron/scripts/windows-signing-con
 };
 
 describe("packaged desktop production posture", () => {
+  it("pins a supported Node.js 24 Electron runtime and build target", () => {
+    const rootManifest = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
+    const desktopManifest = JSON.parse(readFileSync(path.resolve("electron/package.json"), "utf8"));
+    const desktopLock = JSON.parse(readFileSync(path.resolve("electron/package-lock.json"), "utf8"));
+    const runtimeBuilder = readFileSync(path.resolve("scripts/build-desktop-runtime.mjs"), "utf8");
+    const electronVersion = desktopManifest.devDependencies.electron as string;
+
+    expect(rootManifest.engines.node).toBe(">=24");
+    expect(desktopManifest.engines.node).toBe(">=24");
+    expect(electronVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(Number.parseInt(electronVersion.split(".")[0], 10)).toBeGreaterThanOrEqual(44);
+    expect(desktopLock.packages["node_modules/electron"].version).toBe(electronVersion);
+    expect(runtimeBuilder).toContain('target: "node24"');
+    expect(runtimeBuilder).toContain('engines: { node: ">=24" }');
+  });
+
   it("always launches the internal server as a loopback-only production site", () => {
     const env = desktopServerEnvironment(
       { jwtSecret: "test", appPort: 3042, instanceId: "instance" },

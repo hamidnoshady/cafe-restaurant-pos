@@ -20,7 +20,7 @@
 # a manual run from any ref is gated the same way.
 #
 # Runs on GitHub-hosted **Ubuntu** runners (`ubuntu-latest`): the image is a
-# Linux image (`FROM node:20-alpine`), and hosted Ubuntu runners ship Docker
+# Linux image (`FROM node:24-alpine`), and hosted Ubuntu runners ship Docker
 # with the Linux backend plus buildx, which docker/build-push-action needs.
 # Every `run:` block is PowerShell Core (`pwsh`), preinstalled on the hosted
 # runners.
@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run lint
@@ -87,9 +87,9 @@ jobs:
       # The deploy verification at the end of this job is a Node script.
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
 
-      # The Dockerfile is `FROM node:20-alpine` — a Linux image. Hosted Ubuntu
+      # The Dockerfile is `FROM node:24-alpine` — a Linux image. Hosted Ubuntu
       # runners always have Docker running with the Linux backend, which is why
       # this job is not on `windows-latest` with the others.
       - name: Compute short sha

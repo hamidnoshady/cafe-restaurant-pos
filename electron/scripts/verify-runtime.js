@@ -39,6 +39,16 @@ for (const relative of [
   "migrations/0001_foundation.sql",
 ]) requirePath(relative);
 
+const buildNodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
+if (!Number.isInteger(buildNodeMajor) || buildNodeMajor < 24) {
+  fail(`desktop runtime must be built and verified with supported Node.js 24+, found ${process.versions.node}`);
+}
+const pinnedElectron = electronPackage.devDependencies?.electron || "";
+const electronMajor = Number.parseInt(pinnedElectron.split(".")[0], 10);
+if (!/^\d+\.\d+\.\d+$/.test(pinnedElectron) || !Number.isInteger(electronMajor) || electronMajor < 44) {
+  fail(`Electron must be exactly pinned to a supported 44+ release, found ${pinnedElectron || "missing"}`);
+}
+
 const runtimeRequire = createRequire(path.join(runtime, "package.json"));
 const stagedNextRoot = path.join(runtime, "node_modules", "next");
 for (const specifier of ["next/headers", "next/navigation", "next/server"]) {
@@ -132,5 +142,8 @@ if (process.platform === "win32") {
 
 const manifest = JSON.parse(fs.readFileSync(path.join(runtime, "package.json"), "utf8"));
 if (manifest.desktopRuntime?.format !== 1) fail("runtime manifest format is invalid");
+if (manifest.engines?.node !== ">=24") {
+  fail(`runtime manifest must require supported Node.js 24+, found ${manifest.engines?.node || "missing"}`);
+}
 
 if (!process.exitCode) console.log("Desktop runtime shape is valid.");

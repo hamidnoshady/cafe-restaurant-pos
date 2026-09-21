@@ -21,7 +21,7 @@
 # till PC, since a Linux container cannot enumerate the host's spooler.
 
 # ---- deps: install all dependencies (dev deps are needed to build) ----------
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Cache mount keyed on the image's npm cache dir: on a builder that persists
@@ -33,7 +33,7 @@ COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 
 # ---- builder: produce the .next production build ----------------------------
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -66,14 +66,14 @@ RUN mkdir -p public
 # `npm run build` needed). `npm prune` is a local operation on the tree we
 # already have — no registry round trip — so this is strictly a subset of the
 # work the old second `npm ci` did.
-FROM node:20-alpine AS prod-deps
+FROM node:24-alpine AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY --from=deps /app/node_modules ./node_modules
 RUN npm prune --omit=dev
 
 # ---- runner: the image that actually runs in Komodo -------------------------
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000

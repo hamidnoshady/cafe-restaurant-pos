@@ -1,6 +1,6 @@
 # Checks the parts of the platform that ship to a customer's machine but that
-# `test.yml` never touches: the Electron desktop shell, the WordPress plugin,
-# and the PowerShell that runs on a cafe PC.
+# `test.yml` never touches: the production container, Electron desktop shell,
+# WordPress plugin, and the PowerShell that runs on a cafe PC.
 #
 # Why this is separate from `test.yml`: none of it is `src/`. `test.yml` runs
 # tsc, vitest and `next build` over the web app, so a syntax error in
@@ -12,15 +12,13 @@
 #
 # Triggers: `workflow_dispatch` (run it by hand before either release build),
 # plus `pull_request` and `push` to `main`, scoped with `paths:` to only the
-# folders this workflow actually checks (`electron/`, desktop build scripts,
-# `public/windows/`, `wordpress-plugin/`). That keeps it "active" exactly
-# when someone is developing the desktop shell, the print connector, or the
-# WordPress plugin — a PR touching only `src/` never runs it, the same way
-# `test.yml` never touches these folders.
+# files this workflow actually checks (`Dockerfile`, `electron/`, desktop build
+# scripts, `public/windows/`, `wordpress-plugin/`). It remains active whenever
+# production application code or one of those shipped surfaces changes.
 #
-# It deliberately does NOT package anything — producing the `.exe` is
-# `build-desktop-installer.yml`, producing the zip is `build-plugin-zip.yml`.
-# This workflow only answers "would those two builds ship something broken?".
+# It deliberately does not publish or retain release artifacts. It performs a
+# no-push production-container build; `.exe` packaging remains in
+# `build-desktop-installer.yml`, and plugin zip publishing remains separate.
 name: verify-shippables
 
 on:
@@ -31,11 +29,14 @@ on:
       - 'src/**'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
+      - 'scripts/verify-packaged-electron-runtime.ps1'
       - 'scripts/desktop/**'
       - 'server.ts'
       - 'next.config.ts'
       - 'package.json'
       - 'package-lock.json'
+      - 'Dockerfile'
+      - 'docker-entrypoint.sh'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
       - '.github/workflows/verify-shippables.yml'
@@ -48,11 +49,14 @@ on:
       - 'src/**'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
+      - 'scripts/verify-packaged-electron-runtime.ps1'
       - 'scripts/desktop/**'
       - 'server.ts'
       - 'next.config.ts'
       - 'package.json'
       - 'package-lock.json'
+      - 'Dockerfile'
+      - 'docker-entrypoint.sh'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
       - '.github/workflows/verify-shippables.yml'
@@ -72,6 +76,45 @@ defaults:
     shell: powershell
 
 jobs:
+  container:
+    name: production container
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build the production image without publishing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: business-suite:ci
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            NODE_OPTIONS=--max-old-space-size=3072
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Assert supported production Node.js and required runtime tools
+        run: |
+          set -euo pipefail
+          version="$(docker run --rm --entrypoint node business-suite:ci --version)"
+          case "$version" in
+            v24.*) ;;
+            *) echo "Production image must carry Node.js 24.x, found $version" >&2; exit 1 ;;
+          esac
+          docker run --rm --entrypoint sh business-suite:ci -c '
+            test -x ./node_modules/.bin/tsx &&
+            command -v chromium-browser >/dev/null &&
+            command -v pg_dump >/dev/null &&
+            command -v pg_restore >/dev/null
+          '
+          echo "Production image Node.js: $version"
+
   desktop:
     name: desktop shell
     runs-on: windows-latest
@@ -79,7 +122,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install application dependencies
         run: npm ci
@@ -254,20 +297,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # This .ps1 file is downloaded and executed on a cafe PC. Nothing
-      # else in the repo executes it, so a syntax error ships silently and
-      # only shows up when a cashier clicks "install the printer connector".
+      # Parse both the customer-installed connector and packaged-runtime gate.
+      # A syntax failure in either would otherwise surface late in acceptance.
       # Parsing is done without running a single line.
       - name: PowerShell scripts parse
         run: |
           $ErrorActionPreference = "Stop"
           $files = @(
-            "public/windows/cafe-pos-print-connector.ps1"
+            "public/windows/cafe-pos-print-connector.ps1",
+            "scripts/verify-packaged-electron-runtime.ps1"
           )
           $failed = $false
           foreach ($f in $files) {
             if (-not (Test-Path -LiteralPath $f)) {
-              Write-Host "::error::$f is missing - the printer settings screen links to it for download."
+              Write-Host "::error::$f is missing from the shipped Windows tooling set."
               $failed = $true
               continue
             }

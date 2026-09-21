@@ -90,7 +90,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Download immutable organization-controlled PostgreSQL tools artifact
@@ -152,6 +152,9 @@ jobs:
 
       - name: Require valid expected-signer Authenticode and RFC3161 timestamps
         run: .\scripts\verify-windows-signatures.ps1 -ArtifactRoot electron\dist -Mode signed -ExpectedSigner $env:WINDOWS_EXPECTED_SIGNER -OutputPath windows-signature-verification.json
+
+      - name: Assert packaged Electron and Node.js support posture
+        run: .\scripts\verify-packaged-electron-runtime.ps1 -ArtifactRoot electron\dist\win-unpacked -OutputPath packaged-electron-runtime.json
 
       - name: Start disposable PostgreSQL 16 server
         env:
@@ -220,6 +223,7 @@ jobs:
           $rows = foreach ($file in $files) {
             [ordered]@{ name = $file.Name; bytes = $file.Length; sha256 = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
           }
+          $runtime = Get-Content packaged-electron-runtime.json -Raw | ConvertFrom-Json
           [ordered]@{
             schemaVersion = 1
             version = "${{ inputs.version }}"
@@ -227,6 +231,7 @@ jobs:
             signingProvider = $env:WINDOWS_SIGNING_PROVIDER
             expectedSigner = $env:WINDOWS_EXPECTED_SIGNER
             postgresqlToolsArtifactSha256 = $env:PG_TOOLS_ARTIFACT_SHA256
+            desktopRuntime = @{ electron=$runtime.electron; node=$runtime.node; chromium=$runtime.chromium }
             generatedAt = [DateTime]::UtcNow.ToString("o")
             artifacts = $rows
           } | ConvertTo-Json -Depth 6 | Set-Content release-provenance.json -Encoding UTF8
@@ -263,6 +268,7 @@ jobs:
             electron/dist/Business Suite Setup *.exe
             electron/dist/windows-signing-status.json
             windows-signature-verification.json
+            packaged-electron-runtime.json
             packaged-pg-tools-acceptance.json
             packaged-restore-acceptance.json
             release-provenance.json
@@ -280,6 +286,7 @@ jobs:
           path: |
             electron/dist/Business Suite Setup *.exe
             windows-signature-verification.json
+            packaged-electron-runtime.json
             packaged-pg-tools-acceptance.json
             packaged-restore-acceptance.json
             release-provenance.json

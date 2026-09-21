@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
       - name: Verify TLS trust, isolated CA bootstrap and no HTTP app proxy
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: Install certificate fixture dependency only
         working-directory: electron
         run: npm ci --ignore-scripts
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: Install certificate fixture dependency only
         working-directory: electron
         run: npm ci --ignore-scripts
