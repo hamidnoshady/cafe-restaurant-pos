@@ -65,8 +65,14 @@ try {
 if ($probeFailure) {
   Stop-RuntimeVerification $probeFailure
 }
-if ($probeExit -ne 0) {
-  Stop-RuntimeVerification "Packaged Electron runtime probe failed with exit code $probeExit. stderr: $probeStderr"
+# Windows PowerShell can leave ExitCode unavailable for a GUI-subsystem image
+# even after its process handle signals. Valid version JSON is the authoritative
+# success result; still reject every non-zero code when Windows exposes one.
+if ($null -ne $probeExit -and $probeExit -ne 0) {
+  Stop-RuntimeVerification "Packaged Electron runtime probe failed with exit code ${probeExit}. stderr: $probeStderr"
+}
+if ([string]::IsNullOrWhiteSpace($raw)) {
+  Stop-RuntimeVerification "Packaged Electron runtime probe returned no version data. stderr: $probeStderr"
 }
 
 try {
