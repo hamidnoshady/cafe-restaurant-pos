@@ -79,6 +79,33 @@ describe("candidate-bound external release evidence", () => {
     ]);
   });
 
+  it("limits protected signing credentials to validation and packaging steps", async () => {
+    const workflow = await fs.readFile(path.join(root, ".github/workflows/windows-signed-candidate.yml"), "utf8");
+    const workflowEnv = workflow.slice(0, workflow.indexOf("\njobs:"));
+    for (const secret of [
+      "WINDOWS_CSC_LINK",
+      "WINDOWS_CSC_KEY_PASSWORD",
+      "AZURE_SUBSCRIPTION_ID",
+      "AZURE_TENANT_ID",
+      "AZURE_CLIENT_ID",
+      "AZURE_CLIENT_SECRET",
+    ]) {
+      expect(workflowEnv).not.toContain(`secrets.${secret}`);
+    }
+
+    const dependencyInstall = workflow.indexOf("Install and audit Electron dependencies");
+    const azureLogin = workflow.indexOf("Authenticate to Azure with protected OIDC federation");
+    const signingBuild = workflow.indexOf("Set release version and build through configured signing provider");
+    expect(dependencyInstall).toBeGreaterThan(-1);
+    expect(azureLogin).toBeGreaterThan(dependencyInstall);
+    expect(signingBuild).toBeGreaterThan(azureLogin);
+    const signingStep = workflow.slice(signingBuild, workflow.indexOf("Clear transient Azure CLI signing session"));
+    expect(signingStep).toContain("CSC_LINK: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'pfx'");
+    expect(signingStep).toContain("AZURE_CLIENT_SECRET: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing'");
+    expect(workflow).toContain("fromJSON(vars.WINDOWS_SIGNING_RUNNER_JSON");
+    expect(workflow).toContain("certificate-store signing requires WINDOWS_SIGNING_RUNNER_JSON");
+  });
+
   it("preserves the candidate commit in validated real-device evidence", async () => {
     const directory = await temporaryDirectory();
     const config = JSON.parse(await fs.readFile(path.join(root, "config/mobile-device-acceptance.json"), "utf8"));

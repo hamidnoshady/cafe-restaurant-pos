@@ -34,6 +34,7 @@ env:
   RELEASE_VERSION: ${{ inputs.version }}
   CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
   WINDOWS_SIGNING_PROVIDER: ${{ vars.WINDOWS_SIGNING_PROVIDER }}
+  WINDOWS_SIGNING_RUNNER_JSON: ${{ vars.WINDOWS_SIGNING_RUNNER_JSON }}
   WINDOWS_EXPECTED_SIGNER: ${{ vars.WINDOWS_EXPECTED_SIGNER }}
   WINDOWS_RFC3161_URL: ${{ vars.WINDOWS_RFC3161_URL }}
   PG_SOURCE_VERSION: '16.15'
@@ -44,23 +45,20 @@ env:
   ZLIB_SOURCE_SHA256: bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
   WINDOWS_INSTALLER_BUDGET_MIB: ${{ vars.WINDOWS_INSTALLER_BUDGET_MIB }}
   WINDOWS_SIZE_EXCEPTION_REASON: ${{ vars.WINDOWS_SIZE_EXCEPTION_REASON }}
-  CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-  CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
   WINDOWS_CERTIFICATE_SUBJECT: ${{ vars.WINDOWS_CERTIFICATE_SUBJECT }}
   WINDOWS_CERTIFICATE_SHA1: ${{ vars.WINDOWS_CERTIFICATE_SHA1 }}
   AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
   AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
   AZURE_TRUSTED_SIGNING_PROFILE: ${{ vars.AZURE_TRUSTED_SIGNING_PROFILE }}
   AZURE_USE_OIDC: ${{ vars.AZURE_USE_OIDC }}
-  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
 jobs:
   release:
     name: signed Windows candidate build and verification
-    runs-on: windows-latest
+    # PFX and Azure providers use an ephemeral hosted runner by default. An
+    # organization-controlled certificate-store/HSM runner can be selected with
+    # e.g. WINDOWS_SIGNING_RUNNER_JSON=["self-hosted","Windows","X64","signing"].
+    runs-on: ${{ fromJSON(vars.WINDOWS_SIGNING_RUNNER_JSON || '["windows-latest"]') }}
     timeout-minutes: 150
     environment: windows-production
     steps:
@@ -69,6 +67,13 @@ jobs:
           ref: ${{ inputs.candidate_commit }}
 
       - name: Fail closed when protected release configuration is absent
+        env:
+          CSC_LINK: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'pfx' && secrets.WINDOWS_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'pfx' && secrets.WINDOWS_CSC_KEY_PASSWORD || '' }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && secrets.AZURE_SUBSCRIPTION_ID || '' }}
+          AZURE_TENANT_ID: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && vars.AZURE_USE_OIDC != 'true' && secrets.AZURE_CLIENT_SECRET || '' }}
         run: |
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Version must be X.Y.Z" }
@@ -76,10 +81,13 @@ jobs:
           $checkedOutCommit = (git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or $checkedOutCommit -cne $env:CANDIDATE_COMMIT) { throw "Checked-out commit $checkedOutCommit does not match candidate $env:CANDIDATE_COMMIT" }
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PROVIDER)) { throw "NOT CONFIGURED: WINDOWS_SIGNING_PROVIDER" }
-          if ($env:WINDOWS_SIGNING_PROVIDER -eq "unsigned") { throw "Production release cannot use the unsigned provider" }
+          if ($env:WINDOWS_SIGNING_PROVIDER -notin @('pfx','certificate-store','azure-trusted-signing')) { throw "Unsupported production WINDOWS_SIGNING_PROVIDER: $env:WINDOWS_SIGNING_PROVIDER" }
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_EXPECTED_SIGNER)) { throw "NOT CONFIGURED: WINDOWS_EXPECTED_SIGNER" }
           if ($env:WINDOWS_SIGNING_PROVIDER -eq 'pfx' -and ([string]::IsNullOrWhiteSpace($env:CSC_LINK) -or [string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD))) { throw 'NOT CONFIGURED: protected PFX signing credentials' }
-          if ($env:WINDOWS_SIGNING_PROVIDER -eq 'certificate-store' -and ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_SUBJECT) -and [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_SHA1))) { throw 'NOT CONFIGURED: certificate-store selector' }
+          if ($env:WINDOWS_SIGNING_PROVIDER -eq 'certificate-store') {
+            if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_SUBJECT) -and [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_SHA1)) { throw 'NOT CONFIGURED: certificate-store selector' }
+            if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_RUNNER_JSON) -or $env:WINDOWS_SIGNING_RUNNER_JSON -notmatch 'self-hosted') { throw 'NOT CONFIGURED: certificate-store signing requires WINDOWS_SIGNING_RUNNER_JSON selecting an organization-controlled self-hosted runner' }
+          }
           if ($env:WINDOWS_SIGNING_PROVIDER -eq 'azure-trusted-signing') {
             foreach ($name in @('AZURE_TRUSTED_SIGNING_ENDPOINT','AZURE_TRUSTED_SIGNING_ACCOUNT','AZURE_TRUSTED_SIGNING_PROFILE','AZURE_CLIENT_ID','AZURE_TENANT_ID')) {
               if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "NOT CONFIGURED: $name" }
@@ -87,14 +95,6 @@ jobs:
             if ($env:AZURE_USE_OIDC -eq 'true' -and [string]::IsNullOrWhiteSpace($env:AZURE_SUBSCRIPTION_ID)) { throw 'NOT CONFIGURED: AZURE_SUBSCRIPTION_ID for OIDC' }
             if ($env:AZURE_USE_OIDC -ne 'true' -and [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_SECRET)) { throw 'NOT CONFIGURED: AZURE_CLIENT_SECRET or set AZURE_USE_OIDC=true' }
           }
-
-      - name: Authenticate to Azure with protected OIDC federation
-        if: vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && vars.AZURE_USE_OIDC == 'true'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - uses: actions/setup-node@v7
         with:
@@ -149,12 +149,37 @@ jobs:
           REQUIRE_PACKAGED_PG_TOOLS: "1"
         run: npm run verify:runtime
 
+      # Keep signing authority unavailable while dependency lifecycle scripts,
+      # tests and application builds execute. Only the packaging step receives
+      # PFX/service-principal credentials, and OIDC login happens immediately
+      # before that step rather than at the beginning of the job.
+      - name: Authenticate to Azure with protected OIDC federation
+        if: vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && vars.AZURE_USE_OIDC == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Set release version and build through configured signing provider
         env:
           VERSION: ${{ inputs.version }}
+          CSC_LINK: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'pfx' && secrets.WINDOWS_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'pfx' && secrets.WINDOWS_CSC_KEY_PASSWORD || '' }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && secrets.AZURE_SUBSCRIPTION_ID || '' }}
+          AZURE_TENANT_ID: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && vars.AZURE_USE_OIDC != 'true' && secrets.AZURE_CLIENT_SECRET || '' }}
         run: |
           npm pkg set "version=$env:VERSION" --prefix electron
           npm run dist --prefix electron
+
+      - name: Clear transient Azure CLI signing session
+        if: always() && vars.WINDOWS_SIGNING_PROVIDER == 'azure-trusted-signing' && vars.AZURE_USE_OIDC == 'true'
+        continue-on-error: true
+        run: |
+          az logout
+          az account clear
 
       - name: Require valid expected-signer Authenticode and RFC3161 timestamps
         run: .\scripts\verify-windows-signatures.ps1 -ArtifactRoot electron\dist -Mode signed -ExpectedSigner $env:WINDOWS_EXPECTED_SIGNER -CandidateCommit $env:CANDIDATE_COMMIT -OutputPath windows-signature-verification.json
