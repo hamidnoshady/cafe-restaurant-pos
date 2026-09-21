@@ -63,12 +63,18 @@ jobs:
 
       - name: Build minimal Windows x64 client tools from pinned source
         run: |
-          .\scripts\build-postgresql-tools-from-source.ps1 `
-            -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
-            -SourceSha256 $env:PG_SOURCE_SHA256 `
-            -PostgresVersion $env:PG_SOURCE_VERSION `
-            -OutputDirectory controlled-input `
-            -Organization "${{ github.repository_owner }}"
+          try {
+            .\scripts\build-postgresql-tools-from-source.ps1 `
+              -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
+              -SourceSha256 $env:PG_SOURCE_SHA256 `
+              -PostgresVersion $env:PG_SOURCE_VERSION `
+              -OutputDirectory controlled-input `
+              -Organization "${{ github.repository_owner }}"
+          } catch {
+            $detail = $_.Exception.Message.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Controlled PostgreSQL source build failed::$detail"
+            throw
+          }
           $result = Get-Content controlled-input\source-build.json -Raw | ConvertFrom-Json
           "PG_TOOLS_ARTIFACT_SHA256=$($result.artifactSha256)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 

@@ -23,6 +23,10 @@ $output = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
 New-Item -ItemType Directory -Path $output | Out-Null
 $buildLog = Join-Path $output "source-build.log"
+function Write-BuildTrace([string]$Message) {
+  "[$([DateTime]::UtcNow.ToString('o'))] $Message" | Out-File -LiteralPath $buildLog -Encoding utf8 -Append
+}
+Write-BuildTrace "Pinned source hash verified; preparing PostgreSQL $PostgresVersion x64 Release build"
 $temp = Join-Path ([IO.Path]::GetTempPath()) "business-suite-pg-source-$([Guid]::NewGuid().ToString('N'))"
 $extract = Join-Path $temp "source"
 $payload = Join-Path $temp "payload"
@@ -39,6 +43,7 @@ try {
   }
   & tar -xf $sourcePath -C $extract
   if ($LASTEXITCODE -ne 0) { throw "Could not extract the pinned PostgreSQL source archive" }
+  Write-BuildTrace "Pinned source archive extracted"
 
   $sourceRoot = Join-Path $extract "postgresql-$PostgresVersion"
   if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "src/tools/msvc/build.pl"))) {
@@ -56,6 +61,7 @@ $config->{ldap} = 0;
 
   $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/Installer/vswhere.exe"
   if (-not (Test-Path -LiteralPath $vswhere)) { throw "Visual Studio locator is unavailable" }
+  Write-BuildTrace "Visual Studio locator found; invoking PostgreSQL MSVC build"
   $buildCmd = Join-Path $temp "build-postgresql-client.cmd"
   $buildText = @"
 @echo off
