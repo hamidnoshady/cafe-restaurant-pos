@@ -18,14 +18,11 @@ import { PullToRefresh } from "@/components/pull-to-refresh";
 
 export function DashboardMain({
   children,
-  workspaceEnabled = false,
 }: {
   children: React.ReactNode;
-  /** Whether the `workspace` shell is on — makes the chat home `/dashboard` an assistant surface too. */
-  workspaceEnabled?: boolean;
 }) {
   const pathname = usePathname();
-  const isAssistant = isAssistantSurface(pathname, workspaceEnabled);
+  const isAssistant = isAssistantSurface(pathname);
 
   if (isAssistant) {
     return (

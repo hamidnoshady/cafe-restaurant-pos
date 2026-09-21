@@ -3,7 +3,8 @@ import { WorkspaceShell } from "../dashboard/workspace-shell";
 /**
  * The platform's public app URLs — `/accounting`, `/growth`, `/crm`,
  * `/websites`, `/projects`, `/settings` — and the workspace's own pages
- * (`/overview`, `/ai`, `/media`, `/knowledge`, `/support`).
+ * (`/media`, `/knowledge`, `/support`), plus the compatibility redirects for
+ * the retired `/overview` and `/ai` applications.
  *
  * A route group (the `(app)` folder contributes no path segment), so each app
  * owns a top-level URL of its own while sharing the one workspace chrome with

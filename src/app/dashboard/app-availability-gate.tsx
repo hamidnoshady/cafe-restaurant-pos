@@ -146,43 +146,28 @@ function AvailabilityNotice({
  * Which app owns the route is answered from the path (`appForPagePath`) rather
  * than threaded through every page, so a page added later is covered by the
  * module registration it already has to make. Routes with no owning app — the
- * chat home, projects, the assistant, the connections hub — are never gated,
- * which is also what keeps this screen's "back" link reachable.
- *
- * One route needs its shell to answer: `/dashboard` is the chat home (never
- * gated) in the workspace shell, but the operational overview
- * `/overview` renders in the classic shell. Leaving it ungated in
- * both would leave an Accounting «به‌زودی» bypassable from the home page, so in the
- * classic shell it is gated as part of Accounting.
+ * workspace chat home `/dashboard`, projects, the connections hub — are never
+ * gated, which is also what keeps this screen's "back" link reachable.
  */
 export function AppAvailabilityGate({
   availability,
-  workspaceEnabled = true,
   children,
 }: {
   availability: AppAvailabilityProps;
-  /** False in the classic shell, where `/dashboard` renders the operational overview. */
-  workspaceEnabled?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const app: AppKey | null =
-    !workspaceEnabled && pathname === "/dashboard" ? "accounting" : appForPagePath(pathname);
+  const app: AppKey | null = appForPagePath(pathname);
   const state = app ? availability[app] : undefined;
   if (!state || state.usable) return <>{children}</>;
-  // The escape hatch must itself be reachable: the chat home (never gated) in
-  // the workspace shell, the overview otherwise. In the classic shell
-  // that overview is Accounting-gated, so while Accounting is down the link
-  // would only land on this same screen — it is hidden then, and on either
-  // home, where the sidebar is the way out.
-  const backHref = workspaceEnabled ? "/dashboard" : "/overview";
-  const backUsable = workspaceEnabled || (availability.accounting?.usable ?? true);
+  // The escape hatch is the one home that is never gated — the workspace chat
+  // /dashboard — unless this screen is already sitting on it.
   return (
     <AvailabilityNotice
       availability={state}
-      backHref={backHref}
-      backLabel={workspaceEnabled ? "بازگشت به میز کار" : "بازگشت به داشبورد"}
-      hideBack={pathname === backHref || !backUsable}
+      backHref="/dashboard"
+      backLabel="بازگشت به میز کار"
+      hideBack={pathname === "/dashboard"}
     />
   );
 }

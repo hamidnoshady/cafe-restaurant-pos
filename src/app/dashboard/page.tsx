@@ -1,61 +1,42 @@
-import { toPersianDigits } from "@/lib/digits";
-import { formatJalali } from "@/lib/jalali";
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { withTenant } from "@/lib/db";
-import { getBackupHealth } from "@/lib/backup-service";
-import { isSetupComplete } from "@/lib/setup-state";
-import { effectiveFeatures } from "@/lib/features";
-import { getBusinessIndustry } from "@/lib/industry-guard";
-import { DashboardOverview } from "./overview/dashboard-overview";
+import { featureLockedForPage } from "@/lib/features";
+import { canManageAi } from "@/lib/ai-panel";
+import { FeatureLock } from "@/components/feature-lock";
 import { AiChatHub } from "./ai/ai-chat-hub";
 
 /**
- * `/dashboard` is the workspace home (Phase 35 Wave 2).
+ * `/dashboard` — the tenant's home, and the assistant's one canonical address.
  *
- * When the `workspace` feature flag is on, this is the chat home — the same
- * full-page assistant hub used by `/dashboard/ai`, composed from the shared
- * `useAiChat` core. When it is off, the page is exactly the legacy dashboard,
- * unchanged, now also reachable at `/dashboard/overview`. One branch, not two
- * component trees: the flag is read here and in the layout, and everything else
- * is shared. Note the assistant hub reads `?conversation=` / `?ctx=` from the
- * URL itself, so "open a recent thread" and "ask about this page" links just
- * navigate here with those params.
+ * There is exactly one dashboard: the AI chat hub, composed from the shared
+ * `useAiChat` core, with the composer's task/agent selection, attachments and
+ * propose→confirm actions. The old quick-report dashboard (and the
+ * `workspace` rollout flag that chose between the two) are retired — every
+ * tenant lands here, and the retired addresses (`/overview`, `/dashboard/overview`,
+ * `/ai`, `/dashboard/ai/<section>`) resolve here too, query parameters kept
+ * (the hub reads `?conversation=` / `?ctx=` / `?project=` and the
+ * `?aiPanel=<section>` management panel from the URL itself).
+ *
+ * The `ai_assistant` entitlement is preserved, not bypassed: a business
+ * without it still sees the same home, as the read-only `FeatureLock` preview
+ * (the API guard in `withTenantScope` keeps refusing `/api/ai/*` regardless).
+ *
+ * Management of the assistant (agents, coworkers, automations, activity,
+ * knowledge, usage) opens from the chat itself as the `?aiPanel=` drawer —
+ * owner/manager only, the same gate the retired `/ai` application applied;
+ * auto-apply authority stays owner-only.
  */
 export default async function DashboardPage() {
-  const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
   const session = await getSession();
-  const canSetup = session?.role === "owner" || session?.role === "manager";
-  const [setupDone, features, backupHealth, industryRead] = session
-    ? await withTenant(
-        session.businessId,
-        () =>
-          Promise.all([
-            isSetupComplete(session.businessId),
-            effectiveFeatures(session.businessId),
-            canSetup ? getBackupHealth(session.businessId).catch(() => null) : Promise.resolve(null),
-            getBusinessIndustry(session.businessId),
-          ]),
-        { locationId: session.locationId, userId: session.sub },
-      )
-    : [true, null, null, null];
-  const industry = industryRead ?? "food_service";
-  const workspaceEnabled = Boolean(features?.workspace);
-
-  if (workspaceEnabled) {
-    return (
-      <AiChatHub />
-    );
-  }
+  if (!session) redirect("/login");
+  const locked = await featureLockedForPage(session.businessId, "ai_assistant");
 
   return (
-    <DashboardOverview
-      today={today}
-      role={session?.role ?? null}
-      canSetup={canSetup}
-      setupDone={setupDone}
-      features={features}
-      backupHealth={backupHealth}
-      industry={industry}
-    />
+    <FeatureLock locked={locked} title="دستیار هوشمند">
+      <AiChatHub
+        canManageAi={canManageAi(session.role)}
+        canAutoApply={session.role === "owner"}
+      />
+    </FeatureLock>
   );
 }

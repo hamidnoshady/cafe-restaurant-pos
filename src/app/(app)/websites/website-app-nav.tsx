@@ -114,7 +114,7 @@ function WebsiteNavSkeleton() {
   );
 }
 
-export function WebsiteAppNav({ shell, role, pathname, onNavigate, workspaceShell }: AppShellNavProps) {
+export function WebsiteAppNav({ shell, role, pathname, onNavigate }: AppShellNavProps) {
   const [state, setState] = useState<WebsiteManagersState | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
@@ -146,8 +146,8 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate, workspaceShel
     };
   }, []);
 
-  const backHref = workspaceShell ? "/dashboard" : "/accounting/overview";
-  const backLabel = workspaceShell ? "بازگشت به میز کار" : "بازگشت به داشبورد";
+  const backHref = "/dashboard";
+  const backLabel = "بازگشت به میز کار";
   const canManage = role === "owner" || role === "manager";
 
   const cmsKeys = state ? visibleCmsSections(state) : [];

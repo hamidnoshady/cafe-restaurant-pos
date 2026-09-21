@@ -4,8 +4,10 @@
  * Growth, CRM and Website own their own workspaces. Website contains separate
  * Eshobe CMS and WordPress/Woo managers within one app.
  *
- * The assistant, workspace, settings and connections are shared
- * platform utilities; they do not have their own app availability state.
+ * The assistant, settings and connections are shared platform
+ * utilities; they do not have their own app availability state. (No
+ * `workspace` entry either: the rail around these four apps is the product's
+ * one shell, not a gated app of its own.)
  */
 import type { Industry } from "./industries";
 import { hasModule, MODULE_KEYS, type ModuleKey } from "./industry-profile";
@@ -126,20 +128,18 @@ export const APPS: AppDef[] = [
 // Holoo, the remote server sync, MCP and API keys — but it is a technical
 // utility of the shell, not a سکو: it is never listed in the platform
 // switchboard, never badged, and never gated by app availability. Its module
-// (`connections`) stays intentionally unassigned below, next to `ai` and
-// `workspace`, so `appForModule` answers null for it and every guard fails
-// open. Each tab still carries its own role and feature gate
-// (src/lib/connection-kinds.ts).
+// (`connections`) stays intentionally unassigned below, next to `ai`, so
+// `appForModule` answers null for it and every guard fails open. Each tab
+// still carries its own role and feature gate (src/lib/connection-kinds.ts).
 
 /**
  * Module → owning app, built once at load. A module claimed by two apps is a
  * real authoring mistake, not a runtime condition, so it throws on import —
  * the same "fail fast on invalid config" posture `industry-profile.ts` uses
- * for its prefix maps. The assistant (`ai`), workspace (`workspace`), shared settings (`settings`)
- * and technical-connections hub (`connections`) are
- * intentionally absent: the assistant is the chat *home*, not an app in the
- * rail, the workspace is the shell around the apps, and shared utilities are shell
- * infrastructure — see the NOTE above.
+ * for its prefix maps. The assistant (`ai`), shared settings (`settings`)
+ * and the technical-connections hub (`connections`) are intentionally
+ * absent: the assistant is the chat *home*, not an app in the rail, and the
+ * rest are shell infrastructure — see the NOTE above.
  */
 const MODULE_APP_MAP: Partial<Record<ModuleKey, AppKey>> = (() => {
   const map: Partial<Record<ModuleKey, AppKey>> = {};

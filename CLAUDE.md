@@ -61,11 +61,15 @@ comment happens to use, until you have checked this list.
   `industry-profile.ts`): a module is a trade-level capability ("does this trade have
   inventory?"); a section is a *presentational* menu item inside an app.
 - **AI assistant** (also «دستیار هوشمند», "the assistant") means the platform's
-  **main page**: the full-page chat home at `/dashboard` (when the workspace flag is
-  on) and `/dashboard/ai`. It is the workspace home, not a rail app — `apps.ts`
-  leaves `ai` unassigned on purpose. A prompt about the AI assistant is about that
-  home surface (chat, tools, replies), not about MCP, coworker jobs, or autopilot
-  unless those are named.
+  **main page**: the full-page chat home at `/dashboard` — the assistant IS the
+  dashboard for every tenant, unconditionally (the old `workspace` flag and the
+  quick-report dashboard are retired; `/overview`, `/ai`, `/dashboard/overview` and
+  `/dashboard/ai` are compat redirects). Its management sections (agents, coworkers,
+  automations, activity, knowledge, usage) open in the chat home's «مدیریت دستیار»
+  panel, addressed by `/dashboard?aiPanel=<key>` (`src/lib/ai-panel.ts`). It is the
+  workspace home, not a rail app — `apps.ts` leaves `ai` unassigned on purpose. A
+  prompt about the AI assistant is about that home surface (chat, tools, replies),
+  not about MCP, coworker jobs, or autopilot unless those are named.
 - **Website management** means **both** website systems, not one of them. Since
   migration 0138 they are two **managers inside one app**, `website`
   («مدیریت وب‌سایت», `/websites`):
@@ -504,7 +508,9 @@ has kept.
 
 Since Phase 32 an owner can hand the assistant a *standing* instruction — «هر شب که شیفت بسته
 می‌شود، ماندهٔ نان را ضایعات بزن» — as a **job** (`ai_coworker_jobs`) that fires on a business event
-or a schedule and lands in an approval inbox at `/dashboard/ai` ← «همکار هوشمند». See the "AI
+or a schedule and lands in the assistant's approval inbox — «مدیریت دستیار ← همکاران» on the
+dashboard chat home (`/dashboard?aiPanel=coworkers`; the retired `/dashboard/ai` address forwards
+there). See the "AI
 coworker" section of [README.md](README.md) and
 [docs/phases/Phase-32-AI-Coworker.md](docs/phases/Phase-32-AI-Coworker.md).
 

@@ -1,31 +1,13 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
-import { featureLockedForPage } from "@/lib/features";
-import { AiWorkspacePage } from "../ai-workspace-page";
-import { AgentsManager } from "./agents-manager";
+import { aiPanelHref } from "@/lib/ai-panel";
 
 /**
- * «ایجنت‌ها» — the AI Workspace's custom-agent section (Phase I).
- *
- * The engine shipped in Phase D (custom agents with their own instructions,
- * read-tool allowlist and action allowlist; the chat route already runs a turn
- * under one via `agentId`), but its management UI was deferred here. This page
- * mounts the manager behind the same `ai_assistant` lock and owner/manager gate
- * the rest of the workspace uses.
+ * Compatibility redirect: this assistant management section is no longer a
+ * page of a second AI application — it is a section of the dashboard chat
+ * home's «مدیریت دستیار» panel. Bookmarked URLs keep working, addressed the
+ * way `aiPanelHref` names them, and the panel's own owner/manager gate
+ * applies on arrival, exactly as the page's gate did here.
  */
-export default async function AiAgentsPage() {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
-  const locked = await featureLockedForPage(session.businessId, "ai_assistant");
-
-  return (
-    <AiWorkspacePage
-      locked={locked}
-      title="ایجنت‌ها"
-      description="دستیارهای سفارشی کسب‌وکار: هر ایجنت نقش، ابزارهای خواندنی و اجازهٔ عملیات خودش را دارد و می‌توانید در گفت‌وگو آن را انتخاب کنید."
-    >
-      <AgentsManager />
-    </AiWorkspacePage>
-  );
+export default function Page() {
+  redirect(aiPanelHref("agents"));
 }

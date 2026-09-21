@@ -159,8 +159,6 @@ describe("legacy redirects", () => {
 
   it("moves the workspace's own pages to their top-level routes", () => {
     const moved: readonly (readonly [string, string])[] = [
-      ["/dashboard/overview", "/overview"],
-      ["/dashboard/ai", "/ai"],
       ["/dashboard/media", "/media"],
       ["/dashboard/knowledge", "/knowledge"],
       ["/dashboard/knowledge/a/pos-basics", "/knowledge/a/pos-basics"],
@@ -175,6 +173,41 @@ describe("legacy redirects", () => {
       expect(canonicalPathForLegacy(canonical), canonical).toBeNull();
       expect(isCanonicalAppPathname(canonical), canonical).toBe(true);
     }
+  });
+
+  it("resolves the retired dashboard and assistant addresses back onto /dashboard", () => {
+    // The old quick-report dashboard and the second AI application are gone;
+    // every one of their addresses lands on the chat home. Section suffixes
+    // of the retired `/dashboard/ai` tree name the management panel's key
+    // instead, and an unknown suffix falls back to the home rather than 404.
+    const cases: readonly (readonly [string, string])[] = [
+      ["/dashboard/overview", "/dashboard"],
+      ["/dashboard/ai", "/dashboard"],
+      ["/dashboard/ai/agents", "/dashboard?aiPanel=agents"],
+      ["/dashboard/ai/coworkers", "/dashboard?aiPanel=coworkers"],
+      ["/dashboard/ai/usage", "/dashboard?aiPanel=usage"],
+      ["/dashboard/ai/not-a-section", "/dashboard"],
+    ];
+    for (const [legacy, canonical] of cases) {
+      const [path, query] = canonical.split("?");
+      const search = query ? `?${query}` : "";
+      expect(legacyRedirectTarget(legacy, ""), legacy).toBe(`${path}${search}`);
+      // The target is the workspace home itself — never re-routed, so no
+      // redirect chain is possible.
+      expect(canonicalPathForLegacy(path), canonical).toBeNull();
+      expect(legacyRedirectTarget(canonical, ""), canonical).toBeNull();
+      void search;
+    }
+  });
+
+  it("keeps the assistant's deep-link params across the redirect", () => {
+    expect(legacyRedirectTarget("/dashboard/ai", "?conversation=abc-123")).toBe(
+      "/dashboard?conversation=abc-123",
+    );
+    expect(legacyRedirectTarget("/dashboard/overview", "?ctx=pos")).toBe("/dashboard?ctx=pos");
+    expect(legacyRedirectTarget("/dashboard/ai/coworkers", "?project=p-1")).toBe(
+      "/dashboard?aiPanel=coworkers&project=p-1",
+    );
   });
 
   it("moves the second-wave work areas into Accounting", () => {
