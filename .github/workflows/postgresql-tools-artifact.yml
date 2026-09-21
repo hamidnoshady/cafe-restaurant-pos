@@ -2,10 +2,26 @@ name: postgresql-tools-artifact
 
 on:
   workflow_dispatch:
+    inputs:
+      source_mode:
+        description: 'Controlled input source'
+        type: choice
+        required: true
+        default: official-source-build
+        options:
+          - official-source-build
+          - protected-artifact
+  pull_request:
+    paths:
+      - '.github/workflows/postgresql-tools-artifact.yml'
+      - 'scripts/build-postgresql-tools-from-source.ps1'
+      - 'scripts/stage-postgresql-tools.mjs'
+      - 'scripts/accept-packaged-pg-tools.mjs'
+      - 'scripts/accept-packaged-restore.ts'
 
 concurrency:
-  group: postgresql-tools-artifact
-  cancel-in-progress: false
+  group: postgresql-tools-artifact-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -15,24 +31,117 @@ defaults:
     shell: powershell
 
 env:
+  PG_SOURCE_VERSION: '16.15'
+  PG_SOURCE_URL: https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.gz
+  PG_SOURCE_SHA256: 4f200ca23dfb120ff9838f13ce06014aad1d3c432d16ee9f93ab2000c0eeef7b
   PG_TOOLS_SOURCE_URL: ${{ vars.PG_TOOLS_SOURCE_URL }}
   PG_TOOLS_PROVENANCE_URL: ${{ vars.PG_TOOLS_PROVENANCE_URL }}
   PG_TOOLS_ALLOWED_HOST: ${{ vars.PG_TOOLS_ALLOWED_HOST }}
   PG_TOOLS_ARTIFACT_SHA256: ${{ vars.PG_TOOLS_ARTIFACT_SHA256 }}
+  PGPORT: '55432'
+  DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
 
 jobs:
+  verify-controlled-source-build:
+    if: github.event_name == 'pull_request'
+    name: build and execute pinned-source PostgreSQL tools
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Download exact official PostgreSQL source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri $env:PG_SOURCE_URL -OutFile "$env:RUNNER_TEMP\postgresql-source.tar.gz" -MaximumRedirection 0
+          $actual = (Get-FileHash "$env:RUNNER_TEMP\postgresql-source.tar.gz" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:PG_SOURCE_SHA256) { throw "Pinned PostgreSQL source SHA-256 mismatch: $actual" }
+
+      - name: Build minimal Windows x64 client tools from pinned source
+        run: |
+          .\scripts\build-postgresql-tools-from-source.ps1 `
+            -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
+            -SourceSha256 $env:PG_SOURCE_SHA256 `
+            -PostgresVersion $env:PG_SOURCE_VERSION `
+            -OutputDirectory controlled-input `
+            -Organization "${{ github.repository_owner }}"
+          $result = Get-Content controlled-input\source-build.json -Raw | ConvertFrom-Json
+          "PG_TOOLS_ARTIFACT_SHA256=$($result.artifactSha256)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Execute allowlist, provenance, hash and version validator
+        env:
+          PG_TOOLS_ARCHIVE: ${{ github.workspace }}\controlled-input\postgresql-16-windows-x64-client-tools.zip
+          PG_TOOLS_PROVENANCE: ${{ github.workspace }}\controlled-input\provenance.json
+        run: node scripts/stage-postgresql-tools.mjs --require
+
+      - name: Install test dependencies and start disposable PostgreSQL 16
+        env:
+          PGDATA: ${{ runner.temp }}\source-tools-pgdata
+        run: |
+          npm ci
+          npm run db:dev:start
+          npm run db:migrate
+
+      - name: Execute custom-format, corruption and safe-swap acceptance
+        env:
+          PG_TOOLS_DIR: ${{ github.workspace }}\.desktop-assets\postgresql-tools
+        run: |
+          node scripts/accept-packaged-pg-tools.mjs
+          npx tsx scripts/accept-packaged-restore.ts
+
+      - name: Stop disposable PostgreSQL
+        if: always()
+        continue-on-error: true
+        env:
+          PGDATA: ${{ runner.temp }}\source-tools-pgdata
+        run: npm run db:dev:stop
+
+      - name: Upload controlled-source build evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: postgresql-tools-source-build-evidence-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            controlled-input/provenance.json
+            controlled-input/source-build.json
+            .desktop-assets/postgresql-tools/provenance.json
+            packaged-pg-tools-acceptance.json
+            packaged-restore-acceptance.json
+
   validate-and-publish:
+    if: github.event_name == 'workflow_dispatch'
     name: validate controlled PostgreSQL 16 client payload
     runs-on: windows-latest
     environment: postgresql-tools
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
 
+      - name: Build from exact official source
+        if: inputs.source_mode == 'official-source-build'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri $env:PG_SOURCE_URL -OutFile "$env:RUNNER_TEMP\postgresql-source.tar.gz" -MaximumRedirection 0
+          .\scripts\build-postgresql-tools-from-source.ps1 `
+            -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
+            -SourceSha256 $env:PG_SOURCE_SHA256 `
+            -PostgresVersion $env:PG_SOURCE_VERSION `
+            -OutputDirectory controlled-input `
+            -Organization "${{ github.repository_owner }}"
+          $result = Get-Content controlled-input\source-build.json -Raw | ConvertFrom-Json
+          "PG_TOOLS_ARTIFACT_SHA256=$($result.artifactSha256)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Download only from the protected organization host
+        if: inputs.source_mode == 'protected-artifact'
         env:
           ARTIFACT_BEARER: ${{ secrets.PG_TOOLS_ARTIFACT_BEARER }}
         run: |
@@ -64,11 +173,13 @@ jobs:
         run: |
           $runtime = Get-Content .desktop-assets\postgresql-tools\provenance.json -Raw | ConvertFrom-Json
           if ($runtime.status -ne 'verified' -or $runtime.postgresMajor -ne 16) { throw 'Staged tools did not verify as PostgreSQL 16' }
+          $sourceHost = if ("${{ inputs.source_mode }}" -eq 'official-source-build') { 'ftp.postgresql.org (pinned official source)' } else { $env:PG_TOOLS_ALLOWED_HOST }
           [ordered]@{
             schemaVersion = 1
             status = 'PASS'
             commit = $env:GITHUB_SHA
-            sourceHost = $env:PG_TOOLS_ALLOWED_HOST
+            sourceMode = "${{ inputs.source_mode }}"
+            sourceHost = $sourceHost
             artifactSha256 = $env:PG_TOOLS_ARTIFACT_SHA256
             postgresVersion = $runtime.postgresVersion
             organization = $runtime.artifact.organization
@@ -84,4 +195,5 @@ jobs:
           path: |
             controlled-input/postgresql-16-windows-x64-client-tools.zip
             controlled-input/provenance.json
+            controlled-input/source-build.json
             controlled-input/validation.json
