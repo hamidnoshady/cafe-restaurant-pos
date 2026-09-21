@@ -13,9 +13,11 @@ import {
   targetDatabaseName,
 } from "../src/lib/restore-engine";
 
-const databaseUrl = process.env.DATABASE_URL;
-const toolsDir = process.env.PG_TOOLS_DIR;
-if (!databaseUrl || !toolsDir) throw new Error("DATABASE_URL and PG_TOOLS_DIR are required");
+const configuredDatabaseUrl = process.env.DATABASE_URL;
+const configuredToolsDir = process.env.PG_TOOLS_DIR;
+if (!configuredDatabaseUrl || !configuredToolsDir) throw new Error("DATABASE_URL and PG_TOOLS_DIR are required");
+const databaseUrl: string = configuredDatabaseUrl;
+const toolsDir: string = configuredToolsDir;
 const pgDump = path.join(toolsDir, "bin", process.platform === "win32" ? "pg_dump.exe" : "pg_dump");
 const pgRestore = path.join(toolsDir, "bin", process.platform === "win32" ? "pg_restore.exe" : "pg_restore");
 const reportPath = path.resolve(process.env.PACKAGED_RESTORE_REPORT || "packaged-restore-acceptance.json");

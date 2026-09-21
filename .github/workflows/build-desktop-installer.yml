@@ -14,6 +14,10 @@ on:
       - 'public/**'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
+      - 'scripts/build-postgresql-tools-from-source.ps1'
+      - 'scripts/stage-postgresql-tools.mjs'
+      - 'scripts/accept-packaged-pg-tools.mjs'
+      - 'scripts/accept-packaged-restore.ts'
       - 'scripts/report-desktop-size.mjs'
       - 'scripts/verify-packaged-electron-runtime.ps1'
       - 'scripts/desktop/**'
@@ -34,6 +38,10 @@ on:
       - 'public/**'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
+      - 'scripts/build-postgresql-tools-from-source.ps1'
+      - 'scripts/stage-postgresql-tools.mjs'
+      - 'scripts/accept-packaged-pg-tools.mjs'
+      - 'scripts/accept-packaged-restore.ts'
       - 'scripts/report-desktop-size.mjs'
       - 'scripts/verify-packaged-electron-runtime.ps1'
       - 'scripts/desktop/**'
@@ -57,6 +65,11 @@ defaults:
 env:
   NODE_OPTIONS: --max-old-space-size=4096
   JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
+  PG_SOURCE_VERSION: '16.15'
+  PG_SOURCE_URL: https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.gz
+  PG_SOURCE_SHA256: 4f200ca23dfb120ff9838f13ce06014aad1d3c432d16ee9f93ab2000c0eeef7b
+  PGPORT: '55432'
+  DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
   # PR/branch artifacts are deliberately unsigned and are never release eligible.
   WINDOWS_SIGNING_PROVIDER: unsigned
 
@@ -84,8 +97,24 @@ jobs:
       - name: Install application dependencies
         run: npm ci
 
-      - name: Stage explicit development PostgreSQL-tools status
-        run: npm run desktop:stage-pg-tools
+      - name: Build minimal PostgreSQL 16 client tools from pinned official source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri $env:PG_SOURCE_URL -OutFile "$env:RUNNER_TEMP\postgresql-source.tar.gz" -MaximumRedirection 0
+          .\scripts\build-postgresql-tools-from-source.ps1 `
+            -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
+            -SourceSha256 $env:PG_SOURCE_SHA256 `
+            -PostgresVersion $env:PG_SOURCE_VERSION `
+            -OutputDirectory controlled-input `
+            -Organization "${{ github.repository_owner }}"
+          $result = Get-Content controlled-input\source-build.json -Raw | ConvertFrom-Json
+          "PG_TOOLS_ARTIFACT_SHA256=$($result.artifactSha256)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Stage verified PostgreSQL tools without runtime network fallback
+        env:
+          PG_TOOLS_ARCHIVE: ${{ github.workspace }}\controlled-input\postgresql-16-windows-x64-client-tools.zip
+          PG_TOOLS_PROVENANCE: ${{ github.workspace }}\controlled-input\provenance.json
+        run: npm run desktop:stage-pg-tools:release
 
       - name: Production dependency vulnerability gate
         run: npm audit --omit=dev --audit-level=high
@@ -170,6 +199,27 @@ jobs:
           if (Test-Path "$root/resources/desktop-runtime/.next/cache") { Stop-ShapeCheck ".next/cache leaked into runtime" }
           Write-Host "PostgreSQL payload: $($postgres[0].FullName)"
 
+      - name: Start disposable PostgreSQL 16 for packaged-tools acceptance
+        env:
+          PGDATA: ${{ runner.temp }}\package-tools-pgdata
+        run: |
+          npm run db:dev:start
+          npm run db:migrate
+
+      - name: Execute tools from the actual packaged runtime
+        env:
+          PG_TOOLS_DIR: ${{ github.workspace }}\electron\dist\win-unpacked\resources\postgresql-tools
+        run: |
+          node scripts/accept-packaged-pg-tools.mjs
+          npx tsx scripts/accept-packaged-restore.ts
+
+      - name: Stop packaged-tools acceptance PostgreSQL
+        if: always()
+        continue-on-error: true
+        env:
+          PGDATA: ${{ runner.temp }}\package-tools-pgdata
+        run: npm run db:dev:stop
+
       - name: Install and run actual packaged desktop twice as a standard user
         run: |
           $ErrorActionPreference = "Stop"
@@ -251,12 +301,15 @@ jobs:
           $exe = Get-ChildItem electron/dist -File -Filter *.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $exe) { throw "NSIS installer missing" }
           $unpacked = (Get-ChildItem electron/dist/win-unpacked -Recurse -File | Measure-Object Length -Sum).Sum
+          $tools = (Get-ChildItem electron/dist/win-unpacked/resources/postgresql-tools -Recurse -File | Measure-Object Length -Sum).Sum
           $installerMiB = [math]::Round($exe.Length / 1MB, 1)
           $installedMiB = [math]::Round($unpacked / 1MB, 1)
+          $toolsMiB = [math]::Round($tools / 1MB, 1)
           Add-GitHubOutput "installer=$installerMiB"
           Add-GitHubOutput "installed=$installedMiB"
+          Add-GitHubOutput "tools=$toolsMiB"
           Add-GitHubOutput "name=$($exe.Name)"
-          Write-Host "::notice title=Desktop package sizes::Installer $installerMiB MiB; unpacked installed payload $installedMiB MiB"
+          Write-Host "::notice title=Desktop package sizes::Installer $installerMiB MiB; unpacked installed payload $installedMiB MiB; PostgreSQL tools $toolsMiB MiB"
           if ($exe.Length -gt 175MB) { throw "Installer $installerMiB MiB exceeds the 175 MiB release baseline" }
           if ($unpacked -gt 600MB) { throw "Installed payload $installedMiB MiB exceeds 600 MiB budget" }
 
@@ -276,7 +329,7 @@ jobs:
             platform = "$($os.Caption) build $($os.BuildNumber) (Windows Server, not retail Windows 11)"
             signingStatus = "UNSIGNED DEVELOPMENT"
             desktopRuntime = @{ electron=$runtime.electron; node=$runtime.node; chromium=$runtime.chromium }
-            checks = @("supported-electron-node-runtime", "standard-user-install", "postgresql-utf8-and-migrations", "restricted-role-boot", "bootstrap-and-auth", "clean-stop", "second-launch-persistence", "size-budgets")
+            checks = @("supported-electron-node-runtime", "pinned-source-postgresql-tools", "packaged-custom-dump-restore", "verified-restore-swap-and-rollback", "standard-user-install", "postgresql-utf8-and-migrations", "restricted-role-boot", "bootstrap-and-auth", "clean-stop", "second-launch-persistence", "size-budgets")
           } | ConvertTo-Json -Depth 6 | Set-Content windows-server-package-evidence.json -Encoding UTF8
 
       - name: Upload installer
@@ -295,6 +348,10 @@ jobs:
             desktop-size-report.md
             windows-signature-verification.json
             packaged-electron-runtime.json
+            packaged-pg-tools-acceptance.json
+            packaged-restore-acceptance.json
+            controlled-input/source-build.json
+            controlled-input/provenance.json
             windows-server-package-evidence.json
             electron/dist/windows-signing-status.json
           if-no-files-found: error
@@ -304,13 +361,15 @@ jobs:
           NAME: ${{ steps.sizes.outputs.name }}
           INSTALLER: ${{ steps.sizes.outputs.installer }}
           INSTALLED: ${{ steps.sizes.outputs.installed }}
+          PG_TOOLS: ${{ steps.sizes.outputs.tools }}
         run: |
           $summary = @"
           ## Business Suite Windows package
 
           - Installer: **$env:NAME** — **$env:INSTALLER MiB**
           - Unpacked installed payload: **$env:INSTALLED MiB**
+          - PostgreSQL backup tools: **$env:PG_TOOLS MiB**, built from pinned PostgreSQL $env:PG_SOURCE_VERSION source
           - Runtime: Next standalone trace + bundled custom server; no root node_modules
-          - Acceptance: packaged executable initialized PostgreSQL UTF-8, migrated, passed RLS boot, bootstrapped through the real API, authenticated, stopped, restarted and retained data
+          - Acceptance: packaged pg_dump/pg_restore passed custom-format, corruption, encrypted staging, emergency-backup, swap and rollback checks; the packaged executable initialized PostgreSQL UTF-8, migrated, passed RLS boot, bootstrapped through the real API, authenticated, stopped, restarted and retained data
           "@
           [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$summary`n", (New-Object System.Text.UTF8Encoding($false)))
