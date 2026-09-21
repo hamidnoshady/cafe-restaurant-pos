@@ -13,8 +13,9 @@
 # Triggers: `workflow_dispatch` (run it by hand before either release build),
 # plus `pull_request` and `push` to `main`, scoped with `paths:` to only the
 # files this workflow actually checks (`Dockerfile`, `electron/`, desktop build
-# scripts, `public/windows/`, `wordpress-plugin/`). It remains active whenever
-# production application code or one of those shipped surfaces changes.
+# scripts, release workflow PowerShell, `public/windows/`, `wordpress-plugin/`).
+# It remains active whenever production application code or one of those shipped
+# surfaces changes.
 #
 # It deliberately does not publish or retain release artifacts. It performs a
 # no-push production-container build; `.exe` packaging remains in
@@ -43,7 +44,7 @@ on:
       - 'docker-entrypoint.sh'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
-      - '.github/workflows/verify-shippables.yml'
+      - '.github/workflows/*.yml'
   # GitHub suppresses PR-synchronize events created by the Arena GitHub App.
   # Keep shipped-runtime checks active on those branch pushes as well.
   push:
@@ -67,7 +68,7 @@ on:
       - 'docker-entrypoint.sh'
       - 'public/windows/**'
       - 'wordpress-plugin/**'
-      - '.github/workflows/verify-shippables.yml'
+      - '.github/workflows/*.yml'
 
 # Keep PR and Arena-push groups distinct. Cancelling the fallback run leaves
 # cancelled check contexts attached to the same review commit.
