@@ -148,16 +148,20 @@ jobs:
 
       - name: Assert one Windows PostgreSQL payload and no foreign payload
         run: |
+          function Stop-ShapeCheck([string]$Message) {
+            Write-Host "::error title=Packaged desktop shape::$Message"
+            throw $Message
+          }
           $root = "electron/dist/win-unpacked"
           $postgres = @(Get-ChildItem $root -Recurse -File -Filter postgres.exe)
           $initdb = @(Get-ChildItem $root -Recurse -File -Filter initdb.exe)
-          if ($postgres.Count -ne 1) { throw "Expected exactly one postgres.exe, found $($postgres.Count)" }
-          if ($initdb.Count -ne 1) { throw "Expected exactly one initdb.exe, found $($initdb.Count)" }
+          if ($postgres.Count -ne 1) { Stop-ShapeCheck "Expected exactly one postgres.exe, found $($postgres.Count): $($postgres.FullName -join ', ')" }
+          if ($initdb.Count -ne 1) { Stop-ShapeCheck "Expected exactly one initdb.exe, found $($initdb.Count): $($initdb.FullName -join ', ')" }
           $foreign = @(Get-ChildItem $root -Recurse -Directory | Where-Object { $_.FullName -match '@embedded-postgres[\\/](linux|darwin)-' })
-          if ($foreign.Count) { throw "Foreign PostgreSQL payload found: $($foreign.FullName -join ', ')" }
-          $rootModules = Get-ChildItem "$root/resources/desktop-runtime/node_modules" -ErrorAction Stop
-          if (Test-Path "$root/resources/desktop-runtime/node_modules/typescript") { throw "TypeScript leaked into runtime" }
-          if (Test-Path "$root/resources/desktop-runtime/.next/cache") { throw ".next/cache leaked into runtime" }
+          if ($foreign.Count) { Stop-ShapeCheck "Foreign PostgreSQL payload found: $($foreign.FullName -join ', ')" }
+          if (-not (Test-Path "$root/resources/desktop-runtime/node_modules")) { Stop-ShapeCheck "Positive desktop runtime node_modules is missing" }
+          if (Test-Path "$root/resources/desktop-runtime/node_modules/typescript") { Stop-ShapeCheck "TypeScript leaked into runtime" }
+          if (Test-Path "$root/resources/desktop-runtime/.next/cache") { Stop-ShapeCheck ".next/cache leaked into runtime" }
           Write-Host "PostgreSQL payload: $($postgres[0].FullName)"
 
       - name: Install and run actual packaged desktop twice as a standard user
