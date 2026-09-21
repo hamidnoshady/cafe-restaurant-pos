@@ -48,7 +48,13 @@ interface Filters {
   tagId: string;
 }
 
-const EMPTY_FILTERS: Filters = { q: "", status: "", categoryId: "", section: "", tagId: "" };
+const EMPTY_FILTERS: Filters = {
+  q: "",
+  status: "",
+  categoryId: "",
+  section: "",
+  tagId: "",
+};
 
 export function ArticlesPanel({
   categories,
@@ -75,9 +81,10 @@ export function ArticlesPanel({
     if (f.categoryId) params.set("category", f.categoryId);
     if (f.section) params.set("section", f.section);
     if (f.tagId) params.set("tag", f.tagId);
-    const { ok, data } = await api<{ articles: ConsoleArticle[]; error?: string }>(
-      `/api/platform/knowledge/articles?${params.toString()}`,
-    );
+    const { ok, data } = await api<{
+      articles: ConsoleArticle[];
+      error?: string;
+    }>(`/api/platform/knowledge/articles?${params.toString()}`);
     if (ok) {
       setRows(data.articles);
       setError("");
@@ -105,7 +112,7 @@ export function ArticlesPanel({
 
   const categoryTitle = useMemo(() => {
     const map = new Map((categories ?? []).map((c) => [c.id, c.title]));
-    return (id: string | null) => (id ? map.get(id) ?? "—" : "بدون دسته");
+    return (id: string | null) => (id ? (map.get(id) ?? "—") : "بدون دسته");
   }, [categories]);
 
   async function remove(row: ConsoleArticle) {
@@ -152,8 +159,9 @@ export function ArticlesPanel({
   return (
     <div className="mx-auto w-full max-w-6xl">
       <InfoBox>
-        هر راهنما با متن (مارک‌داون)، تصویر، ویدیو و کد نوشته می‌شود؛ تیترهایش خودکار لنگر می‌گیرند
-        و اعضا در مرکز آموزش جست‌وجوشان می‌کنند. راهنمای «منتشرشده» برای همهٔ کسب‌وکارها فعال است.
+        هر راهنما با متن (مارک‌داون)، تصویر، ویدیو و کد نوشته می‌شود؛ تیترهایش
+        خودکار لنگر می‌گیرند و اعضا در مرکز آموزش جست‌وجوشان می‌کنند. راهنمای
+        «منتشرشده» برای همهٔ کسب‌وکارها فعال است.
       </InfoBox>
 
       <ErrorBox>{error}</ErrorBox>
@@ -170,6 +178,7 @@ export function ArticlesPanel({
             value={filters.q}
             onChange={(e) => setFilter({ q: e.target.value })}
             placeholder="جست‌وجو در عنوان و متن…"
+            aria-label="جست‌وجو در عنوان و متن"
             className={`${inputClass} ps-9`}
           />
         </div>
@@ -251,8 +260,12 @@ export function ArticlesPanel({
                 <th className="px-4 py-3 text-start font-medium">دسته</th>
                 <th className="px-4 py-3 text-start font-medium">بخش‌ها</th>
                 <th className="px-4 py-3 text-start font-medium">وضعیت</th>
-                <th className="px-4 py-3 text-start font-medium">به‌روزرسانی</th>
-                {canManage ? <th className="px-4 py-3 text-start font-medium">عملیات</th> : null}
+                <th className="px-4 py-3 text-start font-medium">
+                  به‌روزرسانی
+                </th>
+                {canManage ? (
+                  <th className="px-4 py-3 text-start font-medium">عملیات</th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -261,19 +274,31 @@ export function ArticlesPanel({
                   <td className="max-w-[260px] px-4 py-3">
                     <p className="font-medium text-foreground">
                       {row.videoUrl ? (
-                        <EyeIcon className="me-1 inline size-3.5 text-muted-foreground" aria-hidden="true" />
+                        <EyeIcon
+                          className="me-1 inline size-3.5 text-muted-foreground"
+                          aria-hidden="true"
+                        />
                       ) : null}
                       {row.title}
                     </p>
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground" dir="rtl">
+                    <p
+                      className="mt-0.5 truncate text-[11px] text-muted-foreground"
+                      dir="rtl"
+                    >
                       /dashboard/knowledge/a/{row.slug}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{categoryTitle(row.categoryId)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {categoryTitle(row.categoryId)}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {row.sectionKeys.length
                       ? row.sectionKeys
-                          .map((k) => KNOWLEDGE_SECTIONS.find((s) => s.key === k)?.label ?? k)
+                          .map(
+                            (k) =>
+                              KNOWLEDGE_SECTIONS.find((s) => s.key === k)
+                                ?.label ?? k,
+                          )
                           .join("، ")
                       : "—"}
                   </td>
@@ -288,13 +313,22 @@ export function ArticlesPanel({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(row.updatedAt)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {fmtDate(row.updatedAt)}
+                  </td>
                   {canManage ? (
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => setEditing(row)}>
+                        <Button
+                          variant="ghost"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => setEditing(row)}
+                        >
                           <span className="inline-flex items-center gap-1.5">
-                            <PencilIcon className="size-3.5" aria-hidden="true" />
+                            <PencilIcon
+                              className="size-3.5"
+                              aria-hidden="true"
+                            />
                             ویرایش
                           </span>
                         </Button>
@@ -304,7 +338,9 @@ export function ArticlesPanel({
                           disabled={busyId === row.id}
                           onClick={() => void quickToggleStatus(row)}
                         >
-                          {row.status === "published" ? "پیش‌نویس شود" : "انتشار"}
+                          {row.status === "published"
+                            ? "پیش‌نویس شود"
+                            : "انتشار"}
                         </Button>
                         <Button
                           variant="ghost"
@@ -350,15 +386,64 @@ type Insert =
   | { kind: "block"; text: string };
 
 const TOOLBAR: { label: string; title: string; insert: Insert }[] = [
-  { label: "تیتر۲", title: "تیتر سطح ۲ (لنگردار)", insert: { kind: "block", text: "\n## تیتر جدید\n" } },
-  { label: "تیتر۳", title: "تیتر سطح ۳", insert: { kind: "block", text: "\n### زیرتیتر\n" } },
-  { label: "پ", title: "پررنگ", insert: { kind: "wrap", before: "**", after: "**", placeholder: "متن پررنگ" } },
-  { label: "• لیست", title: "فهرست نشانه‌دار", insert: { kind: "block", text: "\n- مورد اول\n- مورد دوم\n" } },
-  { label: "1. لیست", title: "فهرست شماره‌دار", insert: { kind: "block", text: "\n1. قدم اول\n2. قدم دوم\n" } },
-  { label: "کد", title: "بلوک کد", insert: { kind: "block", text: "\n```\nکد اینجا\n```\n" } },
-  { label: "تصویر", title: "تصویر", insert: { kind: "block", text: "\n![توضیح تصویر](https://example.com/image.png)\n" } },
-  { label: "پیوند", title: "پیوند", insert: { kind: "wrap", before: "[", after: "](https://example.com)", placeholder: "متن پیوند" } },
-  { label: "نکته", title: "نقل‌قول/نکته", insert: { kind: "block", text: "\n> نکتهٔ مهم اینجا\n" } },
+  {
+    label: "تیتر۲",
+    title: "تیتر سطح ۲ (لنگردار)",
+    insert: { kind: "block", text: "\n## تیتر جدید\n" },
+  },
+  {
+    label: "تیتر۳",
+    title: "تیتر سطح ۳",
+    insert: { kind: "block", text: "\n### زیرتیتر\n" },
+  },
+  {
+    label: "پ",
+    title: "پررنگ",
+    insert: {
+      kind: "wrap",
+      before: "**",
+      after: "**",
+      placeholder: "متن پررنگ",
+    },
+  },
+  {
+    label: "• لیست",
+    title: "فهرست نشانه‌دار",
+    insert: { kind: "block", text: "\n- مورد اول\n- مورد دوم\n" },
+  },
+  {
+    label: "1. لیست",
+    title: "فهرست شماره‌دار",
+    insert: { kind: "block", text: "\n1. قدم اول\n2. قدم دوم\n" },
+  },
+  {
+    label: "کد",
+    title: "بلوک کد",
+    insert: { kind: "block", text: "\n```\nکد اینجا\n```\n" },
+  },
+  {
+    label: "تصویر",
+    title: "تصویر",
+    insert: {
+      kind: "block",
+      text: "\n![توضیح تصویر](https://example.com/image.png)\n",
+    },
+  },
+  {
+    label: "پیوند",
+    title: "پیوند",
+    insert: {
+      kind: "wrap",
+      before: "[",
+      after: "](https://example.com)",
+      placeholder: "متن پیوند",
+    },
+  },
+  {
+    label: "نکته",
+    title: "نقل‌قول/نکته",
+    insert: { kind: "block", text: "\n> نکتهٔ مهم اینجا\n" },
+  },
 ];
 
 function ArticleEditor({
@@ -379,12 +464,18 @@ function ArticleEditor({
   const [summary, setSummary] = useState(article?.summary ?? "");
   const [bodyMd, setBodyMd] = useState(article?.bodyMd ?? "");
   const [categoryId, setCategoryId] = useState(article?.categoryId ?? "");
-  const [sectionKeys, setSectionKeys] = useState<string[]>(article?.sectionKeys ?? []);
+  const [sectionKeys, setSectionKeys] = useState<string[]>(
+    article?.sectionKeys ?? [],
+  );
   const [tagIds, setTagIds] = useState<string[]>(article?.tagIds ?? []);
   const [videoUrl, setVideoUrl] = useState(article?.videoUrl ?? "");
-  const [coverImageUrl, setCoverImageUrl] = useState(article?.coverImageUrl ?? "");
+  const [coverImageUrl, setCoverImageUrl] = useState(
+    article?.coverImageUrl ?? "",
+  );
   const [sortOrder, setSortOrder] = useState(article?.sortOrder ?? 0);
-  const [status, setStatus] = useState<"draft" | "published">(article?.status ?? "draft");
+  const [status, setStatus] = useState<"draft" | "published">(
+    article?.status ?? "draft",
+  );
   const [showPreview, setShowPreview] = useState(true);
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -400,8 +491,14 @@ function ArticleEditor({
     let caret: number;
     if (insert.kind === "wrap") {
       const selected = value.slice(start, end) || insert.placeholder;
-      next = value.slice(0, start) + insert.before + selected + insert.after + value.slice(end);
-      caret = start + insert.before.length + selected.length + insert.after.length;
+      next =
+        value.slice(0, start) +
+        insert.before +
+        selected +
+        insert.after +
+        value.slice(end);
+      caret =
+        start + insert.before.length + selected.length + insert.after.length;
     } else {
       next = value.slice(0, start) + insert.text + value.slice(end);
       caret = start + insert.text.length;
@@ -414,7 +511,9 @@ function ArticleEditor({
   }
 
   function toggleList(list: string[], value: string): string[] {
-    return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+    return list.includes(value)
+      ? list.filter((v) => v !== value)
+      : [...list, value];
   }
 
   async function save() {
@@ -434,7 +533,9 @@ function ArticleEditor({
       status,
     };
     const { ok, data } = await api<{ error?: string }>(
-      article ? `/api/platform/knowledge/articles/${article.id}` : "/api/platform/knowledge/articles",
+      article
+        ? `/api/platform/knowledge/articles/${article.id}`
+        : "/api/platform/knowledge/articles",
       { method: article ? "PUT" : "POST", body: JSON.stringify(payload) },
     );
     setBusy(false);
@@ -459,14 +560,21 @@ function ArticleEditor({
     >
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-popover">
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
-          <BookOpenIcon className="size-5 text-sky-700 dark:text-sky-300" aria-hidden="true" />
+          <BookOpenIcon
+            className="size-5 text-sky-700 dark:text-sky-300"
+            aria-hidden="true"
+          />
           <h3 className="text-base font-bold text-foreground">
             {article ? `ویرایش «${article.title}»` : "راهنمای جدید"}
           </h3>
           <span className="me-auto text-[11px] text-muted-foreground" dir="ltr">
             /dashboard/knowledge/a/{effectiveSlug}
           </span>
-          <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => setShowPreview((v) => !v)}>
+          <Button
+            variant="ghost"
+            className="h-8 px-3 text-xs"
+            onClick={() => setShowPreview((v) => !v)}
+          >
             <span className="inline-flex items-center gap-1.5">
               <EyeIcon className="size-3.5" aria-hidden="true" />
               {showPreview ? "بستن پیش‌نمایش" : "پیش‌نمایش زنده"}
@@ -478,7 +586,10 @@ function ArticleEditor({
           <div className="grid gap-4 lg:grid-cols-2">
             {/* ------------------------- left: fields ------------------------- */}
             <div>
-              <Field label="عنوان راهنما" hint="تیتر اصلی صفحه؛ مثل «راهنمای کامل صندوق فروش».">
+              <Field
+                label="عنوان راهنما"
+                hint="تیتر اصلی صفحه؛ مثل «راهنمای کامل صندوق فروش»."
+              >
                 <input
                   type="text"
                   value={title}
@@ -488,7 +599,14 @@ function ArticleEditor({
                 />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="نامک (slug)" hint={autoSlug ? `پیشنهاد خودکار: ${autoSlug}` : "حروف کوچک انگلیسی و خط تیره."}>
+                <Field
+                  label="نامک (slug)"
+                  hint={
+                    autoSlug
+                      ? `پیشنهاد خودکار: ${autoSlug}`
+                      : "حروف کوچک انگلیسی و خط تیره."
+                  }
+                >
                   <input
                     type="text"
                     dir="ltr"
@@ -510,7 +628,10 @@ function ArticleEditor({
                   />
                 </Field>
               </div>
-              <Field label="خلاصه" hint="زیر عنوان و در کارت‌ها/جست‌وجو دیده می‌شود.">
+              <Field
+                label="خلاصه"
+                hint="زیر عنوان و در کارت‌ها/جست‌وجو دیده می‌شود."
+              >
                 <textarea
                   value={summary}
                   onChange={(e) => setSummary(e.target.value)}
@@ -537,7 +658,11 @@ function ArticleEditor({
                 <Field label="وضعیت">
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value === "published" ? "published" : "draft")}
+                    onChange={(e) =>
+                      setStatus(
+                        e.target.value === "published" ? "published" : "draft",
+                      )
+                    }
                     className={selectClass}
                   >
                     <option value="draft">پیش‌نویس</option>
@@ -545,7 +670,10 @@ function ArticleEditor({
                   </select>
                 </Field>
               </div>
-              <Field label="آدرس ویدیو (اختیاری)" hint="فایل مستقیم (.mp4 …) پخش‌کننده می‌گیرد؛ صفحهٔ آپارات/یوتیوب در قاب تعبیه می‌شود.">
+              <Field
+                label="آدرس ویدیو (اختیاری)"
+                hint="فایل مستقیم (.mp4 …) پخش‌کننده می‌گیرد؛ صفحهٔ آپارات/یوتیوب در قاب تعبیه می‌شود."
+              >
                 <input
                   type="url"
                   dir="ltr"
@@ -566,7 +694,10 @@ function ArticleEditor({
                 />
               </Field>
 
-              <Field label="بخش‌هایی که این راهنما آموزش می‌دهد" hint="آیکون «آموزش» همان بخش به این راهنما پیوند می‌خورد.">
+              <Field
+                label="بخش‌هایی که این راهنما آموزش می‌دهد"
+                hint="آیکون «آموزش» همان بخش به این راهنما پیوند می‌خورد."
+              >
                 <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border p-2">
                   {KNOWLEDGE_SECTIONS.map((s) => {
                     const on = sectionKeys.includes(s.key);
@@ -575,7 +706,9 @@ function ArticleEditor({
                         key={s.key}
                         type="button"
                         aria-pressed={on}
-                        onClick={() => setSectionKeys((prev) => toggleList(prev, s.key))}
+                        onClick={() =>
+                          setSectionKeys((prev) => toggleList(prev, s.key))
+                        }
                         className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                           on
                             ? "border-sky-400/50 bg-sky-500/20 text-sky-800 dark:text-sky-200"
@@ -592,7 +725,9 @@ function ArticleEditor({
               <Field label="برچسب‌ها">
                 <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border p-2">
                   {tags.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">اول از برگهٔ «برچسب‌ها» بسازید.</span>
+                    <span className="text-xs text-muted-foreground">
+                      اول از برگهٔ «برچسب‌ها» بسازید.
+                    </span>
                   ) : (
                     tags.map((t) => {
                       const on = tagIds.includes(t.id);
@@ -601,7 +736,9 @@ function ArticleEditor({
                           key={t.id}
                           type="button"
                           aria-pressed={on}
-                          onClick={() => setTagIds((prev) => toggleList(prev, t.id))}
+                          onClick={() =>
+                            setTagIds((prev) => toggleList(prev, t.id))
+                          }
                           className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                             on
                               ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-800 dark:text-emerald-200"
@@ -638,12 +775,15 @@ function ArticleEditor({
                 onChange={(e) => setBodyMd(e.target.value)}
                 rows={18}
                 spellCheck={false}
-                placeholder={"## شروع\nمتن راهنما به فارسی…\n\n```sql\nSELECT 1;\n```"}
+                placeholder={
+                  "## شروع\nمتن راهنما به فارسی…\n\n```sql\nSELECT 1;\n```"
+                }
                 className="min-h-[320px] w-full flex-1 rounded-lg border border-border bg-muted p-3 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/20"
                 aria-label="متن راهنما (مارک‌داون)"
               />
               <p className="mt-1 text-[11px] text-muted-foreground">
-                مارک‌داون: ## تیترها لنگر می‌گیرند؛ ``` بلوک کد؛ ![توضیح](آدرس) تصویر.
+                مارک‌داون: ## تیترها لنگر می‌گیرند؛ ``` بلوک کد؛ ![توضیح](آدرس)
+                تصویر.
               </p>
             </div>
           </div>
@@ -653,13 +793,21 @@ function ArticleEditor({
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 پیش‌نمایش زنده — همان چیزی که عضو می‌بیند
               </p>
-              <h4 className="mb-1 text-lg font-bold text-foreground">{title || "بدون عنوان"}</h4>
-              {summary ? <p className="mb-4 text-sm text-muted-foreground">{summary}</p> : null}
+              <h4 className="mb-1 text-lg font-bold text-foreground">
+                {title || "بدون عنوان"}
+              </h4>
+              {summary ? (
+                <p className="mb-4 text-sm text-muted-foreground">{summary}</p>
+              ) : null}
               <KbMarkdown content={bodyMd || "(بدنه خالی است)"} />
             </div>
           ) : null}
 
-          {formError ? <div className="mt-4"><ErrorBox>{formError}</ErrorBox></div> : null}
+          {formError ? (
+            <div className="mt-4">
+              <ErrorBox>{formError}</ErrorBox>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3.5">
@@ -667,7 +815,11 @@ function ArticleEditor({
             انصراف
           </Button>
           <Button onClick={() => void save()} disabled={busy || !title.trim()}>
-            {busy ? "در حال ذخیره…" : article ? "ذخیره تغییرات" : "ایجاد راهنما"}
+            {busy
+              ? "در حال ذخیره…"
+              : article
+                ? "ذخیره تغییرات"
+                : "ایجاد راهنما"}
           </Button>
         </div>
       </div>

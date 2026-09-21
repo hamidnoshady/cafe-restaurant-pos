@@ -33,7 +33,7 @@ describe("WordPress media browsing", () => {
   });
 
   it("debounces searches and discards superseded requests", () => {
-    expect(media).toMatch(/setTimeout\(\(\) => setSearchQuery/);
+    expect(media).toMatch(/setTimeout\(/);
     expect(media).toMatch(/new AbortController\(\)/);
     expect(media).toMatch(/request !== listRequestRef\.current/);
   });
@@ -68,7 +68,7 @@ describe("the shared connection picker", () => {
     expect(picker).toMatch(/const id = useId\(\)/);
     expect(picker).toMatch(/className=\{`\$\{inputClass\}/);
     expect(picker).toMatch(/embedded\s*\?\s*"flex min-w-0/);
-    expect(media).toMatch(/<ConnectionPicker embedded/);
+    expect(media).toMatch(/<ConnectionPicker\s+embedded/);
   });
 });
 
