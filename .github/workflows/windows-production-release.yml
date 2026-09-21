@@ -140,7 +140,7 @@ jobs:
           foreach ($id in @('automated-core','postgresql-tools','authenticode')) {
             $item = $candidateEvidence.checks.$id
             if (-not $item -or $item.status -cne 'PASS' -or $item.commit -cne $env:CANDIDATE_COMMIT) { throw "Candidate internal check $id is not a candidate-bound PASS" }
-            if ($id -eq 'authenticode' -and $item.version -cne $env:RELEASE_VERSION) { throw 'Authenticode evidence is not bound to this version' }
+            if ($id -eq 'authenticode' -and ($item.version -cne $env:RELEASE_VERSION -or $item.installerSha256 -cne $installerHash)) { throw 'Authenticode evidence is not bound to this version and installer' }
           }
           if ($candidateReadiness.productionEligible -or $candidateReadiness.commit -cne $env:CANDIDATE_COMMIT -or $candidateReadiness.version -cne $env:RELEASE_VERSION) { throw 'Signed-candidate readiness has an invalid scope or eligibility claim' }
 
@@ -165,7 +165,7 @@ jobs:
             if (-not $item -or $item.status -cne 'PASS' -or $item.commit -cne $env:CANDIDATE_COMMIT) { throw "Acceptance check $id is not a candidate-bound PASS" }
           }
           if ($aggregate.checks.'windows-11-retail'.version -cne $env:RELEASE_VERSION) { throw 'Retail Windows 11 evidence is not bound to this version' }
-          if ($aggregate.checks.'windows-11-retail'.installerSha256 -cne $env:PROMOTION_INSTALLER_SHA256) { throw 'Retail Windows 11 acceptance was not executed against this exact installer' }
+          if ($aggregate.installerSha256 -cne $env:PROMOTION_INSTALLER_SHA256 -or $aggregate.checks.'windows-11-retail'.installerSha256 -cne $env:PROMOTION_INSTALLER_SHA256) { throw 'Retail Windows 11 acceptance was not executed against this exact installer' }
 
       - name: Generate final production readiness
         env:
@@ -180,7 +180,7 @@ jobs:
           foreach ($property in $aggregate.checks.PSObject.Properties) { $checks[$property.Name] = $property.Value }
           foreach ($id in @('automated-core','postgresql-tools','authenticode')) { $checks[$id] = $internal.checks.$id }
           [ordered]@{ schemaVersion=1; version=$env:RELEASE_VERSION; commit=$env:CANDIDATE_COMMIT; installerSha256=$env:PROMOTION_INSTALLER_SHA256; checks=$checks } | ConvertTo-Json -Depth 14 | Set-Content release-evidence.json -Encoding UTF8
-          node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:CANDIDATE_COMMIT --version=$env:RELEASE_VERSION --production
+          node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:CANDIDATE_COMMIT --version=$env:RELEASE_VERSION --installer-sha256=$env:PROMOTION_INSTALLER_SHA256 --production
           $readiness = Get-Content release-readiness.json -Raw | ConvertFrom-Json
           if (-not $readiness.productionEligible -or $readiness.status -cne 'PASS') { throw 'Production readiness did not pass' }
           [ordered]@{

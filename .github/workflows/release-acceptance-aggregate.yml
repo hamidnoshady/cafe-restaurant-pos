@@ -148,7 +148,8 @@ jobs:
             $value | Add-Member -NotePropertyName configured -NotePropertyValue $true -Force
             $checks[$entry.Key] = $value
           }
-          [ordered]@{ schemaVersion=1; version=$env:VERSION; commit=$env:COMMIT; checks=$checks } | ConvertTo-Json -Depth 14 | Set-Content release-acceptance-evidence.json -Encoding UTF8
+          $installerSha256 = $checks['windows-11-retail'].installerSha256
+          [ordered]@{ schemaVersion=1; version=$env:VERSION; commit=$env:COMMIT; installerSha256=$installerSha256; checks=$checks } | ConvertTo-Json -Depth 14 | Set-Content release-acceptance-evidence.json -Encoding UTF8
 
       - name: Generate readiness preview (production internals are expected to remain NOT CONFIGURED here)
         env:

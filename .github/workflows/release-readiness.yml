@@ -11,6 +11,10 @@ on:
         description: 'Full release-candidate Git commit SHA'
         type: string
         required: true
+      candidate_installer_sha256:
+        description: 'Exact signed candidate installer SHA-256; required for artifact-bound production evidence'
+        type: string
+        required: false
       production_gate:
         description: 'Fail unless every production requirement is PASS'
         type: boolean
@@ -41,9 +45,11 @@ jobs:
           EVIDENCE: ${{ vars.RELEASE_ACCEPTANCE_EVIDENCE_JSON }}
           VERSION: ${{ inputs.version }}
           CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          INSTALLER_SHA256: ${{ inputs.candidate_installer_sha256 }}
         run: |
           if ($env:VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "version must be a release version" }
           if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
+          if (-not [string]::IsNullOrWhiteSpace($env:INSTALLER_SHA256) -and $env:INSTALLER_SHA256 -notmatch '^[0-9a-f]{64}$') { throw "candidate_installer_sha256 must be a lowercase SHA-256" }
           if ([string]::IsNullOrWhiteSpace($env:EVIDENCE)) {
             '{"schemaVersion":1,"checks":{}}' | Set-Content release-evidence.json -Encoding UTF8
             Write-Host "::warning title=Readiness NOT CONFIGURED::RELEASE_ACCEPTANCE_EVIDENCE_JSON is unset. The report will name each missing requirement and production will remain blocked."
@@ -56,8 +62,21 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
-          PRODUCTION_ARG: ${{ inputs.production_gate && '--production' || '' }}
-        run: node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:CANDIDATE_COMMIT --version=$env:VERSION $env:PRODUCTION_ARG
+          INSTALLER_SHA256: ${{ inputs.candidate_installer_sha256 }}
+          PRODUCTION_GATE: ${{ inputs.production_gate }}
+        run: |
+          $arguments = @(
+            'scripts/generate-release-readiness.mjs',
+            '--evidence=release-evidence.json',
+            '--output=release-readiness.json',
+            '--markdown=release-readiness.md',
+            "--commit=$env:CANDIDATE_COMMIT",
+            "--version=$env:VERSION"
+          )
+          if (-not [string]::IsNullOrWhiteSpace($env:INSTALLER_SHA256)) { $arguments += "--installer-sha256=$env:INSTALLER_SHA256" }
+          if ($env:PRODUCTION_GATE -eq 'true') { $arguments += '--production' }
+          & node @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Publish readiness summary
         if: always()

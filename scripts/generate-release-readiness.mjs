@@ -14,7 +14,9 @@ const expectedVersion = arg("version", "");
 
 const config = JSON.parse(await fs.readFile(configPath, "utf8"));
 const evidence = JSON.parse(await fs.readFile(evidencePath, "utf8").catch(() => "{}"));
+const expectedInstallerSha256 = arg("installer-sha256", evidence.installerSha256 || "");
 if (config.schemaVersion !== 1 || !Array.isArray(config.checks)) throw new Error("invalid readiness configuration");
+if (expectedInstallerSha256 && !/^[0-9a-f]{64}$/.test(expectedInstallerSha256)) throw new Error("invalid expected installer SHA-256");
 
 const validClaim = new Set(["PASS", "FAIL"]);
 const validEvidenceUrl = (value) => {
@@ -41,9 +43,12 @@ const results = config.checks.map((check) => {
   } else if (item.status === "FAIL") {
     state = "FAIL";
     reason = item.reason || "The acceptance check failed.";
-  } else if (check.id === "windows-11-retail" && !/^[0-9a-f]{64}$/.test(item.installerSha256 || "")) {
-    state = "MANUAL ACCEPTANCE REQUIRED";
-    reason = "Retail Windows 11 evidence is not bound to an installer SHA-256.";
+  } else if (check.artifactBound === true && !/^[0-9a-f]{64}$/.test(item.installerSha256 || "")) {
+    state = check.kind === "external" ? "MANUAL ACCEPTANCE REQUIRED" : "FAIL";
+    reason = "Evidence is not bound to an installer SHA-256.";
+  } else if (check.artifactBound === true && expectedInstallerSha256 && item.installerSha256 !== expectedInstallerSha256) {
+    state = check.kind === "external" ? "MANUAL ACCEPTANCE REQUIRED" : "FAIL";
+    reason = `Evidence installer ${item.installerSha256} does not match ${expectedInstallerSha256}.`;
   } else if (!validExecutionTime(item.executedAt) || !validEvidenceUrl(item.evidenceUrl)) {
     state = "FAIL";
     reason = "PASS is invalid without a non-future executedAt value and an HTTPS evidenceUrl.";
@@ -77,6 +82,7 @@ const report = {
   productionEligible: blockers.length === 0,
   commit: expectedCommit || null,
   version: expectedVersion || null,
+  installerSha256: expectedInstallerSha256 || null,
   generatedAt: new Date().toISOString(),
   allowedStates: ["PASS", "FAIL", "NOT CONFIGURED", "MANUAL ACCEPTANCE REQUIRED"],
   checks: results,

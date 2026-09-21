@@ -261,12 +261,16 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           $now = [DateTime]::UtcNow.ToString("o")
+          $provenance = Get-Content release-provenance.json -Raw | ConvertFrom-Json
+          $installer = @($provenance.artifacts | Where-Object { $_.name -ceq "Business Suite Setup $env:RELEASE_VERSION.exe" })
+          if ($installer.Count -ne 1 -or $installer[0].sha256 -notmatch '^[0-9a-f]{64}$') { throw "Release provenance has no valid installer SHA-256" }
+          $installerSha256 = $installer[0].sha256
           $checks = [ordered]@{}
           $checks["automated-core"] = @{ configured=$true; status="PASS"; version=$env:RELEASE_VERSION; commit=$env:CANDIDATE_COMMIT; executedAt=$now; evidenceUrl=$env:RUN_URL; platform="GitHub Windows Server runner" }
           $checks["postgresql-tools"] = @{ configured=$true; status="PASS"; version=$env:RELEASE_VERSION; commit=$env:CANDIDATE_COMMIT; executedAt=$now; evidenceUrl=$env:RUN_URL; platform="Packaged Windows x64 tools" }
-          $checks["authenticode"] = @{ configured=$true; status="PASS"; version=$env:RELEASE_VERSION; commit=$env:CANDIDATE_COMMIT; executedAt=$now; evidenceUrl=$env:RUN_URL; platform="Windows Authenticode" }
-          @{ schemaVersion=1; version=$env:RELEASE_VERSION; commit=$env:CANDIDATE_COMMIT; checks=$checks } | ConvertTo-Json -Depth 12 | Set-Content release-evidence.json -Encoding UTF8
-          node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:CANDIDATE_COMMIT --version=$env:RELEASE_VERSION
+          $checks["authenticode"] = @{ configured=$true; status="PASS"; version=$env:RELEASE_VERSION; commit=$env:CANDIDATE_COMMIT; installerSha256=$installerSha256; executedAt=$now; evidenceUrl=$env:RUN_URL; platform="Windows Authenticode" }
+          @{ schemaVersion=1; version=$env:RELEASE_VERSION; commit=$env:CANDIDATE_COMMIT; installerSha256=$installerSha256; checks=$checks } | ConvertTo-Json -Depth 12 | Set-Content release-evidence.json -Encoding UTF8
+          node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:CANDIDATE_COMMIT --version=$env:RELEASE_VERSION --installer-sha256=$installerSha256
           $readiness = Get-Content release-readiness.json -Raw | ConvertFrom-Json
           if ($readiness.productionEligible) { throw "A signed candidate cannot be production eligible before external acceptance" }
 

@@ -127,7 +127,7 @@ describe("candidate-bound external release evidence", () => {
     const evidencePath = path.join(directory, "evidence.json");
     const outputPath = path.join(directory, "readiness.json");
     const markdownPath = path.join(directory, "readiness.md");
-    const checks = Object.fromEntries(config.checks.map((check: { id: string }) => [check.id, {
+    const checks = Object.fromEntries(config.checks.map((check: { id: string; artifactBound?: boolean }) => [check.id, {
       configured: true,
       status: "PASS",
       commit,
@@ -135,9 +135,9 @@ describe("candidate-bound external release evidence", () => {
       executedAt: new Date().toISOString(),
       evidenceUrl: `https://evidence.invalid/${check.id}`,
       platform: "acceptance fixture",
-      ...(check.id === "windows-11-retail" ? { installerSha256: "f".repeat(64) } : {}),
+      ...(check.artifactBound === true ? { installerSha256: "f".repeat(64) } : {}),
     }]));
-    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, checks }));
+    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, installerSha256: "f".repeat(64), checks }));
 
     const result = await runNode("scripts/generate-release-readiness.mjs", [
       `--evidence=${evidencePath}`,
@@ -151,6 +151,7 @@ describe("candidate-bound external release evidence", () => {
     const report = JSON.parse(await fs.readFile(outputPath, "utf8"));
     expect(report.status).toBe("PASS");
     expect(report.productionEligible).toBe(true);
+    expect(report.installerSha256).toBe("f".repeat(64));
   });
 
   it("blocks stale external evidence from another candidate commit", async () => {
@@ -161,7 +162,7 @@ describe("candidate-bound external release evidence", () => {
     const evidencePath = path.join(directory, "evidence.json");
     const outputPath = path.join(directory, "readiness.json");
     const markdownPath = path.join(directory, "readiness.md");
-    const checks = Object.fromEntries(config.checks.map((check: { id: string }) => [check.id, {
+    const checks = Object.fromEntries(config.checks.map((check: { id: string; artifactBound?: boolean }) => [check.id, {
       configured: true,
       status: "PASS",
       commit: check.id === "android-real-device" ? "d".repeat(40) : commit,
@@ -169,9 +170,9 @@ describe("candidate-bound external release evidence", () => {
       executedAt: new Date().toISOString(),
       evidenceUrl: `https://evidence.invalid/${check.id}`,
       platform: "acceptance fixture",
-      ...(check.id === "windows-11-retail" ? { installerSha256: "f".repeat(64) } : {}),
+      ...(check.artifactBound === true ? { installerSha256: "f".repeat(64) } : {}),
     }]));
-    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, checks }));
+    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, installerSha256: "f".repeat(64), checks }));
 
     const result = await runNode("scripts/generate-release-readiness.mjs", [
       `--evidence=${evidencePath}`,
@@ -196,7 +197,7 @@ describe("candidate-bound external release evidence", () => {
     const evidencePath = path.join(directory, "evidence.json");
     const outputPath = path.join(directory, "readiness.json");
     const markdownPath = path.join(directory, "readiness.md");
-    const checks = Object.fromEntries(config.checks.map((check: { id: string }) => [check.id, {
+    const checks = Object.fromEntries(config.checks.map((check: { id: string; artifactBound?: boolean }) => [check.id, {
       configured: true,
       status: "PASS",
       commit,
@@ -205,7 +206,7 @@ describe("candidate-bound external release evidence", () => {
       evidenceUrl: `https://evidence.invalid/${check.id}`,
       platform: "acceptance fixture",
     }]));
-    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, checks }));
+    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, installerSha256: "f".repeat(64), checks }));
 
     const result = await runNode("scripts/generate-release-readiness.mjs", [
       `--evidence=${evidencePath}`,
@@ -229,7 +230,7 @@ describe("candidate-bound external release evidence", () => {
     const evidencePath = path.join(directory, "evidence.json");
     const outputPath = path.join(directory, "readiness.json");
     const markdownPath = path.join(directory, "readiness.md");
-    const checks = Object.fromEntries(config.checks.map((check: { id: string }) => [check.id, {
+    const checks = Object.fromEntries(config.checks.map((check: { id: string; artifactBound?: boolean }) => [check.id, {
       configured: true,
       status: "PASS",
       commit,
@@ -237,9 +238,9 @@ describe("candidate-bound external release evidence", () => {
       executedAt: new Date().toISOString(),
       evidenceUrl: `https://evidence.invalid/${check.id}`,
       platform: "acceptance fixture",
-      ...(check.id === "windows-11-retail" ? { installerSha256: "f".repeat(64) } : {}),
+      ...(check.artifactBound === true ? { installerSha256: "f".repeat(64) } : {}),
     }]));
-    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, checks }));
+    await fs.writeFile(evidencePath, JSON.stringify({ schemaVersion: 1, installerSha256: "f".repeat(64), checks }));
 
     const result = await runNode("scripts/generate-release-readiness.mjs", [
       `--evidence=${evidencePath}`,
