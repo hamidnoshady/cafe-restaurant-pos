@@ -18,25 +18,55 @@ if ($executables.Count -ne 1) {
   Stop-RuntimeVerification "Expected exactly one packaged application executable in $root, found $($executables.Count): $($executables.Name -join ', ')"
 }
 $executablePath = $executables[0].FullName
-$probePath = Join-Path ([IO.Path]::GetTempPath()) "business-suite-electron-runtime-$([Guid]::NewGuid().ToString('N')).cjs"
+$tempStem = Join-Path ([IO.Path]::GetTempPath()) "business-suite-electron-runtime-$([Guid]::NewGuid().ToString('N'))"
+$probePath = "$tempStem.cjs"
+$stdoutPath = "$tempStem.stdout.log"
+$stderrPath = "$tempStem.stderr.log"
 $probeSource = 'process.stdout.write(JSON.stringify({node:process.versions.node,electron:process.versions.electron,chrome:process.versions.chrome}))'
 [IO.File]::WriteAllText($probePath, $probeSource, (New-Object System.Text.UTF8Encoding($false)))
 
 $prior = $env:ELECTRON_RUN_AS_NODE
+$probeFailure = $null
+$probeExit = $null
+$raw = ""
+$probeStderr = ""
 try {
   $env:ELECTRON_RUN_AS_NODE = "1"
-  $raw = ((& $executablePath $probePath) | Out-String).Trim()
-  $probeExit = $LASTEXITCODE
+  # The packaged application is a Windows GUI-subsystem executable. Direct `&`
+  # invocation can return before it exits and leave $LASTEXITCODE unset, even
+  # when ELECTRON_RUN_AS_NODE makes the child behave as Node. Start-Process gives
+  # us an actual process handle, bounded wait, exit code, and captured streams.
+  $process = Start-Process -FilePath $executablePath `
+    -ArgumentList @("`"$probePath`"") `
+    -RedirectStandardOutput $stdoutPath `
+    -RedirectStandardError $stderrPath `
+    -PassThru
+  if (-not $process.WaitForExit(30000)) {
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    $probeFailure = "Packaged Electron runtime probe timed out after 30 seconds"
+  } else {
+    # A parameterless second wait ensures asynchronous redirected stream reads
+    # are fully drained before the files are consumed.
+    $process.WaitForExit()
+    $probeExit = $process.ExitCode
+  }
+  if (Test-Path -LiteralPath $stdoutPath) { $raw = [IO.File]::ReadAllText($stdoutPath).Trim() }
+  if (Test-Path -LiteralPath $stderrPath) { $probeStderr = [IO.File]::ReadAllText($stderrPath).Trim() }
+} catch {
+  $probeFailure = "Packaged Electron runtime probe could not start: $($_.Exception.Message)"
 } finally {
   if ($null -eq $prior) {
     Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
   } else {
     $env:ELECTRON_RUN_AS_NODE = $prior
   }
-  Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $probePath, $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+}
+if ($probeFailure) {
+  Stop-RuntimeVerification $probeFailure
 }
 if ($probeExit -ne 0) {
-  Stop-RuntimeVerification "Packaged Electron runtime probe failed with exit code $probeExit"
+  Stop-RuntimeVerification "Packaged Electron runtime probe failed with exit code $probeExit. stderr: $probeStderr"
 }
 
 try {
