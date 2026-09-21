@@ -20,6 +20,9 @@ if ($actualSourceHash -cne $SourceSha256) {
 }
 
 $output = [IO.Path]::GetFullPath($OutputDirectory)
+if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
+New-Item -ItemType Directory -Path $output | Out-Null
+$buildLog = Join-Path $output "source-build.log"
 $temp = Join-Path ([IO.Path]::GetTempPath()) "business-suite-pg-source-$([Guid]::NewGuid().ToString('N'))"
 $extract = Join-Path $temp "source"
 $payload = Join-Path $temp "payload"
@@ -72,8 +75,12 @@ if errorlevel 1 exit /b 25
 exit /b 0
 "@
   [IO.File]::WriteAllText($buildCmd, $buildText, (New-Object System.Text.UTF8Encoding($false)))
-  & $env:ComSpec /d /c "`"$buildCmd`""
-  if ($LASTEXITCODE -ne 0) { throw "PostgreSQL MSVC client build failed with exit code $LASTEXITCODE" }
+  & $env:ComSpec /d /c "`"$buildCmd`"" 2>&1 | Tee-Object -FilePath $buildLog
+  $buildExit = $LASTEXITCODE
+  if ($buildExit -ne 0) {
+    $tail = @(Get-Content -LiteralPath $buildLog -Tail 80 -ErrorAction SilentlyContinue) -join "`n"
+    throw "PostgreSQL MSVC client build failed with exit code $buildExit`n$tail"
+  }
 
   $releaseRoot = Join-Path $sourceRoot "Release"
   $executables = foreach ($name in @("pg_dump.exe", "pg_restore.exe")) {
@@ -98,8 +105,6 @@ exit /b 0
     }
   }
 
-  if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
-  New-Item -ItemType Directory -Path $output | Out-Null
   $archivePath = Join-Path $output "postgresql-16-windows-x64-client-tools.zip"
   Compress-Archive -Path (Join-Path $payload "*") -DestinationPath $archivePath -CompressionLevel Optimal
   $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -110,6 +110,7 @@ jobs:
           path: |
             controlled-input/provenance.json
             controlled-input/source-build.json
+            controlled-input/source-build.log
             .desktop-assets/postgresql-tools/provenance.json
             packaged-pg-tools-acceptance.json
             packaged-restore-acceptance.json
