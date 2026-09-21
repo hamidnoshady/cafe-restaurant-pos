@@ -202,8 +202,12 @@ export async function scoringFreshness(businessId: string): Promise<ScoringFresh
     last_run_status: string;
     last_error: string;
     last_scored_count: number;
+    age_hours: number | null;
   }>(
-    `SELECT dirty_since, last_run_at, last_run_status, last_error, last_scored_count
+    `SELECT dirty_since, last_run_at, last_run_status, last_error, last_scored_count,
+            CASE WHEN last_run_at IS NULL THEN NULL
+                 ELSE floor(extract(epoch FROM (now() - last_run_at)) / 3600)::integer
+            END AS age_hours
        FROM crm_scoring_state WHERE business_id = $1`,
     [businessId],
   );
@@ -227,9 +231,10 @@ export async function scoringFreshness(businessId: string): Promise<ScoringFresh
     lastRunStatus: (row.last_run_status as ScoringFreshness["lastRunStatus"]) ?? "idle",
     lastError: row.last_error ?? "",
     lastScoredCount: Number(row.last_scored_count ?? 0),
-    ageHours: lastRunAt
-      ? Math.floor((Date.now() - new Date(lastRunAt).getTime()) / (60 * 60 * 1000))
-      : null,
+    // Derive age on the database clock that wrote last_run_at. Comparing a
+    // database timestamp with Date.now() makes a boundary answer depend on
+    // clock skew between application and database hosts.
+    ageHours: row.age_hours === null ? null : Number(row.age_hours),
   };
 }
 
