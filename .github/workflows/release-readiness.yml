@@ -7,6 +7,10 @@ on:
         description: 'Release version whose external evidence must match'
         type: string
         required: true
+      candidate_commit:
+        description: 'Full release-candidate Git commit SHA'
+        type: string
+        required: true
       production_gate:
         description: 'Fail unless every production requirement is PASS'
         type: boolean
@@ -26,6 +30,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -33,7 +39,11 @@ jobs:
       - name: Materialize configured acceptance evidence
         env:
           EVIDENCE: ${{ vars.RELEASE_ACCEPTANCE_EVIDENCE_JSON }}
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
         run: |
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "version must be a release version" }
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
           if ([string]::IsNullOrWhiteSpace($env:EVIDENCE)) {
             '{"schemaVersion":1,"checks":{}}' | Set-Content release-evidence.json -Encoding UTF8
             Write-Host "::warning title=Readiness NOT CONFIGURED::RELEASE_ACCEPTANCE_EVIDENCE_JSON is unset. The report will name each missing requirement and production will remain blocked."
@@ -44,8 +54,10 @@ jobs:
 
       - name: Generate PASS, FAIL, NOT CONFIGURED and MANUAL states
         env:
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
           PRODUCTION_ARG: ${{ inputs.production_gate && '--production' || '' }}
-        run: node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:GITHUB_SHA --version=${{ inputs.version }} $env:PRODUCTION_ARG
+        run: node scripts/generate-release-readiness.mjs --evidence=release-evidence.json --output=release-readiness.json --markdown=release-readiness.md --commit=$env:CANDIDATE_COMMIT --version=$env:VERSION $env:PRODUCTION_ARG
 
       - name: Publish readiness summary
         if: always()

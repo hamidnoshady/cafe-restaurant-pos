@@ -12,6 +12,10 @@ on:
         description: 'Release version under acceptance'
         required: true
         type: string
+      candidate_commit:
+        description: 'Full release-candidate Git commit SHA'
+        required: true
+        type: string
       printer_name:
         description: 'Exact physical Windows printer queue (print mode)'
         required: false
@@ -60,13 +64,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
       - name: Validate request and send through loopback connector
         env:
           PRINTER: ${{ inputs.printer_name }}
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:PRINTER)) { throw "printer_name is required in print mode" }
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
           $code = "BS-${{ github.run_id }}-${{ github.run_attempt }}"
-          .\scripts\accept-physical-printer.ps1 -PrinterName $env:PRINTER -AcceptanceCode $code -OutputPath physical-printer-delivery.json
+          .\scripts\accept-physical-printer.ps1 -PrinterName $env:PRINTER -AcceptanceCode $code -ReleaseVersion $env:VERSION -CandidateCommit $env:CANDIDATE_COMMIT -OutputPath physical-printer-delivery.json
       - name: Upload payload-free diagnostics and challenge
         uses: actions/upload-artifact@v7
         with:
@@ -80,15 +89,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
       - name: Validate confirmation inputs
         env:
           HARNESS_RUN_ID: ${{ inputs.harness_run_id }}
           PRINTED_CODE: ${{ inputs.printed_code }}
           EVIDENCE_URL: ${{ inputs.evidence_url }}
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
         run: |
           if ($env:HARNESS_RUN_ID -notmatch '^\d+$') { throw "harness_run_id is required in confirm mode" }
           if ([string]::IsNullOrWhiteSpace($env:PRINTED_CODE)) { throw "printed_code is required in confirm mode" }
           if ($env:EVIDENCE_URL -notmatch '^https://') { throw "evidence_url must be HTTPS" }
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "version must be a release version" }
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
       - name: Download challenge diagnostics
         uses: actions/download-artifact@v8
         with:
@@ -101,16 +116,21 @@ jobs:
         env:
           PRINTED_CODE: ${{ inputs.printed_code }}
           EVIDENCE_URL: ${{ inputs.evidence_url }}
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           $delivery = Get-Content challenge\physical-printer-delivery.json -Raw | ConvertFrom-Json
           if ($delivery.connectorDelivery -ne 'PASS') { throw "Harness delivery did not pass" }
           if ($delivery.acceptanceCode -cne $env:PRINTED_CODE) { throw "Witnessed code does not match the delivered challenge" }
+          if ($delivery.version -cne $env:VERSION) { throw "Printer challenge version $($delivery.version) does not match $env:VERSION" }
+          if ($delivery.commit -cne $env:CANDIDATE_COMMIT) { throw "Printer challenge commit $($delivery.commit) does not match candidate $env:CANDIDATE_COMMIT" }
           [ordered]@{
             schemaVersion = 1
             checkId = 'physical-printer'
             status = 'PASS'
-            version = '${{ inputs.version }}'
+            version = $env:VERSION
+            commit = $env:CANDIDATE_COMMIT
             executedAt = [DateTime]::UtcNow.ToString('o')
             evidenceUrl = $env:EVIDENCE_URL
             workflowEvidenceUrl = $env:RUN_URL

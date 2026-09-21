@@ -46,6 +46,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -96,6 +98,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           COMMIT: ${{ inputs.candidate_commit }}
         run: |
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "version must be a release version" }
           if ($env:COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
           $files = [ordered]@{
             'windows-server-package' = 'evidence\windows-server\windows-server-package-evidence.json'
@@ -112,7 +115,7 @@ jobs:
             if ($entry.Key -in @('windows-11-retail','physical-printer','android-real-device','ios-real-device') -and $value.version -ne $env:VERSION) {
               throw "$($entry.Key) evidence version $($value.version) does not match $env:VERSION"
             }
-            if ($entry.Key -in @('windows-server-package','windows-11-retail') -and $value.commit -ne $env:COMMIT) {
+            if ($value.commit -ne $env:COMMIT) {
               throw "$($entry.Key) evidence commit $($value.commit) does not match $env:COMMIT"
             }
             $value | Add-Member -NotePropertyName configured -NotePropertyValue $true -Force
@@ -121,7 +124,10 @@ jobs:
           [ordered]@{ schemaVersion=1; version=$env:VERSION; commit=$env:COMMIT; checks=$checks } | ConvertTo-Json -Depth 14 | Set-Content release-acceptance-evidence.json -Encoding UTF8
 
       - name: Generate readiness preview (production internals are expected to remain NOT CONFIGURED here)
-        run: node scripts/generate-release-readiness.mjs --evidence=release-acceptance-evidence.json --output=release-readiness-preview.json --markdown=release-readiness-preview.md --commit=${{ inputs.candidate_commit }} --version=${{ inputs.version }}
+        env:
+          VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+        run: node scripts/generate-release-readiness.mjs --evidence=release-acceptance-evidence.json --output=release-readiness-preview.json --markdown=release-readiness-preview.md --commit=$env:CANDIDATE_COMMIT --version=$env:VERSION
 
       - name: Upload aggregate for final production release
         uses: actions/upload-artifact@v7

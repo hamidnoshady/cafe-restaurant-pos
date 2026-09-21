@@ -11,6 +11,7 @@ const platform = config.platforms?.[claim.checkId];
 if (!platform) throw new Error("checkId must be android-real-device or ios-real-device");
 if (!/^https:\/\//.test(claim.evidenceUrl || "")) throw new Error("an HTTPS evidence URL is required");
 if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(claim.version || "")) throw new Error("a release version is required");
+if (!/^[0-9a-f]{40}$/.test(claim.commit || "")) throw new Error("a full release-candidate Git commit SHA is required");
 for (const field of ["deviceModel", "osVersion", "browser", "tester"]) {
   if (typeof claim[field] !== "string" || !claim[field].trim()) throw new Error(`${field} is required`);
 }
@@ -31,6 +32,7 @@ const report = {
   checkId: claim.checkId,
   status: "PASS",
   version: claim.version,
+  commit: claim.commit,
   executedAt: new Date().toISOString(),
   evidenceUrl: claim.evidenceUrl,
   platform: `${claim.deviceModel} / ${claim.osVersion} / ${claim.browser}`,

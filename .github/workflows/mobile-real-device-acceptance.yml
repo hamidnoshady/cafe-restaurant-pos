@@ -12,6 +12,10 @@ on:
         description: 'Release version tested'
         required: true
         type: string
+      candidate_commit:
+        description: 'Full release-candidate Git commit SHA'
+        required: true
+        type: string
       device_metadata_json:
         description: 'JSON: {"deviceModel":"...","osVersion":"...","browser":"...","tester":"..."}'
         required: true
@@ -42,6 +46,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -49,6 +55,7 @@ jobs:
         env:
           PLATFORM: ${{ inputs.platform }}
           VERSION: ${{ inputs.version }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
           DEVICE_METADATA: ${{ inputs.device_metadata_json }}
           CA_FINGERPRINT: ${{ inputs.ca_fingerprint }}
           EVIDENCE_URL: ${{ inputs.evidence_url }}
@@ -56,9 +63,11 @@ jobs:
         run: |
           $metadata = $env:DEVICE_METADATA | ConvertFrom-Json
           $checks = $env:CHECKS | ConvertFrom-Json
+          if ($env:CANDIDATE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw "candidate_commit must be a full Git SHA" }
           [ordered]@{
             checkId = $env:PLATFORM
             version = $env:VERSION
+            commit = $env:CANDIDATE_COMMIT
             deviceModel = $metadata.deviceModel
             osVersion = $metadata.osVersion
             browser = $metadata.browser

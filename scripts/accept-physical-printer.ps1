@@ -2,6 +2,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$PrinterName,
   [Parameter(Mandatory = $true)][string]$AcceptanceCode,
+  [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')][string]$ReleaseVersion,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$CandidateCommit,
   [string]$OutputPath = "physical-printer-delivery.json"
 )
 
@@ -57,6 +59,8 @@ try {
     schemaVersion = 1
     checkId = 'physical-printer'
     status = 'MANUAL ACCEPTANCE REQUIRED'
+    version = $ReleaseVersion
+    commit = $CandidateCommit
     connectorDelivery = 'PASS'
     physicalOutput = 'MANUAL ACCEPTANCE REQUIRED'
     acceptanceCode = $AcceptanceCode
