@@ -75,20 +75,55 @@ click (the authenticated installer is built by `src/lib/windows-print-connector.
 and served from `/api/printing/connector/installer`). It:
 
 - binds only to `127.0.0.1:9123` — never exposed to the LAN;
-- accepts browser requests only from the exact tenant origin baked into the
-  installer;
+- accepts browser requests only from the exact Cafe POS origin(s) baked into
+  the installer (the tenant origin first, plus any rename aliases — all of
+  them verified by the server, normalised before comparison, never a wildcard);
 - enumerates installed queues via `Win32_Printer` (`GET /printers/windows`);
 - discovers network printers by scanning its own IPv4 /24 subnets for an open
   9100, windowed and deduplicated (`POST /printers/network/discover`);
 - probes a target (`POST /printers/probe`);
 - delivers raw bytes through the native `winspool.drv` `WritePrinter` API or a
   TCP socket (`POST /print/raw`), returning canonical error codes
-  (`printer_not_found`, `network_unreachable`, …) — never raw exceptions.
+  (`printer_not_found`, `network_unreachable`, …) — never raw exceptions;
+- answers `GET /health` with its protocol version, release, the full
+  allowed-origin set and print-subsystem status, so both the installer and
+  the browser can tell installed / outdated / wrong-origin apart.
 
 Reinstalling is also the upgrade path: the installer stops the previous
 connector (including the pre-v3 «print agent» spelling), replaces the script,
-and only reports success for a v3+ health answer. It starts now and at every
-Windows login; no Node.js, no admin account, no command line.
+and only reports success for a health answer at or above the minimum protocol
+version. It starts now and at every Windows login; no Node.js, no admin
+account, no command line. Running it again is a safe repair.
+
+#### Where the payload comes from
+
+The installer's two addresses are deliberately independent:
+
+- the connector's **allowed origin(s)** — the tenant's browser origin, needed
+  by CORS. On a host-routed deployment these are the session business's own
+  DNS labels (current subdomain plus rename aliases, read from the database),
+  and the route refuses outright when the request's Host names anything else;
+  on single-café installs it is simply the one origin the kiosk is browsed
+  on. Nothing is ever fabricated as `{label}.{domain}` from the request;
+- the **download URL** — where the tenant-neutral connector file is fetched
+  from. Resolved (in `src/lib/printing/connector-release.ts`) as:
+  `CONNECTOR_DOWNLOAD_BASE_URL` → the platform base (`PLATFORM_BASE_URL` /
+  `POS_DOMAIN` / `ROOT_DOMAIN`'s apex) on HTTPS requests → the request origin
+  itself (localhost, desktop, café-laptop installs). It is intentionally
+  *not* each tenant's subdomain: a hostname the browser could reach via DoH
+  can still fail the Windows system resolver the installer uses, and tenants
+  must never need per-tenant DNS work just to install printing.
+
+The payload path is public (`/windows/…` is session-less in middleware — the
+installer carries no cookie) and identical for every tenant. Downloads are
+retried, error-classified (DNS/TLS/timeout/HTTP status), size- and
+marker-checked, HTML rejected, PowerShell-parsed, and SHA-256-verified when
+the serving deployment can vouch for the bytes. Failures land in a friendly
+dialog with the technical trail in
+`%LOCALAPPDATA%\CafePOS\PrintConnector\install.log` (no credentials — the
+installer never holds any). Port 9123 conflicts are diagnosed by owner
+process: another Cafe POS connector is replaced, a foreign program is named
+in the message.
 
 ### Browser printing is an output, not a connection
 
@@ -127,6 +162,8 @@ canonical model.
 | `src/app/api/printing/print` | The one hardware job endpoint: printerId in, canonical bytes + target out. |
 | `src/app/api/printing/test-draft` | The add-printer wizard's test print before the printer is saved. |
 | `src/app/api/printing/connector/installer` | Authenticated per-origin Windows connector installer download. |
+| `src/lib/printing/connector-release.ts` | Protocol/release versions, allowed-origin normalisation and the download-base resolution (the file above depends on both halves of this contract). Pure. |
+| `src/lib/printing/connector-payload.ts` | Runtime SHA-256 fingerprint of the shipped payload for installer integrity pinning. Server-only. |
 | `public/windows/cafe-pos-print-connector.ps1` | The one Windows hardware gateway: queue discovery, LAN discovery, probe, RAW/TCP delivery. |
 | `src/app/(app)/settings/printing/**` | The section: gallery, designer, printers panel (shared with the setup wizard), logo. |
 

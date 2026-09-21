@@ -45,6 +45,16 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/logindecoy")).toBe(false);
   });
 
+  it("serves the Windows connector payload without a session", () => {
+    // The installer's PowerShell download carries no session cookie by
+    // definition. When this path was gated, host-routed deployments answered
+    // the download with a redirect into the login page — and the installer
+    // saved that HTML as the connector script. This is the regression guard.
+    expect(isPublicPath("/windows")).toBe(true);
+    expect(isPublicPath("/windows/cafe-pos-print-connector.ps1")).toBe(true);
+    expect(isPublicPath("/windowshade")).toBe(false);
+  });
+
   it("gates the apps' new top-level URLs exactly like the dashboard's", () => {
     // The apps left `/dashboard/<app>` for prefixes of their own. They are
     // still the same signed-in surfaces, and nothing about giving an app a

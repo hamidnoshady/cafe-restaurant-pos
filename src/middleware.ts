@@ -154,6 +154,14 @@ const PUBLIC_PATHS = [
   // own health check hit it without a session, and a probe that gets
   // redirected into the host resolver reads as "the app is down".
   "/api/health",
+  // The Windows Print Connector payload (public/windows). It is tenant-neutral
+  // by design — the same static file for every business — but it is consumed
+  // by the installer's PowerShell download, which by definition carries no
+  // session cookie. Gating it behind the session check made first install
+  // download the *login page's HTML* instead of the connector on every
+  // host-routed deployment. The exact tenant origin is never decided here;
+  // the authenticated installer route bakes it into each .cmd.
+  "/windows",
 ];
 
 /**
