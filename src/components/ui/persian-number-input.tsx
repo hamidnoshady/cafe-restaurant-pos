@@ -20,7 +20,10 @@ import {
  * about display-only glyphs and separators.
  */
 export interface PersianNumberInputProps
-  extends Omit<React.ComponentPropsWithoutRef<"input">, "type" | "value" | "defaultValue" | "onChange" | "onBlur"> {
+  extends Omit<
+    React.ComponentPropsWithoutRef<"input">,
+    "type" | "value" | "defaultValue" | "onChange" | "onBlur" | "pattern"
+  > {
   /** A canonical ASCII numeric value, or a number supplied by an existing controlled field. */
   value?: string | number | readonly string[];
   /** Same as `value`, for an uncontrolled field. */
@@ -30,7 +33,7 @@ export interface PersianNumberInputProps
    * inferred from `inputMode="decimal"` or a fractional `step` value.
    */
   allowDecimal?: boolean;
-  /** Keep the historical ability to type a negative price/quantity where the API permits one. */
+  /** Opt in for genuinely signed domains (for example a balance adjustment). Defaults to false. */
   allowNegative?: boolean;
   /** Thousand separators are useful for values and prices; turn them off only for compact numeric codes. */
   grouping?: boolean;
@@ -55,7 +58,7 @@ function decimalStep(step: React.ComponentPropsWithoutRef<"input">["step"]): boo
 
 function optionsFor({
   allowDecimal,
-  allowNegative = true,
+  allowNegative = false,
   grouping = true,
 }: Pick<PersianNumberInputProps, "allowDecimal" | "allowNegative" | "grouping">): NumericTextOptions {
   return { allowDecimal, allowNegative, grouping };
@@ -121,12 +124,14 @@ export const PersianNumberInput = React.forwardRef<HTMLInputElement, PersianNumb
       onChange,
       onBlur,
       allowDecimal: allowDecimalProp,
-      allowNegative = true,
+      allowNegative = false,
       grouping = true,
       inputMode,
       step,
       // Deliberately discarded. See the component docblock: this must be a
-      // text control to support Persian digits and thousands grouping.
+      // text control to support Persian digits and thousands grouping. Native
+      // pattern validation would inspect the localized DOM value rather than
+      // the canonical value exposed to application code.
       type: _type,
       dir = "ltr",
       ...props
@@ -135,10 +140,17 @@ export const PersianNumberInput = React.forwardRef<HTMLInputElement, PersianNumb
   ) {
     const allowDecimal = allowDecimalProp ?? (inputMode === "decimal" || decimalStep(step));
     const options = optionsFor({ allowDecimal, allowNegative, grouping });
+    // Preserve an attempted sign/fraction in canonical state so domain
+    // validation can reject it with useful feedback. Silently turning `-5`
+    // into `5` or `12.5` into `12` changes the value the person entered.
+    const editingOptions = { ...options, allowDecimal: true, allowNegative: true };
     const keyboard = inputMode ?? (allowDecimal ? "decimal" : "numeric");
+    // A spread from JavaScript can bypass the public TypeScript contract. Do
+    // not let a canonical-value pattern reach the localized DOM in that case.
+    const { pattern: _pattern, ...safeProps } = props as typeof props & { pattern?: string };
 
     function format(valueToFormat: NumericValue): string {
-      return formatPersianNumericText(valueAsText(valueToFormat), options);
+      return formatPersianNumericText(valueAsText(valueToFormat), editingOptions);
     }
 
     function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -146,14 +158,14 @@ export const PersianNumberInput = React.forwardRef<HTMLInputElement, PersianNumb
       const raw = input.value;
       const selectionStart = input.selectionStart ?? raw.length;
       const selectionEnd = input.selectionEnd ?? selectionStart;
-      const canonical = normalizeNumericText(raw, options);
-      const display = formatPersianNumericText(canonical, options);
+      const canonical = normalizeNumericText(raw, editingOptions);
+      const display = formatPersianNumericText(canonical, editingOptions);
 
       // Count canonical characters before the selection rather than copying a
       // pixel/character offset from the ungrouped text. A new «٬» can appear on
       // every fourth digit.
-      const canonicalStart = normalizeNumericText(raw.slice(0, selectionStart), options).length;
-      const canonicalEnd = normalizeNumericText(raw.slice(0, selectionEnd), options).length;
+      const canonicalStart = normalizeNumericText(raw.slice(0, selectionStart), editingOptions).length;
+      const canonicalEnd = normalizeNumericText(raw.slice(0, selectionEnd), editingOptions).length;
 
       if (input.value !== display) {
         input.value = display;
@@ -174,13 +186,13 @@ export const PersianNumberInput = React.forwardRef<HTMLInputElement, PersianNumb
     }
 
     function handleBlur(event: React.FocusEvent<HTMLInputElement>) {
-      const canonical = normalizeNumericText(event.currentTarget.value, options);
+      const canonical = normalizeNumericText(event.currentTarget.value, editingOptions);
       onBlur?.(eventWithCanonicalValue(event, canonical));
     }
 
     return (
       <input
-        {...props}
+        {...safeProps}
         ref={ref}
         type="text"
         dir={dir}

@@ -101,7 +101,7 @@ const MARK_DIRTY_SQL = `INSERT INTO crm_scoring_state (business_id, dirty_since)
 
 export async function markScoringDirty(businessId: string): Promise<void> {
   try {
-    await query(MARK_DIRTY_SQL, [businessId]);
+    await withTenant(businessId, () => query(MARK_DIRTY_SQL, [businessId]));
   } catch {
     // Intentionally swallowed — see above. The daily floor is the backstop.
   }
@@ -164,15 +164,17 @@ export async function recordManualScoringRun(
   scored: number,
   runStartedAt: Date,
 ): Promise<void> {
-  await query(
-    `INSERT INTO crm_scoring_state (business_id, last_run_at, last_run_status, last_scored_count)
-     VALUES ($1, now(), 'ok', $2)
-     ON CONFLICT (business_id) DO UPDATE
-       SET last_run_at = now(), last_run_status = 'ok', last_error = '',
-           last_scored_count = $2, running_since = NULL,
-           ${CLEAR_SATISFIED_DIRT},
-           updated_at = now()`,
-    [businessId, scored, runStartedAt.toISOString()],
+  await withTenant(businessId, () =>
+    query(
+      `INSERT INTO crm_scoring_state (business_id, last_run_at, last_run_status, last_scored_count)
+       VALUES ($1, now(), 'ok', $2)
+       ON CONFLICT (business_id) DO UPDATE
+         SET last_run_at = now(), last_run_status = 'ok', last_error = '',
+             last_scored_count = $2, running_since = NULL,
+             ${CLEAR_SATISFIED_DIRT},
+             updated_at = now()`,
+      [businessId, scored, runStartedAt.toISOString()],
+    ),
   );
 }
 
@@ -196,20 +198,22 @@ export interface ScoringFreshness {
  * محاسبه نشده» rather than as a zero-hour-old score.
  */
 export async function scoringFreshness(businessId: string): Promise<ScoringFreshness> {
-  const { rows } = await query<{
-    dirty_since: string | null;
-    last_run_at: string | null;
-    last_run_status: string;
-    last_error: string;
-    last_scored_count: number;
-    age_hours: number | null;
-  }>(
-    `SELECT dirty_since, last_run_at, last_run_status, last_error, last_scored_count,
-            CASE WHEN last_run_at IS NULL THEN NULL
-                 ELSE floor(extract(epoch FROM (now() - last_run_at)) / 3600)::integer
-            END AS age_hours
-       FROM crm_scoring_state WHERE business_id = $1`,
-    [businessId],
+  const { rows } = await withTenant(businessId, () =>
+    query<{
+      dirty_since: string | null;
+      last_run_at: string | null;
+      last_run_status: string;
+      last_error: string;
+      last_scored_count: number;
+      age_hours: number | null;
+    }>(
+      `SELECT dirty_since, last_run_at, last_run_status, last_error, last_scored_count,
+              CASE WHEN last_run_at IS NULL THEN NULL
+                   ELSE floor(extract(epoch FROM (now() - last_run_at)) / 3600)::integer
+              END AS age_hours
+         FROM crm_scoring_state WHERE business_id = $1`,
+      [businessId],
+    ),
   );
   const row = rows[0];
   if (!row) {
@@ -302,35 +306,43 @@ export async function runCrmScoringTick(now = new Date()): Promise<number> {
   let scored = 0;
 
   for (const businessId of businessIds) {
-    if (!(await claim(businessId, now))) continue;
-
-    // Stamped before the scan begins: the run accounts for everything that
-    // was dirty as of this instant, and nothing that happens after it.
-    const runStartedAt = new Date();
-
     try {
-      const result = await withTenant(businessId, () => recomputeRfm(businessId));
-      await query(
-        `UPDATE crm_scoring_state
-            SET last_run_at = now(), last_run_status = 'ok', last_error = '',
-                last_scored_count = $2, running_since = NULL,
-                ${CLEAR_SATISFIED_DIRT},
-                updated_at = now()
-          WHERE business_id = $1`,
-        [businessId, result.scored, runStartedAt.toISOString()],
-      );
-      scored += 1;
-    } catch (error) {
-      // Recorded against this business and surfaced in the UI. Scores that
-      // quietly stopped updating are worse than no scores, because people keep
-      // making decisions on them.
-      await query(
-        `UPDATE crm_scoring_state
-            SET last_run_status = 'failed', last_error = $2,
-                running_since = NULL, updated_at = now()
-          WHERE business_id = $1`,
-        [businessId, String(error).slice(0, 500)],
-      ).catch(() => undefined);
+      const didScore = await withTenant(businessId, async () => {
+        if (!(await claim(businessId, now))) return false;
+
+        // Stamped before the scan begins: the run accounts for everything that
+        // was dirty as of this instant, and nothing that happens after it.
+        const runStartedAt = new Date();
+
+        try {
+          const result = await recomputeRfm(businessId);
+          await query(
+            `UPDATE crm_scoring_state
+                SET last_run_at = now(), last_run_status = 'ok', last_error = '',
+                    last_scored_count = $2, running_since = NULL,
+                    ${CLEAR_SATISFIED_DIRT},
+                    updated_at = now()
+              WHERE business_id = $1`,
+            [businessId, result.scored, runStartedAt.toISOString()],
+          );
+          return true;
+        } catch (error) {
+          // Recorded against this business and surfaced in the UI. Scores that
+          // quietly stopped updating are worse than no scores, because people keep
+          // making decisions on them.
+          await query(
+            `UPDATE crm_scoring_state
+                SET last_run_status = 'failed', last_error = $2,
+                    running_since = NULL, updated_at = now()
+              WHERE business_id = $1`,
+            [businessId, String(error).slice(0, 500)],
+          ).catch(() => undefined);
+          return false;
+        }
+      });
+      if (didScore) scored += 1;
+    } catch (err) {
+      console.error(`CRM scoring tick failed for business ${businessId}:`, err);
     }
   }
 

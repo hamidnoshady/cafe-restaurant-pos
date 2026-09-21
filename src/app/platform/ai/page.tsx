@@ -463,8 +463,6 @@ export default function PlatformAiPage() {
             <Field label="بودجهٔ پیش‌فرض هر کلید (دلار)">
               <PersianNumberInput
                 className={inputClass}
-                type="number"
-                min="0"
                 value={draft.defaultMaxBudgetUsd ?? ""}
                 onChange={(event) => setDraft({ ...draft, defaultMaxBudgetUsd: numericOrNull(event.target.value) })}
               />
@@ -480,8 +478,6 @@ export default function PlatformAiPage() {
             <Field label="سقف پیش‌فرض توکن در دقیقه (TPM)">
               <PersianNumberInput
                 className={inputClass}
-                type="number"
-                min="0"
                 value={draft.defaultTpmLimit ?? ""}
                 onChange={(event) => setDraft({ ...draft, defaultTpmLimit: numericOrNull(event.target.value) })}
               />
@@ -489,8 +485,6 @@ export default function PlatformAiPage() {
             <Field label="سقف پیش‌فرض درخواست در دقیقه (RPM)">
               <PersianNumberInput
                 className={inputClass}
-                type="number"
-                min="0"
                 value={draft.defaultRpmLimit ?? ""}
                 onChange={(event) => setDraft({ ...draft, defaultRpmLimit: numericOrNull(event.target.value) })}
               />
@@ -520,8 +514,6 @@ export default function PlatformAiPage() {
             >
               <PersianNumberInput
                 className={inputClass}
-                type="number"
-                min="0"
                 value={draft.usdRialRate ?? ""}
                 onChange={(event) => setDraft({ ...draft, usdRialRate: numericOrNull(event.target.value) })}
               />
@@ -532,8 +524,6 @@ export default function PlatformAiPage() {
             >
               <PersianNumberInput
                 className={inputClass}
-                type="number"
-                min="0"
                 value={draft.revenueMarginPercent || ""}
                 onChange={(event) =>
                   setDraft({ ...draft, revenueMarginPercent: Number(event.target.value.replace(/[٬,\s]/g, "")) || 0 })
@@ -546,8 +536,6 @@ export default function PlatformAiPage() {
             >
               <PersianNumberInput
                 className={inputClass}
-                type="number"
-                min="0"
                 value={draft.maxTurnRial || ""}
                 onChange={(event) =>
                   setDraft({ ...draft, maxTurnRial: Number(event.target.value.replace(/[٬,\s]/g, "")) || 0 })

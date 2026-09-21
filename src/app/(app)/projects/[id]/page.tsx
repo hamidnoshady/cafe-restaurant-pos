@@ -22,6 +22,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { PageHeader, PageShell, SectionCard, cardClass } from "@/app/dashboard/page-chrome";
 import { api, inputClass } from "@/app/dashboard/ui";
 import {
@@ -479,7 +480,7 @@ export default function ProjectDetailPage() {
               {editingOperations ? <>
                 <label className="grid gap-1 text-xs text-muted-foreground">وضعیت<select className={inputClass} value={statusDraft} onChange={(e) => setStatusDraft(e.target.value as Project["status"])}><option value="active">فعال</option><option value="paused">متوقف</option><option value="completed">تکمیل‌شده</option></select></label>
                 <label className="grid gap-1 text-xs text-muted-foreground">مالک<select className={inputClass} value={ownerDraft} onChange={(e) => setOwnerDraft(e.target.value)}><option value="">بدون مالک</option>{owners.map((member) => <option value={member.id} key={member.id}>{member.fullName}</option>)}</select></label>
-                <label className="grid gap-1 text-xs text-muted-foreground">بودجه (ریال)<input className={inputClass} type="number" min="0" step="1" value={budgetDraft} onChange={(e) => setBudgetDraft(e.target.value)} placeholder="بدون سقف" /></label>
+                <label className="grid gap-1 text-xs text-muted-foreground">بودجه (ریال)<PersianNumberInput className={inputClass} inputMode="numeric" allowDecimal={false} allowNegative={false} value={budgetDraft} onChange={(e) => setBudgetDraft(e.target.value)} placeholder="بدون سقف" /></label>
                 <label className="grid gap-1 text-xs text-muted-foreground">ایجنت پیش‌فرض<select className={inputClass} value={agentDraft} onChange={(e) => setAgentDraft(e.target.value)}><option value="">دستیار کامل</option>{agents.map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</select><span className="text-[11px] text-muted-foreground">همهٔ گفت‌وگوهای این پروژه با این ایجنت اجرا می‌شوند.</span></label>
                 <div className="flex gap-2"><Button size="sm" onClick={handleSaveOperations}><SaveIcon className="size-3" /> ذخیره</Button><Button variant="outline" size="sm" onClick={() => setEditingOperations(false)}>انصراف</Button></div>
               </> : <>

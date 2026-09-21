@@ -37,6 +37,11 @@ describe("digits", () => {
   });
 
   it("normalizes Persian, Arabic-Indic, and grouped input text without losing decimals", () => {
+    expect(normalizeNumericText("2030")).toBe("2030");
+    expect(normalizeNumericText("۲٬۰۳۰")).toBe("2030");
+    expect(normalizeNumericText("٢٠٣٠")).toBe("2030");
+    expect(normalizeNumericText("۱۲٫۵")).toBe("12.5");
+    expect(normalizeNumericText("١٢٫٥")).toBe("12.5");
     expect(normalizeNumericText("۱٬۲۵۰٬۰۰۰٫۵۰")).toBe("1250000.50");
     expect(normalizeNumericText("١,٢٥٠,٠٠٠.٥٠")).toBe("1250000.50");
     expect(normalizeNumericText("۰۰۰۱۲")).toBe("12");
@@ -47,6 +52,8 @@ describe("digits", () => {
   });
 
   it("formats editable numeric text with Persian digits, separators, and decimal mark", () => {
+    expect(formatPersianNumericText("2030")).toBe("۲٬۰۳۰");
+    expect(formatPersianNumericText("12.5")).toBe("۱۲٫۵");
     expect(formatPersianNumericText("1250000.50")).toBe("۱٬۲۵۰٬۰۰۰٫۵۰");
     expect(formatPersianNumericText("-12500.5")).toBe("-۱۲٬۵۰۰٫۵");
     expect(formatPersianNumericText("12.")).toBe("۱۲٫");

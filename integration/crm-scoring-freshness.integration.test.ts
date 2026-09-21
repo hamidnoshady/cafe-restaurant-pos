@@ -25,21 +25,30 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import { createAppRole } from "../scripts/create-app-role";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
   throw new Error("DATABASE_URL is required for database integration tests");
 }
 
+const APP_ROLE = "pos_rfmfresh_role";
+const APP_PASSWORD = "rfm-fresh-password";
+
 let databaseName: string;
 let db: Client;
+let dbLib: typeof import("../src/lib/db");
 let freshness: typeof import("../src/lib/crm-scoring-freshness");
 
 const biz = { id: "", locationId: "" };
 
-function urlFor(database: string): string {
+function urlFor(database: string, user?: { name: string; password: string }): string {
   const url = new URL(rootDatabaseUrl!);
   url.pathname = `/${database}`;
+  if (user) {
+    url.username = user.name;
+    url.password = user.password;
+  }
   return url.toString();
 }
 
@@ -59,8 +68,15 @@ beforeAll(async () => {
     await maintenance.end();
   }
   await runMigrations({ databaseUrl: urlFor(databaseName), quiet: true });
+  await createAppRole({
+    databaseUrl: urlFor(databaseName),
+    roleName: APP_ROLE,
+    password: APP_PASSWORD,
+    quiet: true,
+  });
 
-  process.env.DATABASE_URL = urlFor(databaseName);
+  process.env.DATABASE_URL = urlFor(databaseName, { name: APP_ROLE, password: APP_PASSWORD });
+  dbLib = await import("../src/lib/db");
   freshness = await import("../src/lib/crm-scoring-freshness");
 
   db = new Client({ connectionString: urlFor(databaseName) });
@@ -81,6 +97,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.end();
+  await dbLib?.getPool().end().catch(() => {});
+  process.env.DATABASE_URL = rootDatabaseUrl;
+
   const maintenance = new Client({ connectionString: maintenanceUrl() });
   await maintenance.connect();
   try {

@@ -152,8 +152,6 @@ export function OnlinePlatformsSettings() {
                 inputMode="decimal"
                 allowDecimal
                 grouping={false}
-                min={0}
-                max={MAX_ONLINE_PLATFORM_COMMISSION_PERCENT}
                 step="0.01"
                 value={commissionPercent}
                 disabled={saving}

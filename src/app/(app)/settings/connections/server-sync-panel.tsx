@@ -431,9 +431,6 @@ export function ServerSyncPanel() {
               className={inputClass}
               value={batchSize}
               onChange={(e) => setBatchSize(e.target.value)}
-              type="number"
-              min={1}
-              max={200}
               dir="ltr"
             />
           </Field>
