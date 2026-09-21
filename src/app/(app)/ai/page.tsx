@@ -1,20 +1,27 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
-import { featureLockedForPage } from "@/lib/features";
-import { FeatureLock } from "@/components/feature-lock";
-import { AiWorkspace } from "@/app/dashboard/ai/ai-workspace";
 
-export default async function AiPage() {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
-  // `ai_assistant` is lockable: a business without it sees the workspace rather
-  // than being bounced back to /dashboard, but cannot use any of it.
-  const locked = await featureLockedForPage(session.businessId, "ai_assistant");
-
-  return (
-    <FeatureLock locked={locked} title="دستیار هوشمند">
-      <AiWorkspace />
-    </FeatureLock>
-  );
+/**
+ * The assistant's old standalone address — a compatibility redirect.
+ *
+ * The assistant is the dashboard now: `/dashboard` is the chat home, the same
+ * `AiChatHub` this page used to mount, and the management sections open there
+ * as the `?aiPanel=` drawer. The deep-link parameters that meant anything on
+ * this page travel with the redirect — `?conversation=` and `?ctx=` were read
+ * by the hub then exactly as now, and `?project=` starts new turns inside the
+ * same project workspace. `?aiPanel=` passes through untouched for the
+ * section redirects beside this one.
+ */
+export default async function AiPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const kept = new URLSearchParams();
+  for (const key of ["conversation", "ctx", "project", "aiPanel"]) {
+    const value = params[key];
+    if (typeof value === "string" && value) kept.set(key, value);
+  }
+  const query = kept.toString();
+  redirect(query ? `/dashboard?${query}` : "/dashboard");
 }

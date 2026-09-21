@@ -5,7 +5,6 @@ import {
   isProductWorkspaceIndustry,
   PRODUCT_WORKSPACE_SECTIONS,
 } from "@/lib/product-workspace";
-import { visibleConnectionKinds, type ConnectionKind } from "@/lib/connection-kinds";
 import { ACCOUNTING_ROLES, ACCOUNTING_SECTIONS } from "@/app/(app)/accounting/accounting-nav";
 import { PARTY_DIRECTORY_NAV_VIEWS, partyDirectoryHref } from "@/lib/party-directory";
 import { accountingSectionHref } from "@/app/(app)/accounting/accounting-routes";
@@ -44,17 +43,10 @@ import { AppAvailabilityGate } from "./app-availability-gate";
 interface NavContext {
   /** The settings tabs this member may open (already role/permission/feature-filtered). */
   settingsTabs: ResolvedSettingsTab[];
-  /** The connection kinds this member may open (already role/module-filtered). */
-  connectionKinds: ConnectionKind[];
 }
 
 function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
   return [
-    // Phase 35 Wave 2: the dashboard itself moved to /dashboard/overview; the
-    // bare /dashboard route is now the chat home. Links that meant "the
-    // dashboard" point here instead, so the legacy surface is still one tap away
-    // whether or not the workspace shell is on.
-    { label: "داشبورد", module: "dashboard", href: "/overview" },
     {
       label: labelFor(industry, "saleDocumentPlural"),
       module: "orders",
@@ -198,25 +190,6 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       href: "/media",
       roles: ["owner", "manager"],
     },
-    // The «اتصال‌های فنی» hub — every technical connection in the product
-    // (desktop, WordPress/WooCommerce, the CMS site, Holoo, the remote server
-    // sync, MCP, API keys). A shell utility, not an app: its module is
-    // unassigned in `apps.ts`, so it is never badged and never gated.
-    // WordPress/WooCommerce *management* is not listed here either: it lives
-    // inside «مدیریت وب‌سایت» above, and the old `/dashboard/wp` prefix
-    // forwards there (its connection screen forwards to this hub instead), so
-    // one door stays one door.
-    {
-      label: "اتصال‌های فنی",
-      module: "connections",
-      href: "/settings/connections",
-      roles: ["owner", "manager"],
-      children: ctx.connectionKinds.map((kind) => ({
-        label: kind.label,
-        module: "connections" as const,
-        href: `/settings/connections?tab=${kind.key}`,
-      })),
-    },
     {
       label: "گزارش‌ها",
       module: "reports",
@@ -230,7 +203,13 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
         roles: tab.roles ?? ["owner", "manager", "accountant"],
       })),
     },
-    { label: "دستیار هوشمند", module: "ai", href: "/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
+    // The assistant itself is not an entry: it IS the dashboard (`/dashboard`
+    // is the chat home), and the workspace rail names the home in its own
+    // toolbar. The «اتصال‌های فنی» hub is likewise no longer a nav group here
+    // — the feature is untouched at `/settings/connections`, but its door is
+    // the platform user menu, which is where a shell utility belongs, and the
+    // contextual links (Website → WooCommerce/CMS, Holoo, MCP/API) still hand a
+    // member over from the app that uses the connection.
     // Wallet/credits & plans — platform-owned, so the door is the platform
     // settings area's billing page, never an app's. The small credit badge in
     // the chrome links to the same URL.
@@ -337,9 +316,8 @@ export async function WorkspaceShell({
   const currencyDisplay = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
   const permissions = member.permissions;
   const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features, industry });
-  const connectionKinds = visibleConnectionKinds({ role: member.role, industry });
   const profile = industryProfile(industry);
-  const navItems = navItemsFor(industry, { settingsTabs, connectionKinds })
+  const navItems = navItemsFor(industry, { settingsTabs })
     // Phase 42 — group children go through the same role/module/permission
     // gate as their parent; a group whose children all filtered out is gone
     // rather than an empty disclosure.
@@ -368,11 +346,6 @@ export async function WorkspaceShell({
             : undefined,
       };
     });
-  // Phase 35 Wave 2 — the workspace shell is gated on this flag. Off (the
-  // default) keeps the classic sidebar; on means the workspace rail is used
-  // for the chat home and projects surface.
-  const workspaceEnabled = Boolean(features.workspace);
-
   return (
     <LockProvider fullName={session.fullName}>
       <MoneyProvider unit={currencyDisplay}>
@@ -403,11 +376,10 @@ export async function WorkspaceShell({
           fullName={session.fullName}
           brandTitle={profile.brandTitle}
           brandSubtitle={profile.brandSubtitle}
-          variant={workspaceEnabled ? "workspace" : "classic"}
           industry={industry}
         />
-        <DashboardMain workspaceEnabled={workspaceEnabled}>
-          <AppAvailabilityGate availability={appAvailability} workspaceEnabled={workspaceEnabled}>
+        <DashboardMain>
+          <AppAvailabilityGate availability={appAvailability}>
             {children}
           </AppAvailabilityGate>
         </DashboardMain>

@@ -15,7 +15,6 @@ import {
   ArmchairIcon,
   BarChart3Icon,
   BookOpenIcon,
-  BotIcon,
   CalculatorIcon,
   CalendarDaysIcon,
   ChefHatIcon,
@@ -41,7 +40,6 @@ import {
 
 export const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboardIcon,
-  "/overview": LayoutDashboardIcon,
   "/accounting/orders": ClipboardListIcon,
   // Business work areas now sit under the primary Accounting workspace. The
   // retired dashboard URLs are redirect-only and intentionally have no icon
@@ -72,7 +70,6 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   "/media": ImageIcon,
   "/accounting/reports": BarChart3Icon,
   "/accounting/cosmetics": SparklesIcon,
-  "/ai": BotIcon,
   "/settings/billing": WalletIcon,
   "/settings": SettingsIcon,
   // Phase 36b — the Growth & Marketing app's home; the trend glyph the

@@ -22,10 +22,13 @@ state therefore affects those work areas together. The trade-level module keys
 in `industry-profile.ts` still decide which capabilities a given industry has;
 roles and feature entitlements still apply to individual pages.
 
-The AI assistant, workspace shell, shared Settings, technical Connections,
-support and knowledge surfaces are platform utilities. They do not get their
-own app key or app availability state. In particular, the technical connection
-hub is separate from the two website managers' business workflows.
+The AI assistant, shared Settings, technical Connections, support and
+knowledge surfaces are platform utilities. They do not get their own app key
+or app availability state. In particular, the technical connection hub is
+separate from the two website managers' business workflows. (The assistant is
+the workspace home itself: `/dashboard` is its chat surface for every tenant,
+and the retired second applications — the old quick-report dashboard and the
+standalone `/ai` app — redirect there rather than existing alongside it.)
 
 The super-admin app switchboard and its per-business overrides should list
 only these four registry apps. Historical `sales`, `operations`, `settings`

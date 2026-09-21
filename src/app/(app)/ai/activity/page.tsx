@@ -1,30 +1,13 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
-import { featureLockedForPage } from "@/lib/features";
-import { AiWorkspacePage } from "../ai-workspace-page";
-import { AiAutopilotActivity } from "@/app/dashboard/ai/ai-autopilot-activity";
+import { aiPanelHref } from "@/lib/ai-panel";
 
 /**
- * «فعالیت خودکار» — the AI Workspace's autopilot activity section (Phase I).
- *
- * The feed of what the assistant did unattended, what it held back for the
- * owner to confirm, and the one-click revert — shipped as `AiAutopilotActivity`
- * but, like the coworker panel, mounted by no route. This gives it a home
- * beside the engines whose output it records.
+ * Compatibility redirect: this assistant management section is no longer a
+ * page of a second AI application — it is a section of the dashboard chat
+ * home's «مدیریت دستیار» panel. Bookmarked URLs keep working, addressed the
+ * way `aiPanelHref` names them, and the panel's own owner/manager gate
+ * applies on arrival, exactly as the page's gate did here.
  */
-export default async function AiActivityPage() {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
-  const locked = await featureLockedForPage(session.businessId, "ai_assistant");
-
-  return (
-    <AiWorkspacePage
-      locked={locked}
-      title="فعالیت خودکار"
-      description="آنچه دستیار به‌صورت خودکار انجام داده، آنچه برای تأیید شما نگه داشته، و امکان برگرداندن هر مورد."
-    >
-      <AiAutopilotActivity />
-    </AiWorkspacePage>
-  );
+export default function Page() {
+  redirect(aiPanelHref("activity"));
 }

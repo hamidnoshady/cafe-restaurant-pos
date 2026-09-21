@@ -18,8 +18,9 @@
  * The props are the same for every shell: the def that owns the slot (so an app
  * labels itself from the registry rather than restating its name in a component),
  * the member's role (so a component can show the sections that role may open),
- * the pathname (active state), a `onNavigate` to close the drawer on a phone,
- * and whether the workspace shell is on (which decides where «بازگشت» leads).
+ * the pathname (active state), and a `onNavigate` to close the drawer on a
+ * phone. «بازگشت» always leads back to the workspace home — `/dashboard` is
+ * that home for every business now.
  */
 
 import type { AppKey } from "@/lib/apps";
@@ -55,8 +56,6 @@ export interface AppShellNavProps {
   navItems?: readonly { label: string; href: string; iconKey?: string }[];
   /** Closes the mobile drawer after a tap, the way the flat nav does. */
   onNavigate: () => void;
-  /** The `workspace` feature flag: the rail launcher exists, so «بازگشت» goes to it. */
-  workspaceShell: boolean;
 }
 
 export const APP_SHELL_NAV: Partial<

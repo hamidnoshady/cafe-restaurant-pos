@@ -3,18 +3,18 @@
 /**
  * The AI assistant's chat surface — a ChatGPT-style column (Phase 36b
  * revision, redesigned again in Phase 36c with the shared bubble/composer
- * components).
+ * components), and now the one canonical assistant experience: it IS the
+ * dashboard. The retired `/ai` application forwarded here.
  *
- * A slim header (nav toggle + new chat), a scrollable bubble thread, and the
- * shared composer pinned to the bottom of the column. The welcome state is a
- * hero with floating gradient orbs and task-aware starter cards. The
- * conversation state can be owned by a parent (AiWorkspace) or, when rendered
- * standalone, created here.
+ * A slim header (new chat + the owner/manager «مدیریت دستیار» control that
+ * opens the `?aiPanel=` management drawer), a scrollable bubble thread, and
+ * the shared composer pinned to the bottom of the column. The welcome state
+ * is a hero with floating gradient orbs and task-aware starter cards.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { MenuIcon, MessageSquarePlusIcon, SparklesIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { MessageSquarePlusIcon, Settings2Icon, SparklesIcon } from "lucide-react";
 import { LoadingSkeleton } from "../page-chrome";
 import { useGSAP } from "@gsap/react";
 import { useMoney } from "@/components/money/money-context";
@@ -25,27 +25,61 @@ import { ChatComposer } from "@/components/ai/chat-composer";
 import { ChatBubble } from "@/components/ai/chat-bubble";
 import { animateFloat, animateStaggerIn } from "@/components/ai/chat-animations";
 import { SUGGESTED_PROMPTS, taskById, taskSuggestions } from "@/lib/ai-tasks";
-import { useAiChat, type AiChatState } from "@/components/ai/use-ai-chat";
+import {
+  AI_PANEL_PARAM,
+  isAiPanelSectionKey,
+  type AiPanelSectionKey,
+} from "@/lib/ai-panel";
+import { useAiChat } from "@/components/ai/use-ai-chat";
+import { AiManagementSheet } from "./ai-management-sheet";
 import { cardClass } from "../page-chrome";
 
 export function AiChatHub({
-  chat: externalChat,
-  onOpenNav,
+  canManageAi = false,
+  canAutoApply = false,
 }: {
-  chat?: AiChatState;
-  /** Shown on phones to open the assistant's own side nav (conversations/projects). */
-  onOpenNav?: () => void;
+  /** Owner/manager: shows the «مدیریت دستیار» control and honours `?aiPanel=`. */
+  canManageAi?: boolean;
+  /** Owner only: coworker jobs and automations may apply unattended. */
+  canAutoApply?: boolean;
 }) {
   const locked = useFeatureLocked();
+  const router = useRouter();
   const searchParams = useSearchParams();
   // Phase F — `?project=<id>` starts new conversations inside that project's
-  // workspace. Only the internal chat needs it; when a parent supplies the chat
-  // state (the /ai workspace) it has already wired its own projectId.
-  const internalChat = useAiChat({
+  // workspace, so their turns are shaped by the project's instruction, notes
+  // and memory.
+  const chat = useAiChat({
     mode: "dashboard",
     projectId: searchParams.get("project"),
   });
-  const chat = externalChat ?? internalChat;
+
+  // The management panel is addressed by the URL (`/dashboard?aiPanel=
+  // <section>`, the same address `aiPanelHref` and the legacy `/ai/<section>`
+  // redirects produce), so it survives bookmarks and the back button without a
+  // second state tree of its own. A member who may not manage the assistant
+  // simply never has a panel, whatever the URL says.
+  const panelParam = searchParams.get(AI_PANEL_PARAM);
+  const panelSection: AiPanelSectionKey | null =
+    canManageAi && isAiPanelSectionKey(panelParam) ? panelParam : null;
+
+  const replaceParams = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      const params = new URLSearchParams(searchParams.toString());
+      mutate(params);
+      const query = params.toString();
+      router.replace(query ? `/dashboard?${query}` : "/dashboard", { scroll: false });
+    },
+    [router, searchParams],
+  );
+  const openPanel = useCallback(
+    (key: AiPanelSectionKey) => replaceParams((params) => params.set(AI_PANEL_PARAM, key)),
+    [replaceParams],
+  );
+  const closePanel = useCallback(
+    () => replaceParams((params) => params.delete(AI_PANEL_PARAM)),
+    [replaceParams],
+  );
 
   const money = useMoney();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -124,23 +158,26 @@ export function AiChatHub({
   return (
     <section className="flex h-full min-h-0 w-full flex-col">
       <header className="flex min-h-12 items-center gap-2 border-b border-border/80 bg-card/80 backdrop-blur px-2 py-1.5 backdrop-blur sm:px-3">
-        {onOpenNav ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onOpenNav}
-            aria-label="منوی دستیار"
-            className="md:hidden"
-          >
-            <MenuIcon />
-          </Button>
-        ) : null}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">دستیار هوشمند</p>
           {taskLabel ? (
             <p className="truncate text-[10px] text-muted-foreground">وظیفهٔ فعلی: {taskLabel}</p>
           ) : null}
         </div>
+        {canManageAi ? (
+          <Button
+            variant={panelSection ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => openPanel(panelSection ?? "agents")}
+            aria-expanded={panelSection !== null}
+            aria-label="مدیریت دستیار"
+            title="مدیریت دستیار: ایجنت‌ها، همکاران، اتوماسیون‌ها، دانش و مصرف"
+            className="gap-1.5 px-2.5 sm:px-3"
+          >
+            <Settings2Icon className="size-4 shrink-0" aria-hidden="true" />
+            <span className="hidden sm:inline">مدیریت دستیار</span>
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           size="sm"
@@ -151,6 +188,13 @@ export function AiChatHub({
           <span className="hidden sm:inline">گفت‌وگوی جدید</span>
         </Button>
       </header>
+
+      <AiManagementSheet
+        section={panelSection}
+        canAutoApply={canAutoApply}
+        onSectionChange={openPanel}
+        onClose={closePanel}
+      />
 
       <div ref={scrollRef} className="ai-chat-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-4 sm:px-6">
         {loadingConversation ? (

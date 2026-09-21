@@ -71,14 +71,14 @@ export const MODULE_KEYS = [
   "ai",
   "settings",
   // Phase 35 — module keys for the app ecosystem and the phases that build on
-  // it. `workspace` is the ecosystem shell (gated by the `workspace` feature
-  // flag, not a trade module) and is added to no industry's `modules`.
-  // `crm` (Phase 36) and `website` (Phase 36b/reversal) are wired into
+  // it. `crm` (Phase 36) and `website` (Phase 36b/reversal) are wired into
   // `CORE_MODULES` below; `messaging` is still the subject of a later phase
-  // and stays unassigned until it wires up its own pages. They exist now so
-  // the app registry (src/lib/apps.ts) can give them a place and so a later
-  // phase need not touch the union again.
-  "workspace",
+  // and stays unassigned until it wires up its own pages. The key exists so
+  // the app registry (src/lib/apps.ts) can give it a place without touching
+  // the union again. There is deliberately no `workspace` key: the ecosystem
+  // shell stopped being a gated module when its flag retired — the chat home
+  // and the rail are the product's one shell now, for every trade, so there
+  // is nothing left for such a key to gate.
   "crm",
   "website",
   "messaging",
