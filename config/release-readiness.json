@@ -4,10 +4,10 @@
     { "id": "automated-core", "label": "Unit, database, sync, accounting, inventory, TypeScript, ESLint and production build", "kind": "automated", "requiredForProduction": true },
     { "id": "windows-server-package", "label": "Windows Server packaged install, two-launch persistence and size acceptance", "kind": "automated", "requiredForProduction": true },
     { "id": "postgresql-tools", "label": "Pinned PostgreSQL 16 packaged custom-format backup/restore acceptance", "kind": "integration", "requiredForProduction": true },
-    { "id": "authenticode", "label": "Expected-signer Authenticode plus RFC3161 timestamp verification", "kind": "integration", "requiredForProduction": true },
-    { "id": "windows-11-retail", "label": "Retail Windows 11 clean-state lifecycle, network profile, UAC, recovery, update and uninstall", "kind": "external", "requiredForProduction": true },
-    { "id": "physical-printer", "label": "Physical receipt-printer spool and printed-output acceptance", "kind": "external", "requiredForProduction": true },
-    { "id": "android-real-device", "label": "Real Android local-CA onboarding, pairing, revoke and HTTPS/WSS trust acceptance", "kind": "external", "requiredForProduction": true },
-    { "id": "ios-real-device", "label": "Real iOS local-CA onboarding, pairing, revoke and HTTPS/WSS trust acceptance", "kind": "external", "requiredForProduction": true }
+    { "id": "authenticode", "label": "Expected-signer Authenticode plus RFC3161 timestamp verification", "kind": "integration", "versionBound": true, "requiredForProduction": true },
+    { "id": "windows-11-retail", "label": "Retail Windows 11 clean-state lifecycle, network profile, UAC, recovery, update and uninstall", "kind": "external", "versionBound": true, "requiredForProduction": true },
+    { "id": "physical-printer", "label": "Physical receipt-printer spool and printed-output acceptance", "kind": "external", "versionBound": true, "requiredForProduction": true },
+    { "id": "android-real-device", "label": "Real Android local-CA onboarding, pairing, revoke and HTTPS/WSS trust acceptance", "kind": "external", "versionBound": true, "requiredForProduction": true },
+    { "id": "ios-real-device", "label": "Real iOS local-CA onboarding, pairing, revoke and HTTPS/WSS trust acceptance", "kind": "external", "versionBound": true, "requiredForProduction": true }
   ]
 }

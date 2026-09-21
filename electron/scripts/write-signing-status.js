@@ -18,7 +18,7 @@ module.exports = async function writeSigningStatus(result) {
     expectedSigner: process.env.WINDOWS_EXPECTED_SIGNER?.trim() || null,
     rfc3161TimestampRequired: provider !== "unsigned",
     artifacts: result.artifactPaths.map((artifactPath) => path.basename(artifactPath)).sort(),
-    commit: process.env.GITHUB_SHA || null,
+    commit: process.env.CANDIDATE_COMMIT || process.env.GITHUB_SHA || null,
     generatedAt: new Date().toISOString(),
   };
   const destination = path.join(result.outDir, "windows-signing-status.json");

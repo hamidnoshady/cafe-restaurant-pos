@@ -41,15 +41,18 @@ const results = config.checks.map((check) => {
   } else if (item.status === "FAIL") {
     state = "FAIL";
     reason = item.reason || "The acceptance check failed.";
+  } else if (check.id === "windows-11-retail" && !/^[0-9a-f]{64}$/.test(item.installerSha256 || "")) {
+    state = "MANUAL ACCEPTANCE REQUIRED";
+    reason = "Retail Windows 11 evidence is not bound to an installer SHA-256.";
   } else if (!validExecutionTime(item.executedAt) || !validEvidenceUrl(item.evidenceUrl)) {
     state = "FAIL";
     reason = "PASS is invalid without a non-future executedAt value and an HTTPS evidenceUrl.";
   } else if (expectedCommit && item.commit !== expectedCommit) {
     state = check.kind === "external" ? "MANUAL ACCEPTANCE REQUIRED" : "FAIL";
     reason = `Evidence commit ${item.commit || "missing"} does not match ${expectedCommit}.`;
-  } else if (expectedVersion && check.kind === "external" && item.version !== expectedVersion) {
-    state = "MANUAL ACCEPTANCE REQUIRED";
-    reason = `Hardware/retail evidence is not for version ${expectedVersion}.`;
+  } else if (expectedVersion && check.versionBound === true && item.version !== expectedVersion) {
+    state = check.kind === "external" ? "MANUAL ACCEPTANCE REQUIRED" : "FAIL";
+    reason = `Evidence version ${item.version || "missing"} does not match ${expectedVersion}.`;
   } else {
     state = "PASS";
     reason = item.reason || "Acceptance evidence supplied.";

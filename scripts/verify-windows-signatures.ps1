@@ -4,6 +4,7 @@ param(
   [string]$ManifestPath = "config/windows-signing-manifest.json",
   [ValidateSet("signed", "unsigned-development")][string]$Mode = "signed",
   [string]$ExpectedSigner = $env:WINDOWS_EXPECTED_SIGNER,
+  [ValidatePattern('^[0-9a-f]{40}$')][string]$CandidateCommit = $env:GITHUB_SHA,
   [string]$OutputPath = "windows-signature-verification.json"
 )
 
@@ -29,9 +30,13 @@ foreach ($entry in $manifest.required) {
   foreach ($file in $matches) {
     $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
     $signer = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { $null }
+    $signerCommonName = if ($signature.SignerCertificate) { $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) } else { $null }
     $timestampSigner = if ($signature.TimeStamperCertificate) { $signature.TimeStamperCertificate.Subject } else { $null }
     $valid = $signature.Status -eq [System.Management.Automation.SignatureStatus]::Valid
-    $signerMatches = $signer -and $signer.IndexOf($ExpectedSigner, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    $signerMatches = $signer -and (
+      [string]::Equals($signer, $ExpectedSigner, [StringComparison]::OrdinalIgnoreCase) -or
+      [string]::Equals($signerCommonName, $ExpectedSigner, [StringComparison]::OrdinalIgnoreCase)
+    )
     $timestamped = -not [string]::IsNullOrWhiteSpace($timestampSigner)
     $accepted = if ($Mode -eq "signed") {
       $valid -and $signerMatches -and $timestamped
@@ -48,12 +53,13 @@ foreach ($entry in $manifest.required) {
       sha256 = $hash
       status = [string]$signature.Status
       signer = $signer
+      signerCommonName = $signerCommonName
       timestampSigner = $timestampSigner
       accepted = $accepted
     }
     if (-not $accepted) {
       $failed = $true
-      Write-Host "::error file=$relative,title=Authenticode verification failed::mode=$Mode status=$($signature.Status) signer=$signer timestampSigner=$timestampSigner"
+      Write-Host "::error file=$relative,title=Authenticode verification failed::mode=$Mode status=$($signature.Status) expectedSigner=$ExpectedSigner signer=$signer signerCommonName=$signerCommonName timestampSigner=$timestampSigner"
     } else {
       Write-Host "Verified $relative ($Mode, sha256:$hash)"
     }
@@ -65,7 +71,7 @@ $report = [ordered]@{
   mode = $Mode
   expectedSigner = if ($Mode -eq "signed") { $ExpectedSigner } else { $null }
   rfc3161TimestampRequired = $Mode -eq "signed"
-  commit = $env:GITHUB_SHA
+  commit = $CandidateCommit
   generatedAt = [DateTime]::UtcNow.ToString("o")
   artifacts = $results
   passed = -not $failed

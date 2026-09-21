@@ -30,7 +30,10 @@ on:
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
       - 'scripts/verify-packaged-electron-runtime.ps1'
+      - 'scripts/verify-windows-signatures.ps1'
       - 'scripts/accept-physical-printer.ps1'
+      - 'config/windows-signing-manifest.json'
+      - 'config/windows-installer-signing-manifest.json'
       - 'scripts/desktop/**'
       - 'server.ts'
       - 'next.config.ts'
@@ -51,7 +54,10 @@ on:
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
       - 'scripts/verify-packaged-electron-runtime.ps1'
+      - 'scripts/verify-windows-signatures.ps1'
       - 'scripts/accept-physical-printer.ps1'
+      - 'config/windows-signing-manifest.json'
+      - 'config/windows-installer-signing-manifest.json'
       - 'scripts/desktop/**'
       - 'server.ts'
       - 'next.config.ts'
@@ -299,8 +305,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Parse both the customer-installed connector and packaged-runtime gate.
-      # A syntax failure in either would otherwise surface late in acceptance.
+      # Parse every Windows PowerShell acceptance/signature/runtime gate.
+      # A syntax failure in one would otherwise surface late in acceptance.
       # Parsing is done without running a single line.
       - name: PowerShell scripts parse
         run: |
@@ -308,6 +314,7 @@ jobs:
           $files = @(
             "public/windows/cafe-pos-print-connector.ps1",
             "scripts/verify-packaged-electron-runtime.ps1",
+            "scripts/verify-windows-signatures.ps1",
             "scripts/accept-physical-printer.ps1"
           )
           $failed = $false
@@ -331,5 +338,49 @@ jobs:
             } else {
               Write-Host "ok  $f"
             }
+          }
+          if ($failed) { exit 1 }
+
+      - name: PowerShell workflow blocks parse
+        run: |
+          $ErrorActionPreference = "Stop"
+          $workflowFiles = @(
+            ".github/workflows/build-desktop-installer.yml",
+            ".github/workflows/mobile-real-device-acceptance.yml",
+            ".github/workflows/physical-printer-acceptance.yml",
+            ".github/workflows/postgresql-tools-artifact.yml",
+            ".github/workflows/release-acceptance-aggregate.yml",
+            ".github/workflows/release-readiness.yml",
+            ".github/workflows/windows-11-release.yml",
+            ".github/workflows/windows-production-release.yml",
+            ".github/workflows/windows-signed-candidate.yml"
+          )
+          $failed = $false
+          foreach ($file in $workflowFiles) {
+            $lines = @(Get-Content -LiteralPath $file)
+            for ($index = 0; $index -lt $lines.Count; $index++) {
+              if ($lines[$index] -notmatch '^(\s*)run:\s*[|>][-+]?\s*$') { continue }
+              $runIndent = $Matches[1].Length
+              $bodyIndent = $runIndent + 2
+              $body = [System.Collections.Generic.List[string]]::new()
+              for ($cursor = $index + 1; $cursor -lt $lines.Count; $cursor++) {
+                $line = $lines[$cursor]
+                if ($line.Trim().Length -eq 0) { $body.Add(''); continue }
+                $null = $line -match '^(\s*)'
+                if ($Matches[1].Length -le $runIndent) { break }
+                $body.Add($line.Substring([Math]::Min($bodyIndent, $line.Length)))
+              }
+              $script = ($body -join "`n") -replace '\$\{\{.*?\}\}', 'GHA_EXPRESSION'
+              $tokens = $null; $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseInput($script, [ref]$tokens, [ref]$errors) | Out-Null
+              if ($errors -and $errors.Count -gt 0) {
+                $failed = $true
+                foreach ($error in $errors) {
+                  $lineNumber = $index + 1 + $error.Extent.StartLineNumber
+                  Write-Host "::error file=$file,line=$lineNumber::$($error.Message)"
+                }
+              }
+            }
+            if (-not $failed) { Write-Host "ok  $file inline PowerShell" }
           }
           if ($failed) { exit 1 }

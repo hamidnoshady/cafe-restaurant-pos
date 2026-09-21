@@ -86,7 +86,9 @@ describe("packaged desktop production posture", () => {
     expect(windowsSigningConfig.artifactBuildCompleted).toBeUndefined();
     const outDir = mkdtempSync(path.join(os.tmpdir(), "desktop-signing-status-"));
     const prior = process.env.WINDOWS_SIGNING_PROVIDER;
+    const priorCandidate = process.env.CANDIDATE_COMMIT;
     process.env.WINDOWS_SIGNING_PROVIDER = "unsigned";
+    process.env.CANDIDATE_COMMIT = "a".repeat(40);
     try {
       await writeSigningStatus({
         outDir,
@@ -97,10 +99,13 @@ describe("packaged desktop production posture", () => {
         status: "UNSIGNED DEVELOPMENT",
         provider: "unsigned",
         artifacts: ["Business Suite Setup.exe", "latest.yml"],
+        commit: "a".repeat(40),
       });
     } finally {
       if (prior === undefined) delete process.env.WINDOWS_SIGNING_PROVIDER;
       else process.env.WINDOWS_SIGNING_PROVIDER = prior;
+      if (priorCandidate === undefined) delete process.env.CANDIDATE_COMMIT;
+      else process.env.CANDIDATE_COMMIT = priorCandidate;
       rmSync(outDir, { recursive: true, force: true });
     }
   });
