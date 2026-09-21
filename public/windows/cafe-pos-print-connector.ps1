@@ -1,7 +1,11 @@
+# CAFE_POS_PRINT_CONNECTOR_V3
 param(
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$AllowedOrigin
+    [string]$AllowedOrigin,
+    # Further legitimate Cafe POS origins (e.g. a tenant's old subdomain kept
+    # alive as an alias after a rename). $AllowedOrigin remains the primary one.
+    [string[]]$AllowedOrigins = @()
 )
 
 # Cafe POS Windows Print Connector (protocol v3)
@@ -17,8 +21,8 @@ param(
 #     IPv4 subnets for the raw-print port 9100 and printed over TCP.
 # The app server renders documents; it never reaches restaurant hardware.
 #
-# Endpoints (loopback 127.0.0.1:9123 only; browser calls must carry the exact
-# allowed origin):
+# Endpoints (loopback 127.0.0.1:9123 only; browser calls must carry one of the
+# exact allowed origins):
 #   GET  /health
 #   GET  /printers/windows              → installed Windows print queues
 #   POST /printers/network/discover     → sweep local /24s for port 9100
@@ -49,16 +53,40 @@ function Write-ConnectorLog {
     }
 }
 
-try {
-    $parsedOrigin = [Uri]$AllowedOrigin
-    if (-not $parsedOrigin.IsAbsoluteUri -or ($parsedOrigin.Scheme -ne "https" -and $parsedOrigin.Scheme -ne "http")) {
-        throw "The application origin is invalid."
+function ConvertTo-NormalizedOrigin {
+    # One canonical spelling per origin, on both sides of the comparison:
+    # lowercase scheme and host, default port dropped, trailing slash removed.
+    # Browsers send Origin headers in exactly this form; normalizing this way
+    # means http://EXAMPLE.com:443/ and https://example.com never accidentally
+    # miss, without ever widening the match to a different origin.
+    param([string]$Value)
+    try {
+        $uri = [Uri]($Value.Trim().TrimEnd("/"))
+        if (-not $uri.IsAbsoluteUri -or ($uri.Scheme -ne "https" -and $uri.Scheme -ne "http")) { return "" }
+        $port = ""
+        if (-not $uri.IsDefaultPort) { $port = ":" + $uri.Port }
+        return ($uri.Scheme.ToLowerInvariant() + "://" + $uri.Host.ToLowerInvariant() + $port)
+    } catch {
+        return ""
     }
-    $AllowedOrigin = $parsedOrigin.GetLeftPart([UriPartial]::Authority).TrimEnd("/")
-} catch {
+}
+
+$primaryOrigin = ConvertTo-NormalizedOrigin -Value $AllowedOrigin
+if ($primaryOrigin -eq "") {
     Write-ConnectorLog "Invalid allowed origin."
     exit 2
 }
+$originSet = @{}
+$originSet[$primaryOrigin] = $true
+$AllowedOriginList = @($primaryOrigin)
+foreach ($extra in @($AllowedOrigins)) {
+    $normalized = ConvertTo-NormalizedOrigin -Value ([string]$extra)
+    if ($normalized -ne "" -and -not $originSet.ContainsKey($normalized)) {
+        $originSet[$normalized] = $true
+        $AllowedOriginList += $normalized
+    }
+}
+$AllowedOrigin = $primaryOrigin
 
 $createdNew = $false
 $mutex = [System.Threading.Mutex]::new($true, "Local\CafePOSPrintConnector9123", [ref]$createdNew)
@@ -269,8 +297,8 @@ function Write-HttpResponse {
               "Cache-Control: no-store`r`n" +
               "Access-Control-Allow-Private-Network: true`r`n" +
               "Vary: Origin`r`n"
-    if ($RequestOrigin -and $RequestOrigin -eq $AllowedOrigin) {
-        $header += "Access-Control-Allow-Origin: $AllowedOrigin`r`n" +
+    if ($RequestOrigin -and $originSet.ContainsKey($RequestOrigin)) {
+        $header += "Access-Control-Allow-Origin: $RequestOrigin`r`n" +
                    "Access-Control-Allow-Methods: GET, POST, OPTIONS`r`n" +
                    "Access-Control-Allow-Headers: Content-Type`r`n"
     }
@@ -495,8 +523,8 @@ function ConvertFrom-Base64PrintData {
 function Handle-Request {
     param([Net.Sockets.NetworkStream]$Stream, $Request)
 
-    $origin = if ($Request.Headers.ContainsKey("origin")) { [string]$Request.Headers["origin"] } else { "" }
-    $originAllowed = $origin -eq $AllowedOrigin
+    $origin = if ($Request.Headers.ContainsKey("origin")) { ConvertTo-NormalizedOrigin -Value ([string]$Request.Headers["origin"]) } else { "" }
+    $originAllowed = ($origin -ne "") -and $originSet.ContainsKey($origin)
 
     if ($Request.Method -eq "OPTIONS") {
         if (-not $originAllowed) {
@@ -510,12 +538,24 @@ function Handle-Request {
     # A no-Origin health request is useful to the installer itself. Every browser
     # operation, including browser health checks, is restricted to the exact POS origin.
     if ($Request.Path -eq "/health" -and $Request.Method -eq "GET" -and (-not $origin -or $originAllowed)) {
+        $spoolerStatus = "unknown"
+        try { $spoolerStatus = [string](Get-Service -Name Spooler -ErrorAction Stop).Status } catch { }
         Write-JsonResponse -Stream $Stream -Status 200 -Value @{
             ok = $true
             service = "cafe-pos-print-connector"
             version = 3
+            release = "3.1.0"
             platform = "windows"
             allowedOrigin = $AllowedOrigin
+            allowedOrigins = $AllowedOriginList
+            printSubsystem = @{
+                # The native winspool bridge is loaded before the listener starts,
+                # so a health answer already implies it; the spooler service state
+                # is the part that can still degrade at runtime.
+                winspool = "ready"
+                networkDiscovery = "ready"
+                spooler = $spoolerStatus
+            }
         } -RequestOrigin $origin
         return
     }
@@ -615,7 +655,8 @@ try {
     Set-Content -LiteralPath $PidPath -Value $PID -Encoding ASCII
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
     $listener.Start()
-    Write-ConnectorLog ("Connector v3 started on 127.0.0.1:" + $Port + " for " + $AllowedOrigin + ".")
+    $originCountNote = if ($AllowedOriginList.Count -gt 1) { " (+" + ($AllowedOriginList.Count - 1) + " more origin(s))" } else { "" }
+    Write-ConnectorLog ("Connector v3 (release 3.1.0) started on 127.0.0.1:" + $Port + " for " + $AllowedOrigin + $originCountNote + ".")
 
     while ($true) {
         $client = $listener.AcceptTcpClient()
