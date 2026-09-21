@@ -96,17 +96,20 @@ jobs:
         env:
           PG_TOOLS_DIR: ${{ github.workspace }}\.desktop-assets\postgresql-tools
         run: |
-          function Invoke-Acceptance([string]$Name, [scriptblock]$Command) {
-            $lines = @(& $Command 2>&1 | Tee-Object -FilePath "$Name.log")
-            if ($LASTEXITCODE -ne 0) {
-              $tail = @($lines | Select-Object -Last 60) -join "`n"
-              $detail = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
-              Write-Host "::error title=$Name failed::$detail"
-              throw "$Name failed"
-            }
+          $lines = @(node scripts/accept-packaged-pg-tools.mjs 2>&1 | Tee-Object -FilePath packaged-pg-tools-acceptance.log)
+          $toolExit = $LASTEXITCODE
+          if ($toolExit -ne 0) {
+            $detail = ((@($lines | Select-Object -Last 60) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A'))
+            Write-Host "::error title=Packaged PostgreSQL tools acceptance failed::$detail"
+            throw "Packaged PostgreSQL tools acceptance failed"
           }
-          Invoke-Acceptance 'packaged-pg-tools-acceptance' { node scripts/accept-packaged-pg-tools.mjs }
-          Invoke-Acceptance 'packaged-restore-acceptance' { npx tsx scripts/accept-packaged-restore.ts }
+          $lines = @(npx tsx scripts/accept-packaged-restore.ts 2>&1 | Tee-Object -FilePath packaged-restore-acceptance.log)
+          $restoreExit = $LASTEXITCODE
+          if ($restoreExit -ne 0) {
+            $detail = ((@($lines | Select-Object -Last 60) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A'))
+            Write-Host "::error title=Packaged restore acceptance failed::$detail"
+            throw "Packaged restore acceptance failed"
+          }
 
       - name: Stop disposable PostgreSQL
         if: always()
