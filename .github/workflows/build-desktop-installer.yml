@@ -68,6 +68,9 @@ env:
   PG_SOURCE_VERSION: '16.15'
   PG_SOURCE_URL: https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.gz
   PG_SOURCE_SHA256: 4f200ca23dfb120ff9838f13ce06014aad1d3c432d16ee9f93ab2000c0eeef7b
+  ZLIB_SOURCE_VERSION: '1.3.2'
+  ZLIB_SOURCE_URL: https://zlib.net/zlib-1.3.2.tar.gz
+  ZLIB_SOURCE_SHA256: bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
   PGPORT: '55432'
   DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
   # PR/branch artifacts are deliberately unsigned and are never release eligible.
@@ -97,14 +100,18 @@ jobs:
       - name: Install application dependencies
         run: npm ci
 
-      - name: Build minimal PostgreSQL 16 client tools from pinned official source
+      - name: Build compressed-backup PostgreSQL 16 tools from pinned official sources
         run: |
           $ErrorActionPreference = 'Stop'
           Invoke-WebRequest -Uri $env:PG_SOURCE_URL -OutFile "$env:RUNNER_TEMP\postgresql-source.tar.gz" -MaximumRedirection 0
+          Invoke-WebRequest -Uri $env:ZLIB_SOURCE_URL -OutFile "$env:RUNNER_TEMP\zlib-source.tar.gz" -MaximumRedirection 0
           .\scripts\build-postgresql-tools-from-source.ps1 `
             -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
             -SourceSha256 $env:PG_SOURCE_SHA256 `
+            -ZlibSourceArchive "$env:RUNNER_TEMP\zlib-source.tar.gz" `
+            -ZlibSourceSha256 $env:ZLIB_SOURCE_SHA256 `
             -PostgresVersion $env:PG_SOURCE_VERSION `
+            -ZlibVersion $env:ZLIB_SOURCE_VERSION `
             -OutputDirectory controlled-input `
             -Organization "${{ github.repository_owner }}"
           $result = Get-Content controlled-input\source-build.json -Raw | ConvertFrom-Json
@@ -368,7 +375,7 @@ jobs:
 
           - Installer: **$env:NAME** — **$env:INSTALLER MiB**
           - Unpacked installed payload: **$env:INSTALLED MiB**
-          - PostgreSQL backup tools: **$env:PG_TOOLS MiB**, built from pinned PostgreSQL $env:PG_SOURCE_VERSION source
+          - PostgreSQL backup tools: **$env:PG_TOOLS MiB**, built from pinned PostgreSQL $env:PG_SOURCE_VERSION and zlib $env:ZLIB_SOURCE_VERSION sources with gzip compression
           - Runtime: Next standalone trace + bundled custom server; no root node_modules
           - Acceptance: packaged pg_dump/pg_restore passed custom-format, corruption, encrypted staging, emergency-backup, swap and rollback checks; the packaged executable initialized PostgreSQL UTF-8, migrated, passed RLS boot, bootstrapped through the real API, authenticated, stopped, restarted and retained data
           "@

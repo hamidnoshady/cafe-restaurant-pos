@@ -88,7 +88,9 @@ try {
     SELECT setval(pg_get_serial_sequence('packaged_tools_acceptance.parent', 'id'), 41, true);
   `);
 
-  await run(dumpBin, ["--format=custom", "--no-owner", "--no-privileges", "--file", dump, sourceUrl]);
+  // Requiring gzip explicitly prevents a source build without zlib from
+  // silently producing much larger uncompressed production backups.
+  await run(dumpBin, ["--format=custom", "--compress=gzip:6", "--no-owner", "--no-privileges", "--file", dump, sourceUrl]);
   await sql(adminUrl, `CREATE DATABASE ${restoredName}`);
   await run(restoreBin, ["--exit-on-error", "--no-owner", "--no-privileges", "--dbname", databaseUrl(restoredName), dump]);
 
@@ -117,7 +119,7 @@ try {
     postgresToolsVersion: provenance.postgresVersion,
     serverVersion,
     artifact: provenance.artifact,
-    checks: ["custom-format", "utf8", "exact-bigint", "foreign-key", "identity-sequence", "corruption-rejected"],
+    checks: ["custom-format", "gzip-compression", "utf8", "exact-bigint", "foreign-key", "identity-sequence", "corruption-rejected"],
     generatedAt: new Date().toISOString(),
   };
   await fs.writeFile(output, `${JSON.stringify(report, null, 2)}\n`);

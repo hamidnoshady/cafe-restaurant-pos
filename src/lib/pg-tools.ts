@@ -266,7 +266,12 @@ export async function runPgDump(outFile: string, databaseUrl: string, bin?: stri
     ? { kind: "pg_dump" as const, executable: bin, source: "development-override" as const, postgresVersion: "16.0", postgresMajor: 16, provenance: null }
     : await resolvePgTool("pg_dump");
   if (!bin) await assertPgToolServerCompatibility(resolution, databaseUrl);
-  await executeTool(resolution.executable, ["--format=custom", "--no-password", `--file=${outFile}`, databaseUrl], PG_DUMP_TIMEOUT_MS, "pg_dump");
+  await executeTool(
+    resolution.executable,
+    ["--format=custom", "--compress=gzip:6", "--no-password", `--file=${outFile}`, databaseUrl],
+    PG_DUMP_TIMEOUT_MS,
+    "pg_dump",
+  );
 }
 
 export async function runPgRestore(bin: string | undefined, args: string[], databaseUrl?: string): Promise<void> {
