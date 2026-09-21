@@ -7,41 +7,51 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+function Stop-RuntimeVerification([string]$Message) {
+  Write-Host "::error title=Packaged Electron runtime verification::$Message"
+  throw $Message
+}
+
 $root = (Resolve-Path -LiteralPath $ArtifactRoot).Path
 $executables = @(Get-ChildItem -LiteralPath $root -File -Filter "*.exe" | Where-Object { $_.Name -ne "Uninstall Business Suite.exe" })
 if ($executables.Count -ne 1) {
-  throw "Expected exactly one packaged application executable in $root, found $($executables.Count)"
+  Stop-RuntimeVerification "Expected exactly one packaged application executable in $root, found $($executables.Count): $($executables.Name -join ', ')"
 }
+$executablePath = $executables[0].FullName
+$probePath = Join-Path ([IO.Path]::GetTempPath()) "business-suite-electron-runtime-$([Guid]::NewGuid().ToString('N')).cjs"
+$probeSource = 'process.stdout.write(JSON.stringify({node:process.versions.node,electron:process.versions.electron,chrome:process.versions.chrome}))'
+[IO.File]::WriteAllText($probePath, $probeSource, (New-Object System.Text.UTF8Encoding($false)))
 
 $prior = $env:ELECTRON_RUN_AS_NODE
 try {
   $env:ELECTRON_RUN_AS_NODE = "1"
-  $expression = 'JSON.stringify({node:process.versions.node,electron:process.versions.electron,chrome:process.versions.chrome})'
-  $raw = ((& $executables[0].FullName -p $expression) | Out-String).Trim()
-  if ($LASTEXITCODE -ne 0) {
-    throw "Packaged Electron runtime probe failed with exit code $LASTEXITCODE"
-  }
+  $raw = ((& $executablePath $probePath) | Out-String).Trim()
+  $probeExit = $LASTEXITCODE
 } finally {
   if ($null -eq $prior) {
     Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
   } else {
     $env:ELECTRON_RUN_AS_NODE = $prior
   }
+  Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue
+}
+if ($probeExit -ne 0) {
+  Stop-RuntimeVerification "Packaged Electron runtime probe failed with exit code $probeExit"
 }
 
 try {
   $versions = $raw | ConvertFrom-Json
 } catch {
-  throw "Packaged Electron runtime returned invalid version JSON: $raw"
+  Stop-RuntimeVerification "Packaged Electron runtime returned invalid version JSON: $raw"
 }
 
 $nodeMajor = if ($versions.node -match '^(\d+)\.') { [int]$Matches[1] } else { -1 }
 $electronMajor = if ($versions.electron -match '^(\d+)\.') { [int]$Matches[1] } else { -1 }
 if ($nodeMajor -ne $RequiredNodeMajor) {
-  throw "Packaged Electron must carry Node.js $RequiredNodeMajor.x, found $($versions.node)"
+  Stop-RuntimeVerification "Packaged Electron must carry Node.js $RequiredNodeMajor.x, found $($versions.node)"
 }
 if ($electronMajor -lt $MinimumElectronMajor) {
-  throw "Packaged Electron must be $MinimumElectronMajor.x or newer, found $($versions.electron)"
+  Stop-RuntimeVerification "Packaged Electron must be $MinimumElectronMajor.x or newer, found $($versions.electron)"
 }
 
 $report = [ordered]@{
