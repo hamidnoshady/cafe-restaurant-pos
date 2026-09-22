@@ -76,12 +76,12 @@ function attachments(
 }
 
 function resolve(
-  modifierIds: string[],
+  selection: (string | { id: string; quantity?: number })[],
   allowed: string[] = ["extras", "size"],
   overrides: Record<string, { minSelectOverride?: number | null; maxSelectOverride?: number | null }> = {},
 ) {
   return resolveModifierSelection({
-    modifierIds,
+    selection,
     modifiersById: new Map(
       MODIFIERS.map((modifier) => [modifier.id, modifier]),
     ),
@@ -95,15 +95,15 @@ describe("resolveModifierSelection", () => {
     expect(result).toEqual({
       ok: true,
       modifiers: [
-        { id: "bread", name: "نان", priceDelta: 300_000 },
-        { id: "small", name: "کوچک", priceDelta: 0 },
+        { id: "bread", name: "نان", priceDelta: 300_000, quantity: 1 },
+        { id: "small", name: "کوچک", priceDelta: 0, quantity: 1 },
       ],
     });
   });
 
   it("parses text price deltas, as pg returns bigint columns", () => {
     const result = resolveModifierSelection({
-      modifierIds: ["bread"],
+      selection: ["bread"],
       modifiersById: new Map([
         [
           "bread",
@@ -120,7 +120,7 @@ describe("resolveModifierSelection", () => {
     });
     expect(result).toEqual({
       ok: true,
-      modifiers: [{ id: "bread", name: "نان", priceDelta: 300_000 }],
+      modifiers: [{ id: "bread", name: "نان", priceDelta: 300_000, quantity: 1 }],
     });
   });
 
@@ -164,7 +164,7 @@ describe("resolveModifierSelection", () => {
   });
 
   it("rejects a required group on a line submitted with no modifiers at all", () => {
-    // The regression case from order-cart.ts: modifierIds: [] used to skip
+    // The regression case from order-cart.ts: selection: [] used to skip
     // loading the groups entirely, so the rule never ran. With the map always
     // present, an empty selection fails the same way.
     expect(resolve([], ["extras", "size"])).toEqual({
@@ -212,14 +212,14 @@ describe("resolveModifierSelection", () => {
     // «نوع شیر» required on the latte, optional on the espresso: same group,
     // two resolved rules — the override decides, the default fills the gaps.
     const latte = resolveModifierSelection({
-      modifierIds: [],
+      selection: [],
       modifiersById: new Map(MODIFIERS.map((m) => [m.id, m])),
       attachedGroups: attachments(["extras"], { extras: { minSelectOverride: 1 } }),
     });
     expect(latte).toEqual({ ok: false, error: "invalid_modifier_selection", status: 400 });
 
     const espresso = resolveModifierSelection({
-      modifierIds: [],
+      selection: [],
       modifiersById: new Map(MODIFIERS.map((m) => [m.id, m])),
       attachedGroups: attachments(["extras"], { extras: { minSelectOverride: 0, maxSelectOverride: 1 } }),
     });
@@ -229,11 +229,99 @@ describe("resolveModifierSelection", () => {
   it("accepts an attachment list as well as a map", () => {
     expect(
       resolveModifierSelection({
-        modifierIds: ["small"],
+        selection: ["small"],
         modifiersById: new Map(MODIFIERS.map((m) => [m.id, m])),
         attachedGroups: [{ groupId: "size", minSelect: 1, maxSelect: 1 }],
       }),
     ).toMatchObject({ ok: true });
+  });
+});
+
+
+describe("resolveModifierSelection — add-on quantity", () => {
+  it("carries a repeated add-on as one choice with quantity", () => {
+    // «شات اضافه ×۳» is one entry at quantity 3 — the row the unique
+    // (order_item_id, modifier_id) constraint already guarantees. The group's
+    // max is raised here so the case isolates the quantity itself.
+    const result = resolve(
+      [{ id: "bread", quantity: 3 }, "small"],
+      ["extras", "size"],
+      { extras: { maxSelectOverride: 5 } },
+    );
+    expect(result).toEqual({
+      ok: true,
+      modifiers: [
+        { id: "bread", name: "نان", priceDelta: 300_000, quantity: 3 },
+        { id: "small", name: "کوچک", priceDelta: 0, quantity: 1 },
+      ],
+    });
+  });
+
+  it("defaults a missing quantity to one unit", () => {
+    const result = resolve([{ id: "bread" }, "small"]);
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    expect(result.modifiers[0]).toMatchObject({ id: "bread", quantity: 1 });
+    expect(result.modifiers[1]).toMatchObject({ id: "small", quantity: 1 });
+  });
+
+  it("rejects a non-integer or non-positive quantity", () => {
+    for (const quantity of [0, -1, 1.5, NaN]) {
+      expect(resolve([{ id: "bread", quantity }, "small"])).toEqual({
+        ok: false,
+        error: "invalid_modifier_quantity",
+        status: 400,
+      });
+    }
+  });
+
+  it("rejects a quantity above the hospitality ceiling", () => {
+    const wide = { extras: { maxSelectOverride: 30 } };
+    expect(resolve([{ id: "bread", quantity: 21 }, "small"], ["extras", "size"], wide)).toEqual({
+      ok: false,
+      error: "invalid_modifier_quantity",
+      status: 400,
+    });
+    expect(resolve([{ id: "bread", quantity: 20 }, "small"], ["extras", "size"], wide)).toMatchObject({ ok: true });
+  });
+
+  it("counts total quantity toward a group's max_select", () => {
+    // extras is 0..2: one add-on at quantity 3 overruns it exactly as three
+    // distinct choices would — three shots is three selections' worth.
+    expect(resolve([{ id: "bread", quantity: 3 }], ["extras"])).toEqual({
+      ok: false,
+      error: "invalid_modifier_selection",
+      status: 400,
+    });
+    // …while quantity 2 alone fills the group to its ceiling.
+    expect(resolve([{ id: "bread", quantity: 2 }], ["extras"])).toMatchObject({ ok: true });
+    // …and quantity 2 beside another choice overruns it too.
+    expect(resolve([{ id: "bread", quantity: 2 }, "lemon"], ["extras"])).toEqual({
+      ok: false,
+      error: "invalid_modifier_selection",
+      status: 400,
+    });
+  });
+
+  it("counts total quantity toward a group's min_select", () => {
+    // An item-level min of 2 on «افزادنی» is satisfied by one add-on taken
+    // twice — the min reads the same total the max does.
+    expect(resolve([{ id: "bread", quantity: 2 }], ["extras"], { extras: { minSelectOverride: 2 } })).toMatchObject({
+      ok: true,
+    });
+    expect(resolve([{ id: "bread", quantity: 1 }], ["extras"], { extras: { minSelectOverride: 2 } })).toEqual({
+      ok: false,
+      error: "invalid_modifier_selection",
+      status: 400,
+    });
+  });
+
+  it("rejects the same id twice even when one entry carries a quantity", () => {
+    expect(resolve([{ id: "bread", quantity: 2 }, "bread", "small"])).toEqual({
+      ok: false,
+      error: "duplicate_modifier",
+      status: 400,
+    });
   });
 });
 

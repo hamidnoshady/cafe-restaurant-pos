@@ -64,7 +64,8 @@ interface CartUiLine {
   name: string;
   unitPrice: number;
   quantity: number;
-  modifierIds: string[];
+  /** Add-on picks with quantities, sorted by id — the line's configuration. */
+  modifierPicks: { id: string; quantity: number }[];
   modifiers: DisplayModifier[];
   note: string;
 }
@@ -220,13 +221,24 @@ export function TableOrderPanel({
     [menuIndex],
   );
 
-  function addToCart(item: RestaurantMenuItem, selectedModifierIds: string[], note: string) {
+  function addToCart(
+    item: RestaurantMenuItem,
+    picks: { id: string; quantity: number }[],
+    note: string,
+  ) {
     const allModifiers = new Map(
       (menu?.modifiers ?? []).map((m) => [m.id, m]),
     );
-    const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
-      const modifier = allModifiers.get(id)!;
-      return { name: modifier.name, priceDelta: modifier.priceDelta };
+    const sortedPicks = [...picks]
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .map((pick) => ({ ...pick, quantity: Math.max(1, Math.round(pick.quantity)) }));
+    const modifiers: DisplayModifier[] = sortedPicks.map((pick) => {
+      const modifier = allModifiers.get(pick.id)!;
+      return {
+        name: modifier.name,
+        priceDelta: modifier.priceDelta,
+        quantity: pick.quantity,
+      };
     });
     setCart((prev) => [
       ...prev,
@@ -236,7 +248,7 @@ export function TableOrderPanel({
         name: item.name,
         unitPrice: item.price,
         quantity: 1,
-        modifierIds: selectedModifierIds,
+        modifierPicks: sortedPicks,
         modifiers,
         note,
       },
@@ -269,7 +281,7 @@ export function TableOrderPanel({
     const items = cart.map((l) => ({
       menuItemId: l.menuItemId,
       quantity: l.quantity,
-      modifierIds: l.modifierIds,
+      modifiers: l.modifierPicks,
       note: l.note || undefined,
     }));
     if (!table.order_id && !clientRequestIdRef.current) {
@@ -556,10 +568,11 @@ export function TableOrderPanel({
         <ModifierPicker
           itemName={pickerItem.name}
           itemPrice={pickerItem.price}
+          menuItemId={pickerItem.id}
           groups={attachedGroups(pickerItem.id)}
           onCancel={() => setPickerItem(null)}
-          onConfirm={(modifierIds, note) => {
-            addToCart(pickerItem, modifierIds, note);
+          onConfirm={(picks, note) => {
+            addToCart(pickerItem, picks, note);
             setPickerItem(null);
           }}
         />

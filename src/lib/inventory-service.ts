@@ -194,8 +194,8 @@ export async function deductForOrder(
   );
   if (items.length === 0) return { totalCost: rialText("0") };
 
-  const { rows: mods } = await client.query<{ order_item_id: string; modifier_id: string | null }>(
-    `SELECT oim.order_item_id, oim.modifier_id FROM order_item_modifiers oim
+  const { rows: mods } = await client.query<{ order_item_id: string; modifier_id: string | null; quantity: number }>(
+    `SELECT oim.order_item_id, oim.modifier_id, oim.quantity FROM order_item_modifiers oim
        JOIN order_items oi ON oi.id = oim.order_item_id
       WHERE oi.order_id = $1`,
     [orderId],
@@ -204,7 +204,10 @@ export async function deductForOrder(
   for (const m of mods) {
     if (!m.modifier_id) continue;
     const list = modifiersByItem.get(m.order_item_id) ?? [];
-    list.push(m.modifier_id);
+    // A repeated add-on (quantity > 1) consumes its ingredients once per
+    // repeat, which the flat id list expresses by repetition — the pure
+    // requirement math below already handles it that way.
+    for (let n = 0; n < m.quantity; n += 1) list.push(m.modifier_id);
     modifiersByItem.set(m.order_item_id, list);
   }
 

@@ -227,7 +227,7 @@ export async function computeSessionBill(sessionId: string): Promise<SessionBill
   const { rows: allItems } = await query<ItemRow>(
     `SELECT oi.order_id, oi.id, oi.name_snapshot, oi.unit_price, oi.quantity,
             COALESCE(mc.tax_rate, 0) AS tax_rate,
-            ARRAY(SELECT price_delta FROM order_item_modifiers oim WHERE oim.order_item_id = oi.id) AS mod_deltas
+            ARRAY(SELECT price_delta * quantity FROM order_item_modifiers oim WHERE oim.order_item_id = oi.id) AS mod_deltas
        FROM order_items oi
        LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
        LEFT JOIN menu_categories mc ON mc.id = mi.category_id

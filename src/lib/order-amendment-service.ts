@@ -54,7 +54,7 @@ import {
 } from "./ledger-service";
 import { getOnlinePlatformsConfig } from "./online-platforms-service";
 import { commissionAmountFor } from "./online-platforms-calculation";
-import { captureInventorySnapshot } from "./order-mutations";
+import { captureInventorySnapshot, insertOrderItemModifiers } from "./order-mutations";
 import { resolveCartItems } from "./order-cart";
 import {
   planOrderLines,
@@ -112,7 +112,7 @@ async function snapshotOrder(client: PoolClient, orderId: string): Promise<unkno
                          'id', oi.id, 'name', oi.name_snapshot, 'unitPrice', oi.unit_price,
                          'quantity', oi.quantity, 'status', oi.status, 'note', oi.note,
                          'modifiers', COALESCE((
-                           SELECT jsonb_agg(jsonb_build_object('name', m.name_snapshot, 'priceDelta', m.price_delta)
+                           SELECT jsonb_agg(jsonb_build_object('name', m.name_snapshot, 'priceDelta', m.price_delta, 'quantity', m.quantity)
                                             ORDER BY m.id)
                              FROM order_item_modifiers m WHERE m.order_item_id = oi.id), '[]'::jsonb))
                        ORDER BY oi.created_at)
@@ -414,24 +414,13 @@ export async function amendClosedOrder(
           ],
         );
         const orderItemId = itemRows[0].id;
-        if (item.modifiers.length > 0) {
-          await client.query(
-            `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-             SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[])`,
-            [
-              orderItemId,
-              item.modifiers.map((m) => m.id),
-              item.modifiers.map((m) => m.name),
-              item.modifiers.map((m) => m.priceDelta),
-            ],
-          );
-        }
+        await insertOrderItemModifiers(client, orderItemId, item.modifiers);
         try {
           await captureInventorySnapshot(
             client,
             orderItemId,
             item.menuItemId,
-            item.modifiers.map((m) => m.id),
+            item.modifiers,
           );
         } catch (snapshotError) {
           if (

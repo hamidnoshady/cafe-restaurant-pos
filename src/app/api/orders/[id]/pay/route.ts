@@ -17,12 +17,14 @@ import { paymentFailureFor } from "@/lib/order-payment-errors";
 import { rialBigInt, rialText, type RialText } from "@/lib/inventory-exact";
 import {
   platformCommissionBase,
+  settlementDifference,
   tendersWithTip,
   validateTenders,
   type ResolvedTender,
 } from "@/lib/payment-methods";
 import { listPaymentMethods } from "@/lib/payment-methods-service";
 import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-producer";
+import { emitDomainEvent } from "@/lib/posting-engine";
 import { earnPoints } from "@/lib/loyalty-service";
 
 interface PayTenderBody {
@@ -40,6 +42,14 @@ interface PayBody {
    * ۳۰۰٬۰۰۰ کارت‌خوان. The slices add up to the order total; a separately
    * entered tip is added to the ledger tender later and is not duplicated in
    * the payment rows.
+   *
+   * With the manual «مبلغ دریافتی» flow the slices may also settle the bill
+   * *with a difference*: less than the total leaves the remainder as customer
+   * debt (a `credit` payments row plus an Accounts-Receivable debit), more
+   * than the total leaves the excess as customer credit (the store-credit
+   * liability plus an `order.customer_credit_issued` domain event). Either
+   * difference requires `customerId` — a balance is a person's, never a
+   * walk-in's.
    */
   payments?: PayTenderBody[];
   /** The single-way form, still sent by the amendment screen and by older clients. */
@@ -133,6 +143,11 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   const client = await getPool().connect();
   let total = "0" as RialText;
   let paid: ResolvedTender[] = [];
+  // The settle-with-difference balances (manual «مبلغ دریافتی»), surfaced in
+  // the response so the receipt and the till can restate what became debt or
+  // credit. Both zero for the ordinary, exact checkout.
+  let balanceDue = 0;
+  let customerCredit = 0;
   try {
     await client.query("BEGIN");
     const locked = await lockOpenOrder(client, location.id, id);
@@ -172,13 +187,19 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
           amount: rawTenders[index].amount,
           reference: rawTenders[index].reference,
         })),
-        { due, hasCustomer: Boolean(customerId) },
+        // A difference is settled onto the customer's account, so the
+        // customer requirement is enforced inside the same validation that
+        // checks the amounts — never after the money has moved.
+        { due, hasCustomer: Boolean(customerId), allowDifference: true },
       );
       if (!validated.ok) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: validated.error }, { status: 400 });
       }
       tenders = validated.value;
+      const difference = settlementDifference(tenders, due);
+      balanceDue = difference.balanceDue;
+      customerCredit = difference.customerCredit;
     }
     paid = tenders;
     for (const [index, tender] of tenders.entries()) {
@@ -187,6 +208,44 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [location.id, id, tender.settlement, String(tender.amount), tender.reference, session.sub, tender.methodId, index + 1],
       );
+    }
+    // An underpayment's remainder is recorded like any نسیه slice: a credit
+    // payments row, so the shift's per-method buckets and the AR subledger
+    // read one consistent story. The business's own نسیه way is named when it
+    // has one; the settlement class is what the ledger posts either way.
+    if (balanceDue > 0) {
+      const { rows: creditWay } = await client.query<{ id: string }>(
+        `SELECT id FROM payment_methods
+          WHERE business_id = $1 AND settlement = 'credit' AND is_active
+          ORDER BY sort_order LIMIT 1`,
+        [session.businessId],
+      );
+      await client.query(
+        `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by, payment_method_id, settlement_seq)
+         VALUES ($1, $2, 'credit', $3, $4, $5, $6, $7)`,
+        [location.id, id, String(balanceDue), null, session.sub, creditWay[0]?.id ?? null, tenders.length + 1],
+      );
+    }
+    // An overpayment's excess is the customer's store credit: a real
+    // liability, recorded as a domain event the balance is reconstructed
+    // from (loyalty-service.ts's storeCreditBalance). No posting rule is
+    // registered for this event type — the credit line already rides the
+    // payment entry below, in the same transaction, so posting it twice is
+    // structurally impossible.
+    if (customerCredit > 0 && customerId) {
+      await emitDomainEvent(client, {
+        businessId: session.businessId,
+        locationId: location.id,
+        eventType: "order.customer_credit_issued",
+        payload: {
+          customerId,
+          amount: rialText(String(customerCredit)),
+          orderId: id,
+        },
+        sourceType: "order",
+        sourceId: id,
+        createdBy: session.sub,
+      });
     }
     const { rowCount: completed } = await client.query(
       `UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now(), tip_amount = $3
@@ -225,6 +284,8 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       orderChannel: order.type,
       tip: rialText(String(tipAmount)),
       platformCommission,
+      balanceDue: rialText(String(balanceDue)),
+      customerCredit: rialText(String(customerCredit)),
     });
     await postExactCogsEntry(client, {
       businessId: session.businessId,
@@ -283,5 +344,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       reference: tender.reference,
     })),
     tipAmount,
+    balanceDue,
+    customerCredit,
   });
 });

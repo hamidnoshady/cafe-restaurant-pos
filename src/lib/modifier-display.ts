@@ -17,6 +17,29 @@ export interface DisplayModifier {
   name: string;
   /** Integer Rial, may be negative (a discount-shaped add-on). */
   priceDelta: number;
+  /**
+   * How many times this add-on applies to one unit of the line
+   * («شات اضافه ×۳», migration 0169). Absent means 1 — every surface that
+   * predates quantities keeps working unchanged.
+   */
+  quantity?: number;
+}
+
+/** An add-on's repeat count, clamped to the sane hospitality range. */
+export function modifierQuantity(modifier: Pick<DisplayModifier, "quantity">): number {
+  const quantity = Math.round(modifier.quantity ?? 1);
+  return Number.isFinite(quantity) && quantity >= 1 ? quantity : 1;
+}
+
+/**
+ * The per-unit deltas of a line's add-ons, each repeated by its own quantity —
+ * the list `linePriceBreakdown` and `computeLineSubtotal` sum. One helper so
+ * no surface has to remember the multiplication itself.
+ */
+export function modifierDeltasOf(modifiers: DisplayModifier[]): number[] {
+  return modifiers.flatMap((modifier) =>
+    Array.from({ length: modifierQuantity(modifier) }, () => modifier.priceDelta),
+  );
 }
 
 /**
@@ -40,7 +63,12 @@ export function sumModifierDeltas(deltas: number[]): number {
 
 /** Names only — for the thermal ticket/receipt templates, which have no room for chips. */
 export function modifierNamesLabel(modifiers: DisplayModifier[]): string {
-  return modifiers.map((modifier) => modifier.name).join("، ");
+  return modifiers
+    .map((modifier) => {
+      const count = modifierQuantity(modifier);
+      return count > 1 ? `${modifier.name} ×${toPersianDigits(count)}` : modifier.name;
+    })
+    .join("، ");
 }
 
 export interface LinePriceBreakdown {

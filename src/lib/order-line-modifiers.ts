@@ -16,6 +16,14 @@
  */
 import type { SelectionBounds } from "./modifier-selection";
 
+/**
+ * The highest one add-on may be repeated on a single line («شات اضافه ×N»).
+ * A hospitality ceiling, not a schema one: it keeps a runaway hold-to-repeat
+ * gesture or a malformed payload from ordering ninety-nine espresso shots,
+ * while leaving every real order reachable.
+ */
+export const MAX_MODIFIER_QUANTITY = 20;
+
 /** A `modifiers` row, as every call site reads it. */
 export interface SelectableModifier {
   id: string;
@@ -36,11 +44,26 @@ export interface AttachedModifierGroup {
   maxSelect: number;
 }
 
+/**
+ * One chosen add-on, with how many times it was chosen.
+ *
+ * `quantity` is the add-on's own count on the line — «شات اضافه ×۳» is one
+ * choice at quantity 3, not the same id submitted three times. It is a
+ * separate concept from the menu item's own line quantity: the item's stepper
+ * counts units of the drink, this counts shots *per unit* of the drink.
+ */
+export interface ModifierPick {
+  id: string;
+  quantity?: number;
+}
+
 /** What a validated selection turns into: the snapshot written to `order_item_modifiers`. */
 export interface SelectedModifier {
   id: string;
   name: string;
   priceDelta: number;
+  /** How many times this add-on applies to one unit of the line. Defaults to 1. */
+  quantity: number;
 }
 
 export type ModifierSelectionResult =
@@ -50,6 +73,7 @@ export type ModifierSelectionResult =
       error:
         | "invalid_modifier"
         | "duplicate_modifier"
+        | "invalid_modifier_quantity"
         | "invalid_modifier_selection";
       status: 400;
     };
@@ -84,24 +108,37 @@ export function effectiveSelectionBounds(
  *
  * Rejects with:
  *  - `duplicate_modifier` — the same add-on id submitted twice for one line.
- *    This is dangerous rather than merely sloppy: pricing would count the
- *    delta twice while the inventory snapshot's `ANY(uuid[])` lookup consumes
- *    its ingredients once, so money and stock would silently disagree. The
- *    same id twice is therefore always a malformed request, on every path
- *    (create, add-items, edit, offline replay).
+ *    A repeated add-on is one choice with `quantity > 1`, never the same id
+ *    twice; two entries for one id are therefore always a malformed request,
+ *    on every path (create, add-items, edit, offline replay). Pricing would
+ *    count the delta twice while the inventory snapshot's `ANY(uuid[])`
+ *    lookup consumes its ingredients once, so money and stock would silently
+ *    disagree — the unique constraint on (order_item_id, modifier_id) agrees.
  *  - `invalid_modifier` — an id that is unknown, malformed, inactive, or
  *    belongs to a group this menu item does not carry.
+ *  - `invalid_modifier_quantity` — a quantity that is not a whole number
+ *    between 1 and MAX_MODIFIER_QUANTITY.
  *  - `invalid_modifier_selection` — a group's resolved [min, max] is not
  *    satisfied, including a required group the caller selected nothing from.
+ *
+ * Group bounds count **total selected quantity**, not distinct choices: a
+ * group with maxSelect 3 holds «شات اضافه ×۳» on its own and nothing beside
+ * it, which is the hospitality reading — three selections' worth of espresso
+ * is three selections. `minSelect` reads the same total (a required 1..1
+ * group still wants exactly one unit's worth of choice).
  *
  * Prices come from the `modifiers` rows, never from the client.
  */
 export function resolveModifierSelection({
-  modifierIds,
+  selection,
   modifiersById,
   attachedGroups,
 }: {
-  modifierIds: string[];
+  /**
+   * The line's chosen add-ons. A bare id is the ordinary one-unit choice;
+   * `{ id, quantity }` is a repeated add-on.
+   */
+  selection: (ModifierPick | string)[];
   modifiersById: Map<string, SelectableModifier>;
   /**
    * The modifier groups attached to this line's menu item, with each group's
@@ -116,22 +153,29 @@ export function resolveModifierSelection({
       ? attachedGroups
       : new Map(attachedGroups.map((group) => [group.groupId, group]));
 
-  // Duplicate ids are rejected before anything is priced: a repeated add-on is
-  // never a legitimate configuration, and catching it here keeps the rule in
-  // one place for every caller.
+  // Duplicate ids are rejected before anything is priced: a repeated add-on
+  // is expressed as quantity on one entry, and catching it here keeps the
+  // rule in one place for every caller.
   const seen = new Set<string>();
-  for (const modifierId of modifierIds) {
-    if (seen.has(modifierId)) {
+  for (const pick of selection) {
+    const id = typeof pick === "string" ? pick : pick.id;
+    if (seen.has(id)) {
       return { ok: false, error: "duplicate_modifier", status: 400 };
     }
-    seen.add(modifierId);
+    seen.add(id);
   }
 
-  const selectedByGroup = new Map<string, number>();
+  const quantityByGroup = new Map<string, number>();
   const modifiers: SelectedModifier[] = [];
 
-  for (const modifierId of modifierIds) {
-    const modifier = modifiersById.get(modifierId);
+  for (const pick of selection) {
+    const id = typeof pick === "string" ? pick : pick.id;
+    const rawQuantity = typeof pick === "string" ? 1 : (pick.quantity ?? 1);
+    const quantity = Number(rawQuantity);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_MODIFIER_QUANTITY) {
+      return { ok: false, error: "invalid_modifier_quantity", status: 400 };
+    }
+    const modifier = modifiersById.get(id);
     if (
       !modifier ||
       !modifier.is_active ||
@@ -139,14 +183,15 @@ export function resolveModifierSelection({
     ) {
       return { ok: false, error: "invalid_modifier", status: 400 };
     }
-    selectedByGroup.set(
+    quantityByGroup.set(
       modifier.group_id,
-      (selectedByGroup.get(modifier.group_id) ?? 0) + 1,
+      (quantityByGroup.get(modifier.group_id) ?? 0) + quantity,
     );
     modifiers.push({
       id: modifier.id,
       name: modifier.name,
       priceDelta: Number(modifier.price_delta),
+      quantity,
     });
   }
 
@@ -155,7 +200,7 @@ export function resolveModifierSelection({
   // all. The attachment map must therefore always be built for the item,
   // whatever the request happened to contain.
   for (const [groupId, group] of attached) {
-    const count = selectedByGroup.get(groupId) ?? 0;
+    const count = quantityByGroup.get(groupId) ?? 0;
     if (count < group.minSelect || count > group.maxSelect) {
       return { ok: false, error: "invalid_modifier_selection", status: 400 };
     }
