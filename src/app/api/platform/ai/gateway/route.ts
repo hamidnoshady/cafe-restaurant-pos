@@ -1,11 +1,9 @@
 /**
- * Phase 37 & Phase 39 — the console's gateway operations.
+ * Phase 37, Phase 39 & Phase 40 — technical LiteLLM administration API.
  *
- * Supports global LiteLLM settings, business virtual keys, and branch-level overrides.
- *
- * The endpoint deliberately does not aggregate plan, wallet or revenue data.
- * `/platform/ai` is a technical LiteLLM page: connection diagnostics plus
- * business virtual-key lifecycle. Commercial AI settings live in Plan/Billing.
+ * Exclusively handles LiteLLM connection parameters, model aliases, and
+ * business/branch virtual-key management. All billing, money, revenue,
+ * allowances and tenant monetization belong strictly to Plan/Billing.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getAiRuntimeReadiness, getPlatformAiConfig } from "@/lib/ai-config";
@@ -33,7 +31,7 @@ import {
 import { platformAudit, requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
 import { query, withoutTenantScope } from "@/lib/db";
 
-/** Gateway state, plus a live probe when the operator asked for one. */
+/** Technical LiteLLM gateway status, models, readiness and virtual keys. */
 export const GET = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.read");
   if (error) return error;
@@ -107,7 +105,7 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
 });
 
 
-/** Owner-only: the gateway connection, and an on-demand connection test. */
+/** Owner/Admin: LiteLLM connection setup and on-demand comprehensive probe. */
 export const PUT = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.config.manage");
   if (error) return error;
@@ -150,6 +148,8 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
       payload: {
         enabled: saved.enabled,
         baseUrl: saved.baseUrl,
+        chatModel: saved.chatModel,
+        embeddingModel: saved.embeddingModel,
         virtualKeysEnabled: saved.virtualKeysEnabled,
       },
     });
@@ -179,27 +179,18 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
   const gateway = await getAiGatewayConfig();
 
   if (body.action === "sync_key") {
-    // Pre-flight: each of these states would end in a guaranteed-failing or
-    // guaranteed-useless key, so the operator hears *that* instead of an
-    // opaque 502 from a call that was never going to work. They are 400s —
-    // operator-fixable configuration, not an upstream failure.
     if (!isGatewayActive(gateway)) {
       return NextResponse.json({ error: "ai_gateway_disabled" }, { status: 400 });
     }
     if (!gateway.masterKey) {
       return NextResponse.json({ error: "ai_gateway_missing_master_key" }, { status: 400 });
     }
-    // A key minted while the toggle is off would never authenticate anything:
-    // resolveGatewayAuthKey only consults business keys once virtual keys are
-    // enabled, so the console must not let one be minted into that limbo.
     if (!gateway.virtualKeysEnabled) {
       return NextResponse.json({ error: "ai_gateway_virtual_keys_disabled" }, { status: 400 });
     }
 
     const existing = await getBusinessGateway(businessId, locationId);
     try {
-      // Migration 0168: the minted key carries identity only — no models
-      // allowlist, no budgets, no rate limits. LiteLLM owns those.
       const row = await provisionVirtualKey(gateway, {
         businessId,
         locationId,
@@ -215,8 +206,6 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
       return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
     } catch (err) {
       if (err instanceof GatewayProvisioningError) {
-        // The gateway answered but refused — the proxy's own explanation is
-        // the most actionable thing the operator can be shown.
         return NextResponse.json({ error: err.code, detail: err.detail }, { status: 502 });
       }
       if (err instanceof Error && err.message.startsWith("ai_gateway")) {

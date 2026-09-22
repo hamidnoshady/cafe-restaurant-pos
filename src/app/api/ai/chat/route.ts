@@ -584,35 +584,27 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             costRial: settlement.chargedRial,
           });
         } catch (err) {
-          // Phase B — no reservation to refund. A turn that failed before the
-          // provider answered cost nothing, so nothing is settled; a turn that
-          // failed after already paying upstream has (in the happy path) been
-          // settled above. Nothing to undo here.
+          // A turn that failed before the provider answered cost nothing, so
+          // nothing is settled.
           if (err instanceof AiError) {
-            if (err.providerError || err.requestDiagnostics) {
-              console.error("ai provider request failed", {
-                requestId,
-                businessId: session.businessId,
-                locationId,
-                status: err.providerError?.status ?? null,
-                model: err.requestDiagnostics?.model ?? config.model,
-                url: err.requestDiagnostics?.url ?? null,
-                endpoint: err.requestDiagnostics?.endpoint ?? "chat_completions",
-                credentialSource: err.requestDiagnostics?.credentialSource ?? null,
-                streaming: err.requestDiagnostics?.streaming ?? null,
-                streamOptions: err.requestDiagnostics?.streamOptions ?? null,
-                toolCount: err.requestDiagnostics?.toolCount ?? null,
-                functionToolCount: err.requestDiagnostics?.functionToolCount ?? null,
-                mcpToolCount: err.requestDiagnostics?.mcpToolCount ?? null,
-                fallbackCount: err.requestDiagnostics?.fallbackCount ?? null,
-                providerType: err.providerError?.type ?? null,
-                providerCode: err.providerError?.code ?? null,
-                providerReason: providerErrorReason(err.providerError),
-              });
-            }
+            console.error("ai chat provider error", {
+              requestId,
+              businessId: session.businessId,
+              locationId,
+              mode,
+              code: err.code,
+              status: err.providerError?.status ?? null,
+              detail: providerErrorReason(err.providerError),
+            });
             emit("error", { error: err.code, message: err.message, requestId });
           } else {
-            console.error("ai chat error", err);
+            console.error("ai chat unexpected error", {
+              requestId,
+              businessId: session.businessId,
+              locationId,
+              mode,
+              error: err instanceof Error ? err.message : String(err),
+            });
             emit("error", { error: "ai_unknown", message: "خطای غیرمنتظره در دستیار." });
           }
         } finally {
