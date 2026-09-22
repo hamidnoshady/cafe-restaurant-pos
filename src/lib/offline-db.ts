@@ -8,7 +8,20 @@
 import Dexie, { type Table } from "dexie";
 import type { SyncQueueStatus } from "./sync-queue";
 
-export type PendingActionType = "order.create" | "order.add_items" | "order_item.status";
+/**
+ * "inventory.waste.recorded" (Section 5 audit extension) is the queue's
+ * first non-order action type: waste logging is a single self-contained
+ * write (no dependent follow-up actions like an order's add-items/status
+ * flow), server-idempotent by clientEventId (waste-service.ts), and its
+ * transactional domain handler already existed — see sync-event-registry.ts's
+ * `offlineQueueEligible` for why this one type was opened up rather than a
+ * whole other domain.
+ */
+export type PendingActionType =
+  | "order.create"
+  | "order.add_items"
+  | "order_item.status"
+  | "inventory.waste.recorded";
 
 /**
  * Sync Queue System (Section 5 of the offline-first audit): the literal

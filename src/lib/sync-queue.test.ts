@@ -32,6 +32,20 @@ describe("resolveQueueRecordRef", () => {
   it("falls back to unknown/null for a malformed payload", () => {
     expect(resolveQueueRecordRef("order.add_items", {})).toEqual({ table: "orders", recordId: null });
   });
+
+  it("inventory.waste.recorded (Section 5 offline-queue extension) targets the wasted item, no server-assigned id yet", () => {
+    expect(resolveQueueRecordRef("inventory.waste.recorded", { inventoryItemId: "item_1", quantity: "2" })).toEqual({
+      table: "inventory_items",
+      recordId: "item_1",
+    });
+  });
+
+  it("inventory.waste.recorded falls back to null recordId for a malformed payload", () => {
+    expect(resolveQueueRecordRef("inventory.waste.recorded", {})).toEqual({
+      table: "inventory_items",
+      recordId: null,
+    });
+  });
 });
 
 describe("retryBackoffMs", () => {

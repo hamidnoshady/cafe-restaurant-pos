@@ -74,10 +74,18 @@ real-world verification yet — prioritize these first.
 - [ ] With no internet connection, complete a full order end-to-end
       (product lookup → cart → payment → receipt) on a Local Desktop Mode
       or already-paired Cloud Connected install.
-- [ ] **[NEW]** While offline, perform actions across each of Products,
-      Customers, Orders, Accounting, Settings, Users; confirm each one
-      lands in the sync queue with `status: "pending"` (Section 5's state
-      machine), not silently dropped or double-applied.
+- [ ] **[UPDATED]** While offline, take an order action (create order, add
+      items, change an item's status) and a waste-logging action
+      (Inventory → «ثبت ضایعات»); confirm both land in the local sync
+      queue with `status: "pending"` (Section 5's state machine), not
+      silently dropped or double-applied. These are, by design, the only
+      client-offline-queue-backed actions in this app — a call-site audit
+      this cycle confirmed Products/Customers/Accounting/Settings/Users/
+      Images/Reports do not use this queue (they instead rely on
+      `server-sync.ts`'s separate cross-device push/pull mechanism once
+      back online, which requires connectivity to the local server too, so
+      an action there while genuinely offline should be understood to wait
+      rather than queue).
 - [ ] Reconnect the network; confirm queued items transition
       `pending → syncing → completed` and disappear from the pending list.
 - [ ] Force a server-side rejection of one queued item (e.g. a stale
@@ -191,7 +199,7 @@ real-world verification yet — prioritize these first.
 ## 9. General regression pass
 
 - [ ] Run `npx tsc --noEmit` and `npx eslint .` — both must be clean.
-- [ ] Run `npx vitest run` — should be **≥ 382 files / ≥ 5472 tests**,
+- [ ] Run `npx vitest run` — should be **≥ 383 files / ≥ 5482 tests**,
       zero failures (this was the state at audit completion; a regression
       below this count means something in this audit's work broke).
 - [ ] Spot-check Persian RTL rendering and Shamsi (Jalali) date display on

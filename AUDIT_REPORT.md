@@ -19,10 +19,10 @@ explicitly wherever it applies below, per the standing instruction not to
 claim hardware verification that never happened.
 
 **Baseline at completion:** `npx tsc --noEmit` clean · `npx eslint .` clean ·
-`npx vitest run` → **382 files / 5472 tests, all passing**. Branch
-`arena/01a0c899-cafe-restaurant-pos`, commits `687794b` → `26fd707` →
-`5d1fb7a` → `f0973d9` → `c38c81c` → `bef43a9` → `4d9a971` → `0e95e45`, all
-pushed.
+`npx vitest run` → **383 files / 5482 tests, all passing**. Branch
+`arena/01a0c899-cafe-restaurant-pos`; see the commit-chain table in §3 for
+the full, current list of commits (each tagged with the section(s) and
+files it covers).
 
 ---
 
@@ -136,12 +136,55 @@ flagged conflict → conflict), exponential retry backoff, and
 17 unit tests. `offline-db.ts`'s Dexie schema bumped to v2 with an
 `upgrade()` backfill so pre-existing queued rows on an already-deployed
 install get sane defaults instead of breaking the migration.
-**Residual:** this closes the queue's *data model*; a full audit of every
-call site that enqueues an action (products/customers/orders/accounting/
-settings/users/images/reports, per the brief's list) to confirm each one
-populates the new fields correctly end-to-end was not exhaustively done
-across all nine domains — high-traffic paths (orders, products) were
-checked; the remainder should be spot-checked before shipping.
+**Follow-up audit (this cycle) — call-site coverage, corrected finding:**
+grepped every `apiOrQueue`/`enqueueAction` call site repo-wide: the client
+queue was used in exactly 4 files covering exactly 3 action types
+(`order.create`, `order.add_items`, `order_item.status`) — zero usage in
+Products/Customers/Accounting/Settings/Users/Images/Reports.
+`docs/phases/Phase-5-Offline-Queue-Hardware.md`'s explicit scope section
+confirms this was the *original design boundary*, not an unaudited gap —
+those domains never wired into the client queue at all, so there was
+nothing left to "spot-check" per call site (the prior wording above was
+imprecise and is corrected here). Separately, `server-sync.ts`'s
+push/pull mechanism (over `sync_events`/`sync_domain_effects`, ~20
+registered event types in `sync-event-registry.ts`) already gives those
+other domains cross-device/cloud sync — a genuinely different mechanism
+from the client's local Dexie queue.
+**Follow-up feature (this cycle — see commit-chain table in §3 for the exact
+hash) — extended the queue to a second domain as a real proof-of-pattern
+build, not just documentation:**
+`inventory.waste.recorded` is now the client queue's first non-order action
+type. This was chosen because its server-side transactional domain handler
+already existed and was already idempotent by `clientEventId`
+(`waste-service.ts`, Phase 32) — the change opens an existing, already-safe
+server capability to the offline queue rather than writing new posting
+logic. Changes: `sync-event-registry.ts` gained an `offlineQueueEligible`
+flag (a definition existing in the registry for the server-to-server sync
+engine no longer implies the client queue may post it — only types
+explicitly opted in, alongside real client wiring, may) and a new
+`isOfflineQueueEligible()` helper; `/api/sync/events/route.ts` now gates on
+that helper instead of `?.legacy`; `offline-db.ts`'s `PendingActionType`
+and `sync-queue.ts`'s `resolveQueueRecordRef` gained the new type (targets
+`inventory_items`, no server-assigned record id until it applies, same
+shape as `order.create`); `waste-section.tsx`'s submit handler now calls
+`apiOrQueue` instead of a plain `api()` POST, with an inline Persian
+"queued for later" notice matching the existing order-detail-modal pattern;
+`sync-queue-panel.tsx`'s `actionTypeLabel` (the Devices settings tab's
+queue list) gained a Persian label for the new type instead of falling
+back to the raw event-type string. No new server posting/ledger logic was
+written. 10 new tests: registry
+eligibility (`sync-event-registry.test.ts`), the new `resolveQueueRecordRef`
+case (`sync-queue.test.ts`), and a new `route.test.ts` for
+`/api/sync/events` pinning that a transactional type merely existing in the
+registry (e.g. `order.payment.completed`) is still rejected as
+`invalid_event` unless explicitly opted in.
+**Residual (deliberately out of scope, unchanged from before):** the other
+7 domains (Products/Customers/Accounting/Settings/Users/Images/Reports)
+remain on `server-sync.ts`'s cross-device mechanism only, not the client
+offline queue — extending further was assessed as a larger scope decision
+per domain (conflict semantics, UI wiring, dedicated server handlers where
+none exist yet) than this cycle's one-domain proof-of-pattern build, and is
+left for a future phase rather than attempted piecemeal here.
 
 ### Section 6 — Cloud/Desktop installation relationship audit
 **Finding:** reviewed `src/lib/server-sync.ts` (token/credential
@@ -361,6 +404,8 @@ This document, plus `TESTING_CHECKLIST.md` in the repo root.
 | `bef43a9` | 6, 11 | `src/app/(app)/settings/connections/server-sync-panel.tsx` (copy fix) |
 | `4d9a971` | 14 | `AUDIT_REPORT.md` (new), `TESTING_CHECKLIST.md` (new) |
 | `0e95e45` | 12 (follow-up) | `src/lib/error-report.ts`, `src/lib/error-report.test.ts`, `src/app/dashboard/ui.tsx`, `src/app/setup/ui.tsx`, `src/lib/platform-client.ts`, `src/lib/platform-client.test.ts`, `src/app/dashboard/api-error-logging.test.ts` (new), `src/app/setup/api-error-logging.test.ts` (new), `src/app/(app)/settings/logs-panel.tsx`, `electron/local-storage.js` (doc fix) |
+| `742f28b` | 14 (doc-only) | `AUDIT_REPORT.md` — commit-chain table updated to include `4d9a971`/`0e95e45` |
+| *(this cycle)* | 5 (follow-up) | `src/lib/sync-event-registry.ts` (new `offlineQueueEligible` flag + `isOfflineQueueEligible()`), `src/lib/sync-event-registry.test.ts`, `src/app/api/sync/events/route.ts` (gate on `isOfflineQueueEligible` instead of `?.legacy`), `src/app/api/sync/events/route.test.ts` (new), `src/lib/offline-db.ts` (new `inventory.waste.recorded` `PendingActionType`), `src/lib/sync-queue.ts`/`.test.ts` (new `resolveQueueRecordRef` case), `src/app/dashboard/inventory/waste-section.tsx` (submit now uses `apiOrQueue`, queued-offline notice), `AUDIT_REPORT.md` (Section 5 residual note rewritten to describe the extension) |
 
 ## 4. Architecture changes
 
@@ -414,11 +459,13 @@ This document, plus `TESTING_CHECKLIST.md` in the repo root.
 
 ## 6. Verification performed
 
-- `npx tsc --noEmit` — clean, throughout and at final HEAD (`bef43a9`).
+- `npx tsc --noEmit` — clean, throughout and at final HEAD.
 - `npx eslint .` — clean, throughout and at final HEAD.
-- `npx vitest run` — **382 test files / 5472 tests, all passing** at final
-  HEAD. This includes 17 new tests for the sync queue state machine and 16
-  new tests for the error-report helpers, plus all pre-existing suites
+- `npx vitest run` — **383 test files / 5482 tests, all passing** at final
+  HEAD. This includes 17 tests for the sync queue state machine, 16 for the
+  error-report helpers, and this cycle's 10 new tests for the offline-queue
+  domain extension (registry eligibility, the new `resolveQueueRecordRef`
+  case, and `/api/sync/events` route gating), plus all pre-existing suites
   updated to expect audit-introduced changes (e.g. `settings-tabs.test.ts`
   now expects the new `"logs"` tab).
 - **Not verified** (no environment available in this sandbox): a live

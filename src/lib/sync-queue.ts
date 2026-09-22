@@ -70,6 +70,10 @@ export function resolveQueueRecordRef(
       return { table: "orders", recordId: typeof payload.orderId === "string" ? payload.orderId : null };
     case "order_item.status":
       return { table: "order_items", recordId: typeof payload.itemId === "string" ? payload.itemId : null };
+    case "inventory.waste.recorded":
+      // No server-assigned id yet — like order.create, the inventory event
+      // this becomes doesn't exist until the queued action applies.
+      return { table: "inventory_items", recordId: typeof payload.inventoryItemId === "string" ? payload.inventoryItemId : null };
     default:
       return { table: "unknown", recordId: null };
   }

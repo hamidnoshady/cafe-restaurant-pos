@@ -39,6 +39,8 @@ function actionTypeLabel(type: PendingAction["type"]): string {
       return "افزودن قلم به سفارش";
     case "order_item.status":
       return "به‌روزرسانی وضعیت قلم";
+    case "inventory.waste.recorded":
+      return "ثبت ضایعات";
     default:
       return type;
   }
