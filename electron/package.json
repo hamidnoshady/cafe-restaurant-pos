@@ -40,6 +40,7 @@
       "gateway-manager.js",
       "network-interfaces.js",
       "native-printing.js",
+      "local-storage.js",
       "logger.js",
       "package.json"
     ],

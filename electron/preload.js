@@ -8,7 +8,18 @@ contextBridge.exposeInMainWorld("desktop", Object.freeze({
 
 contextBridge.exposeInMainWorld("businessSuiteDesktop", Object.freeze({
   isDesktop: true,
-  pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  pickFolder: (title) => ipcRenderer.invoke("pick-folder", { title }),
+  /**
+   * Local storage configuration (Section 3 of the desktop audit): a
+   * first-run/settings check of a candidate data folder — free space on its
+   * volume, and a real write/read/delete round trip — before the app commits
+   * Postgres/attachments/backups to it. See electron/local-storage.js.
+   */
+  storage: Object.freeze({
+    suggestDefaultRoot: () => ipcRenderer.invoke("desktop:storage-suggest-root"),
+    defaultLayout: (root) => ipcRenderer.invoke("desktop:storage-default-layout", { root }),
+    checkFolder: (path) => ipcRenderer.invoke("desktop:storage-check-folder", { path }),
+  }),
   localGateway: Object.freeze({
     status: () => ipcRenderer.invoke("desktop:gateway-status"),
     enable: (address) => ipcRenderer.invoke("desktop:gateway-enable", { address }),

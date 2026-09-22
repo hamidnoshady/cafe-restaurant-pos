@@ -68,8 +68,53 @@ export interface DesktopPrintingBridge {
   sendRaw(target: PrinterTarget, dataBase64: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
 }
 
+export interface DesktopFolderSpaceCheck {
+  ok: boolean;
+  freeBytes?: number;
+  totalBytes?: number;
+  freeLabel?: string;
+  totalLabel?: string;
+  sufficient?: boolean;
+  recommended?: boolean;
+  checkedPath?: string;
+  error?: string;
+  detail?: string;
+}
+
+export interface DesktopFolderAccessCheck {
+  ok: boolean;
+  error?: string;
+  detail?: string;
+}
+
+export interface DesktopFolderCheckResult {
+  ok: boolean;
+  path?: string;
+  error?: string;
+  space?: DesktopFolderSpaceCheck;
+  access?: DesktopFolderAccessCheck;
+}
+
+export type DesktopStorageKind = "database" | "attachments" | "images" | "reports" | "backups" | "printerConfig";
+
+/**
+ * First-run/settings local storage folder checks — Section 3 of the desktop
+ * audit: disk-space + a real write/read/delete round trip for a candidate
+ * data folder, run from the main process (`electron/local-storage.js`)
+ * before Postgres/attachments/backups are pointed at it.
+ */
+export interface DesktopStorageBridge {
+  suggestDefaultRoot(): Promise<string>;
+  defaultLayout(root: string): Promise<Record<DesktopStorageKind, string> | null>;
+  checkFolder(path: string): Promise<DesktopFolderCheckResult>;
+}
+
 export interface DesktopBridge {
   isDesktop: true;
+  /** Opens a native "choose a folder" dialog; `title` customizes the dialog heading. */
+  pickFolder(title?: string): Promise<string | null>;
+  /** Present since the local-storage wizard shipped; optional so older builds still type-check. */
+  storage?: DesktopStorageBridge;
   localGateway: {
     status(): Promise<DesktopGatewayStatus>;
     enable(address: string): Promise<DesktopGatewayStatus>;

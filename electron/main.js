@@ -11,6 +11,7 @@ const { FirewallManager } = require("./firewall-manager");
 const { GatewayManager } = require("./gateway-manager");
 const { createLogger } = require("./logger");
 const nativePrinting = require("./native-printing");
+const localStorageChecks = require("./local-storage");
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -67,12 +68,30 @@ if (!gotSingleInstanceLock) {
   function registerIpc() {
     if (ipcRegistered) return;
     ipcRegistered = true;
-    ipcMain.handle("pick-folder", async () => {
+    ipcMain.handle("pick-folder", async (_event, payload) => {
+      const title = typeof payload?.title === "string" && payload.title ? payload.title : "پوشهٔ پشتیبان‌گیری";
       const { canceled, filePaths } = await dialog.showOpenDialog({
         properties: ["openDirectory", "createDirectory"],
-        title: "پوشهٔ پشتیبان‌گیری",
+        title,
       });
       return canceled ? null : filePaths[0];
+    });
+
+    // Local storage configuration (Section 3 of the desktop audit): let the
+    // first-run wizard check a candidate folder's free space and actually
+    // prove it is writable, BEFORE Postgres/attachments/backups are pointed
+    // at it — see local-storage.js's header for the full rationale.
+    ipcMain.handle("desktop:storage-suggest-root", async () => localStorageChecks.suggestedDefaultRoot());
+    ipcMain.handle("desktop:storage-default-layout", async (_event, payload) => {
+      const root = typeof payload?.root === "string" ? payload.root : "";
+      if (!root.trim()) return null;
+      return localStorageChecks.defaultLayout(root);
+    });
+    ipcMain.handle("desktop:storage-check-folder", async (_event, payload) => {
+      const target = typeof payload?.path === "string" ? payload.path : "";
+      const result = await localStorageChecks.evaluateFolder(target);
+      if (!result.ok) logger.warn("Local storage folder check failed", { path: target, result });
+      return result;
     });
     ipcMain.handle("desktop:gateway-status", gatewayStatus);
     ipcMain.handle("desktop:gateway-enable", async (_event, payload) => {
@@ -194,6 +213,109 @@ if (!gotSingleInstanceLock) {
     }, null, 2));
   }
 
+  /**
+   * First-run local storage location (Section 3 of the desktop audit): ask
+   * ONCE, before Postgres/config/logs land anywhere, whether this install's
+   * data should live at the OS default `userData` path or on a drive/folder
+   * the owner picks (a bigger disk, an external drive). Every later launch
+   * reuses the answer via the marker file — see local-storage.js's header.
+   *
+   * Deliberately native dialogs rather than a second renderer window: this
+   * runs before the application server (and therefore the whole Next.js UI)
+   * exists, so there is nothing to load a web page against yet, and the
+   * three questions here (default vs. custom, browse, confirm with the
+   * space/access check result) map cleanly onto `dialog`'s built-in flows
+   * without needing an HTML asset pipeline of its own.
+   *
+   * Never runs in packaged/CI smoke mode (`DESKTOP_SMOKE_MARKER`): an
+   * unattended run must never block on a dialog nobody can answer, so it
+   * always takes the default path there, exactly like every automated boot
+   * before this feature existed.
+   */
+  async function runStorageBootstrap() {
+    if (process.env.DESKTOP_SMOKE_MARKER) return;
+    const fs = require("node:fs");
+    try {
+      const defaultUserDataDir = app.getPath("userData");
+      const hasExistingConfigAtDefault = fs.existsSync(path.join(defaultUserDataDir, "config.json"));
+      const { root: markerRoot } = await localStorageChecks.readStorageRootMarker(defaultUserDataDir);
+      const decision = localStorageChecks.decideStorageBootstrap({ hasExistingConfigAtDefault, markerRoot });
+      if (decision.action === "use_marker_root") {
+        app.setPath("userData", decision.root);
+        return;
+      }
+      if (decision.action === "use_default") return;
+      await promptForStorageLocation(defaultUserDataDir);
+    } catch (error) {
+      // A failure here must never prevent the app from starting: fall back
+      // silently to whatever Electron's own default already is. `logger` is
+      // not created yet at this point in boot, so this is a plain console
+      // write rather than the structured logger the rest of main.js uses.
+      console.error("Local storage bootstrap failed; using the default location.", error);
+    }
+  }
+
+  async function promptForStorageLocation(defaultUserDataDir) {
+    const choice = await dialog.showMessageBox({
+      type: "question",
+      title: "محل ذخیرهٔ اطلاعات",
+      message: "اطلاعات این نصب — پایگاه‌داده، تنظیمات، گزارش‌ها و نسخه‌های پشتیبان — کجا ذخیره شود؟",
+      detail: `مسیر پیش‌فرض ویندوز:\n${defaultUserDataDir}\n\nبرای استفاده از درایو یا پوشهٔ دیگری (مثلاً دیسکی بزرگ‌تر یا یک هارد خارجی)، «انتخاب پوشهٔ دیگر» را بزنید. این انتخاب فقط یک بار پرسیده می‌شود.`,
+      buttons: ["استفاده از مسیر پیش‌فرض", "انتخاب پوشهٔ دیگر"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (choice.response !== 1) return;
+
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+      title: "پوشهٔ ذخیرهٔ اطلاعات را انتخاب کنید",
+    });
+    if (canceled || !filePaths[0]) return;
+    const chosenRoot = filePaths[0];
+
+    const evaluation = await localStorageChecks.evaluateFolder(chosenRoot);
+    if (!evaluation.ok) {
+      const detailLines = [];
+      if (evaluation.access && !evaluation.access.ok) {
+        detailLines.push(`دسترسی نوشتن: ناموفق (${evaluation.access.error || "unknown"})`);
+      }
+      if (evaluation.space && !evaluation.space.ok) {
+        detailLines.push(`بررسی فضای دیسک: ناموفق (${evaluation.space.error || "unknown"})`);
+      }
+      await dialog.showMessageBox({
+        type: "warning",
+        title: "این پوشه قابل استفاده نیست",
+        message: "بررسی پوشهٔ انتخابی موفق نبود؛ مسیر پیش‌فرض استفاده می‌شود.",
+        detail: detailLines.join("\n") || "خطای نامشخص.",
+        buttons: ["باشه"],
+        noLink: true,
+      });
+      return;
+    }
+
+    const spaceNote = evaluation.space?.ok
+      ? `فضای آزاد: ${evaluation.space.freeLabel}${
+          evaluation.space.recommended ? "" : " — کمتر از مقدار پیشنهادشدهٔ ۱ گیگابایت است"
+        }`
+      : "بررسی فضای دیسک ممکن نشد؛ ادامه دادن به مسئولیت شما است.";
+    const confirm = await dialog.showMessageBox({
+      type: "info",
+      title: "تأیید پوشهٔ ذخیره‌سازی",
+      message: `اطلاعات این نصب در پوشهٔ زیر ذخیره خواهد شد:\n${chosenRoot}`,
+      detail: `دسترسی نوشتن: موفق\n${spaceNote}\n\nپس از تأیید، این مسیر همیشه استفاده می‌شود.`,
+      buttons: ["تأیید و ادامه", "انصراف (استفاده از مسیر پیش‌فرض)"],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (confirm.response !== 0) return;
+
+    app.setPath("userData", chosenRoot);
+    await localStorageChecks.writeStorageRootMarker(defaultUserDataDir, chosenRoot);
+  }
+
   async function initialiseBackend() {
     backend = new BackendManager({ app, logger });
     const state = await backend.start();
@@ -297,6 +419,10 @@ if (!gotSingleInstanceLock) {
   }
 
   app.whenReady().then(async () => {
+    // Runs before the logger/backend so a first-run choice of storage
+    // location also decides where logs and Postgres data end up — not just
+    // where the config marker recording the choice lives.
+    await runStorageBootstrap();
     logger = createLogger(app.getPath("userData"));
     logger.info("Desktop process starting", { version: app.getVersion(), packaged: app.isPackaged });
     process.on("uncaughtException", (error) => logger.error("Uncaught desktop exception", error));
