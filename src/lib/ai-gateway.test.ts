@@ -96,31 +96,7 @@ describe("model resolution", () => {
     ).toBe("pos-chat");
   });
 
-  it("ignores a business override while model choice is switched off", () => {
-    const result = resolveChatModel({
-      platformModel: "gpt-4o-mini",
-      gateway: gateway({ chatModel: "pos-chat", allowBusinessModels: false, publishedModels: ["pos-fast"] }),
-      business: business({ modelOverride: "pos-fast" }),
-    });
-    expect(result).toBe("pos-chat");
-  });
-
-  it("honours a business override only when it is published", () => {
-    const allowed = gateway({
-      chatModel: "pos-chat",
-      allowBusinessModels: true,
-      publishedModels: ["pos-fast", "pos-smart"],
-    });
-    expect(
-      resolveChatModel({
-        platformModel: "gpt-4o-mini",
-        gateway: allowed,
-        business: business({ modelOverride: "pos-smart" }),
-      }),
-    ).toBe("pos-smart");
-  });
-
-  it("prefers a branch override over a business override", () => {
+  it("ignores historical business and branch model overrides", () => {
     const allowed = gateway({
       chatModel: "pos-chat",
       allowBusinessModels: true,
@@ -130,23 +106,8 @@ describe("model resolution", () => {
       resolveChatModel({
         platformModel: "gpt-4o-mini",
         gateway: allowed,
-        business: business({ modelOverride: "pos-fast" }),
-        branch: business({ modelOverride: "pos-pro" }),
-      }),
-    ).toBe("pos-pro");
-  });
-
-  it("refuses an override that is no longer published, even if the row still says it", () => {
-    const tightened = gateway({
-      chatModel: "pos-chat",
-      allowBusinessModels: true,
-      publishedModels: ["pos-fast"],
-    });
-    expect(
-      resolveChatModel({
-        platformModel: "gpt-4o-mini",
-        gateway: tightened,
         business: business({ modelOverride: "pos-smart" }),
+        branch: business({ modelOverride: "pos-pro" }),
       }),
     ).toBe("pos-chat");
   });
@@ -221,10 +182,8 @@ describe("credential resolution", () => {
 });
 
 describe("request body", () => {
-  it("attaches the failover chain in order", () => {
-    expect(gatewayRequestBody(gateway({ fallbackModels: ["pos-cheap", "pos-last"] }))).toEqual({
-      fallbacks: ["pos-cheap", "pos-last"],
-    });
+  it("does not send request-level fallbacks", () => {
+    expect(gatewayRequestBody(gateway({ fallbackModels: ["pos-cheap", "pos-last"] }))).toEqual({});
   });
 
   it("omits the field entirely when the chain is empty", () => {
@@ -242,7 +201,7 @@ describe("request body", () => {
       embeddingModel: "pos-chat",
       authKey: "sk-master",
       virtualKeyResolved: false,
-      body: { fallbacks: ["pos-cheap"] },
+      body: {},
     });
   });
 });
@@ -328,12 +287,9 @@ describe("the operator-facing error vocabulary", () => {
       "ai_gateway_auth",
       "ai_gateway_error",
       "ai_gateway_bad_response",
-      ...validateGatewayInput({ baseUrl: "not-a-url", fallbackModels: "no", publishedModels: "no" }),
-      ...validateGatewayInput({ usdRialRate: -1, gatewayCostingEnabled: true, revenueMarginPercent: -1, maxTurnRial: -1, mcpServers: "no" }),
-      ...validateBusinessGatewayInput({ modelOverride: "nope" }, { allowBusinessModels: false, allowedModels: [] }),
-      ...validateBusinessGatewayInput({ modelOverride: "nope" }, { allowBusinessModels: true, allowedModels: [] }),
+      ...validateGatewayInput({ baseUrl: "not-a-url" }),
     ];
-    expect(new Set(codes).size).toBeGreaterThan(10);
+    expect(new Set(codes).size).toBeGreaterThanOrEqual(6);
     for (const code of codes) {
       expect(gatewayErrorText(code), code).toBeTruthy();
     }
@@ -402,19 +358,19 @@ describe("the single billing architecture (migration 0168)", () => {
     }
   });
 
-  it("keeps a business row identity-only — no budget, duration or rate limit columns", () => {
+  it("keeps a business row identity-only — no model, budget, duration or rate limit columns", () => {
     const fresh = emptyBusinessGateway("b1");
     const row = normaliseBusinessGatewayInput("b1", {
       modelOverride: "  pos-fast  ",
-      // A legacy console patch still carrying the retired fields must not
-      // resurrect them (they are ignored, not validated).
+      // A legacy console patch still carrying retired fields must not resurrect
+      // them (they are ignored, not validated).
       ...({ maxBudgetUsd: 5, tpmLimit: 100, rpmLimit: 100, budgetDuration: "30d" } as unknown as Record<string, never>),
     });
     const json = JSON.stringify({ fresh, row });
     for (const retired of ["maxBudgetUsd", "tpmLimit", "rpmLimit", "budgetDuration"]) {
       expect(json, retired).not.toContain(retired);
     }
-    expect(row.modelOverride).toBe("pos-fast");
+    expect(row.modelOverride).toBeNull();
   });
 
   it("validates a gateway patch without any routing/budget/limit codes", () => {
@@ -430,22 +386,16 @@ describe("validation", () => {
     expect(validateGatewayInput({ baseUrl: "http://litellm:4000/v1" })).not.toContain("ai_gateway_bad_base_url");
   });
 
-  it("refuses a model override the platform has not published", () => {
+  it("ignores legacy model override fields instead of validating app-owned model policy", () => {
     expect(
       validateBusinessGatewayInput({ modelOverride: "gpt-4o" }, { allowBusinessModels: true, allowedModels: ["pos-fast"] }),
-    ).toContain("ai_gateway_model_not_published");
-    expect(
-      validateBusinessGatewayInput({ modelOverride: null }, { allowBusinessModels: true, allowedModels: ["pos-fast"] }),
     ).toEqual([]);
-  });
-
-  it("refuses any override at all when the platform switched the choice off", () => {
     expect(
       validateBusinessGatewayInput(
         { modelOverride: "pos-fast" },
         { allowBusinessModels: false, allowedModels: ["pos-fast"] },
       ),
-    ).toContain("ai_gateway_model_choice_disabled");
+    ).toEqual([]);
   });
 });
 
@@ -548,23 +498,14 @@ describe("gateway MCP servers", () => {
     expect(mcpServersFromText(mcpServersToText(servers))).toEqual(servers);
   });
 
-  it("declares the proxy's servers as auto-executed MCP tools", () => {
+  it("does not inject MCP tools into ordinary chat", () => {
     const body = gatewayMcpToolsBody(
       gateway({
         mcpEnabled: true,
         mcpServers: [{ name: "pos_mcp", label: "POS", url: "http://app:3000/api/mcp" }],
       }),
     );
-    expect(body).toEqual({
-      tools: [
-        {
-          type: "mcp",
-          server_url: "litellm_proxy/pos_mcp/mcp",
-          server_label: "pos_mcp",
-          require_approval: "never",
-        },
-      ],
-    });
+    expect(body).toEqual({});
   });
 
   it("sends nothing when MCP is off, empty, or the gateway is not a gateway", () => {
@@ -589,7 +530,7 @@ describe("the runtime carries MCP only through a gateway", () => {
     expect(runtime?.body).toEqual({});
   });
 
-  it("MCP servers ride in the body next to the fallback chain", () => {
+  it("fallback and MCP settings do not become per-request body fields", () => {
     const runtime = buildGatewayRuntime({
       config: platform,
       gateway: gateway({
@@ -599,57 +540,24 @@ describe("the runtime carries MCP only through a gateway", () => {
       }),
       business: null,
     });
-    expect(runtime?.body).toEqual({
-      fallbacks: ["pos-cheap"],
-      tools: [
-        { type: "mcp", server_url: "litellm_proxy/pos_mcp/mcp", server_label: "pos_mcp", require_approval: "never" },
-      ],
-    });
+    expect(runtime?.body).toEqual({});
   });
 });
 
-describe("validation of the phase 38b fields", () => {
-  it("gateway costing requires a conversion rate", () => {
-    const errors = validateGatewayInput({ baseUrl: "http://litellm:4000/v1", gatewayCostingEnabled: true });
-    expect(errors).toContain("ai_gateway_costing_needs_rate");
-    expect(
-      validateGatewayInput({ baseUrl: "http://litellm:4000/v1", gatewayCostingEnabled: true, usdRialRate: 60_000 }),
-    ).toEqual([]);
+describe("validation after platform AI cleanup", () => {
+  it("validates only technical LiteLLM connection fields on the AI page", () => {
+    expect(validateGatewayInput({ baseUrl: "http://litellm:4000/v1", enabled: true, chatModel: "pos-chat" })).toEqual([]);
+    expect(validateGatewayInput({ baseUrl: "http://litellm:4000/v1", fallbackModels: "legacy" } as never)).toEqual([]);
+    expect(validateGatewayInput({ baseUrl: "http://litellm:4000/v1", mcpServers: "legacy" } as never)).toEqual([]);
   });
 
-  it("a rate must be a positive number", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: -1 })).toContain("ai_gateway_bad_usd_rate");
-    expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: 0 })).toContain("ai_gateway_bad_usd_rate");
-    expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: null })).toEqual([]);
-  });
-
-  it("MCP servers must be an array", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", mcpServers: "http://x" })).toContain(
-      "ai_gateway_bad_mcp_servers",
-    );
-    expect(validateGatewayInput({ baseUrl: "http://x", mcpServers: [] })).toEqual([]);
-  });
-
-  it("a platform-side margin must be zero or a positive number", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: -5 })).toContain(
-      "ai_gateway_bad_margin",
-    );
-    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: 0 })).toEqual([]);
-    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: 20 })).toEqual([]);
-  });
-
-  it("allows zero while disabled but requires a positive ceiling when enabled", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: -1 })).toContain(
-      "ai_gateway_bad_max_turn",
-    );
-    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 0 })).toEqual([]);
-    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 50_000 })).toEqual([]);
-    expect(validateGatewayInput({ enabled: true, baseUrl: "http://x", chatModel: "pos-chat", maxTurnRial: 0, gatewayCostingEnabled: true, usdRialRate: 1 })).toContain("ai_gateway_bad_max_turn");
+  it("still requires a chat model when enabling LiteLLM", () => {
+    expect(validateGatewayInput({ enabled: true, baseUrl: "http://x", chatModel: "" })).toContain("ai_gateway_missing_chat_model");
   });
 });
 
-describe("the public gateway config carries the costing knobs", () => {
-  it("exposes the conversion rate, margin and ceiling but never the master key", () => {
+describe("the public gateway config is technical-only", () => {
+  it("exposes LiteLLM connection fields but no billing, fallback or MCP controls", () => {
     const pub = toPublicGatewayConfig(
       gateway({
         masterKey: "sk-secret",
@@ -657,20 +565,21 @@ describe("the public gateway config carries the costing knobs", () => {
         usdRialRate: 60_000,
         revenueMarginPercent: 15,
         maxTurnRial: 40_000,
+        fallbackModels: ["pos-cheap"],
+        mcpEnabled: true,
+        mcpServers: [{ name: "pos_mcp", label: "POS", url: "http://app:3000/api/mcp" }],
       }),
     );
-    expect(pub.hasMasterKey).toBe(true);
-    expect(pub.gatewayCostingEnabled).toBe(true);
-    expect(pub.usdRialRate).toBe(60_000);
-    expect(pub.revenueMarginPercent).toBe(15);
-    expect(pub.maxTurnRial).toBe(40_000);
-    expect(JSON.stringify(pub)).not.toContain("sk-secret");
+    expect(pub).toEqual({
+      enabled: true,
+      baseUrl: "http://litellm:4000/v1",
+      chatModel: "",
+      embeddingModel: "",
+      virtualKeysEnabled: false,
+      hasMasterKey: true,
+    });
+    const json = JSON.stringify(pub);
+    expect(json).not.toContain("sk-secret");
+    expect(json).not.toMatch(/usdRialRate|revenueMarginPercent|maxTurnRial|fallbackModels|publishedModels|allowBusinessModels|mcpServers/);
   });
-  it("rejects enabled configurations that runtime would immediately refuse", () => {
-    const base = { enabled: true, baseUrl: "http://litellm:4000/v1", chatModel: "pos-chat", maxTurnRial: 50_000 };
-    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: true, usdRialRate: null })).toContain("ai_gateway_costing_needs_rate");
-    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: false })).toContain("ai_gateway_costing_not_configured");
-    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: true, usdRialRate: 600_000 })).toEqual([]);
-  });
-
 });

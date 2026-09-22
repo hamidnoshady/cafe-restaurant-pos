@@ -29,11 +29,9 @@ this database), and an MCP server could not reach the assistant at all.
 LiteLLM already does all four jobs — it prices every completion from its model-cost map and
 reports the figure on every response (`x-litellm-response-cost`, USD); it accumulates one spend
 log per request (`/spend/logs`, with the calling key's alias, model, tokens and cost); it
-serves prompt templates (`prompts:` in its config — dotprompt files or any supported
-integration) that a completion can reference with `prompt_id` + `prompt_variables`; and it
-fronts MCP servers and can auto-execute their tools inside `/v1/chat/completions` when the
-request declares `tools: [{type: "mcp", server_url: "litellm_proxy/<name>/mcp", …}]` with
-`require_approval: "never"`.
+serves prompt templates and can front MCP servers. Those remain LiteLLM-side capabilities:
+core tenant chat deliberately does not mirror prompt or MCP declarations in ordinary request
+bodies, so optional gateway policy cannot break the app-owned assistant loop.
 
 The load-bearing decision of this phase is the same one Phase 37 made: **the gateway is a
 capability of the one provider connection, not a second connection.** Every new feature below
@@ -65,14 +63,11 @@ configured), and a deployment that never touches it is byte-for-byte today's beh
   day a request belongs to. The key alias → business mapping is resolved at sync time from
   `ai_business_gateway`; logs under the master key or an unknown alias keep their alias but
   resolve to no business, and still count.
-- **Prompts are bound per surface, and the dynamic context travels as a variable.** A bound
-  surface stops sending the code-built system message and instead sends
-  `prompt_id: <bound>` with `prompt_variables: {system_context, business_name, user_name,
-  mode}` — the template in the gateway is authored to include `{{system_context}}`, which is
-  the full text `buildSystemPrompt` would have sent. The confirm-before-write rules therefore
-  keep travelling on every bound turn even though the prose now lives gateway-side; a template
-  that drops the variable drops the guardrails, which is why the console names the variable in
-  its help text. Business prompt overrides (0115) keep appending after it, unchanged.
+- **Prompt/MCP policy is not request-local app config.** LiteLLM may host prompt templates and
+  MCP servers, but the app-owned assistant keeps sending its code-built system prompt and
+  OpenAI function tools. It does not add request-level `prompt_id`, `prompt_variables` or
+  MCP tool declarations from `/platform/ai`; this keeps confirm-before-write guardrails and
+  ordinary chat independent of optional gateway features.
 - **Skills are surfaces.** The product already names its agent surfaces (wizard, dashboard,
   floor, proactive, autopilot, platform) as the unit a prompt is authored for; a "skill" in
   the gateway console is that same unit bound to a gateway prompt template. No new taxonomy.
@@ -99,23 +94,19 @@ configured), and a deployment that never touches it is byte-for-byte today's beh
   receipt-extraction, invoice-OCR and autopilot surfaces pass one when the platform runs
   gateway costing and the turn reported a cost. Ledger metadata records the USD figure and
   the converted cost beside the usual Rial numbers.
-- **Usage sync + console**: `/spend/logs` → `aggregateSpendLogs` (pure) → upsert
-  `ai_gateway_usage`; `POST /api/platform/ai/gateway/usage` refreshes, `GET` reads; the
-  console gains a usage table (per day/alias/model, USD and converted Rial). The business's
-  own gateway endpoint returns its own usage rows — RLS does the scoping.
-- **Prompt bindings**: config + validation + the runtime body (`prompt_id`,
-  `prompt_variables`) and dropping the system message for bound surfaces; console inputs per
-  surface.
-- **MCP servers**: config + validation + the `tools` array in the request body; console
-  editor (one server per line: `name | label | url`).
-- **Proxy config**: `docker/litellm/config.yaml` documents the `prompts:` (dotprompt GitOps)
-  and `mcp_servers:` blocks this phase assumes, plus the env vars the app's own connector
-  needs.
-- **Tests**: the pure layer (pricing, header parsing, body builders, log parsing, rollup
-  aggregation, normalisation/validation) in `ai-gateway.test.ts`; request-shape tests
-  (prompt-bound turns omit the system message and send the variable; MCP servers become
-  `tools`) in `ai-service.test.ts`; the new table is covered by the Phase 17 generated
-  tenant-isolation test like every tenant-scoped table.
+- **Usage sync moves to Billing/Plan surfaces**: `/spend/logs` and virtual-key spend are still
+  read for reconciliation, but `/platform/ai` no longer renders revenue/usage tables or wallet
+  state. Commercial views live under platform billing and business billing routes.
+- **Prompt/MCP ownership cleanup**: prompt bindings and MCP server routing are LiteLLM policy.
+  Core tenant chat no longer sends `prompt_id`, request-level `fallbacks`, or LiteLLM MCP tool
+  declarations from app-side gateway config; it sends only the app-owned OpenAI function tools.
+- **Proxy config**: `docker/litellm/config.yaml` documents model aliases, router/fallback policy
+  and optional `mcp_servers:` blocks as LiteLLM-owned configuration, plus the env vars the app's
+  own connector needs.
+- **Tests**: the pure layer (pricing, header parsing, no-op legacy body builders, log parsing,
+  rollup aggregation, normalisation/validation) in `ai-gateway.test.ts`; request-shape tests
+  assert that fallback/MCP legacy config does not reach ordinary chat in `ai-service.test.ts`; the
+  usage table remains covered by generated tenant-isolation tests like every tenant-scoped table.
 
 ## Out of scope
 
@@ -125,8 +116,8 @@ configured), and a deployment that never touches it is byte-for-byte today's beh
   licensed; the integration reads `/spend/logs`, which the open-source proxy serves.
 - **Streaming through `/v1/responses` or swapping the agent loop for the proxy's.** The app's
   agent loop (Persian, human-confirmed writes, per-tenant RLS-scoped tools) is the product;
-  the proxy's MCP auto-execution is an *addition* inside the existing loop, not a replacement
-  of it.
+  LiteLLM may own MCP/provider automation behind the gateway, but optional MCP must not be able
+  to invalidate ordinary tenant chat.
 - **Per-request usage rows.** The app stores the daily rollup, not one row per request; the
   proxy keeps the request-level audit trail.
 - **Embedding-cost capture.** `/embeddings` responses carry the header too, but embedding
@@ -140,10 +131,10 @@ configured), and a deployment that never touches it is byte-for-byte today's beh
   recorded with its USD source; with no cost reported: the token-rate path, never zero.
 - `ai_gateway_usage` passes the generated tenant-isolation test; a business can read its own
   rows and no others.
-- A bound surface's request carries `prompt_id` + `prompt_variables` and **no** system
-  message; an unbound surface's request is byte-identical to Phase 37's.
-- MCP servers appear in the request body exactly as configured and never for a
-  non-gateway deployment.
+- Core chat request bodies contain no app-owned `fallbacks`, `prompt_id`, `prompt_variables` or
+  LiteLLM MCP declarations; routing, prompt and MCP policy are configured in LiteLLM instead.
+- Optional MCP configuration cannot break ordinary tenant chat, and app function tools stay valid
+  OpenAI-compatible schemas before any provider request is sent.
 - The usage console shows per-day totals that reconcile with the proxy's own Usage tab for
   the same window, and a failed sync changes nothing already stored.
 - No master key, virtual key or MCP server credential is ever rendered in a response.

@@ -108,16 +108,23 @@ The refusal is the one code `ai_credit_required` with the message
 |---|---|---|
 | Rial billing, affordability, debt, allowance | `wallet-service.ts` + `ai-plan-allowance.ts` | The single stop. |
 | Routing strategy, per-model RPM/TPM, per-key budgets | `docker/litellm/config.yaml` | The platform console mirrors none of them (migration 0168 dropped the columns and the env knobs). |
-| Model aliases served | `platform_ai_config` chat/embedding models | Compared against the proxy's live list by the console's probe. |
-| Per-business model override | `ai_business_gateway.model_override` | Only while the platform publishes a choice. |
-| Platform revenue | `ai_wallet_settlements` aggregation | «درآمد هوش مصنوعی پلتفرم» card on `/platform/ai`. |
+| Model aliases served | `platform_ai_gateway` chat/embedding aliases | Compared against the proxy's live list by the console's probe. |
+| Per-business model override | `ai_business_gateway.model_override` | Legacy column only; ignored by runtime and not managed from `/platform/ai`. LiteLLM owns tenant/model access. |
+| Platform revenue | `ai_wallet_settlements` aggregation | Billing/finance reporting only; not shown on `/platform/ai`. |
 
 ## Console surfaces (post-cutover)
 
-- **`/platform/ai`** — LiteLLM connection settings (base URL, master key,
-  models, fallback chain, costing rate/margin, per-turn ceiling), the revenue
-  card, per-business key management (sync / refresh spend / revoke /
-  model-override) and the per-business usage table (requests, tokens, charged
+- **`/platform/ai`** — technical LiteLLM connection settings (enabled, base
+  URL, master key, default chat alias, embedding alias, connection diagnostics)
+  and business virtual-key lifecycle (provision / verify / rotate / revoke).
+  It does not show customer pricing, wallet balances, allowances or revenue.
+- **Plan/Billing** — customer price, monthly AI allowance, wallet balance,
+  top-ups, overage and monetisation. AI settlements still flow through
+  `ai_wallet_settlements`, `business_wallets` and `ai_plan_allowance_usage`.
+- **LiteLLM** — upstream providers, model deployments, routing, retries,
+  fallback, load balancing, provider costs and optional MCP/gateway behaviour.
+
+Legacy note: earlier builds showed per-business usage on `/platform/ai` (requests, tokens, charged
   Rial including allowance-used, wallet balance and remaining monthly
   allowance). The routing/budget/duration/TPM/RPM controls are **gone**.
 - **`/platform/plans`** — the Plan Builder carries «اعتبار ماهانهٔ هوش مصنوعی

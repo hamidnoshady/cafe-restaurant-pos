@@ -45,6 +45,7 @@ import { toolDefinitions } from "@/lib/ai";
 import { businessToday } from "@/lib/business-day-service";
 import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
 import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
+import { providerErrorReason } from "@/lib/ai-provider-errors";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT = 8_000;
@@ -165,8 +166,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const activeLocation = await resolveActiveLocation(session);
   const locationId = floorLocation?.id ?? activeLocation?.id ?? null;
-  // Phase 37 & 39 — resolved through the gateway: the virtual key, the model alias
-  // and the failover chain for THIS business and branch are applied here.
+  // Phase 37 & 39 — resolved through the gateway: the virtual key and model alias
+  // for THIS business and branch are applied here. Routing/fallback stays in LiteLLM.
   const config = await resolveAiConfigFor(session.businessId, locationId, { ensureVirtualKey: true });
   if (!isPlatformAiConfigured(config)) {
     const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: locationId, surface: "chat" });
@@ -445,6 +446,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               onDelta: (content) => emit("delta", { content }),
               onToolCalls: () => emit("reset", {}),
             },
+            requestId,
           });
 
           // Phase F pt.2 — a project-scoped proposal is addressed by the AMBIENT
@@ -587,7 +589,28 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           // failed after already paying upstream has (in the happy path) been
           // settled above. Nothing to undo here.
           if (err instanceof AiError) {
-            emit("error", { error: err.code, message: err.message });
+            if (err.providerError || err.requestDiagnostics) {
+              console.error("ai provider request failed", {
+                requestId,
+                businessId: session.businessId,
+                locationId,
+                status: err.providerError?.status ?? null,
+                model: err.requestDiagnostics?.model ?? config.model,
+                url: err.requestDiagnostics?.url ?? null,
+                endpoint: err.requestDiagnostics?.endpoint ?? "chat_completions",
+                credentialSource: err.requestDiagnostics?.credentialSource ?? null,
+                streaming: err.requestDiagnostics?.streaming ?? null,
+                streamOptions: err.requestDiagnostics?.streamOptions ?? null,
+                toolCount: err.requestDiagnostics?.toolCount ?? null,
+                functionToolCount: err.requestDiagnostics?.functionToolCount ?? null,
+                mcpToolCount: err.requestDiagnostics?.mcpToolCount ?? null,
+                fallbackCount: err.requestDiagnostics?.fallbackCount ?? null,
+                providerType: err.providerError?.type ?? null,
+                providerCode: err.providerError?.code ?? null,
+                providerReason: providerErrorReason(err.providerError),
+              });
+            }
+            emit("error", { error: err.code, message: err.message, requestId });
           } else {
             console.error("ai chat error", err);
             emit("error", { error: "ai_unknown", message: "خطای غیرمنتظره در دستیار." });
