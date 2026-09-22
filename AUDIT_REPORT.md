@@ -21,7 +21,8 @@ claim hardware verification that never happened.
 **Baseline at completion:** `npx tsc --noEmit` clean · `npx eslint .` clean ·
 `npx vitest run` → **382 files / 5472 tests, all passing**. Branch
 `arena/01a0c899-cafe-restaurant-pos`, commits `687794b` → `26fd707` →
-`5d1fb7a` → `f0973d9` → `c38c81c` → `bef43a9`, all pushed.
+`5d1fb7a` → `f0973d9` → `c38c81c` → `bef43a9` → `4d9a971` → `0e95e45`, all
+pushed.
 
 ---
 
@@ -358,6 +359,8 @@ This document, plus `TESTING_CHECKLIST.md` in the repo root.
 | `f0973d9` | 5 | `src/lib/sync-queue.ts` (new), `src/lib/sync-queue.test.ts` (new), `src/lib/offline-db.ts` (Dexie v2 schema + upgrade) |
 | `c38c81c` | 9, 12 | `src/lib/error-report.ts` (new), `src/lib/error-report.test.ts` (new), `src/app/error.tsx`, `src/app/global-error.tsx`, `src/app/(app)/settings/logs-panel.tsx` (new), `src/lib/settings-tabs.ts`, `src/lib/settings-tabs.test.ts`, `src/lib/settings-routes.ts`, `src/app/(app)/settings/settings-manager.tsx` |
 | `bef43a9` | 6, 11 | `src/app/(app)/settings/connections/server-sync-panel.tsx` (copy fix) |
+| `4d9a971` | 14 | `AUDIT_REPORT.md` (new), `TESTING_CHECKLIST.md` (new) |
+| `0e95e45` | 12 (follow-up) | `src/lib/error-report.ts`, `src/lib/error-report.test.ts`, `src/app/dashboard/ui.tsx`, `src/app/setup/ui.tsx`, `src/lib/platform-client.ts`, `src/lib/platform-client.test.ts`, `src/app/dashboard/api-error-logging.test.ts` (new), `src/app/setup/api-error-logging.test.ts` (new), `src/app/(app)/settings/logs-panel.tsx`, `electron/local-storage.js` (doc fix) |
 
 ## 4. Architecture changes
 
