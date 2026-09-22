@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useBugReport } from "@/components/bug-report/bug-report-provider";
 import { platformUserMenuItems } from "@/lib/platform-user-menu";
+import { clearRememberedLoginDoor } from "@/lib/login-door";
 import { roleLabel } from "@/lib/role-labels";
 
 const ITEM_CLASS =
@@ -95,6 +96,24 @@ export function PlatformUserMenu({
     } catch {
       // Offline: the session cookie is still local, so let them try again
       // rather than stranding them on a dead button.
+      setSigningOut(false);
+    }
+  }
+
+  /**
+   * "Switch account": the same sign-out, but forgets this browser's
+   * remembered login door first, so `/login` shows the chooser again instead
+   * of jumping straight back into whichever door this device had settled on.
+   */
+  async function switchAccount() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      clearRememberedLoginDoor();
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+      router.refresh();
+    } catch {
       setSigningOut(false);
     }
   }
@@ -173,6 +192,18 @@ export function PlatformUserMenu({
                 onSelect={() => openReport()}
               >
                 {item.label}
+              </DropdownMenuItem>
+            );
+          }
+          if (item.kind === "switch-account") {
+            return (
+              <DropdownMenuItem
+                key={item.key}
+                className={ITEM_CLASS}
+                disabled={signingOut}
+                onSelect={() => void switchAccount()}
+              >
+                {signingOut ? "در حال خروج…" : item.label}
               </DropdownMenuItem>
             );
           }

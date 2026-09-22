@@ -10,6 +10,7 @@ import {
 } from "@/components/auth/mfa-step";
 import { lockoutMessage, useNextPath } from "@/components/auth/login-helpers";
 import { toPersianDigits } from "@/lib/digits";
+import { clearRememberedLoginDoor } from "@/lib/login-door";
 
 /** What `/api/auth/login` can answer with, beyond the plain success shape. */
 interface LoginResponse {
@@ -184,6 +185,23 @@ export default function AdminLoginForm() {
         </p>
 
         {body}
+
+        {/*
+          The audit fix's other half: an owner who lands here by mistake (or
+          who wants to switch this device back to the staff door) must not be
+          stuck on a password form with no way out. Clearing the remembered
+          door sends `/login` back to the chooser on its next visit.
+        */}
+        <button
+          type="button"
+          onClick={() => {
+            clearRememberedLoginDoor();
+            router.push("/login");
+          }}
+          className="mx-auto mt-4 block text-center text-xs text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
+        >
+          کارمند هستید؟ ورود کارکنان
+        </button>
       </div>
     </main>
   );
