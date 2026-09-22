@@ -299,6 +299,24 @@ function isWorkspaceGuarded(src: string): boolean {
   return /workspaceOwner\(/.test(src) && /PERMISSIONS\.workspace[A-Za-z]+/.test(src);
 }
 
+/**
+ * «ورود و خروج داده» — the same shape as the workspace helper above, and
+ * recognised for the same reason: `dataOwner(PERMISSIONS.data…)` in
+ * `src/app/api/data/guard.ts` is a wrapper whose only body is
+ * `requirePermission(permission)` from `@/lib/auth`.
+ *
+ * This is a *narrowing* rather than a loosening, and more so than the
+ * workspace one. A `/api/data/*` route must call `dataOwner(` and name a
+ * `PERMISSIONS.data…` key — and, because this module is one screen that
+ * reaches every app, the suite below additionally asserts that every route
+ * which names an entity also calls `entityAccess(`, which re-checks the
+ * *entity's own* permission (crm.export, menu.edit, ledger.post). One engine
+ * key alone is never enough to move another app's data.
+ */
+function isDataTransferGuarded(src: string): boolean {
+  return /dataOwner\(/.test(src) && /PERMISSIONS\.data(?:Import|Export)/.test(src);
+}
+
 /** Public API routes are session-less only because api-auth.ts authenticates a scoped key. */
 function isApiKeyGuarded(src: string): boolean {
   return /withApiKeyScope\(/.test(src) && /requireApiScope\(/.test(src);
@@ -419,6 +437,9 @@ describe("every API route is guarded", () => {
       // Phase G — `workspaceOwner(PERMISSIONS.workspace…)`, which is
       // `requirePermission` behind one shared helper. See isWorkspaceGuarded.
       if (isWorkspaceGuarded(src)) return;
+      // «ورود و خروج داده» — `dataOwner(PERMISSIONS.data…)`, the same shape.
+      // See isDataTransferGuarded.
+      if (isDataTransferGuarded(src)) return;
       // Phase 35 — `requireMember` is the fourth guard: any signed-in member,
       // for endpoints where every member acts only on their own rows and there
       // is therefore no role left to gate (notification devices, rules, inbox).
@@ -643,6 +664,80 @@ describe("the workspace module's API guards", () => {
     for (const key of ["workspace/dashboard", "workspace/reports"]) {
       expect(read(key)).toMatch(/PERMISSIONS\.workspaceView/);
       expect(read(key)).not.toMatch(/PERMISSIONS\.workspaceManage/);
+    }
+  });
+});
+
+/**
+ * «ورود و خروج داده» — the platform-wide data transfer engine.
+ *
+ * This module is the one screen in the product that reaches every app's data,
+ * so its guard is the one most worth pinning. Three properties are asserted
+ * here rather than left implicit in the shared helper.
+ */
+describe("the data transfer module's API guards", () => {
+  const dataRoutes = [...sources].filter(([key]) => key === "data" || key.startsWith("data/"));
+
+  it("has routes to check", () => {
+    expect(dataRoutes.length).toBeGreaterThan(5);
+  });
+
+  it("guards every data route on a data.* engine permission", () => {
+    for (const [key, src] of dataRoutes) {
+      expect(src, `src/app/api/${key}/route.ts`).toMatch(/dataOwner\(/);
+      expect(src, `src/app/api/${key}/route.ts`).toMatch(/PERMISSIONS\.data(?:Import|Export)/);
+      // A role list would bypass the per-member overrides entirely — the same
+      // rule team/*, branches/* and workspace/* are held to.
+      expect(requireRoleCalls(src), `src/app/api/${key}/route.ts uses requireRole`).toEqual([]);
+    }
+  });
+
+  it("the shared helper really is requirePermission and nothing weaker", () => {
+    const guard = readFileSync(join(API_ROOT, "data", "guard.ts"), "utf8");
+    expect(guard).toMatch(/requirePermission\(permission\)/);
+    expect(guard).toMatch(/from "@\/lib\/auth"/);
+  });
+
+  it("re-checks the ENTITY's own permission, never the engine key alone", () => {
+    // The whole security model of this module. `data.export` says "may use the
+    // transfer engine"; it must never substitute for `crm.export` on the
+    // customer directory or `menu.edit` on the catalogue. Every route that can
+    // name an entity therefore calls `entityAccess`, which resolves the
+    // entity's own permission out of the registry and checks the member holds
+    // it. Only the read-only catalogue route is exempt: it *computes* the
+    // permitted list rather than acting on one entity.
+    const CATALOGUE_ONLY = new Set(["data/entities"]);
+    for (const [key, src] of dataRoutes) {
+      if (CATALOGUE_ONLY.has(key)) {
+        expect(src, `src/app/api/${key}/route.ts`).toMatch(/memberAccessFor\(/);
+        continue;
+      }
+      expect(src, `src/app/api/${key}/route.ts must call entityAccess()`).toMatch(
+        /entityAccess\(/,
+      );
+    }
+
+    const guard = readFileSync(join(API_ROOT, "data", "guard.ts"), "utf8");
+    // The two halves of the check, in the helper itself.
+    expect(guard).toMatch(/entity\.importPermission/);
+    expect(guard).toMatch(/entity\.exportPermission/);
+    expect(guard).toMatch(/memberAccessFor\(/);
+  });
+
+  it("separates the import direction from the export direction", () => {
+    const read = (key: string) => {
+      const src = sources.get(key);
+      expect(src, `src/app/api/${key}/route.ts is missing`).toBeTruthy();
+      return src as string;
+    };
+    // Uploading and performing an import is dataImport; producing a file is
+    // dataExport. A member granted only one must not reach the other.
+    for (const key of ["data/imports", "data/imports/[id]", "data/imports/[id]/errors"]) {
+      expect(read(key)).toMatch(/PERMISSIONS\.dataImport/);
+    }
+    for (const key of ["data/exports", "data/exports/[id]", "data/schedules", "data/schedules/[id]"]) {
+      expect(read(key)).toMatch(/PERMISSIONS\.dataExport/);
+      expect(read(key)).not.toMatch(/PERMISSIONS\.dataImport/);
     }
   });
 });
