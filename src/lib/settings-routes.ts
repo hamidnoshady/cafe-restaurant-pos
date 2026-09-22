@@ -10,7 +10,7 @@
  *
  * Two kinds of entry live here:
  *
- *  - the sixteen **tabs** of the settings manager (`settings-tabs.ts`), whose
+ *  - the tabs of the settings manager (`settings-tabs.ts`, `SETTINGS_TAB_KEYS`), whose
  *    slug is usually their key; `security` and `sync` are shorter, friendlier
  *    spellings of keys the code already had.
  *  - the platform sections that are **not** tabs — the member's own profile,
