@@ -397,17 +397,46 @@ export async function storeCreditBalance(businessId: string, customerId: string,
 
   const { rows } = await run<{ issued: string | null; used: string | null }>(
     `SELECT
-       COALESCE(SUM(CASE WHEN event_type = 'loyalty.store_credit_issued'
+       COALESCE(SUM(CASE WHEN event_type IN ('loyalty.store_credit_issued', 'order.customer_credit_issued')
                           THEN (payload->>'amount')::bigint ELSE 0 END), 0)::text AS issued,
        COALESCE(SUM(CASE WHEN event_type = 'loyalty.store_credit_used'
                           THEN (payload->>'amount')::bigint ELSE 0 END), 0)::text AS used
        FROM domain_events
       WHERE business_id = $1
-        AND event_type IN ('loyalty.store_credit_issued', 'loyalty.store_credit_used')
+        AND event_type IN ('loyalty.store_credit_issued', 'loyalty.store_credit_used', 'order.customer_credit_issued')
         AND payload->>'customerId' = $2`,
     [businessId, customerId],
   );
   return Number(rows[0]?.issued ?? 0) - Number(rows[0]?.used ?? 0);
+}
+
+/**
+ * Several customers' store-credit balances in one pass — the till's picker,
+ * which shows a page of customers and must not ask per row. Same events, same
+ * arithmetic as {@link storeCreditBalance}; an empty id list answers empty.
+ */
+export async function storeCreditBalancesFor(
+  businessId: string,
+  customerIds: readonly string[],
+  client?: PoolClient,
+): Promise<Map<string, number>> {
+  if (customerIds.length === 0) return new Map();
+  const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
+  const { rows } = await run<{ customer_id: string; balance: string }>(
+    `SELECT payload->>'customerId' AS customer_id,
+            (COALESCE(SUM(CASE WHEN event_type IN ('loyalty.store_credit_issued', 'order.customer_credit_issued')
+                               THEN (payload->>'amount')::bigint ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN event_type = 'loyalty.store_credit_used'
+                               THEN (payload->>'amount')::bigint ELSE 0 END), 0))::text AS balance
+       FROM domain_events
+      WHERE business_id = $1
+        AND event_type IN ('loyalty.store_credit_issued', 'loyalty.store_credit_used', 'order.customer_credit_issued')
+        AND payload->>'customerId' = ANY($2::text[])
+      GROUP BY payload->>'customerId'`,
+    [businessId, customerIds],
+  );
+  return new Map(rows.map((row) => [row.customer_id, Number(row.balance)]));
 }
 
 /** Issue a credit liability, for a documented refund / correction. */

@@ -30,7 +30,10 @@ export const PATCH = withTenantScope(
     let body: {
       quantity?: number;
       note?: string | null;
+      /** The pre-quantity shape — still accepted; see `modifiers`. */
       modifierIds?: string[];
+      /** The line's add-ons after the edit, each with its own repeat count. */
+      modifiers?: { id?: unknown; quantity?: unknown }[];
       void?: { reason?: string };
     };
     try {
@@ -46,6 +49,26 @@ export const PATCH = withTenantScope(
     ) {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
+    let modifiers: { id: string; quantity?: number }[] | undefined;
+    if (body.modifiers !== undefined) {
+      if (!Array.isArray(body.modifiers)) {
+        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+      }
+      modifiers = [];
+      for (const pick of body.modifiers) {
+        if (pick === null || typeof pick !== "object" || typeof pick.id !== "string") {
+          return NextResponse.json({ error: "bad_request" }, { status: 400 });
+        }
+        const quantity = pick.quantity === undefined ? undefined : Number(pick.quantity);
+        if (
+          quantity !== undefined &&
+          (!Number.isSafeInteger(quantity) || quantity < 1)
+        ) {
+          return NextResponse.json({ error: "invalid_modifier_quantity" }, { status: 400 });
+        }
+        modifiers.push({ id: pick.id, quantity });
+      }
+    }
     if (
       body.note !== undefined &&
       body.note !== null &&
@@ -60,6 +83,7 @@ export const PATCH = withTenantScope(
       orderItemId: itemId,
       quantity: body.quantity,
       note: body.note,
+      modifiers,
       modifierIds: body.modifierIds,
       void: body.void,
     });

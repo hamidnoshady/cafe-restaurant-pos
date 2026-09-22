@@ -67,7 +67,7 @@ interface Shop {
 }
 
 /** One café whose bandari carries two add-on groups: optional extras, required size. */
-async function createShop(): Promise<Shop> {
+async function createShop(extrasMax = 2): Promise<Shop> {
   const biz = await db.query<{ id: string }>(
     "INSERT INTO businesses (name, slug) VALUES ($1, $2) RETURNING id",
     [
@@ -98,7 +98,7 @@ async function createShop(): Promise<Shop> {
     );
     return rows[0].id;
   };
-  const extrasId = await group("افزودنی‌ها", 0, 2);
+  const extrasId = await group("افزودنی‌ها", 0, extrasMax);
   const sizeId = await group("اندازه", 1, 1);
   const sauceId = await group("سس", 0, 1);
 
@@ -147,14 +147,17 @@ async function createShop(): Promise<Shop> {
   };
 }
 
-/** An open order with one bandari on it, sized as asked. */
-async function openOrder(shop: Shop, modifierIds: string[]) {
+/** An open order with one bandari on it, sized as asked. Accepts picks with quantities. */
+async function openOrder(
+  shop: Shop,
+  modifiers: (string | { id: string; quantity?: number })[],
+) {
   const result = await dbLib.withTenant(shop.businessId, () =>
     orderMutations.createOrder({
       locationId: shop.locationId,
       type: "takeaway",
       discount: { type: null },
-      items: [{ menuItemId: shop.menuItemId, quantity: 1, modifierIds }],
+      items: [{ menuItemId: shop.menuItemId, quantity: 1, modifiers }],
       openedBy: null,
     }),
   );
@@ -558,5 +561,133 @@ describe("re-picking an open line's add-ons", () => {
       quantity: 4,
     });
     expect(await orderTotal(orderId)).toBe(4_200_000 * 4);
+  });
+});
+
+describe("add-on quantity («شات اضافه ×۳»)", () => {
+  it("prices a repeated add-on once per unit, times its quantity", async () => {
+    const shop = await createShop(5);
+    const { orderId, orderItemId } = await openOrder(shop, [
+      { id: shop.breadId, quantity: 3 },
+      shop.smallId,
+    ]);
+
+    // 3,900,000 base + 3 × 300,000 bread — one row, quantity 3, not three rows.
+    expect(await orderTotal(orderId)).toBe(3_900_000 + 3 * 300_000);
+    const { rows } = await db.query<{ quantity: number }>(
+      "SELECT quantity FROM order_item_modifiers WHERE order_item_id = $1 AND modifier_id = $2",
+      [orderItemId, shop.breadId],
+    );
+    expect(rows).toEqual([{ quantity: 3 }]);
+  });
+
+  it("consumes inventory once per add-on unit — the recipe repeats", async () => {
+    const shop = await createShop(5);
+    const { orderId } = await openOrder(shop, [
+      { id: shop.breadId, quantity: 3 },
+      shop.smallId,
+    ]);
+    // «نان» costs 50g of flour; three of them cost 150g, on this one line.
+    expect(await pendingConsumption(orderId)).toEqual({ [shop.flourId]: 150 });
+  });
+
+  it("re-picks a line's add-ons with a new quantity, superseding and re-pricing", async () => {
+    const shop = await createShop(5);
+    const { orderId, orderItemId } = await openOrder(shop, [
+      { id: shop.breadId, quantity: 3 },
+      shop.smallId,
+    ]);
+
+    const result = await update(shop, orderId, orderItemId, {
+      modifiers: [
+        { id: shop.breadId, quantity: 2 },
+        { id: shop.smallId },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const replacementId = result.data.replacementItemId;
+
+    expect(await orderTotal(orderId)).toBe(3_900_000 + 2 * 300_000);
+    expect(await pendingConsumption(orderId)).toEqual({ [shop.flourId]: 100 });
+    const { rows } = await db.query<{ quantity: number }>(
+      "SELECT quantity FROM order_item_modifiers WHERE order_item_id = $1 AND modifier_id = $2",
+      [replacementId!, shop.breadId],
+    );
+    expect(rows).toEqual([{ quantity: 2 }]);
+  });
+
+  it("adds a line with a repeated add-on to an already-open order", async () => {
+    const shop = await createShop();
+    const { orderId } = await openOrder(shop, [shop.smallId]);
+
+    const result = await dbLib.withTenant(shop.businessId, () =>
+      orderMutations.addItemsToOrder({
+        locationId: shop.locationId,
+        orderId,
+        items: [
+          {
+            menuItemId: shop.menuItemId,
+            quantity: 2,
+            modifiers: [
+              { id: shop.breadId, quantity: 2 },
+              { id: shop.smallId },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    // First line 3,900,000; second 2 × (3,900,000 + 2 × 300,000).
+    expect(await orderTotal(orderId)).toBe(3_900_000 + 2 * (3_900_000 + 600_000));
+    expect(await liveLineCount(orderId)).toBe(2);
+  });
+
+  it("counts total quantity toward a group's max_select", async () => {
+    const shop = await createShop();
+    // The extras group allows 2; bread ×3 alone overruns it even though it is
+    // one choice, because the budget counts units, not distinct add-ons.
+    const result = await dbLib.withTenant(shop.businessId, () =>
+      orderMutations.createOrder({
+        locationId: shop.locationId,
+        type: "takeaway",
+        discount: { type: null },
+        items: [
+          {
+            menuItemId: shop.menuItemId,
+            quantity: 1,
+            modifiers: [
+              { id: shop.breadId, quantity: 3 },
+              shop.smallId,
+            ],
+          },
+        ],
+        openedBy: null,
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, error: "invalid_modifier_selection" });
+  });
+
+  it("refuses a quantity above the hospitality ceiling before anything is priced", async () => {
+    const shop = await createShop();
+    const result = await dbLib.withTenant(shop.businessId, () =>
+      orderMutations.createOrder({
+        locationId: shop.locationId,
+        type: "takeaway",
+        discount: { type: null },
+        items: [
+          {
+            menuItemId: shop.menuItemId,
+            quantity: 1,
+            modifiers: [
+              { id: shop.breadId, quantity: 21 },
+              shop.smallId,
+            ],
+          },
+        ],
+        openedBy: null,
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, error: "invalid_modifier_quantity" });
   });
 });

@@ -27,7 +27,6 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  BanknoteIcon,
   MinusIcon,
   PencilIcon,
   PlusIcon,
@@ -48,9 +47,9 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import {
-  draftNeedsCustomer,
   draftOpensDrawer,
   draftReceiptPayments,
+  draftRequiresCustomer,
   emptyPaymentDraft,
   paymentDraftBody,
   type PaymentDraft,
@@ -64,10 +63,14 @@ import type { ReceiptData } from "@/lib/receipt-template";
 import {
   formatModifierDelta,
   linePriceBreakdown,
+  modifierDeltasOf,
   modifierNamesLabel,
+  modifierQuantity,
   type DisplayModifier,
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
+import { CustomerBalanceBadge, CustomerPicker, type PickerCustomer } from "../customer-picker";
+import { HoldToConfirmButton } from "../hold-to-confirm-button";
 import { isTableOccupied, isTableUnavailable } from "@/lib/pos-selection";
 import {
   buildRestaurantMenuIndex,
@@ -139,17 +142,21 @@ const PAYMENT_LABELS: Record<string, string> = {
   cheque: "چک",
 };
 
+/** The dialog's three tabs — see the `tab` state for what belongs where. */
+const ORDER_TABS = [
+  { id: "register", label: "سفارش و صندوق" },
+  { id: "info", label: "اطلاعات سفارش" },
+  { id: "ops", label: "عملیات بیشتر" },
+] as const;
+
 function orderLabel(order: Pick<OrderRow, "type" | "order_number">): string {
   return order.type === "retail"
     ? `فاکتور ${order.order_number}`
     : formatQueueLabel(order.type, order.order_number);
 }
 
-interface Customer {
-  id: string;
-  name: string;
-  phone: string | null;
-}
+/** A directory customer as this dialog needs it (see customer-picker.tsx). */
+type Customer = PickerCustomer;
 
 interface OrderRow {
   id: string;
@@ -195,6 +202,8 @@ interface ModifierRow {
   modifier_id: string | null;
   name_snapshot: string;
   price_delta: string | number;
+  /** How many of this add-on the line carries («شات اضافه ×۳» = 3). */
+  quantity: number | null;
 }
 
 interface PaymentRow {
@@ -221,7 +230,7 @@ type PickerTarget =
       mode: "edit";
       menuItem: MenuItem;
       item: OrderItemRow;
-      modifierIds: string[];
+      modifiers: { id: string; quantity: number }[];
       note: string;
     };
 
@@ -280,7 +289,6 @@ export function OrderDetailModal({
   // with the POS through <PaymentWays>, so the two checkouts stay identical.
   const { methods: paymentMethods, loaded: paymentMethodsLoaded } = usePaymentMethods();
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => emptyPaymentDraft([]));
-  const needsCustomer = draftNeedsCustomer(paymentDraft, paymentMethods);
   // The ways land a render or two after the dialog opens, so the draft starts
   // pointing at nothing; this settles it on the first way once they arrive.
   useEffect(() => {
@@ -290,17 +298,22 @@ export function OrderDetailModal({
   }, [paymentMethods]);
   const [tipInput, setTipInput] = useState("");
   const [paying, setPaying] = useState(false);
-  const [customerQuery, setCustomerQuery] = useState("");
-  const [customerResults, setCustomerResults] = useState<Customer[]>([]);
-  const [customerResultsLoading, setCustomerResultsLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
   );
+  /** Bumped to open the customer picker from the payment preview's action. */
+  const [customerPickerRequests, setCustomerPickerRequests] = useState(0);
   const [tables, setTables] = useState<{ id: string; name: string; status: string }[]>([]);
   const [tablesLoaded, setTablesLoaded] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState("");
-  const [showNewCustomer, setShowNewCustomer] = useState(false);
-  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  /**
+   * The dialog's three tabs — صندوق (the bill and its payment), اطلاعات
+   * (the order's facts), عملیات (everything that is not the bill itself).
+   * Working an order is usually a one-tab visit: the cashier opens صندوق,
+   * takes the money, closes; the other two are there for the visits that
+   * need them, without crowding the one that doesn't.
+   */
+  const [tab, setTab] = useState<"register" | "info" | "ops">("register");
   const printers = usePrinters();
   const business = useBusinessInfo();
   const money = useMoney();
@@ -386,8 +399,7 @@ export function OrderDetailModal({
     setAddQty("1");
     setTipInput("");
     setSelectedCustomer(null);
-    setCustomerQuery("");
-    setShowNewCustomer(false);
+    setTab("register");
     setPaymentDraft(emptyPaymentDraft(paymentMethods));
     setTables([]);
     setTablesLoaded(false);
@@ -421,32 +433,6 @@ export function OrderDetailModal({
       );
   }, [menu, open]);
 
-  useEffect(() => {
-    if (!open || selectedCustomer) {
-      setCustomerResults([]);
-      setCustomerResultsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setCustomerResultsLoading(true);
-    const timer = setTimeout(() => {
-      void api<{ customers: Customer[] }>(
-        `/api/parties?q=${encodeURIComponent(customerQuery)}`,
-      )
-        .then(({ ok, data }) => {
-          if (!cancelled && ok) setCustomerResults(data.customers);
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (!cancelled) setCustomerResultsLoading(false);
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [customerQuery, open, selectedCustomer]);
-
   const addOnsByItem = useMemo(() => {
     const map = new Map<
       string,
@@ -457,6 +443,7 @@ export function OrderDetailModal({
       current.push({
         name: modifier.name_snapshot,
         priceDelta: Number(modifier.price_delta),
+        quantity: modifierQuantity({ quantity: modifier.quantity ?? 1 }),
         modifierId: modifier.modifier_id,
       });
       map.set(modifier.order_item_id, current);
@@ -464,14 +451,20 @@ export function OrderDetailModal({
     return map;
   }, [modifiers]);
 
-  async function saveOrderCustomer(customerId: string | null) {
+  /**
+   * Picking is saving: choosing (or clearing, or quick-creating) a customer in
+   * the picker patches the order right there, so there is no second «ذخیره»
+   * button to forget on the way to payment.
+   */
+  async function saveOrderCustomer(customer: Customer | null) {
+    setSelectedCustomer(customer);
     const saved = await run(() =>
       api(`/api/orders/${orderId}`, {
         method: "PATCH",
-        body: JSON.stringify({ customerId }),
+        body: JSON.stringify({ customerId: customer?.id ?? null }),
       }),
     );
-    if (saved) setInfo(customerId ? "مشتری سفارش ذخیره شد." : "مشتری سفارش حذف شد.");
+    if (saved) setInfo(customer ? "مشتری سفارش ذخیره شد." : "مشتری سفارش حذف شد.");
   }
 
   async function saveOrderTable(tableId: string) {
@@ -482,25 +475,6 @@ export function OrderDetailModal({
       }),
     );
     if (saved) setSelectedTableId(tableId);
-  }
-
-  async function createCustomer() {
-    const name = customerQuery.trim();
-    if (!name) return;
-    const { ok, data } = await api<{ customer: Customer; error?: string }>(
-      "/api/parties",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          phone: newCustomerPhone.trim() || undefined,
-        }),
-      },
-    );
-    if (!ok) return setError(errorMessage(data.error));
-    setSelectedCustomer(data.customer);
-    setShowNewCustomer(false);
-    setNewCustomerPhone("");
   }
 
   async function run(
@@ -549,8 +523,10 @@ export function OrderDetailModal({
       mode: "edit",
       menuItem,
       item,
-      modifierIds: (addOnsByItem.get(item.id) ?? []).flatMap((addOn) =>
-        addOn.modifierId ? [addOn.modifierId] : [],
+      modifiers: (addOnsByItem.get(item.id) ?? []).flatMap((addOn) =>
+        addOn.modifierId
+          ? [{ id: addOn.modifierId, quantity: modifierQuantity(addOn) }]
+          : [],
       ),
       note: item.note ?? "",
     });
@@ -558,12 +534,12 @@ export function OrderDetailModal({
 
   async function addItem(
     menuItemId: string,
-    modifierIds: string[],
+    picks: { id: string; quantity: number }[],
     note: string,
   ) {
     const quantity = Number(addQty) || 1;
     const payload = [
-      { menuItemId, quantity, modifierIds, note: note || undefined },
+      { menuItemId, quantity, modifiers: picks, note: note || undefined },
     ];
     setBusy(true);
     setError("");
@@ -596,13 +572,13 @@ export function OrderDetailModal({
 
   async function saveAddOns(
     itemId: string,
-    modifierIds: string[],
+    picks: { id: string; quantity: number }[],
     note: string,
   ) {
     const saved = await run(() =>
       api(`/api/orders/${orderId}/items/${itemId}`, {
         method: "PATCH",
-        body: JSON.stringify({ modifierIds, note }),
+        body: JSON.stringify({ modifiers: picks, note }),
       }),
     );
     if (saved) toast.success("افزودنی‌های قلم به‌روز شد");
@@ -743,10 +719,10 @@ export function OrderDetailModal({
    */
   async function pay() {
     if (!order) return;
-    if (needsCustomer && !selectedCustomer) {
+    const total = Number(order.total);
+    if (draftRequiresCustomer(paymentDraft, paymentMethods, total) && !selectedCustomer) {
       return setError(errorMessage("customer_required"));
     }
-    const total = Number(order.total);
     const built = paymentDraftBody(paymentDraft, paymentMethods, total, money.unit);
     if (!built.ok) return setError(errorMessage(built.error));
     let tipAmount = 0;
@@ -759,20 +735,34 @@ export function OrderDetailModal({
     }
     setPaying(true);
     setError("");
-    const { ok, data } = await api<{ error?: string }>(
-      `/api/orders/${orderId}/pay`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          payments: built.value,
-          customerId: selectedCustomer?.id,
-          tipAmount,
-        }),
-      },
-    );
+    const { ok, data } = await api<{
+      error?: string;
+      /** What the typed amount left on the customer's account (settle-with-difference). */
+      balanceDue?: number;
+      customerCredit?: number;
+    }>(`/api/orders/${orderId}/pay`, {
+      method: "POST",
+      body: JSON.stringify({
+        payments: built.value,
+        customerId: selectedCustomer?.id,
+        tipAmount,
+      }),
+    });
     setPaying(false);
     if (!ok) return setError(errorMessage(data.error));
-    toast.success("پرداخت ثبت شد");
+    // The settle-with-difference outcomes are said out loud: they change the
+    // customer's balance, and a silent success is how a debt goes unbilled.
+    if (Number(data.balanceDue ?? 0) > 0) {
+      toast.success(
+        `پرداخت ثبت شد؛ ${money.format(Number(data.balanceDue))} به‌عنوان بدهی مشتری ثبت شد.`,
+      );
+    } else if (Number(data.customerCredit ?? 0) > 0) {
+      toast.success(
+        `پرداخت ثبت شد؛ ${money.format(Number(data.customerCredit))} به‌عنوان اعتبار مشتری ثبت شد.`,
+      );
+    } else {
+      toast.success("پرداخت ثبت شد");
+    }
     await load();
     onChanged?.();
 
@@ -964,6 +954,12 @@ export function OrderDetailModal({
     );
   }
 
+  const paidSum = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const orderTip = Number(order?.tip_amount ?? 0);
+  const remainingDue = order
+    ? Math.max(0, Number(order.total) + orderTip - paidSum)
+    : 0;
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1014,76 +1010,54 @@ export function OrderDetailModal({
                   )}
                 </DialogDescription>
               </div>
-              {/* Actions sit beside the title from `sm` up and drop to their
-                  own row on a phone, where a third button would not fit. */}
-              <div className="flex shrink-0 items-center gap-2">
-                {/* The wrapper carries `hidden`, not the buttons: a `hidden`
-                    utility on an element that also sets `inline-flex` is a
-                    coin toss between two same-specificity display rules. */}
-                {order ? (
-                  <div className="hidden items-center gap-2 sm:flex">
-                    <button
-                      type="button"
-                      onClick={reprint}
-                      className={SECONDARY_BUTTON}
-                    >
-                      <PrinterIcon className="size-4" aria-hidden="true" />
-                      {order.status === "open" ? "چاپ رسید" : "چاپ مجدد"}
-                    </button>
-                    {editable ? (
-                      <button
-                        type="button"
-                        onClick={voidOrder}
-                        disabled={busy}
-                        className={DANGER_BUTTON}
-                      >
-                        <Trash2Icon className="size-4" aria-hidden="true" />
-                        ابطال سفارش
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => onOpenChange(false)}
-                  aria-label="بستن"
-                  className={`flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-card text-muted-foreground transition-colors hover:bg-muted ${FOCUS} active:scale-[0.95]`}
-                >
-                  <XIcon className="size-4" aria-hidden="true" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                aria-label="بستن"
+                className={`flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-card text-muted-foreground transition-colors hover:bg-muted ${FOCUS} active:scale-[0.95]`}
+              >
+                <XIcon className="size-4" aria-hidden="true" />
+              </button>
             </div>
 
-            {order ? (
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:hidden">
-                <button
-                  type="button"
-                  onClick={reprint}
-                  className={`${SECONDARY_BUTTON} min-h-12`}
-                >
-                  <PrinterIcon className="size-4" aria-hidden="true" />
-                  {order.status === "open" ? "چاپ رسید" : "چاپ مجدد"}
-                </button>
-                {editable ? (
+            {/*
+              The three tabs. صندوق is where 90% of visits start and end;
+              اطلاعات and عملیات hold the rest without making the working
+              tab scroll past them. Real tabs (role=tablist) so the structure
+              is spoken, not just drawn.
+            */}
+            <div
+              role="tablist"
+              aria-label="بخش‌های جزئیات سفارش"
+              className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
+            >
+              {ORDER_TABS.map((entry) => {
+                const selected = tab === entry.id;
+                return (
                   <button
+                    key={entry.id}
                     type="button"
-                    onClick={voidOrder}
-                    disabled={busy}
-                    className={`${DANGER_BUTTON} min-h-12`}
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setTab(entry.id)}
+                    className={`min-h-11 rounded-lg px-2 text-xs font-bold transition-colors sm:text-sm ${
+                      selected
+                        ? "border border-amber-500/50 dark:border-amber-500/40 bg-card text-amber-700 dark:text-amber-300"
+                        : "border border-transparent text-muted-foreground hover:bg-card/70"
+                    } ${FOCUS}`}
                   >
-                    <Trash2Icon className="size-4" aria-hidden="true" />
-                    ابطال سفارش
+                    {entry.label}
                   </button>
-                ) : null}
-              </div>
-            ) : null}
+                );
+              })}
+            </div>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
             {!order ? (
               !orderLoaded ? (
                 <div
-                  className="space-y-3"
+                  className="mx-auto max-w-4xl space-y-3"
                   aria-busy="true"
                   aria-label="در حال بارگذاری جزئیات سفارش"
                 >
@@ -1092,23 +1066,25 @@ export function OrderDetailModal({
                   <div className="ops-skeleton h-24 rounded-2xl" />
                 </div>
               ) : (
-                <div className="rounded-xl border border-destructive/20 bg-destructive/[0.035] px-4 py-6 text-center text-sm text-destructive">
-                  <p>{error || "اطلاعات سفارش در دسترس نیست."}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setError("");
-                      setOrderLoaded(false);
-                      void load();
-                    }}
-                    className={`${SECONDARY_BUTTON} mt-3`}
-                  >
-                    تلاش دوباره
-                  </button>
+                <div className="mx-auto max-w-4xl">
+                  <div className="rounded-xl border border-destructive/20 bg-destructive/[0.035] px-4 py-6 text-center text-sm text-destructive">
+                    <p>{error || "اطلاعات سفارش در دسترس نیست."}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError("");
+                        setOrderLoaded(false);
+                        void load();
+                      }}
+                      className={`${SECONDARY_BUTTON} mt-3`}
+                    >
+                      تلاش دوباره
+                    </button>
+                  </div>
                 </div>
               )
             ) : (
-              <>
+              <div className="mx-auto max-w-4xl">
                 {error ? (
                   <div
                     className="mb-3 flex flex-col gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.035] px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
@@ -1138,116 +1114,358 @@ export function OrderDetailModal({
                   </p>
                 ) : null}
 
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
-                  <div className="min-w-0 space-y-3">
-                    <section className={CARD} aria-label="اقلام سفارش">
-                      <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
-                        <h3 className="font-semibold text-foreground">
-                          اقلام سفارش
-                        </h3>
-                        <span className="text-xs text-muted-foreground">
-                          {toPersianDigits(itemCount)} قلم
-                        </span>
-                      </div>
-
-                      {liveItems.length === 0 ? (
-                        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                          قلم فعالی برای این سفارش ثبت نشده است.
-                        </p>
-                      ) : (
-                        <>
-                          <div
-                            className={`hidden border-b border-border/80 bg-muted px-4 py-2.5 text-xs font-medium text-muted-foreground ${LINE_GRID}`}
-                            aria-hidden="true"
-                          >
-                            <span>قلم</span>
-                            <span>تعداد</span>
-                            <span className="text-end">مبلغ</span>
-                            <span />
-                          </div>
-                          <ul>{liveItems.map(renderLine)}</ul>
-                        </>
-                      )}
-
-                      {voidedItems.length > 0 ? (
-                        <div className="border-t border-border/80">
-                          <button
-                            type="button"
-                            onClick={() => setShowVoided((value) => !value)}
-                            aria-expanded={showVoided}
-                            className={`flex min-h-12 w-full items-center justify-between gap-2 px-4 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted ${FOCUS}`}
-                          >
-                            <span>
-                              اقلام باطل‌شده (
-                              {toPersianDigits(voidedItems.length)} مورد)
-                            </span>
-                            <span aria-hidden="true">
-                              {showVoided ? "−" : "+"}
-                            </span>
-                          </button>
-                          {showVoided ? (
-                            <ul className="border-t border-border/80 bg-muted">
-                              {voidedItems.map(renderLine)}
-                            </ul>
-                          ) : null}
+                {tab === "register" ? (
+                  <>
+                    <div className="space-y-3">
+                      <section className={CARD} aria-label="اقلام سفارش">
+                        <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
+                          <h3 className="font-semibold text-foreground">
+                            اقلام سفارش
+                          </h3>
+                          <span className="text-xs text-muted-foreground">
+                            {toPersianDigits(itemCount)} قلم
+                          </span>
                         </div>
+
+                        {liveItems.length === 0 ? (
+                          <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+                            قلم فعالی برای این سفارش ثبت نشده است.
+                          </p>
+                        ) : (
+                          <>
+                            <div
+                              className={`hidden border-b border-border/80 bg-muted px-4 py-2.5 text-xs font-medium text-muted-foreground ${LINE_GRID}`}
+                              aria-hidden="true"
+                            >
+                              <span>قلم</span>
+                              <span>تعداد</span>
+                              <span className="text-end">مبلغ</span>
+                              <span />
+                            </div>
+                            <ul>{liveItems.map(renderLine)}</ul>
+                          </>
+                        )}
+
+                        {voidedItems.length > 0 ? (
+                          <div className="border-t border-border/80">
+                            <button
+                              type="button"
+                              onClick={() => setShowVoided((value) => !value)}
+                              aria-expanded={showVoided}
+                              className={`flex min-h-12 w-full items-center justify-between gap-2 px-4 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted ${FOCUS}`}
+                            >
+                              <span>
+                                اقلام باطل‌شده (
+                                {toPersianDigits(voidedItems.length)} مورد)
+                              </span>
+                              <span aria-hidden="true">
+                                {showVoided ? "−" : "+"}
+                              </span>
+                            </button>
+                            {showVoided ? (
+                              <ul className="border-t border-border/80 bg-muted">
+                                {voidedItems.map(renderLine)}
+                              </ul>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </section>
+
+                      {editable ? (
+                        <section
+                          className={`${CARD} p-4`}
+                          aria-label="افزودن قلم"
+                        >
+                          <h3 className="mb-3 font-semibold text-foreground">
+                            افزودن قلم
+                          </h3>
+                          {!menu ? (
+                            <LoadingSkeleton rows={2} compact label="در حال بارگذاری منو" />
+                          ) : (
+                            <>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <div className="min-w-0 flex-1">
+                                  <SearchableSelect
+                                    value={addItemId}
+                                    onChange={setAddItemId}
+                                    ariaLabel="انتخاب آیتم برای افزودن"
+                                    className={OPS_INPUT}
+                                    options={[
+                                      { value: "", label: "آیتم…" },
+                                      ...activeItems.map((i) => ({
+                                        value: i.id,
+                                        label: i.name,
+                                      })),
+                                    ]}
+                                  />
+                                </div>
+                                <PersianNumberInput
+                                  className={`${OPS_INPUT} sm:w-20`}
+                                  dir="ltr"
+                                  inputMode="numeric"
+                                  aria-label="تعداد"
+                                  value={addQty}
+                                  onChange={(event) => setAddQty(event.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={startAddItem}
+                                  disabled={busy || !addItemId}
+                                  className={`${PRIMARY_BUTTON} sm:w-auto sm:min-w-28`}
+                                >
+                                  <PlusIcon className="size-4" aria-hidden="true" />
+                                  افزودن
+                                </button>
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                                آیتم‌هایی که گروه افزودنی دارند، پیش از ثبت پنجرهٔ
+                                انتخاب افزودنی را باز می‌کنند.
+                              </p>
+                            </>
+                          )}
+                        </section>
                       ) : null}
-                    </section>
+                    </div>
+
+                      <section className={`${CARD} mt-3 p-4`} aria-label="مبلغ و تخفیف سفارش">
+                        {editable ? (
+                          <div className="mb-4 border-b border-border/80 pb-4">
+                            <h3 className="mb-2 font-semibold text-foreground">
+                              تخفیف
+                            </h3>
+                            <div className="flex flex-col gap-2">
+                              <div className="flex gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <SearchableSelect
+                                    value={discountType}
+                                    onChange={(value) =>
+                                      setDiscountType(
+                                        value as "" | "percent" | "amount",
+                                      )
+                                    }
+                                    ariaLabel="نوع تخفیف"
+                                    className={OPS_INPUT}
+                                    options={[
+                                      { value: "", label: "بدون تخفیف" },
+                                      { value: "percent", label: "درصدی" },
+                                      { value: "amount", label: "مبلغ ثابت" },
+                                    ]}
+                                  />
+                                </div>
+                                {discountType ? (
+                                  <PersianNumberInput
+                                    className={`${OPS_INPUT} w-24`}
+                                    dir="ltr"
+                                    inputMode={discountType === "percent" ? "decimal" : "numeric"}
+                                    aria-label="مقدار تخفیف"
+                                    value={discountValue}
+                                    onChange={(event) =>
+                                      setDiscountValue(event.target.value)
+                                    }
+                                    placeholder={
+                                      discountType === "percent" ? "٪" : money.unitLabel
+                                    }
+                                  />
+                                ) : null}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={saveDiscount}
+                                disabled={busy}
+                                className={`${SECONDARY_BUTTON} min-h-12 w-full`}
+                              >
+                                اعمال تخفیف
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <dl className="space-y-2">
+                          <Row
+                            label="جمع جزء"
+                            value={money.format(Number(order.subtotal))}
+                          />
+                          {addOnTotal !== 0 ? (
+                            <Row
+                              label="از این مبلغ، افزودنی‌ها"
+                              value={formatModifierDelta(addOnTotal, { unit: money.unit })}
+                              accent
+                            />
+                          ) : null}
+                          {Number(order.discount) > 0 ? (
+                            <Row
+                              label="تخفیف"
+                              value={`- ${money.format(Number(order.discount))}`}
+                            />
+                          ) : null}
+                          {Number(order.service_charge ?? 0) > 0 ? (
+                            <Row
+                              label="هزینهٔ ارسال"
+                              value={money.format(Number(order.service_charge))}
+                            />
+                          ) : null}
+                          {Number(order.tax) > 0 ? (
+                            <Row
+                              label="مالیات"
+                              value={money.format(Number(order.tax))}
+                            />
+                          ) : null}
+                          <div className="mt-1 flex items-center justify-between gap-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-3 py-2.5">
+                            <dt className="text-sm font-bold text-foreground">
+                              جمع کل
+                            </dt>
+                            <dd className="text-base font-bold tabular-nums text-amber-700 dark:text-amber-300">
+                              {money.format(Number(order.total))}
+                            </dd>
+                          </div>
+                        </dl>
+                      </section>
 
                     {editable ? (
                       <section
-                        className={`${CARD} p-4`}
-                        aria-label="افزودن قلم"
+                        className={`${CARD} mt-3 p-4`}
+                        aria-label="دریافت وجه و تکمیل سفارش"
                       >
                         <h3 className="mb-3 font-semibold text-foreground">
-                          افزودن قلم
+                          دریافت وجه و تکمیل سفارش
                         </h3>
-                        {!menu ? (
-                          <LoadingSkeleton rows={2} compact label="در حال بارگذاری منو" />
-                        ) : (
-                          <>
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                              <div className="min-w-0 flex-1">
-                                <SearchableSelect
-                                  value={addItemId}
-                                  onChange={setAddItemId}
-                                  ariaLabel="انتخاب آیتم برای افزودن"
-                                  className={OPS_INPUT}
-                                  options={[
-                                    { value: "", label: "آیتم…" },
-                                    ...activeItems.map((i) => ({
-                                      value: i.id,
-                                      label: i.name,
-                                    })),
-                                  ]}
-                                />
-                              </div>
-                              <PersianNumberInput
-                                className={`${OPS_INPUT} sm:w-20`}
-                                dir="ltr"
-                                inputMode="numeric"
-                                aria-label="تعداد"
-                                value={addQty}
-                                onChange={(event) => setAddQty(event.target.value)}
-                              />
-                              <button
-                                type="button"
-                                onClick={startAddItem}
-                                disabled={busy || !addItemId}
-                                className={`${PRIMARY_BUTTON} sm:w-auto sm:min-w-28`}
-                              >
-                                <PlusIcon className="size-4" aria-hidden="true" />
-                                افزودن
-                              </button>
-                            </div>
-                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                              آیتم‌هایی که گروه افزودنی دارند، پیش از ثبت پنجرهٔ
-                              انتخاب افزودنی را باز می‌کنند.
-                            </p>
-                          </>
-                        )}
+
+                        {/*
+                          The customer sits with the payment because that is
+                          where they matter: a difference (نسیه، بدهی، اعتبار)
+                          is booked against a person, and the picker also
+                          quick-creates one from a name and a mobile number.
+                          Picking is saving — the order is patched immediately.
+                        */}
+                        <div className="mb-3">
+                          <CustomerPicker
+                            customer={selectedCustomer}
+                            onChange={(customer) => void saveOrderCustomer(customer)}
+                            disabled={busy}
+                            idPrefix="order-customer"
+                            requestOpen={customerPickerRequests}
+                          />
+                          <CustomerBalanceBadge customer={selectedCustomer} />
+                        </div>
+
+                        <div className="mb-3">
+                          <PaymentWays
+                            methods={paymentMethods}
+                            loaded={paymentMethodsLoaded}
+                            draft={paymentDraft}
+                            onChange={setPaymentDraft}
+                            due={Number(order.total)}
+                            disabled={paying}
+                            idPrefix="order"
+                            customer={selectedCustomer}
+                            onChooseCustomer={() =>
+                              setCustomerPickerRequests((count) => count + 1)
+                            }
+                          />
+                        </div>
+
+                        <label className="mb-3 block">
+                          <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                            انعام{" "}
+                            <span className="font-normal text-muted-foreground">
+                              (اختیاری، {money.unitLabel})
+                            </span>
+                          </span>
+                          <PersianNumberInput
+                            className={OPS_INPUT}
+                            dir="ltr"
+                            inputMode="numeric"
+                            value={tipInput}
+                            onChange={(event) =>
+                              setTipInput(event.target.value)
+                            }
+                            placeholder="۰"
+                          />
+                        </label>
+
+                        <HoldToConfirmButton
+                          durationMs={4000}
+                          label={`ثبت پرداخت ${money.format(Number(order.total))}`}
+                          holdingLabel="نگه دارید…"
+                          busy={paying}
+                          disabled={
+                            paymentMethods.length === 0 ||
+                            (draftRequiresCustomer(paymentDraft, paymentMethods, Number(order.total)) &&
+                              !selectedCustomer)
+                          }
+                          onComplete={() => void pay()}
+                        />
                       </section>
                     ) : null}
+                  </>
+                ) : null}
+
+                {tab === "info" ? (
+                  <div className="space-y-3">
+                    <section
+                      className={`${CARD} p-4`}
+                      aria-label="مشخصات سفارش"
+                    >
+                      <h3 className="mb-3 font-semibold text-foreground">
+                        مشخصات سفارش
+                      </h3>
+                      {/* Flex rather than a 2-column grid: the number of facts
+                          varies by order, and an odd one out should fill the
+                          row instead of leaving a hole beside it. */}
+                      <dl className="flex flex-wrap gap-2">
+                        <Fact
+                          label="نوع سفارش"
+                          value={TYPE_LABELS[order.type]}
+                        />
+                        {order.table_name ? (
+                          <Fact label="میز" value={order.table_name} />
+                        ) : null}
+                        {order.customer_name ? (
+                          <Fact
+                            label="مشتری"
+                            value={
+                              order.customer_phone
+                                ? `${order.customer_name} · ${toPersianDigits(order.customer_phone)}`
+                                : order.customer_name
+                            }
+                          />
+                        ) : null}
+                        {order.guest_count ? (
+                          <Fact
+                            label="تعداد مهمان"
+                            value={toPersianDigits(order.guest_count)}
+                          />
+                        ) : null}
+                        <Fact
+                          label="زمان ثبت"
+                          value={timeLabel(order.opened_at)}
+                        />
+                        {order.closed_at ? (
+                          <Fact
+                            label={
+                              order.status === "voided"
+                                ? "زمان ابطال"
+                                : "زمان تسویه"
+                            }
+                            value={timeLabel(order.closed_at)}
+                          />
+                        ) : null}
+                        {Number(order.tip_amount ?? 0) > 0 ? (
+                          <Fact
+                            label="انعام"
+                            value={money.format(Number(order.tip_amount))}
+                          />
+                        ) : null}
+                      </dl>
+                      {order.customer_id ? (
+                        <a
+                          href={crmCustomerHref(order.customer_id)}
+                          className="mt-3 inline-block text-xs font-semibold text-teal-700 dark:text-teal-300 underline-offset-4 hover:underline"
+                        >
+                          پروندهٔ مشتری در CRM
+                        </a>
+                      ) : null}
+                    </section>
 
                     <section
                       className={`${CARD} p-4`}
@@ -1306,64 +1524,62 @@ export function OrderDetailModal({
                         </p>
                       )}
                     </section>
-                  </div>
 
-                  <div className="min-w-0 space-y-3">
-                    <section
-                      className={`${CARD} p-4`}
-                      aria-label="مشخصات سفارش"
-                    >
+                    {payments.length > 0 ? (
+                      <section
+                        className={`${CARD} p-4`}
+                        aria-label="پرداخت‌های ثبت‌شده"
+                      >
+                        <h3 className="mb-3 font-semibold text-foreground">
+                          پرداخت‌های ثبت‌شده
+                        </h3>
+                        <ul className="space-y-2">
+                          {payments.map((payment) => (
+                            <li
+                              key={payment.id}
+                              className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3 py-2.5 text-sm"
+                            >
+                              <span className="min-w-0 truncate text-foreground">
+                                {payment.payment_method_name ?? PAYMENT_LABELS[payment.method] ?? payment.method}
+                              </span>
+                              <span className="shrink-0 font-bold tabular-nums text-foreground">
+                                {money.format(Number(payment.amount))}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {tab === "ops" ? (
+                  <div className="space-y-3">
+                    <section className={`${CARD} p-4`} aria-label="عملیات سفارش">
                       <h3 className="mb-3 font-semibold text-foreground">
-                        مشخصات سفارش
+                        عملیات
                       </h3>
-                      {/* Flex rather than a 2-column grid: the number of facts
-                          varies by order, and an odd one out should fill the
-                          row instead of leaving a hole beside it. */}
-                      <dl className="flex flex-wrap gap-2">
-                        <Fact
-                          label="نوع سفارش"
-                          value={TYPE_LABELS[order.type]}
-                        />
-                        {order.table_name ? (
-                          <Fact label="میز" value={order.table_name} />
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={reprint}
+                          className={`${SECONDARY_BUTTON} min-h-12`}
+                        >
+                          <PrinterIcon className="size-4" aria-hidden="true" />
+                          {order.status === "open" ? "چاپ رسید" : "چاپ مجدد رسید"}
+                        </button>
+                        {editable ? (
+                          <button
+                            type="button"
+                            onClick={voidOrder}
+                            disabled={busy}
+                            className={`${DANGER_BUTTON} min-h-12`}
+                          >
+                            <Trash2Icon className="size-4" aria-hidden="true" />
+                            ابطال سفارش
+                          </button>
                         ) : null}
-                        {order.customer_name ? (
-                          <Fact
-                            label="مشتری"
-                            value={
-                              order.customer_phone
-                                ? `${order.customer_name} · ${toPersianDigits(order.customer_phone)}`
-                                : order.customer_name
-                            }
-                          />
-                        ) : null}
-                        {order.guest_count ? (
-                          <Fact
-                            label="تعداد مهمان"
-                            value={toPersianDigits(order.guest_count)}
-                          />
-                        ) : null}
-                        <Fact
-                          label="زمان ثبت"
-                          value={timeLabel(order.opened_at)}
-                        />
-                        {order.closed_at ? (
-                          <Fact
-                            label={
-                              order.status === "voided"
-                                ? "زمان ابطال"
-                                : "زمان تسویه"
-                            }
-                            value={timeLabel(order.closed_at)}
-                          />
-                        ) : null}
-                        {Number(order.tip_amount ?? 0) > 0 ? (
-                          <Fact
-                            label="انعام"
-                            value={money.format(Number(order.tip_amount))}
-                          />
-                        ) : null}
-                      </dl>
+                      </div>
                     </section>
 
                     {editable && order.type === "dine_in" ? (
@@ -1376,7 +1592,6 @@ export function OrderDetailModal({
                           cleaned or out of service is left out — PATCH refuses
                           those, so offering them would only produce an error.
                         */}
-                        <p className="mb-2 text-xs text-muted-foreground">میز این سفارش را می‌توانید تغییر دهید. میزی که مهمان دارد هم قابل انتخاب است؛ هر سفارش صورت‌حساب جدای خودش را دارد.</p>
                         {!tablesLoaded ? (
                           <LoadingSkeleton rows={1} compact label="در حال بارگذاری میزها" />
                         ) : (
@@ -1416,8 +1631,8 @@ export function OrderDetailModal({
                     {editable && order.type === "dine_in" && order.table_id ? (
                       <section className={`${CARD} p-4`} aria-label="مهمان جدید روی این میز">
                         <h3 className="mb-2 font-semibold text-foreground">مهمان جدید روی این میز</h3>
-                        <p className="mb-3 text-xs text-muted-foreground">
-                          برای مهمانی که تازه به {order.table_name ?? "این میز"} اضافه شده، سفارش جداگانه ثبت کنید: صورت‌حساب، تخفیف، تسویه و چاپ آن کاملاً مستقل از این سفارش است. مشتری‌اش را در صندوق انتخاب می‌کنید.
+                        <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                          برای مهمانی که تازه به {order.table_name ?? "این میز"} اضافه شده، سفارش جداگانه ثبت کنید؛ صورت‌حساب و تسویهٔ آن کاملاً مستقل از این سفارش است.
                         </p>
                         <Link
                           href={`/accounting/pos?table=${encodeURIComponent(order.table_id)}`}
@@ -1428,364 +1643,68 @@ export function OrderDetailModal({
                       </section>
                     ) : null}
 
-                    {editable ? (
-                      <section className={`${CARD} p-4`} aria-label="مشتری سفارش">
-                        <div className="flex items-center justify-between gap-2">
-                          <h3 className="font-semibold text-foreground">مشتری سفارش</h3>
-                          <span className="text-xs text-muted-foreground">اختیاری</span>
-                        </div>
-                        {selectedCustomer ? (
-                          <div className="mt-3 flex items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate rounded-xl bg-muted px-3 py-2.5 text-sm text-foreground">
-                              {selectedCustomer.name}{selectedCustomer.phone ? ` — ${toPersianDigits(selectedCustomer.phone)}` : ""}
-                            </span>
-                            <button type="button" onClick={() => { setSelectedCustomer(null); void saveOrderCustomer(null); }} className={`${SECONDARY_BUTTON} shrink-0`}>
-                              حذف
-                            </button>
-                          </div>
-                        ) : null}
-                        {selectedCustomer ? (
-                          /*
-                            Phase 36d — from the till to the whole person. The
-                            cashier looking at this order can see the open
-                            complaint or the unpaid balance before handing over
-                            the receipt, instead of finding out afterwards.
-                          */
-                          <a
-                            href={crmCustomerHref(selectedCustomer.id)}
-                            className="mt-2 inline-block text-xs font-semibold text-teal-700 dark:text-teal-300 underline-offset-4 hover:underline"
-                          >
-                            پروندهٔ مشتری در CRM
-                          </a>
-                        ) : (
-                          <>
-                            <input
-                              className={`${OPS_INPUT} mt-3`}
-                              placeholder="جستجوی نام یا شماره…"
-                              value={customerQuery}
-                              onChange={(event) => setCustomerQuery(event.target.value)}
-                            />
-                            {customerResultsLoading ? (
-                              <LoadingSkeleton rows={2} compact className="mt-2" label="در حال جست‌وجوی مشتری" />
-                            ) : customerResults.length > 0 ? (
-                              <ul className="mt-2 max-h-44 overscroll-contain overflow-y-auto rounded-xl border border-border/80 bg-card" onWheel={(event) => event.stopPropagation()}>
-                                {customerResults.map((candidate) => (
-                                  <li key={candidate.id}>
-                                    <button type="button" onClick={() => setSelectedCustomer(candidate)} className={`min-h-12 w-full px-3 text-start text-sm ${FOCUS}`}>
-                                      {candidate.name}{candidate.phone ? ` — ${toPersianDigits(candidate.phone)}` : ""}
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
-                            {customerQuery.trim() && !showNewCustomer && !customerResultsLoading ? (
-                              <button type="button" onClick={() => setShowNewCustomer(true)} className={`mt-2 min-h-11 text-xs font-bold text-amber-700 dark:text-amber-300 ${FOCUS}`}>
-                                + مشتری جدید «{customerQuery.trim()}»
-                              </button>
-                            ) : null}
-                            {showNewCustomer ? (
-                              <div className="mt-2 flex flex-col gap-2">
-                                <input className={`${OPS_INPUT} bg-card`} dir="ltr" placeholder="شماره تماس (اختیاری)" value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} />
-                                <button type="button" onClick={createCustomer} disabled={!customerQuery.trim()} className={`${SECONDARY_BUTTON} min-h-12 w-full`}>ثبت مشتری</button>
-                              </div>
-                            ) : null}
-                          </>
-                        )}
-                        {selectedCustomer ? (
-                          <button type="button" onClick={() => void saveOrderCustomer(selectedCustomer.id)} disabled={busy} className={`${PRIMARY_BUTTON} mt-3 w-full`}>ذخیرهٔ مشتری سفارش</button>
-                        ) : null}
-                      </section>
+                    {amendable && orderId ? (
+                      <ClosedOrderAmendment
+                        orderId={orderId}
+                        items={items.map((it) => ({
+                          id: it.id,
+                          name: it.name_snapshot,
+                          quantity: it.quantity,
+                          status: it.status,
+                        }))}
+                        menuItems={activeItems.map((item) => ({
+                          id: item.id,
+                          name: item.name,
+                        }))}
+                        discountType={order.discount_type}
+                        discountValue={
+                          order.discount_value === null
+                            ? null
+                            : Number(order.discount_value)
+                        }
+                        onDone={() => {
+                          void load();
+                          onChanged?.();
+                        }}
+                      />
                     ) : null}
-
-                    <section className={`${CARD} p-4`} aria-label="مبلغ سفارش">
-                      {editable ? (
-                        <div className="mb-4 border-b border-border/80 pb-4">
-                          <h3 className="mb-2 font-semibold text-foreground">
-                            تخفیف
-                          </h3>
-                          <div className="flex flex-col gap-2">
-                            <div className="flex gap-2">
-                              <div className="min-w-0 flex-1">
-                                <SearchableSelect
-                                  value={discountType}
-                                  onChange={(value) =>
-                                    setDiscountType(
-                                      value as "" | "percent" | "amount",
-                                    )
-                                  }
-                                  ariaLabel="نوع تخفیف"
-                                  className={OPS_INPUT}
-                                  options={[
-                                    { value: "", label: "بدون تخفیف" },
-                                    { value: "percent", label: "درصدی" },
-                                    { value: "amount", label: "مبلغ ثابت" },
-                                  ]}
-                                />
-                              </div>
-                              {discountType ? (
-                                <PersianNumberInput
-                                  className={`${OPS_INPUT} w-24`}
-                                  dir="ltr"
-                                  inputMode={discountType === "percent" ? "decimal" : "numeric"}
-                                  aria-label="مقدار تخفیف"
-                                  value={discountValue}
-                                  onChange={(event) =>
-                                    setDiscountValue(event.target.value)
-                                  }
-                                  placeholder={
-                                    discountType === "percent" ? "٪" : money.unitLabel
-                                  }
-                                />
-                              ) : null}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={saveDiscount}
-                              disabled={busy}
-                              className={`${SECONDARY_BUTTON} min-h-12 w-full`}
-                            >
-                              اعمال تخفیف
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <dl className="space-y-2">
-                        <Row
-                          label="جمع جزء"
-                          value={money.format(Number(order.subtotal))}
-                        />
-                        {addOnTotal !== 0 ? (
-                          <Row
-                            label="از این مبلغ، افزودنی‌ها"
-                            value={formatModifierDelta(addOnTotal, { unit: money.unit })}
-                            accent
-                          />
-                        ) : null}
-                        {Number(order.discount) > 0 ? (
-                          <Row
-                            label="تخفیف"
-                            value={`- ${money.format(Number(order.discount))}`}
-                          />
-                        ) : null}
-                        {Number(order.service_charge ?? 0) > 0 ? (
-                          <Row
-                            label="هزینهٔ ارسال"
-                            value={money.format(Number(order.service_charge))}
-                          />
-                        ) : null}
-                        {Number(order.tax) > 0 ? (
-                          <Row
-                            label="مالیات"
-                            value={money.format(Number(order.tax))}
-                          />
-                        ) : null}
-                        <div className="mt-1 flex items-center justify-between gap-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-3 py-2.5">
-                          <dt className="text-sm font-bold text-foreground">
-                            جمع کل
-                          </dt>
-                          <dd className="text-base font-bold tabular-nums text-amber-700 dark:text-amber-300">
-                            {money.format(Number(order.total))}
-                          </dd>
-                        </div>
-                      </dl>
-                    </section>
-
-                    {editable ? (
-                      <section
-                        className={`${CARD} p-4`}
-                        aria-label="دریافت وجه"
-                      >
-                        <h3 className="mb-3 font-semibold text-foreground">
-                          دریافت وجه و تکمیل سفارش
-                        </h3>
-                        <div className="mb-3">
-                          <PaymentWays
-                            methods={paymentMethods}
-                            loaded={paymentMethodsLoaded}
-                            draft={paymentDraft}
-                            onChange={(draft) => {
-                              setPaymentDraft(draft);
-                              if (!draftNeedsCustomer(draft, paymentMethods)) {
-                                setSelectedCustomer(null);
-                                setCustomerQuery("");
-                              }
-                            }}
-                            due={Number(order.total)}
-                            disabled={paying}
-                            idPrefix="order"
-                          />
-                        </div>
-
-                        <label className="mb-3 block">
-                          <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
-                            انعام{" "}
-                            <span className="font-normal text-muted-foreground">
-                              (اختیاری، تومان)
-                            </span>
-                          </span>
-                          <PersianNumberInput
-                            className={OPS_INPUT}
-                            dir="ltr"
-                            inputMode="numeric"
-                            value={tipInput}
-                            onChange={(event) =>
-                              setTipInput(event.target.value)
-                            }
-                            placeholder="۰"
-                          />
-                        </label>
-
-                        {needsCustomer ? (
-                          <div className="mb-3 rounded-xl border border-border/80 bg-muted p-3">
-                            {selectedCustomer ? (
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="min-w-0 truncate text-sm text-foreground">
-                                  {selectedCustomer.name}
-                                  {selectedCustomer.phone
-                                    ? ` — ${toPersianDigits(selectedCustomer.phone)}`
-                                    : ""}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedCustomer(null)}
-                                  className={`${SECONDARY_BUTTON} shrink-0`}
-                                >
-                                  تغییر
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                <input
-                                  className={`${OPS_INPUT} bg-card`}
-                                  placeholder="جستجوی نام یا شماره تماس مشتری…"
-                                  value={customerQuery}
-                                  onChange={(event) =>
-                                    setCustomerQuery(event.target.value)
-                                  }
-                                />
-                                {customerResultsLoading ? (
-                                  <LoadingSkeleton rows={2} compact className="mt-2" label="در حال جست‌وجوی مشتری" />
-                                ) : customerResults.length > 0 ? (
-                                  <ul className="mt-2 max-h-44 divide-y divide-border overflow-y-auto rounded-xl border border-border/80 bg-card">
-                                    {customerResults.map((customer) => (
-                                      <li key={customer.id}>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setSelectedCustomer(customer)
-                                          }
-                                          className={`block min-h-12 w-full px-3 text-start text-sm text-foreground hover:bg-muted ${FOCUS}`}
-                                        >
-                                          {customer.name}
-                                          {customer.phone
-                                            ? ` — ${toPersianDigits(customer.phone)}`
-                                            : ""}
-                                        </button>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : null}
-                                {customerQuery.trim() && !showNewCustomer && !customerResultsLoading ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowNewCustomer(true)}
-                                    className={`mt-2 min-h-11 text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline ${FOCUS}`}
-                                  >
-                                    + مشتری جدید «{customerQuery.trim()}»
-                                  </button>
-                                ) : null}
-                                {showNewCustomer ? (
-                                  <div className="mt-2 flex flex-col gap-2">
-                                    <input
-                                      className={`${OPS_INPUT} bg-card`}
-                                      dir="ltr"
-                                      placeholder="شماره تماس (اختیاری)"
-                                      value={newCustomerPhone}
-                                      onChange={(event) =>
-                                        setNewCustomerPhone(event.target.value)
-                                      }
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={createCustomer}
-                                      disabled={!customerQuery.trim()}
-                                      className={`${SECONDARY_BUTTON} min-h-12 w-full`}
-                                    >
-                                      ثبت مشتری
-                                    </button>
-                                  </div>
-                                ) : null}
-                              </>
-                            )}
-                          </div>
-                        ) : null}
-
-                        <button
-                          type="button"
-                          onClick={pay}
-                          disabled={
-                            paying ||
-                            paymentMethods.length === 0 ||
-                            (needsCustomer && !selectedCustomer)
-                          }
-                          className={PRIMARY_BUTTON}
-                        >
-                          <BanknoteIcon className="size-4" aria-hidden="true" />
-                          {paying
-                            ? "در حال ثبت پرداخت…"
-                            : `دریافت ${money.format(Number(order.total))} و تکمیل`}
-                        </button>
-                      </section>
-                    ) : null}
-                  </div>
-                </div>
-
-                {amendable && orderId ? (
-                  <div className="mt-3">
-                    <ClosedOrderAmendment
-                      orderId={orderId}
-                      items={items.map((it) => ({
-                        id: it.id,
-                        name: it.name_snapshot,
-                        quantity: it.quantity,
-                        status: it.status,
-                      }))}
-                      menuItems={activeItems.map((item) => ({
-                        id: item.id,
-                        name: item.name,
-                      }))}
-                      discountType={order.discount_type}
-                      discountValue={
-                        order.discount_value === null
-                          ? null
-                          : Number(order.discount_value)
-                      }
-                      onDone={() => {
-                        void load();
-                        onChanged?.();
-                      }}
-                    />
                   </div>
                 ) : null}
-              </>
+              </div>
             )}
           </div>
 
-          {/* Pinned, so scrolling a long bill never takes the amount being
-              collected off-screen — the same reason the POS cart pins its own
-              total. */}
+          {/*
+            Pinned, so scrolling a long bill never takes the amount being
+            collected off-screen. Compact by design: total, what is paid, what
+            remains — the breakdown lives in the صندوق tab.
+          */}
           {order ? (
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/80 bg-card px-4 py-3 sm:px-5">
+            <div
+              className="flex shrink-0 items-center justify-between gap-3 border-t border-border/80 bg-card px-4 py-3 sm:px-5"
+              style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+            >
               <div className="flex items-baseline gap-2">
                 <span className="text-sm font-bold text-foreground">جمع کل</span>
                 <span className="text-xs text-muted-foreground">
                   {toPersianDigits(itemCount)} قلم
                 </span>
               </div>
-              <span className="text-base font-bold tabular-nums text-amber-700 dark:text-amber-300">
-                {money.format(Number(order.total))}
-              </span>
+              <div className="flex items-center gap-2">
+                {remainingDue > 0 && order.status === "open" ? (
+                  <span className="inline-flex min-h-8 items-center rounded-lg border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-2 text-xs font-bold text-amber-700 dark:text-amber-300">
+                    باقی‌مانده {money.format(remainingDue)}
+                  </span>
+                ) : null}
+                {paidSum > 0 ? (
+                  <span className="inline-flex min-h-8 items-center rounded-lg border border-emerald-500/25 dark:border-emerald-500/25 bg-emerald-50 dark:bg-emerald-500/15 px-2 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                    پرداخت‌شده {money.format(paidSum)}
+                  </span>
+                ) : null}
+                <span className="text-base font-bold tabular-nums text-amber-700 dark:text-amber-300">
+                  {money.format(Number(order.total))}
+                </span>
+              </div>
             </div>
           ) : null}
         </DialogContent>
@@ -1800,19 +1719,25 @@ export function OrderDetailModal({
           }
           groups={attachedGroups(picker.menuItem.id)}
           tone="amber"
-          initialModifierIds={
-            picker.mode === "edit" ? picker.modifierIds : undefined
+          menuItemId={picker.menuItem.id}
+          initialModifiers={
+            picker.mode === "edit"
+              ? picker.modifiers.map((modifier) => ({
+                  id: modifier.id,
+                  quantity: modifierQuantity(modifier),
+                }))
+              : undefined
           }
           initialNote={picker.mode === "edit" ? picker.note : ""}
           confirmLabel={
             picker.mode === "edit" ? "ذخیرهٔ افزودنی‌ها" : undefined
           }
           onCancel={() => setPicker(null)}
-          onConfirm={(modifierIds, note) => {
+          onConfirm={(picks, note) => {
             if (picker.mode === "add") {
-              void addItem(picker.menuItem.id, modifierIds, note);
+              void addItem(picker.menuItem.id, picks, note);
             } else {
-              void saveAddOns(picker.item.id, modifierIds, note);
+              void saveAddOns(picker.item.id, picks, note);
             }
             setPicker(null);
           }}

@@ -18,11 +18,6 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { formatQueueLabel } from "@/lib/orders";
-import {
-  linePriceBreakdown,
-  type DisplayModifier,
-} from "@/lib/modifier-display";
-import { ModifierBadges } from "../modifier-badges";
 import { useRealtime } from "../use-realtime";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { EmptyState, PageShell, cardClass } from "../page-chrome";
@@ -52,36 +47,6 @@ interface OrderRow {
   opened_at: string;
   /** Set once the order is paid or voided — null for everything still in the queue. */
   closed_at: string | null;
-}
-
-interface OrderItem {
-  id: string;
-  name_snapshot: string;
-  unit_price: string | number;
-  quantity: number;
-  status: string;
-  note: string | null;
-}
-
-/** An add-on snapshot as the order API returns it, priced at the moment of sale. */
-interface OrderModifier {
-  id: string;
-  order_item_id: string;
-  name_snapshot: string;
-  price_delta: string | number;
-}
-
-interface DetailedOrder extends OrderRow {
-  subtotal: string | number;
-  discount: string | number;
-  tax: string | number;
-  note: string | null;
-}
-
-interface OrderDetailsResponse {
-  order: DetailedOrder;
-  items: OrderItem[];
-  modifiers: OrderModifier[];
 }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -212,294 +177,6 @@ function OrderRowsSkeleton() {
   );
 }
 
-function DetailSkeleton() {
-  return (
-    <div
-      className="space-y-4"
-      aria-label="در حال بارگذاری جزئیات سفارش"
-      aria-busy="true"
-    >
-      <div className="ops-skeleton h-5 w-28 rounded" />
-      <div className="grid grid-cols-2 gap-2">
-        <div className="ops-skeleton h-16 rounded-xl" />
-        <div className="ops-skeleton h-16 rounded-xl" />
-      </div>
-      <div className="space-y-3 border-y border-border/80 py-4">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <div key={index} className="flex items-center justify-between gap-3">
-            <div className="ops-skeleton h-3 w-28 rounded" />
-            <div className="ops-skeleton h-3 w-12 rounded" />
-          </div>
-        ))}
-      </div>
-      <div className="ops-skeleton h-12 w-full rounded-xl" />
-    </div>
-  );
-}
-
-function OrderDetailsPanel({
-  selectedOrder,
-  detail,
-  isLoading,
-  error,
-  onRetry,
-  onOpenDetail,
-}: {
-  selectedOrder: OrderRow | null;
-  detail: OrderDetailsResponse | null;
-  isLoading: boolean;
-  error: string;
-  onRetry: () => void;
-  onOpenDetail: (orderId: string) => void;
-}) {
-  const money = useMoney();
-  if (!selectedOrder) {
-    return (
-      <aside
-        className="rounded-2xl border border-dashed border-border/80 bg-muted"
-        aria-label="جزئیات سفارش"
-      >
-        <EmptyState icon={ShoppingBagIcon} title="سفارشی برای نمایش نیست" className="min-h-72">
-          برای دیدن خلاصه و ادامهٔ پیگیری، یک سفارش را از فهرست انتخاب کنید.
-        </EmptyState>
-      </aside>
-    );
-  }
-
-  const selectedDetail = detail?.order.id === selectedOrder.id ? detail : null;
-  const order = selectedDetail?.order ?? selectedOrder;
-  const activeItems =
-    selectedDetail?.items.filter((item) => item.status !== "voided") ?? [];
-  const itemCount = activeItems.reduce(
-    (count, item) => count + item.quantity,
-    0,
-  );
-  const addOnsByItem = new Map<string, DisplayModifier[]>();
-  for (const modifier of selectedDetail?.modifiers ?? []) {
-    const current = addOnsByItem.get(modifier.order_item_id) ?? [];
-    current.push({
-      name: modifier.name_snapshot,
-      priceDelta: Number(modifier.price_delta),
-    });
-    addOnsByItem.set(modifier.order_item_id, current);
-  }
-  const closed = isClosed(order);
-  // A closed order's "3 hours ago" is noise; when it closed is the useful fact.
-  const elapsed = closed ? null : elapsedLabel(order.opened_at);
-
-  return (
-    <aside
-      className={`${cardClass} p-4 md:sticky md:top-0 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto`}
-      aria-label="جزئیات سفارش انتخاب‌شده"
-    >
-      <div className="flex items-start justify-between gap-3 border-b border-border/80 pb-4">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">سفارش انتخاب‌شده</p>
-          <h2 className="mt-1 text-xl font-bold text-foreground">
-            {toPersianDigits(formatQueueLabel(order.type, order.order_number))}
-          </h2>
-        </div>
-        <span
-          className={`inline-flex min-h-8 shrink-0 items-center rounded-lg px-2.5 text-xs font-bold ${statusBadgeClass(order.status)}`}
-        >
-          {STATUS_LABELS[order.status]}
-        </span>
-      </div>
-
-      {isLoading && !selectedDetail ? (
-        <div className="pt-4">
-          <DetailSkeleton />
-        </div>
-      ) : error && !selectedDetail ? (
-        <div
-          className="mt-4 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 p-3"
-          role="status"
-        >
-          <p className="text-sm font-semibold text-muted-foreground">
-            جزئیات سفارش به‌روز نشد
-          </p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{error}</p>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-3 min-h-11 rounded-lg px-2 text-xs font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
-          >
-            تلاش دوباره
-          </button>
-        </div>
-      ) : (
-        <>
-          {error ? (
-            <div
-              className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 p-3"
-              role="status"
-            >
-              <p className="text-xs leading-5 text-muted-foreground">{error}</p>
-              <button
-                type="button"
-                onClick={onRetry}
-                className="min-h-11 shrink-0 rounded-lg px-2 text-xs font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
-              >
-                تلاش دوباره
-              </button>
-            </div>
-          ) : null}
-          <dl className="grid grid-cols-2 gap-2 py-4">
-            <div className="rounded-xl bg-muted p-3">
-              <dt className="text-[11px] text-muted-foreground">نوع سفارش</dt>
-              <dd className="mt-1 text-sm font-bold text-foreground">
-                {TYPE_LABELS[order.type]}
-              </dd>
-            </div>
-            <div className="rounded-xl bg-muted p-3">
-              <dt className="text-[11px] text-muted-foreground">مبلغ سفارش</dt>
-              <dd className="mt-1 text-sm font-bold text-amber-700 dark:text-amber-300">
-                {money.format(Number(order.total))}
-              </dd>
-            </div>
-            {order.table_name ? (
-              <div className="rounded-xl bg-muted p-3">
-                <dt className="text-[11px] text-muted-foreground">میز</dt>
-                <dd className="mt-1 truncate text-sm font-bold text-foreground">
-                  {order.table_name}
-                </dd>
-              </div>
-            ) : null}
-            {order.customer_name ? (
-              <div className="col-span-2 rounded-xl bg-muted p-3">
-                <dt className="text-[11px] text-muted-foreground">مشتری</dt>
-                <dd className="mt-1 truncate text-sm font-bold text-foreground">
-                  {order.customer_name}
-                  {order.customer_phone ? (
-                    <span className="font-normal text-muted-foreground">
-                      {" · "}
-                      {toPersianDigits(order.customer_phone)}
-                    </span>
-                  ) : null}
-                </dd>
-              </div>
-            ) : null}
-            <div className="rounded-xl bg-muted p-3">
-              <dt className="text-[11px] text-muted-foreground">زمان ثبت</dt>
-              <dd className="mt-1 text-sm font-bold text-foreground">
-                {orderTimeLabel(order.opened_at)}
-              </dd>
-            </div>
-            {order.closed_at ? (
-              <div className="rounded-xl bg-muted p-3">
-                <dt className="text-[11px] text-muted-foreground">
-                  {order.status === "voided" ? "زمان ابطال" : "زمان تسویه"}
-                </dt>
-                <dd className="mt-1 text-sm font-bold text-foreground">
-                  {orderTimeLabel(order.closed_at)}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-
-          <section
-            className="border-y border-border/80 py-4"
-            aria-label="اقلام سفارش"
-          >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-foreground">اقلام سفارش</h3>
-              {selectedDetail ? (
-                <span className="text-xs text-muted-foreground">
-                  {toPersianDigits(itemCount)} قلم
-                </span>
-              ) : null}
-            </div>
-            {selectedDetail && activeItems.length > 0 ? (
-              <ul className="space-y-2">
-                {activeItems.slice(0, 5).map((item) => {
-                  const addOns = addOnsByItem.get(item.id) ?? [];
-                  const breakdown = linePriceBreakdown({
-                    unitPrice: Number(item.unit_price),
-                    modifierDeltas: addOns.map((addOn) => addOn.priceDelta),
-                    quantity: item.quantity,
-                  });
-                  return (
-                    <li
-                      key={item.id}
-                      className={
-                        "rounded-xl border p-2.5 text-sm " +
-                        (addOns.length > 0
-                          ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15"
-                          : "border-border/80 bg-muted")
-                      }
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-bold text-foreground">
-                            {item.name_snapshot}
-                            <span className="ms-1 text-xs font-semibold text-muted-foreground">
-                              × {toPersianDigits(item.quantity)}
-                            </span>
-                          </p>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            {money.format(breakdown.unit)} هر واحد
-                          </p>
-                        </div>
-                        <span className="shrink-0 text-xs font-bold text-amber-700 dark:text-amber-300">
-                          {money.format(breakdown.total)}
-                        </span>
-                      </div>
-                      <ModifierBadges
-                        modifiers={addOns}
-                        tone="amber"
-                        className="mt-2"
-                      />
-                      {item.note ? (
-                        <p className="mt-2 line-clamp-2 text-[11px] text-muted-foreground">
-                          یادداشت: {item.note}
-                        </p>
-                      ) : null}
-                    </li>
-                  );
-                })}
-                {activeItems.length > 5 ? (
-                  <li className="text-xs text-muted-foreground">
-                    و {toPersianDigits(activeItems.length - 5)} قلم دیگر
-                  </li>
-                ) : null}
-              </ul>
-            ) : selectedDetail ? (
-              <p className="text-xs leading-6 text-muted-foreground">
-                قلم فعالی برای این سفارش ثبت نشده است.
-              </p>
-            ) : (
-              <p className="text-xs leading-6 text-muted-foreground">
-                خلاصهٔ سفارش آماده است؛ اقلام و عملیات کامل در صفحهٔ جزئیات در
-                دسترس‌اند.
-              </p>
-            )}
-          </section>
-
-          <div className="pt-4 md:sticky md:bottom-0 md:-mx-4 md:-mb-4 md:border-t md:border-border/80 md:bg-card md:px-4 md:pb-4">
-            <p className="mb-3 text-xs text-muted-foreground">
-              {closed && order.closed_at
-                ? `${order.status === "voided" ? "باطل‌شده" : "بسته‌شده"} در ${orderDateLabel(order.closed_at)}، ساعت ${orderTimeLabel(order.closed_at)}`
-                : elapsed
-                  ? `از زمان ثبت: ${elapsed}`
-                  : `ثبت‌شده در ${orderDateLabel(order.opened_at)}`}
-            </p>
-            <button
-              type="button"
-              onClick={() => onOpenDetail(order.id)}
-              className="flex min-h-12 w-full items-center justify-center rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
-            >
-              {/* A closed order can still be corrected — editing or removing it
-                  reverses its accounting — and the detail dialog is where that
-                  lives, so the label says so rather than promising only "track". */}
-              {closed ? "جزئیات و اصلاح سفارش" : "جزئیات و پیگیری سفارش"}
-            </button>
-          </div>
-        </>
-      )}
-    </aside>
-  );
-}
-
 export function OrdersList({
   canEdit,
   canAmendClosed = false,
@@ -551,10 +228,6 @@ export function OrdersList({
     initialOrderId,
   );
   const [detailOpen, setDetailOpen] = useState(Boolean(initialOrderId));
-  const [detail, setDetail] = useState<OrderDetailsResponse | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState("");
-  const [detailRefreshToken, setDetailRefreshToken] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [typeFilter, setTypeFilter] = useState<OrderType | "all">("all");
@@ -588,7 +261,6 @@ export function OrdersList({
         // answered with the default window — follow the server rather than
         // leaving the picker pointing at something it isn't showing.
         if (shiftFilter && !data.selectedShift) setShiftFilter("");
-        setDetailRefreshToken((token) => token + 1);
       } else {
         setLoadError("فهرست سفارش‌ها به‌روز نشد. داده‌های موجود حفظ شده‌اند.");
       }
@@ -713,48 +385,6 @@ export function OrdersList({
     });
   }, [filteredOrders]);
 
-  useEffect(() => {
-    if (!selectedOrderId) {
-      setDetail(null);
-      setDetailError("");
-      setDetailLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setDetail((current) =>
-      current?.order.id === selectedOrderId ? current : null,
-    );
-    setDetailError("");
-    setDetailLoading(true);
-    api<OrderDetailsResponse & { error?: string }>(
-      `/api/orders/${selectedOrderId}`,
-    )
-      .then(({ ok, data }) => {
-        if (cancelled) return;
-        if (ok) {
-          setDetail(data);
-        } else {
-          setDetailError(
-            "جزئیات سفارش در دسترس نیست. می‌توانید دوباره تلاش کنید یا صفحهٔ جزئیات را باز کنید.",
-          );
-        }
-      })
-      .catch(() => {
-        if (!cancelled)
-          setDetailError("ارتباط برای دریافت جزئیات سفارش برقرار نشد.");
-      })
-      .finally(() => {
-        if (!cancelled) setDetailLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [detailRefreshToken, selectedOrderId]);
-
-  const selectedOrder =
-    orderRows.find((order) => order.id === selectedOrderId) ?? null;
   const hasActiveFilters = Boolean(
     searchQuery ||
     statusFilter !== "all" ||
@@ -1002,7 +632,7 @@ export function OrdersList({
         </div>
       </section>
 
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(19rem,0.9fr)] xl:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]">
+      <div className="grid gap-3">
         <section
           className={`min-w-0 overflow-hidden ${cardClass}`}
           aria-label="فهرست سفارش‌ها"
@@ -1132,11 +762,21 @@ export function OrdersList({
                         >
                           {STATUS_LABELS[order.status]}
                         </span>
+                        {/* The table is the second thing a runner looks for
+                            after the number — same visual weight as the
+                            number, not a whisper on the meta line. */}
+                        {order.table_name ? (
+                          <span className="inline-flex min-h-7 items-center rounded-lg border border-amber-500/60 dark:border-amber-500/50 bg-amber-100 dark:bg-amber-500/20 px-2 text-[11px] font-black text-amber-700 dark:text-amber-300">
+                            {order.table_name}
+                          </span>
+                        ) : null}
                       </div>
                       {/* The customer gets its own line rather than a slot on
                           the muted meta line below: "whose order is this" is
                           read at a glance off this list, and a name folded in
-                          among the type, table and timings is not. */}
+                          among the type, table and timings is not. A walk-in
+                          order simply says nothing — «بدون مشتری» on every
+                          second card is noise, not information. */}
                       {order.customer_name ? (
                         <p className="mt-1 flex items-center gap-1 text-sm font-bold text-foreground">
                           <UserIcon
@@ -1150,7 +790,6 @@ export function OrdersList({
                       ) : null}
                       <p className="mt-1 truncate text-xs text-muted-foreground">
                         {TYPE_LABELS[order.type]}
-                        {order.table_name ? ` · ${order.table_name}` : ""}
                         {elapsed ? ` · ${elapsed}` : ""}
                         {closedLabel ? ` · ${closedLabel}` : ""}
                       </p>
@@ -1172,14 +811,6 @@ export function OrdersList({
           )}
         </section>
 
-        <OrderDetailsPanel
-          selectedOrder={selectedOrder}
-          detail={detail}
-          isLoading={detailLoading}
-          error={detailError}
-          onRetry={() => setDetailRefreshToken((token) => token + 1)}
-          onOpenDetail={openDetail}
-        />
       </div>
 
       <OrderDetailModal

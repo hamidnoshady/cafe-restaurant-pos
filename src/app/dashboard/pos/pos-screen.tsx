@@ -38,6 +38,7 @@ import { useMoney } from "@/components/money/money-context";
 import {
   draftOpensDrawer,
   draftReceiptPayments,
+  draftRequiresCustomer,
   emptyPaymentDraft,
   methodOf,
   paymentDraftBody,
@@ -79,11 +80,15 @@ import { MenuItemImage } from "../menu-item-image";
 import {
   formatModifierDelta,
   linePriceBreakdown,
+  modifierDeltasOf,
   modifierNamesLabel,
+  sumModifierDeltas,
   type DisplayModifier,
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
+import { CustomerBalanceBadge, CustomerPicker, type PickerCustomer } from "../customer-picker";
+import { HoldToConfirmButton } from "../hold-to-confirm-button";
 import { CartLineCard } from "./cart-line-card";
 import {
   addOrMergeLine,
@@ -93,6 +98,7 @@ import {
   stepLastLineForItem,
   stepLineQuantity,
   upsertLine,
+  type PosCartModifierPick,
 } from "@/lib/pos-cart";
 import { TablePickerDialog } from "./table-picker-dialog";
 import {
@@ -120,11 +126,6 @@ interface Courier {
   name: string;
   phone: string | null;
 }
-interface Customer {
-  id: string;
-  name: string;
-  phone: string | null;
-}
 
 interface CartUiLine {
   key: string;
@@ -133,7 +134,8 @@ interface CartUiLine {
   unitPrice: number;
   quantity: number;
   taxRatePercent: number;
-  modifierIds: string[];
+  /** Add-on picks with quantities, sorted by id — the line's configuration. */
+  modifierPicks: PosCartModifierPick[];
   /**
    * Name + price of every chosen add-on, kept together so any surface that
    * renders this line can show what was added *and* what it costs. The label
@@ -171,10 +173,7 @@ export function PosScreen({
   const [loadError, setLoadError] = useState("");
   const [tables, setTables] = useState<PosTable[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [customerQuery, setCustomerQuery] = useState("");
-  const [customerSearchLoading, setCustomerSearchLoading] = useState(true);
-  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [customer, setCustomer] = useState<PickerCustomer | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -216,6 +215,8 @@ export function PosScreen({
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent>("order");
+  /** Bumped to ask the payment step's own customer picker to open (from the difference preview). */
+  const [reviewCustomerPickerRequests, setReviewCustomerPickerRequests] = useState(0);
   /**
    * The product tile that was last added to, flashed for a moment so a tap on a
    * grid of near-identical tiles is visibly acknowledged. Purely cosmetic: the
@@ -294,36 +295,6 @@ export function PosScreen({
   }, []);
 
   useEffect(load, [load]);
-
-  /**
-   * The customer picker searches server-side: the directory can be far longer
-   * than the twenty rows /api/customers returns, so each keystroke in the
-   * combobox refetches instead of filtering a truncated local list. The empty
-   * query on mount is what fills the picker with the most recent customers.
-   */
-  useEffect(() => {
-    let cancelled = false;
-    setCustomerSearchLoading(true);
-    const timer = setTimeout(
-      () => {
-        void api<{ customers?: Customer[] }>(
-          "/api/parties?q=" + encodeURIComponent(customerQuery.trim()),
-        )
-          .then(({ ok, data }) => {
-            if (!cancelled && ok) setCustomers(data.customers ?? []);
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            if (!cancelled) setCustomerSearchLoading(false);
-          });
-      },
-      customerQuery.trim() ? 250 : 0,
-    );
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [customerQuery]);
 
   /**
    * Delivery is an entitlement, and the domain layer refuses a delivery order
@@ -505,7 +476,7 @@ export function PosScreen({
    */
   function buildCartLine(
     item: Item,
-    selectedModifierIds: string[],
+    picks: { id: string; quantity: number }[],
     note: string,
     quantity: number,
     key?: string,
@@ -517,9 +488,16 @@ export function PosScreen({
     const allModifiers = new Map(
       (menu?.modifiers ?? []).map((m) => [m.id, m]),
     );
-    const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
-      const modifier = allModifiers.get(id)!;
-      return { name: modifier.name, priceDelta: modifier.priceDelta };
+    const sortedPicks = [...picks]
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .map((pick) => ({ ...pick, quantity: Math.max(1, Math.round(pick.quantity)) }));
+    const modifiers: DisplayModifier[] = sortedPicks.map((pick) => {
+      const modifier = allModifiers.get(pick.id)!;
+      return {
+        name: modifier.name,
+        priceDelta: modifier.priceDelta,
+        quantity: pick.quantity,
+      };
     });
     return {
       key: key ?? `${item.id}-${safeRandomId()}`,
@@ -528,7 +506,7 @@ export function PosScreen({
       unitPrice: item.price,
       quantity: units,
       taxRatePercent: categoryTaxRate(item.categoryId),
-      modifierIds: [...selectedModifierIds].sort(),
+      modifierPicks: sortedPicks,
       modifiers,
       note,
     };
@@ -536,11 +514,11 @@ export function PosScreen({
 
   function addToCart(
     item: Item,
-    selectedModifierIds: string[],
+    picks: { id: string; quantity: number }[],
     note: string,
     quantity = 1,
   ) {
-    const line = buildCartLine(item, selectedModifierIds, note, quantity);
+    const line = buildCartLine(item, picks, note, quantity);
     setCart((prev) => addOrMergeLine(prev, line));
     flashItem(item.id);
   }
@@ -554,13 +532,13 @@ export function PosScreen({
   function commitLineEdit(
     lineKey: string,
     item: Item,
-    selectedModifierIds: string[],
+    picks: { id: string; quantity: number }[],
     note: string,
     quantity: number,
   ) {
     const line = buildCartLine(
       item,
-      selectedModifierIds,
+      picks,
       note,
       quantity,
       `${item.id}-${safeRandomId()}`,
@@ -682,7 +660,7 @@ export function PosScreen({
       cart.map((l) => ({
         unitPrice: l.unitPrice,
         quantity: l.quantity,
-        modifierDeltas: l.modifiers.map((modifier) => modifier.priceDelta),
+        modifierDeltas: modifierDeltasOf(l.modifiers),
         taxRatePercent: l.taxRatePercent,
       })),
     [cart],
@@ -724,12 +702,7 @@ export function PosScreen({
     () =>
       cart.reduce(
         (sum, line) =>
-          sum +
-          line.modifiers.reduce(
-            (lineSum, modifier) => lineSum + modifier.priceDelta,
-            0,
-          ) *
-            line.quantity,
+          sum + sumModifierDeltas(modifierDeltasOf(line.modifiers)) * line.quantity,
         0,
       ),
     [cart],
@@ -747,36 +720,14 @@ export function PosScreen({
     [cartLines, discount, feeNum],
   );
   /**
-   * A chosen customer stays in the list even once a later search stops
-   * returning them — otherwise the trigger would fall back to its placeholder
-   * while the order still carries the selection.
+   * A payment whose typed amount (or way) books a difference needs a named
+   * customer — the server refuses it otherwise, so the hold button says so
+   * here instead of failing after the ۴ seconds.
    */
-  const customerOptions = useMemo(() => {
-    const known =
-      customer && !customers.some((row) => row.id === customer.id)
-        ? [customer, ...customers]
-        : customers;
-    return [
-      { value: "", label: "بدون مشتری" },
-      ...known.map((row) => ({
-        value: row.id,
-        label: row.phone
-          ? row.name + " — " + toPersianDigits(row.phone)
-          : row.name,
-        searchString: row.name + " " + (row.phone ?? ""),
-      })),
-    ];
-  }, [customer, customers]);
-
-  function selectCustomer(value: string) {
-    setCustomer(
-      value
-        ? (customers.find((row) => row.id === value) ??
-            (customer?.id === value ? customer : null))
-        : null,
-    );
-  }
-
+  const paymentNeedsCustomer =
+    checkoutIntent === "payment" &&
+    draftRequiresCustomer(paymentDraft, paymentMethods, totals.total) &&
+    !customer;
   /**
    * `overrides` is how the table prompt places an order with the table that was
    * just chosen in it: confirming the prompt sets the state *and* submits in the
@@ -856,7 +807,7 @@ export function PosScreen({
       items: cart.map((line) => ({
         menuItemId: line.menuItemId,
         quantity: line.quantity,
-        modifierIds: line.modifierIds,
+        modifiers: line.modifierPicks,
         note: line.note || undefined,
       })),
       delivery:
@@ -993,9 +944,7 @@ export function PosScreen({
             quantity: line.quantity,
             lineTotal: linePriceBreakdown({
               unitPrice: line.unitPrice,
-              modifierDeltas: line.modifiers.map(
-                (modifier) => modifier.priceDelta,
-              ),
+              modifierDeltas: modifierDeltasOf(line.modifiers),
               quantity: line.quantity,
             }).total,
             modifiersLabel: modifierNamesLabel(line.modifiers) || null,
@@ -1044,7 +993,6 @@ export function PosScreen({
     setTableId("");
     setGuestCount("");
     setCustomer(null);
-    setCustomerQuery("");
     setDiscountType("");
     setDiscountValue("");
     setDeliveryAddress("");
@@ -1532,7 +1480,7 @@ export function PosScreen({
           <ErrorBox>{error}</ErrorBox>
           <OrderTypeTabs value={orderType} onChange={changeOrderType} deliveryEnabled={deliveryEnabled} />
           {orderType === "dine_in" ? (
-            <>
+            <div className="mt-3 grid grid-cols-[minmax(0,1fr)_7rem] gap-2">
               <TableField
                 label={tableLabel}
                 chosen={tableId !== ""}
@@ -1540,10 +1488,10 @@ export function PosScreen({
                 onPick={() => setTablePickerFor("select")}
               />
               <label
-                className="mt-3 block text-xs font-semibold text-muted-foreground"
+                className="block text-xs font-semibold text-muted-foreground"
                 htmlFor="pos-guest-count"
               >
-                تعداد مهمان
+                مهمان
                 <PersianNumberInput
                   id="pos-guest-count"
                   className={
@@ -1553,10 +1501,10 @@ export function PosScreen({
                   inputMode="numeric"
                   value={guestCount}
                   onChange={(event) => setGuestCount(event.target.value)}
-                  placeholder="اختیاری"
+                  placeholder="—"
                 />
               </label>
-            </>
+            </div>
           ) : null}
           {orderType === "delivery" ? (
             <div className="space-y-3">
@@ -1633,13 +1581,14 @@ export function PosScreen({
               </label>
             </div>
           ) : null}
-          <CustomerField
-            value={customer?.id ?? ""}
-            options={customerOptions}
-            onChange={selectCustomer}
-            onQueryChange={setCustomerQuery}
-            loading={customerSearchLoading}
-          />
+          <div className="mt-3">
+            <CustomerPicker
+              customer={customer}
+              onChange={setCustomer}
+              idPrefix="pos-customer"
+            />
+            <CustomerBalanceBadge customer={customer} />
+          </div>
         </div>
 
         {/*
@@ -1820,7 +1769,7 @@ export function PosScreen({
             <div className="border-b border-border p-4">
               <OrderTypeTabs value={orderType} onChange={changeOrderType} deliveryEnabled={deliveryEnabled} />
               {orderType === "dine_in" ? (
-                <>
+                <div className="mt-3 grid grid-cols-[minmax(0,1fr)_7rem] gap-2">
                   <TableField
                     label={tableLabel}
                     chosen={tableId !== ""}
@@ -1828,10 +1777,10 @@ export function PosScreen({
                     onPick={() => setTablePickerFor("select")}
                   />
                   <label
-                    className="mt-3 block text-xs font-semibold text-muted-foreground"
+                    className="block text-xs font-semibold text-muted-foreground"
                     htmlFor="pos-mobile-guest-count"
                   >
-                    تعداد مهمان
+                    مهمان
                     <PersianNumberInput
                       id="pos-mobile-guest-count"
                       className={
@@ -1841,10 +1790,10 @@ export function PosScreen({
                       inputMode="numeric"
                       value={guestCount}
                       onChange={(event) => setGuestCount(event.target.value)}
-                      placeholder="اختیاری"
+                      placeholder="—"
                     />
                   </label>
-                </>
+                </div>
               ) : null}
               {orderType === "delivery" ? (
                 <div className="mt-3 space-y-3">
@@ -1927,13 +1876,14 @@ export function PosScreen({
                   </label>
                 </div>
               ) : null}
-              <CustomerField
-                value={customer?.id ?? ""}
-                options={customerOptions}
-                onChange={selectCustomer}
-                onQueryChange={setCustomerQuery}
-                loading={customerSearchLoading}
-              />
+              <div className="mt-3">
+                <CustomerPicker
+                  customer={customer}
+                  onChange={setCustomer}
+                  idPrefix="pos-customer-sheet"
+                />
+                <CustomerBalanceBadge customer={customer} />
+              </div>
             </div>
             <div className="p-4">
               {cart.length === 0 ? (
@@ -2119,6 +2069,22 @@ export function PosScreen({
               */}
               {checkoutIntent === "payment" ? (
                 <section aria-label="روش دریافت وجه">
+                  {/*
+                    The customer sits with the payment because that is where
+                    they matter: a difference (نسیه، بدهی، اعتبار) is booked
+                    against a person, and the picker also quick-creates one
+                    from a name and a mobile number.
+                  */}
+                  <div className="mb-3">
+                    <CustomerPicker
+                      customer={customer}
+                      onChange={setCustomer}
+                      disabled={busy}
+                      idPrefix="pos-review-customer"
+                      requestOpen={reviewCustomerPickerRequests}
+                    />
+                    <CustomerBalanceBadge customer={customer} />
+                  </div>
                   <PaymentWays
                     methods={paymentMethods}
                     loaded={paymentMethodsLoaded}
@@ -2127,6 +2093,12 @@ export function PosScreen({
                     due={totals.total}
                     disabled={busy}
                     idPrefix="pos-checkout"
+                    customer={customer}
+                    onChooseCustomer={() => {
+                      // The difference needs a person; open the picker that
+                      // sits right here in the payment step.
+                      setReviewCustomerPickerRequests((count) => count + 1);
+                    }}
                   />
                   <label
                     htmlFor="pos-checkout-tip"
@@ -2158,20 +2130,29 @@ export function PosScreen({
                 >
                   بازگشت
                 </button>
-                <button
-                  type="button"
-                  disabled={busy || cart.length === 0}
-                  onClick={() => {
-                    void submit(checkoutIntent);
-                  }}
-                  className="min-h-12 rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55"
-                >
-                  {busy
-                    ? "در حال ثبت…"
-                    : checkoutIntent === "payment"
-                      ? "تأیید دریافت وجه"
-                      : "تأیید و ثبت سفارش"}
-                </button>
+                {checkoutIntent === "payment" ? (
+                  <HoldToConfirmButton
+                    durationMs={4000}
+                    label="ثبت پرداخت"
+                    holdingLabel="نگه دارید…"
+                    busy={busy}
+                    disabled={cart.length === 0 || paymentNeedsCustomer}
+                    onComplete={() => {
+                      void submit("payment");
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || cart.length === 0}
+                    onClick={() => {
+                      void submit(checkoutIntent);
+                    }}
+                    className="min-h-12 rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55"
+                  >
+                    {busy ? "در حال ثبت…" : "تأیید و ثبت سفارش"}
+                  </button>
+                )}
               </DialogFooter>
             </>
           )}
@@ -2181,12 +2162,13 @@ export function PosScreen({
         <ModifierPicker
           itemName={pickerItem.name}
           itemPrice={Number(pickerItem.price)}
+          menuItemId={pickerItem.id}
           selectQuantity
           groups={attachedGroups(pickerItem.id)}
           tone="amber"
           onCancel={() => setPickerItem(null)}
-          onConfirm={(modifierIds, note, quantity) => {
-            addToCart(pickerItem, modifierIds, note, quantity);
+          onConfirm={(picks, note, quantity) => {
+            addToCart(pickerItem, picks, note, quantity);
             setPickerItem(null);
           }}
         />
@@ -2203,19 +2185,20 @@ export function PosScreen({
         <ModifierPicker
           itemName={editingItem.name}
           itemPrice={Number(editingItem.price)}
+          menuItemId={editingItem.id}
           selectQuantity
           quantity={editingLine.quantity}
-          initialModifierIds={editingLine.modifierIds}
+          initialModifiers={editingLine.modifierPicks}
           initialNote={editingLine.note}
           confirmLabel="اعمال تغییر"
           groups={attachedGroups(editingItem.id)}
           tone="amber"
           onCancel={() => setEditingLineKey(null)}
-          onConfirm={(modifierIds, note, quantity) => {
+          onConfirm={(picks, note, quantity) => {
             commitLineEdit(
               editingLine.key,
               editingItem,
-              modifierIds,
+              picks,
               note,
               quantity,
             );
@@ -2261,7 +2244,7 @@ function CheckoutLineRow({ line }: { line: CartUiLine }) {
   const money = useMoney();
   const breakdown = linePriceBreakdown({
     unitPrice: line.unitPrice,
-    modifierDeltas: line.modifiers.map((modifier) => modifier.priceDelta),
+    modifierDeltas: modifierDeltasOf(line.modifiers),
     quantity: line.quantity,
   });
   return (
@@ -2618,7 +2601,7 @@ function TableField({
   onPick: () => void;
 }) {
   return (
-    <div className="mt-3">
+    <div>
       <span className="block text-xs font-semibold text-muted-foreground">
         میز
       </span>
@@ -2643,43 +2626,6 @@ function TableField({
         </p>
       ) : null}
     </div>
-  );
-}
-
-/**
- * The till's customer picker, shared by the desktop cart panel and the mobile
- * cart sheet so both send the same field. Optional by design — a walk-in sale
- * stays anonymous, and picking someone only attributes the order to them.
- */
-function CustomerField({
-  value,
-  options,
-  onChange,
-  onQueryChange,
-  loading,
-}: {
-  value: string;
-  options: SelectOption[];
-  onChange: (value: string) => void;
-  onQueryChange: (query: string) => void;
-  loading: boolean;
-}) {
-  return (
-    <label className="mt-3 block text-xs font-semibold text-muted-foreground">
-      مشتری <span className="font-normal text-muted-foreground">(اختیاری)</span>
-      <SearchableSelect
-        className={inputClass + " mt-1 min-h-11 border-border/80 bg-muted"}
-        value={value}
-        onChange={onChange}
-        onQueryChange={onQueryChange}
-        loading={loading}
-        options={options}
-        ariaLabel="انتخاب مشتری"
-        placeholder="بدون مشتری"
-        searchPlaceholder="جستجوی نام یا شماره…"
-        emptyText="مشتری‌ای یافت نشد."
-      />
-    </label>
   );
 }
 

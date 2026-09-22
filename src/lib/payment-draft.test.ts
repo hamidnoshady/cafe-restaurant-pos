@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  draftDifference,
   draftNeedsCustomer,
   draftOpensDrawer,
   draftReceiptPayments,
+  draftReceivedRial,
   draftRemaining,
+  draftRequiresCustomer,
   draftRowRial,
   emptyPaymentDraft,
   newDraftRow,
@@ -209,5 +212,74 @@ describe("draftReceiptPayments", () => {
   it("leaves out a slice that is not a payable amount yet", () => {
     const draft = split([{ methodId: "cash", amount: "200000" }, { methodId: "card", amount: "" }]);
     expect(draftReceiptPayments(draft, METHODS, DUE)).toEqual([{ label: "نقدی", amount: 2_000_000 }]);
+  });
+});
+
+describe("manual received amount (مبلغ دریافتی)", () => {
+  function manual(receivedAmount: string): PaymentDraft {
+    return { ...emptyPaymentDraft(METHODS), receivedAmount };
+  }
+
+  it("sends no amount when nothing is typed — the ordinary whole-bill sale", () => {
+    const result = paymentDraftBody(manual(""), METHODS, DUE);
+    expect(result).toMatchObject({ ok: true, value: [{ methodId: "cash", amount: undefined }] });
+  });
+
+  it("sends the typed amount explicitly, even when it differs from the bill", () => {
+    expect(paymentDraftBody(manual("700000"), METHODS, DUE)).toMatchObject({
+      ok: true,
+      value: [{ methodId: "cash", amount: 7_000_000 }],
+    });
+    expect(paymentDraftBody(manual("500000"), METHODS, DUE)).toMatchObject({
+      ok: true,
+      value: [{ methodId: "cash", amount: 5_000_000 }],
+    });
+  });
+
+  it("treats a half-typed or invalid box as 'take the whole bill', not an error", () => {
+    expect(paymentDraftBody(manual("۱۲a"), METHODS, DUE)).toMatchObject({
+      ok: true,
+      value: [{ methodId: "cash", amount: undefined }],
+    });
+  });
+
+  it("reads Persian digits and thousand separators like every money input", () => {
+    expect(draftReceivedRial(manual("۷۰۰٬۰۰۰"))).toBe(7_000_000);
+    expect(draftReceivedRial(manual("700,000"))).toBe(7_000_000);
+  });
+
+  it("is ignored while splitting — the split's own rows are the amounts", () => {
+    const draft = {
+      ...split([
+        { methodId: "cash", amount: "200000" },
+        { methodId: "card", amount: "" },
+      ]),
+      receivedAmount: "700000",
+    };
+    expect(draftReceivedRial(draft)).toBeNull();
+    // The empty second slice is what the split refuses, not the ignored amount.
+    expect(paymentDraftBody(draft, METHODS, DUE)).toMatchObject({ ok: false, error: "invalid_amount" });
+  });
+
+  it("splits the difference into debt or credit for the live preview", () => {
+    expect(draftDifference(DUE, DUE)).toEqual({ balanceDue: 0, customerCredit: 0 });
+    expect(draftDifference(DUE - 1_000_000, DUE)).toEqual({ balanceDue: 1_000_000, customerCredit: 0 });
+    expect(draftDifference(DUE + 1_000_000, DUE)).toEqual({ balanceDue: 0, customerCredit: 1_000_000 });
+  });
+
+  it("requires a customer once the typed amount differs from the bill", () => {
+    // DUE is ۵۰۰٬۰۰۰ Toman (5,000,000 Rial) — the typed box is in Toman too.
+    expect(draftRequiresCustomer(manual("400000"), METHODS, DUE)).toBe(true);
+    expect(draftRequiresCustomer(manual("600000"), METHODS, DUE)).toBe(true);
+    // Exact, empty, or half-typed: the ordinary sale, no customer needed.
+    expect(draftRequiresCustomer(manual("500000"), METHODS, DUE)).toBe(false);
+    expect(draftRequiresCustomer(manual(""), METHODS, DUE)).toBe(false);
+    expect(draftRequiresCustomer(manual("garbage"), METHODS, DUE)).toBe(false);
+  });
+
+  it("prints what was actually taken, not the bill, on the receipt", () => {
+    expect(draftReceiptPayments(manual("700000"), METHODS, DUE)).toEqual([
+      { label: "نقدی", amount: 7_000_000 },
+    ]);
   });
 });

@@ -43,6 +43,8 @@ interface TicketItem {
 interface Modifier {
   order_item_id: string;
   name_snapshot: string;
+  /** How many times this add-on applies to one unit of the line (migration 0169). */
+  quantity?: number;
 }
 
 interface KitchenTicketsResponse {
@@ -506,7 +508,14 @@ export function KdsBoard() {
     const byItem = new Map<string, string[]>();
     for (const modifier of modifiers) {
       const current = byItem.get(modifier.order_item_id) ?? [];
-      current.push(modifier.name_snapshot);
+      const count = Math.max(1, modifier.quantity ?? 1);
+      // The kitchen reads «×۳» as three shots in the cup, not one — the
+      // label carries the repeat so preparation and inventory agree.
+      current.push(
+        count > 1
+          ? `${modifier.name_snapshot} ×${toPersianDigits(count)}`
+          : modifier.name_snapshot,
+      );
       byItem.set(modifier.order_item_id, current);
     }
     return byItem;

@@ -33,7 +33,36 @@ import {
 import type { PoolClient } from "pg";
 
 /**
+ * Writes one line's add-on snapshots, quantities included. One INSERT per
+ * line for every path that creates order items, so the quantity column can
+ * never be forgotten by a caller that still spells the INSERT by hand.
+ */
+export async function insertOrderItemModifiers(
+  client: PoolClient,
+  orderItemId: string,
+  modifiers: { id: string; name: string; priceDelta: number; quantity: number }[],
+): Promise<void> {
+  if (modifiers.length === 0) return;
+  await client.query(
+    `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta, quantity)
+     SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[], $5::int[])`,
+    [
+      orderItemId,
+      modifiers.map((m) => m.id),
+      modifiers.map((m) => m.name),
+      modifiers.map((m) => m.priceDelta),
+      modifiers.map((m) => m.quantity),
+    ],
+  );
+}
+
+/**
  * Capture the recipe plus modifier deltas as an immutable per-unit snapshot.
+ *
+ * A modifier's `quantity` multiplies its ingredient requirement: «شات اضافه
+ * ×۳» consumes three shots' worth of espresso per unit of the drink, and the
+ * snapshot — not a later re-derivation — is what payment-time deduction reads,
+ * so the quantity has to be baked in here.
  *
  * Exported for order-amendment-service.ts: a line added to an already-closed
  * order has to be snapshotted the same way an intake line is, or the replayed
@@ -43,7 +72,7 @@ export async function captureInventorySnapshot(
   client: PoolClient,
   orderItemId: string,
   menuItemId: string,
-  modifierIds: string[],
+  modifiers: { id: string; quantity?: number }[],
 ): Promise<void> {
   const { rows } = await client.query<{
     inventory_item_id: string;
@@ -53,12 +82,17 @@ export async function captureInventorySnapshot(
        SELECT inventory_item_id, quantity::numeric AS qty
        FROM menu_item_ingredients WHERE menu_item_id=$1
        UNION ALL
-       SELECT inventory_item_id, quantity_delta::numeric
-       FROM modifier_ingredients WHERE modifier_id=ANY($2::uuid[])
+       SELECT mi.inventory_item_id, mi.quantity_delta::numeric * pick.qty
+       FROM modifier_ingredients mi
+       JOIN UNNEST($2::uuid[], $3::int[]) AS pick(id, qty) ON pick.id = mi.modifier_id
      )
      SELECT inventory_item_id, sum(qty)::text required_quantity
      FROM requirements GROUP BY inventory_item_id`,
-    [menuItemId, modifierIds],
+    [
+      menuItemId,
+      modifiers.map((m) => m.id),
+      modifiers.map((m) => Math.max(1, Math.round(m.quantity ?? 1))),
+    ],
   );
   for (const row of rows) {
     if (Number(row.required_quantity) < 0)
@@ -74,7 +108,9 @@ export async function captureInventorySnapshot(
         row.inventory_item_id,
         row.required_quantity,
         menuItemId,
-        modifierIds,
+        // The audit column keeps the flat id list; the quantities live in the
+        // required_quantity it produced.
+        modifiers.map((m) => m.id),
       ],
     );
   }
@@ -374,23 +410,12 @@ export async function createOrder(
         ],
       );
       const orderItemId = itemRows[0].id;
-      if (item.modifiers.length > 0) {
-        await client.query(
-          `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-           SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[])`,
-          [
-            orderItemId,
-            item.modifiers.map((m) => m.id),
-            item.modifiers.map((m) => m.name),
-            item.modifiers.map((m) => m.priceDelta),
-          ],
-        );
-      }
+      await insertOrderItemModifiers(client, orderItemId, item.modifiers);
       await captureInventorySnapshot(
         client,
         orderItemId,
         item.menuItemId,
-        item.modifiers.map((m) => m.id),
+        item.modifiers,
       );
     }
 
@@ -486,23 +511,12 @@ export async function addItemsToOrder(
         ],
       );
       const orderItemId = itemRows[0].id;
-      if (item.modifiers.length > 0) {
-        await client.query(
-          `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-           SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[])`,
-          [
-            orderItemId,
-            item.modifiers.map((m) => m.id),
-            item.modifiers.map((m) => m.name),
-            item.modifiers.map((m) => m.priceDelta),
-          ],
-        );
-      }
+      await insertOrderItemModifiers(client, orderItemId, item.modifiers);
       await captureInventorySnapshot(
         client,
         orderItemId,
         item.menuItemId,
-        item.modifiers.map((m) => m.id),
+        item.modifiers,
       );
     }
     const totals = await recomputeOrderTotals(client, input.orderId, discount);
@@ -532,7 +546,12 @@ export interface UpdateOrderItemInput {
   quantity?: number;
   /** `null` clears the line's note. */
   note?: string | null;
-  /** The line's add-ons after the edit — a full replacement, not a delta. */
+  /**
+   * The line's add-ons after the edit — a full replacement, not a delta. The
+   * quantity-aware shape the picker sends; `modifierIds` below is the
+   * pre-quantity spelling, still accepted.
+   */
+  modifiers?: { id: string; quantity?: number }[];
   modifierIds?: string[];
   /** Voiding wins over every other field, since a voided line has nothing left to edit. */
   void?: { reason?: string | null };
@@ -627,7 +646,7 @@ export async function updateOrderItem(input: UpdateOrderItemInput): Promise<
         "UPDATE order_items SET status = 'voided', void_reason = $2 WHERE id = $1",
         [input.orderItemId, input.void.reason?.trim() || null],
       );
-    } else if (input.modifierIds !== undefined) {
+    } else if (input.modifiers !== undefined || input.modifierIds !== undefined) {
       // A line whose menu item has since been deleted has nothing to validate
       // a new selection against, so its add-ons stay as sold.
       if (!item.menu_item_id) {
@@ -637,7 +656,7 @@ export async function updateOrderItem(input: UpdateOrderItemInput): Promise<
       const selection = await resolveLineModifiers(
         input.locationId,
         item.menu_item_id,
-        input.modifierIds,
+        [...(input.modifierIds ?? []), ...(input.modifiers ?? [])],
         client,
       );
       if (!selection.ok) {
@@ -664,24 +683,17 @@ export async function updateOrderItem(input: UpdateOrderItemInput): Promise<
       );
       replacementItemId = replacement[0].id;
 
-      if (selection.modifiers.length > 0) {
-        await client.query(
-          `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-           SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[])`,
-          [
-            replacementItemId,
-            selection.modifiers.map((modifier) => modifier.id),
-            selection.modifiers.map((modifier) => modifier.name),
-            selection.modifiers.map((modifier) => modifier.priceDelta),
-          ],
-        );
-      }
+      await insertOrderItemModifiers(
+        client,
+        replacementItemId,
+        selection.modifiers,
+      );
       try {
         await captureInventorySnapshot(
           client,
           replacementItemId,
           item.menu_item_id,
-          selection.modifiers.map((modifier) => modifier.id),
+          selection.modifiers,
         );
       } catch (snapshotError) {
         if (

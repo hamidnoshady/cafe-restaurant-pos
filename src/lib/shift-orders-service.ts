@@ -132,8 +132,8 @@ interface ShiftOrderItemRow extends Record<string, unknown> {
   item_name: string | null;
   quantity: number | null;
   unit_price: string | null;
-  /** [{ name, price_delta }] in selection order — json rather than two parallel arrays so a name can never drift off its price. */
-  modifiers: { name: string; price_delta: string | number }[] | null;
+  /** [{ name, price_delta, quantity }] in selection order — json rather than two parallel arrays so a name can never drift off its price. */
+  modifiers: { name: string; price_delta: string | number; quantity?: number }[] | null;
   item_status: string | null;
   note: string | null;
   void_reason: string | null;
@@ -192,7 +192,7 @@ export async function getShiftOrdersReport(
          LEFT JOIN order_items oi ON oi.order_id = o.id
          LEFT JOIN LATERAL (
            SELECT json_agg(
-                    json_build_object('name', oim.name_snapshot, 'price_delta', oim.price_delta)
+                    json_build_object('name', oim.name_snapshot, 'price_delta', oim.price_delta, 'quantity', oim.quantity)
                     ORDER BY oim.name_snapshot
                   ) AS modifiers
              FROM order_item_modifiers oim
@@ -248,6 +248,7 @@ export async function getShiftOrdersReport(
       (modifier): ShiftOrderModifier => ({
         name: modifier.name,
         priceDelta: Number(modifier.price_delta),
+        quantity: modifier.quantity,
       }),
     ),
     itemStatus: row.item_status,
