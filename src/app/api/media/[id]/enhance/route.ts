@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { isPlatformAiConfigured } from "@/lib/ai-config";
+import { isPlatformAiConfigured, logAiRuntimeUnavailable } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import { MediaAiError, runMediaEnhance } from "@/lib/ai-media-service";
 import { MEDIA_ENHANCE_FEATURE_KEY } from "@/lib/media";
@@ -46,8 +46,9 @@ export const POST = withTenantScope(async (_request: NextRequest, context: { par
 
   const config = await resolveAiConfigFor(session.businessId, null);
   if (!isPlatformAiConfigured(config)) {
+    const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: null, surface: "media_enhance" });
     return NextResponse.json(
-      { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
+      { error: "ai_unavailable", reason, message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
       { status: 503 },
     );
   }

@@ -202,10 +202,20 @@ describe("credential resolution", () => {
     expect(key).toBe("sk-tenant");
   });
 
-  it("falls back to the master key when the business has no key yet", () => {
+  it("uses the master key for non-tenant/platform calls when no virtual key is present", () => {
     expect(
       resolveGatewayAuthKey({ gateway: gateway({ virtualKeysEnabled: true, masterKey: "sk-master" }), business: null }),
     ).toBe("sk-master");
+  });
+
+  it("never falls back to a shared master key for a tenant when virtual keys are required", () => {
+    expect(
+      resolveGatewayAuthKey({
+        gateway: gateway({ virtualKeysEnabled: true, masterKey: "sk-master" }),
+        business: null,
+        tenantScoped: true,
+      }),
+    ).toBeUndefined();
   });
 
   it("uses the master key when virtual keys are off", () => {
@@ -238,6 +248,7 @@ describe("request body", () => {
       model: "pos-chat",
       embeddingModel: "pos-chat",
       authKey: "sk-master",
+      virtualKeyResolved: false,
       body: { fallbacks: ["pos-cheap"] },
     });
   });
@@ -714,10 +725,11 @@ describe("validation of the phase 38b fields", () => {
     expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: 20 })).toEqual([]);
   });
 
-  it("the per-turn reservation ceiling must be zero or positive", () => {
+  it("the per-turn reservation ceiling must be positive when provided", () => {
     expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: -1 })).toContain(
       "ai_gateway_bad_max_turn",
     );
+    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 0 })).toContain("ai_gateway_bad_max_turn");
     expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 50_000 })).toEqual([]);
   });
 });
@@ -740,4 +752,11 @@ describe("the public gateway config carries the costing knobs", () => {
     expect(pub.maxTurnRial).toBe(40_000);
     expect(JSON.stringify(pub)).not.toContain("sk-secret");
   });
+  it("rejects enabled configurations that runtime would immediately refuse", () => {
+    const base = { enabled: true, baseUrl: "http://litellm:4000/v1", chatModel: "pos-chat", maxTurnRial: 50_000 };
+    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: true, usdRialRate: null })).toContain("ai_gateway_costing_needs_rate");
+    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: false })).toContain("ai_gateway_costing_not_configured");
+    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: true, usdRialRate: 600_000 })).toEqual([]);
+  });
+
 });

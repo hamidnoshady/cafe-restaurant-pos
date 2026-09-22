@@ -99,6 +99,9 @@ export interface AiGatewayConfig {
   usdRialRate: number | null;
   /** Phase 38b — settle turns on the gateway's own reported cost. */
   gatewayCostingEnabled: boolean;
+  /** Manual fallback rates used only when gateway costing is disabled. */
+  inputCostRialPerMillion: number;
+  outputCostRialPerMillion: number;
   /**
    * Optional extra margin the platform adds on top of LiteLLM's reported cost,
    * in percent. Normally 0: cost-plus-margin pricing is configured inside
@@ -166,6 +169,8 @@ export interface AiGatewayInput {
   defaultRpmLimit?: number | null;
   usdRialRate?: number | null;
   gatewayCostingEnabled?: boolean;
+  inputCostRialPerMillion?: number | null;
+  outputCostRialPerMillion?: number | null;
   revenueMarginPercent?: number | null;
   maxTurnRial?: number | null;
   mcpEnabled?: boolean;
@@ -250,6 +255,8 @@ export function defaultGatewayConfig(): AiGatewayConfig {
     defaultRpmLimit: null,
     usdRialRate: null,
     gatewayCostingEnabled: false,
+    inputCostRialPerMillion: 0,
+    outputCostRialPerMillion: 0,
     revenueMarginPercent: 0,
     maxTurnRial: 0,
     mcpEnabled: false,
@@ -647,7 +654,9 @@ export const GATEWAY_ERROR_TEXT: Record<string, string> = {
   ai_gateway_costing_needs_rate:
     "برای تسویه بر پایهٔ هزینهٔ دروازه، نرخ تبدیل دلار به ریال الزامی است.",
   ai_gateway_bad_margin: "حاشیهٔ سود باید عددی بزرگ‌تر یا مساوی صفر باشد.",
-  ai_gateway_bad_max_turn: "سقف رزرو اعتبار هر درخواست باید عددی بزرگ‌تر یا مساوی صفر باشد.",
+  ai_gateway_bad_max_turn: "سقف رزرو اعتبار هر درخواست باید عددی بزرگ‌تر از صفر باشد.",
+  ai_gateway_missing_chat_model: "نام مستعار مدل گفت‌وگو الزامی است.",
+  ai_gateway_costing_not_configured: "برای فعال‌سازی، هزینه‌گذاری LiteLLM یا هر دو نرخ دستی ورودی و خروجی باید معتبر باشند.",
   ai_gateway_bad_mcp_servers: "فهرست سرورهای MCP معتبر نیست.",
   ai_gateway_model_choice_disabled: "انتخاب مدل توسط کسب‌وکار در تنظیمات دروازه فعال نیست.",
   ai_gateway_model_not_published: "این مدل در فهرست مدل‌های قابل انتخاب پلتفرم نیست.",
@@ -738,12 +747,15 @@ export function resolveGatewayAuthKey(input: {
   gateway: AiGatewayConfig | null;
   business?: BusinessGateway | null;
   branch?: BusinessGateway | null;
+  /** Tenant calls must not fall back to a shared master key when virtual keys are enabled. */
+  tenantScoped?: boolean;
 }): string | undefined {
   const { gateway, business, branch } = input;
   if (!gateway || !gateway.enabled) return undefined;
   if (gateway.virtualKeysEnabled) {
     if (trimmed(branch?.virtualKey)) return trimmed(branch?.virtualKey);
     if (trimmed(business?.virtualKey)) return trimmed(business?.virtualKey);
+    if (input.tenantScoped) return undefined;
   }
   if (trimmed(gateway.masterKey)) return trimmed(gateway.masterKey);
   return undefined;
@@ -851,9 +863,16 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   if (
     input.maxTurnRial !== undefined &&
     input.maxTurnRial !== null &&
-    !(Number.isFinite(input.maxTurnRial) && input.maxTurnRial >= 0)
+    !(Number.isFinite(input.maxTurnRial) && input.maxTurnRial > 0)
   ) {
     errors.push("ai_gateway_bad_max_turn");
+  }
+  if (input.enabled === true) {
+    if (!(Number(input.maxTurnRial) > 0) && !errors.includes("ai_gateway_bad_max_turn")) {
+      errors.push("ai_gateway_bad_max_turn");
+    }
+    if (!trimmed(input.chatModel)) errors.push("ai_gateway_missing_chat_model");
+    if (input.gatewayCostingEnabled !== true && !(Number(input.inputCostRialPerMillion) > 0 && Number(input.outputCostRialPerMillion) > 0)) errors.push("ai_gateway_costing_not_configured");
   }
   if (input.mcpServers !== undefined && !Array.isArray(input.mcpServers)) {
     errors.push("ai_gateway_bad_mcp_servers");
@@ -931,11 +950,13 @@ export function buildGatewayRuntime(input: {
   gateway: AiGatewayConfig | null;
   business?: BusinessGateway | null;
   branch?: BusinessGateway | null;
+  tenantScoped?: boolean;
 }): {
   model: string;
   embeddingModel: string;
   authKey?: string;
   body: Record<string, unknown>;
+  virtualKeyResolved: boolean;
 } | undefined {
   if (!input.gateway || !isGatewayActive(input.gateway)) return undefined;
   const gateway = input.gateway;
@@ -955,8 +976,9 @@ export function buildGatewayRuntime(input: {
       platformModel: input.config.model,
       gateway,
     }),
+    virtualKeyResolved: Boolean(trimmed(input.branch?.virtualKey) || trimmed(input.business?.virtualKey)),
     ...(() => {
-      const key = resolveGatewayAuthKey({ gateway, business: input.business, branch: input.branch });
+      const key = resolveGatewayAuthKey({ gateway, business: input.business, branch: input.branch, tenantScoped: input.tenantScoped });
       return key ? { authKey: key } : {};
     })(),
     body,
