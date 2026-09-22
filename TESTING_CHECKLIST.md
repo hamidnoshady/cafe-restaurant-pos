@@ -1,0 +1,194 @@
+# Desktop Application — Testing Checklist
+
+This checklist is for a human tester with access to a real Windows machine
+and, ideally, a real receipt/kitchen printer. It was produced as part of the
+desktop-application audit (see `AUDIT_REPORT.md`); none of these steps could
+be executed inside the automated sandbox this audit ran in (no Postgres, no
+Electron binary, no Windows printer). Everything below is either newly
+introduced by the audit or an existing area the audit specifically touched
+or reviewed.
+
+Check off each item as `PASS` / `FAIL` / `N/A` with a one-line note. Items
+marked **[NEW]** were built or changed during this audit and have zero
+real-world verification yet — prioritize these first.
+
+## 1. Fresh install
+
+- [ ] Run the NSIS installer on a clean Windows machine (no prior install).
+      Confirm it is **not** a silent one-click install (`oneClick: false`)
+      — the wizard should let the user pick options.
+- [ ] **[NEW]** During first run, confirm the storage-location prompt
+      appears (Section 3): choose a non-default drive/folder, confirm the
+      disk-space check and write/read/delete round-trip both run and give
+      accurate results (e.g. point it at a full/read-only volume and
+      confirm it's rejected with a clear message, not a silent failure).
+- [ ] Confirm a *second* fresh install with the same choice does **not**
+      re-prompt (the marker file should make `decideStorageBootstrap`
+      reuse the recorded choice).
+- [ ] Uninstall and reinstall; confirm existing business data survives
+      (`deleteAppDataOnUninstall: false`).
+- [ ] Confirm the app creates its DB/config/log files under the chosen
+      location, not silently back at the Electron default.
+
+## 2. First-run wizard (Cloud vs Local)
+
+- [ ] Choose "Cloud Connected" — pair against a real cloud tenant using a
+      pairing code; confirm the resulting session is scoped to the right
+      business and the sync token round-trips correctly.
+- [ ] Choose "Local Desktop Mode" — confirm a fully offline business
+      bootstraps with no network calls attempted.
+- [ ] Attempt pairing with an invalid/expired/already-redeemed code;
+      confirm each produces a distinct, correct error message (not a
+      generic "code is not valid" for a token-vs-code mix-up specifically).
+- [ ] Attempt pairing against an unreachable remote URL; confirm
+      "server unreachable" is shown, not a stack trace or infinite spinner.
+
+## 3. Authentication flow — Choose Login Type **[NEW]**
+
+- [ ] On first visit to `/login` on a fresh browser profile, confirm the
+      three-card chooser (Staff / Admin / Offline Local) appears — **not**
+      the staff roster directly.
+- [ ] Choose "Staff" without checking "remember this device"; reload
+      `/login` — confirm the chooser reappears (not remembered).
+- [ ] Choose "Staff" **with** "remember this device" checked; reload
+      `/login` — confirm it goes straight to the staff roster this time.
+- [ ] From the staff roster, click "Change login type" — confirm it
+      returns to the three-card chooser.
+- [ ] Choose "Admin" — confirm it navigates to `/admin` and the admin
+      login form has a "Staff? go to staff login" link back.
+- [ ] Choose "Offline Local Login" — confirm it lands on the identical
+      staff PIN flow with a footnote explaining it needs no internet, and
+      confirm it actually works with the network disabled.
+- [ ] Log in as staff, then use "Switch account" from the platform user
+      menu — confirm it signs out **and** clears the remembered door, so
+      `/login` shows the chooser again (distinct from plain "Logout",
+      which should sign out without necessarily resetting the chooser).
+- [ ] Confirm a plain "Logout" fully invalidates the session (subsequent
+      protected API calls are rejected).
+- [ ] Confirm attempting to reach `/admin`-only settings (cloud
+      connection, users, sync, backup config) as a logged-in staff user is
+      rejected server-side, independent of which door the UI showed.
+
+## 4. Offline operation
+
+- [ ] With no internet connection, complete a full order end-to-end
+      (product lookup → cart → payment → receipt) on a Local Desktop Mode
+      or already-paired Cloud Connected install.
+- [ ] **[NEW]** While offline, perform actions across each of Products,
+      Customers, Orders, Accounting, Settings, Users; confirm each one
+      lands in the sync queue with `status: "pending"` (Section 5's state
+      machine), not silently dropped or double-applied.
+- [ ] Reconnect the network; confirm queued items transition
+      `pending → syncing → completed` and disappear from the pending list.
+- [ ] Force a server-side rejection of one queued item (e.g. a stale
+      record); confirm it goes to `retryCount++` / `pending` again rather
+      than being silently dropped, and eventually to `failed` after
+      exceeding the retry ceiling — not stuck retrying forever.
+- [ ] Force a genuine conflict (edit the same record from two offline
+      devices, then let both sync); confirm the queue item lands in
+      `status: "conflict"` and is surfced to an admin rather than silently
+      overwriting one side.
+
+## 5. Printer system **[NEW — needs real Windows + real hardware]**
+
+> Everything in this section is implemented with unit-tested logic only.
+> None of it has run against a real Windows print spooler or real
+> hardware. Do not skip this section before shipping.
+
+- [ ] On a real Windows machine with at least one installed printer,
+      confirm `desktop:print-list-windows-printers` returns the actual
+      installed printer list (via `window.businessSuiteDesktop.printing`),
+      not an empty list or an error.
+- [ ] Select a printer as "Default", print a test page — confirm actual
+      paper output, correct encoding (Persian text, if applicable),
+      correct paper width/cut behavior for a receipt printer.
+- [ ] Configure a second printer as "Kitchen" and a third as "Label" (if
+      available); confirm each order type routes to the correct assigned
+      printer, not all to the default.
+- [ ] Test a network ESC/POS printer (TCP socket path, not `winspool.drv`)
+      — confirm discovery (`-discover-network`) finds it on the LAN and
+      a raw send (`-send-raw`) produces real output.
+- [ ] Deliberately point at an offline/nonexistent printer; confirm the
+      error surfaced to the UI is a clear, canonical error code (per
+      `src/lib/printing/errors.ts`), not a raw PowerShell/C# stack trace.
+- [ ] Confirm this desktop print path works with **no** print-connector
+      process running at all (the whole point of Section 7) — kill/never
+      start the connector and confirm printing still works from the
+      desktop app.
+- [ ] Separately, confirm the **browser/cloud** version still requires and
+      correctly uses the connector (unchanged by this audit) — this is a
+      regression check, not a new feature check.
+
+## 6. Backup system
+
+- [ ] Configure a local backup destination on a non-default drive; trigger
+      a manual backup; confirm the artifact lands there.
+- [ ] Configure each schedule interval option and confirm the "next backup
+      due" calculation (`latestSlotBefore`/staleness logic) matches
+      expectations for at least one short interval (e.g. 1h) and the daily
+      (24h) case.
+- [ ] Set local retention to a small number (e.g. 2) and cloud retention
+      to a large number; run enough manual backups to exceed local
+      retention; confirm old local artifacts are pruned while cloud
+      artifacts are not (retention is applied per-target, independently).
+- [ ] Configure S3-compatible cloud backup (Arvan/Backblaze/MinIO or
+      equivalent) end-to-end; confirm a real upload succeeds and appears
+      in the restore list's "cloud" column.
+- [ ] Run the restore wizard: pick an artifact, let it verify into the
+      scratch database, confirm the verification summary is shown, then
+      confirm the live database is **not** touched until explicit
+      confirmation, and correctly replaced after confirmation.
+- [ ] Attempt to start a second restore while one is in progress; confirm
+      it's rejected with "a restore is already in progress," not silently
+      queued or run concurrently.
+
+## 7. Update system
+
+- [ ] With a paired Cloud Connected install, confirm the Owner's settings
+      panel correctly shows "up to date" vs. "update available" based on
+      the real running cloud version.
+- [ ] **[Confirm audit fix]** Read the update-available banner text;
+      confirm it says installing the new version is a **manual**
+      administrator step and recommends taking a backup first — it must
+      **not** imply the update installs itself automatically.
+- [ ] Perform a real manual update (download + run the new installer over
+      an existing install); confirm all business data, settings, and
+      backup history survive.
+- [ ] After the update, confirm the Owner's settings panel now reports the
+      new version as current.
+
+## 8. Error handling **[NEW]**
+
+- [ ] Force a render-time error inside the app shell (e.g. throw in a
+      dashboard page during development); confirm `error.tsx` shows a
+      friendly message, a short `ERR-XXXX-XXXX` error ID distinct from any
+      `digest`, and an expandable technical-details section.
+- [ ] Click "دریافت فایل گزارش‌ها" (export logs); confirm a file downloads
+      containing the ring-buffer of recent client errors, and that no
+      secret/token/connection-string value appears in it even if one was
+      present in the underlying error context (redaction check).
+- [ ] Force a **root-layout**-level error (severe enough to hit
+      `global-error.tsx` instead of `error.tsx`); confirm the same
+      error-ID/export behavior works from that self-contained page too.
+- [ ] Open Settings → گزارش‌ها (Logs) tab; confirm it shows the same
+      exportable client log, and on a desktop build, confirm the "open
+      log folder" button actually reveals the Electron process log
+      directory in the OS file browser.
+- [ ] (Known residual gap — confirm it is still a gap, not regressed
+      further) Trigger a plain API/fetch error inside a dashboard page
+      (e.g. a 500 from a `/api/...` route); confirm it still shows via the
+      existing `ErrorBox` pattern — note that this path is **not** expected
+      to have an error ID or export button yet; this is documented,
+      pre-existing, unaddressed scope, not a new regression.
+
+## 9. General regression pass
+
+- [ ] Run `npx tsc --noEmit` and `npx eslint .` — both must be clean.
+- [ ] Run `npx vitest run` — should be **≥ 380 files / ≥ 5452 tests**,
+      zero failures (this was the state at audit completion; a regression
+      below this count means something in this audit's work broke).
+- [ ] Spot-check Persian RTL rendering and Shamsi (Jalali) date display on
+      every screen touched by this audit (login chooser, storage wizard,
+      printer settings, logs tab, error screens) — none of these should
+      look or behave differently from the rest of the app's existing
+      design system.
