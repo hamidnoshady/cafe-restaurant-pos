@@ -19,6 +19,21 @@ export interface OutboundMessage {
   /** Email subject; empty for SMS. */
   subject?: string;
   body: string;
+  /**
+   * Files to attach. Email only — an SMS adapter ignores them.
+   *
+   * Added for the scheduled-export delivery in `data-transfer`: «فروش روزانه»
+   * has to arrive as a spreadsheet, not as a link into an app the recipient may
+   * not have a session for. Optional, so every existing caller (campaigns,
+   * triggered messages) is unchanged.
+   */
+  attachments?: readonly OutboundAttachment[];
+}
+
+export interface OutboundAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
 }
 
 export type SendResult =

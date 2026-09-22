@@ -64,6 +64,17 @@ export class SmtpMessageProvider implements MessageProvider {
         text: msg.body,
         // A fixed, minimal HTML mirror of the same text — never an editor.
         html: `<div dir="rtl" style="font-family:inherit">${escapeHtml(msg.body).replace(/\n/g, "<br/>")}</div>`,
+        // Only present for a scheduled data export; a marketing email never
+        // carries one, so the key is omitted entirely rather than sent empty.
+        ...(msg.attachments && msg.attachments.length > 0
+          ? {
+              attachments: msg.attachments.map((attachment) => ({
+                filename: attachment.filename,
+                content: attachment.content,
+                contentType: attachment.contentType,
+              })),
+            }
+          : {}),
       });
       return {
         ok: true,
