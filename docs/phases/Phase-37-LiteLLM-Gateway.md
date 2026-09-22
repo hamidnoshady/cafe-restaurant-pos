@@ -47,22 +47,20 @@ third value of the existing `provider` column.** `litellm` joins `openrouter` an
 - **A `litellm` provider**, selectable in `/platform/ai` like any other. Base URL defaults to
   `http://litellm:4000/v1`; the key falls back to `LITELLM_MASTER_KEY`.
 - **A gateway settings singleton** (`platform_ai_gateway`, migration 0121): address, admin
-  credential, chat and embedding model aliases, a failover chain, routing strategy, virtual-key
-  defaults, and whether a business may choose its own model — plus the published list it may
-  choose from.
+  credential, chat and embedding model aliases, and the virtual-key toggle. Historical columns
+  for failover, routing, MCP and published model lists are ignored; LiteLLM owns those policies.
 - **A per-business gateway row** (`ai_business_gateway`, same migration): the virtual key this
-  business's calls authenticate with, its budget/rate ceilings, and its model choice. Tenant
-  scoped, RLS forced, covered by the Phase 17 generated isolation test without being hand-added
+  business's calls authenticate with, plus branch identity when needed. Budget, rate and model
+  policy live in Plan/Billing and LiteLLM. Tenant scoped, RLS forced, covered by the Phase 17 generated isolation test without being hand-added
   to any list.
 - **Per-call resolution** in `src/lib/ai-runtime.ts`, applied in one place: which credential to
-  send, which model to ask for, whether to attach the failover chain. Every AI surface calls it
-  instead of `getPlatformAiConfig()`.
-- **A console page, `/platform/ai/gateway`**: connection settings, a "test connection" button that
-  reports latency and lists the gateway's models, and per-business key provisioning, revocation,
-  spend refresh and model override.
-- **A business-facing panel** on `/dashboard/ai/settings`: the model in force for this business,
-  and a picker limited to the models the platform published — only when the platform switched that
-  on.
+  send and which LiteLLM/platform model alias to ask for. Fallback chains and routing are LiteLLM
+  policy, not request-level app fields. Every AI surface calls it instead of `getPlatformAiConfig()`.
+- **A console page, `/platform/ai`**: technical connection settings, a staged diagnostic button,
+  model-alias visibility and per-business/branch virtual-key provisioning, verification, rotation
+  and revocation.
+- **Tenant-facing AI settings** show effective technical status only. Tenant model selection is no
+  longer an app-owned concept; LiteLLM owns tenant/model access policy.
 
 ## Out of scope
 
@@ -118,10 +116,10 @@ third value of the existing `provider` column.** `litellm` joins `openrouter` an
    row, an unparseable response. The exception is provisioning, which is an operator pressing a
    button and asking for something — there, silence would be worse than an error.
 
-4. **A business's model choice is validated on read, not only on write.** `resolveChatModel`
-   re-checks the override against `publishedModels` every call. The alternative — trusting the
-   stored row — leaves a window in which a model the platform has stopped selling keeps being
-   called because nobody edited the row that named it.
+4. **The app no longer owns business model choices.** `resolveChatModel` now resolves only the
+   LiteLLM chat alias and then the platform default. Tenant/model access policy, aliases and
+   routing live in LiteLLM, so stale `publishedModels` or per-business override rows cannot
+   change runtime calls.
 
 5. **Virtual keys are stored in the clear, and that is the same bargain Phase 18 already made.**
    `platform_ai_config.api_key` is stored the same way, because the server must be able to send

@@ -12,13 +12,13 @@
  *    there the operator has asked for something and is entitled to hear why it
  *    did not happen.
  *
- * 2. **Tenant scope is the caller's, not this module's.** `saveBusinessGateway`
- *    takes explicit `business_id` and optional `location_id` and writes through the
- *    ordinary `query()`, exactly as Phase 18's credit writes do: from the platform
- *    console the ambient scope is the documented `platform` bypass and any
- *    business/branch may be addressed, while from a business's own settings page RLS
- *    confines the write to the session's business — so a forged business id is
- *    refused rather than merely ignored.
+ * 2. **Tenant scope is the caller's, not this module's.** Business/branch key
+ *    rows carry explicit `business_id` and optional `location_id` and are written
+ *    through ordinary `query()`, exactly as Phase 18's credit writes do: from the
+ *    platform console the ambient scope is the documented `platform` bypass and
+ *    any business/branch may be addressed, while from a business's own settings
+ *    page RLS confines the write to the session's business — so a forged
+ *    business id is refused rather than merely ignored.
  */
 import { query, withoutTenantScope } from "./db";
 import {
@@ -34,14 +34,12 @@ import {
   keyUpdateUrl,
   livelinessUrl,
   modelInfoUrl,
-  normalizeMcpServers,
   parseGatewayErrorDetail,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
   resolveChatModel,
   toPublicGatewayConfig,
-  toStringList,
   validateBusinessGatewayInput,
   validateGatewayInput,
   virtualKeyAlias,
@@ -55,6 +53,8 @@ import {
   type AiGatewayTurnPricing,
 } from "./ai-gateway";
 import { getPlatformAiConfig } from "./ai-config";
+import { chatCompletionsUrl } from "./ai";
+import { normalizeProviderError, providerErrorReason } from "./ai-provider-errors";
 
 /** Management calls are operator-facing: fail them fast rather than hang a page. */
 const MANAGEMENT_TIMEOUT_MS = 10_000;
@@ -106,18 +106,19 @@ function rowToGateway(row: GatewayRow): AiGatewayConfig {
     masterKey: row.master_key ?? "",
     chatModel: row.chat_model ?? "",
     embeddingModel: row.embedding_model ?? "",
-    fallbackModels: toStringList(row.fallback_models),
+    // Retired local mirrors: route/fallback/MCP/model access policy belongs to LiteLLM.
+    fallbackModels: [],
     virtualKeysEnabled: row.virtual_keys_enabled,
-    allowBusinessModels: row.allow_business_models,
-    publishedModels: toStringList(row.published_models),
+    allowBusinessModels: false,
+    publishedModels: [],
     usdRialRate: optionalNumber(row.usd_rial_rate),
     gatewayCostingEnabled: row.gateway_costing_enabled,
     inputCostRialPerMillion: numberValue(row.input_cost_rial_per_million),
     outputCostRialPerMillion: numberValue(row.output_cost_rial_per_million),
     revenueMarginPercent: Math.max(0, numberValue(row.revenue_margin_percent)),
     maxTurnRial: Math.max(0, numberValue(row.max_turn_rial)),
-    mcpEnabled: row.mcp_enabled,
-    mcpServers: normalizeMcpServers(row.mcp_servers),
+    mcpEnabled: false,
+    mcpServers: [],
   };
 }
 
@@ -144,15 +145,12 @@ export function toPublicAiGatewayConfig(config: AiGatewayConfig): PublicAiGatewa
 /** Env-supplied defaults, so a deployment can be configured without a DB round-trip. */
 function envGatewayConfig(): Partial<AiGatewayInput> {
   const env = process.env;
-  const usdRate = Number(env.LITELLM_USD_RIAL_RATE ?? "");
   return {
     enabled: env.LITELLM_ENABLED === "true",
     baseUrl: env.LITELLM_BASE_URL?.trim() || undefined,
     masterKey: env.LITELLM_MASTER_KEY?.trim() || undefined,
     chatModel: env.LITELLM_CHAT_MODEL?.trim() || undefined,
     embeddingModel: env.LITELLM_EMBEDDING_MODEL?.trim() || undefined,
-    fallbackModels: env.LITELLM_FALLBACK_MODELS ? env.LITELLM_FALLBACK_MODELS.split(",").map((m) => m.trim()).filter(Boolean) : undefined,
-    usdRialRate: Number.isFinite(usdRate) && usdRate > 0 ? usdRate : null,
   };
 }
 
@@ -166,32 +164,21 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
     masterKey: draft.masterKey?.trim() || current.masterKey,
     chatModel: draft.chatModel ?? current.chatModel,
     embeddingModel: draft.embeddingModel ?? current.embeddingModel,
-    fallbackModels: draft.fallbackModels === undefined ? current.fallbackModels : toStringList(draft.fallbackModels),
+    fallbackModels: [],
     virtualKeysEnabled: draft.virtualKeysEnabled ?? current.virtualKeysEnabled,
-    allowBusinessModels: draft.allowBusinessModels ?? current.allowBusinessModels,
-    publishedModels:
-      draft.publishedModels === undefined ? current.publishedModels : toStringList(draft.publishedModels),
-    usdRialRate: pickOptionalNumber(draft.usdRialRate, current.usdRialRate),
-    gatewayCostingEnabled: draft.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
-    inputCostRialPerMillion: pickNonNegativeNumber(draft.inputCostRialPerMillion, current.inputCostRialPerMillion),
-    outputCostRialPerMillion: pickNonNegativeNumber(draft.outputCostRialPerMillion, current.outputCostRialPerMillion),
-    revenueMarginPercent: pickNonNegativeNumber(draft.revenueMarginPercent, current.revenueMarginPercent),
-    maxTurnRial: pickNonNegativeNumber(draft.maxTurnRial, current.maxTurnRial),
-    mcpEnabled: draft.mcpEnabled ?? current.mcpEnabled,
-    mcpServers: draft.mcpServers === undefined ? current.mcpServers : normalizeMcpServers(draft.mcpServers),
+    allowBusinessModels: false,
+    publishedModels: [],
+    // Billing-owned settings are preserved here for runtime compatibility but
+    // are no longer accepted from `/platform/ai` patches.
+    usdRialRate: current.usdRialRate,
+    gatewayCostingEnabled: current.gatewayCostingEnabled,
+    inputCostRialPerMillion: current.inputCostRialPerMillion,
+    outputCostRialPerMillion: current.outputCostRialPerMillion,
+    revenueMarginPercent: current.revenueMarginPercent,
+    maxTurnRial: current.maxTurnRial,
+    mcpEnabled: false,
+    mcpServers: [],
   };
-}
-
-function pickOptionalNumber(value: number | null | undefined, current: number | null): number | null {
-  if (value === undefined) return current;
-  return optionalNumber(value);
-}
-
-/** A non-negative numeric setting (margin, ceiling): 0 is valid, negatives clamp to current. */
-function pickNonNegativeNumber(value: number | null | undefined, current: number): number {
-  if (value === undefined || value === null) return current;
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? n : current;
 }
 
 /**
@@ -241,20 +228,18 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
       masterKey,
       (input.chatModel ?? current.chatModel).trim(),
       (input.embeddingModel ?? current.embeddingModel).trim(),
-      JSON.stringify(toStringList(input.fallbackModels ?? current.fallbackModels)),
+      JSON.stringify([]),
       input.virtualKeysEnabled ?? current.virtualKeysEnabled,
-      input.allowBusinessModels ?? current.allowBusinessModels,
-      JSON.stringify(toStringList(input.publishedModels ?? current.publishedModels)),
-      pickOptionalNumber(input.usdRialRate, current.usdRialRate),
-      input.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
-      pickNonNegativeNumber(input.inputCostRialPerMillion, current.inputCostRialPerMillion),
-      pickNonNegativeNumber(input.outputCostRialPerMillion, current.outputCostRialPerMillion),
-      pickNonNegativeNumber(input.revenueMarginPercent, current.revenueMarginPercent),
-      Math.round(pickNonNegativeNumber(input.maxTurnRial, current.maxTurnRial)),
-      input.mcpEnabled ?? current.mcpEnabled,
-      JSON.stringify(
-        input.mcpServers === undefined ? current.mcpServers : normalizeMcpServers(input.mcpServers),
-      ),
+      false,
+      JSON.stringify([]),
+      current.usdRialRate,
+      current.gatewayCostingEnabled,
+      current.inputCostRialPerMillion,
+      current.outputCostRialPerMillion,
+      current.revenueMarginPercent,
+      Math.round(current.maxTurnRial),
+      false,
+      JSON.stringify([]),
     ],
   );
   return getAiGatewayConfig();
@@ -373,7 +358,8 @@ export async function listBusinessGateways(
 }
 
 /**
- * Upsert gateway settings for a business or branch.
+ * Legacy-safe upsert for a business or branch key row. Model override input is
+ * ignored: LiteLLM owns tenant/model access policy.
  */
 export async function saveBusinessGateway(
   businessId: string,
@@ -382,24 +368,19 @@ export async function saveBusinessGateway(
   locationId?: string | null,
 ): Promise<BusinessGateway> {
   const loc = locationId?.trim() || null;
-  const errors = validateBusinessGatewayInput(input, {
+  validateBusinessGatewayInput(input, {
     allowBusinessModels: gateway.allowBusinessModels,
     allowedModels: gateway.publishedModels,
   });
-  if (errors.length > 0) throw new Error(errors[0]);
 
   await query(
     `INSERT INTO ai_business_gateway
        (business_id, location_id, model_override, updated_at)
-     VALUES ($1, $2, $3, now())
+     VALUES ($1, $2, NULL, now())
      ON CONFLICT (business_id, location_id)
-     DO UPDATE SET model_override = EXCLUDED.model_override,
+     DO UPDATE SET model_override = NULL,
                    updated_at = now()`,
-    [
-      businessId,
-      loc,
-      input.modelOverride === undefined ? null : (input.modelOverride ?? "").trim() || null,
-    ],
+    [businessId, loc],
   );
   return (await getBusinessGateway(businessId, loc)) ?? emptyBusinessGateway(businessId, loc);
 }
@@ -501,6 +482,89 @@ export interface GatewayCallError {
   detail: string | null;
 }
 
+function stage(input: {
+  key: GatewayProbe["stages"][number]["key"];
+  label: string;
+  ok: boolean;
+  skipped?: boolean;
+  status?: number | null;
+  model?: string | null;
+  message?: string | null;
+  detail?: string | null;
+}): GatewayProbe["stages"][number] {
+  return {
+    key: input.key,
+    label: input.label,
+    ok: input.ok,
+    ...(input.skipped ? { skipped: true } : {}),
+    status: input.status ?? null,
+    model: input.model ?? null,
+    message: input.message ?? null,
+    detail: input.detail ?? null,
+  };
+}
+
+async function completionProbe(config: AiGatewayConfig, input: { authKey: string; model: string; key: GatewayProbe["stages"][number]["key"]; label: string }): Promise<GatewayProbe["stages"][number]> {
+  const model = input.model.trim();
+  if (!model) {
+    return stage({
+      key: input.key,
+      label: input.label,
+      ok: false,
+      model: null,
+      message: "نام مستعار مدل گفت‌وگو تنظیم نشده است.",
+    });
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MANAGEMENT_TIMEOUT_MS);
+  try {
+    const res = await fetch(chatCompletionsUrl(config.baseUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.authKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "ping" }],
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+    const text = await res.text().catch(() => "");
+    if (ok(res.status)) {
+      return stage({
+        key: input.key,
+        label: input.label,
+        ok: true,
+        status: res.status,
+        model,
+        message: "تکمیل آزمایشی موفق بود.",
+      });
+    }
+    const err = normalizeProviderError(res.status, text);
+    return stage({
+      key: input.key,
+      label: input.label,
+      ok: false,
+      status: res.status,
+      model,
+      message: providerErrorReason(err) ?? gatewayStatusMessage(res.status),
+      detail: err.detail ?? err.sanitizedBody,
+    });
+  } catch {
+    return stage({
+      key: input.key,
+      label: input.label,
+      ok: false,
+      model,
+      message: "درخواست تکمیل آزمایشی به دروازه نرسید.",
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function asError(status: number, body?: unknown): GatewayCallError {
   if (status === 0) {
     return {
@@ -538,26 +602,112 @@ function ok(status: number): boolean {
   return status >= 200 && status < 300;
 }
 
-/** Liveness plus the model list — the console's "test connection" button. */
-export async function probeGateway(config: AiGatewayConfig): Promise<GatewayProbe> {
+/** Multi-stage LiteLLM diagnostic — real auth, model and completion checks. */
+export async function probeGateway(
+  config: AiGatewayConfig,
+  options: { platformModel?: string; virtualKey?: string | null } = {},
+): Promise<GatewayProbe> {
   const started = Date.now();
+  const stages: GatewayProbe["stages"] = [];
   const health = await gatewayRequest(config, livelinessUrl(config.baseUrl), { method: "GET" });
   if (!ok(health.status)) {
     const error = asError(health.status, health.body);
+    stages.push(stage({
+      key: "server",
+      label: "Gateway reachable",
+      ok: false,
+      status: health.status || null,
+      message: error.message,
+      detail: error.detail,
+    }));
     return {
       ok: false,
       latencyMs: null,
       models: [],
       error: joinGatewayDetail(error.message, error.detail),
+      stages,
     };
   }
-  const latencyMs = Date.now() - started;
-  const models = config.masterKey ? await listGatewayModels(config) : [];
+  stages.push(stage({ key: "server", label: "Gateway reachable", ok: true, status: health.status, message: "دروازه در دسترس است." }));
+
+  if (!config.masterKey) {
+    stages.push(stage({ key: "auth", label: "Master key accepted", ok: false, message: "کلید مدیر تنظیم نشده است." }));
+    return { ok: false, latencyMs: Date.now() - started, models: [], error: "کلید مدیر تنظیم نشده است.", stages };
+  }
+
+  const modelInfo = await gatewayRequest(config, modelInfoUrl(config.baseUrl), { method: "GET" });
+  if (!ok(modelInfo.status)) {
+    const error = asError(modelInfo.status, modelInfo.body);
+    stages.push(stage({ key: "auth", label: "Master key accepted", ok: false, status: modelInfo.status, message: error.message, detail: error.detail }));
+    return {
+      ok: false,
+      latencyMs: Date.now() - started,
+      models: [],
+      error: joinGatewayDetail(error.message, error.detail),
+      stages,
+    };
+  }
+  stages.push(stage({ key: "auth", label: "Master key accepted", ok: true, status: modelInfo.status, message: "کلید مدیر پذیرفته شد." }));
+
+  const models = parseGatewayModels(modelInfo.body);
+  const model = config.chatModel.trim() || options.platformModel?.trim() || "";
+  const modelOk = Boolean(model) && models.includes(model);
+  stages.push(stage({
+    key: "model_alias",
+    label: "Model alias exists",
+    ok: modelOk,
+    status: modelInfo.status,
+    model: model || null,
+    message: modelOk ? "نام مستعار مدل در LiteLLM موجود است." : `مدل ${model || "—"} در /model/info پیدا نشد.`,
+    detail: modelOk ? null : `Available: ${models.join(", ") || "none"}`,
+  }));
+  if (!modelOk) {
+    return {
+      ok: false,
+      latencyMs: Date.now() - started,
+      models,
+      error: `مدل ${model || "—"} در LiteLLM پیدا نشد.`,
+      stages,
+    };
+  }
+
+  const masterCompletion = await completionProbe(config, {
+    authKey: config.masterKey,
+    model,
+    key: "master_completion",
+    label: "Master-key minimal completion",
+  });
+  stages.push(masterCompletion);
+  if (!masterCompletion.ok) {
+    return { ok: false, latencyMs: Date.now() - started, models, error: masterCompletion.message, stages };
+  }
+
+  if (options.virtualKey) {
+    const virtualCompletion = await completionProbe(config, {
+      authKey: options.virtualKey,
+      model,
+      key: "virtual_key_completion",
+      label: "Business virtual-key completion",
+    });
+    stages.push(virtualCompletion);
+  } else {
+    stages.push(stage({
+      key: "virtual_key_completion",
+      label: "Business virtual-key completion",
+      ok: true,
+      skipped: true,
+      model,
+      message: "کلید مجازی برای تست سراسری انتخاب نشده است؛ از بخش کسب‌وکارها Verify را اجرا کنید.",
+    }));
+  }
+
+  const failed = stages.find((item) => !item.ok && !item.skipped);
   return {
-    ok: true,
-    latencyMs,
+    ok: !failed,
+    latencyMs: Date.now() - started,
     models,
-    error: null,
+    error: failed?.message ?? null,
+    stages,
   };
 }
 
@@ -749,6 +899,82 @@ export async function revokeVirtualKey(
   await clearVirtualKey(businessId, loc);
 }
 
+export async function rotateVirtualKey(
+  config: AiGatewayConfig,
+  businessId: string,
+  locationId?: string | null,
+): Promise<BusinessGateway> {
+  await revokeVirtualKey(config, businessId, locationId);
+  return provisionVirtualKey(config, { businessId, locationId: locationId ?? null });
+}
+
+export async function verifyVirtualKey(
+  config: AiGatewayConfig,
+  businessId: string,
+  locationId?: string | null,
+  platformModel?: string,
+): Promise<{ gateway: BusinessGateway | null; probe: GatewayProbe }> {
+  const loc = locationId?.trim() || null;
+  const existing = await getBusinessGatewayOrEmpty(businessId, loc);
+  const model = resolveChatModel({
+    platformModel: platformModel || config.chatModel || "",
+    gateway: config,
+    business: loc ? null : existing,
+    branch: loc ? existing : null,
+  });
+  if (!existing?.virtualKey) {
+    return {
+      gateway: existing,
+      probe: {
+        ok: false,
+        latencyMs: null,
+        models: [],
+        error: "کلید مجازی برای این کسب‌وکار وجود ندارد.",
+        stages: [
+          stage({
+            key: "virtual_key_completion",
+            label: "Business virtual-key completion",
+            ok: false,
+            model,
+            message: "کلید مجازی برای این کسب‌وکار وجود ندارد.",
+          }),
+        ],
+      },
+    };
+  }
+  const started = Date.now();
+  const completion = await completionProbe(config, {
+    authKey: existing.virtualKey,
+    model,
+    key: "virtual_key_completion",
+    label: "Business virtual-key completion",
+  });
+  const probe: GatewayProbe = {
+    ok: completion.ok,
+    latencyMs: Date.now() - started,
+    models: [],
+    error: completion.ok ? null : completion.message,
+    stages: [completion],
+  };
+  if (!completion.ok) {
+    await storeVirtualKey({
+      businessId,
+      locationId: loc,
+      virtualKey: existing.virtualKey,
+      keyAlias: existing.keyAlias ?? virtualKeyAlias(businessId, loc),
+      syncError: joinGatewayDetail(completion.message ?? "تست کلید مجازی ناموفق بود.", completion.detail),
+    });
+  } else {
+    await storeVirtualKey({
+      businessId,
+      locationId: loc,
+      virtualKey: existing.virtualKey,
+      keyAlias: existing.keyAlias ?? virtualKeyAlias(businessId, loc),
+    });
+  }
+  return { gateway: (await getBusinessGatewayOrEmpty(businessId, loc)) ?? existing, probe };
+}
+
 /**
  * Ask the gateway what this key has spent. Diagnostic only.
  */
@@ -828,9 +1054,13 @@ export function toPublicBusinessGateway(
   config: AiGatewayConfig,
   platformModel: string,
 ): PublicBusinessGateway {
-  const { virtualKey: _virtualKey, ...rest } = business;
   return {
-    ...rest,
+    id: business.id,
+    businessId: business.businessId,
+    locationId: business.locationId,
+    keyAlias: business.keyAlias,
+    syncedAt: business.syncedAt,
+    syncError: business.syncError,
     hasVirtualKey: Boolean(business.virtualKey),
     effectiveModel: resolveChatModel({
       platformModel,

@@ -120,36 +120,35 @@ currently call `resolveAiConfigFor(businessId, mode)`. Each needs its call site'
 
 ### 6. Console and dashboard
 
-- `/platform/ai` and `/platform/ai/gateway` merge into one page — there is no longer a
-  "connection" vs. "gateway" distinction to show separately. One global panel (address,
-  master key, aliases, failover, routing, costing rate, prompt bindings, MCP servers), plus
-  the existing per-business list.
-- The platform console's business drill-down gains a branch tab: each of that business's
-  locations (from `businessLocations(businessId)`, the same helper `resolveActiveLocation`
-  uses) gets the same key/budget/model controls as the business row, showing "inherits from
-  business" when unset.
-- `/dashboard/ai/settings` gains a branch selector for multi-location businesses (reuse the
-  dashboard's existing branch-switcher component rather than building a one-off picker). An
-  Owner sees the business default and, per branch, an override toggle; other roles see
-  read-only effective values — the same role gate as today, since this is billing-adjacent.
+- `/platform/ai` and `/platform/ai/gateway` merge into one technical LiteLLM page — there is
+  no longer a "connection" vs. "gateway" distinction to show separately. The page owns the
+  gateway address, master key, aliases, staged diagnostics and per-business virtual-key
+  lifecycle only. LiteLLM owns failover, routing, provider/MCP configuration and model access;
+  Plan/Billing owns pricing, allowance, wallet and revenue.
+- The platform console's business drill-down gains branch-aware virtual-key lifecycle: each
+  location (from `businessLocations(businessId)`, the same helper `resolveActiveLocation`
+  uses) can have its own key row, showing inherited/effective technical status without app-side
+  model or budget controls.
+- `/dashboard/ai/settings` must not reintroduce branch model/budget overrides. Tenant runtime
+  resolves key + LiteLLM alias server-side; money stays in Plan/Billing and provider policy
+  stays in LiteLLM.
 
 ### 7. Cleanup
 
 Remove `OPENROUTER_API_KEY`/`ARVAN_AI_API_KEY` from `.env.example`; document
 `LITELLM_MASTER_KEY`/gateway base URL as the only AI env vars. Update
 `ai.test.ts`/`ai-gateway.test.ts`/`ai-service.test.ts`/`ai-config.test.ts` for the removed
-providers and the new branch-merge order (add cases: branch overrides model only and
-inherits budget; no branch row falls back to the business row; no business row falls back to
-platform defaults).
+providers and the technical-only branch/key merge order (add cases: branch key overrides
+business key; no branch row falls back to the business row; no business row falls back to the
+platform default key when tenant virtual keys are required).
 
 ## Out of scope
 
-- **Per-branch prompt bindings or per-branch MCP server lists.** Stay global, as today —
-  not requested, and Phase 38b's "skills are surfaces" decision doesn't need a branch axis.
-- **Splitting `ai_business_billing` per branch.** The Rial ledger a business is actually
+- **Per-branch prompt bindings or per-branch MCP server lists.** Stay in LiteLLM/global MCP
+  configuration; this app page must not become an MCP management surface.
+- **Splitting AI wallet/allowance billing per branch.** The Rial ledger a business is actually
   billed against stays business-level, matching every other billing surface in the app. The
-  branch layer is gateway-side control and attribution (spend caps, model choice, usage
-  breakdown), never a second billing entity.
+  branch layer is virtual-key identity and diagnostics, never a second billing entity.
 - **Changing the costing formula, the `/spend/logs` sync mechanism, or the answer-cache
   key.** Phase 38b's mechanisms are unchanged; only which config layer feeds them gains a
   branch dimension.
@@ -171,8 +170,9 @@ and must be called out in the release notes the way any breaking migration is.
   `arvan` outside historical migration files.
 - `platform_ai_config` no longer exists; `platform_ai_gateway` is the sole source of the
   global connection.
-- A business with two branches — one with a model override, one with none — routes each
-  branch's calls to the right model, verified end to end against a real gateway.
+- A business with two branches — one with a branch virtual key and one inheriting the business
+  key — authenticates each branch's calls with the right key while using the LiteLLM/platform
+  model alias, verified end to end against a real gateway.
 - Clearing the platform gateway's master key makes `isPlatformAiConfigured()` false and every
   AI entry point shows its existing "assistant unavailable" state rather than throwing.
 - `ai_business_gateway` (widened) and `ai_gateway_usage.location_id` both pass the Phase 17

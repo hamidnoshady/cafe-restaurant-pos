@@ -33,14 +33,12 @@ plan assignment stays hand-assigned, unchanged.
 - **Single global provider connection.** Provider, model, base URL, API key and temperature move from
   a per-business `settings` row to one platform-owned config, used by every business's assistant calls.
   No business ever sees or sets a key again.
-- **A dedicated `/platform/ai` console section** — provider connection, credit packages/pricing,
-  per-business subscription + balance + manual credit grants, pending top-up requests, and
-  cross-business usage analytics (tokens/credits consumed, busiest businesses). This is the "section
-  for managing all AI features and management" the product owner asked for — one place, not scattered
-  across existing pages.
+- **A dedicated `/platform/ai` console section** — now narrowed to technical LiteLLM connection
+  diagnostics and business virtual-key lifecycle. Credit packages/pricing, balances, manual grants,
+  top-ups and usage monetisation live in Plan/Billing so `/platform/ai` does not duplicate the money source of truth.
 - **Per-business enable/disable** stays on the existing `ai_assistant` feature-flag override (it
-  already does exactly this job) — this phase surfaces that same toggle inside `/platform/ai` next to
-  the new credit/subscription controls, rather than building a second on/off mechanism.
+  already does exactly this job). Commercial controls are surfaced in Plan/Billing, not `/platform/ai`,
+  so there is still no second on/off or credit source of truth.
 - **Credits, pricing, subscriptions, top-up.** A priced catalogue of credit packages; a business can
   hold an optional subscription plan (recurring monthly credit grant) and/or a manually topped-up
   balance; every assistant call debits the business's balance by its actual usage; a business with a
@@ -113,18 +111,16 @@ plan assignment stays hand-assigned, unchanged.
 5. **Top-up is a request-then-approve flow in V1, not a live payment gateway.** Nothing in this repo
    integrates a payment provider today, and picking one (and its fee/webhook/reconciliation model) is
    a product decision, not an implementation detail this phase should guess at. A business submits a
-   top-up request (package + note) from `/dashboard/ai`; it lands in `/platform/ai`'s pending-requests
-   list; a platform admin marks it fulfilled, which posts the credit grant to the ledger. This keeps the
+   top-up request (package + note); it lands in the billing console for approval. A platform admin
+   marks it fulfilled, which posts the credit grant to the ledger. This keeps the
    feature usable immediately (manual bank transfer is already how many Iranian SMBs pay for
    subscriptions) while leaving room to wire a real gateway later without changing the ledger/balance
    model underneath it.
 
-6. **New platform capabilities, split by blast radius like every other one in `platform-admin.ts`:**
-   `ai.read` (usage, balances, pending requests — all three existing roles' read tier), `ai.credits.manage`
-   (grant credits, assign a subscription, approve/reject a top-up request — operational and reversible,
-   so `engineer` + `owner`, the same tier as `business.suspend`), and `ai.config.manage` (the provider
-   connection and the credit-package/subscription-plan pricing catalogue — holds a real secret and sets
-   real pricing policy, so `owner`-only, the same tier as `updates.manage`).
+6. **Platform capabilities, split by blast radius like every other one in `platform-admin.ts`:**
+   `ai.read` covers read-only AI diagnostics. `ai.config.manage` owns technical LiteLLM
+   administration (connection and virtual keys). `billing.manage` owns grants, plans, pricing,
+   top-up approval and wallet operations. The legacy AI credit-management capability was removed.
 
 7. **A subscription is a recurring monthly credit grant, not a separate spending bucket.** Keeping one
    balance per business (subscription renewals and manual top-ups both post to the same ledger) avoids
@@ -134,11 +130,11 @@ plan assignment stays hand-assigned, unchanged.
 
 ## Resolved implementation decisions
 
-1. **V1 top-up remains request-then-approve.** No payment gateway was guessed or added. A business chooses a platform-priced package and may include a transfer/reference note; an engineer or owner approves or rejects it in /platform/ai. Approval posts the credit through the same immutable ledger path as a manual grant.
+1. **V1 top-up remains request-then-approve.** No payment gateway was guessed or added. A business chooses a platform-priced package and may include a transfer/reference note; an engineer or owner approves or rejects it in Billing. Approval posts the credit through the same immutable ledger path as a manual grant.
 
-2. **No sample price is seeded.** The platform owner creates the real priced packages and subscriptions in /platform/ai before offering them. This avoids treating guessed Iranian pricing as production financial data while still delivering a complete catalogue, request, approval and ledger workflow.
+2. **No sample price is seeded.** The platform owner creates real priced packages and plans in Plan/Billing before offering them. This avoids treating guessed Iranian pricing as production financial data while still delivering a complete catalogue, request, approval and ledger workflow.
 
-3. **Balances never go negative.** Each assistant turn atomically reserves the platform-configured maximum before any provider call. Provider usage is settled to its actual input/output-token cost and unused reservation is refunded. A business unable to cover the reservation is blocked before a provider request.
+3. **AI billing is settled through the central wallet/allowance system.** The pre-request gate blocks businesses with AI debt and can enforce a billing-owned per-turn affordability guard. After the provider answers, settlement consumes plan allowance first, debits the wallet second, records any shortfall as AI debt, and is idempotent by request id.
 
 4. **Suspended businesses cannot drain AI credit.** The existing requireManager/tenant guard blocks suspended memberships before /api/ai/chat reaches the billing reservation. No parallel suspension switch was introduced.
 
@@ -146,10 +142,10 @@ plan assignment stays hand-assigned, unchanged.
 
 - migrations/0039_ai_platform_billing.sql creates the singleton provider config, global catalogues, tenant-scoped billing/ledger/top-up tables, forced RLS policies, and removes obsolete settings.ai.config rows.
 - src/lib/ai-config.ts, src/lib/ai-billing.ts, src/lib/ai-billing-service.ts, and src/lib/ai-service.ts provide the global connection, actual-usage settlement, atomic reservation/refund, top-up approval, and monthly subscription renewal.
-- /platform/ai and /api/platform/ai are the capability-gated platform console/API. ai.read covers analytics, ai.credits.manage covers grants/subscriptions/reviews, and ai.config.manage is owner-only for secrets and pricing.
+- /platform/ai and /api/platform/ai/gateway are the capability-gated technical LiteLLM console/API. ai.read covers diagnostics; ai.config.manage is owner-only for LiteLLM secrets and virtual keys. Billing.manage covers plans, pricing, grants and wallet operations.
 - /dashboard/ai and /api/ai/billing are business-facing credits surfaces only. Provider/model/key inputs are removed; no business API response includes them.
 - server.ts runs the idempotent monthly-credit renewal tick, and the RLS/exempt-table tests cover the new schema classes.
 
 ## Status: implemented
 
-The Phase 18 code is complete pending the standard migration, unit, integration, type-check, and production-build verification. Before enabling the service in production, the platform owner must enter the real provider connection/rates and create the intended credit packages/subscription plans in /platform/ai.
+The Phase 18 code is complete pending the standard migration, unit, integration, type-check, and production-build verification. Before enabling the service in production, the platform owner must enter the real LiteLLM connection on `/platform/ai` and create the intended credit packages/plans in Plan/Billing.
