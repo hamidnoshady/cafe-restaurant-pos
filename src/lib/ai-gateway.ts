@@ -13,66 +13,16 @@
  * Phase 39 introduces branch-level overrides:
  * Model resolution: branch override -> business override -> gateway alias -> platform default.
  * Virtual key resolution: branch key -> business key -> gateway master key -> none.
+ *
+ * Single-architecture rule (migration 0168): the proxy owns routing, model
+ * limits, RPM/TPM and provider management. This console mirrors NONE of that —
+ * a stored copy of a proxy-side setting is a second source of truth that
+ * silently disagrees with the proxy, and the request path must never depend
+ * on it. The platform owns only what the proxy cannot know: the tenant credit
+ * (wallet), the USD→Rial pricing read-back and the plan-included allowance.
  */
 
 import type { AiConfig } from "./ai";
-
-// ---------------------------------------------------------------------------
-// Configuration shapes
-// ---------------------------------------------------------------------------
-
-/**
- * The routing strategies the LiteLLM proxy actually implements, in the order
- * the console should offer them.
- *
- * This list is a mirror of the proxy's own vocabulary — the `RoutingStrategy`
- * enum in `litellm/types/router.py` plus `simple-shuffle`, which is the default
- * and is offered by the proxy's `GET /router/settings` as an option. A value
- * that is not in that vocabulary is silently ignored by the proxy, which is
- * worse than a rejected one, so the console must not be able to offer it.
- *
- * Two of these are documented as unsuitable for production and are marked as
- * such in the console: `usage-based-routing` is deprecated (its v2 replacement
- * tracks usage asynchronously), and both usage-based strategies add a Redis
- * round-trip per request.
- */
-export const GATEWAY_ROUTING_STRATEGIES = [
-  "simple-shuffle",
-  "least-busy",
-  "latency-based-routing",
-  "cost-based-routing",
-  "usage-based-routing-v2",
-  "usage-based-routing",
-  "provider-budget-routing",
-] as const;
-
-export type GatewayRoutingStrategy = (typeof GATEWAY_ROUTING_STRATEGIES)[number];
-
-/**
- * Names earlier revisions of this console stored that the proxy never
- * understood. `usage-based-router` was never a LiteLLM value; the strategy it
- * was reaching for is `usage-based-routing-v2`.
- */
-const LEGACY_ROUTING_STRATEGIES: Record<string, GatewayRoutingStrategy> = {
-  "usage-based-router": "usage-based-routing-v2",
-};
-
-/**
- * Fold a stored or posted strategy onto the proxy's vocabulary.
- * Returns `null` for anything the proxy would ignore, so callers can reject it
- * instead of storing a value that would quietly do nothing.
- */
-export function normaliseRoutingStrategy(value: unknown): GatewayRoutingStrategy | null {
-  const text = trimmed(value).toLowerCase();
-  if (!text) return null;
-  if ((GATEWAY_ROUTING_STRATEGIES as readonly string[]).includes(text)) {
-    return text as GatewayRoutingStrategy;
-  }
-  return LEGACY_ROUTING_STRATEGIES[text] ?? null;
-}
-
-/** How often a virtual key's budget resets. LiteLLM accepts e.g. "30d", "1mo". */
-export const GATEWAY_BUDGET_DURATIONS = ["1d", "7d", "30d", "1mo"] as const;
 
 export interface AiGatewayConfig {
   enabled: boolean;
@@ -85,16 +35,11 @@ export interface AiGatewayConfig {
   embeddingModel: string;
   /** Failover chain, tried in order after the primary model errors. */
   fallbackModels: string[];
-  routingStrategy: GatewayRoutingStrategy;
   /** Mint and use one virtual key per business or branch. */
   virtualKeysEnabled: boolean;
   /** Whether a business owner may choose a model, and from which list. */
   allowBusinessModels: boolean;
   publishedModels: string[];
-  defaultMaxBudgetUsd: number | null;
-  defaultBudgetDuration: string;
-  defaultTpmLimit: number | null;
-  defaultRpmLimit: number | null;
   /** Phase 38b — FX rate turning the gateway's USD cost figures into Rial. */
   usdRialRate: number | null;
   /** Phase 38b — settle turns on the gateway's own reported cost. */
@@ -159,14 +104,9 @@ export interface AiGatewayInput {
   chatModel?: string;
   embeddingModel?: string;
   fallbackModels?: unknown;
-  routingStrategy?: string;
   virtualKeysEnabled?: boolean;
   allowBusinessModels?: boolean;
   publishedModels?: unknown;
-  defaultMaxBudgetUsd?: number | null;
-  defaultBudgetDuration?: string;
-  defaultTpmLimit?: number | null;
-  defaultRpmLimit?: number | null;
   usdRialRate?: number | null;
   gatewayCostingEnabled?: boolean;
   inputCostRialPerMillion?: number | null;
@@ -189,7 +129,7 @@ export interface GatewayMcpServer {
   url: string;
 }
 
-/** One business or branch's slice of the gateway: its key, its ceilings, its model choice. */
+/** One business or branch's slice of the gateway: its key and its model choice. */
 export interface BusinessGateway {
   id?: string;
   businessId: string;
@@ -197,10 +137,6 @@ export interface BusinessGateway {
   virtualKey: string | null;
   keyAlias: string | null;
   modelOverride: string | null;
-  maxBudgetUsd: number | null;
-  budgetDuration: string | null;
-  tpmLimit: number | null;
-  rpmLimit: number | null;
   spendUsd: number;
   syncedAt: string | null;
   syncError: string | null;
@@ -219,14 +155,6 @@ export interface GatewayProbe {
   latencyMs: number | null;
   /** Model aliases the gateway is serving, when the admin key allowed listing them. */
   models: string[];
-  /**
-   * The routing strategy the proxy reports it is running, from its own
-   * `/router/settings`. `null` when the proxy did not answer — which is not a
-   * mismatch, just an unreadable one.
-   */
-  proxyRoutingStrategy: string | null;
-  /** True when the strategy stored here is not the one the proxy is running. */
-  routingMismatch: boolean;
   /** A short, human-readable failure reason — Persian, shown verbatim in the console. */
   error: string | null;
 }
@@ -245,14 +173,9 @@ export function defaultGatewayConfig(): AiGatewayConfig {
     chatModel: "",
     embeddingModel: "",
     fallbackModels: [],
-    routingStrategy: "simple-shuffle",
     virtualKeysEnabled: false,
     allowBusinessModels: false,
     publishedModels: [],
-    defaultMaxBudgetUsd: null,
-    defaultBudgetDuration: "30d",
-    defaultTpmLimit: null,
-    defaultRpmLimit: null,
     usdRialRate: null,
     gatewayCostingEnabled: false,
     inputCostRialPerMillion: 0,
@@ -271,10 +194,6 @@ export function emptyBusinessGateway(businessId: string, locationId: string | nu
     virtualKey: null,
     keyAlias: null,
     modelOverride: null,
-    maxBudgetUsd: null,
-    budgetDuration: null,
-    tpmLimit: null,
-    rpmLimit: null,
     spendUsd: 0,
     syncedAt: null,
     syncError: null,
@@ -399,18 +318,6 @@ export function gatewayTurnPricing(
   return { costRial, chargedRial: Math.max(chargedRial, costRial) };
 }
 
-function positiveNumberOrNull(value: unknown): number | null {
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
-}
-
-function positiveIntOrNull(value: unknown): number | null {
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isSafeInteger(n) || n <= 0) return null;
-  return n;
-}
-
 export function toPublicGatewayConfig(config: AiGatewayConfig): PublicAiGatewayConfig {
   const { masterKey, ...rest } = config;
   return { ...rest, hasMasterKey: masterKey.length > 0 };
@@ -431,18 +338,6 @@ export function livelinessUrl(baseUrl: string): string {
 
 export function modelInfoUrl(baseUrl: string): string {
   return `${gatewayManagementUrl(baseUrl)}/model/info`;
-}
-
-/**
- * The proxy's live router configuration — the strategy it is actually running,
- * the fallback chains it declares, and the strategies it offers.
- *
- * Read-only: LiteLLM exposes no endpoint that changes `routing_strategy` at
- * runtime, so this is how the console *verifies* the stored value rather than
- * pushing it. The proxy's own answer always wins over what is stored here.
- */
-export function routerSettingsUrl(baseUrl: string): string {
-  return `${gatewayManagementUrl(baseUrl)}/router/settings`;
 }
 
 export function keyGenerateUrl(baseUrl: string): string {
@@ -479,82 +374,6 @@ export function parseGatewayModels(payload: unknown): string[] {
     })
     .filter((name) => name.length > 0);
   return [...new Set(names)].sort((a, b) => a.localeCompare(b));
-}
-
-/** One `model_name -> [fallback model_names]` rule the proxy declares. */
-export interface ProxyFallbackRule {
-  from: string;
-  to: string[];
-}
-
-/** What the proxy's own router reports, from `GET /router/settings`. */
-export interface ProxyRouterSettings {
-  /** The strategy the proxy is actually running; `null` when it does not say. */
-  routingStrategy: string | null;
-  /** The strategies this proxy build offers, when it reports them. */
-  routingOptions: string[];
-  /** The fallback rules the proxy declares in `router_settings`. */
-  fallbacks: ProxyFallbackRule[];
-}
-
-const EMPTY_ROUTER_SETTINGS: ProxyRouterSettings = {
-  routingStrategy: null,
-  routingOptions: [],
-  fallbacks: [],
-};
-
-/**
- * `/router/settings` answers
- * `{ fields: [{ field_name, field_value, options }], current_values: {…} }`.
- *
- * `current_values` is the authoritative view (the proxy merges the live router
- * with its own config there); `fields[]` carries the same values plus the
- * strategies this build offers. Both are read, because an older proxy may
- * populate only one of them, and an absent value must stay `null` rather than
- * being mistaken for a match.
- */
-export function parseRouterSettings(payload: unknown): ProxyRouterSettings {
-  const row = payload as {
-    current_values?: Record<string, unknown>;
-    fields?: unknown;
-  } | null;
-  if (!row || typeof row !== "object") return { ...EMPTY_ROUTER_SETTINGS };
-
-  const current = row.current_values && typeof row.current_values === "object" ? row.current_values : {};
-  const fields = Array.isArray(row.fields) ? (row.fields as Record<string, unknown>[]) : [];
-  const field = fields.find((entry) => trimmed(entry?.field_name) === "routing_strategy");
-
-  const fromCurrent = typeof current.routing_strategy === "string" ? current.routing_strategy : "";
-  const fromField = field && typeof field.field_value === "string" ? field.field_value : "";
-  const routingStrategy = trimmed(fromCurrent) || trimmed(fromField) || null;
-
-  const routingOptions =
-    field && Array.isArray(field.options) ? toStringList(field.options) : [];
-
-  // `fallbacks` is `List[Dict[str, List[str]]]` — one entry per model group.
-  const rawFallbacks = Array.isArray(current.fallbacks) ? current.fallbacks : [];
-  const fallbacks: ProxyFallbackRule[] = [];
-  for (const entry of rawFallbacks) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-    for (const [from, to] of Object.entries(entry as Record<string, unknown>)) {
-      const targets = toStringList(to);
-      if (trimmed(from) && targets.length > 0) {
-        fallbacks.push({ from: trimmed(from), to: targets });
-      }
-    }
-  }
-
-  return { routingStrategy, routingOptions, fallbacks };
-}
-
-/**
- * Whether the console's stored strategy is the one the proxy is running.
- * A proxy that does not report its strategy (`null`) is not a mismatch — the
- * console must not claim a fault it cannot see.
- */
-export function routingStrategyMatches(configured: string, proxy: string | null): boolean {
-  if (!proxy) return true;
-  return normaliseRoutingStrategy(configured) === normaliseRoutingStrategy(proxy);
 }
 
 /** `/key/generate` answers `{ key: "sk-…", … }`. */
@@ -645,11 +464,6 @@ export const GATEWAY_ERROR_TEXT: Record<string, string> = {
   ai_gateway_bad_base_url: "نشانی دروازه باید یک نشانی http یا https معتبر باشد.",
   ai_gateway_bad_fallbacks: "زنجیرهٔ جایگزین معتبر نیست؛ یک نام مستعار در هر سطر.",
   ai_gateway_bad_published_models: "فهرست مدل‌های قابل انتخاب معتبر نیست؛ یک نام در هر سطر.",
-  ai_gateway_bad_routing: "روش توزیع انتخاب‌شده معتبر نیست.",
-  ai_gateway_bad_duration: "دورهٔ بودجه باید عددی به‌همراه یکی از واحدهای s، m، h، d یا mo باشد (مثل 30d).",
-  ai_gateway_bad_budget: "سقف بودجه باید عددی بزرگ‌تر از صفر باشد.",
-  ai_gateway_bad_tpm: "سقف توکن در دقیقه باید عدد صحیح بزرگ‌تر از صفر باشد.",
-  ai_gateway_bad_rpm: "سقف درخواست در دقیقه باید عدد صحیح بزرگ‌تر از صفر باشد.",
   ai_gateway_bad_usd_rate: "نرخ تبدیل دلار به ریال باید عددی بزرگ‌تر از صفر باشد.",
   ai_gateway_costing_needs_rate:
     "برای تسویه بر پایهٔ هزینهٔ دروازه، نرخ تبدیل دلار به ریال الزامی است.",
@@ -769,25 +583,6 @@ export function gatewayRequestBody(gateway: AiGatewayConfig | null): Record<stri
   return { fallbacks: [...gateway.fallbackModels] };
 }
 
-/** The models a virtual key is allowed to call: the alias plus its fallbacks. */
-export function keyModelsFor(input: {
-  platformModel: string;
-  gateway: AiGatewayConfig;
-  business?: BusinessGateway | null;
-  branch?: BusinessGateway | null;
-}): string[] {
-  const primary = resolveChatModel({
-    platformModel: input.platformModel,
-    gateway: input.gateway,
-    business: input.business,
-    branch: input.branch,
-  });
-  const models = [primary, ...input.gateway.fallbackModels];
-  const embedding = trimmed(input.gateway.embeddingModel);
-  if (embedding) models.push(embedding);
-  return [...new Set(models.filter((model) => model.length > 0))];
-}
-
 /** LiteLLM `key_alias` for a business or branch — stable, short and traceable. */
 export function virtualKeyAlias(businessId: string, locationId?: string | null): string {
   const b = businessId.replace(/-/g, "").slice(0, 16);
@@ -812,36 +607,6 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   }
   if (input.publishedModels !== undefined && !Array.isArray(input.publishedModels)) {
     errors.push("ai_gateway_bad_published_models");
-  }
-  if (input.routingStrategy !== undefined && normaliseRoutingStrategy(input.routingStrategy) === null) {
-    errors.push("ai_gateway_bad_routing");
-  }
-  if (input.defaultBudgetDuration !== undefined && !trimmed(input.defaultBudgetDuration)) {
-    errors.push("ai_gateway_bad_duration");
-  }
-  if (!isValidBudgetDuration(input.defaultBudgetDuration)) {
-    errors.push("ai_gateway_bad_duration");
-  }
-  if (
-    input.defaultMaxBudgetUsd !== undefined &&
-    input.defaultMaxBudgetUsd !== null &&
-    !(Number.isFinite(input.defaultMaxBudgetUsd) && input.defaultMaxBudgetUsd > 0)
-  ) {
-    errors.push("ai_gateway_bad_budget");
-  }
-  if (
-    input.defaultTpmLimit !== undefined &&
-    input.defaultTpmLimit !== null &&
-    !(Number.isSafeInteger(input.defaultTpmLimit) && input.defaultTpmLimit > 0)
-  ) {
-    errors.push("ai_gateway_bad_tpm");
-  }
-  if (
-    input.defaultRpmLimit !== undefined &&
-    input.defaultRpmLimit !== null &&
-    !(Number.isSafeInteger(input.defaultRpmLimit) && input.defaultRpmLimit > 0)
-  ) {
-    errors.push("ai_gateway_bad_rpm");
   }
   if (
     input.usdRialRate !== undefined &&
@@ -880,19 +645,8 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   return errors;
 }
 
-export function isValidBudgetDuration(value: unknown): boolean {
-  if (value === undefined || value === null) return true;
-  const text = trimmed(value);
-  if (!text) return false;
-  return /^\d+\s*(s|m|h|d|mo)$/i.test(text);
-}
-
 export interface BusinessGatewayInput {
   modelOverride?: string | null;
-  maxBudgetUsd?: number | null;
-  budgetDuration?: string | null;
-  tpmLimit?: number | null;
-  rpmLimit?: number | null;
 }
 
 export function validateBusinessGatewayInput(
@@ -908,19 +662,6 @@ export function validateBusinessGatewayInput(
       errors.push("ai_gateway_model_not_published");
     }
   }
-  if (input.maxBudgetUsd !== undefined && input.maxBudgetUsd !== null) {
-    const budget = positiveNumberOrNull(input.maxBudgetUsd);
-    if (!budget) errors.push("ai_gateway_bad_budget");
-  }
-  if (input.budgetDuration !== undefined && input.budgetDuration !== null) {
-    if (!isValidBudgetDuration(input.budgetDuration)) errors.push("ai_gateway_bad_duration");
-  }
-  if (input.tpmLimit !== undefined && input.tpmLimit !== null && !positiveIntOrNull(input.tpmLimit)) {
-    errors.push("ai_gateway_bad_tpm");
-  }
-  if (input.rpmLimit !== undefined && input.rpmLimit !== null && !positiveIntOrNull(input.rpmLimit)) {
-    errors.push("ai_gateway_bad_rpm");
-  }
   return errors;
 }
 
@@ -933,11 +674,6 @@ export function normaliseBusinessGatewayInput(
   return {
     ...base,
     modelOverride: input.modelOverride === undefined ? base.modelOverride : trimmed(input.modelOverride) || null,
-    maxBudgetUsd: input.maxBudgetUsd === undefined ? base.maxBudgetUsd : positiveNumberOrNull(input.maxBudgetUsd),
-    budgetDuration:
-      input.budgetDuration === undefined ? base.budgetDuration : trimmed(input.budgetDuration) || null,
-    tpmLimit: input.tpmLimit === undefined ? base.tpmLimit : positiveIntOrNull(input.tpmLimit),
-    rpmLimit: input.rpmLimit === undefined ? base.rpmLimit : positiveIntOrNull(input.rpmLimit),
   };
 }
 

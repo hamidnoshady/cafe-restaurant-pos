@@ -14,7 +14,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MessageSquarePlusIcon, Settings2Icon, SparklesIcon } from "lucide-react";
+import {
+  HistoryIcon,
+  MessageSquarePlusIcon,
+  PanelLeftIcon,
+  Settings2Icon,
+  SparklesIcon,
+} from "lucide-react";
 import { LoadingSkeleton } from "../page-chrome";
 import { useGSAP } from "@gsap/react";
 import { useMoney } from "@/components/money/money-context";
@@ -32,7 +38,8 @@ import {
 } from "@/lib/ai-panel";
 import { useAiChat } from "@/components/ai/use-ai-chat";
 import { AiManagementSheet } from "./ai-management-sheet";
-import { cardClass } from "../page-chrome";
+import { AiConversationsSidebar } from "./ai-conversations-sidebar";
+import { cardClass, overlayPanelClass } from "../page-chrome";
 
 export function AiChatHub({
   canManageAi = false,
@@ -88,6 +95,14 @@ export function AiChatHub({
   const orbRightRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
 
+  // «گفتگوهای اخیر» — the history sidebar on the chat page's end (left in
+  // RTL) side. Phones get it as a modal sheet (the toggle lives in the same
+  // header as «گفت‌وگوی جدید»); desktops get an inline, collapsible column.
+  // The workspace rail carries no chat history any more.
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const [historySheetOpen, setHistorySheetOpen] = useState(false);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+
   const {
     canPropose,
     messages,
@@ -95,6 +110,7 @@ export function AiChatHub({
     setInput,
     busy,
     applyingId,
+    conversationId,
     loadingConversation,
     attachments,
     attachFiles,
@@ -138,6 +154,19 @@ export function AiChatHub({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
+  // The history list re-reads when a conversation becomes active (a new thread
+  // was just created) and when a turn finishes on one (its thread jumped to
+  // the top). Skipping the first run keeps the mount-time double fetch away.
+  const lastConversationId = useRef<string | null>(null);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    const conversationChanged = lastConversationId.current !== conversationId;
+    const turnFinished = wasBusy.current && !busy;
+    lastConversationId.current = conversationId;
+    wasBusy.current = busy;
+    if (conversationChanged || turnFinished) setHistoryRefresh((token) => token + 1);
+  }, [conversationId, busy]);
+
   const isWelcome =
     messages.length === 1 && messages[0]?.role === "assistant" && !busy && !loadingConversation;
 
@@ -155,8 +184,32 @@ export function AiChatHub({
   const suggestions = taskSuggestions(task, "dashboard", SUGGESTED_PROMPTS.dashboard);
   const taskLabel = task === "custom" && customTask ? "وظیفهٔ سفارشی" : taskById(task)?.label;
 
+  /** Continue a thread from the history sidebar. */
+  const openFromHistory = useCallback(
+    (id: string) => {
+      setHistorySheetOpen(false);
+      void loadConversation(id);
+    },
+    [loadConversation],
+  );
+
+  /** The history sidebar body — shared by the desktop column and the phone sheet. */
+  const historyPanel = (onClose?: () => void) => (
+    <AiConversationsSidebar
+      activeId={conversationId}
+      refreshToken={historyRefresh}
+      onSelect={openFromHistory}
+      onClose={onClose}
+      onDeleted={(id) => {
+        if (id === conversationId) startNewConversation();
+      }}
+      onRenamed={() => setHistoryRefresh((token) => token + 1)}
+    />
+  );
+
   return (
-    <section className="flex h-full min-h-0 w-full flex-col">
+    <section className="flex h-full min-h-0 w-full flex-col lg:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex min-h-12 items-center gap-2 border-b border-border/80 bg-card/80 backdrop-blur px-2 py-1.5 backdrop-blur sm:px-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">دستیار هوشمند</p>
@@ -164,6 +217,30 @@ export function AiChatHub({
             <p className="truncate text-[10px] text-muted-foreground">وظیفهٔ فعلی: {taskLabel}</p>
           ) : null}
         </div>
+        {/* History lives in the LEFT sidebar; its doors are here in the header,
+            beside the one «گفت‌وگوی جدید» control. The rail no longer offers
+            either. */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setHistorySheetOpen(true)}
+          aria-label="گفتگوهای اخیر"
+          title="گفتگوهای اخیر"
+          className="gap-1.5 px-2.5 lg:hidden"
+        >
+          <HistoryIcon className="size-4 shrink-0" aria-hidden="true" />
+        </Button>
+        <Button
+          variant={historyCollapsed ? "outline" : "secondary"}
+          size="sm"
+          onClick={() => setHistoryCollapsed((collapsed) => !collapsed)}
+          aria-expanded={!historyCollapsed}
+          aria-label={historyCollapsed ? "نمایش گفتگوهای اخیر" : "پنهان‌کردن گفتگوهای اخیر"}
+          title={historyCollapsed ? "نمایش گفتگوهای اخیر" : "پنهان‌کردن گفتگوهای اخیر"}
+          className="hidden gap-1.5 px-2.5 lg:inline-flex"
+        >
+          <PanelLeftIcon className="size-4 shrink-0" aria-hidden="true" />
+        </Button>
         {canManageAi ? (
           <Button
             variant={panelSection ? "secondary" : "outline"}
@@ -316,6 +393,36 @@ export function AiChatHub({
           />
         </div>
       </div>
+      </div>
+
+      {/* Desktop — the history column on the chat's end (left in RTL) side. */}
+      {historyCollapsed ? null : (
+        <aside
+          aria-label="گفتگوهای اخیر"
+          className="hidden w-72 shrink-0 border-s border-border/80 bg-card/70 backdrop-blur lg:flex lg:flex-col"
+        >
+          {historyPanel()}
+        </aside>
+      )}
+
+      {/* Phone — the same list as a modal sheet over the chat. */}
+      {historySheetOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="گفتگوهای اخیر">
+          <div
+            aria-hidden="true"
+            onClick={() => setHistorySheetOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+          />
+          <div
+            className={cn(
+              "absolute inset-y-0 start-0 flex w-[min(20rem,85vw)] flex-col rounded-none rounded-e-2xl",
+              overlayPanelClass,
+            )}
+          >
+            {historyPanel(() => setHistorySheetOpen(false))}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

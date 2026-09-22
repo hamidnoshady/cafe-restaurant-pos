@@ -82,12 +82,13 @@ export const uid = (): string => crypto.randomUUID();
 
 export const CHAT_ERROR: Record<string, string> = {
   ai_credit_required:
-    "اعتبار کیف پول برای استفاده از هوش مصنوعی کافی نیست. از صفحهٔ اعتبار و شارژ، کیف پول را شارژ کنید.",
+    "اعتبار هوش مصنوعی کافی نیست. از صفحهٔ اعتبار و شارژ، کیف پول کسب‌وکار را شارژ کنید.",
   ai_unavailable: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است.",
   feature_disabled: "دستیار هوشمند برای این کسب‌وکار فعال نیست.",
   ai_auth: "اتصال سراسری سرویس هوش مصنوعی نیاز به بررسی مدیر پلتفرم دارد.",
   ai_timeout: "پاسخ سرویس دیر رسید. دوباره تلاش کنید.",
   ai_network: "اتصال به سرویس هوش مصنوعی برقرار نشد.",
+  ai_rate_limited: "سرویس هوش مصنوعی در حال حاضر پرکاربرد است؛ کمی بعد دوباره تلاش کنید.",
   ai_provider: "سرویس هوش مصنوعی خطا داد. بعداً تلاش کنید.",
   empty_messages: "پیامی برای ارسال نیست.",
 };
@@ -105,12 +106,12 @@ export function greeting(mode: AssistantMode): string {
 }
 
 export function errorMessage(data: Record<string, unknown>): string {
-  return (
-    CHAT_ERROR[String(data.error ?? "")] ??
-    (typeof data.message === "string"
-      ? data.message
-      : "خطا در ارتباط با دستیار.")
-  );
+  // The server's own message wins when it sent one: it is the specific,
+  // curated Persian explanation (which provider status answered, what to do).
+  // The table is the fallback for the failures that never reached it —
+  // transport errors and bare codes.
+  if (typeof data.message === "string" && data.message.trim()) return data.message;
+  return CHAT_ERROR[String(data.error ?? "")] ?? "خطا در ارتباط با دستیار.";
 }
 
 function isEstimate(value: unknown): value is TurnEstimate {

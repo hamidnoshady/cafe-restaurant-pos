@@ -22,8 +22,7 @@ import {
   LayoutGridIcon,
   LifeBuoyIcon,
   LockIcon,
-  MessageSquareIcon,
-  MessageSquarePlusIcon,
+  SparklesIcon,
   PackageIcon,
   SettingsIcon,
   ShoppingCartIcon,
@@ -107,7 +106,6 @@ import { LockButton } from "./lock-screen";
 import { LogoutButton } from "./logout-button";
 import { PlatformUserMenu } from "./platform-user-menu";
 import { ShiftButton } from "./shift-panel";
-import { AiRecentConversations } from "./ai/ai-recent-conversations";
 
 /** Roles that sign in with a PIN (team.ts's PIN_ROLES) — the lock screen is a floor-terminal convenience for them. */
 const PIN_ROLES = ["cashier", "waiter", "kitchen"];
@@ -142,7 +140,7 @@ const SIDEBAR_KEYBOARD_STEP = 16;
  * makes an app disappear from the rail for a business that does not have it.
  *
  * Neither the assistant nor the technical-connections hub is a launcher: the
- * assistant IS the rail's home («گفت‌وگوی جدید» above opens it), and
+ * assistant IS the rail's home («دستیار هوشمند» above opens it), and
  * «اتصال‌های فنی» lives on the platform user menu, not beside the apps.
  */
 const WORKSPACE_APP_LAUNCHERS: readonly {
@@ -391,17 +389,19 @@ function SidebarNavigation({
 /**
  * The workspace rail (Phase 35 Wave 2).
  *
- * Every entry is the same flat button — «گفت‌وگوی جدید», «میز کار من», and the
+ * Every entry is the same flat button — «دستیار هوشمند», «میز کار من», and the
  * two apps the business works in: «حسابداری» (which owns the day-to-day
  * surfaces: فروش, عملیات, اتصال‌ها and تنظیمات live behind its classic
  * sidebar) and «رشد و بازاریابی» (وفاداری، کمپین‌ها و پورسانت). No dropdowns,
  * no counts. Clicking an app opens the main product — the page plus the
  * classic sidebar — so the rail is a launcher, not a second navigation
- * system. Recent threads start short, collapse, and load more on demand.
+ * system.
+ *
+ * The rail carries NO chat navigation: starting a conversation is the chat
+ * header's «گفت‌وگوی جدید» alone, and «گفتگوهای اخیر» is the chat page's own
+ * left sidebar (search/rename/delete/continue) — see ai-chat-hub.tsx.
  */
 function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: string }) {
-  const router = useRouter();
-  const { expandSidebar } = useSidebar();
   const hrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
   // The four apps this rail launches, as data rather than four copies of the same
   // markup. Each entry lists its candidate routes in preference order: a
@@ -442,12 +442,12 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
             <SidebarMenuButton
               asChild
               isActive={pathname === "/dashboard"}
-              tooltip="گفت‌وگوی جدید"
+              tooltip="دستیار هوشمند"
               className={APP_NAV_BUTTON_CLASS}
             >
               <Link href="/dashboard">
-                <MessageSquarePlusIcon aria-hidden="true" className="size-5 shrink-0" />
-                <span className={NAV_LABEL_CLASS}>گفت‌وگوی جدید</span>
+                <SparklesIcon aria-hidden="true" className="size-5 shrink-0" />
+                <span className={NAV_LABEL_CLASS}>دستیار هوشمند</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -522,37 +522,11 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
             (the footer menu lists it beside حقوق اشتراک و تنظیمات کسب‌وکار);
             the row is gone rather than a second door to the same hub. */}
 
-        <div className="group-data-[state=collapsed]/sidebar:hidden">
-          {/* AiRecentConversations already filters to dashboard-mode threads and
-              shows its own empty/loading states; selecting one opens it in the
-              chat home. It starts with five threads, collapses, and grows on
-              demand so it never owns the sidebar. */}
-          <AiRecentConversations
-            activeId={null}
-            refreshKey={0}
-            initialLimit={5}
-            collapsible
-            onSelect={(id) => router.push(`/dashboard?conversation=${id}`)}
-          />
-        </div>
-
-        {/* Collapsed, the thread list has no room to render — but it must not
-            silently disappear either, or the rail looks like a business that
-            has never had a conversation. One glyph stands in for it and widens
-            the rail back out. */}
-        <SidebarMenu className="hidden group-data-[state=collapsed]/sidebar:block">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              type="button"
-              tooltip="نخ‌های اخیر"
-              aria-label="نمایش نخ‌های اخیر"
-              className={APP_NAV_BUTTON_CLASS}
-              onClick={expandSidebar}
-            >
-              <MessageSquareIcon aria-hidden="true" className="size-5 shrink-0" />
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        {/* Chat history no longer lives here: «گفتگوهای اخیر» is the chat
+            page's own left sidebar (search, rename, delete, continue), and
+            creating a conversation stays in the chat header alone — the rail
+            keeps only the assistant's home, the workspace and the apps, so it
+            carries no second chat navigation. */}
       </nav>
     </SidebarContent>
   );
@@ -775,7 +749,7 @@ function DashboardSidebarFooter({
  * Closes the phone drawer whenever the route actually changes.
  *
  * Every menu wires an `onNavigate` for this, but the ones that forgot (the
- * workspace rail's «گفت‌وگوی جدید» and «میز کار من», an app launcher, a link
+ * workspace rail's «دستیار هوشمند» and «میز کار من», an app launcher, a link
  * inside a page rendered under the open drawer) left the sheet sitting over the
  * page the member had just asked for. Watching the pathname covers all of them
  * at once, and it also handles the browser's back button, which no click

@@ -52,7 +52,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "no_location", message: "شعبه‌ای ثبت نشده است." }, { status: 409 });
   }
 
-  const config = await resolveAiConfigFor(session.businessId, location.id);
+  const config = await resolveAiConfigFor(session.businessId, location.id, { ensureVirtualKey: true });
   if (!isPlatformAiConfigured(config)) {
     const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: location.id, surface: "invoice_ocr" });
     return NextResponse.json(
@@ -67,7 +67,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   } catch (err) {
     if (err instanceof AiWalletInsufficientError) {
       return NextResponse.json(
-        { error: "ai_credit_required", message: "اعتبار کیف پول برای استفاده از هوش مصنوعی کافی نیست." },
+        { error: "ai_credit_required", message: "اعتبار هوش مصنوعی کافی نیست. کیف پول کسب‌وکار را شارژ کنید." },
         { status: 402 },
       );
     }

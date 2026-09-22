@@ -39,7 +39,7 @@ export const POST = withTenantScope(async (_request: NextRequest, context: { par
     );
   }
 
-  const config = await resolveAiConfigFor(session.businessId, null);
+  const config = await resolveAiConfigFor(session.businessId, null, { ensureVirtualKey: true });
   if (!isPlatformAiConfigured(config)) {
     const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: null, surface: "media_detect" });
     return NextResponse.json(
@@ -54,7 +54,7 @@ export const POST = withTenantScope(async (_request: NextRequest, context: { par
   } catch (err) {
     if (err instanceof AiWalletInsufficientError) {
       return NextResponse.json(
-        { error: "ai_credit_required", message: "اعتبار کیف پول برای استفاده از هوش مصنوعی کافی نیست." },
+        { error: "ai_credit_required", message: "اعتبار هوش مصنوعی کافی نیست. کیف پول کسب‌وکار را شارژ کنید." },
         { status: 402 },
       );
     }

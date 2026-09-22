@@ -56,7 +56,6 @@ interface LiteLlmSpend {
     hasVirtualKey: boolean;
     spendUsd: number;
     spendRial: number;
-    maxBudgetUsd: number | null;
     syncedAt: string | null;
     syncError: string | null;
   }[];

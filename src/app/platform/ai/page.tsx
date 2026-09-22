@@ -5,8 +5,15 @@
  *
  * This single page is the whole AI control surface: the platform hands every
  * AI function to LiteLLM and only talks to LiteLLM. It manages the platform-wide
- * LiteLLM gateway (master key, model aliases, routing, budgets, MCP tools) and
- * the per-business/per-branch virtual keys and model overrides.
+ * LiteLLM gateway (master key, model aliases, virtual keys, MCP tools) and the
+ * per-business/per-branch virtual keys and model overrides.
+ *
+ * Single-architecture rule (migration 0168): LiteLLM owns routing, the model
+ * catalogue, RPM/TPM and provider management — the console mirrors none of it,
+ * so those fields are gone from this page. What the platform owns and shows
+ * here instead is the money: each business's credit balance (wallet + the
+ * plan's monthly AI allowance), its request/token/cost usage, and the
+ * platform's own AI revenue.
  *
  * Costing is LiteLLM's job too. Cost-plus-margin per model is configured inside
  * LiteLLM; this console only sets how the platform reads that price back — the
@@ -28,14 +35,9 @@ interface GatewayConfig {
   chatModel: string;
   embeddingModel: string;
   fallbackModels: string[];
-  routingStrategy: string;
   virtualKeysEnabled: boolean;
   allowBusinessModels: boolean;
   publishedModels: string[];
-  defaultMaxBudgetUsd: number | null;
-  defaultBudgetDuration: string;
-  defaultTpmLimit: number | null;
-  defaultRpmLimit: number | null;
   gatewayCostingEnabled: boolean;
   inputCostRialPerMillion: number;
   outputCostRialPerMillion: number;
@@ -58,10 +60,6 @@ interface BusinessGateway {
   locationId: string | null;
   keyAlias: string | null;
   modelOverride: string | null;
-  maxBudgetUsd: number | null;
-  budgetDuration: string | null;
-  tpmLimit: number | null;
-  rpmLimit: number | null;
   spendUsd: number;
   syncedAt: string | null;
   syncError: string | null;
@@ -69,14 +67,29 @@ interface BusinessGateway {
   effectiveModel: string;
 }
 
+/** One business's row in the key-management dashboard (Part 5 of the rebuild). */
+interface BusinessUsage {
+  businessId: string;
+  totalRequests: number;
+  inputTokens: number;
+  outputTokens: number;
+  chargedRial: number;
+  balanceRial: number;
+  monthlyAiCreditRial: number;
+  allowanceUsedRial: number;
+  allowanceRemainingRial: number;
+}
+
+interface PlatformRevenue {
+  totalChargedRial: number;
+  monthChargedRial: number;
+  totalRequests: number;
+}
+
 interface GatewayStatus {
   ok: boolean;
   latencyMs: number | null;
   models: string[];
-  /** The strategy the proxy reports it is running, when it reports one. */
-  proxyRoutingStrategy: string | null;
-  /** The strategy stored here differs from the one the proxy is running. */
-  routingMismatch: boolean;
   error: string | null;
 }
 
@@ -110,6 +123,8 @@ interface GatewayData {
   gateways: BusinessGateway[];
   businesses: BusinessSummary[];
   locations: LocationSummary[];
+  businessUsage: BusinessUsage[];
+  platformRevenue: PlatformRevenue | null;
   error?: string;
 }
 
@@ -118,28 +133,6 @@ interface BusinessSummary {
   businessName: string;
   aiEntitled: boolean;
 }
-
-/**
- * The routing strategies the LiteLLM proxy implements, mirrored from
- * `GATEWAY_ROUTING_STRATEGIES` in `src/lib/ai-gateway.ts` (which mirrors the
- * proxy's own vocabulary). A value the proxy does not know is ignored without
- * an error, so the console must never offer one.
- */
-const ROUTING_OPTIONS = [
-  { value: "simple-shuffle", label: "simple-shuffle — توزیع وزنی (پیش‌فرض و پیشنهادی)" },
-  { value: "least-busy", label: "least-busy — کم‌ترین درخواست در جریان" },
-  { value: "latency-based-routing", label: "latency-based-routing — کم‌ترین تأخیر" },
-  { value: "cost-based-routing", label: "cost-based-routing — کم‌ترین هزینه (ناهمگام)" },
-  { value: "usage-based-routing-v2", label: "usage-based-routing-v2 — بر پایهٔ مصرف TPM (ناهمگام)" },
-  { value: "usage-based-routing", label: "usage-based-routing — نسخهٔ قدیمی (منسوخ)" },
-  { value: "provider-budget-routing", label: "provider-budget-routing — بر پایهٔ بودجهٔ ارائه‌دهنده" },
-];
-
-const DURATION_OPTIONS = [
-  { value: "1d", label: "روزانه (1d)" },
-  { value: "7d", label: "هفتگی (7d)" },
-  { value: "30d", label: "ماهانه (30d)" },
-];
 
 function listText(values: string[]): string {
   return values.join("\n");
@@ -177,6 +170,10 @@ function mcpServersToText(servers: { name: string; label: string; url: string }[
 function fmtDate(value: string | null): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function toman(rial: number): string {
+  return formatPersianNumber(Math.round(rial / 10));
 }
 
 const READINESS_REASON_FA: Record<string, string> = {
@@ -219,7 +216,7 @@ export default function PlatformAiPage() {
     const result = await api<GatewayData>("/api/platform/ai/gateway");
     if (!result.ok) {
       setError(result.data.error === "ai_configuration_load_failed"
-        ? "خواندن تنظیمات هوش مصنوعی ناموفق بود؛ اجرای مهاجرت‌های پایگاه داده (به‌ویژه 0124) و لاگ سرور را بررسی کنید."
+        ? "خواندن تنظیمات هوش مصنوعی ناموفق بود؛ اجرای مهاجرت‌های پایگاه داده (به‌ویژه 0168) و لاگ سرور را بررسی کنید."
         : result.data.error ? errorMessage(result.data.error) : "خواندن تنظیمات دروازه ممکن نشد.");
       setLoading(false);
       return;
@@ -261,6 +258,25 @@ export default function PlatformAiPage() {
     () => data?.tenantReadiness?.find((item) => item.businessId === selectedBusinessId),
     [data?.tenantReadiness, selectedBusinessId],
   );
+  const selectedUsage = useMemo(
+    () => data?.businessUsage?.find((item) => item.businessId === selectedBusinessId) ?? null,
+    [data?.businessUsage, selectedBusinessId],
+  );
+
+  /** The key-management dashboard rows: business → key, requests, tokens, cost, credit. */
+  const usageByKeyBusiness = useMemo(() => {
+    const map = new Map<string, BusinessUsage>();
+    for (const row of data?.businessUsage ?? []) map.set(row.businessId, row);
+    return map;
+  }, [data?.businessUsage]);
+  const keyRows = useMemo(() => {
+    const businesses = data?.businesses ?? [];
+    const gateways = data?.gateways ?? [];
+    return businesses.map((business) => {
+      const key = gateways.find((row) => row.businessId === business.businessId && row.locationId === null);
+      return { business, key: key ?? null, usage: usageByKeyBusiness.get(business.businessId) ?? null };
+    });
+  }, [data?.businesses, data?.gateways, usageByKeyBusiness]);
 
   async function write(body: Record<string, unknown>, key: string, method: "PUT" | "POST" = "POST") {
     setBusy(key);
@@ -351,6 +367,7 @@ export default function PlatformAiPage() {
   if (loading) return <PlatformPageSkeleton />;
 
   const status = data?.status;
+  const revenue = data?.platformRevenue;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 sm:space-y-6">
@@ -358,7 +375,8 @@ export default function PlatformAiPage() {
         <h1 className="text-xl font-bold">تنظیمات هوش مصنوعی (LiteLLM)</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           ارائه‌دهندهٔ واحد و یکپارچهٔ هوش مصنوعی: نشانی و کلید مدیر، نام مستعار مدل‌ها، زنجیرهٔ جایگزین،
-          سقف بودجه و کلیدهای مجازی کسب‌وکارها و شعبه‌ها و ابزارهای MCP.
+          کلیدهای مجازی کسب‌وکارها و ابزارهای MCP. توزیع، سقف‌های RPM/TPM و مدیریت ارائه‌دهنده‌ها درون خودِ
+          LiteLLM تنظیم می‌شود و اینجا تکرار نمی‌شود.
         </p>
       </header>
 
@@ -408,21 +426,6 @@ export default function PlatformAiPage() {
                 {status.models.join("، ")}
               </p>
             ) : null}
-            {status.ok && status.proxyRoutingStrategy ? (
-              <p className="mt-2 text-xs">
-                <span className="text-muted-foreground">روش توزیع واقعی دروازه: </span>
-                <span dir="ltr" className={status.routingMismatch ? "text-amber-700 dark:text-amber-300" : "text-foreground"}>
-                  {status.proxyRoutingStrategy}
-                </span>
-                {status.routingMismatch ? (
-                  <span className="text-amber-700 dark:text-amber-300">
-                    {" "}
-                    — با مقدار ذخیره‌شدهٔ این صفحه یکی نیست؛ این مقدار از راه API تغییر نمی‌کند و باید در
-                    config.yaml اصلاح شود.
-                  </span>
-                ) : null}
-              </p>
-            ) : null}
           </div>
         ) : null}
         {can("ai.config.manage") ? (
@@ -432,6 +435,33 @@ export default function PlatformAiPage() {
             </Button>
           </div>
         ) : null}
+      </Card>
+
+      <Card title="درآمد هوش مصنوعی پلتفرم">
+        {revenue ? (
+          <div className="grid gap-3 text-sm sm:grid-cols-3">
+            <div>
+              <p className="text-muted-foreground">درآمد کل (ریالی که از کسب‌وکارها تسویه شده)</p>
+              <p className="mt-1 text-lg font-extrabold tabular-nums text-foreground">
+                {toman(revenue.totalChargedRial)} <span className="text-xs font-normal text-muted-foreground">تومان</span>
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">درآمد این ماه</p>
+              <p className="mt-1 text-lg font-extrabold tabular-nums text-foreground">
+                {toman(revenue.monthChargedRial)} <span className="text-xs font-normal text-muted-foreground">تومان</span>
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">درخواست‌های ثبت‌شده</p>
+              <p className="mt-1 text-lg font-extrabold tabular-nums text-foreground">
+                {formatPersianNumber(revenue.totalRequests)}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">هنوز مصرفی ثبت نشده است.</p>
+        )}
       </Card>
 
       {can("ai.config.manage") && draft ? (
@@ -497,46 +527,6 @@ export default function PlatformAiPage() {
                 />
               </Field>
             </div>
-            <Field
-              label="روش توزیع (routing_strategy)"
-              hint="تنظیم سمت دروازه است و با درخواست ارسال نمی‌شود؛ باید با router_settings.routing_strategy در config.yaml یکی باشد. «بررسی ارتباط» مقدار واقعی دروازه را می‌خواند و اختلاف را گزارش می‌کند."
-            >
-              <SearchableSelect
-                className={inputClass}
-                value={draft.routingStrategy}
-                onChange={(value) => setDraft({ ...draft, routingStrategy: value })}
-                options={ROUTING_OPTIONS}
-              />
-            </Field>
-            <Field label="بودجهٔ پیش‌فرض هر کلید (دلار)">
-              <PersianNumberInput
-                className={inputClass}
-                value={draft.defaultMaxBudgetUsd ?? ""}
-                onChange={(event) => setDraft({ ...draft, defaultMaxBudgetUsd: numericOrNull(event.target.value) })}
-              />
-            </Field>
-            <Field label="دورهٔ بودجهٔ پیش‌فرض">
-              <SearchableSelect
-                className={inputClass}
-                value={draft.defaultBudgetDuration}
-                onChange={(value) => setDraft({ ...draft, defaultBudgetDuration: value })}
-                options={DURATION_OPTIONS}
-              />
-            </Field>
-            <Field label="سقف پیش‌فرض توکن در دقیقه (TPM)">
-              <PersianNumberInput
-                className={inputClass}
-                value={draft.defaultTpmLimit ?? ""}
-                onChange={(event) => setDraft({ ...draft, defaultTpmLimit: numericOrNull(event.target.value) })}
-              />
-            </Field>
-            <Field label="سقف پیش‌فرض درخواست در دقیقه (RPM)">
-              <PersianNumberInput
-                className={inputClass}
-                value={draft.defaultRpmLimit ?? ""}
-                onChange={(event) => setDraft({ ...draft, defaultRpmLimit: numericOrNull(event.target.value) })}
-              />
-            </Field>
 
             <div className="lg:col-span-2 border-t border-border pt-4">
               <h3 className="mb-1 text-sm font-semibold text-foreground">هزینه‌گذاری و اعتبار (بر پایهٔ LiteLLM)</h3>
@@ -662,9 +652,10 @@ export default function PlatformAiPage() {
       ) : null}
 
       {can("ai.credits.manage") ? (
-        <Card title="کلید مجازی و سقف‌ها — کسب‌وکار و شعبه‌ها">
+        <Card title="کلید مجازی — کسب‌وکار و شعبه‌ها">
           <p className="mb-3 text-sm text-muted-foreground">
-            می‌توانید برای کل کسب‌وکار یا به‌صورت مجزا برای هر یک از شعبه‌های آن کلید مجازی و مدل تعیین کنید.
+            هر کسب‌وکار یک کلید مجازی دارد که به‌صورت خودکار ساخته و روی درخواست‌هایش به‌کار گرفته می‌شود؛
+            سقف‌ها و مدل‌های مجاز درون LiteLLM اعمال می‌شوند. اینجا فقط چرخهٔ عمر کلید و مدل مؤثر مدیریت می‌شود.
           </p>
           {!data?.active ? (
             <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
@@ -711,7 +702,7 @@ export default function PlatformAiPage() {
                   <p>کلید مجازی: <strong>{selectedReadiness?.virtualKeyRequired ? (selectedReadiness.virtualKeyReady ? "آماده است" : "صادر نشده / خطا") : "الزامی نیست"}</strong></p>
                   <p>هزینه‌گذاری: <strong>{selectedReadiness?.costingReady ? "آماده است" : "تنظیم نشده"}</strong></p>
                   <p>سقف هر درخواست: <strong>{selectedReadiness?.ceilingReady ? "تنظیم شده" : "تنظیم نشده"}</strong></p>
-                  <p>وضعیت نهایی: <strong>{selectedReadiness?.ready && selectedReadiness.entitled ? "آماده برای گفتگو" : "نیازمند تنظیم"}</strong></p>
+                  <p>وضعیت نهایی: <strong>{selectedReadiness?.ready && selectedReadiness?.entitled ? "آماده برای گفتگو" : "نیازمند تنظیم"}</strong></p>
                 </div>
                 {selectedReadiness && (!selectedReadiness.ready || !selectedReadiness.entitled) ? (
                   <p className="mt-2 text-xs text-muted-foreground">علت: {!selectedReadiness.entitled ? "دسترسی ai_assistant فعال نشده است" : readinessText(selectedReadiness)}</p>
@@ -730,11 +721,14 @@ export default function PlatformAiPage() {
                 </p>
                 <p>نام مستعار: <span dir="ltr">{selectedRow?.keyAlias ?? "—"}</span></p>
                 <p>آخرین همگام‌سازی: {fmtDate(selectedRow?.syncedAt ?? null)}</p>
-                <p>
-                  سقف‌ها:{" "}
-                  {selectedRow?.maxBudgetUsd ? `${formatPersianNumber(selectedRow.maxBudgetUsd)} دلار` : "بدون سقف"}
-                  {selectedRow?.tpmLimit ? ` · ${formatPersianNumber(selectedRow.tpmLimit)} توکن/دقیقه` : ""}
-                </p>
+                {selectedUsage ? (
+                  <p>
+                    اعتبار باقی‌مانده: <strong>{toman(selectedUsage.balanceRial)} تومان</strong>
+                    {selectedUsage.monthlyAiCreditRial > 0
+                      ? ` + اعتبار پلن ${toman(selectedUsage.allowanceRemainingRial)} تومان`
+                      : ""}
+                  </p>
+                ) : null}
               </div>
               {selectedRow?.syncError ? (
                 <ErrorBox>{selectedRow.syncError}</ErrorBox>
@@ -821,33 +815,66 @@ export default function PlatformAiPage() {
         </Card>
       ) : null}
 
-      <Card title="همهٔ کلیدهای مجازی">
-        {!data?.gateways.length ? (
-          <p className="text-sm text-muted-foreground">هنوز کلیدی صادر نشده است.</p>
-        ) : (
-          <ul className="space-y-2">
-            {data.gateways.map((row, idx) => (
-              <li
-                key={`${row.businessId}-${row.locationId || "biz"}-${idx}`}
-                className="flex flex-col gap-1 rounded-lg border border-border bg-card p-3 text-sm md:flex-row md:items-center md:justify-between"
-              >
-                <div>
-                  <p className="font-medium" dir="ltr">
-                    {row.keyAlias ?? row.businessId}
-                    {row.locationId ? ` (شعبه: ${row.locationId.slice(0, 8)})` : " (کل کسب‌وکار)"}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    مدل: <span dir="ltr">{row.effectiveModel}</span>
-                  </p>
-                </div>
-                <div className="text-xs text-muted-foreground md:text-right">
-                  <p>مصرف: {formatPersianNumber(Math.round(row.spendUsd * 100) / 100)} دلار</p>
-                  {row.syncError ? <p className="text-rose-700 dark:text-rose-300">{row.syncError}</p> : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      <Card title="کلیدها و مصرف هوش مصنوعی کسب‌وکارها">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-right text-xs text-muted-foreground">
+              <tr className="border-b border-border">
+                <th className="py-2 pr-1">کسب‌وکار</th>
+                <th className="py-2">کلید مجازی</th>
+                <th className="py-2">درخواست‌ها</th>
+                <th className="py-2">توکن‌ها (ورود/خروج)</th>
+                <th className="py-2">هزینهٔ ثبت‌شده</th>
+                <th className="py-2">اعتبار باقی‌مانده</th>
+              </tr>
+            </thead>
+            <tbody>
+              {keyRows.map(({ business, key, usage }) => (
+                <tr key={business.businessId} className="border-b border-border">
+                  <td className="py-2 pr-1">
+                    <p className="font-medium text-foreground">{business.businessName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {business.aiEntitled ? "هوش مصنوعی فعال" : "هوش مصنوعی غیرفعال"}
+                    </p>
+                  </td>
+                  <td className="py-2">
+                    <span dir="ltr" className="text-xs">{key?.keyAlias ?? "—"}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {key?.hasVirtualKey ? (key.syncError ? "خطای همگام‌سازی" : "صادر شده") : "صادر نشده"}
+                    </span>
+                  </td>
+                  <td className="py-2 tabular-nums">{formatPersianNumber(usage?.totalRequests ?? 0)}</td>
+                  <td className="py-2 tabular-nums">
+                    {formatPersianNumber(usage?.inputTokens ?? 0)} / {formatPersianNumber(usage?.outputTokens ?? 0)}
+                  </td>
+                  <td className="py-2 tabular-nums">
+                    {usage && usage.chargedRial > 0 ? `${toman(usage.chargedRial)} ت` : "—"}
+                    {usage && usage.allowanceUsedRial > 0 ? (
+                      <span className="block text-[10px] text-muted-foreground">
+                        شامل {toman(usage.allowanceUsedRial)} ت از اعتبار پلن
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="py-2 tabular-nums">
+                    {toman(usage?.balanceRial ?? 0)} ت
+                    {usage && usage.monthlyAiCreditRial > 0 ? (
+                      <span className="block text-[10px] text-violet-700 dark:text-violet-300">
+                        + {toman(usage.allowanceRemainingRial)} ت اعتبار پلن این ماه
+                      </span>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+              {keyRows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                    هنوز کسب‌وکاری ثبت نشده است.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

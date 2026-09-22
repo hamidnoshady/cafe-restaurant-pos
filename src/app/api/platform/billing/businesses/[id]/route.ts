@@ -74,7 +74,6 @@ export const GET = withPlatformScope(
           hasVirtualKey: pub.hasVirtualKey,
           spendUsd: pub.spendUsd,
           spendRial: rate > 0 ? rialFromGatewayUsd(pub.spendUsd, rate) : 0,
-          maxBudgetUsd: pub.maxBudgetUsd,
           syncedAt: pub.syncedAt,
           syncError: pub.syncError,
         };
@@ -145,7 +144,6 @@ export const POST = withPlatformScope(
           hasVirtualKey: pub.hasVirtualKey,
           spendUsd: pub.spendUsd,
           spendRial: rate > 0 ? rialFromGatewayUsd(pub.spendUsd, rate) : 0,
-          maxBudgetUsd: pub.maxBudgetUsd,
           syncedAt: pub.syncedAt,
           syncError: pub.syncError,
         };

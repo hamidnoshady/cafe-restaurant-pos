@@ -77,7 +77,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const activeLocation = await resolveActiveLocation(session);
   const locationId = activeLocation?.id ?? null;
-  const config = await resolveAiConfigFor(session.businessId, locationId);
+  const config = await resolveAiConfigFor(session.businessId, locationId, { ensureVirtualKey: true });
   if (!isPlatformAiConfigured(config)) {
     const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: locationId, surface: "estimate" });
     return NextResponse.json(
