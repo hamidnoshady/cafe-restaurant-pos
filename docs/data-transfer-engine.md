@@ -210,7 +210,7 @@ neutralised, everything is audited and tenant-isolated.
 
 ## 6. Defects found and fixed
 
-Four real bugs, all found by tests written for this work:
+Five real bugs, all found by tests or CI during this work:
 
 1. **`report-export.ts` had no formula-injection guard.** The reports CSV was
    an unguarded export door — a cell beginning `=` would execute on open in
@@ -234,6 +234,15 @@ Four real bugs, all found by tests written for this work:
    queue for *every* business. Now caught, and `reclaimStalledImports()` returns
    jobs abandoned mid-flight (deploy, OOM, dropped connection) to the queue,
    parking them as failed after the attempt ceiling.
+5. **The desktop installer stopped building.** The retention tick made
+   `server.ts` reach `export-service` → `pdf-render` → `playwright-core`, whose
+   prebuilt bundle requires `chromium-bidi` subpaths that are not in the npm
+   tree. esbuild could not resolve them, so `npm run desktop:runtime` failed and
+   took `verify-shippables` and `build-desktop-installer` with it. Nothing else
+   compiles `server.ts` with esbuild, so all nine `test` jobs stayed green while
+   the shipped artefacts broke. Fixed by marking `playwright-core` external —
+   safe because Next's standalone trace already stages the real package into the
+   runtime — plus a lazy import, and a posture test pinning it to the list.
 
 ---
 
@@ -245,10 +254,19 @@ Everything below was run after the final change.
 |---|---|
 | `npx tsc --noEmit` | clean |
 | `npm run lint` | clean |
-| `npm test` | **380 files / 5463 tests pass** (baseline 376 / 5346) |
+| `npm test` | **380 files / 5464 tests pass** (baseline 376 / 5346) |
 | `npm run test:db` | **130 files / 1478 pass, 1 skipped** (~544s) |
 | `npm run test:design` | 5 files / 36 tests pass |
-| `npm run build` | succeeds with `NODE_OPTIONS=--max-old-space-size=3072` |
+| `npm run build` | succeeds (needs a raised heap; see §9) |
+| `npm run desktop:runtime` | succeeds — 164.9 MiB, within the 200 MiB budget |
+
+### On CI (GitHub Actions, all green)
+
+| Workflow | Result |
+|---|---|
+| `test` | all 9 jobs pass, including `visual regression`, `api-guard-tests` and `data-transfer-tests` |
+| `verify-shippables` | desktop shell, production container, WordPress plugin, print connector |
+| `build-desktop-installer` | packaged Windows end-to-end |
 
 New tests: `codecs` (37), `mapping` (43), `registry` (23), `schedule` (12),
 `queue-scope` (9), and `integration/data-transfer.integration.test.ts` (54,
@@ -304,9 +322,10 @@ Stated plainly, because each one is a real limit:
    existing `/api/reports/export`, so it is a pre-existing constraint rather
    than a new one; CI's `visual-regression` job installs Chromium and does
    cover it.
-3. **`npm run build` needs `NODE_OPTIONS=--max-old-space-size=3072`.** The
-   default 1954 MB heap OOMs during the type-check phase. CI already sets this;
-   local builds need it too. Pre-existing, now more visible.
+3. **`npm run build` needs a raised heap** (`NODE_OPTIONS=--max-old-space-size`
+   at 2560–3072 MB). The default 1954 MB OOMs during the type-check phase; on a
+   4 GB machine 3072 can itself be killed by the OS, so 2560 is the safer value.
+   CI already raises it. Pre-existing, now more visible.
 4. **Scheduled-export email delivery** rides the existing SMTP outbox
    (`OutboundAttachment` was added to the provider interface). The scheduling,
    claiming and file-production paths are unit- and integration-tested, but an
@@ -314,4 +333,6 @@ Stated plainly, because each one is a real limit:
 5. **Visual-regression baselines** were not re-recorded for the new screen —
    recording is deliberately a human, opt-in action in this repo
    (`docs/design/visual-regression.md`), never something CI or an agent does to
-   turn a run green.
+   turn a run green. The job passes because the new screen is additive and no
+   existing baseline shifted; recording one for `/settings/data-transfer` is a
+   deliberate follow-up for whoever approves the look.
