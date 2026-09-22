@@ -39,6 +39,14 @@ Inputs:
 
 One run does all of this, in order:
 
+0. Checks the resulting tag is free. The check asks with `git tag --list`, whose
+   answer is its **output** — it exits 0 either way — and then ends on an explicit
+   `exit`. Both details are load-bearing: the runner appends
+   `if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit $LASTEXITCODE }`
+   to every PowerShell step, so a step ends on whatever exit code it happens to
+   leave behind. The original check probed with `git rev-parse -q --verify`, which
+   exits **1** when the tag does *not* exist — the healthy case — and that leftover
+   1 failed the step every time the version was free (run #101).
 1. Computes the next version from `POS_CONNECTOR_VERSION`.
 2. Bumps it in the three places the repo rule names (`Version:` header,
    `POS_CONNECTOR_VERSION`, `Stable tag`) and inserts the changelog entry.

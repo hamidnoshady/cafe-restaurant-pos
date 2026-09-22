@@ -125,12 +125,44 @@ jobs:
         env:
           NEXT: ${{ steps.version.outputs.next }}
         run: |
-          git fetch --tags --force
-          git rev-parse -q --verify "refs/tags/v$env:NEXT" 2>&1 | Out-Null
-          if ($LASTEXITCODE -eq 0) {
+          # Native git calls only, so keep errors non-terminating and read the
+          # exit codes explicitly rather than relying on the runner's implicit
+          # `$ErrorActionPreference = 'stop'`.
+          $ErrorActionPreference = "Continue"
+
+          git fetch --tags --force --quiet
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::Could not fetch tags (git exited $LASTEXITCODE) - refusing to guess whether v$env:NEXT was already shipped."
+            exit 1
+          }
+
+          # Ask with `git tag --list`, which exits 0 whether or not the tag
+          # exists, so the answer is its *output* and never its exit code.
+          #
+          # This is load-bearing. The previous `git rev-parse -q --verify` exits
+          # **1** for the normal, healthy case — the tag is free — and the runner
+          # appends this epilogue to every powershell/pwsh step:
+          #
+          #   if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit $LASTEXITCODE }
+          #
+          # so when the `if` below did not fire, the step still ended with
+          # $LASTEXITCODE = 1 and the whole build failed before it bumped
+          # anything. A guard that only ever passed when the version was already
+          # taken is exactly backwards; never end this step on the exit code of a
+          # probe whose failure means "all clear".
+          $existing = git tag --list "v$env:NEXT"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::Could not list tags (git exited $LASTEXITCODE)."
+            exit 1
+          }
+          if ($existing) {
             Write-Host "::error::Tag v$env:NEXT already exists - a version that was already shipped is never rebuilt. Pick another bump."
             exit 1
           }
+
+          Write-Host "v$env:NEXT is free - nothing to shadow."
+          # Explicit, so the appended epilogue can never decide this step.
+          exit 0
 
       - name: Bump version, write changelog, generate update.json
         env:
