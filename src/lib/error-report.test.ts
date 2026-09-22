@@ -3,6 +3,8 @@ import {
   buildTechnicalReport,
   exportClientErrorLog,
   generateErrorId,
+  isNotableApiFailure,
+  recordApiFailure,
   recordClientError,
   redactSecrets,
 } from "./error-report";
@@ -152,5 +154,64 @@ describe("recordClientError / exportClientErrorLog", () => {
     expect(() =>
       recordClientError({ errorId: "x", occurredAt: "t", report: "r" }, storage),
     ).not.toThrow();
+  });
+});
+
+describe("isNotableApiFailure", () => {
+  it("flags a transport failure (status 0)", () => {
+    expect(isNotableApiFailure(0)).toBe(true);
+  });
+
+  it("flags a server error (5xx)", () => {
+    expect(isNotableApiFailure(500)).toBe(true);
+    expect(isNotableApiFailure(503)).toBe(true);
+  });
+
+  it("does not flag an ordinary client rejection (4xx)", () => {
+    expect(isNotableApiFailure(400)).toBe(false);
+    expect(isNotableApiFailure(401)).toBe(false);
+    expect(isNotableApiFailure(404)).toBe(false);
+    expect(isNotableApiFailure(422)).toBe(false);
+  });
+
+  it("does not flag success", () => {
+    expect(isNotableApiFailure(200)).toBe(false);
+    expect(isNotableApiFailure(204)).toBe(false);
+  });
+});
+
+describe("recordApiFailure", () => {
+  it("logs a 5xx failure and returns an error id", () => {
+    const storage = fakeStorage();
+    const id = recordApiFailure({ method: "POST", url: "/api/orders", status: 500, code: "server_error" }, storage);
+    expect(id).toMatch(/^ERR-/);
+    const exported = exportClientErrorLog(storage);
+    expect(exported).toContain("POST /api/orders");
+    expect(exported).toContain("HTTP 500");
+    expect(exported).toContain("server_error");
+  });
+
+  it("logs a transport failure (status 0) as 'no response'", () => {
+    const storage = fakeStorage();
+    recordApiFailure({ method: "GET", url: "/api/menu", status: 0, code: "network_error" }, storage);
+    expect(exportClientErrorLog(storage)).toContain("(no response)");
+  });
+
+  it("does not log an ordinary 4xx validation rejection", () => {
+    const storage = fakeStorage();
+    const id = recordApiFailure({ method: "POST", url: "/api/orders", status: 400, code: "missing_fields" }, storage);
+    expect(id).toBeNull();
+    expect(exportClientErrorLog(storage)).toBe("");
+  });
+
+  it("redacts a secret that leaked into the server-reported code", () => {
+    const storage = fakeStorage();
+    recordApiFailure(
+      { method: "POST", url: "/api/setup/pair", status: 500, code: "jwt_secret=super-secret-value" },
+      storage,
+    );
+    const exported = exportClientErrorLog(storage);
+    expect(exported).toContain("[REDACTED]");
+    expect(exported).not.toContain("super-secret-value");
   });
 });

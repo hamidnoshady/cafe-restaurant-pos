@@ -19,7 +19,7 @@ explicitly wherever it applies below, per the standing instruction not to
 claim hardware verification that never happened.
 
 **Baseline at completion:** `npx tsc --noEmit` clean · `npx eslint .` clean ·
-`npx vitest run` → **380 files / 5452 tests, all passing**. Branch
+`npx vitest run` → **382 files / 5472 tests, all passing**. Branch
 `arena/01a0c899-cafe-restaurant-pos`, commits `687794b` → `26fd707` →
 `5d1fb7a` → `f0973d9` → `c38c81c` → `bef43a9`, all pushed.
 
@@ -285,13 +285,32 @@ string/token/password), `buildTechnicalReport`, and a capped (50-entry)
 `error.tsx` and `global-error.tsx` now show the short ID, an expandable
 technical-details block, and a "دریافت فایل گزارش‌ها" export button.
 16 unit tests.
-**Residual (documented, not fixed):** API/fetch-layer errors surfaced via
-`src/app/dashboard/ui.tsx`'s `ErrorBox`/`errorMessage()` pattern still
-carry no error ID or log attachment — only the two render-error boundaries
-got the full treatment in this engagement. Retrofitting every API error
-surface across the app was judged too large a change for this audit's
-time budget; recommended as the next incremental step if more time is
-available.
+**Follow-up (closed in a later pass of this same engagement):** the
+original review of this section flagged that API/fetch-layer errors
+surfaced via `src/app/dashboard/ui.tsx`'s `ErrorBox`/`errorMessage()`
+pattern carried no error ID or log attachment — only the two render-error
+boundaries got the full treatment initially. Retrofitting an error ID onto
+each of the ~200 individual call sites that render `errorMessage()` would
+have been a large, risky change touching page-level JSX across the app for
+little practical benefit (most of those are ordinary validation messages a
+user can act on, e.g. "fill in the required field" — not failures support
+needs a log for). Instead, the fix targets the few shared fetch wrappers
+every one of those call sites already goes through —
+`src/app/dashboard/ui.tsx`'s and `src/app/setup/ui.tsx`'s `api()`, and the
+platform console's `src/lib/platform-client.ts`'s `platformFetch()` — so a
+genuinely unexpected failure (a transport failure with no HTTP response at
+all, or a request that reached the server and the server itself failed
+with a 5xx) is silently appended to the same exportable error-report ring
+buffer a render error uses (`error-report.ts`'s new `recordApiFailure`/
+`isNotableApiFailure`), with **zero UI/behavior change** — the on-screen
+message a user sees is exactly what it already was. An ordinary 4xx
+validation rejection is deliberately never logged, so the export stays
+useful signal rather than noise. Unit-tested: 6 new assertions in
+`error-report.test.ts` for the pure logging/filtering logic, plus
+integration-style tests against each of the three wrappers
+(`platform-client.test.ts`, `src/app/dashboard/api-error-logging.test.ts`,
+`src/app/setup/api-error-logging.test.ts`) confirming a 5xx/transport
+failure is captured and a 4xx/2xx/abort is not.
 
 ### Section 13 — Code audit (duplicated/unused/broken/incomplete/security)
 Findings folded into the sections above rather than kept separate, since
@@ -381,17 +400,20 @@ This document, plus `TESTING_CHECKLIST.md` in the repo root.
   restructuring the installer's own directory layout was judged lower
   priority than the auth/sync/printing fixes given the remaining time
   budget.
-- Retrofitting error IDs onto the API/fetch error-surface layer
-  (`dashboard/ui.tsx`'s `ErrorBox`) — scoped out of Section 12 to keep the
-  change to the two render-error boundaries the brief names explicitly
-  ("for every error" was judged best served by fixing the two structural
-  boundaries correctly rather than a shallow pass over every call site).
+- Individually retrofitting an error ID onto each of the ~200 JSX call
+  sites that render `<ErrorBox>{errorMessage(...)}</ErrorBox>` — instead,
+  the three shared fetch wrappers underneath all of them now log 5xx/
+  transport failures into the same exportable ring buffer a render error
+  uses (see the updated Section 12 entry above); a per-call-site on-screen
+  error ID for every one of the ~200 sites was judged unnecessary once the
+  underlying failure is already captured for support, and would have been
+  a much larger, higher-risk change for comparatively little benefit.
 
 ## 6. Verification performed
 
 - `npx tsc --noEmit` — clean, throughout and at final HEAD (`bef43a9`).
 - `npx eslint .` — clean, throughout and at final HEAD.
-- `npx vitest run` — **380 test files / 5452 tests, all passing** at final
+- `npx vitest run` — **382 test files / 5472 tests, all passing** at final
   HEAD. This includes 17 new tests for the sync queue state machine and 16
   new tests for the error-report helpers, plus all pre-existing suites
   updated to expect audit-introduced changes (e.g. `settings-tabs.test.ts`

@@ -20,10 +20,16 @@
  * This module is the FIRST-RUN, pre-Postgres half of that fix: a plain
  * Node/Electron-side check of a folder BEFORE the app commits to it —
  * writable?, how much free space does its volume report?, does a real file
- * survive a write+read+delete round trip? — surfaced to the renderer via IPC
- * (`desktop:storage-*`, see main.js) and consumed by the local-storage setup
- * step (`src/app/setup/storage/page.tsx`). Every side-effecting piece takes
- * injectable collaborators (`fsp`, `platform`) so the decision logic here is
+ * survive a write+read+delete round trip? — driving `main.js`'s native
+ * `dialog`-based prompt (`runStorageBootstrap`/`promptForStorageLocation`),
+ * which runs before the Next.js server (and therefore any renderer page)
+ * exists — there is no `src/app/setup/storage` page; the whole flow is
+ * native Electron dialogs. The same functions are also exposed over IPC
+ * (`desktop:storage-*`, see main.js/preload.js's `window.businessSuiteDesktop
+ * .localStorage`) for any renderer-side surface that wants to show the same
+ * checks later (e.g. a "change storage location" action from within the
+ * running app, post first-run). Every side-effecting piece takes injectable
+ * collaborators (`fsp`, `platform`) so the decision logic here is
  * unit-testable without touching a real disk — see
  * src/lib/local-storage.test.ts.
  *

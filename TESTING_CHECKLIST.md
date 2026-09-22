@@ -174,17 +174,24 @@ real-world verification yet — prioritize these first.
       exportable client log, and on a desktop build, confirm the "open
       log folder" button actually reveals the Electron process log
       directory in the OS file browser.
-- [ ] (Known residual gap — confirm it is still a gap, not regressed
-      further) Trigger a plain API/fetch error inside a dashboard page
-      (e.g. a 500 from a `/api/...` route); confirm it still shows via the
-      existing `ErrorBox` pattern — note that this path is **not** expected
-      to have an error ID or export button yet; this is documented,
-      pre-existing, unaddressed scope, not a new regression.
+- [ ] **[NEW]** Trigger a plain API/fetch error inside a dashboard page
+      (e.g. force a `/api/...` route to return a 500, or disconnect the
+      network mid-request); confirm the on-screen message is unchanged
+      (still the existing `ErrorBox`/`errorMessage()` Persian text — no new
+      UI element appears here by design), but confirm the failure **does**
+      now show up in Settings → گزارش‌ها (Logs) → "دریافت فایل گزارش خطاها"
+      after the fact, with the failing URL/method/status visible in the
+      exported text.
+- [ ] **[NEW]** Trigger an ordinary validation rejection instead (e.g.
+      submit a form with a required field empty, a 400/404/409 response);
+      confirm it does **not** appear in the exported log — only genuinely
+      unexpected failures (5xx / dropped connection) are recorded, so a
+      normal "please fill in this field" message is not treated as a bug.
 
 ## 9. General regression pass
 
 - [ ] Run `npx tsc --noEmit` and `npx eslint .` — both must be clean.
-- [ ] Run `npx vitest run` — should be **≥ 380 files / ≥ 5452 tests**,
+- [ ] Run `npx vitest run` — should be **≥ 382 files / ≥ 5472 tests**,
       zero failures (this was the state at audit completion; a regression
       below this count means something in this audit's work broke).
 - [ ] Spot-check Persian RTL rendering and Shamsi (Jalali) date display on

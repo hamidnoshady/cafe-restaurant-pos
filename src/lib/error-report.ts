@@ -155,3 +155,75 @@ export function exportClientErrorLog(
   if (entries.length === 0) return "";
   return entries.map((entry) => entry.report).join("\n\n" + "=".repeat(40) + "\n\n");
 }
+
+// ---------------------------------------------------------------------------
+// API/fetch-layer failures
+// ---------------------------------------------------------------------------
+
+/**
+ * The residual gap the audit's Section 12 review documented: `error.tsx` /
+ * `global-error.tsx` give a *render* error the full treatment (error ID +
+ * technical log + export), but an API call that fails — a 500 from a route
+ * handler, a dropped connection mid-request — only ever surfaced through
+ * `dashboard/ui.tsx`'s plain `<ErrorBox>{errorMessage(...)}</ErrorBox>`
+ * pattern, with nothing recorded anywhere support could later ask for.
+ *
+ * Rather than retrofit an error ID onto every one of the ~200 call sites that
+ * render `errorMessage()` — a much larger, riskier change that would touch
+ * page-level JSX across the app — this hooks the few shared fetch wrappers
+ * every one of those call sites already goes through
+ * (`dashboard/ui.tsx`'s and `setup/ui.tsx`'s `api()`, `platform-client.ts`'s
+ * `platformFetch()`) so a genuinely unexpected failure is appended to the
+ * same exportable ring buffer a render error uses, with zero UI change: the
+ * on-screen message is exactly what it already was, but "دریافت فایل
+ * گزارش‌ها" on the new Logs settings tab now also has this failure's detail
+ * (URL, status, method, server-reported code) if a user needs to hand it to
+ * support.
+ *
+ * Deliberately narrow about what counts as worth recording: an ordinary
+ * validation rejection (400 "این فیلد الزامی است") is the app working
+ * correctly, not a bug, and logging every one of those would bury the
+ * genuinely unexpected failures in noise. Only a transport failure (no HTTP
+ * response at all — offline, DNS, a dropped connection) or a request that
+ * reached the server and the server itself failed (5xx) is recorded.
+ */
+export interface ApiFailureContext {
+  /** HTTP method, e.g. "GET"/"POST" — absent defaults to GET in the report. */
+  method?: string;
+  url: string;
+  /** 0 for a transport failure that never got an HTTP response. */
+  status: number;
+  /** The server's own error code, when one came back (e.g. "server_error", "network_error"). */
+  code?: string;
+  occurredAt?: string;
+}
+
+/** Whether an API failure is worth recording — see the module doc above. */
+export function isNotableApiFailure(status: number): boolean {
+  return status === 0 || status >= 500;
+}
+
+/**
+ * Builds and stores a technical report for one API failure, the same way a
+ * render error does, so it shows up in the same exported log. Returns the
+ * assigned error id (not shown in the UI by default — this is a background
+ * log entry, not a new on-screen element — but available to a caller that
+ * wants to fold it into a toast/detail view later).
+ *
+ * No-op (returns null) for a failure `isNotableApiFailure` would exclude —
+ * callers may skip that check themselves and rely on this one.
+ */
+export function recordApiFailure(
+  context: ApiFailureContext,
+  storage: Storage | undefined = typeof window !== "undefined" ? window.localStorage : undefined,
+): string | null {
+  if (!isNotableApiFailure(context.status)) return null;
+  const occurredAt = context.occurredAt ?? new Date().toISOString();
+  const errorId = generateErrorId(`api:${context.method ?? "GET"}:${context.url}:${context.status}`, Date.parse(occurredAt) || Date.now());
+  const message = `API request failed — ${context.method ?? "GET"} ${context.url} — HTTP ${context.status || "(no response)"}${
+    context.code ? ` — code: ${context.code}` : ""
+  }`;
+  const report = buildTechnicalReport({ errorId, message, occurredAt, url: context.url });
+  recordClientError({ errorId, occurredAt, report }, storage);
+  return errorId;
+}

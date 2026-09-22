@@ -3,12 +3,20 @@
 /**
  * Logs panel (Section 9/12 of the desktop audit): the "Logs" entry the
  * unified Settings Center needs. Surfaces this browser's recorded client
- * errors (error-report.ts's ring buffer, written by error.tsx/global-error.tsx
- * whenever a render error happens) with a one-click export, and — on the
- * desktop app — a shortcut to reveal the process-level log file
+ * errors (error-report.ts's ring buffer) with a one-click export, and — on
+ * the desktop app — a shortcut to reveal the process-level log file
  * (electron/logger.js) in the OS file explorer, so "logs" means one place to
  * look whether the failure was in this page or in the desktop shell/Postgres
  * bootstrap that runs before any page exists.
+ *
+ * The ring buffer this exports is written from two places, both routed
+ * through error-report.ts: a render error caught by error.tsx/
+ * global-error.tsx, and — the audit's Section 12 follow-up — a server-side
+ * (5xx) or transport failure from any of the app's shared fetch wrappers
+ * (dashboard/ui.tsx's and setup/ui.tsx's `api()`, platform-client.ts's
+ * `platformFetch()`), logged silently with no on-screen change. An ordinary
+ * validation rejection (a 400 the user can act on, like a missing field) is
+ * deliberately never logged here — only failures nobody could self-resolve.
  */
 import { useEffect, useState } from "react";
 import { DownloadIcon, FolderOpenIcon } from "lucide-react";
