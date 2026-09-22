@@ -93,6 +93,24 @@ replicated by the event engine. Pairing snapshot v2 bootstraps selected
 master data, but it is not continuing full sync. Do not present this feature as
 full database replication.
 
+**Audit note (desktop offline-first review):** `src/lib/sync-event-registry.ts`
+actually registers 17 event types, not 3 — 14 more
+(`order.payment.completed`, `inventory.purchase.created/received`,
+`inventory.transfer.*`, `inventory.waste.recorded`,
+`inventory.stock_count.*`, `inventory.production.*`,
+`accounting.manual_journal.reversed`, etc.) have complete, atomic domain
+handlers in `sync-domain-handlers.ts` and are fully validated/dispatchable by
+`applySyncEvent()`. This is not a second, hidden replication path: nothing in
+the product ever constructs a `SyncEventInput` of one of those 14 types —
+`sync_events` rows only ever come from `applyLegacySyncEvent`'s own INSERT
+(the 3 legacy client-queue types above) or from a remote peer's `push`
+request. In other words, those 14 definitions are complete server-side
+machinery for financial/inventory site↔cloud sync **with no producer wired up
+yet** — forward-compatible scaffolding, not a partially-working feature. Do
+not assume payments, purchases, transfers, waste, stock counts or production
+runs replicate to a paired cloud site; they do not, today. Wiring a producer
+for any of them is a deliberate follow-up, not a bug fix.
+
 ## Configuration and operations
 
 1. Install and launch the signed Windows installer.

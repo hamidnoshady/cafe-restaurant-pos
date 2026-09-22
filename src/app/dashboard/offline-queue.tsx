@@ -1,14 +1,24 @@
 "use client";
 
 /**
- * Offline queue glue (Phase 5): wraps a mutation's fetch so a LAN drop mid-
- * order queues the action locally (src/lib/offline-db.ts) instead of losing
- * it, then flushes the queue to POST /api/sync/events on reconnect. See
- * docs/phases/Phase-5-Offline-Queue-Hardware.md for the conflict-handling
- * decision (offline-sync.ts) this leans on.
+ * Offline queue glue (Phase 5, extended by the Section 5 offline-first audit
+ * into a proper Sync Queue System): wraps a mutation's fetch so a LAN drop
+ * mid-order queues the action locally (src/lib/offline-db.ts) instead of
+ * losing it, then flushes the queue to POST /api/sync/events on reconnect.
+ * See docs/phases/Phase-5-Offline-Queue-Hardware.md for the original
+ * conflict-handling decision (offline-sync.ts) and src/lib/sync-queue.ts for
+ * the pure Pending/Syncing/Completed/Failed/Conflict state machine this
+ * module drives.
  */
 import { useCallback, useEffect, useState } from "react";
 import { getOfflineDb, type PendingAction, type PendingActionType } from "@/lib/offline-db";
+import { safeRandomId } from "@/lib/client-id";
+import {
+  classifyFlushOutcome,
+  isQueueEntryDueForRetry,
+  resolveQueueRecordRef,
+  type SyncQueueStatus,
+} from "@/lib/sync-queue";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -22,10 +32,17 @@ export async function enqueueAction(action: {
   occurredAt: string;
   description: string;
 }): Promise<void> {
+  const { table, recordId } = resolveQueueRecordRef(action.type, action.payload);
   await getOfflineDb().pendingActions.add({
     ...action,
-    id: crypto.randomUUID(),
+    id: safeRandomId(),
+    table,
+    recordId,
     createdAt: Date.now(),
+    status: "pending",
+    retryCount: 0,
+    lastAttemptAt: null,
+    lastError: null,
   });
   notifyListeners();
 }
@@ -100,17 +117,35 @@ export async function probeServer(): Promise<boolean> {
   }
 }
 
-/** Sends every queued action to the server in FIFO order; removes what the server accepted (applied or a flagged conflict — either way there's nothing left to retry). */
+/**
+ * Sends every queue entry due for retry (sync-queue.ts's
+ * isQueueEntryDueForRetry — excludes `conflict`/`completed`, and backs off a
+ * repeatedly-`failed` entry) to the server in FIFO order.
+ *
+ * Each entry's `status`/`retryCount`/`lastError` is updated per
+ * classifyFlushOutcome instead of the old all-or-nothing "delete on
+ * ok-or-conflict, otherwise leave untouched forever" behaviour: a server-side
+ * rejection now visibly becomes `failed` after repeated attempts (surfaced by
+ * OfflineBanner/the queue detail list) rather than silently retrying forever
+ * with no sign anything is wrong, and a real two-device conflict is kept
+ * (status `conflict`) for a human to resolve via `discardQueueEntry`/
+ * `retryQueueEntry` instead of being deleted the instant the server flags it.
+ */
 export async function flushQueue(): Promise<void> {
   if (flushing) return;
   // The queue targets this origin (usually the LAN PC), not the Internet.
   // navigator.onLine=false must not suppress a flush while local Wi-Fi works.
   const db = getOfflineDb();
-  const pending = await db.pendingActions.orderBy("createdAt").toArray();
+  const all = await db.pendingActions.orderBy("createdAt").toArray();
+  const now = Date.now();
+  const pending = all.filter((p) => isQueueEntryDueForRetry(p, now));
   if (pending.length === 0) return;
 
   flushing = true;
   try {
+    await db.pendingActions.bulkUpdate(pending.map((p) => ({ key: p.id, changes: { status: "syncing" as SyncQueueStatus, lastAttemptAt: now } })));
+    notifyListeners();
+
     const res = await fetch("/api/sync/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -118,20 +153,58 @@ export async function flushQueue(): Promise<void> {
         events: pending.map((p) => ({ clientEventId: p.id, type: p.type, occurredAt: p.occurredAt, payload: p.payload })),
       }),
     });
-    if (!res.ok) return;
-    const { results } = (await res.json()) as {
-      results: { clientEventId: string; ok: boolean; conflict?: boolean }[];
-    };
-    const settled = new Set(results.filter((r) => r.ok || r.conflict).map((r) => r.clientEventId));
-    for (const p of pending) {
-      if (settled.has(p.id)) await db.pendingActions.delete(p.id);
+    if (!res.ok) {
+      // Whole-batch failure (server 5xx, etc.): every entry we just marked
+      // "syncing" goes back to "pending" untouched — no retry penalty for a
+      // failure that wasn't about any individual action.
+      await db.pendingActions.bulkUpdate(pending.map((p) => ({ key: p.id, changes: { status: "pending" as SyncQueueStatus } })));
+      return;
     }
+    const { results } = (await res.json()) as {
+      results: { clientEventId: string; ok: boolean; conflict?: boolean; error?: string }[];
+    };
+    const byId = new Map(results.map((r) => [r.clientEventId, r]));
+    const toDelete: string[] = [];
+    const updates: { key: string; changes: Partial<PendingAction> }[] = [];
+    for (const p of pending) {
+      const outcome = classifyFlushOutcome(byId.get(p.id), p.retryCount);
+      if (outcome.status === "completed") {
+        toDelete.push(p.id);
+        continue;
+      }
+      updates.push({
+        key: p.id,
+        changes: { status: outcome.status, retryCount: outcome.retryCount, lastError: byId.get(p.id)?.error ?? null },
+      });
+    }
+    if (updates.length > 0) await db.pendingActions.bulkUpdate(updates);
+    if (toDelete.length > 0) await db.pendingActions.bulkDelete(toDelete);
   } catch {
-    // still offline, or the server just went down mid-flush — leave queued, try again later
+    // still offline, or the server just went down mid-flush — put the
+    // in-flight entries back to pending; leave everything else untouched.
+    await db.pendingActions.bulkUpdate(pending.map((p) => ({ key: p.id, changes: { status: "pending" as SyncQueueStatus } })));
   } finally {
     flushing = false;
     notifyListeners();
   }
+}
+
+/**
+ * A human decision on a `failed` or `conflict` entry: re-arm it for another
+ * flush attempt (retryCount reset to 0, so it isn't immediately re-failed by
+ * a stale backoff) after the user has resolved whatever was wrong — e.g.
+ * fixed the underlying data, or confirmed the server's current state is fine
+ * to overwrite.
+ */
+export async function retryQueueEntry(id: string): Promise<void> {
+  await getOfflineDb().pendingActions.update(id, { status: "pending", retryCount: 0, lastError: null });
+  notifyListeners();
+}
+
+/** Permanently discards a `failed` or `conflict` entry the user has decided not to replay. */
+export async function discardQueueEntry(id: string): Promise<void> {
+  await getOfflineDb().pendingActions.delete(id);
+  notifyListeners();
 }
 
 export type LocalServerState = "local_server_connected" | "local_server_unreachable";
@@ -148,23 +221,30 @@ export interface ConnectionState {
   cloudSync: CloudSyncState;
   pendingActions: number;
   syncError: boolean;
+  /** Entries stuck in `failed` or `conflict` — need a human decision, not just time. */
+  attentionNeeded: number;
 }
 
-export function useOfflineQueue(): { pendingCount: number; isOnline: boolean; connectionState: ConnectionState } {
-  const [pendingCount, setPendingCount] = useState(0);
+export function useOfflineQueue(): {
+  pendingCount: number;
+  isOnline: boolean;
+  connectionState: ConnectionState;
+  entries: PendingAction[];
+} {
+  const [entries, setEntries] = useState<PendingAction[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [internet, setInternet] = useState<InternetState>("internet_unknown");
   const [cloudSync, setCloudSync] = useState<CloudSyncState>("cloud_sync_not_configured");
   const [syncError, setSyncError] = useState(false);
 
-  const refreshCount = useCallback(() => {
-    void getOfflineDb().pendingActions.count().then(setPendingCount);
+  const refreshEntries = useCallback(() => {
+    void getOfflineDb().pendingActions.orderBy("createdAt").toArray().then(setEntries);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    refreshCount();
-    listeners.add(refreshCount);
+    refreshEntries();
+    listeners.add(refreshEntries);
 
     async function refreshOnlineState() {
       const reachable = await probeServer();
@@ -215,22 +295,26 @@ export function useOfflineQueue(): { pendingCount: number; isOnline: boolean; co
 
     return () => {
       cancelled = true;
-      listeners.delete(refreshCount);
+      listeners.delete(refreshEntries);
       window.removeEventListener("online", onNetworkChange);
       window.removeEventListener("offline", onNetworkChange);
       clearInterval(interval);
     };
-  }, [refreshCount]);
+  }, [refreshEntries]);
+
+  const attentionNeeded = entries.filter((e) => e.status === "failed" || e.status === "conflict").length;
 
   return {
-    pendingCount,
+    pendingCount: entries.length,
     isOnline,
+    entries,
     connectionState: {
       localServer: isOnline ? "local_server_connected" : "local_server_unreachable",
       internet,
       cloudSync,
-      pendingActions: pendingCount,
+      pendingActions: entries.length,
       syncError,
+      attentionNeeded,
     },
   };
 }
