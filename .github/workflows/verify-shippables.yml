@@ -17,6 +17,14 @@
 # It remains active whenever production application code or one of those shipped
 # surfaces changes.
 #
+# Job scoping: the workflow-level `paths:` is the union that wakes the workflow
+# up; the `changes` job then decides per shippable which jobs actually run, so
+# a WordPress-plugin-only change does not rebuild the container/desktop shell
+# and a desktop-only change does not re-lint the plugin. `workflow_dispatch`
+# always runs everything (that is the pre-release "check it all" button).
+# A skipped job reports `skipped`, which required-check rollups treat as
+# passing, so scoping never blocks an unrelated PR.
+#
 # It deliberately does not publish or retain release artifacts. It performs a
 # no-push production-container build; `.exe` packaging remains in
 # `build-desktop-installer.yml`, and plugin zip publishing remains separate.
@@ -27,7 +35,15 @@ on:
   pull_request:
     paths:
       - 'electron/**'
+      # Shipped app source wakes the workflow; test files never ship, so
+      # test-only changes don't (except the three posture tests the desktop
+      # job executes). The `changes` job then scopes jobs per shippable.
       - 'src/**'
+      - '!src/**/*.test.ts'
+      - '!src/**/*.test.tsx'
+      - 'src/lib/desktop-runtime-posture.test.ts'
+      - 'src/lib/desktop-network-interfaces.test.ts'
+      - 'src/lib/chromium-executable.test.ts'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
       - 'scripts/verify-packaged-electron-runtime.ps1'
@@ -51,7 +67,13 @@ on:
     branches: [main, 'arena/**']
     paths:
       - 'electron/**'
+      # Same shipped-source rule as the pull_request trigger above.
       - 'src/**'
+      - '!src/**/*.test.ts'
+      - '!src/**/*.test.tsx'
+      - 'src/lib/desktop-runtime-posture.test.ts'
+      - 'src/lib/desktop-network-interfaces.test.ts'
+      - 'src/lib/chromium-executable.test.ts'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
       - 'scripts/verify-packaged-electron-runtime.ps1'
@@ -85,8 +107,129 @@ defaults:
     shell: powershell
 
 jobs:
+  # Decides which shippable actually changed, so only its jobs run. Uses
+  # plain `git diff` instead of a third-party action, in keeping with this
+  # repo's "only what the runner ships" rule. Fail-open: whenever the base
+  # commit cannot be determined (forced push, brand-new branch) or the event
+  # is a manual dispatch, every job runs — scoping only ever *skips* work it
+  # can prove is unrelated, never the other way around.
+  changes:
+    name: which shippables changed
+    runs-on: ubuntu-latest
+    outputs:
+      container: ${{ steps.classify.outputs.container }}
+      desktop: ${{ steps.classify.outputs.desktop }}
+      plugin: ${{ steps.classify.outputs.plugin }}
+      connector: ${{ steps.classify.outputs.connector }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The diff base (PR base branch or push `before`) must be reachable.
+          fetch-depth: 0
+
+      - name: Classify changed files per shippable
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          container=false; desktop=false; plugin=false; connector=false
+          run_all=false
+
+          base=""
+          case "$EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            push)         base="$PUSH_BEFORE" ;;
+            *)            run_all=true ;;  # workflow_dispatch: the pre-release "check it all" button
+          esac
+          if [ "$run_all" = false ]; then
+            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              echo "diff base unavailable — running every job"
+              run_all=true
+            fi
+          fi
+
+          if [ "$run_all" = true ]; then
+            container=true; desktop=true; plugin=true; connector=true
+          else
+            # `...` (merge-base diff) so a stale PR branch is judged by what
+            # the PR itself changes, not by what main gained in the meantime.
+            files="$(git diff --name-only "$base"..."$GITHUB_SHA")"
+            echo "changed files:"; echo "$files" | sed 's/^/  /'
+
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+
+              # A change to this workflow re-verifies everything it gates.
+              case "$f" in
+                .github/workflows/verify-shippables.yml)
+                  container=true; desktop=true; plugin=true; connector=true ;;
+              esac
+
+              # App source ships inside both the container and the desktop
+              # runtime — but test files never ship, so test-only changes do
+              # not rebuild either. (In a `case` pattern `*` crosses `/`, so
+              # `src/*.test.ts` matches at any depth.) The three posture tests
+              # the desktop job itself executes stay desktop triggers.
+              is_shipped_app_source=false
+              case "$f" in
+                src/*.test.ts|src/*.test.tsx) : ;;
+                src/*) is_shipped_app_source=true ;;
+              esac
+              case "$f" in
+                src/lib/desktop-runtime-posture.test.ts|src/lib/desktop-network-interfaces.test.ts|src/lib/chromium-executable.test.ts)
+                  desktop=true ;;
+              esac
+              # Shared app plumbing that both shipped runtimes carry.
+              case "$f" in
+                migrations/*|server.ts|next.config.ts|package.json|package-lock.json)
+                  is_shipped_app_source=true ;;
+              esac
+              if [ "$is_shipped_app_source" = true ]; then
+                container=true; desktop=true
+              fi
+
+              case "$f" in
+                Dockerfile|docker-entrypoint.sh) container=true ;;
+              esac
+
+              case "$f" in
+                electron/*|scripts/desktop/*|scripts/build-desktop-runtime.mjs|config/windows-signing-manifest.json|config/windows-installer-signing-manifest.json)
+                  desktop=true ;;
+              esac
+
+              case "$f" in
+                wordpress-plugin/*) plugin=true ;;
+              esac
+
+              # The connector job parses the cafe-PC PowerShell and the
+              # PowerShell embedded in the release workflows.
+              case "$f" in
+                public/windows/*|scripts/verify-packaged-electron-runtime.ps1|scripts/verify-windows-signatures.ps1|scripts/accept-physical-printer.ps1|.github/workflows/*)
+                  connector=true ;;
+              esac
+            done <<< "$files"
+          fi
+
+          {
+            echo "container=$container"
+            echo "desktop=$desktop"
+            echo "plugin=$plugin"
+            echo "connector=$connector"
+          } >> "$GITHUB_OUTPUT"
+          echo "container=$container desktop=$desktop plugin=$plugin connector=$connector"
+
   container:
     name: production container
+    needs: changes
+    if: needs.changes.outputs.container == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -126,6 +269,8 @@ jobs:
 
   desktop:
     name: desktop shell
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -183,6 +328,8 @@ jobs:
 
   plugin:
     name: WordPress plugin
+    needs: changes
+    if: needs.changes.outputs.plugin == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -302,6 +449,8 @@ jobs:
 
   connector:
     name: Windows print connector
+    needs: changes
+    if: needs.changes.outputs.connector == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
