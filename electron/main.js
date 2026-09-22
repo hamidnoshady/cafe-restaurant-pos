@@ -10,6 +10,7 @@ const { createCertificateManager } = require("./certificate-manager");
 const { FirewallManager } = require("./firewall-manager");
 const { GatewayManager } = require("./gateway-manager");
 const { createLogger } = require("./logger");
+const nativePrinting = require("./native-printing");
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -115,6 +116,45 @@ if (!gotSingleInstanceLock) {
     ipcMain.handle("desktop:open-logs", async () => {
       shell.showItemInFolder(logger.path);
       return logger.path;
+    });
+
+    // Native printing (Section 7 of the desktop audit): the desktop app talks
+    // to Windows queues and network ESC/POS printers directly from this main
+    // process — see native-printing.js's header for why the browser/cloud
+    // product's separate loopback "print connector" is not needed here.
+    ipcMain.handle("desktop:print-list-windows-printers", async () => {
+      const result = await nativePrinting.listWindowsPrinters();
+      if (!result.ok) logger.warn("Windows printer enumeration failed", result.detail);
+      return result;
+    });
+    ipcMain.handle("desktop:print-discover-network", async () => {
+      try {
+        const printers = await nativePrinting.discoverNetworkPrinters();
+        return { ok: true, printers };
+      } catch (error) {
+        logger.warn("Network printer discovery failed", error);
+        return { ok: false, error: "print_failed", detail: error?.message };
+      }
+    });
+    ipcMain.handle("desktop:print-probe", async (_event, payload) => {
+      const target = payload?.target;
+      const result = await nativePrinting.probeTarget(target);
+      if (result.ok && result.reachable === false) logger.info("Printer probe unreachable", { target, detail: result.detail });
+      return result;
+    });
+    ipcMain.handle("desktop:print-send-raw", async (_event, payload) => {
+      const target = payload?.target;
+      const dataBase64 = typeof payload?.dataBase64 === "string" ? payload.dataBase64 : "";
+      let bytes;
+      try {
+        bytes = Buffer.from(dataBase64, "base64");
+      } catch {
+        return { ok: false, error: "invalid_printer", detail: "Print data is invalid." };
+      }
+      const result = await nativePrinting.sendRawToTarget(target, bytes);
+      if (result.ok) logger.info("Native print delivered", { target, bytes: bytes.length });
+      else logger.warn("Native print failed", { target, error: result.error, detail: result.detail });
+      return result;
     });
   }
 

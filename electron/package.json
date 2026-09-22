@@ -39,6 +39,7 @@
       "firewall-manager.js",
       "gateway-manager.js",
       "network-interfaces.js",
+      "native-printing.js",
       "logger.js",
       "package.json"
     ],

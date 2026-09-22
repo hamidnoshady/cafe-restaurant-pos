@@ -4,58 +4,9 @@ import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ErrorBox, InfoBox, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import { SectionCard } from "@/app/dashboard/page-chrome";
+import type { DesktopGatewayStatus } from "@/lib/desktop-bridge";
 
-interface LanInterface {
-  name: string;
-  address: string;
-  netmask: string;
-  mac: string;
-}
-interface GatewayStatus {
-  supported: boolean;
-  enabled: boolean;
-  running: boolean;
-  computerName: string;
-  interfaces: LanInterface[];
-  selectedAddress: string | null;
-  port: number;
-  url: string | null;
-  caDownloadUrl: string | null;
-  onboardingPort: number;
-  onboardingScope: "ca-certificate-only";
-  onboardingDownloads: number;
-  lastOnboardingDownloadAt: string | null;
-  tlsDiagnostics: { count: number; last: { code: string; message: string; at: string } | null };
-  addressActive: boolean;
-  certificate: {
-    exists: boolean;
-    fingerprint?: string;
-    caFingerprint?: string;
-    expiresAt?: string;
-  };
-  firewall: { supported: boolean; installed: boolean; error?: string };
-  clients: Array<{ address: string; kind: string; lastSeenAt: string }>;
-  logPath: string;
-}
-interface DesktopBridge {
-  isDesktop: true;
-  localGateway: {
-    status(): Promise<GatewayStatus>;
-    enable(address: string): Promise<GatewayStatus>;
-    disable(): Promise<GatewayStatus>;
-    installFirewallRule(): Promise<GatewayStatus>;
-    removeFirewallRule(): Promise<GatewayStatus>;
-    regenerateCertificate(): Promise<GatewayStatus>;
-    showCaCertificate(): Promise<string>;
-    openLogs(): Promise<string>;
-  };
-}
-
-declare global {
-  interface Window {
-    businessSuiteDesktop?: DesktopBridge;
-  }
-}
+type GatewayStatus = DesktopGatewayStatus;
 
 function State({ ok, yes, no }: { ok: boolean; yes: string; no: string }) {
   return <span className={ok ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>{ok ? yes : no}</span>;
