@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const forge = require("node-forge");
+const { computePaths } = require("./app-paths");
 
 function pemFingerprint(pem) {
   const der = Buffer.from(pem.replace(/-----(?:BEGIN|END) CERTIFICATE-----|\s/g, ""), "base64");
@@ -20,7 +21,11 @@ function serial() {
 }
 
 function createCertificateManager(userDataDir, logger) {
-  const directory = path.join(userDataDir, "gateway-certificates");
+  // Section 8 folder split: gateway certificates live under
+  // Data/gateway-certificates/, not directly in userData. `main.js` runs
+  // `migrateLegacyLayout()` before this is ever called, so an existing
+  // install's certificates have already moved here.
+  const directory = computePaths(userDataDir).certificatesDir;
   const caKeyPath = path.join(directory, "local-ca-key.pem");
   const caCertPath = path.join(directory, "business-suite-local-ca.crt");
   const leafKeyPath = path.join(directory, "gateway-key.pem");

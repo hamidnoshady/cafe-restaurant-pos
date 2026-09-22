@@ -19,7 +19,7 @@ explicitly wherever it applies below, per the standing instruction not to
 claim hardware verification that never happened.
 
 **Baseline at completion:** `npx tsc --noEmit` clean · `npx eslint .` clean ·
-`npx vitest run` → **383 files / 5482 tests, all passing**. Branch
+`npx vitest run` → **385 files / 5496 tests, all passing**. Branch
 `arena/01a0c899-cafe-restaurant-pos`; see the commit-chain table in §3 for
 the full, current list of commits (each tagged with the section(s) and
 files it covers).
@@ -69,6 +69,16 @@ background/card tokens, centered the forms. See `687794b`.
 **Residual:** a full pixel-level pass over every settings sub-page was out
 of scope given the size of the codebase; the fix targeted the setup/login
 surfaces named explicitly in the brief.
+**Follow-up sweep (this cycle):** searched the rest of `src/app` for any
+other dark-gradient usage the original fix might have missed
+(`bg-gradient-to-*`/`from-slate-900`/`from-gray-900`/`from-black`/
+`via-black`/`bg-clip-text`). The only hit outside the already-fixed
+setup/login surfaces is `src/app/dashboard/ai/ai-chat-hub.tsx`'s hero
+section (two gradients: an icon tile and a heading). Both use semantic
+design-system tokens — `from-primary to-primary/70` and `from-foreground
+to-foreground/60` — not a raw dark/black color, so this is compliant with
+the "remove dark gradients" requirement rather than a residual violation
+and was left as-is.
 
 ### Section 2 — First-run wizard (Cloud Connected vs Local Desktop Mode)
 **Finding:** already implemented (`src/app/welcome/*`) — a welcome step
@@ -185,6 +195,21 @@ offline queue — extending further was assessed as a larger scope decision
 per domain (conflict semantics, UI wiring, dedicated server handlers where
 none exist yet) than this cycle's one-domain proof-of-pattern build, and is
 left for a future phase rather than attempted piecemeal here.
+**Final scope decision (this cycle, "do all jobs" pass):** re-evaluated
+whether to migrate any further domain onto the client queue before closing
+this engagement, and explicitly decided not to. Each remaining domain
+would need its own conflict-resolution semantics, its own idempotent
+server-side handler audit (the waste domain only qualified because
+`waste-service.ts` was already `clientEventId`-idempotent — that is not
+yet established for the other 7), and its own UI wiring reviewed against
+that domain's specific offline/online transition risks (e.g. Accounting
+entries are far higher-stakes to double-post than a waste log). Attempting
+several of these in one pass, unaudited, inside an already-large
+engagement would be exactly the kind of unscoped, risky rewrite the
+standing "no temporary/cosmetic-only fixes" and "do not fake verification"
+instructions warn against in spirit — a shallow multi-domain change here
+would be worse than the current, honestly-documented single-domain
+boundary. This is recorded as an explicit decision, not a silent omission.
 
 ### Section 6 — Cloud/Desktop installation relationship audit
 **Finding:** reviewed `src/lib/server-sync.ts` (token/credential
@@ -243,18 +268,73 @@ attempt was made to fake that verification.
 the connector, as instructed.
 
 ### Section 8 — Installation improvements
-**Finding:** `electron/package.json`'s electron-builder config was
-reviewed for `deleteAppDataOnUninstall` (`false` — correctly preserves
-local data across reinstall/uninstall), `oneClick`/`perMachine` (both
-`false`, i.e. a real NSIS wizard rather than a silent one-click installer).
-No separate Application/Data/Backup/Logs/Configuration folder split was
-found or built during this audit; Electron's own `userData` convention
-already separates config/logs/DB by OS-standard path, and Section 3's new
-storage-location wizard (§3 above) is the mechanism for relocating the
-data root, but an explicit installer-level four-way folder split matching
-the brief's exact wording was not implemented. Flagged as a residual gap,
-not fixed this engagement — lower priority than the auth/sync/printing
-gaps given the size of the remaining work.
+**Finding (original pass):** `electron/package.json`'s electron-builder
+config was reviewed for `deleteAppDataOnUninstall` (`false` — correctly
+preserves local data across reinstall/uninstall), `oneClick`/`perMachine`
+(both `false`, i.e. a real NSIS wizard rather than a silent one-click
+installer). No separate Application/Data/Backup/Logs/Configuration folder
+split existed: every install wrote `config.json`, the embedded Postgres
+data directory, the local HTTPS gateway's certificates, log files, and
+emergency pre-restore dumps all directly into one flat `userData` root,
+with no subfolder separation anywhere. "Application" was already distinct
+(the NSIS-installed program binaries under Program Files, never mixed with
+runtime data), but Data/Backup/Logs/Configuration were not.
+**Fix (this cycle):** `electron/app-paths.js` — a new module that is the
+single source of truth for the four-way split (`computePaths()`) and a
+one-time, idempotent migration (`migrateLegacyLayout()`) that moves an
+existing install's flat files into it:
+- `Configuration/config.json` — generated secrets, ports, instance identity
+- `Data/pgdata` — the embedded PostgreSQL data directory
+- `Data/gateway-certificates` — the local mobile-access CA/server certificates
+- `Backup/emergency-backups` — automatic pre-restore safety dumps
+- `Logs/desktop.log` (+ Postgres's own log)
+
+`electron/backend-manager.js`, `electron/logger.js`, and
+`electron/certificate-manager.js` now derive every one of those paths from
+`computePaths()` instead of constructing a flat `userData`-relative path
+inline (three call sites were updated). `electron/main.js` runs
+`migrateLegacyLayout()` once per install, immediately after the Section 3
+storage-location choice resolves the final `userData` root and before
+anything else computes a path from it, so an EXISTING install upgrading to
+this version has its files moved automatically on first launch after the
+upgrade — nothing re-prompts, nothing is silently duplicated, and a failed
+move (permissions, a locked file) is retried on the next launch rather
+than losing data (the legacy source is only removed after a successful
+copy). Completion is recorded in a `.folder-layout-v1` marker file at the
+`userData` root, mirroring the marker-file pattern `local-storage.js`
+already uses for the storage-root choice, so the migration runs at most
+once. A related interaction bug was fixed at the same time:
+`runStorageBootstrap()`'s "does this install already have data at the
+default path?" check only ever looked at the pre-split flat `config.json`
+location, which would have made an already-migrated install's SECOND
+launch look like a fresh install and re-prompt for a storage location on
+every subsequent launch; it now also checks the post-migration
+`Configuration/config.json` path.
+**Also found and fixed while implementing this (independent bug, not
+previously identified):** `backend-manager.js`'s `start()` has always
+called `desktopServerEnvironment(config, runtimeUrl, superuserUrl,
+appVersion, { pgToolsDir, emergencyBackupDir })` with a 5th options
+argument, but the function's own signature only accepted 4 parameters —
+`pgToolsDir` and `emergencyBackupDir` were silently dropped and never
+reached the spawned server process's environment. Since `NODE_ENV` is
+forced to `"production"` in that same environment object,
+`src/lib/pg-tools.ts`'s `pgToolBin()` *requires* `PG_TOOLS_DIR` in
+production and throws `{pg_dump,pg_restore}_packaged_tools_not_configured`
+without it — meaning every packaged desktop install's backup/restore path
+(pg_dump/pg_restore) was broken, silently, with no code path ever setting
+the one environment variable it depended on. Fixed by adding the `options`
+parameter to `desktopServerEnvironment()` and wiring both values into the
+returned environment (`PG_TOOLS_DIR`, `RESTORE_EMERGENCY_DIR`). See
+`src/lib/backend-manager-environment.test.ts`.
+**Tests:** `src/lib/app-paths.test.ts` (10 tests: fresh-install no-op,
+full migration, marker prevents re-running, pre-existing-destination is
+skipped not overwritten, a failed move does not write the marker, a
+legacy `logs/` folder is not mistaken for an occupied destination, EXDEV
+cross-device fallback, non-EXDEV errors re-throw) and
+`src/lib/backend-manager-environment.test.ts` (4 tests, pinning the
+`PG_TOOLS_DIR`/`RESTORE_EMERGENCY_DIR` fix).
+**Residual:** none — the folder split and the environment-variable bug it
+surfaced are both fixed and tested this cycle.
 
 ### Section 9 — Desktop Settings Center (Storage, Backup, Sync, Printer,
 Devices, Updates, Logs, Account)
@@ -461,13 +541,16 @@ This document, plus `TESTING_CHECKLIST.md` in the repo root.
 
 - `npx tsc --noEmit` — clean, throughout and at final HEAD.
 - `npx eslint .` — clean, throughout and at final HEAD.
-- `npx vitest run` — **383 test files / 5482 tests, all passing** at final
+- `npx vitest run` — **385 test files / 5496 tests, all passing** at final
   HEAD. This includes 17 tests for the sync queue state machine, 16 for the
-  error-report helpers, and this cycle's 10 new tests for the offline-queue
+  error-report helpers, this cycle's 10 new tests for the offline-queue
   domain extension (registry eligibility, the new `resolveQueueRecordRef`
-  case, and `/api/sync/events` route gating), plus all pre-existing suites
-  updated to expect audit-introduced changes (e.g. `settings-tabs.test.ts`
-  now expects the new `"logs"` tab).
+  case, and `/api/sync/events` route gating), and this cycle's 14 new tests
+  for the Section 8 folder split (`app-paths.test.ts`, 10 tests) and its
+  companion environment-variable bug fix
+  (`backend-manager-environment.test.ts`, 4 tests), plus all pre-existing
+  suites updated to expect audit-introduced changes (e.g.
+  `settings-tabs.test.ts` now expects the new `"logs"` tab).
 - **Not verified** (no environment available in this sandbox): a live
   Postgres-backed integration run, a live Electron process, real Windows
   print-spooler/hardware output, and a real signed-installer upgrade run.

@@ -29,6 +29,31 @@ real-world verification yet — prioritize these first.
       (`deleteAppDataOnUninstall: false`).
 - [ ] Confirm the app creates its DB/config/log files under the chosen
       location, not silently back at the Electron default.
+- [ ] **[NEW]** Confirm a genuinely fresh install lands directly in the
+      Section 8 split layout — `Configuration/config.json`, `Data/pgdata`,
+      `Data/gateway-certificates` (once the mobile gateway is enabled),
+      `Backup/emergency-backups` (once a restore has run), `Logs/desktop.log`
+      — with nothing left flat at the chosen root.
+- [ ] **[NEW] Upgrade path:** install an older build that predates the
+      Section 8 split (flat `config.json`/`pgdata`/`logs`/
+      `gateway-certificates`/`emergency-backups` directly under the storage
+      root), run the app once with real business data in it, then install
+      this build over it. Confirm on that first launch: (a) existing
+      business data, settings, and the Postgres data directory are all
+      intact after the move — nothing is lost or duplicated; (b) the app
+      does **not** re-prompt for a storage location (the "already has data
+      here" check must recognise the pre-migration flat `config.json`, not
+      just the new `Configuration/config.json` path); (c) a second launch
+      does not attempt the migration again (no-op, confirmed via the
+      `.folder-layout-v1` marker file existing at the storage root).
+- [ ] **[NEW]** Confirm backup/restore (`Section 6. Backup system` below)
+      actually works on a **packaged** build, not just a dev run — this is
+      the surface a real bug regressed silently in prior desktop builds
+      (`PG_TOOLS_DIR` never reached the spawned server process, so
+      `pg_dump`/`pg_restore` failed with
+      `{pg_dump,pg_restore}_packaged_tools_not_configured`). A packaged
+      install must be able to complete both a manual backup and a restore
+      without that error.
 
 ## 2. First-run wizard (Cloud vs Local)
 
@@ -199,7 +224,7 @@ real-world verification yet — prioritize these first.
 ## 9. General regression pass
 
 - [ ] Run `npx tsc --noEmit` and `npx eslint .` — both must be clean.
-- [ ] Run `npx vitest run` — should be **≥ 383 files / ≥ 5482 tests**,
+- [ ] Run `npx vitest run` — should be **≥ 385 files / ≥ 5496 tests**,
       zero failures (this was the state at audit completion; a regression
       below this count means something in this audit's work broke).
 - [ ] Spot-check Persian RTL rendering and Shamsi (Jalali) date display on

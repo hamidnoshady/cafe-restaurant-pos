@@ -34,6 +34,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "app-paths.js",
       "backend-manager.js",
       "certificate-manager.js",
       "firewall-manager.js",

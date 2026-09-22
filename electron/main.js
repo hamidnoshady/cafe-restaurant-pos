@@ -12,6 +12,7 @@ const { GatewayManager } = require("./gateway-manager");
 const { createLogger } = require("./logger");
 const nativePrinting = require("./native-printing");
 const localStorageChecks = require("./local-storage");
+const { migrateLegacyLayout } = require("./app-paths");
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -209,7 +210,7 @@ if (!gotSingleInstanceLock) {
       needsBootstrap: Boolean(state.needsBootstrap),
       authenticated,
       instanceId: backend.config.instanceId,
-      pgdata: require("node:fs").existsSync(path.join(app.getPath("userData"), "pgdata", "PG_VERSION")),
+      pgdata: require("node:fs").existsSync(path.join(computePaths(app.getPath("userData")).pgDataDir, "PG_VERSION")),
     }, null, 2));
   }
 
@@ -237,7 +238,16 @@ if (!gotSingleInstanceLock) {
     const fs = require("node:fs");
     try {
       const defaultUserDataDir = app.getPath("userData");
-      const hasExistingConfigAtDefault = fs.existsSync(path.join(defaultUserDataDir, "config.json"));
+      // Checks BOTH the pre-Section-8 flat path and the post-migration
+      // Configuration/ path: `migrateLegacyLayout()` (below, after this
+      // function returns) moves config.json out of the flat location on
+      // its first run, so an existing default-path install's SECOND launch
+      // must still be recognised as "already has data here" — otherwise it
+      // would incorrectly look like a fresh install and re-prompt for a
+      // storage location every launch after the very first migration.
+      const hasExistingConfigAtDefault =
+        fs.existsSync(path.join(defaultUserDataDir, "config.json")) ||
+        fs.existsSync(computePaths(defaultUserDataDir).configPath);
       const { root: markerRoot } = await localStorageChecks.readStorageRootMarker(defaultUserDataDir);
       const decision = localStorageChecks.decideStorageBootstrap({ hasExistingConfigAtDefault, markerRoot });
       if (decision.action === "use_marker_root") {
@@ -423,6 +433,24 @@ if (!gotSingleInstanceLock) {
     // location also decides where logs and Postgres data end up — not just
     // where the config marker recording the choice lives.
     await runStorageBootstrap();
+    // Section 8 folder split: one-time, idempotent move of an existing
+    // install's flat config.json/pgdata/logs/gateway-certificates/
+    // emergency-backups into Configuration/Data/Backup/Logs. Must run
+    // AFTER the storage-location choice above (so it operates on the final
+    // `userData` root) and BEFORE the logger/backend/certificate manager
+    // below compute any path from that root, so nothing ever reads from
+    // the pre-split flat locations. A failure here must never block
+    // startup — the app keeps working from whatever layout already exists
+    // (see app-paths.js's `migrateLegacyLayout` for why a failed move
+    // leaves the source untouched rather than losing data).
+    try {
+      const migration = migrateLegacyLayout(app.getPath("userData"));
+      if (migration.migrated && migration.results?.some((entry) => entry.action === "moved")) {
+        console.log("Migrated existing install to the Configuration/Data/Backup/Logs folder layout.", migration.results);
+      }
+    } catch (error) {
+      console.error("Folder-layout migration failed; continuing with the existing layout.", error);
+    }
     logger = createLogger(app.getPath("userData"));
     logger.info("Desktop process starting", { version: app.getVersion(), packaged: app.isPackaged });
     process.on("uncaughtException", (error) => logger.error("Uncaught desktop exception", error));

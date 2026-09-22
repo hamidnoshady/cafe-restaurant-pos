@@ -88,6 +88,28 @@ this never blocks a scripted run. Relocating an *already-initialised*
 `pgdata` directory later is out of scope for this feature and belongs with
 the Section 10 backup/restore wizard instead.
 
+Within whichever root that resolves to, Section 8 of the desktop audit
+splits it into four subfolders rather than leaving everything flat —
+`electron/app-paths.js`'s `computePaths()` is the single source of truth:
+
+- `Configuration/config.json` — generated secrets, ports, instance identity
+- `Data/pgdata` — the embedded PostgreSQL data directory
+- `Data/gateway-certificates` — the local mobile-access CA/server certificates
+- `Backup/emergency-backups` — automatic pre-restore safety dumps
+- `Logs/desktop.log` (+ Postgres's own log) — everything `electron/logger.js` writes
+
+An install that predates this split has all of the above sitting directly
+in the `userData` root instead. `main.js` runs `app-paths.js`'s
+`migrateLegacyLayout()` exactly once per install, immediately after the
+storage-location choice above resolves and before the logger, backend
+manager or certificate manager compute a single path from the result — it
+moves each legacy entry that exists into its new home and records
+completion in a `.folder-layout-v1` marker file at the root, so it never
+re-runs and a fresh install (nothing to move) is a no-op. A move failure
+(locked file, permissions) is not recorded as migrated, so it is retried on
+the next launch, and a partially-migrated entry never causes data loss —
+the source is only removed after a successful copy.
+
 The in-app **Setup wizard → Backup destination** step and the packaged app's
 own first-run prompt both call through to the same `evaluateFolder` check —
 disk-space and a real write/read/delete round trip — via
@@ -107,12 +129,15 @@ service directly:
 2. On a genuinely first launch, ask once where local data should live
    (default `userData` path or an owner-chosen folder) and record the
    answer — see "Persistent state" above.
-3. Load or create protected persistent configuration.
-4. Start embedded PostgreSQL and wait for readiness.
-5. Apply forward-only migrations.
-6. Derive the restricted `pos_app` runtime database URL.
-7. choose a free loopback application port and start the staged server.
-8. Verify identity-aware `/api/health` before opening the window.
+3. Migrate an existing install's flat layout into
+   Configuration/Data/Backup/Logs, once, idempotently — see "Persistent
+   state" above.
+4. Load or create protected persistent configuration.
+5. Start embedded PostgreSQL and wait for readiness.
+6. Apply forward-only migrations.
+7. Derive the restricted `pos_app` runtime database URL.
+8. choose a free loopback application port and start the staged server.
+9. Verify identity-aware `/api/health` before opening the window.
 9. Restore the configured HTTPS gateway where possible.
 
 If another process owns a required resource, startup fails with a diagnostic

@@ -7,6 +7,7 @@ const net = require("node:net");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
+const { computePaths } = require("./app-paths");
 
 class StartupError extends Error {
   constructor(stage, message, cause) {
@@ -68,8 +69,12 @@ function findFreePort(host, from, to) {
 }
 
 async function loadOrCreateConfig(userDataDir) {
-  const configPath = path.join(userDataDir, "config.json");
-  fs.mkdirSync(userDataDir, { recursive: true });
+  // Section 8 folder split: config.json lives under Configuration/, not
+  // directly in userData. `main.js` runs `migrateLegacyLayout()` before
+  // this is ever called, so an existing install's config.json has already
+  // moved here by the time this reads/creates it.
+  const configPath = computePaths(userDataDir).configPath;
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
   let config = {};
   if (fs.existsSync(configPath)) {
     config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -133,7 +138,8 @@ function runLoggedCommand(executable, args, logger, name) {
   });
 }
 
-function desktopServerEnvironment(config, runtimeUrl, superuserUrl, appVersion = "unknown") {
+function desktopServerEnvironment(config, runtimeUrl, superuserUrl, appVersion = "unknown", options = {}) {
+  const { pgToolsDir, emergencyBackupDir } = options;
   return {
     DATABASE_URL: runtimeUrl,
     BACKUP_DATABASE_URL: superuserUrl,
@@ -152,6 +158,23 @@ function desktopServerEnvironment(config, runtimeUrl, superuserUrl, appVersion =
     // Existing health/deployment diagnostics expose APP_IMAGE_SHA. Keep that
     // established field populated with the signed desktop package version.
     APP_IMAGE_SHA: appVersion,
+    // Bug fix (this cycle): `start()` below has always passed a 5th
+    // options argument here (`{ pgToolsDir, emergencyBackupDir }`), but
+    // this function's signature silently dropped it — neither value ever
+    // reached the spawned server process's environment. Since NODE_ENV is
+    // forced to "production" a few lines up, pg-tools.ts's pgToolBin()
+    // *requires* PG_TOOLS_DIR in production and throws
+    // "{pg_dump,pg_restore}_packaged_tools_not_configured" without it — so
+    // every packaged desktop install's backup/restore was broken (the
+    // *object* it dumps into, e.g. `BACKUP_DIR`, is separately configurable
+    // in-app via the Owner's backup-directory setting and was unaffected;
+    // this is specifically the *tool binary* the app shells out to).
+    // RESTORE_EMERGENCY_DIR is a lower-severity companion fix: without it,
+    // an emergency pre-restore dump falls back to the OS temp directory
+    // instead of living beside the rest of this install's data under
+    // `userData`.
+    ...(pgToolsDir ? { PG_TOOLS_DIR: pgToolsDir } : {}),
+    ...(emergencyBackupDir ? { RESTORE_EMERGENCY_DIR: emergencyBackupDir } : {}),
   };
 }
 
@@ -268,7 +291,7 @@ class BackendManager {
 
   async startPostgresWithPgCtl(dataDir, port) {
     const pgCtl = await this.pgControlPath();
-    const logDir = this.logger.dir || path.join(this.app.getPath("userData"), "logs");
+    const logDir = this.logger.dir || computePaths(this.app.getPath("userData")).logsDir;
     const logPath = path.join(logDir, "postgres.log");
     fs.mkdirSync(logDir, { recursive: true });
     fs.writeFileSync(logPath, "", { encoding: "utf8", mode: 0o600 });
@@ -299,7 +322,7 @@ class BackendManager {
       throw new StartupError("application-port", `Application loopback port ${config.appPort} is already in use.`);
     }
 
-    const dataDir = path.join(userDataDir, "pgdata");
+    const dataDir = computePaths(userDataDir).pgDataDir;
     const firstRun = !isInitialised(dataDir);
     let postgresStage = firstRun ? "initdb" : "postgres-start";
     try {
@@ -366,7 +389,7 @@ class BackendManager {
     const pgToolsDir = this.app.isPackaged
       ? path.join(process.resourcesPath, "postgresql-tools")
       : path.join(__dirname, "..", ".desktop-assets", "postgresql-tools");
-    const emergencyBackupDir = path.join(userDataDir, "emergency-backups");
+    const emergencyBackupDir = computePaths(userDataDir).emergencyBackupDir;
     const serverEnv = desktopServerEnvironment(config, runtimeUrl, superuserUrl, this.app.getVersion(), {
       pgToolsDir,
       emergencyBackupDir,
@@ -404,7 +427,7 @@ class BackendManager {
 
   async stopPostgresGracefully() {
     if (!this.pg) return;
-    const dataDir = path.join(this.app.getPath("userData"), "pgdata");
+    const dataDir = computePaths(this.app.getPath("userData")).pgDataDir;
     try {
       const pgCtl = await this.pgControlPath();
       await new Promise((resolve, reject) => {

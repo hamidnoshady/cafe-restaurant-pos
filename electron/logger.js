@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { computePaths } = require("./app-paths");
 
 const SECRET_PATTERNS = [
   /(postgres(?:ql)?:\/\/[^:\s]+:)[^@\s]+/gi,
@@ -31,7 +32,10 @@ function rotate(logPath, maxBytes, retained) {
 }
 
 function createLogger(userDataDir, options = {}) {
-  const logDir = path.join(userDataDir, "logs");
+  // Section 8 folder split: logs live under Logs/, not directly in
+  // userData. `main.js` runs `migrateLegacyLayout()` before this is ever
+  // called, so an existing install's log files have already moved here.
+  const logDir = computePaths(userDataDir).logsDir;
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, "desktop.log");
   const maxBytes = options.maxBytes || 5 * 1024 * 1024;
