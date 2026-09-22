@@ -11,6 +11,7 @@
  * same Rial twice. Money is integer Rial everywhere.
  */
 import { getPool, query, withTenant, type PoolClient } from "./db";
+import { consumePlanAllowanceTx, getPlanAllowance } from "./ai-plan-allowance";
 import {
   zarinpalRequest,
   zarinpalVerify,
@@ -485,6 +486,12 @@ export interface AiAffordability {
   balanceRial: number;
   debtRial: number;
   requiredRial: number;
+  /**
+   * Plan-included monthly AI credit still unused this month (migration 0168).
+   * The gate admits a turn when balance + this allowance covers the ceiling —
+   * a plan's «اعتبار ماهانهٔ هوش مصنوعی» is real spendable credit, not a hint.
+   */
+  allowanceRemainingRial: number;
 }
 
 export interface AiSettlementInput {
@@ -516,6 +523,8 @@ export interface AiSettlementInput {
 export interface AiSettlementResult {
   /** The full settled cost of the turn (what it *should* cost). */
   chargedRial: number;
+  /** The part covered by the plan's monthly AI allowance, not the wallet. */
+  allowanceAppliedRial: number;
   /** What was actually debited from the wallet this call. */
   debitedRial: number;
   /** New debt added because the wallet could not cover the full cost. */
@@ -593,11 +602,16 @@ export async function checkAiAffordability(
     const { balanceRial, debtRial } = await withWalletTx(client, businessId, (c) =>
       reconcileAiDebtTx(c, businessId),
     );
+    // The plan's monthly AI allowance counts toward affordability: a business
+    // whose plan includes credit may start a turn with an empty wallet, as
+    // long as the unused allowance covers the per-turn ceiling.
+    const allowance = await getPlanAllowance(businessId);
     return {
-      affordable: debtRial <= 0 && balanceRial >= required,
+      affordable: debtRial <= 0 && balanceRial + allowance.remainingRial >= required,
       balanceRial,
       debtRial,
       requiredRial: required,
+      allowanceRemainingRial: allowance.remainingRial,
     };
   } finally {
     client.release();
@@ -635,6 +649,7 @@ export async function settleAiWalletCharge(input: AiSettlementInput): Promise<Ai
         );
         return {
           chargedRial: n(existing.rows[0].charged_rial),
+          allowanceAppliedRial: 0,
           debitedRial: 0,
           debtAddedRial: 0,
           debtRial,
@@ -645,13 +660,20 @@ export async function settleAiWalletCharge(input: AiSettlementInput): Promise<Ai
         };
       }
 
+      // Plan allowance first (migration 0168): the plan's monthly AI credit is
+      // consumed before a single Rial leaves the wallet, inside this same
+      // locked transaction. A business whose plan covers the whole turn is not
+      // debited at all — the allowance row is the record.
+      const allowanceAppliedRial = await consumePlanAllowanceTx(c, input.businessId, cost);
+      const walletCost = cost - allowanceAppliedRial;
+
       const { rows: balRows } = await c.query<{ balance_rial: string }>(
         `SELECT balance_rial FROM business_wallets WHERE business_id = $1`,
         [input.businessId],
       );
       const balance = n(balRows[0]?.balance_rial);
-      const debitedRial = Math.min(cost, balance);
-      const debtAddedRial = cost - debitedRial;
+      const debitedRial = Math.min(walletCost, balance);
+      const debtAddedRial = walletCost - debitedRial;
 
       let walletLedgerId: string | null = null;
       let balanceAfter = balance;
@@ -669,6 +691,7 @@ export async function settleAiWalletCharge(input: AiSettlementInput): Promise<Ai
             requestType: input.requestType ?? "chat",
             pricedBy: input.pricedBy ?? "token_rate",
             ...(input.litellmCallId ? { litellmCallId: input.litellmCallId } : {}),
+            ...(allowanceAppliedRial > 0 ? { allowanceAppliedRial } : {}),
             ...(debtAddedRial > 0 ? { partial: true, debtAddedRial } : {}),
           },
         });
@@ -740,12 +763,16 @@ export async function settleAiWalletCharge(input: AiSettlementInput): Promise<Ai
           input.pricedBy ?? "token_rate",
           walletLedgerId,
           input.userId ?? null,
-          JSON.stringify(input.metadata ?? {}),
+          JSON.stringify({
+            ...(input.metadata ?? {}),
+            ...(allowanceAppliedRial > 0 ? { allowanceAppliedRial } : {}),
+          }),
         ],
       );
 
       return {
         chargedRial: cost,
+        allowanceAppliedRial,
         debitedRial,
         debtAddedRial,
         debtRial,

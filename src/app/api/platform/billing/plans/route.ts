@@ -44,12 +44,19 @@ export const POST = withPlatformScope(async (req: Request) => {
     body.monthlyPriceRial == null || body.monthlyPriceRial === ""
       ? null
       : Math.max(0, Math.floor(Number(body.monthlyPriceRial)));
+  // Plan-included monthly AI credit (migration 0168). Missing/0/null all mean
+  // "no included credit" so an update can also clear it.
+  const monthlyAiCredit =
+    body.monthlyAiCreditRial == null || body.monthlyAiCreditRial === ""
+      ? null
+      : Math.max(0, Math.floor(Number(body.monthlyAiCreditRial)));
 
   const plan = await saveBillingPlan({
     key: typeof body.key === "string" && body.key ? body.key : undefined,
     name,
     description: typeof body.description === "string" ? body.description : null,
     monthlyPriceRial: monthlyPrice,
+    monthlyAiCreditRial: monthlyAiCredit,
     isActive: body.isActive !== false,
     sortOrder: Math.floor(Number(body.sortOrder ?? 0)) || 0,
   });

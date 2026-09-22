@@ -167,7 +167,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const locationId = floorLocation?.id ?? activeLocation?.id ?? null;
   // Phase 37 & 39 — resolved through the gateway: the virtual key, the model alias
   // and the failover chain for THIS business and branch are applied here.
-  const config = await resolveAiConfigFor(session.businessId, locationId);
+  const config = await resolveAiConfigFor(session.businessId, locationId, { ensureVirtualKey: true });
   if (!isPlatformAiConfigured(config)) {
     const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: locationId, surface: "chat" });
     return NextResponse.json(
@@ -185,7 +185,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   } catch (err) {
     if (err instanceof AiWalletInsufficientError) {
       return NextResponse.json(
-        { error: "ai_credit_required", message: "اعتبار کیف پول شما برای استفاده از هوش مصنوعی کافی نیست." },
+        { error: "ai_credit_required", message: "اعتبار هوش مصنوعی کافی نیست. کیف پول کسب‌وکار را شارژ کنید." },
         { status: 402 },
       );
     }

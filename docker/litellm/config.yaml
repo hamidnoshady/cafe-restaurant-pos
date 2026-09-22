@@ -23,9 +23,12 @@
 #   مدل گفت‌وگو              pos-chat
 #   مدل بردارسازی            pos-embed
 #   زنجیرهٔ جایگزین          pos-cheap
-#   روش توزیع                simple-shuffle        (mirror of router_settings)
 #   مدل‌های قابل انتخاب      pos-chat, pos-cheap   (only if the business model
 #                                                  picker is switched on)
+#
+# Routing, per-model RPM/TPM and per-key budgets are configured HERE and only
+# here — the platform console stopped mirroring them (migration 0168), so this
+# file is the single home of the proxy's own settings.
 #
 # A routing strategy only has something to do when an alias has more than one
 # deployment behind it. Each alias below has exactly one, so today the router's

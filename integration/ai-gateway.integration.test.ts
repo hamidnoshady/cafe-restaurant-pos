@@ -123,7 +123,6 @@ describe("the gateway singleton", () => {
       gatewayCostingEnabled: true,
       usdRialRate: 600_000,
       fallbackModels: ["pos-cheap", "pos-last"],
-      routingStrategy: "least-busy",
       allowBusinessModels: true,
       publishedModels: ["pos-chat", "pos-fast"],
     });
@@ -131,8 +130,10 @@ describe("the gateway singleton", () => {
     expect(saved.chatModel).toBe("pos-chat");
     expect(saved.embeddingModel).toBe("pos-embed");
     expect(saved.fallbackModels).toEqual(["pos-cheap", "pos-last"]);
-    expect(saved.routingStrategy).toBe("least-busy");
     expect(saved.publishedModels).toEqual(["pos-chat", "pos-fast"]);
+    // Migration 0168: the stored config carries no routing/budget/limit
+    // mirror any more — those live in docker/litellm/config.yaml alone.
+    expect(JSON.stringify(saved)).not.toMatch(/routingStrategy|maxBudgetUsd|tpmLimit|rpmLimit|budgetDuration/);
 
     const reread = await gateway.getAiGatewayConfig();
     expect(reread).toEqual(saved);
@@ -151,18 +152,10 @@ describe("the gateway singleton", () => {
     expect(JSON.stringify(pub)).not.toContain("sk-secret");
   });
 
-  it("distinguishes an omitted budget from an explicitly cleared one", async () => {
-    await gateway.saveAiGatewayConfig({
-      baseUrl: "http://litellm:4000/v1",
-      defaultMaxBudgetUsd: 25,
-      defaultTpmLimit: 500_000,
-    });
+  it("stores no budget or rate-limit defaults at all — the wallet is the single stop", async () => {
     await gateway.saveAiGatewayConfig({ baseUrl: "http://litellm:4000/v1", chatModel: "pos-chat" });
-    expect((await gateway.getAiGatewayConfig()).defaultMaxBudgetUsd).toBe(25);
-
-    await gateway.saveAiGatewayConfig({ baseUrl: "http://litellm:4000/v1", defaultMaxBudgetUsd: null });
-    expect((await gateway.getAiGatewayConfig()).defaultMaxBudgetUsd).toBeNull();
-    expect((await gateway.getAiGatewayConfig()).defaultTpmLimit).toBe(500_000);
+    const stored = await gateway.getAiGatewayConfig();
+    expect(JSON.stringify(stored)).not.toMatch(/defaultMaxBudgetUsd|defaultTpmLimit|defaultRpmLimit|defaultBudgetDuration|routingStrategy/);
   });
 });
 
@@ -217,7 +210,7 @@ describe("one business's gateway row", () => {
   it.skipIf(!rlsActive)("keeps one business's row out of another business's session", async () => {
     const config = getTestConfig();
     await asBusiness(alpha.businessId, () =>
-      gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-fast", tpmLimit: 900 }, config),
+      gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-fast" }, config),
     );
 
     expect(await asBusiness(beta.businessId, () => gateway.getBusinessGateway(alpha.businessId))).toBeNull();
@@ -234,13 +227,15 @@ describe("one business's gateway row", () => {
       gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-fast" }, config),
     );
     await asBusiness(beta.businessId, () =>
-      gateway.saveBusinessGateway(beta.businessId, { tpmLimit: 1200 }, config),
+      gateway.saveBusinessGateway(beta.businessId, { modelOverride: "pos-pro" }, config),
     );
 
     const alphaRow = await asBusiness(alpha.businessId, () => gateway.getBusinessGateway(alpha.businessId));
     const betaRow = await asBusiness(beta.businessId, () => gateway.getBusinessGateway(beta.businessId));
     expect(alphaRow?.modelOverride).toBe("pos-fast");
-    expect(betaRow?.tpmLimit).toBe(1200);
+    expect(betaRow?.modelOverride).toBe("pos-pro");
+    // Identity-only rows: no mirrored key budgets or rate limits remain.
+    expect(JSON.stringify(betaRow)).not.toMatch(/maxBudgetUsd|tpmLimit|rpmLimit|budgetDuration/);
   });
 
   it("lists every business's row for the platform console", async () => {
@@ -249,13 +244,13 @@ describe("one business's gateway row", () => {
       gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-fast" }, config),
     );
     await asBusiness(beta.businessId, () =>
-      gateway.saveBusinessGateway(beta.businessId, { tpmLimit: 1200 }, config),
+      gateway.saveBusinessGateway(beta.businessId, { modelOverride: "pos-pro" }, config),
     );
 
     const rows = await gateway.listBusinessGateways();
     expect(rows).toHaveLength(2);
     expect(rows.find((row) => row.businessId === alpha.businessId)?.modelOverride).toBe("pos-fast");
-    expect(rows.find((row) => row.businessId === beta.businessId)?.tpmLimit).toBe(1200);
+    expect(rows.find((row) => row.businessId === beta.businessId)?.modelOverride).toBe("pos-pro");
   });
 
   it("reports the model a call would actually use", async () => {

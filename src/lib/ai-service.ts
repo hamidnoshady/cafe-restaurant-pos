@@ -344,6 +344,13 @@ async function callProvider(
     if (res.status === 401 || res.status === 403) {
       throw new AiError("ai_auth", "کلید سرویس هوش مصنوعی نامعتبر است.", body);
     }
+    // The gateway's own throttles (RPM/TPM per deployment, per-key budgets)
+    // answer 429. It is a transient, self-healing state — and since migration
+    // 0168 the platform no longer mirrors key budgets, a 429 with wallet
+    // credit left really is a proxy-side throttle, not a billing stop.
+    if (res.status === 429) {
+      throw new AiError("ai_rate_limited", "سرویس هوش مصنوعی در حال حاضر پرکاربرد است؛ کمی بعد دوباره تلاش کنید.", body);
+    }
     throw new AiError("ai_provider", `سرویس هوش مصنوعی خطا داد (${res.status}).`, body);
   }
 

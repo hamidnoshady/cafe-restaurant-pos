@@ -44,6 +44,13 @@ export interface BillingPlan {
   name: string;
   description: string | null;
   monthlyPriceRial: number | null;
+  /**
+   * AI credit included per calendar month (migration 0168). Consumed by the
+   * wallet settlement BEFORE the wallet itself, so a plan can ship
+   * «۱۰۰٬۰۰۰ تومان اعتبار هوش مصنوعی» with no manual grant and no second
+   * balance. NULL = the plan includes no AI credit.
+   */
+  monthlyAiCreditRial: number | null;
   isActive: boolean;
   sortOrder: number;
 }
@@ -103,10 +110,11 @@ export async function listBillingPlans(activeOnly = false): Promise<BillingPlan[
     name: string;
     description: string | null;
     monthly_price_rial: string | null;
+    monthly_ai_credit_rial: string | null;
     is_active: boolean;
     sort_order: number;
   }>(
-    `SELECT key, name, description, monthly_price_rial, is_active, sort_order
+    `SELECT key, name, description, monthly_price_rial, monthly_ai_credit_rial, is_active, sort_order
        FROM billing_plans
       WHERE ($1::boolean = false OR is_active)
       ORDER BY sort_order, key`,
@@ -117,6 +125,7 @@ export async function listBillingPlans(activeOnly = false): Promise<BillingPlan[
     name: r.name,
     description: r.description,
     monthlyPriceRial: r.monthly_price_rial == null ? null : n(r.monthly_price_rial),
+    monthlyAiCreditRial: r.monthly_ai_credit_rial == null ? null : n(r.monthly_ai_credit_rial),
     isActive: r.is_active,
     sortOrder: r.sort_order,
   }));
@@ -127,6 +136,7 @@ export async function saveBillingPlan(input: {
   name: string;
   description?: string | null;
   monthlyPriceRial?: number | null;
+  monthlyAiCreditRial?: number | null;
   isActive: boolean;
   sortOrder: number;
 }): Promise<BillingPlan> {
@@ -134,15 +144,22 @@ export async function saveBillingPlan(input: {
   if (!name) throw new Error("missing_fields");
   const key = (input.key ?? "").trim() || slugifyKey(name);
   const price = input.monthlyPriceRial == null ? null : Math.max(0, Math.floor(n(input.monthlyPriceRial)));
+  // NULL keeps "no included AI credit"; 0 normalises to NULL (same meaning,
+  // one representation).
+  const aiCredit =
+    input.monthlyAiCreditRial == null || n(input.monthlyAiCreditRial) <= 0
+      ? null
+      : Math.max(0, Math.floor(n(input.monthlyAiCreditRial)));
   await query(
-    `INSERT INTO billing_plans (key, name, description, monthly_price_rial, is_active, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO billing_plans (key, name, description, monthly_price_rial, monthly_ai_credit_rial, is_active, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
      ON CONFLICT (key) DO UPDATE SET
        name = EXCLUDED.name, description = EXCLUDED.description,
        monthly_price_rial = EXCLUDED.monthly_price_rial,
+       monthly_ai_credit_rial = EXCLUDED.monthly_ai_credit_rial,
        is_active = EXCLUDED.is_active, sort_order = EXCLUDED.sort_order,
        updated_at = now()`,
-    [key, name, input.description?.trim() || null, price, input.isActive, input.sortOrder || 0],
+    [key, name, input.description?.trim() || null, price, aiCredit, input.isActive, input.sortOrder || 0],
   );
   // A new billing plan row should also exist in the `plans` limits table so
   // plan-limits.ts and business.plan FK keep working.

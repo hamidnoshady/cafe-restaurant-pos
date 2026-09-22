@@ -17,7 +17,7 @@ export const GET = withTenantScope(async () => {
   const guard = await requireManager();
   if (guard.error) return guard.error;
 
-  const config = await resolveAiConfigFor(guard.session.businessId);
+  const config = await resolveAiConfigFor(guard.session.businessId, null, { ensureVirtualKey: true });
   const aiConfigured = isPlatformAiConfigured(config);
   const status = await getAiKnowledgeStatus(guard.session.businessId, aiConfigured);
   return NextResponse.json({ status });

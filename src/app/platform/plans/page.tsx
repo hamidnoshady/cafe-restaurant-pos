@@ -24,6 +24,8 @@ interface Plan {
   name: string;
   description: string | null;
   monthlyPriceRial: number | null;
+  /** اعتبار ماهانهٔ هوش مصنوعی که در این پلن گنجانده شده (ریال؛ null = بدون اعتبار). */
+  monthlyAiCreditRial: number | null;
   isActive: boolean;
   sortOrder: number;
 }
@@ -90,6 +92,8 @@ export default function PlanBuilderPage() {
   const [priceToman, setPriceToman] = useState("");
   const [freeUntil, setFreeUntil] = useState("");
   const [freeLimit, setFreeLimit] = useState("");
+  const [newPlanAiCredit, setNewPlanAiCredit] = useState("");
+  const [planAiCredit, setPlanAiCredit] = useState("");
 
   const load = useCallback(async () => {
     const { ok, data } = await api<{
@@ -124,6 +128,10 @@ export default function PlanBuilderPage() {
       body: JSON.stringify({
         name: newPlanName.trim(),
         monthlyPriceRial: priceTomanValue > 0 ? priceTomanValue * 10 : null,
+        monthlyAiCreditRial:
+          Number(toLatinDigits(newPlanAiCredit || "0")) > 0
+            ? Number(toLatinDigits(newPlanAiCredit)) * 10
+            : null,
         isActive: true,
         sortOrder: plans.length + 1,
       }),
@@ -133,6 +141,7 @@ export default function PlanBuilderPage() {
       setInfo(`پلن «${data.plan.name}» ساخته شد.`);
       setNewPlanName("");
       setNewPlanPrice("");
+      setNewPlanAiCredit("");
       setSelectedPlan(data.plan.key);
       void load();
     } else {
@@ -190,6 +199,49 @@ export default function PlanBuilderPage() {
   const currentFeatures = featuresByPlan[selectedPlan] ?? [];
   const usedKeys = new Set(currentFeatures.map((f) => f.featureKey));
   const availableCatalogue = catalogue.filter((c) => !usedKeys.has(c.key));
+  const selectedPlanRow = plans.find((p) => p.key === selectedPlan) ?? null;
+
+  // The per-plan AI credit editor mirrors the selected plan's stored value
+  // until the operator edits it (a controlled field, re-synced on plan/data
+  // change rather than kept in a second source of truth).
+  useEffect(() => {
+    setPlanAiCredit(
+      selectedPlanRow?.monthlyAiCreditRial
+        ? String(Math.round(selectedPlanRow.monthlyAiCreditRial / 10))
+        : "",
+    );
+  }, [selectedPlanRow?.key, selectedPlanRow?.monthlyAiCreditRial]);
+
+  async function savePlanAiCredit(ev: FormEvent<HTMLFormElement>) {
+    ev.preventDefault();
+    if (!selectedPlanRow) return;
+    setBusy("ai-credit");
+    setError("");
+    const creditToman = Math.max(0, Number(toLatinDigits(planAiCredit || "0")));
+    const { ok, data } = await api<{ plan?: Plan; error?: string }>("/api/platform/billing/plans", {
+      method: "POST",
+      body: JSON.stringify({
+        key: selectedPlanRow.key,
+        name: selectedPlanRow.name,
+        description: selectedPlanRow.description ?? undefined,
+        monthlyPriceRial: selectedPlanRow.monthlyPriceRial,
+        monthlyAiCreditRial: creditToman > 0 ? creditToman * 10 : null,
+        isActive: selectedPlanRow.isActive,
+        sortOrder: selectedPlanRow.sortOrder,
+      }),
+    });
+    setBusy(null);
+    if (ok) {
+      setInfo(
+        creditToman > 0
+          ? `اعتبار ماهانهٔ هوش مصنوعی پلن «${selectedPlanRow.name}» روی ${toman(creditToman * 10)} تومان تنظیم شد.`
+          : `اعتبار ماهانهٔ هوش مصنوعی پلن «${selectedPlanRow.name}» حذف شد.`,
+      );
+      void load();
+    } else {
+      setError(data.error ?? "ذخیره انجام نشد.");
+    }
+  }
 
   if (loading) return <PlatformPageSkeleton />;
 
@@ -230,6 +282,15 @@ export default function PlanBuilderPage() {
                 placeholder="0 = بدون هزینهٔ پایه"
               />
             </Field>
+            <Field label="اعتبار ماهانهٔ هوش مصنوعی (تومان) — اختیاری">
+              <PersianNumberInput
+                className={inputClass}
+                inputMode="numeric"
+                value={newPlanAiCredit}
+                onChange={(e) => setNewPlanAiCredit(e.target.value)}
+                placeholder="مثلاً ۱۰۰٬۰۰۰"
+              />
+            </Field>
             <Button type="submit" disabled={busy === "plan"} className="sm:col-span-2">
               {busy === "plan" ? <Loader2Icon className="size-4 animate-spin" /> : <PlusIcon className="size-4" />}
               ساخت پلن
@@ -255,9 +316,41 @@ export default function PlanBuilderPage() {
               {plan.monthlyPriceRial != null && plan.monthlyPriceRial > 0 && (
                 <span className="mr-2 text-xs text-muted-foreground">{toman(plan.monthlyPriceRial)} ت/ماه</span>
               )}
+              {plan.monthlyAiCreditRial != null && plan.monthlyAiCreditRial > 0 && (
+                <span className="mr-2 text-xs text-violet-700 dark:text-violet-300">
+                  ✦ {toman(plan.monthlyAiCreditRial)} ت اعتبار AI
+                </span>
+              )}
             </button>
           ))}
         </div>
+
+        {canManage && selectedPlanRow && (
+          <form
+            onSubmit={savePlanAiCredit}
+            className="mb-4 grid gap-3 rounded-xl border border-violet-300/60 bg-violet-50/40 p-4 dark:border-violet-500/30 dark:bg-violet-500/10 sm:grid-cols-3 sm:items-end"
+          >
+            <p className="text-sm font-semibold text-foreground sm:col-span-3">
+              سقف هوش مصنوعی این پلن
+              <span className="block mt-1 text-xs font-normal text-muted-foreground">
+                اعتباری که هر ماه پیش از کیف پول کسب‌وکار مصرف می‌شود؛ هزینهٔ بیش از آن از کیف پول کسر می‌شود.
+              </span>
+            </p>
+            <Field label="اعتبار ماهانهٔ هوش مصنوعی (تومان)">
+              <PersianNumberInput
+                className={inputClass}
+                inputMode="numeric"
+                value={planAiCredit}
+                onChange={(e) => setPlanAiCredit(e.target.value)}
+                placeholder="0 = بدون اعتبار ماهانه"
+              />
+            </Field>
+            <Button type="submit" disabled={busy === "ai-credit"} className="sm:col-span-2">
+              {busy === "ai-credit" ? <Loader2Icon className="size-4 animate-spin" /> : null}
+              ذخیرهٔ سقف هوش مصنوعی
+            </Button>
+          </form>
+        )}
 
         {canManage && (
           <form onSubmit={saveFeature} className="rounded-xl border border-border bg-card p-4">
