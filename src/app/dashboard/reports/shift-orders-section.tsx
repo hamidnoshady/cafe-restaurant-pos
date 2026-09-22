@@ -2,10 +2,10 @@
 
 import { EmptyState, SectionCard, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
-import { useCallback, useEffect, useState } from "react";
-import { ChevronDownIcon, RefreshCwIcon, ShoppingBagIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDownIcon, FilterIcon, RefreshCwIcon, SearchIcon, ShoppingBagIcon, XIcon } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { toPersianDigits } from "@/lib/digits";
+import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { formatModifierDelta, linePriceBreakdown } from "@/lib/modifier-display";
@@ -16,6 +16,9 @@ import { ModifierBadges } from "../modifier-badges";
 import { Button } from "@/components/ui/button";
 import { api, inputClass } from "../ui";
 import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
+import { JalaliDatePicker } from "../jalali-date-picker";
+import { BusinessDayRangePresets } from "./business-day-range";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 /** Mirrors shift-orders-service.ts's ShiftOrdersReport — declared here rather than imported so the client bundle never reaches a module that imports db.ts. */
 interface ShiftOption {
@@ -26,9 +29,14 @@ interface ShiftOption {
 }
 
 interface ShiftOrdersReport {
-  shift: ShiftOption;
+  shift: ShiftOption | null;
   shifts: ShiftOption[];
   orders: ShiftOrder[];
+  totalCount: number;
+  totalAmount: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -248,6 +256,7 @@ function OrderCard({ order }: { order: ShiftOrder }) {
             <p className="mt-1 truncate text-xs text-muted-foreground">
               {TYPE_LABELS[order.type]}
               {order.tableName ? ` · ${order.tableName}` : ""}
+              {order.customerName ? ` · ${order.customerName}` : ""}
               {` · ${timeLabel(order.openedAt)}`}
               {` · ${toPersianDigits(order.itemCount)} قلم`}
             </p>
@@ -314,98 +323,192 @@ function OrderCard({ order }: { order: ShiftOrder }) {
   );
 }
 
-/**
- * "سفارش‌های شیفت" — every order of one of the branch's recent shifts,
- * expandable to the whole bill: lines with their add-ons, the money
- * breakdown, and the tender. Defaults to the current shift, whose window
- * rolls over on its own when the next one starts (see
- * shift-orders-service.ts), so there is no date range to pick here — only
- * which shift.
- */
+interface FilterState {
+  shift: "latest" | "all" | string;
+  from: string;
+  to: string;
+  orderNumber: string;
+  customer: string;
+  status: string;
+  type: string;
+  page: number;
+}
+
+const DEFAULT_FILTERS: FilterState = { shift: "latest", from: "", to: "", orderNumber: "", customer: "", status: "", type: "", page: 1 };
+
+function FilterFields({ filters, setFilters, shifts, disabled }: {
+  filters: FilterState;
+  setFilters: (next: FilterState) => void;
+  shifts: ShiftOption[];
+  disabled: boolean;
+}) {
+  const patch = (value: Partial<FilterState>) => setFilters({ ...filters, ...value, page: 1 });
+  return (
+    <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <label className="min-w-0">
+        <span className="mb-1 block text-xs font-medium text-muted-foreground">شیفت</span>
+        <SearchableSelect
+          className={`${inputClass} w-full text-xs`}
+          ariaLabel="انتخاب شیفت"
+          value={filters.shift}
+          onChange={(shift) => patch({ shift })}
+          disabled={disabled}
+          options={[
+            { value: "latest", label: "آخرین شیفت" },
+            { value: "all", label: "همه شیفت‌ها" },
+            ...shifts.map((option) => ({ value: option.id, label: shiftLabel(option) })),
+          ]}
+        />
+      </label>
+      <label className="min-w-0">
+        <span className="mb-1 block text-xs font-medium text-muted-foreground">شماره سفارش</span>
+        <input className={`${inputClass} w-full`} dir="ltr" inputMode="numeric" value={filters.orderNumber}
+          onChange={(event) => patch({ orderNumber: event.target.value })} placeholder="#۱۲۳۴" />
+      </label>
+      <label className="min-w-0">
+        <span className="mb-1 block text-xs font-medium text-muted-foreground">نام مشتری</span>
+        <input className={`${inputClass} w-full`} value={filters.customer}
+          onChange={(event) => patch({ customer: event.target.value })} placeholder="بخشی از نام مشتری" />
+      </label>
+      <label className="min-w-0">
+        <span className="mb-1 block text-xs font-medium text-muted-foreground">وضعیت سفارش</span>
+        <select className={`${inputClass} w-full`} value={filters.status} onChange={(event) => patch({ status: event.target.value })}>
+          <option value="">همه وضعیت‌ها</option><option value="open">باز</option><option value="held">نگه‌داشته</option>
+          <option value="completed">تکمیل‌شده</option><option value="voided">باطل‌شده</option>
+        </select>
+      </label>
+      <label className="min-w-0">
+        <span className="mb-1 block text-xs font-medium text-muted-foreground">نوع سفارش</span>
+        <select className={`${inputClass} w-full`} value={filters.type} onChange={(event) => patch({ type: event.target.value })}>
+          <option value="">همه انواع</option><option value="dine_in">حضوری</option><option value="takeaway">بیرون‌بر</option><option value="delivery">ارسالی</option>
+        </select>
+      </label>
+      <label className="min-w-0">
+        <span className="mb-1 block text-xs font-medium text-muted-foreground">از تاریخ</span>
+        <JalaliDatePicker value={filters.from} onChange={(from) => patch({ from })} placeholder="از تاریخ" className={inputClass} />
+      </label>
+      <label className="min-w-0">
+        <span className="mb-1 block text-xs font-medium text-muted-foreground">تا تاریخ</span>
+        <JalaliDatePicker value={filters.to} onChange={(to) => patch({ to })} placeholder="تا تاریخ" className={inputClass} />
+      </label>
+    </div>
+  );
+}
+
+function initialFilters(): FilterState {
+  if (typeof window === "undefined") return DEFAULT_FILTERS;
+  const p = new URLSearchParams(window.location.search);
+  return {
+    shift: p.get("shift") || "latest", from: p.get("from") || "", to: p.get("to") || "",
+    orderNumber: p.get("order") || "", customer: p.get("customer") || "", status: p.get("status") || "",
+    type: p.get("type") || "", page: Math.max(1, Number(p.get("page")) || 1),
+  };
+}
+
 export function ShiftOrdersSection() {
+  const money = useMoney();
   const [report, setReport] = useState<ShiftOrdersReport | null>(null);
-  const [shiftId, setShiftId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [loaded, setLoaded] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async (id: string | null) => {
-    setRefreshing(true);
-    setError("");
-    const { ok, data } = await api<{ report: ShiftOrdersReport | null }>(
-      `/api/reports/shift-orders${id ? `?shiftId=${encodeURIComponent(id)}` : ""}`,
-    );
-    if (ok) setReport(data.report);
-    else setError("گزارش سفارش‌های شیفت به‌روز نشد.");
-    setLoaded(true);
-    setRefreshing(false);
-  }, []);
+  const query = useMemo(() => {
+    const p = new URLSearchParams();
+    if (filters.shift === "all") p.set("allShifts", "1");
+    else if (filters.shift !== "latest") p.set("shiftId", filters.shift);
+    if (filters.from) p.set("from", filters.from); if (filters.to) p.set("to", filters.to);
+    if (filters.orderNumber.trim()) p.set("orderNumber", filters.orderNumber.trim());
+    if (filters.customer.trim()) p.set("customer", filters.customer.trim());
+    if (filters.status) p.set("status", filters.status); if (filters.type) p.set("type", filters.type);
+    p.set("page", String(filters.page)); p.set("pageSize", "25");
+    return p.toString();
+  }, [filters]);
 
   useEffect(() => {
-    void load(shiftId);
-  }, [load, shiftId]);
+    const visible = new URLSearchParams(window.location.search);
+    visible.set("tab", "shift-orders");
+    for (const key of ["from", "to", "order", "customer", "status", "type", "shift", "page"]) visible.delete(key);
+    if (filters.from) visible.set("from", filters.from); if (filters.to) visible.set("to", filters.to);
+    if (filters.orderNumber) visible.set("order", filters.orderNumber); if (filters.customer) visible.set("customer", filters.customer);
+    if (filters.status) visible.set("status", filters.status); if (filters.type) visible.set("type", filters.type);
+    if (filters.shift !== "latest") visible.set("shift", filters.shift); if (filters.page > 1) visible.set("page", String(filters.page));
+    window.history.replaceState(null, "", `${window.location.pathname}?${visible}`);
+  }, [filters]);
 
-  if (!loaded) {
-    return (
-      <SectionCardSkeleton rows={4} />
-    );
-  }
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setRefreshing(true); setError("");
+      const result = await api<{ report: ShiftOrdersReport | null; error?: string }>(`/api/reports/shift-orders?${query}`, { signal: controller.signal });
+      if (result.aborted) return;
+      if (result.ok) setReport(result.data.report); else setError(result.status === 400 ? "فیلترهای انتخاب‌شده معتبر نیستند." : "گزارش سفارش‌ها به‌روز نشد.");
+      setLoaded(true); setRefreshing(false);
+    }, new URLSearchParams(query).has("customer") || new URLSearchParams(query).has("orderNumber") ? 320 : 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, refreshKey]);
+
+  if (!loaded) return <SectionCardSkeleton rows={4} />;
+  const activeCount = [filters.shift !== "latest", filters.from, filters.to, filters.orderNumber, filters.customer, filters.status, filters.type].filter(Boolean).length;
+  const reset = () => setFilters(DEFAULT_FILTERS);
+  const subtitle = report ? `${toPersianDigits(report.totalCount)} سفارش · جمع ${money.format(report.totalAmount)}` : "هر سفارش، قلم‌به‌قلم و در تمام تاریخچهٔ شعبه";
+  const chips: { key: keyof FilterState; label: string }[] = [
+    ...(filters.shift !== "latest" ? [{ key: "shift" as const, label: filters.shift === "all" ? "همه شیفت‌ها" : "شیفت انتخاب‌شده" }] : []),
+    ...(filters.from ? [{ key: "from" as const, label: `از ${formatJalali(filters.from)}` }] : []),
+    ...(filters.to ? [{ key: "to" as const, label: `تا ${formatJalali(filters.to)}` }] : []),
+    ...(filters.orderNumber ? [{ key: "orderNumber" as const, label: `سفارش: ${toPersianDigits(filters.orderNumber)}` }] : []),
+    ...(filters.customer ? [{ key: "customer" as const, label: `مشتری: ${filters.customer}` }] : []),
+    ...(filters.status ? [{ key: "status" as const, label: `وضعیت: ${STATUS_LABELS[filters.status] ?? filters.status}` }] : []),
+    ...(filters.type ? [{ key: "type" as const, label: `نوع: ${TYPE_LABELS[filters.type as ShiftOrder["type"]]}` }] : []),
+  ];
+  const removeChip = (key: keyof FilterState) => setFilters({ ...filters, [key]: key === "shift" ? "latest" : "", page: 1 });
 
   return (
-    <SectionCard
-      title="سفارش‌های شیفت"
-      description={
-        report
-          ? `${shiftLabel(report.shift)} · ${toPersianDigits(report.orders.length)} سفارش`
-          : "هر سفارش این شیفت، قلم‌به‌قلم."
-      }
-      actions={
-        <>
-          {report && report.shifts.length > 1 ? (
-            <SearchableSelect
-              className={`${inputClass} w-auto max-w-full text-xs`}
-              ariaLabel="انتخاب شیفت"
-              value={report.shift.id}
-              onChange={setShiftId}
-              disabled={refreshing}
-              options={report.shifts.map((option) => ({ value: option.id, label: shiftLabel(option) }))}
-            />
-          ) : null}
-          <Button type="button" variant="outline" onClick={() => void load(shiftId)} disabled={refreshing}>
-            <RefreshCwIcon aria-hidden="true" />
-            به‌روزرسانی
-          </Button>
-        </>
-      }
-      flush
-    >
-      {error ? (
-        <p role="status" className="border-b border-border bg-amber-50 px-4 py-2 text-xs text-muted-foreground dark:bg-amber-500/15">
-          {error}
-        </p>
-      ) : null}
-
+    <SectionCard title="سفارش‌های شیفت" description={subtitle} actions={
+      <div className="flex items-center gap-2">
+        <Sheet>
+          <SheetTrigger asChild><Button type="button" variant="outline" className="xl:hidden"><FilterIcon />فیلترها{activeCount ? ` (${toPersianDigits(activeCount)})` : ""}</Button></SheetTrigger>
+          <SheetContent side="bottom" className="max-h-[88vh] overflow-y-auto rounded-t-2xl">
+            <SheetHeader><SheetTitle>فیلترهای گزارش</SheetTitle><SheetDescription>فیلترها هم‌زمان و روی تمام تاریخچهٔ شعبه اعمال می‌شوند.</SheetDescription></SheetHeader>
+            <div className="px-4 pb-5"><FilterFields filters={filters} setFilters={setFilters} shifts={report?.shifts ?? []} disabled={refreshing} />
+              <BusinessDayRangePresets onSelect={(r) => setFilters({ ...filters, from: r.dateFrom, to: r.dateTo, page: 1 })} onClear={() => setFilters({ ...filters, from: "", to: "", page: 1 })} />
+            </div>
+          </SheetContent>
+        </Sheet>
+        {activeCount ? <Button type="button" variant="ghost" onClick={reset}><XIcon />پاک کردن</Button> : null}
+        <Button type="button" variant="outline" onClick={() => setRefreshKey((v) => v + 1)} disabled={refreshing}><RefreshCwIcon />{refreshing ? "در حال به‌روزرسانی…" : "به‌روزرسانی"}</Button>
+      </div>
+    } flush>
+      <div className="hidden border-b border-border bg-muted/40 p-4 xl:block">
+        <FilterFields filters={filters} setFilters={setFilters} shifts={report?.shifts ?? []} disabled={refreshing} />
+        <BusinessDayRangePresets onSelect={(r) => setFilters({ ...filters, from: r.dateFrom, to: r.dateTo, page: 1 })} onClear={() => setFilters({ ...filters, from: "", to: "", page: 1 })} />
+      </div>
+      <div className="border-b border-border p-3 xl:hidden">
+        <label className="relative block"><SearchIcon className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input className={`${inputClass} w-full pe-10`} value={filters.orderNumber || filters.customer} onChange={(e) => {
+            const value = e.target.value;
+            const looksLikeNumber = /^#?\s*\d*$/.test(toLatinDigits(value));
+            setFilters({ ...filters, orderNumber: looksLikeNumber ? value : "", customer: looksLikeNumber ? "" : value, page: 1 });
+          }} placeholder="شماره سفارش یا نام مشتری" />
+        </label>
+      </div>
+      {chips.length ? <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5" aria-label="فیلترهای فعال">
+        {chips.map((chip) => <button key={chip.key} type="button" onClick={() => removeChip(chip.key)} className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-amber-100 px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-200">
+          {chip.label}<XIcon className="size-3.5" aria-hidden="true" />
+        </button>)}
+        <button type="button" onClick={reset} className="min-h-8 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground">پاک کردن همه</button>
+      </div> : null}
+      {error ? <p role="status" className="border-b border-border bg-amber-50 px-4 py-2 text-xs text-muted-foreground dark:bg-amber-500/15">{error}</p> : null}
       {!report ? (
-        <div className="flex min-h-48 flex-col items-center justify-center p-6 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
-            <ShoppingBagIcon className="size-5" aria-hidden="true" />
-          </span>
-          <p className="mt-4 text-sm font-semibold text-foreground">شیفتی برای این شعبه ثبت نشده است</p>
-          <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">
-            با شروع نخستین شیفت، سفارش‌های هر شیفت قلم‌به‌قلم در این بخش نمایش داده می‌شود.
-          </p>
-        </div>
+        <div className="flex min-h-48 flex-col items-center justify-center p-6 text-center"><ShoppingBagIcon className="size-8 text-amber-700 dark:text-amber-300" /><p className="mt-4 text-sm font-semibold">شیفت انتخاب‌شده در این شعبه پیدا نشد</p><Button className="mt-3" variant="outline" onClick={reset}>پاک کردن فیلترها</Button></div>
       ) : report.orders.length === 0 ? (
-        <div className="p-4 sm:p-5">
-          <EmptyState>سفارش‌های ثبت‌شده از شروع این شیفت اینجا فهرست می‌شوند.</EmptyState>
-        </div>
-      ) : (
-        <ul className="divide-y divide-border">
-          {report.orders.map((order) => (
-            <OrderCard key={order.id} order={order} />
-          ))}
-        </ul>
-      )}
+        <div className="p-5"><EmptyState>{activeCount ? "سفارشی با فیلترهای انتخاب‌شده پیدا نشد." : "در این بازه سفارشی ثبت نشده است."}</EmptyState>{activeCount ? <div className="mt-3 text-center"><Button variant="outline" onClick={reset}>پاک کردن فیلترها</Button></div> : null}</div>
+      ) : <ul className={`divide-y divide-border transition-opacity ${refreshing ? "opacity-60" : ""}`}>{report.orders.map((order) => <OrderCard key={order.id} order={order} />)}</ul>}
+      {report && report.pageCount > 1 ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-4 text-xs text-muted-foreground">
+        <span>نمایش {toPersianDigits((report.page - 1) * report.pageSize + 1)} تا {toPersianDigits(Math.min(report.page * report.pageSize, report.totalCount))} از {toPersianDigits(report.totalCount)} سفارش</span>
+        <div className="flex gap-2"><Button variant="outline" disabled={report.page <= 1 || refreshing} onClick={() => setFilters({ ...filters, page: filters.page - 1 })}>قبلی</Button><Button variant="outline" disabled={report.page >= report.pageCount || refreshing} onClick={() => setFilters({ ...filters, page: filters.page + 1 })}>بعدی</Button></div>
+      </div> : null}
     </SectionCard>
   );
 }

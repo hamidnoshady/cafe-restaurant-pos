@@ -34,8 +34,10 @@ interface BusinessDayInfo {
 }
 
 const PRESETS: { key: BusinessDateRangePreset; label: string }[] = [
-  { key: "current_day", label: "روز کاری جاری" },
-  { key: "previous_day", label: "روز کاری قبلی" },
+  { key: "current_day", label: "امروز" },
+  { key: "previous_day", label: "دیروز" },
+  { key: "current_week", label: "این هفته" },
+  { key: "current_month", label: "این ماه" },
   { key: "last_7_days", label: "۷ روز اخیر" },
   { key: "last_30_days", label: "۳۰ روز اخیر" },
 ];

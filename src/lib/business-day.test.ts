@@ -240,6 +240,18 @@ describe("businessDateRange", () => {
     });
   });
 
+  it("uses Saturday for the Iranian week and the first Jalali day for the month", () => {
+    expect(businessDateRange("current_week", today)).toEqual({
+      dateFrom: "2026-08-15",
+      dateTo: "2026-08-16",
+    });
+    // 2026-08-16 is 1405/05/25; Mordad began on 2026-07-23.
+    expect(businessDateRange("current_month", today)).toEqual({
+      dateFrom: "2026-07-23",
+      dateTo: "2026-08-16",
+    });
+  });
+
   it("counts the current business day inside the rolling windows", () => {
     expect(businessDateRange("last_7_days", today)).toEqual({
       dateFrom: "2026-08-10",
@@ -252,7 +264,7 @@ describe("businessDateRange", () => {
   });
 
   it("never produces a backwards range", () => {
-    for (const preset of ["current_day", "previous_day", "last_7_days", "last_30_days"] as const) {
+    for (const preset of ["current_day", "previous_day", "current_week", "current_month", "last_7_days", "last_30_days"] as const) {
       const { dateFrom, dateTo } = businessDateRange(preset, today);
       expect(dateFrom <= dateTo).toBe(true);
     }

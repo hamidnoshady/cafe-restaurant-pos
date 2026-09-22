@@ -1,3 +1,5 @@
+import { isoDateToJalali, jalaliToIsoDate } from "./jalali";
+
 /**
  * The business day (روز کاری) — the framework-free half.
  *
@@ -218,6 +220,8 @@ export function shiftIsoDate(iso: string, days: number): string {
 export type BusinessDateRangePreset =
   | "current_day"
   | "previous_day"
+  | "current_week"
+  | "current_month"
   | "last_7_days"
   | "last_30_days";
 
@@ -237,6 +241,17 @@ export function businessDateRange(
     case "previous_day": {
       const yesterday = shiftIsoDate(today, -1);
       return { dateFrom: yesterday, dateTo: yesterday };
+    }
+    case "current_week": {
+      // Iranian weeks start on Saturday. getUTCDay(): Saturday=6, Sunday=0.
+      const day = new Date(`${today}T00:00:00Z`).getUTCDay();
+      return { dateFrom: shiftIsoDate(today, -((day + 1) % 7)), dateTo: today };
+    }
+    case "current_month": {
+      // Reports are Persian-first: «این ماه» means the current Jalali month,
+      // while the wire remains an ISO/Gregorian date.
+      const jalali = isoDateToJalali(today);
+      return { dateFrom: jalali ? jalaliToIsoDate(jalali.jy, jalali.jm, 1) : today, dateTo: today };
     }
     // Inclusive of the current business day, so "۷ روز اخیر" is seven days of
     // trading and not six plus a partial one.
