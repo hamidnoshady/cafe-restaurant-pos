@@ -100,7 +100,7 @@ retrying forever.
 
 ## 2. Database changes
 
-`migrations/0168_data_transfer_engine.sql` — six tables, each RLS-forced with a
+`migrations/0169_data_transfer_engine.sql` — six tables, each RLS-forced with a
 `tenant_isolation` policy whose `USING` **and** `WITH CHECK` follow the
 templates in 0021/0167, verified by `tenant-isolation.integration.test.ts`:
 

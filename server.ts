@@ -371,7 +371,7 @@ app.prepare().then(async () => {
     runMessagingTick().catch((err) => console.error("messaging tick failed:", err));
   scheduleBackgroundTick(messagingTick, MESSAGE_TICK_INTERVAL_MS, 35_000);
 
-  // «ورود و خروج داده» — the platform data transfer engine (migration 0168).
+  // «ورود و خروج داده» — the platform data transfer engine (migration 0169).
   // Two ticks, for two genuinely different jobs.
   //
   // The import worker claims ONE queued job per tick (a conditional UPDATE, so

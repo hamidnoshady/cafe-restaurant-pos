@@ -5,7 +5,7 @@
  *
  * A background tick has no session, so it inherits no tenant scope. Every
  * table this engine owns is protected by an RLS policy keyed on
- * `app.business_id` (migration 0168), and an unset scope makes
+ * `app.business_id` (migration 0169), and an unset scope makes
  * `app_current_business()` NULL, which makes every policy predicate false.
  * A cross-tenant claim issued with no scope therefore matches **zero rows on
  * every business**: the import queue never drains, and no error is raised —
