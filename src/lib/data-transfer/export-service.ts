@@ -25,7 +25,6 @@ import { formatJalali } from "../jalali";
 import { toPersianDigits } from "../digits";
 import { getSetting, SETTING_KEYS } from "../settings";
 import { renderReportTableHtml, type ReportPdfBusinessInfo } from "../report-pdf-template";
-import { renderHtmlToPdf } from "../pdf-render";
 import { defaultExportFields, findEntity, requireEntity } from "./registry";
 import { ensureAdaptersRegistered } from "./entities";
 import { requireAdapter, type AdapterContext } from "./adapters";
@@ -241,6 +240,16 @@ export async function buildExport(input: BuildExportInput): Promise<BuiltExport>
     columns: columns.map((column) => ({ key: column.key, label: column.label })),
     rows: rendered,
   });
+  // Imported lazily, and this is load-bearing rather than a micro-optimisation.
+  // `pdf-render` pulls in `playwright-core`, which cannot be bundled: esbuild
+  // fails to resolve its `chromium-bidi` requires, and the desktop installer
+  // compiles `server.ts` — including this module, which a background tick
+  // imports for the retention sweep — into a single CJS bundle. A static
+  // import here therefore breaks `npm run desktop:runtime`, and with it both
+  // the `verify-shippables` and `build-desktop-installer` workflows, even
+  // though nothing on that path ever renders a PDF. Same treatment `codecs.ts`
+  // gives `exceljs` and `unpdf`. Keep it lazy.
+  const { renderHtmlToPdf } = await import("../pdf-render");
   const body = await renderHtmlToPdf(html);
   return { fileName, contentType: CONTENT_TYPES.pdf, body, rowCount: rows.length };
 }
