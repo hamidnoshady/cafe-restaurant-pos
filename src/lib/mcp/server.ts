@@ -118,7 +118,18 @@ async function callTool(
   }
 
   if (tool.binding.kind === "read") {
-    const outcome = await runReadTool(tool.binding.readToolName, args, auth.businessId);
+    // The workspace tools need to know who is asking — `mine: true` means the
+    // human who authorized this connection, and nothing else. Every other read
+    // tool ignores the argument. A connection with no authorizing user (a
+    // machine token) gets a decline from the tool itself, which is the right
+    // answer: there is no "my tasks" without a "my".
+    const outcome = await runReadTool(
+      tool.binding.readToolName,
+      args,
+      auth.businessId,
+      undefined,
+      auth.authorizedByUserId ?? undefined,
+    );
     return { result: toolResult(outcome.data, !outcome.ok) };
   }
 

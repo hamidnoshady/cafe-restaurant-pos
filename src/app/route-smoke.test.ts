@@ -15,7 +15,7 @@
  * where you were going; signed in, every one of them is served rather than
  * bounced; and every legacy address permanently redirects to its canonical
  * replacement with its query string intact. That is the login → dashboard →
- * each app overview → /projects → /settings → each app's settings → the menu's
+ * each app overview → /workspace → /settings → each app's settings → the menu's
  * destinations → logout journey, expressed as status codes.
  *
  * The database-backed integration suite (`npm run test:db`) needs Postgres and
@@ -36,7 +36,10 @@ import {
   PLATFORM_BILLING_HREF,
   PLATFORM_SETTINGS_HOME,
   PLATFORM_SUBSCRIPTION_HREF,
+  WORKSPACE_MODULE_HOME,
+  workspaceSectionHref,
 } from "@/lib/app-routes";
+import { WORKSPACE_SECTIONS } from "@/lib/workspace-shared";
 import { platformUserMenuItems } from "@/lib/platform-user-menu";
 import { settingsTabHref } from "@/lib/settings-routes";
 
@@ -91,7 +94,8 @@ async function isServed(pathname: string): Promise<boolean> {
 const JOURNEY: readonly string[] = [
   DASHBOARD_HOME,
   ...APP_ROUTE_PREFIXES.map((prefix) => APP_HOME_HREFS[prefix]),
-  "/projects",
+  WORKSPACE_MODULE_HOME,
+  ...WORKSPACE_SECTIONS.map(workspaceSectionHref),
   PLATFORM_SETTINGS_HOME,
   ...APP_ROUTE_PREFIXES.map((prefix) => APP_SETTINGS_HREFS[prefix]),
   ...Object.values(ACCOUNTING_WORKSPACE_HREFS),
@@ -113,7 +117,7 @@ const JOURNEY: readonly string[] = [
 ];
 
 describe("the signed-in journey", () => {
-  it("serves the workspace home, every app overview, /projects and the settings areas", async () => {
+  it("serves the workspace home, every app overview, every workspace section and the settings areas", async () => {
     for (const pathname of JOURNEY) {
       expect(
         await isServed(pathname),
@@ -259,7 +263,9 @@ describe("the legacy addresses", () => {
     ["/dashboard/growth/campaigns", "/growth/campaigns"],
     ["/dashboard/website", "/websites/overview"],
     ["/dashboard/website/wp/orders", "/websites/wp/orders"],
-    ["/dashboard/projects", "/projects"],
+    ["/dashboard/projects", "/workspace/projects"],
+    ["/projects", "/workspace/projects"],
+    ["/projects/42", "/workspace/projects/42"],
     ["/dashboard/settings", "/settings"],
     ["/dashboard/billing", PLATFORM_BILLING_HREF],
     ["/dashboard/connections", "/settings/connections"],

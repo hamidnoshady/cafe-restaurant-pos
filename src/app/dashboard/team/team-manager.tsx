@@ -77,6 +77,13 @@ const PERMISSION_LABELS: Record<string, string> = {
   // personnel, and the label must not hide that.
   "parties.view": "مشاهدهٔ اشخاص",
   "parties.manage": "مدیریت اشخاص",
+  // Phase G — «میز کار من». The two carved-out keys say what they commit the
+  // business to, not which screen they open: a member reading «مدیریت
+  // قراردادها» must understand it means signing, not filing.
+  "workspace.view": "مشاهدهٔ میز کار",
+  "workspace.manage": "مدیریت پروژه‌ها و وظایف",
+  "workspace.contracts_manage": "مدیریت قراردادهای اجرایی",
+  "workspace.approve": "تأیید درخواست‌ها",
   "ledger.view": "مشاهدهٔ دفتر",
   "ledger.post": "ثبت سند",
   "ledger.approve": "تأیید سند",

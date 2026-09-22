@@ -1,12 +1,21 @@
 "use client";
 
-import { DashboardPageSkeleton } from "@/app/dashboard/page-chrome";
+/**
+ * The AI-assistant side of a project — its static instruction, its
+ * conversations, its files, its notes, its standing memory and its short
+ * assistant to-dos.
+ *
+ * This is the pre-Phase-G `/projects/[id]` page, moved rather than rewritten:
+ * the same components, the same `/api/ai/projects/**` calls, the same limits.
+ * «میز کار من» wraps it in a project page that also carries phases, workspace
+ * tasks, documents, contracts and the team — so nothing a business already
+ * relied on disappeared, it just stopped being the whole of a project.
+ */
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
-  ArrowRightIcon,
   BrainIcon,
   CheckIcon,
   CircleIcon,
@@ -23,7 +32,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { PageHeader, PageShell, SectionCard, cardClass } from "@/app/dashboard/page-chrome";
+import { SectionCard, SectionCardSkeleton, cardClass } from "@/app/dashboard/page-chrome";
 import { api, inputClass } from "@/app/dashboard/ui";
 import {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
@@ -101,8 +110,7 @@ interface Task {
   updatedAt: string;
 }
 
-export default function ProjectDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export function ProjectAssistantPanels({ projectId: id }: { projectId: string }) {
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [cost, setCost] = useState<Cost | null>(null);
@@ -289,7 +297,7 @@ export default function ProjectDetailPage() {
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
   }
 
-  if (!project) return <DashboardPageSkeleton />;
+  if (!project) return <SectionCardSkeleton rows={6} label="در حال بارگذاری پروژه" />;
 
   const titlesWeight = notes.map((n) => n.title);
   const currentWeight = instructionWeight(project.instructions, titlesWeight);
@@ -297,30 +305,16 @@ export default function ProjectDetailPage() {
   const remaining = PROJECT_INSTRUCTION_CHAR_LIMIT - currentWeight;
 
   return (
-    <PageShell className="pb-6">
-      <PageHeader
-        title={project.name}
-        description={project.instructions || undefined}
-        actions={
-          <div className="flex items-center gap-2">
-            <Link href="/projects">
-              <Button variant="outline" size="sm">
-                <ArrowRightIcon className="size-4 rtl:rotate-180" />
-                بازگشت
-              </Button>
-            </Link>
-            <Button
-              size="sm"
-              onClick={() =>
-                router.push(`/dashboard?ctx=پروژه: ${project.name}`)
-              }
-            >
-              <MessageSquareIcon className="size-4" />
-              گفت‌وگوی جدید
-            </Button>
-          </div>
-        }
-      />
+    <div className="pb-2">
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        <Button
+          size="sm"
+          onClick={() => router.push(`/dashboard?ctx=پروژه: ${project.name}`)}
+        >
+          <MessageSquareIcon className="size-4" />
+          گفت‌وگوی جدید
+        </Button>
+      </div>
 
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -764,6 +758,6 @@ export default function ProjectDetailPage() {
           )}
         </aside>
       </div>
-    </PageShell>
+    </div>
   );
 }

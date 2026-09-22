@@ -163,7 +163,10 @@ describe("route → app", () => {
 
   it("leaves the shell surfaces ungated — the explanation screen has to be reachable", () => {
     expect(appForPagePath("/dashboard")).toBeNull();
-    expect(appForPagePath("/projects")).toBeNull();
+    // Phase G — «میز کار من» is platform furniture, not a product a business
+    // can be sold without, so it is never availability-gated.
+    expect(appForPagePath("/workspace")).toBeNull();
+    expect(appForPagePath("/workspace/contracts")).toBeNull();
     expect(appForPagePath("/ai")).toBeNull();
     // The «اتصال‌های فنی» hub is a shell utility, not an app: turning a
     // platform off must never lock the page that holds its credentials.

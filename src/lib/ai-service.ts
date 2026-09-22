@@ -556,6 +556,12 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   /** Present only for the cashier/waiter assistant; it constrains all floor reads. */
   floorScope?: FloorReadScope;
   /**
+   * Phase G — the signed-in member. The workspace read tools resolve «مالِ من»
+   * from this and from nothing else; a model-supplied user id is never
+   * accepted. Absent, those tools decline instead of widening their scope.
+   */
+  actorUserId?: string;
+  /**
    * A separate read-tool realm can supply its own executor. It is deliberately
    * invoked only after the tool name is checked against toolDefinitions(mode).
    */
@@ -629,7 +635,9 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   );
   const toolRunner: ReadToolRunner | null =
     opts.executeReadTool ??
-    (businessId ? (name, args) => runReadTool(name, args, businessId, floorScope) : null);
+    (businessId
+      ? (name, args) => runReadTool(name, args, businessId, floorScope, opts.actorUserId)
+      : null);
   const usage: AiTokenUsage = { inputTokens: 0, outputTokens: 0 };
   let costUsd: number | null = null;
   const toolTrace: AgentToolCallTrace[] = [];

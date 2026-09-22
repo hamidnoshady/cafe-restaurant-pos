@@ -19,7 +19,7 @@
  * under a platform session.
  */
 
-import { ACCOUNTING_WORKSPACE_HREFS } from "./app-routes";
+import { ACCOUNTING_WORKSPACE_HREFS, WORKSPACE_MODULE_HOME } from "./app-routes";
 
 export interface KnowledgeSection {
   /** Stable key stored in `knowledge_base_entries.section`. */
@@ -54,7 +54,10 @@ export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
   { key: "delivery", label: "ارسال سفارش", route: ACCOUNTING_WORKSPACE_HREFS.delivery },
   { key: "connections", label: "اتصال‌های فنی", route: "/settings/connections" },
   { key: "website", label: "وب‌سایت", route: "/websites" },
-  { key: "projects", label: "پروژه‌ها", route: "/projects" },
+  // Phase G — «پروژه‌ها» grew into «میز کار من». The KEY is unchanged on
+  // purpose: it is stored in `knowledge_base_entries.section`, so renaming it
+  // would orphan every guide a business has already written.
+  { key: "projects", label: "میز کار من", route: WORKSPACE_MODULE_HOME },
   // The assistant is not a section of the learning centre's route table: it
   // is the workspace home itself (`/dashboard`), covered by no pathname in
   // this list — the chat home carries its own in-context guidance instead.

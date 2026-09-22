@@ -144,7 +144,11 @@ describe("legacy redirects", () => {
   it("moves the platform's own pages into the settings area", () => {
     expect(canonicalPathForLegacy("/dashboard/settings")).toBe("/settings");
     expect(canonicalPathForLegacy("/dashboard/settings/team")).toBe("/settings/team");
-    expect(canonicalPathForLegacy("/dashboard/projects")).toBe("/projects");
+    // Phase G — «پروژه‌ها» is a section of «میز کار من» now, so the two old
+    // addresses both forward into it and keep their suffix.
+    expect(canonicalPathForLegacy("/dashboard/projects")).toBe("/workspace/projects");
+    expect(canonicalPathForLegacy("/projects")).toBe("/workspace/projects");
+    expect(canonicalPathForLegacy("/projects/42")).toBe("/workspace/projects/42");
     expect(canonicalPathForLegacy("/dashboard/billing")).toBe(PLATFORM_BILLING_HREF);
     expect(canonicalPathForLegacy("/dashboard/connections")).toBe("/settings/connections");
     expect(canonicalPathForLegacy("/dashboard/connections/holoo")).toBe("/settings/connections/holoo");
@@ -315,13 +319,16 @@ describe("legacyRedirectTarget", () => {
 });
 
 describe("isCanonicalAppPathname", () => {
-  it("knows the app prefixes, platform settings and projects", () => {
+  it("knows the app prefixes, platform settings and the workspace module", () => {
     expect(isCanonicalAppPathname("/accounting/expenses")).toBe(true);
     expect(isCanonicalAppPathname("/websites/cms/content")).toBe(true);
     expect(isCanonicalAppPathname("/settings")).toBe(true);
     expect(isCanonicalAppPathname("/settings/billing")).toBe(true);
-    expect(isCanonicalAppPathname("/projects")).toBe(true);
-    expect(isCanonicalAppPathname("/projects/42")).toBe(true);
+    expect(isCanonicalAppPathname("/workspace")).toBe(true);
+    expect(isCanonicalAppPathname("/workspace/projects/42")).toBe(true);
+    // The pre-Phase-G address is legacy now — it redirects, so claiming it as
+    // canonical would make the redirect unreachable.
+    expect(isCanonicalAppPathname("/projects")).toBe(false);
   });
 
   it("does not claim the workspace's own routes", () => {

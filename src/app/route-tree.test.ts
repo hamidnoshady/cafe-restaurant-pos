@@ -36,7 +36,10 @@ import {
   accountingProductsHref,
   DASHBOARD_HOME,
   PLATFORM_SETTINGS_HOME,
+  WORKSPACE_MODULE_HOME,
+  workspaceSectionHref,
 } from "@/lib/app-routes";
+import { WORKSPACE_SECTIONS } from "@/lib/workspace-shared";
 import {
   PLATFORM_SETTINGS_PAGES,
   settingsTabHref,
@@ -94,7 +97,7 @@ function expectRoute(pathname: string) {
 
 describe("the route tree resolves every promised URL", () => {
   it("finds the workspace home and the platform's own pages", () => {
-    for (const pathname of ["/dashboard", "/projects", "/settings", "/login"]) {
+    for (const pathname of ["/dashboard", "/workspace", "/settings", "/login"]) {
       expectRoute(pathname);
     }
   });
@@ -324,7 +327,8 @@ describe("the route tree resolves every promised URL", () => {
 
     const promised = [
       DASHBOARD_HOME,
-      "/projects",
+      WORKSPACE_MODULE_HOME,
+      ...WORKSPACE_SECTIONS.map(workspaceSectionHref),
       PLATFORM_SETTINGS_HOME,
       ...PLATFORM_SETTINGS_PAGES.map((page) => `/settings/${page}`),
       ...APP_ROUTE_PREFIXES.flatMap((prefix) => [

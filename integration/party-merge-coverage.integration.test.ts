@@ -211,6 +211,12 @@ describe("party merge reference coverage", () => {
     // The WooCommerce mapping is the reference that broke in production, so it
     // is seeded explicitly rather than opportunistically.
     expect(seeded).toContain("integration_mappings.local_id");
+    // The workspace references are seeded deliberately too: a task tenanted
+    // through its project is the shape that broke the merge when it was first
+    // added, so a silent skip here would hide the regression it exists to
+    // catch.
+    expect(seeded).toContain("ai_project_tasks.party_id");
+    expect(seeded).toContain("workspace_contracts.party_id");
 
     // A historical reference, to prove the merge leaves it alone.
     await db.query(
@@ -318,6 +324,44 @@ async function seedReference(table: string, column: string, partyId: string): Pr
       {
         sql: `INSERT INTO crm_consent_events (business_id, customer_id, channel, granted, source, actor)
                 VALUES ($1, $2, 'sms', true, 'pos', 'آزمون')`,
+        params: [biz.id, partyId],
+      },
+    ],
+    // Phase G — «میز کار من». A project, a task inside it, a contract and a
+    // document, all naming the losing customer. The task is the interesting
+    // one: it has no `business_id` and reaches the tenant through its project,
+    // which is the `parent` scope the registry grew for it.
+    "ai_projects.party_id": [
+      {
+        sql: `INSERT INTO ai_projects (business_id, name, instructions, created_by, party_id)
+                VALUES ($1, 'بازسازی شعبه', '', 'آزمون', $2)`,
+        params: [biz.id, partyId],
+      },
+    ],
+    "ai_project_tasks.party_id": [
+      {
+        sql: `INSERT INTO ai_projects (business_id, name, instructions, created_by)
+                VALUES ($1, 'پروژهٔ میزبان کار', '', 'آزمون')`,
+        params: [biz.id],
+      },
+      {
+        sql: `INSERT INTO ai_project_tasks (project_id, title, created_by, party_id)
+                SELECT p.id, 'پیگیری با مشتری', 'آزمون', $2 FROM ai_projects p
+                 WHERE p.business_id = $1 AND p.name = 'پروژهٔ میزبان کار' LIMIT 1`,
+        params: [biz.id, partyId],
+      },
+    ],
+    "workspace_contracts.party_id": [
+      {
+        sql: `INSERT INTO workspace_contracts (business_id, title, contract_type, party_id, created_by)
+                VALUES ($1, 'پیمان اجرایی', 'contractor', $2, 'آزمون')`,
+        params: [biz.id, partyId],
+      },
+    ],
+    "workspace_documents.party_id": [
+      {
+        sql: `INSERT INTO workspace_documents (business_id, title, party_id, created_by)
+                VALUES ($1, 'اسکن قرارداد', $2, 'آزمون')`,
         params: [biz.id, partyId],
       },
     ],

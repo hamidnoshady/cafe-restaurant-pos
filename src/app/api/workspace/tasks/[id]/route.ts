@@ -1,0 +1,80 @@
+import { NextRequest, NextResponse } from "next/server";
+import { withTenantScope } from "@/lib/auth";
+import {
+  deleteWorkspaceTask,
+  getWorkspaceTask,
+  listChecklist,
+  listComments,
+  listDependencies,
+  listDocuments,
+  requireProjectCapability,
+  updateWorkspaceTask,
+} from "@/lib/workspace";
+import { PERMISSIONS, handleWorkspaceError, readBody, workspaceOwner } from "../../guard";
+
+/**
+ * GET    — one task with its checklist, dependencies, comments and documents.
+ * PATCH  — amend it (including the board drag, which is a status + position).
+ * DELETE — remove it.
+ */
+export const GET = withTenantScope(
+  async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    const { owner, error } = await workspaceOwner(PERMISSIONS.workspaceView);
+    if (error) return error;
+    const { id } = await context.params;
+    try {
+      const task = await getWorkspaceTask(owner.businessId, id);
+      if (!task) return NextResponse.json({ error: "task_not_found" }, { status: 404 });
+      await requireProjectCapability(owner, task.projectId, "view", true);
+      const [checklist, dependencies, comments, documents] = await Promise.all([
+        listChecklist(id),
+        listDependencies(id),
+        listComments(owner.businessId, "task", id),
+        listDocuments(owner.businessId, { taskId: id }),
+      ]);
+      return NextResponse.json({ task, checklist, dependencies, comments, documents });
+    } catch (err) {
+      return handleWorkspaceError(err);
+    }
+  },
+);
+
+export const PATCH = withTenantScope(
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    const { owner, error } = await workspaceOwner(PERMISSIONS.workspaceManage);
+    if (error) return error;
+    const { id } = await context.params;
+    const body = await readBody(request);
+    try {
+      const existing = await getWorkspaceTask(owner.businessId, id);
+      if (!existing) return NextResponse.json({ error: "task_not_found" }, { status: 404 });
+      // A contributor may work the task they were given (status, checklist) but
+      // not re-scope it; re-assigning or re-dating it is editor work.
+      const structural =
+        body.title !== undefined || body.assigneeUserId !== undefined ||
+        body.dueDate !== undefined || body.phaseId !== undefined ||
+        body.partyId !== undefined || body.priority !== undefined;
+      await requireProjectCapability(owner, existing.projectId, structural ? "edit" : "contribute", true);
+      const task = await updateWorkspaceTask(owner, id, body);
+      return NextResponse.json({ task });
+    } catch (err) {
+      return handleWorkspaceError(err);
+    }
+  },
+);
+
+export const DELETE = withTenantScope(
+  async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    const { owner, error } = await workspaceOwner(PERMISSIONS.workspaceManage);
+    if (error) return error;
+    const { id } = await context.params;
+    try {
+      const existing = await getWorkspaceTask(owner.businessId, id);
+      if (!existing) return NextResponse.json({ error: "task_not_found" }, { status: 404 });
+      await requireProjectCapability(owner, existing.projectId, "edit", true);
+      return NextResponse.json({ deleted: await deleteWorkspaceTask(owner.businessId, id) });
+    } catch (err) {
+      return handleWorkspaceError(err);
+    }
+  },
+);
