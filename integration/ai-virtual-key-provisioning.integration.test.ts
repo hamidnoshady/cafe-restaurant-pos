@@ -156,6 +156,9 @@ async function configuredGateway(overrides: Record<string, unknown> = {}) {
     baseUrl: mockGatewayUrl,
     masterKey: "sk-master",
     chatModel: "pos-chat",
+    maxTurnRial: 50_000,
+    gatewayCostingEnabled: true,
+    usdRialRate: 600_000,
     ...overrides,
   });
   return service.getAiGatewayConfig();

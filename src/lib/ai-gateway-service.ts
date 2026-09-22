@@ -242,9 +242,12 @@ function pickNonNegativeNumber(value: number | null | undefined, current: number
  * Persist the gateway settings.
  */
 export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGatewayConfig> {
-  const errors = validateGatewayInput(input);
-  if (errors.length > 0) throw new Error(errors[0]);
   const current = await getAiGatewayConfig();
+  // Validate the complete state that will be persisted, not a partial patch.
+  // This lets later edits omit unchanged fields while still preventing an
+  // enabled configuration that runtime would immediately reject.
+  const errors = validateGatewayInput(mergeGatewayConfig(input, current));
+  if (errors.length > 0) throw new Error(errors[0]);
   const masterKey = input.masterKey?.trim() || current.masterKey || null;
   await query(
     `INSERT INTO platform_ai_gateway
@@ -257,7 +260,7 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
         mcp_enabled, mcp_servers, updated_at)
      VALUES
        (true, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19, $20, $21, $22, $23::jsonb, now())
+        $15, $16, $17, $18, $19, $20, $21, $22::jsonb, now())
      ON CONFLICT (id)
      DO UPDATE SET enabled = EXCLUDED.enabled,
                    base_url = EXCLUDED.base_url,
