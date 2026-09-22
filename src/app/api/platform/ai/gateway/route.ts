@@ -4,7 +4,8 @@
  * Supports global LiteLLM settings, business virtual keys, and branch-level overrides.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getPlatformAiConfig } from "@/lib/ai-config";
+import { getAiRuntimeReadiness, getPlatformAiConfig } from "@/lib/ai-config";
+import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import {
   GatewayProvisioningError,
   getAiGatewayConfig,
@@ -36,8 +37,16 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.read");
   if (error) return error;
 
-  const [platform, gateway, gateways, locationsRes, businessesRes] = await Promise.all([
-    getPlatformAiConfig(),
+  const platform = await getPlatformAiConfig();
+  const platformReadiness = getAiRuntimeReadiness(platform);
+  if (platformReadiness.reason === "configuration_load_failed") {
+    return NextResponse.json(
+      { error: "ai_configuration_load_failed", runtimeReadiness: platformReadiness },
+      { status: 503 },
+    );
+  }
+
+  const [gateway, gateways, locationsRes, businessesRes] = await Promise.all([
     getAiGatewayConfig(),
     listBusinessGateways(),
     withoutTenantScope("platform", () =>
@@ -46,11 +55,24 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
       ),
     ),
     withoutTenantScope("platform", () =>
-      query<{ id: string; name: string }>(
-        `SELECT id, name FROM businesses WHERE status <> 'archived' ORDER BY name`,
+      query<{ id: string; name: string; ai_entitled: boolean }>(
+        `SELECT b.id, b.name,
+                COALESCE(bf.enabled, ff.default_enabled, false) AS ai_entitled
+           FROM businesses b
+           LEFT JOIN feature_flags ff ON ff.key = 'ai_assistant'
+           LEFT JOIN business_features bf ON bf.business_id = b.id AND bf.flag_key = ff.key
+          WHERE b.status <> 'archived' ORDER BY b.name`,
       ),
     ),
   ]);
+
+  const runtimeReadiness = getAiRuntimeReadiness(platform);
+  const tenantReadiness = await Promise.all(
+    businessesRes.rows.map(async (business) => {
+      const config = await resolveAiConfigFor(business.id, null);
+      return { businessId: business.id, entitled: business.ai_entitled, ...getAiRuntimeReadiness(config) };
+    }),
+  );
 
   const canManage = session.role === "owner";
   const wantsProbe = request.nextUrl.searchParams.get("probe") === "1";
@@ -62,7 +84,9 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
     platformModel: platform.model,
     platformBaseUrl: gateway.baseUrl,
     providerIsGateway: true,
-    active: isGatewayActive(gateway),
+    active: runtimeReadiness.ready,
+    runtimeReadiness,
+    tenantReadiness,
     status,
     gateways: gateways.map((row) => toPublicBusinessGateway(row, gateway, platform.model)),
     locations: locationsRes.rows.map((r) => ({
@@ -73,6 +97,7 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
     businesses: businessesRes.rows.map((r) => ({
       businessId: r.id,
       businessName: r.name,
+      aiEntitled: r.ai_entitled,
     })),
   });
 });
@@ -119,7 +144,9 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
     const input = raw as AiGatewayInput;
-    const errors = validateGatewayInput(input);
+    const current = await getAiGatewayConfig();
+    const merged = mergeGatewayConfig(input, current);
+    const errors = validateGatewayInput(merged);
     if (errors.length > 0) return NextResponse.json({ error: errors[0], errors }, { status: 400 });
     const saved = await saveAiGatewayConfig(input);
     await platformAudit({

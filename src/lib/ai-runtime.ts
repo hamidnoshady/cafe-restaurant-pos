@@ -40,7 +40,7 @@ async function decorate(
   businessId: string | null,
   locationId?: string | null,
 ): Promise<PlatformAiConfig> {
-  if (!config.enabled) return config;
+  if (!config.enabled) return { ...config, runtimeUnavailableReason: config.runtimeUnavailableReason ?? "platform_disabled" };
 
   let gateway;
   let business = null;
@@ -49,7 +49,7 @@ async function decorate(
     gateway = await getAiGatewayConfig();
     if (!isGatewayActive(gateway)) {
       // Gateway is disabled or has no base_url
-      return { ...config, enabled: false };
+      return { ...config, enabled: false, runtimeUnavailableReason: gateway?.enabled ? "missing_base_url" : "gateway_disabled" };
     }
     if (businessId) {
       business = await getBusinessGateway(businessId, null);
@@ -59,17 +59,22 @@ async function decorate(
     }
   } catch (err) {
     console.error("ai gateway state unavailable; failing closed", err);
-    return { ...config, enabled: false };
+    return { ...config, enabled: false, runtimeUnavailableReason: "configuration_load_failed" };
   }
 
-  const runtime = buildGatewayRuntime({ config, gateway, business, branch });
+  const runtime = buildGatewayRuntime({ config, gateway, business, branch, tenantScoped: Boolean(businessId) });
   if (!runtime) return config;
 
   const { model, embeddingModel, body, authKey } = runtime;
-  const decorated: AiConfig = {
+  const tenantVirtualKeyRequired = Boolean(businessId && gateway.virtualKeysEnabled);
+  const tenantVirtualKeyResolved = Boolean(runtime.virtualKeyResolved);
+  const decorated: AiConfig & Pick<PlatformAiConfig, "tenantVirtualKeyRequired" | "tenantVirtualKeyResolved" | "runtimeUnavailableReason"> = {
     ...config,
     model,
     embeddingModel,
+    tenantVirtualKeyRequired,
+    tenantVirtualKeyResolved,
+    ...(tenantVirtualKeyRequired && !tenantVirtualKeyResolved ? { runtimeUnavailableReason: "tenant_virtual_key_missing" as const } : {}),
     gateway: {
       ...(authKey ? { authKey } : {}),
       body,

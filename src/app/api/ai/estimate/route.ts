@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import type { AgentMode, PromptContext } from "@/lib/ai";
-import { isPlatformAiConfigured } from "@/lib/ai-config";
+import { isPlatformAiConfigured, logAiRuntimeUnavailable } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import { estimateAiTurn } from "@/lib/ai-estimate";
 import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
@@ -79,8 +79,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const locationId = activeLocation?.id ?? null;
   const config = await resolveAiConfigFor(session.businessId, locationId);
   if (!isPlatformAiConfigured(config)) {
+    const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: locationId, surface: "estimate" });
     return NextResponse.json(
-      { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
+      { error: "ai_unavailable", reason, message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
       { status: 503 },
     );
   }

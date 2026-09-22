@@ -6,6 +6,8 @@ import {
   withPlatformScope,
 } from "@/lib/platform-auth";
 import { businessFeatures, setBusinessFeature, getBusiness } from "@/lib/platform-service";
+import { resolveAiConfigFor } from "@/lib/ai-runtime";
+import { getAiRuntimeReadiness } from "@/lib/ai-config";
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -68,5 +70,9 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
     payload: { flagKey, enabled: body.enabled ?? null },
   });
 
-  return NextResponse.json({ features: await businessFeatures(id) });
+  const featuresAfter = await businessFeatures(id);
+  const aiReadiness = flagKey === "ai_assistant"
+    ? getAiRuntimeReadiness(await resolveAiConfigFor(id, null))
+    : undefined;
+  return NextResponse.json({ features: featuresAfter, ...(aiReadiness ? { aiReadiness } : {}) });
 });

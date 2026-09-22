@@ -6,10 +6,43 @@
  * reader and the predicates used by runtime resolvers and billing. The only
  * editor of that row is the LiteLLM settings page in the platform console.
  */
-import { defaultConfig, type AiConfig, type AiProvider } from "./ai";
+import { defaultConfig, type AiConfig } from "./ai";
 import { query } from "./db";
 
+export type AiRuntimeUnavailableReason =
+  | "platform_disabled"
+  | "gateway_disabled"
+  | "missing_base_url"
+  | "invalid_base_url"
+  | "missing_runtime_credential"
+  | "tenant_virtual_key_missing"
+  | "missing_model"
+  | "invalid_max_output_tokens"
+  | "max_turn_credit_missing"
+  | "gateway_costing_rate_missing"
+  | "costing_not_configured"
+  | "configuration_load_failed";
+
+export interface AiRuntimeReadiness {
+  ready: boolean;
+  reason: AiRuntimeUnavailableReason | null;
+  gatewayReady: boolean;
+  authenticationReady: boolean;
+  virtualKeyRequired: boolean;
+  virtualKeyReady: boolean;
+  costingReady: boolean;
+  ceilingReady: boolean;
+  modelReady: boolean;
+}
+
 export interface PlatformAiConfig extends AiConfig {
+  /** Safe, server-generated detail about configuration resolution. Never contains secrets. */
+  runtimeUnavailableReason?: AiRuntimeUnavailableReason;
+  /** Whether this is a tenant call for which virtual-key isolation is mandatory. */
+  tenantVirtualKeyRequired?: boolean;
+  /** Whether the effective runtime credential is a tenant/branch virtual key. */
+  tenantVirtualKeyResolved?: boolean;
+
   /** The provider's own cost per million input tokens, Rial. */
   inputCostRialPerMillion: number;
   /** The provider's own cost per million output tokens, Rial. */
@@ -164,34 +197,76 @@ export async function getPlatformAiConfig(): Promise<PlatformAiConfig> {
     // config just failed to load. Log it and disable, matching ai-runtime.ts's
     // own fail-closed rule for gateway/branch state.
     console.error("platform AI config unavailable; failing closed", err);
-    return { ...defaultPlatformConfig(), enabled: false };
+    return { ...defaultPlatformConfig(), enabled: false, runtimeUnavailableReason: "configuration_load_failed" };
   }
+}
+
+function validRuntimeBaseUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Canonical readiness decision used by every tenant AI surface and the platform console. */
+export function getAiRuntimeReadiness(config: PlatformAiConfig): AiRuntimeReadiness {
+  const virtualKeyRequired = Boolean(config.tenantVirtualKeyRequired);
+  const virtualKeyReady = !virtualKeyRequired || Boolean(config.tenantVirtualKeyResolved);
+  const effectiveCredential = config.gateway?.authKey || config.apiKey;
+  const modelReady = Boolean(config.model?.trim());
+  const ceilingReady = config.maxTurnRial > 0;
+  const gatewayCostingReady = config.gatewayCostingEnabled && (config.usdRialRate ?? 0) > 0;
+  const manualCostingReady =
+    !config.gatewayCostingEnabled &&
+    config.inputCostRialPerMillion > 0 &&
+    config.outputCostRialPerMillion > 0;
+  const costingReady = gatewayCostingReady || manualCostingReady;
+  const baseUrl = config.baseUrl?.trim() || "";
+
+  let reason: AiRuntimeUnavailableReason | null = config.runtimeUnavailableReason ?? null;
+  if (!reason && !config.enabled) reason = "platform_disabled";
+  if (!reason && !baseUrl) reason = "missing_base_url";
+  if (!reason && !validRuntimeBaseUrl(baseUrl)) reason = "invalid_base_url";
+  if (!reason && !modelReady) reason = "missing_model";
+  if (!reason && virtualKeyRequired && !virtualKeyReady) reason = "tenant_virtual_key_missing";
+  if (!reason && !effectiveCredential) reason = "missing_runtime_credential";
+  if (!reason && !(config.maxOutputTokens >= 64)) reason = "invalid_max_output_tokens";
+  if (!reason && !ceilingReady) reason = "max_turn_credit_missing";
+  if (!reason && config.gatewayCostingEnabled && !gatewayCostingReady) reason = "gateway_costing_rate_missing";
+  if (!reason && !costingReady) reason = "costing_not_configured";
+
+  return {
+    ready: reason === null,
+    reason,
+    gatewayReady: !reason || !["platform_disabled", "gateway_disabled", "missing_base_url", "invalid_base_url", "configuration_load_failed"].includes(reason),
+    authenticationReady: Boolean(effectiveCredential) && virtualKeyReady,
+    virtualKeyRequired,
+    virtualKeyReady,
+    costingReady,
+    ceilingReady,
+    modelReady,
+  };
 }
 
 /** A provider connection that may serve the platform support agent. */
 export function isPlatformAiProviderReady(config: PlatformAiConfig): boolean {
-  return config.enabled && Boolean(config.apiKey) && config.maxOutputTokens >= 64;
+  const readiness = getAiRuntimeReadiness(config);
+  return readiness.gatewayReady && readiness.authenticationReady && readiness.modelReady && config.maxOutputTokens >= 64;
 }
 
-/**
- * Whether a global provider can safely make metered tenant requests.
- *
- * There are two valid pricing modes and a turn may reserve credit under either:
- *
- *  - **LiteLLM-driven costing (intended):** cost-plus-margin is configured
- *    inside LiteLLM, which reports each turn's USD cost. The platform only needs
- *    a USD→Rial rate and a per-turn reservation ceiling to convert and decrement
- *    the business's credit — the manual token rates may be zero.
- *  - **Manual token rates (fallback):** the platform prices turns from its own
- *    per-million input/output rates when the gateway does not report a cost.
- *
- * A per-turn ceiling (`maxTurnRial`) is required either way: it is the amount
- * reserved up front and released back down to the actual cost at settlement.
- */
+/** Whether a resolved config can safely execute and bill a tenant request. */
 export function isPlatformAiConfigured(config: PlatformAiConfig): boolean {
-  if (!isPlatformAiProviderReady(config)) return false;
-  if (!(config.maxTurnRial > 0)) return false;
-  const gatewayCosting = config.gatewayCostingEnabled && (config.usdRialRate ?? 0) > 0;
-  const tokenRates = config.inputCostRialPerMillion > 0 && config.outputCostRialPerMillion > 0;
-  return gatewayCosting || tokenRates;
+  return getAiRuntimeReadiness(config).ready;
+}
+
+/** Safe structured logging for tenant failures; credentials are deliberately absent. */
+export function logAiRuntimeUnavailable(
+  config: PlatformAiConfig,
+  context: { businessId: string | null; locationId?: string | null; surface: string },
+): AiRuntimeUnavailableReason | null {
+  const reason = getAiRuntimeReadiness(config).reason;
+  if (reason) console.warn("AI runtime unavailable", { ...context, reason });
+  return reason;
 }

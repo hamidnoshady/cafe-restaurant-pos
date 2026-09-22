@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isPlatformAiConfigured } from "@/lib/ai-config";
+import { isPlatformAiConfigured, logAiRuntimeUnavailable } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import {
   AiWalletInsufficientError,
@@ -63,8 +63,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const config = await resolveAiConfigFor(session.businessId, location.id);
   if (!isPlatformAiConfigured(config)) {
+    const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: location.id, surface: "inventory_vision" });
     return NextResponse.json(
-      { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
+      { error: "ai_unavailable", reason, message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
       { status: 503 },
     );
   }

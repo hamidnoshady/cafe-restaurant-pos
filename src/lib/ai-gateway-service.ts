@@ -106,6 +106,8 @@ type GatewayRow = {
   default_rpm_limit: number | null;
   usd_rial_rate: string | null;
   gateway_costing_enabled: boolean;
+  input_cost_rial_per_million: string | number;
+  output_cost_rial_per_million: string | number;
   revenue_margin_percent: string | number | null;
   max_turn_rial: string | number | null;
   mcp_enabled: boolean;
@@ -134,6 +136,8 @@ function rowToGateway(row: GatewayRow): AiGatewayConfig {
     defaultRpmLimit: optionalInteger(row.default_rpm_limit),
     usdRialRate: optionalNumber(row.usd_rial_rate),
     gatewayCostingEnabled: row.gateway_costing_enabled,
+    inputCostRialPerMillion: numberValue(row.input_cost_rial_per_million),
+    outputCostRialPerMillion: numberValue(row.output_cost_rial_per_million),
     revenueMarginPercent: Math.max(0, numberValue(row.revenue_margin_percent)),
     maxTurnRial: Math.max(0, numberValue(row.max_turn_rial)),
     mcpEnabled: row.mcp_enabled,
@@ -149,6 +153,7 @@ export async function getAiGatewayConfig(): Promise<AiGatewayConfig> {
             allow_business_models, published_models, default_max_budget_usd,
             default_budget_duration, default_tpm_limit, default_rpm_limit,
             usd_rial_rate, gateway_costing_enabled,
+            input_cost_rial_per_million, output_cost_rial_per_million,
             revenue_margin_percent, max_turn_rial,
             mcp_enabled, mcp_servers
        FROM platform_ai_gateway
@@ -212,6 +217,8 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
     defaultRpmLimit: pickOptionalNumber(draft.defaultRpmLimit, current.defaultRpmLimit),
     usdRialRate: pickOptionalNumber(draft.usdRialRate, current.usdRialRate),
     gatewayCostingEnabled: draft.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
+    inputCostRialPerMillion: pickNonNegativeNumber(draft.inputCostRialPerMillion, current.inputCostRialPerMillion),
+    outputCostRialPerMillion: pickNonNegativeNumber(draft.outputCostRialPerMillion, current.outputCostRialPerMillion),
     revenueMarginPercent: pickNonNegativeNumber(draft.revenueMarginPercent, current.revenueMarginPercent),
     maxTurnRial: pickNonNegativeNumber(draft.maxTurnRial, current.maxTurnRial),
     mcpEnabled: draft.mcpEnabled ?? current.mcpEnabled,
@@ -235,9 +242,12 @@ function pickNonNegativeNumber(value: number | null | undefined, current: number
  * Persist the gateway settings.
  */
 export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGatewayConfig> {
-  const errors = validateGatewayInput(input);
-  if (errors.length > 0) throw new Error(errors[0]);
   const current = await getAiGatewayConfig();
+  // Validate the complete state that will be persisted, not a partial patch.
+  // This lets later edits omit unchanged fields while still preventing an
+  // enabled configuration that runtime would immediately reject.
+  const errors = validateGatewayInput(mergeGatewayConfig(input, current));
+  if (errors.length > 0) throw new Error(errors[0]);
   const masterKey = input.masterKey?.trim() || current.masterKey || null;
   await query(
     `INSERT INTO platform_ai_gateway
@@ -245,12 +255,12 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
         fallback_models, routing_strategy, virtual_keys_enabled,
         allow_business_models, published_models, default_max_budget_usd,
         default_budget_duration, default_tpm_limit, default_rpm_limit,
-        usd_rial_rate, gateway_costing_enabled,
+        usd_rial_rate, gateway_costing_enabled, input_cost_rial_per_million, output_cost_rial_per_million,
         revenue_margin_percent, max_turn_rial,
         mcp_enabled, mcp_servers, updated_at)
      VALUES
        (true, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19, $20::jsonb, now())
+        $15, $16, $17, $18, $19, $20, $21, $22::jsonb, now())
      ON CONFLICT (id)
      DO UPDATE SET enabled = EXCLUDED.enabled,
                    base_url = EXCLUDED.base_url,
@@ -268,6 +278,8 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
                    default_rpm_limit = EXCLUDED.default_rpm_limit,
                    usd_rial_rate = EXCLUDED.usd_rial_rate,
                    gateway_costing_enabled = EXCLUDED.gateway_costing_enabled,
+                   input_cost_rial_per_million = EXCLUDED.input_cost_rial_per_million,
+                   output_cost_rial_per_million = EXCLUDED.output_cost_rial_per_million,
                    revenue_margin_percent = EXCLUDED.revenue_margin_percent,
                    max_turn_rial = EXCLUDED.max_turn_rial,
                    mcp_enabled = EXCLUDED.mcp_enabled,
@@ -292,6 +304,8 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
       pickOptionalNumber(input.defaultRpmLimit, current.defaultRpmLimit),
       pickOptionalNumber(input.usdRialRate, current.usdRialRate),
       input.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
+      pickNonNegativeNumber(input.inputCostRialPerMillion, current.inputCostRialPerMillion),
+      pickNonNegativeNumber(input.outputCostRialPerMillion, current.outputCostRialPerMillion),
       pickNonNegativeNumber(input.revenueMarginPercent, current.revenueMarginPercent),
       Math.round(pickNonNegativeNumber(input.maxTurnRial, current.maxTurnRial)),
       input.mcpEnabled ?? current.mcpEnabled,

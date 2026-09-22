@@ -37,6 +37,8 @@ interface GatewayConfig {
   defaultTpmLimit: number | null;
   defaultRpmLimit: number | null;
   gatewayCostingEnabled: boolean;
+  inputCostRialPerMillion: number;
+  outputCostRialPerMillion: number;
   usdRialRate: number | null;
   revenueMarginPercent: number;
   maxTurnRial: number;
@@ -78,6 +80,23 @@ interface GatewayStatus {
   error: string | null;
 }
 
+interface RuntimeReadiness {
+  ready: boolean;
+  reason: string | null;
+  gatewayReady: boolean;
+  authenticationReady: boolean;
+  virtualKeyRequired: boolean;
+  virtualKeyReady: boolean;
+  costingReady: boolean;
+  ceilingReady: boolean;
+  modelReady: boolean;
+}
+
+interface TenantReadiness extends RuntimeReadiness {
+  businessId: string;
+  entitled: boolean;
+}
+
 interface GatewayData {
   gateway: GatewayConfig | null;
   provider: string;
@@ -85,6 +104,8 @@ interface GatewayData {
   platformBaseUrl: string;
   providerIsGateway: boolean;
   active: boolean;
+  runtimeReadiness: RuntimeReadiness;
+  tenantReadiness: TenantReadiness[];
   status: GatewayStatus | null;
   gateways: BusinessGateway[];
   businesses: BusinessSummary[];
@@ -95,6 +116,7 @@ interface GatewayData {
 interface BusinessSummary {
   businessId: string;
   businessName: string;
+  aiEntitled: boolean;
 }
 
 /**
@@ -157,6 +179,26 @@ function fmtDate(value: string | null): string {
   return new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+const READINESS_REASON_FA: Record<string, string> = {
+  platform_disabled: "هوش مصنوعی پلتفرم غیرفعال است",
+  gateway_disabled: "دروازه LiteLLM غیرفعال است",
+  missing_base_url: "نشانی Base URL تنظیم نشده است",
+  invalid_base_url: "نشانی Base URL معتبر نیست",
+  missing_runtime_credential: "اعتبارنامهٔ اجرای درخواست موجود نیست",
+  tenant_virtual_key_missing: "کلید مجازی این کسب‌وکار صادر نشده است",
+  missing_model: "مدل گفت‌وگو تنظیم نشده است",
+  invalid_max_output_tokens: "سقف توکن خروجی معتبر نیست",
+  max_turn_credit_missing: "سقف ریالی هر درخواست تنظیم نشده است",
+  gateway_costing_rate_missing: "نرخ تبدیل دلار به ریال تنظیم نشده است",
+  costing_not_configured: "روش هزینه‌گذاری معتبر تنظیم نشده است",
+  configuration_load_failed: "خواندن تنظیمات/ساختار پایگاه داده ناموفق بود؛ مهاجرت‌ها و لاگ سرور را بررسی کنید",
+};
+
+function readinessText(readiness: RuntimeReadiness | undefined): string {
+  if (!readiness) return "نامشخص";
+  return readiness.ready ? "آماده" : (readiness.reason ? READINESS_REASON_FA[readiness.reason] ?? readiness.reason : "نیازمند تنظیم");
+}
+
 export default function PlatformAiPage() {
   const can = useCan();
   const [data, setData] = useState<GatewayData | null>(null);
@@ -176,7 +218,9 @@ export default function PlatformAiPage() {
     setLoading(true);
     const result = await api<GatewayData>("/api/platform/ai/gateway");
     if (!result.ok) {
-      setError(result.data.error ? errorMessage(result.data.error) : "خواندن تنظیمات دروازه ممکن نشد.");
+      setError(result.data.error === "ai_configuration_load_failed"
+        ? "خواندن تنظیمات هوش مصنوعی ناموفق بود؛ اجرای مهاجرت‌های پایگاه داده (به‌ویژه 0124) و لاگ سرور را بررسی کنید."
+        : result.data.error ? errorMessage(result.data.error) : "خواندن تنظیمات دروازه ممکن نشد.");
       setLoading(false);
       return;
     }
@@ -213,6 +257,10 @@ export default function PlatformAiPage() {
       data.gateways.find((row) => row.businessId === selectedBusinessId && row.locationId === loc) ?? null
     );
   }, [data?.gateways, selectedBusinessId, selectedLocationId]);
+  const selectedReadiness = useMemo(
+    () => data?.tenantReadiness?.find((item) => item.businessId === selectedBusinessId),
+    [data?.tenantReadiness, selectedBusinessId],
+  );
 
   async function write(body: Record<string, unknown>, key: string, method: "PUT" | "POST" = "POST") {
     setBusy(key);
@@ -326,8 +374,8 @@ export default function PlatformAiPage() {
             </dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">دروازه فعال است</dt>
-            <dd className="mt-1 font-medium">{data?.active ? "بله" : "خیر"}</dd>
+            <dt className="text-muted-foreground">آمادگی اجرای پلتفرم</dt>
+            <dd className="mt-1 font-medium">{readinessText(data?.runtimeReadiness)}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">مدل پیش‌فرض پلتفرم</dt>
@@ -656,6 +704,19 @@ export default function PlatformAiPage() {
 
           {selectedBusinessId ? (
             <div className="space-y-4 border-t border-border pt-4">
+              <div className={`rounded-lg border p-3 text-sm ${selectedReadiness?.ready && selectedReadiness.entitled ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-500/10" : "border-amber-300 bg-amber-50 dark:bg-amber-500/10"}`}>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <p>دستیار برای کسب‌وکار: <strong>{selectedReadiness?.entitled ? "فعال است" : "غیرفعال است"}</strong></p>
+                  <p>اتصال LiteLLM: <strong>{selectedReadiness?.gatewayReady ? "آماده است" : "آماده نیست"}</strong></p>
+                  <p>کلید مجازی: <strong>{selectedReadiness?.virtualKeyRequired ? (selectedReadiness.virtualKeyReady ? "آماده است" : "صادر نشده / خطا") : "الزامی نیست"}</strong></p>
+                  <p>هزینه‌گذاری: <strong>{selectedReadiness?.costingReady ? "آماده است" : "تنظیم نشده"}</strong></p>
+                  <p>سقف هر درخواست: <strong>{selectedReadiness?.ceilingReady ? "تنظیم شده" : "تنظیم نشده"}</strong></p>
+                  <p>وضعیت نهایی: <strong>{selectedReadiness?.ready && selectedReadiness.entitled ? "آماده برای گفتگو" : "نیازمند تنظیم"}</strong></p>
+                </div>
+                {selectedReadiness && (!selectedReadiness.ready || !selectedReadiness.entitled) ? (
+                  <p className="mt-2 text-xs text-muted-foreground">علت: {!selectedReadiness.entitled ? "دسترسی ai_assistant فعال نشده است" : readinessText(selectedReadiness)}</p>
+                ) : null}
+              </div>
               <div className="grid gap-2 text-sm sm:grid-cols-3">
                 <p>
                   مدل مؤثر:{" "}
