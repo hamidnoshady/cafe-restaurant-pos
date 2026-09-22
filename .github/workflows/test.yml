@@ -22,10 +22,23 @@
 #   2. **PowerShell, not bash.** Every `run:` block here is Windows PowerShell
 #      5.1 (`shell: powershell`), which `windows-latest` provides.
 #
-# Speed: the four checks are independent of each other, so they are declared as
-# four parallel jobs — each GitHub-hosted job gets its own VM, so they really
-# do run in parallel. `required` fans in all four so a single status check
-# names the run.
+# Speed: the checks are independent of each other, so they are declared as
+# parallel jobs — each GitHub-hosted job gets its own VM, so they really do run
+# in parallel. `required` fans in all of them so a single status check names
+# the run.
+#
+# Two jobs exist specifically for «ورود و خروج داده», the platform data
+# transfer engine, and they are separate from the general ones on purpose:
+#
+#   * `api-guard-tests` runs the permission/guard sweeps on their own, so a PR
+#     that weakens an API gate says so in the name of its failing check rather
+#     than inside an anonymous "unit tests" run. A permission regression is the
+#     one class of bug a reviewer is least likely to spot by reading a diff.
+#   * `data-transfer-tests` runs the engine's own integration suite against a
+#     real PostgreSQL — import, mapping, templates, validation, duplicates,
+#     relationships, every export format, the queue and multi-tenant isolation
+#     — plus the whole-schema tenant-isolation sweep, which is what proves the
+#     engine's six new tables cannot leak across businesses.
 name: test
 
 on:
@@ -169,6 +182,84 @@ jobs:
           PGDATA: ${{ runner.temp }}\pos-pgdata
         run: npm run db:dev:stop
 
+  # Permission and guard coverage, named so a regression is legible in the
+  # check list. `api-guards` asserts every route under src/app/api has a real
+  # guard (and that the data-transfer routes re-check the *entity's* own
+  # permission, not just the engine key); `permissions` and `settings-tabs`
+  # pin the role presets and the tab visibility the screens are built from.
+  #
+  # Linux: these read files and evaluate pure functions, so they are
+  # platform-independent and a Linux runner starts in a fraction of the time.
+  api-guard-tests:
+    name: API guard and permission tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: API guards, permissions and settings visibility
+        run: |
+          npx vitest run \
+            src/app/api/api-guards.test.ts \
+            src/lib/permissions.test.ts \
+            src/lib/settings-tabs.test.ts \
+            src/lib/settings-routes.test.ts \
+            src/app/route-tree.test.ts \
+            src/app/route-smoke.test.ts
+
+  # «ورود و خروج داده» against a real database: the engine's own integration
+  # suite plus the two schema-wide sweeps its new tables have to satisfy.
+  #
+  # Ubuntu with a service container rather than Windows + embedded-postgres:
+  # this job is new, so it is free to use the faster mechanism, and the
+  # migrations are re-applied here too (the `integration-tests` job proves
+  # idempotency on Windows).
+  data-transfer-tests:
+    name: data transfer engine (real database)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pos
+          POSTGRES_PASSWORD: pos
+          POSTGRES_DB: pos
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U pos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://pos:pos@127.0.0.1:55432/pos
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations
+        run: npm run db:migrate
+      - name: Re-apply migrations (must be a no-op)
+        run: npm run db:migrate
+      - name: Import/export engine, tenant isolation and migration sweeps
+        run: |
+          npx vitest run --config vitest.db.config.ts \
+            integration/data-transfer.integration.test.ts \
+            integration/tenant-isolation.integration.test.ts \
+            integration/migrations.integration.test.ts
+
   # The design system's executable half: the banned-pattern lint, the
   # structural primitive lint, and the loading-state coverage test. Split out
   # of `unit-tests` so a PR that only drifts the visuals names the reason in
@@ -311,7 +402,7 @@ jobs:
   required:
     name: all checks passed
     runs-on: windows-latest
-    needs: [lint, typecheck, unit-tests, build, integration-tests, design-checks, visual-regression]
+    needs: [lint, typecheck, unit-tests, build, integration-tests, api-guard-tests, data-transfer-tests, design-checks, visual-regression]
     if: always()
     steps:
       - name: Check job results

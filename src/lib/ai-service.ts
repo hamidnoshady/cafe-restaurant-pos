@@ -19,7 +19,8 @@ import {
 import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
 import { validateInputRequest, type InputRequestSpec } from "./ai-input-protocol";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
-import { parseProviderError, parseResponseCostHeader } from "./ai-gateway";
+import { parseResponseCostHeader } from "./ai-gateway";
+import { normalizeProviderError, tenantProviderErrorMessage, type NormalizedProviderError } from "./ai-provider-errors";
 import { clampRetrievalLimit, formatRetrievalForPrompt, isRetrievalAvailable, retrieveKnowledge } from "./ai-rag";
 import { embedOne, isEmbeddingAvailable } from "./ai-embeddings";
 import {
@@ -81,11 +82,109 @@ type ProviderContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
+
 interface ProviderMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | ProviderContentPart[] | null;
   tool_calls?: ProviderToolCall[];
   tool_call_id?: string;
+}
+
+export interface AiProviderRequestDiagnostics {
+  requestId?: string;
+  endpoint: "chat_completions";
+  url: string;
+  model: string;
+  credentialSource: "tenant_virtual_key" | "gateway_master_key" | "platform_key" | "missing";
+  streaming: boolean;
+  streamOptions: boolean;
+  toolCount: number;
+  functionToolCount: number;
+  mcpToolCount: number;
+  toolTypes: string[];
+  fallbackCount: number;
+  hasFallbacks: boolean;
+  hasMcpTools: boolean;
+}
+
+function credentialSource(config: AiConfig): AiProviderRequestDiagnostics["credentialSource"] {
+  const runtime = config as AiConfig & {
+    tenantVirtualKeyResolved?: boolean;
+    tenantVirtualKeyRequired?: boolean;
+  };
+  if (config.gateway?.authKey && runtime.tenantVirtualKeyResolved) return "tenant_virtual_key";
+  if (config.gateway?.authKey) return "gateway_master_key";
+  if (config.apiKey) return "platform_key";
+  return "missing";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateJsonSchemaObject(schema: unknown, path: string, errors: string[]): void {
+  if (!isRecord(schema)) {
+    errors.push(`${path}: parameters must be a JSON object`);
+    return;
+  }
+  if (schema.type !== "object") {
+    errors.push(`${path}.type: root schema must be object`);
+  }
+  const properties = schema.properties;
+  if (properties !== undefined && !isRecord(properties)) {
+    errors.push(`${path}.properties: must be an object when present`);
+  }
+  const required = schema.required;
+  if (required !== undefined) {
+    if (!Array.isArray(required) || required.some((item) => typeof item !== "string")) {
+      errors.push(`${path}.required: must be an array of strings`);
+    } else if (isRecord(properties)) {
+      for (const key of required) {
+        if (!Object.prototype.hasOwnProperty.call(properties, key)) {
+          errors.push(`${path}.required: ${key} is not defined in properties`);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Validate the exact function-tool catalogue before it reaches LiteLLM/OpenAI.
+ * A single malformed definition makes the entire chat-completions request a 400;
+ * failing locally gives operators a precise application error instead.
+ */
+export function validateOpenAiTools(tools: unknown[]): string[] {
+  const errors: string[] = [];
+  const names = new Set<string>();
+  tools.forEach((tool, index) => {
+    const path = `tools[${index}]`;
+    if (!isRecord(tool)) {
+      errors.push(`${path}: tool must be an object`);
+      return;
+    }
+    if (tool.type !== "function") {
+      errors.push(`${path}.type: only OpenAI function tools are allowed in core chat`);
+      return;
+    }
+    if (!isRecord(tool.function)) {
+      errors.push(`${path}.function: missing function definition`);
+      return;
+    }
+    const fn = tool.function;
+    const name = typeof fn.name === "string" ? fn.name.trim() : "";
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) {
+      errors.push(`${path}.function.name: invalid OpenAI function name`);
+    } else if (names.has(name)) {
+      errors.push(`${path}.function.name: duplicate tool name ${name}`);
+    } else {
+      names.add(name);
+    }
+    if (typeof fn.description !== "string" || !fn.description.trim()) {
+      errors.push(`${path}.function.description: description is required`);
+    }
+    validateJsonSchemaObject(fn.parameters, `${path}.function.parameters`, errors);
+  });
+  return errors;
 }
 
 export interface InboundMessage {
@@ -107,7 +206,7 @@ function providerHeaders(config: AiConfig): Record<string, string> {
     "Content-Type": "application/json",
     // Phase 37 — a gateway deployment authenticates the call with the calling
     // business's virtual key when one has been provisioned; every other
-    // deployment sends the platform key.
+    // deployment sends the platform key exactly as it always has.
     Authorization: `Bearer ${config.gateway?.authKey || config.apiKey}`,
   };
 }
@@ -155,6 +254,12 @@ function providerUsage(
     : fallback;
 }
 
+/**
+ * Phase 38b — the gateway prices every completion from its own model-cost map
+ * and reports the figure on the response. A direct vendor never sets the
+ * header, which is exactly the fallback: no figure means the settlement
+ * prices from the token rates, never from zero.
+ */
 function responseCostUsd(response: Response): number | null {
   return parseResponseCostHeader(response.headers.get("x-litellm-response-cost"));
 }
@@ -199,6 +304,9 @@ async function readStreamingProviderResponse(
     if (!delta.tool_calls?.length) return;
     if (!sawToolCalls) {
       sawToolCalls = true;
+      // A provider normally emits no natural-language content in a tool turn.
+      // If one does, the client clears the provisional text before the next,
+      // final response begins.
       callbacks.onToolCalls?.();
     }
     for (const part of delta.tool_calls) {
@@ -263,9 +371,38 @@ async function callProvider(
   messages: ProviderMessage[],
   tools: ReturnType<typeof toolDefinitions>,
   stream?: ProviderStreamCallbacks,
+  requestId?: string,
 ): Promise<ProviderResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const url = chatCompletionsUrl(config.baseUrl);
+  const toolErrors = validateOpenAiTools(tools);
+  const requestDiagnostics: AiProviderRequestDiagnostics = {
+    ...(requestId ? { requestId } : {}),
+    endpoint: "chat_completions",
+    url,
+    model: config.model,
+    credentialSource: credentialSource(config),
+    streaming: Boolean(stream),
+    streamOptions: Boolean(stream),
+    toolCount: tools.length,
+    functionToolCount: tools.length,
+    mcpToolCount: 0,
+    toolTypes: tools.length > 0 ? ["function"] : [],
+    fallbackCount: 0,
+    hasFallbacks: false,
+    hasMcpTools: false,
+  };
+  if (toolErrors.length > 0) {
+    throw new AiError(
+      "ai_invalid_tools",
+      "تعریف ابزارهای هوش مصنوعی معتبر نیست و درخواست ارسال نشد.",
+      toolErrors.join("; "),
+      undefined,
+      requestDiagnostics,
+    );
+  }
+
   let res: Response;
   try {
     const body: Record<string, unknown> = {
@@ -276,25 +413,33 @@ async function callProvider(
       stream: Boolean(stream),
     };
     if (stream) {
+      // OpenAI-compatible APIs include final usage in the terminal stream
+      // chunk when this option is supported; a conservative fallback remains
+      // in place for gateways that omit it.
       body.stream_options = { include_usage: true };
     }
+    // Some OpenAI-compatible providers reject an explicit empty tools array.
+    // MCP and per-request LiteLLM fallbacks are intentionally not merged here:
+    // routing/fallback/provider tools are gateway policy, and optional MCP must
+    // never make ordinary tenant chat invalid.
     if (tools.length > 0) {
       body.tools = tools;
       body.tool_choice = "auto";
     }
-
-    res = await fetch(chatCompletionsUrl(config.baseUrl), {
+    res = await fetch(url, {
       method: "POST",
       headers: providerHeaders(config),
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-
-    // If streaming returned 400, retry once without the optional stream_options
+    // Some OpenAI-compatible gateways accept streaming but not the optional
+    // usage trailer. Retry the same non-mutating provider request once without
+    // it; the documented conservative usage fallback still protects billing.
     if (stream && res.status === 400) {
       const fallbackBody = { ...body };
       delete fallbackBody.stream_options;
-      res = await fetch(chatCompletionsUrl(config.baseUrl), {
+      requestDiagnostics.streamOptions = false;
+      res = await fetch(url, {
         method: "POST",
         headers: providerHeaders(config),
         body: JSON.stringify(fallbackBody),
@@ -304,50 +449,26 @@ async function callProvider(
   } catch (err) {
     clearTimeout(timer);
     if (err instanceof Error && err.name === "AbortError") {
-      throw new AiError("ai_timeout", "پاسخ سرویس هوش مصنوعی به‌موقع نرسید.");
+      throw new AiError("ai_timeout", "پاسخ سرویس هوش مصنوعی به‌موقع نرسید.", undefined, undefined, requestDiagnostics);
     }
-    throw new AiError("ai_network", "اتصال به سرویس هوش مصنوعی برقرار نشد.");
+    throw new AiError("ai_network", "اتصال به سرویس هوش مصنوعی برقرار نشد.", undefined, undefined, requestDiagnostics);
   }
   clearTimeout(timer);
 
   if (!res.ok) {
-    const rawBody = await res.text().catch(() => "");
-    const parsed = parseProviderError(res.status, rawBody);
-
-    // Structured server-side error logging (never logs secret keys)
-    console.error("ai provider error", {
-      status: res.status,
-      model: config.model,
-      url: chatCompletionsUrl(config.baseUrl),
-      authType: config.gateway?.authKey ? "virtual_key" : "master_key",
-      errorType: parsed.type,
-      errorCode: parsed.code,
-      detail: parsed.sanitizedReason,
-    });
-
+    const body = await res.text().catch(() => "");
+    const providerError = normalizeProviderError(res.status, body);
     if (res.status === 401 || res.status === 403) {
-      throw new AiError("ai_auth", "کلید سرویس هوش مصنوعی نامعتبر است.", parsed.sanitizedReason, res.status);
+      throw new AiError("ai_auth", tenantProviderErrorMessage(res.status), body, providerError, requestDiagnostics);
     }
-    if (res.status === 404) {
-      throw new AiError("ai_model_not_found", "مدل یا سرویس هوش مصنوعی در دسترس نیست.", parsed.sanitizedReason, res.status);
-    }
+    // The gateway's own throttles (RPM/TPM per deployment, per-key budgets)
+    // answer 429. It is a transient, self-healing state — and since migration
+    // 0168 the platform no longer mirrors key budgets, a 429 with wallet
+    // credit left really is a proxy-side throttle, not a billing stop.
     if (res.status === 429) {
-      throw new AiError("ai_rate_limited", "سرویس هوش مصنوعی در حال حاضر پرکاربرد است؛ کمی بعد دوباره تلاش کنید.", parsed.sanitizedReason, res.status);
+      throw new AiError("ai_rate_limited", tenantProviderErrorMessage(res.status), body, providerError, requestDiagnostics);
     }
-    if (res.status === 400) {
-      throw new AiError(
-        "ai_invalid_request",
-        "درخواست توسط سرویس هوش مصنوعی رد شد. مدیر پلتفرم می‌تواند جزئیات فنی را بررسی کند.",
-        parsed.sanitizedReason,
-        res.status,
-      );
-    }
-    throw new AiError(
-      "ai_provider",
-      "سرویس هوش مصنوعی با خطا مواجه شد.",
-      parsed.sanitizedReason,
-      res.status,
-    );
+    throw new AiError("ai_provider", tenantProviderErrorMessage(res.status), body, providerError, requestDiagnostics);
   }
 
   if (stream && res.headers.get("content-type")?.includes("text/event-stream")) {
@@ -378,176 +499,239 @@ export class AiError extends Error {
     public code: string,
     message: string,
     public detail?: string,
-    public status?: number,
+    public providerError?: NormalizedProviderError,
+    public requestDiagnostics?: AiProviderRequestDiagnostics,
   ) {
     super(message);
     this.name = "AiError";
   }
 }
 
-function parseArgs(raw: string): Record<string, unknown> {
+function parseArgs(raw: string | undefined): Record<string, unknown> {
+  if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};
   }
 }
 
 function toProposedAction(args: Record<string, unknown>): ProposedAction | null {
-  const type = args.type;
-  if (!isKnownAction(type)) return null;
-  const title = typeof args.title === "string" ? args.title.trim() : "";
-  const summary = typeof args.summary === "string" ? args.summary.trim() : "";
-  const payload = args.payload && typeof args.payload === "object" && !Array.isArray(args.payload)
-    ? (args.payload as Record<string, unknown>)
-    : {};
-  if (!title || !summary) return null;
-  return { type, title, summary, payload };
-}
-
-function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrace {
-  const dateFrom = typeof args.dateFrom === "string" ? args.dateFrom : undefined;
-  const dateTo = typeof args.dateTo === "string" ? args.dateTo : undefined;
-  return { name, ...(dateFrom ? { dateFrom } : {}), ...(dateTo ? { dateTo } : {}) };
+  if (!isKnownAction(args.type)) return null;
+  const payload =
+    args.payload && typeof args.payload === "object"
+      ? (args.payload as Record<string, unknown>)
+      : {};
+  return {
+    type: args.type,
+    title: typeof args.title === "string" ? args.title : "پیشنهاد تغییر",
+    summary: typeof args.summary === "string" ? args.summary : "",
+    payload,
+  };
 }
 
 /**
- * Isolated multimodal call for receipt/invoice extraction.
- * No tools, strict prompt, returns structured draft fields.
+ * A file attached to one turn only (Wave 5, issue #145, extended to PDFs).
+ * Nothing here is ever persisted — not to the conversation transcript, not to
+ * any table or object storage. An image is used for exactly one isolated
+ * vision call; a PDF has its text extracted server-side and travels inline.
+ * `kind` is optional so callers predating the PDF extension keep working —
+ * it is derived from the data URL when absent.
  */
-async function extractReceiptDraft(
-  config: AiConfig,
-  imageUrl: string,
-): Promise<{ fields: ReceiptDraftFields | null; usage: AiTokenUsage; costUsd: number | null }> {
-  const messages: ProviderMessage[] = [
+export interface ChatAttachment {
+  kind?: "image" | "pdf";
+  dataUrl?: string;
+  /** PDF only — the extracted text layer, ready to hand to the model. */
+  extractedText?: string | null;
+  /** PDF only — the extraction hit MAX_PDF_TEXT_CHARS. */
+  truncated?: boolean;
+  name?: string;
+}
+
+/** Derives the kind for legacy attachments that only carry a data URL. */
+export function attachmentKind(attachment: ChatAttachment): "image" | "pdf" {
+  if (attachment.kind) return attachment.kind;
+  return attachment.dataUrl?.startsWith("data:application/pdf") ? "pdf" : "image";
+}
+
+/** Normalizes the legacy single-attachment option into the attachment list. */
+function normalizeAttachments(
+  attachments: ChatAttachment[] | undefined,
+  legacy: ChatAttachment | undefined,
+): ChatAttachment[] {
+  const list = attachments && attachments.length > 0 ? attachments : legacy ? [legacy] : [];
+  return list.map((attachment) => ({
+    ...attachment,
+    kind: attachmentKind(attachment),
+  }));
+}
+
+interface ReceiptExtractionResult {
+  fields: ReceiptDraftFields | null;
+  usage: AiTokenUsage;
+  costUsd: number | null;
+}
+
+/**
+ * One isolated, non-streaming, tool-less provider call that asks the same
+ * configured platform provider (both defaults are vision-capable models) to
+ * read a receipt image and return structured JSON. Deliberately its own
+ * request rather than folding the image into the main conversation loop —
+ * that would resend the image bytes on every later tool round.
+ */
+async function extractReceiptDraft(config: AiConfig, dataUrl: string): Promise<ReceiptExtractionResult> {
+  const convo: ProviderMessage[] = [
     { role: "system", content: RECEIPT_EXTRACTION_SYSTEM_PROMPT },
     {
       role: "user",
       content: [
         { type: "text", text: RECEIPT_EXTRACTION_USER_PROMPT },
-        { type: "image_url", image_url: { url: imageUrl } },
+        { type: "image_url", image_url: { url: dataUrl } },
       ],
     },
   ];
+  try {
+    const result = await callProvider(config, convo, []);
+    return {
+      fields: parseReceiptExtractionReply(textOf(result.message.content)),
+      usage: result.usage,
+      costUsd: result.costUsd,
+    };
+  } catch {
+    return { fields: null, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: null };
+  }
+}
 
-  const result = await callProvider(config, messages, []);
-  const replyText = textOf(result.message.content);
-  return {
-    fields: parseReceiptExtractionReply(replyText),
-    usage: result.usage,
-    costUsd: result.costUsd,
-  };
+/** Both halves of Wave 6 availability, cached per process; never throws. */
+async function isRetrievalEnabledForTurn(config: AiConfig): Promise<boolean> {
+  try {
+    return (await isRetrievalAvailable()) && (await isEmbeddingAvailable(config));
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Semantic knowledge search tool execution during an agent turn.
+ * Whether this mode's turn will declare the retrieval tool — exported so a
+ * caller resolving the system prompt through the prompt manager can build the
+ * same context `runAgentTurn` would (the fallback prompt's retrieval line
+ * depends on it). Probes are cached per process, so the double call is free.
+ */
+export async function retrievalReadyForMode(
+  config: AiConfig,
+  mode: AgentMode,
+  businessId?: string,
+): Promise<boolean> {
+  return mode === "dashboard" && Boolean(businessId) && (await isRetrievalEnabledForTurn(config));
+}
+
+/**
+ * Phase 36 Wave 6 — the `search_business_knowledge` executor. Embeds the
+ * question over the shared platform connection (its tokens are metered into
+ * the same turn, exit criterion 5), retrieves the nearest knowledge rows, and
+ * hands the model prose whose every line names its source. Any failure —
+ * provider, dimensions, SQL — is a missing hint, never a failed answer.
  */
 async function runKnowledgeSearch(
   config: AiConfig,
   businessId: string,
-  callArgs: Record<string, unknown>,
-  messages: ProviderMessage[],
+  args: Record<string, unknown>,
+  messages: InboundMessage[],
   usage: AiTokenUsage,
 ): Promise<ToolResult> {
-  const explicitQuery = typeof callArgs.query === "string" ? callArgs.query.trim() : "";
-  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
-  const fallbackQuery = typeof lastUserMessage?.content === "string" ? lastUserMessage.content.trim() : "";
-  const searchText = explicitQuery || fallbackQuery;
-  const requestedLimit = typeof callArgs.limit === "number" ? callArgs.limit : undefined;
-  const limit = clampRetrievalLimit(requestedLimit);
-
-  if (!searchText) {
-    return { ok: false, data: { error: "عبارت جست‌وجو مشخص نیست." } };
+  const fallbackQuestion = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  const query = typeof args.query === "string" && args.query.trim() ? args.query : fallbackQuestion;
+  if (!query.trim()) {
+    return { ok: false, data: { error: "عبارت جست‌وجو خالی است." } };
   }
-
-  const embedded = await embedOne(config, searchText);
-  if (!embedded) {
-    return { ok: false, data: { error: "سرویس بردارسازی موقتاً در دسترس نیست." } };
+  try {
+    const embedded = await embedOne(config, query);
+    usage.inputTokens += embedded.inputTokens;
+    const limit = clampRetrievalLimit(typeof args.limit === "number" ? args.limit : undefined);
+    const results = await retrieveKnowledge(businessId, embedded.vector, { limit });
+    if (results.length === 0) {
+      return {
+        ok: true,
+        data: { results: [], note: "چیزی نزدیک این عبارت در دانش ثبت‌شدهٔ کسب‌وکار پیدا نشد." },
+      };
+    }
+    return { ok: true, data: { count: results.length, knowledge: formatRetrievalForPrompt(results) } };
+  } catch {
+    return { ok: false, data: { error: "جست‌وجوی دانش کسب‌وکار در دسترس نیست." } };
   }
-
-  usage.inputTokens += embedded.inputTokens;
-  const hits = await retrieveKnowledge(businessId, embedded.vector, { limit });
-  if (hits.length === 0) {
-    return {
-      ok: true,
-      data: {
-        matches: [],
-        formatted: "موردی در پایگاه دانش این کسب‌وکار یافت نشد.",
-        note: "اگر کاربر اطلاعات بیشتری خواست بگو در دانش ثبت‌شده موردی نبود.",
-      },
-    };
-  }
-
-  return {
-    ok: true,
-    data: {
-      matchCount: hits.length,
-      matches: hits.map((hit) => ({
-        kind: hit.kind,
-        refId: hit.refId,
-        sourceLabel: hit.sourceLabel,
-        content: hit.content,
-        similarity: Math.round(hit.similarity * 100) / 100,
-      })),
-      formatted: formatRetrievalForPrompt(hits),
-      note: "از این اطلاعات مستند برای پاسخ دقیق با ذکر منبع استفاده کن.",
-    },
-  };
 }
 
-export async function retrievalReadyForMode(
-  config: AiConfig,
-  mode: AgentMode,
-  businessId?: string | null,
-): Promise<boolean> {
-  if (mode !== "dashboard" || !businessId) return false;
-  const [dbReady, embedReady] = await Promise.all([
-    isRetrievalAvailable(),
-    isEmbeddingAvailable(config),
-  ]);
-  return dbReady && embedReady;
-}
-
-export interface ChatAttachment {
-  kind?: "image" | "pdf";
-  name?: string;
-  dataUrl?: string;
-  extractedText?: string | null;
-  truncated?: boolean;
-  pageCount?: number;
-  byteLength?: number;
-  mimeType?: string;
-}
-
-function normalizeAttachments(
-  attachments?: ChatAttachment[],
-  legacySingle?: ChatAttachment,
-): ChatAttachment[] {
-  if (Array.isArray(attachments) && attachments.length > 0) return attachments;
-  if (legacySingle) return [legacySingle];
-  return [];
+/** Wave 7 — the signature-relevant shape of one tool call: name + date range. */
+function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrace {
+  const trace: AgentToolCallTrace = { name };
+  if (typeof args.dateFrom === "string") trace.dateFrom = args.dateFrom;
+  if (typeof args.dateTo === "string") trace.dateTo = args.dateTo;
+  return trace;
 }
 
 /**
- * Runs one agent turn: system prompt + messages + tools -> next action / answer.
- */
-export async function runAgentTurn(opts: {
+ * Run one user turn to completion: resolve any read-tool calls server-side, and
+ * stop as soon as the model proposes an action (returned for confirmation) or
+ * produces a plain text answer.
+ */export async function runAgentTurn(opts: {
   config: AiConfig;
   mode: AgentMode;
-  businessId?: string | null;
-  actorUserId?: string | null;
+  /** Tenant turns provide this. Platform support supplies executeReadTool instead. */
+  businessId?: string;
+  /** Present only for the cashier/waiter assistant; it constrains all floor reads. */
   floorScope?: FloorReadScope;
+  /**
+   * Phase G — the signed-in member. The workspace read tools resolve «مالِ من»
+   * from this and from nothing else; a model-supplied user id is never
+   * accepted. Absent, those tools decline instead of widening their scope.
+   */
+  actorUserId?: string;
+  /**
+   * A separate read-tool realm can supply its own executor. It is deliberately
+   * invoked only after the tool name is checked against toolDefinitions(mode).
+   */
+  executeReadTool?: ReadToolRunner;
+  /** Optional callbacks turn the provider response into a live UI stream. */
+  stream?: ProviderStreamCallbacks;
+  /** Server-generated id used only for sanitized diagnostics/log correlation. */
+  requestId?: string;
   promptContext: PromptContext;
+  /**
+   * An explicit system prompt for this turn; when absent the code-built one
+   * (`buildSystemPrompt`) is used.
+   */
   systemPrompt?: string;
   messages: InboundMessage[];
-  executeReadTool?: ReadToolRunner;
-  stream?: ProviderStreamCallbacks;
+  /** Wave 5 (issue #145) — a receipt/invoice image attached to this turn only. */
   attachment?: ChatAttachment;
+  /** Wave 5 extension — one or more attachments (images and/or PDFs). */
   attachments?: ChatAttachment[];
+  /**
+   * Wave 5 (issue #145) — the composer's "allow action in this message"
+   * toggle. Only drops propose_action from this turn's own tool list; no
+   * change to the confirm-before-apply architecture itself.
+   */
   allowActions?: boolean;
+  /**
+   * Phase 31 — restricts which action types this turn may propose. Narrows the
+   * tool schema the model sees AND is re-checked against the returned proposal,
+   * so a hand-crafted response naming another action is refused rather than
+   * treated as executable.
+   */
   actionTypes?: ActionType[];
+  /**
+   * Phase D — a custom agent's read-tool allowlist. When present, the dashboard
+   * read surface is intersected with it (see `toolDefinitions`), so the turn can
+   * call only the read tools this agent was granted. Paired with `actionTypes`
+   * (the agent's action allowlist) it fully scopes what the agent may do.
+   */
   toolAllowlist?: string[];
+  /**
+   * Phase F pt.2 — the turn's conversation belongs to a project, so
+   * project-scoped actions (project.memory.add) join `propose_action`'s enum.
+   * The ambient project id is injected by the caller, never by the model.
+   */
   projectScoped?: boolean;
 }): Promise<AgentReply> {
   const { config, mode, businessId, floorScope, promptContext, messages } = opts;
@@ -555,6 +739,11 @@ export async function runAgentTurn(opts: {
   const attachments = normalizeAttachments(opts.attachments, opts.attachment);
   const hasAttachment = attachments.length > 0;
 
+  // Phase 36 Wave 6 — the retrieval tool is declared only when the whole chain
+  // can actually serve it: pgvector + the 0113 table (isRetrievalAvailable)
+  // and a platform connection that answers /embeddings. Both probes cache per
+  // process, and neither ever throws — a probe that fails means "off", and off
+  // is exactly the pre-wave behaviour. Desktop installs keep the assistant.
   const retrievalReady = await retrievalReadyForMode(config, mode, businessId);
 
   const tools = toolDefinitions(mode, {
@@ -575,7 +764,7 @@ export async function runAgentTurn(opts: {
   const toolRunner: ReadToolRunner | null =
     opts.executeReadTool ??
     (businessId
-      ? (name, args) => runReadTool(name, args, businessId, floorScope, opts.actorUserId ?? undefined)
+      ? (name, args) => runReadTool(name, args, businessId, floorScope, opts.actorUserId)
       : null);
   const usage: AiTokenUsage = { inputTokens: 0, outputTokens: 0 };
   let costUsd: number | null = null;
@@ -583,13 +772,7 @@ export async function runAgentTurn(opts: {
 
   const systemContent =
     opts.systemPrompt?.trim() ||
-    buildSystemPrompt({
-      ...promptContext,
-      userName: promptContext.userName ?? undefined,
-      role: promptContext.role ?? undefined,
-      hasAttachment,
-      retrieval: retrievalReady,
-    });
+    buildSystemPrompt({ ...promptContext, hasAttachment, retrieval: retrievalReady });
 
   const convo: ProviderMessage[] = [
     { role: "system" as const, content: systemContent },
@@ -597,7 +780,7 @@ export async function runAgentTurn(opts: {
   ];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const result = await callProvider(config, convo, tools, opts.stream);
+    const result = await callProvider(config, convo, tools, opts.stream, opts.requestId);
     usage.inputTokens += result.usage.inputTokens;
     usage.outputTokens += result.usage.outputTokens;
     if (result.costUsd !== null) costUsd = (costUsd ?? 0) + result.costUsd;
@@ -615,20 +798,27 @@ export async function runAgentTurn(opts: {
       };
     }
 
-    // A proposed action ends the turn immediately
+    // A proposed action ends the turn immediately — we never auto-execute it.
     const proposal = canPropose
       ? toolCalls.find((c) => c.function.name === "propose_action")
       : undefined;
     if (proposal) {
       const parsed = toProposedAction(parseArgs(proposal.function.arguments));
       const inAllowlist = parsed && (!allowedActionTypes || allowedActionTypes.has(parsed.type));
+      // Phase F pt.2 — a project-scoped action is valid only when the turn is
+      // inside a project. This backstops the enum: a hand-crafted response that
+      // names project.memory.add on a project-less turn is refused, not applied.
       const projectOk = parsed && (!ACTION_CATALOG[parsed.type]?.projectScoped || opts.projectScoped);
       const action = parsed && inAllowlist && projectOk ? parsed : null;
       const text = textOf(message.content).trim() || (action ? action.summary : "پیشنهاد آماده است.");
       return { content: text, proposedAction: action, inputRequest: null, usage, costUsd, toolCalls: toolTrace };
     }
 
-    // A structured input request also ends the turn
+    // Phase E — a structured input request also ends the turn: the model is
+    // waiting on the user, so there is nothing more to generate. A malformed
+    // spec (the model got the shape wrong) is dropped and the loop continues,
+    // so a bad request_input degrades to an ordinary answer rather than a dead
+    // turn.
     const inputCall = canRequestInput
       ? toolCalls.find((c) => c.function.name === "request_input")
       : undefined;
@@ -645,6 +835,8 @@ export async function runAgentTurn(opts: {
           toolCalls: toolTrace,
         };
       }
+      // Fall through: feed the tool an error so the model can ask again in
+      // prose or fix the spec, rather than silently ending the turn.
       convo.push({ role: "assistant", content: textOf(message.content), tool_calls: toolCalls });
       convo.push({
         role: "tool",
@@ -654,15 +846,17 @@ export async function runAgentTurn(opts: {
       continue;
     }
 
-    // Otherwise execute read tools
+    // Otherwise every call must be a read tool — run them and feed results back.
     convo.push({ role: "assistant", content: textOf(message.content), tool_calls: toolCalls });
     for (const call of toolCalls) {
       let result: ToolResult;
       const callArgs = parseArgs(call.function.arguments);
       if (call.function.name === "draft_expense_from_receipt" && allowedReadToolNames.has(call.function.name)) {
-        const image = attachments.find(
-          (item) => (item.kind === "image" || (!item.kind && item.dataUrl?.startsWith("data:image/"))) && item.dataUrl,
-        );
+        // Images still go through the isolated vision call. A PDF's text was
+        // already extracted by the route and travels here — the model reads
+        // the same structured draft out of it, and the same
+        // "check before you propose" note applies.
+        const image = attachments.find((item) => item.kind === "image" && item.dataUrl);
         const pdf = attachments.find(
           (item) => item.kind === "pdf" && typeof item.extractedText === "string" && item.extractedText,
         );

@@ -16,10 +16,10 @@ import {
   mergeGatewayConfig,
   probeGateway,
   provisionVirtualKey,
-  refreshKeySpend,
+  rotateVirtualKey,
+  verifyVirtualKey,
   revokeVirtualKey,
   saveAiGatewayConfig,
-  saveBusinessGateway,
   toPublicAiGatewayConfig,
   toPublicBusinessGateway,
 } from "@/lib/ai-gateway-service";
@@ -27,7 +27,6 @@ import {
   isGatewayActive,
   validateGatewayInput,
   type AiGatewayInput,
-  type BusinessGatewayInput,
 } from "@/lib/ai-gateway";
 import { platformAudit, requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
 import { query, withoutTenantScope } from "@/lib/db";
@@ -76,7 +75,10 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
 
   const canManage = session.role === "owner";
   const wantsProbe = request.nextUrl.searchParams.get("probe") === "1";
-  const status = canManage && wantsProbe ? await probeGateway(gateway) : null;
+  const firstVirtualKey = gateways.find((row) => Boolean(row.virtualKey))?.virtualKey ?? null;
+  const status = canManage && wantsProbe
+    ? await probeGateway(gateway, { platformModel: platform.model, virtualKey: firstVirtualKey })
+    : null;
 
   return NextResponse.json({
     gateway: canManage ? toPublicAiGatewayConfig(gateway) : null,
@@ -102,9 +104,6 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
   });
 });
 
-function optionalText(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
 
 /** Owner/Admin: LiteLLM connection setup and on-demand comprehensive probe. */
 export const PUT = withPlatformScope(async (request: NextRequest) => {
@@ -125,8 +124,9 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
     }
     const current = await getAiGatewayConfig();
     const merged = mergeGatewayConfig(draft as AiGatewayInput, current);
-    const probeResult = await probeGateway(merged);
-    return NextResponse.json({ status: probeResult });
+    const [platform, gatewayRows] = await Promise.all([getPlatformAiConfig(), listBusinessGateways()]);
+    const firstVirtualKey = gatewayRows.find((row) => Boolean(row.virtualKey))?.virtualKey ?? null;
+    return NextResponse.json({ status: await probeGateway(merged, { platformModel: platform.model, virtualKey: firstVirtualKey }) });
   }
 
   if (body.action === "config") {
@@ -151,7 +151,6 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
         chatModel: saved.chatModel,
         embeddingModel: saved.embeddingModel,
         virtualKeysEnabled: saved.virtualKeysEnabled,
-        allowBusinessModels: saved.allowBusinessModels,
       },
     });
     return NextResponse.json({ gateway: toPublicAiGatewayConfig(saved) });
@@ -160,7 +159,7 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
 });
 
-/** Manage business and branch virtual keys and model overrides. */
+/** Engineer/owner: per-business and per-branch virtual-key lifecycle and diagnostics. */
 export const POST = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.config.manage");
   if (error) return error;
@@ -229,28 +228,30 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
     return NextResponse.json({ ok: true });
   }
 
-  if (body.action === "refresh_spend") {
-    const row = await refreshKeySpend(gateway, businessId, locationId);
-    if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
+  if (body.action === "verify_key") {
+    const result = await verifyVirtualKey(gateway, businessId, locationId, platform.model);
+    if (!result.gateway) return NextResponse.json({ error: "not_found", status: result.probe }, { status: 404 });
+    return NextResponse.json({
+      gateway: toPublicBusinessGateway(result.gateway, gateway, platform.model),
+      status: result.probe,
+    });
   }
 
-  if (body.action === "business") {
+  if (body.action === "rotate_key") {
     try {
-      const input = businessInput(body);
-      const row = await saveBusinessGateway(businessId, input, gateway, locationId);
+      const row = await rotateVirtualKey(gateway, businessId, locationId);
       await platformAudit({
         adminId: session.padmin,
         businessId,
-        action: "ai.gateway.business.save",
+        action: "ai.gateway.key.rotate",
         entity: "ai_business_gateway",
         entityId: locationId ? `${businessId}:${locationId}` : businessId,
-        payload: { ...input, locationId },
+        payload: { keyAlias: row.keyAlias, locationId, syncError: row.syncError },
       });
       return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
     } catch (err) {
-      if (err instanceof Error && err.message.startsWith("ai_gateway")) {
-        return NextResponse.json({ error: err.message }, { status: 400 });
+      if (err instanceof GatewayProvisioningError) {
+        return NextResponse.json({ error: err.code, detail: err.detail }, { status: 502 });
       }
       throw err;
     }
@@ -258,9 +259,3 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
 
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
 });
-
-function businessInput(body: Record<string, unknown>): BusinessGatewayInput {
-  return {
-    modelOverride: body.modelOverride === null ? null : optionalText(body.modelOverride),
-  };
-}

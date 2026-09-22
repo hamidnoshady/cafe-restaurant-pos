@@ -50,7 +50,7 @@ export type PlatformCapability =
   // privileged information.
   | "cms.manage"
   | "business.suspend"
-  // Platform billing: gateway config, credit packages, plan builder, wallet
+  // Platform billing: credit packages, plan builder, wallet
   // grants and payment approval.
   | "billing.manage"
   // Messaging (migration 0137+): SMS/Email provider credentials, rates, credit

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultConfig } from "./ai";
-import { runAgentTurn } from "./ai-service";
+import { defaultConfig, toolDefinitions } from "./ai";
+import { runAgentTurn, validateOpenAiTools } from "./ai-service";
 
 const config = {
   ...defaultConfig("litellm"),
@@ -141,7 +141,7 @@ describe("Phase 18b Wave 4 proactive isolation", () => {
 
 describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
   it("runs the isolated extraction call (no tools, multimodal content) and feeds fields back for propose_action", async () => {
-    const chatMock = vi
+    const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
         providerReply({
@@ -181,15 +181,6 @@ describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
           ],
         }),
       );
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/embeddings")) {
-        return new Response(JSON.stringify({ data: [{ index: 0, embedding: new Array(1536).fill(0.1) }], usage: { total_tokens: 5 } }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return chatMock(url, init);
-    });
     vi.stubGlobal("fetch", fetchMock);
     const readTool = vi.fn(async () => ({ ok: true, data: {} }));
 
@@ -203,16 +194,16 @@ describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
       executeReadTool: readTool,
     });
 
-    expect(chatMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(readTool).not.toHaveBeenCalled();
     expect(reply.proposedAction?.type).toBe("expense.categorize");
 
-    const firstPayload = JSON.parse(String(chatMock.mock.calls[0][1]?.body));
+    const firstPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(firstPayload.tools.map((t: { function: { name: string } }) => t.function.name)).toContain(
       "draft_expense_from_receipt",
     );
 
-    const extractionPayload = JSON.parse(String(chatMock.mock.calls[1][1]?.body));
+    const extractionPayload = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
     expect(extractionPayload.tools).toBeUndefined();
     expect(extractionPayload.messages[1].content[1]).toEqual({
       type: "image_url",
@@ -409,12 +400,14 @@ describe("Phase 38b gateway cost capture", () => {
     expect(reply.costUsd).toBeNull();
   });
 
-  it("the gateway config uses the virtual key in Authorization header and maintains clean request payload", async () => {
+  it("the gateway runtime key is used without sending request-level fallbacks", async () => {
+    // LiteLLM owns failover/routing policy. Legacy gateway body fields must not
+    // become /chat/completions request parameters.
     const gatewayConfig = {
       ...config,
       gateway: {
-        authKey: "sk-virtual-123",
-        body: {},
+        authKey: "sk-virtual",
+        body: { fallbacks: ["pos-cheap"] },
       },
     };
     const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "پاسخ با پرامپت دروازه." }));
@@ -427,9 +420,6 @@ describe("Phase 38b gateway cost capture", () => {
       systemPrompt: "نظم سیستمی",
       messages: [{ role: "user", content: "سلام" }],
     });
-
-    const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
-    expect(headers.Authorization).toBe("Bearer sk-virtual-123");
 
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(payload.prompt_id).toBeUndefined();
@@ -456,21 +446,90 @@ describe("Phase 38b gateway cost capture", () => {
     expect(payload.messages[0]).toEqual({ role: "system", content: "نظم سیستمی" });
   });
 
-  it("only standard function tools reach the provider tools array without leaking unhandled types", async () => {
+  it("MCP declarations in legacy runtime body do not reach ordinary chat tools", async () => {
+    const mcpConfig = {
+      ...config,
+      gateway: {
+        body: {
+          tools: [
+            {
+              type: "mcp",
+              server_url: "litellm_proxy/pos_mcp/mcp",
+              server_label: "pos_mcp",
+              require_approval: "never",
+            },
+          ],
+        },
+      },
+    };
     const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "با ابزارها پاسخ دادم." }));
     vi.stubGlobal("fetch", fetchMock);
 
     await runAgentTurn({
-      config,
+      config: mcpConfig,
       mode: "dashboard",
       promptContext: { mode: "dashboard" },
       messages: [{ role: "user", content: "سلام" }],
     });
 
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    const tools = payload.tools as { type: string; function: { name: string } }[];
+    const tools = payload.tools as { type: string }[];
     expect(tools.every((tool) => tool.type === "function")).toBe(true);
-    expect(tools.length).toBeGreaterThan(1);
+    expect(tools).not.toContainEqual(mcpConfig.gateway.body.tools[0]);
+  });
+  it("preserves sanitized LiteLLM 400 detail on AiError while tenant message stays generic", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "litellm.BadRequestError: invalid tools schema",
+            type: "invalid_request_error",
+            code: "400",
+          },
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      runAgentTurn({
+        config,
+        mode: "proactive",
+        promptContext: { mode: "proactive" },
+        messages: [{ role: "user", content: "ping" }],
+        requestId: "req-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "ai_provider",
+      message: "درخواست توسط سرویس هوش مصنوعی رد شد. مدیر پلتفرم می‌تواند جزئیات فنی را بررسی کند.",
+      providerError: {
+        status: 400,
+        type: "invalid_request_error",
+        code: "400",
+        detail: "litellm.BadRequestError: invalid tools schema",
+      },
+      requestDiagnostics: { requestId: "req-1", model: config.model, hasFallbacks: false, hasMcpTools: false },
+    });
+  });
+
+  it("validates every production tool schema before provider execution", () => {
+    const modes = ["wizard", "dashboard", "floor", "platform", "autopilot", "proactive"] as const;
+    for (const mode of modes) {
+      const tools = mode === "autopilot" ? [] : mode === "proactive" ? [] : toolDefinitions(mode, {
+        hasAttachment: true,
+        retrieval: true,
+        projectScoped: true,
+      });
+      expect(validateOpenAiTools(tools), mode).toEqual([]);
+    }
+  });
+
+  it("detects an invalid function tool before fetch is called", async () => {
+    const errors = validateOpenAiTools([
+      { type: "function", function: { name: "bad name", description: "x", parameters: { type: "object", properties: {}, required: ["missing"] } } },
+    ]);
+    expect(errors.join(" ")).toMatch(/invalid OpenAI function name|required/);
   });
 });
 

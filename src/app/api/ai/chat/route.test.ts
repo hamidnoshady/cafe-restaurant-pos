@@ -118,8 +118,17 @@ describe("POST /api/ai/chat streaming error handling", () => {
       new AiError(
         "ai_invalid_request",
         "درخواست توسط سرویس هوش مصنوعی رد شد. مدیر پلتفرم می‌تواند جزئیات فنی را بررسی کند.",
-        "Invalid model name pos-chat on upstream",
-        400,
+        JSON.stringify({ error: { message: "Invalid model name pos-chat on upstream" } }),
+        {
+          status: 400,
+          message: "Invalid model name pos-chat on upstream",
+          type: "invalid_request_error",
+          code: null,
+          param: null,
+          detail: "Invalid model name pos-chat on upstream",
+          validation: [],
+          sanitizedBody: "Invalid model name pos-chat on upstream",
+        },
       ),
     );
 

@@ -2,9 +2,23 @@
  * Phase 37 & Phase 39 — the gateway's server half: the singleton gateway row,
  * each business and branch's slice of it, and the calls to the gateway's own management API.
  *
- * Two rules shape this file:
- * 1. A gateway failure is never an assistant crash.
- * 2. Tenant scope is the caller's, not this module's.
+ * Two rules shape this file.
+ *
+ * 1. **A gateway failure is never an assistant failure.** Every HTTP call here
+ *    returns a result object instead of throwing; the only place that matters
+ *    is the request path, and a deployment that was working before the gateway
+ *    was introduced must keep working when the gateway container is stopped.
+ *    The one exception is provisioning, which is an explicit operator action:
+ *    there the operator has asked for something and is entitled to hear why it
+ *    did not happen.
+ *
+ * 2. **Tenant scope is the caller's, not this module's.** Business/branch key
+ *    rows carry explicit `business_id` and optional `location_id` and are written
+ *    through ordinary `query()`, exactly as Phase 18's credit writes do: from the
+ *    platform console the ambient scope is the documented `platform` bypass and
+ *    any business/branch may be addressed, while from a business's own settings
+ *    page RLS confines the write to the session's business — so a forged
+ *    business id is refused rather than merely ignored.
  */
 import { query, withoutTenantScope } from "./db";
 import {
@@ -24,10 +38,8 @@ import {
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
-  parseProviderError,
   resolveChatModel,
   toPublicGatewayConfig,
-  toStringList,
   validateBusinessGatewayInput,
   validateGatewayInput,
   virtualKeyAlias,
@@ -36,12 +48,13 @@ import {
   type BusinessGateway,
   type BusinessGatewayInput,
   type GatewayProbe,
-  type GatewayProbeStage,
   type PublicAiGatewayConfig,
   type PublicBusinessGateway,
   type AiGatewayTurnPricing,
 } from "./ai-gateway";
 import { getPlatformAiConfig } from "./ai-config";
+import { chatCompletionsUrl } from "./ai";
+import { normalizeProviderError, providerErrorReason } from "./ai-provider-errors";
 
 /** Management calls are operator-facing: fail them fast rather than hang a page. */
 const MANAGEMENT_TIMEOUT_MS = 10_000;
@@ -71,10 +84,18 @@ type GatewayRow = {
   master_key: string | null;
   chat_model: string;
   embedding_model: string;
-  fallback_models?: unknown;
+  fallback_models: unknown;
   virtual_keys_enabled: boolean;
   allow_business_models: boolean;
-  published_models?: unknown;
+  published_models: unknown;
+  usd_rial_rate: string | null;
+  gateway_costing_enabled: boolean;
+  input_cost_rial_per_million: string | number;
+  output_cost_rial_per_million: string | number;
+  revenue_margin_percent: string | number | null;
+  max_turn_rial: string | number | null;
+  mcp_enabled: boolean;
+  mcp_servers: unknown;
 };
 
 function rowToGateway(row: GatewayRow): AiGatewayConfig {
@@ -85,10 +106,19 @@ function rowToGateway(row: GatewayRow): AiGatewayConfig {
     masterKey: row.master_key ?? "",
     chatModel: row.chat_model ?? "",
     embeddingModel: row.embedding_model ?? "",
-    virtualKeysEnabled: Boolean(row.virtual_keys_enabled),
-    allowBusinessModels: Boolean(row.allow_business_models),
-    publishedModels: toStringList(row.published_models),
-    fallbackModels: toStringList(row.fallback_models),
+    // Retired local mirrors: route/fallback/MCP/model access policy belongs to LiteLLM.
+    fallbackModels: [],
+    virtualKeysEnabled: row.virtual_keys_enabled,
+    allowBusinessModels: false,
+    publishedModels: [],
+    usdRialRate: optionalNumber(row.usd_rial_rate),
+    gatewayCostingEnabled: row.gateway_costing_enabled,
+    inputCostRialPerMillion: numberValue(row.input_cost_rial_per_million),
+    outputCostRialPerMillion: numberValue(row.output_cost_rial_per_million),
+    revenueMarginPercent: Math.max(0, numberValue(row.revenue_margin_percent)),
+    maxTurnRial: Math.max(0, numberValue(row.max_turn_rial)),
+    mcpEnabled: false,
+    mcpServers: [],
   };
 }
 
@@ -97,7 +127,11 @@ export async function getAiGatewayConfig(): Promise<AiGatewayConfig> {
   const { rows } = await query<GatewayRow>(
     `SELECT enabled, base_url, master_key, chat_model, embedding_model,
             fallback_models, virtual_keys_enabled,
-            allow_business_models, published_models
+            allow_business_models, published_models,
+            usd_rial_rate, gateway_costing_enabled,
+            input_cost_rial_per_million, output_cost_rial_per_million,
+            revenue_margin_percent, max_turn_rial,
+            mcp_enabled, mcp_servers
        FROM platform_ai_gateway
       WHERE id = true`,
   );
@@ -130,93 +164,130 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
     masterKey: draft.masterKey?.trim() || current.masterKey,
     chatModel: draft.chatModel ?? current.chatModel,
     embeddingModel: draft.embeddingModel ?? current.embeddingModel,
+    fallbackModels: [],
     virtualKeysEnabled: draft.virtualKeysEnabled ?? current.virtualKeysEnabled,
-    allowBusinessModels: draft.allowBusinessModels ?? current.allowBusinessModels,
-    publishedModels:
-      draft.publishedModels === undefined ? current.publishedModels : toStringList(draft.publishedModels),
-    fallbackModels: draft.fallbackModels === undefined ? current.fallbackModels : toStringList(draft.fallbackModels),
+    allowBusinessModels: false,
+    publishedModels: [],
+    // Billing-owned settings are preserved here for runtime compatibility but
+    // are no longer accepted from `/platform/ai` patches.
+    usdRialRate: current.usdRialRate,
+    gatewayCostingEnabled: current.gatewayCostingEnabled,
+    inputCostRialPerMillion: current.inputCostRialPerMillion,
+    outputCostRialPerMillion: current.outputCostRialPerMillion,
+    revenueMarginPercent: current.revenueMarginPercent,
+    maxTurnRial: current.maxTurnRial,
+    mcpEnabled: false,
+    mcpServers: [],
   };
 }
 
 /**
- * Persist the technical gateway settings.
+ * Persist the gateway settings.
  */
 export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGatewayConfig> {
   const current = await getAiGatewayConfig();
-  const merged = mergeGatewayConfig(input, current);
-  const errors = validateGatewayInput(merged);
+  // Validate the complete state that will be persisted, not a partial patch.
+  // This lets later edits omit unchanged fields while still preventing an
+  // enabled configuration that runtime would immediately reject.
+  const errors = validateGatewayInput(mergeGatewayConfig(input, current));
   if (errors.length > 0) throw new Error(errors[0]);
   const masterKey = input.masterKey?.trim() || current.masterKey || null;
-
   await query(
     `INSERT INTO platform_ai_gateway
        (id, enabled, base_url, master_key, chat_model, embedding_model,
-        virtual_keys_enabled, allow_business_models, published_models,
-        fallback_models, updated_at)
+        fallback_models, virtual_keys_enabled,
+        allow_business_models, published_models,
+        usd_rial_rate, gateway_costing_enabled, input_cost_rial_per_million, output_cost_rial_per_million,
+        revenue_margin_percent, max_turn_rial,
+        mcp_enabled, mcp_servers, updated_at)
      VALUES
-       (true, $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, now())
+       (true, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb,
+        $10, $11, $12, $13, $14, $15, $16, $17::jsonb, now())
      ON CONFLICT (id)
      DO UPDATE SET enabled = EXCLUDED.enabled,
                    base_url = EXCLUDED.base_url,
                    master_key = EXCLUDED.master_key,
                    chat_model = EXCLUDED.chat_model,
                    embedding_model = EXCLUDED.embedding_model,
+                   fallback_models = EXCLUDED.fallback_models,
                    virtual_keys_enabled = EXCLUDED.virtual_keys_enabled,
                    allow_business_models = EXCLUDED.allow_business_models,
                    published_models = EXCLUDED.published_models,
-                   fallback_models = EXCLUDED.fallback_models,
+                   usd_rial_rate = EXCLUDED.usd_rial_rate,
+                   gateway_costing_enabled = EXCLUDED.gateway_costing_enabled,
+                   input_cost_rial_per_million = EXCLUDED.input_cost_rial_per_million,
+                   output_cost_rial_per_million = EXCLUDED.output_cost_rial_per_million,
+                   revenue_margin_percent = EXCLUDED.revenue_margin_percent,
+                   max_turn_rial = EXCLUDED.max_turn_rial,
+                   mcp_enabled = EXCLUDED.mcp_enabled,
+                   mcp_servers = EXCLUDED.mcp_servers,
                    updated_at = now()`,
     [
-      merged.enabled,
-      merged.baseUrl,
+      input.enabled ?? current.enabled,
+      (input.baseUrl ?? current.baseUrl).trim(),
       masterKey,
-      merged.chatModel,
-      merged.embeddingModel,
-      merged.virtualKeysEnabled,
-      merged.allowBusinessModels,
-      JSON.stringify(merged.publishedModels),
-      JSON.stringify(merged.fallbackModels ?? []),
+      (input.chatModel ?? current.chatModel).trim(),
+      (input.embeddingModel ?? current.embeddingModel).trim(),
+      JSON.stringify([]),
+      input.virtualKeysEnabled ?? current.virtualKeysEnabled,
+      false,
+      JSON.stringify([]),
+      current.usdRialRate,
+      current.gatewayCostingEnabled,
+      current.inputCostRialPerMillion,
+      current.outputCostRialPerMillion,
+      current.revenueMarginPercent,
+      Math.round(current.maxTurnRial),
+      false,
+      JSON.stringify([]),
     ],
   );
   return getAiGatewayConfig();
 }
 
 // ---------------------------------------------------------------------------
-// Per-business and per-branch gateway slices
+// Business & Branch Gateways
 // ---------------------------------------------------------------------------
 
 type BusinessGatewayRow = {
-  id: string;
+  id?: string;
   business_id: string;
   location_id: string | null;
   virtual_key: string | null;
   key_alias: string | null;
   model_override: string | null;
-  spend_usd: string | number | null;
+  spend_usd: string | null;
   synced_at: string | null;
   sync_error: string | null;
 };
 
 function rowToBusinessGateway(row: BusinessGatewayRow): BusinessGateway {
   return {
+    id: row.id,
     businessId: row.business_id,
-    locationId: row.location_id,
-    virtualKey: row.virtual_key,
-    keyAlias: row.key_alias,
-    modelOverride: row.model_override,
+    locationId: row.location_id ?? null,
+    virtualKey: row.virtual_key ?? null,
+    keyAlias: row.key_alias ?? null,
+    modelOverride: row.model_override ?? null,
     spendUsd: numberValue(row.spend_usd),
     syncedAt: row.synced_at,
-    syncError: row.sync_error,
+    syncError: row.sync_error ?? null,
   };
 }
 
+/**
+ * Get gateway row for a business or a specific branch.
+ * If locationId is provided, queries for that branch.
+ * If locationId is null/undefined, queries for the business-level gateway (location_id IS NULL).
+ */
 export async function getBusinessGateway(
   businessId: string,
-  locationId: string | null = null,
+  locationId?: string | null,
 ): Promise<BusinessGateway | null> {
+  const loc = locationId?.trim() || null;
   const { rows } = await query<BusinessGatewayRow>(
-    `SELECT id, business_id, location_id, virtual_key, key_alias,
-            model_override, spend_usd, synced_at, sync_error
+    `SELECT id, business_id, location_id, virtual_key, key_alias, model_override,
+            spend_usd, synced_at, sync_error
        FROM ai_business_gateway
       WHERE business_id = $1
         AND (
@@ -224,11 +295,12 @@ export async function getBusinessGateway(
           OR
           ($2::uuid IS NULL AND location_id IS NULL)
         )`,
-    [businessId, locationId],
+    [businessId, loc],
   );
   return rows[0] ? rowToBusinessGateway(rows[0]) : null;
 }
 
+/** Get gateway row for a specific branch. */
 export async function getBranchGateway(
   businessId: string,
   locationId: string,
@@ -236,173 +308,289 @@ export async function getBranchGateway(
   return getBusinessGateway(businessId, locationId);
 }
 
+/** List all branch gateways for a business. */
 export async function listBranchGateways(businessId: string): Promise<BusinessGateway[]> {
   const { rows } = await query<BusinessGatewayRow>(
-    `SELECT id, business_id, location_id, virtual_key, key_alias,
-            model_override, spend_usd, synced_at, sync_error
+    `SELECT id, business_id, location_id, virtual_key, key_alias, model_override,
+            spend_usd, synced_at, sync_error
        FROM ai_business_gateway
-      WHERE business_id = $1 AND location_id IS NOT NULL
-      ORDER BY updated_at DESC`,
+      WHERE business_id = $1
+        AND location_id IS NOT NULL`,
     [businessId],
   );
   return rows.map(rowToBusinessGateway);
 }
 
-export async function listBusinessGateways(businessId?: string): Promise<BusinessGateway[]> {
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<BusinessGatewayRow>(
-      businessId
-        ? `SELECT id, business_id, location_id, virtual_key, key_alias,
-                  model_override, spend_usd, synced_at, sync_error
-             FROM ai_business_gateway
-            WHERE business_id = $1
-            ORDER BY updated_at DESC`
-        : `SELECT id, business_id, location_id, virtual_key, key_alias,
-                  model_override, spend_usd, synced_at, sync_error
-             FROM ai_business_gateway
-            ORDER BY updated_at DESC`,
-      businessId ? [businessId] : [],
-    ),
-  );
-  return rows.map(rowToBusinessGateway);
+/** List business/branch gateway rows. Platform scope. */
+export async function listBusinessGateways(
+  businessId?: string,
+  locationId?: string | null,
+): Promise<BusinessGateway[]> {
+  return withoutTenantScope("platform", async () => {
+    let sql = `SELECT id, business_id, location_id, virtual_key, key_alias, model_override,
+                      spend_usd, synced_at, sync_error
+                 FROM ai_business_gateway`;
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+
+    if (businessId) {
+      params.push(businessId);
+      conditions.push(`business_id = $${params.length}`);
+    }
+
+    if (locationId !== undefined) {
+      if (locationId === null) {
+        conditions.push(`location_id IS NULL`);
+      } else {
+        params.push(locationId);
+        conditions.push(`location_id = $${params.length}`);
+      }
+    }
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ` + conditions.join(" AND ");
+    }
+
+    sql += ` ORDER BY business_id, location_id NULLS FIRST`;
+    const { rows } = await query<BusinessGatewayRow>(sql, params);
+    return rows.map(rowToBusinessGateway);
+  });
 }
 
+/**
+ * Legacy-safe upsert for a business or branch key row. Model override input is
+ * ignored: LiteLLM owns tenant/model access policy.
+ */
 export async function saveBusinessGateway(
   businessId: string,
   input: BusinessGatewayInput,
   gateway: AiGatewayConfig,
-  locationId: string | null = null,
+  locationId?: string | null,
 ): Promise<BusinessGateway> {
-  const errors = validateBusinessGatewayInput(input, {
+  const loc = locationId?.trim() || null;
+  validateBusinessGatewayInput(input, {
     allowBusinessModels: gateway.allowBusinessModels,
     allowedModels: gateway.publishedModels,
   });
-  if (errors.length > 0) throw new Error(errors[0]);
 
-  const existing = await getBusinessGateway(businessId, locationId);
-  const modelOverride =
-    input.modelOverride === undefined ? existing?.modelOverride ?? null : input.modelOverride;
-
-  const { rows } = await query<BusinessGatewayRow>(
+  await query(
     `INSERT INTO ai_business_gateway
        (business_id, location_id, model_override, updated_at)
-     VALUES ($1, $2, $3, now())
+     VALUES ($1, $2, NULL, now())
      ON CONFLICT (business_id, location_id)
-     DO UPDATE SET model_override = EXCLUDED.model_override,
-                   updated_at = now()
-     RETURNING id, business_id, location_id, virtual_key, key_alias,
-               model_override, spend_usd, synced_at, sync_error`,
-    [businessId, locationId, modelOverride],
+     DO UPDATE SET model_override = NULL,
+                   updated_at = now()`,
+    [businessId, loc],
   );
-  return rowToBusinessGateway(rows[0]);
+  return (await getBusinessGateway(businessId, loc)) ?? emptyBusinessGateway(businessId, loc);
 }
 
-export async function storeVirtualKey(input: {
+/** Record a virtual key against a business or branch. Platform scope. */
+async function storeVirtualKey(input: {
   businessId: string;
-  locationId: string | null;
+  locationId?: string | null;
   virtualKey: string;
   keyAlias: string;
   syncError?: string | null;
 }): Promise<BusinessGateway> {
-  const { businessId, locationId, virtualKey, keyAlias, syncError = null } = input;
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<BusinessGatewayRow>(
+  const loc = input.locationId?.trim() || null;
+  return withoutTenantScope("platform", async () => {
+    await query(
       `INSERT INTO ai_business_gateway
          (business_id, location_id, virtual_key, key_alias, synced_at, sync_error, updated_at)
-       VALUES ($1, $2, $3, $4, now(), $5, now())
+       VALUES ($1, $2, $3, $4, CASE WHEN $5::text IS NULL THEN now() ELSE NULL END, $5, now())
        ON CONFLICT (business_id, location_id)
        DO UPDATE SET virtual_key = EXCLUDED.virtual_key,
                      key_alias = EXCLUDED.key_alias,
-                     synced_at = now(),
+                     synced_at = CASE WHEN $5::text IS NULL THEN now() ELSE ai_business_gateway.synced_at END,
                      sync_error = EXCLUDED.sync_error,
-                     updated_at = now()
-       RETURNING id, business_id, location_id, virtual_key, key_alias,
-                 model_override, spend_usd, synced_at, sync_error`,
-      [businessId, locationId, virtualKey, keyAlias, syncError],
-    ),
-  );
-  return rowToBusinessGateway(rows[0]);
+                     updated_at = now()`,
+      [
+        input.businessId,
+        loc,
+        input.virtualKey,
+        input.keyAlias,
+        input.syncError ?? null,
+      ],
+    );
+    return (await getBusinessGateway(input.businessId, loc)) ?? emptyBusinessGateway(input.businessId, loc);
+  });
 }
 
-export async function clearVirtualKey(businessId: string, locationId: string | null = null): Promise<void> {
-  await withoutTenantScope("platform", () =>
-    query(
-      `UPDATE ai_business_gateway
-          SET virtual_key = NULL,
-              key_alias = NULL,
-              synced_at = NULL,
-              sync_error = NULL,
-              spend_usd = 0,
-              updated_at = now()
+/** Forget the virtual key and the row that held it. Platform scope. */
+export async function clearVirtualKey(businessId: string, locationId?: string | null): Promise<void> {
+  const loc = locationId?.trim() || null;
+  await withoutTenantScope("platform", async () => {
+    await query(
+      `DELETE FROM ai_business_gateway
         WHERE business_id = $1
           AND (
             ($2::uuid IS NOT NULL AND location_id = $2::uuid)
             OR
             ($2::uuid IS NULL AND location_id IS NULL)
           )`,
-      [businessId, locationId],
-    ),
-  );
+      [businessId, loc],
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Gateway Management API calls
+// The gateway's own management API
 // ---------------------------------------------------------------------------
 
-export interface GatewayResponse {
+interface GatewayResponse {
   status: number;
   body: unknown;
 }
 
-export async function gatewayRequest(
+async function gatewayRequest(
   config: AiGatewayConfig,
   url: string,
-  options: {
-    method?: string;
-    body?: Record<string, unknown>;
-  } = {},
+  init: { method: "GET" | "POST"; body?: unknown },
 ): Promise<GatewayResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MANAGEMENT_TIMEOUT_MS);
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (config.masterKey) headers.Authorization = `Bearer ${config.masterKey}`;
     const res = await fetch(url, {
-      method: options.method ?? "GET",
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      method: init.method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(config.masterKey ? { Authorization: `Bearer ${config.masterKey}` } : {}),
+      },
+      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
       signal: controller.signal,
     });
-    const text = await res.text().catch(() => "");
-    let body: unknown = text;
+    const text = await res.text();
+    let body: unknown = null;
     try {
-      body = JSON.parse(text);
+      body = text ? JSON.parse(text) : null;
     } catch {
-      body = text;
+      body = null;
     }
     return { status: res.status, body };
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      return { status: 504, body: { error: "gateway_timeout" } };
-    }
-    return { status: 503, body: { error: "gateway_unreachable" } };
+  } catch {
+    return { status: 0, body: null };
   } finally {
     clearTimeout(timer);
   }
 }
 
-function asError(status: number, body: unknown): { code: string; message: string; detail: string | null } {
-  const detail = parseGatewayErrorDetail(body);
-  if (status === 401 || status === 403) return { code: "ai_gateway_auth", message: gatewayStatusMessage(status), detail };
-  if (status === 404) return { code: "ai_gateway_not_found", message: gatewayStatusMessage(status), detail };
-  if (status === 503 || status === 504) return { code: "ai_gateway_unreachable", message: "دروازه در دسترس نیست.", detail };
-  return { code: "ai_gateway_error", message: gatewayStatusMessage(status), detail };
+export interface GatewayCallError {
+  code: string;
+  message: string;
+  /** The proxy's own explanation of the failure, when it sent one. */
+  detail: string | null;
 }
 
+function stage(input: {
+  key: GatewayProbe["stages"][number]["key"];
+  label: string;
+  ok: boolean;
+  skipped?: boolean;
+  status?: number | null;
+  model?: string | null;
+  message?: string | null;
+  detail?: string | null;
+}): GatewayProbe["stages"][number] {
+  return {
+    key: input.key,
+    label: input.label,
+    ok: input.ok,
+    ...(input.skipped ? { skipped: true } : {}),
+    status: input.status ?? null,
+    model: input.model ?? null,
+    message: input.message ?? null,
+    detail: input.detail ?? null,
+  };
+}
+
+async function completionProbe(config: AiGatewayConfig, input: { authKey: string; model: string; key: GatewayProbe["stages"][number]["key"]; label: string }): Promise<GatewayProbe["stages"][number]> {
+  const model = input.model.trim();
+  if (!model) {
+    return stage({
+      key: input.key,
+      label: input.label,
+      ok: false,
+      model: null,
+      message: "نام مستعار مدل گفت‌وگو تنظیم نشده است.",
+    });
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MANAGEMENT_TIMEOUT_MS);
+  try {
+    const res = await fetch(chatCompletionsUrl(config.baseUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.authKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "ping" }],
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+    const text = await res.text().catch(() => "");
+    if (ok(res.status)) {
+      return stage({
+        key: input.key,
+        label: input.label,
+        ok: true,
+        status: res.status,
+        model,
+        message: "تکمیل آزمایشی موفق بود.",
+      });
+    }
+    const err = normalizeProviderError(res.status, text);
+    return stage({
+      key: input.key,
+      label: input.label,
+      ok: false,
+      status: res.status,
+      model,
+      message: providerErrorReason(err) ?? gatewayStatusMessage(res.status),
+      detail: err.detail ?? err.sanitizedBody,
+    });
+  } catch {
+    return stage({
+      key: input.key,
+      label: input.label,
+      ok: false,
+      model,
+      message: "درخواست تکمیل آزمایشی به دروازه نرسید.",
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function asError(status: number, body?: unknown): GatewayCallError {
+  if (status === 0) {
+    return {
+      code: "ai_gateway_unreachable",
+      message: "دروازه در دسترس نیست (اتصال برقرار نشد).",
+      detail: null,
+    };
+  }
+  return {
+    code: status === 401 || status === 403 ? "ai_gateway_auth" : "ai_gateway_error",
+    message: gatewayStatusMessage(status),
+    detail: parseGatewayErrorDetail(body),
+  };
+}
+
+/**
+ * The one throw of this module: provisioning is an explicit operator action,
+ * so the operator is entitled to the code *and* the proxy's own explanation.
+ * `message` stays the code so the route's `startsWith("ai_gateway")` contract
+ * keeps working; the explanation rides along as `detail`.
+ */
 export class GatewayProvisioningError extends Error {
-  code: string;
-  detail: string | null;
-  constructor(code: string, detail: string | null = null) {
+  readonly code: string;
+  readonly detail: string | null;
+
+  constructor(code: string, detail: string | null) {
     super(code);
     this.name = "GatewayProvisioningError";
     this.code = code;
@@ -414,220 +602,112 @@ function ok(status: number): boolean {
   return status >= 200 && status < 300;
 }
 
-function stringifyBody(body: unknown): string {
-  if (typeof body === "string") return body;
-  try {
-    return JSON.stringify(body);
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Multi-stage connection probe:
- * 1. Server reachability (/health/liveliness)
- * 2. Master key validation (/model/info)
- * 3. Chat model alias check
- * 4. Minimal chat completion test
- * 5. Virtual keys verification
- */
-export async function probeGateway(config: AiGatewayConfig): Promise<GatewayProbe> {
+/** Multi-stage LiteLLM diagnostic — real auth, model and completion checks. */
+export async function probeGateway(
+  config: AiGatewayConfig,
+  options: { platformModel?: string; virtualKey?: string | null } = {},
+): Promise<GatewayProbe> {
   const started = Date.now();
-  const stages: GatewayProbeStage[] = [];
-
-  // Stage 1: Reachability
+  const stages: GatewayProbe["stages"] = [];
   const health = await gatewayRequest(config, livelinessUrl(config.baseUrl), { method: "GET" });
   if (!ok(health.status)) {
-    const parsed = parseProviderError(health.status, stringifyBody(health.body));
-    const detail = parsed.sanitizedReason;
-    stages.push({
-      id: "liveliness",
-      label: "دسترسی به سرور LiteLLM",
+    const error = asError(health.status, health.body);
+    stages.push(stage({
+      key: "server",
+      label: "Gateway reachable",
       ok: false,
-      error: "سرور دروازه در دسترس نیست",
-      detail,
-    });
+      status: health.status || null,
+      message: error.message,
+      detail: error.detail,
+    }));
     return {
       ok: false,
       latencyMs: null,
       models: [],
+      error: joinGatewayDetail(error.message, error.detail),
       stages,
-      error: joinGatewayDetail("سرور دروازه در دسترس نیست", detail),
-      detail,
     };
   }
-  const latencyMs = Date.now() - started;
-  stages.push({
-    id: "liveliness",
-    label: "دسترسی به سرور LiteLLM",
-    ok: true,
-    detail: `${latencyMs} میلی‌ثانیه`,
-  });
+  stages.push(stage({ key: "server", label: "Gateway reachable", ok: true, status: health.status, message: "دروازه در دسترس است." }));
 
-  // Stage 2: Master key auth & model listing
   if (!config.masterKey) {
-    stages.push({
-      id: "auth",
-      label: "اعتبارسنجی کلید مدیر (Master Key)",
-      ok: true,
-      detail: "کلید مدیر وارد نشده است",
-    });
-    return {
-      ok: true,
-      latencyMs,
-      models: [],
-      stages,
-      error: null,
-    };
+    stages.push(stage({ key: "auth", label: "Master key accepted", ok: false, message: "کلید مدیر تنظیم نشده است." }));
+    return { ok: false, latencyMs: Date.now() - started, models: [], error: "کلید مدیر تنظیم نشده است.", stages };
   }
 
-  const modelRes = await gatewayRequest(config, modelInfoUrl(config.baseUrl), { method: "GET" });
-  if (modelRes.status === 401 || modelRes.status === 403) {
-    const parsed = parseProviderError(modelRes.status, stringifyBody(modelRes.body));
-    stages.push({
-      id: "auth",
-      label: "اعتبارسنجی کلید مدیر (Master Key)",
-      ok: false,
-      error: "احراز هویت کلید مدیر ناموفق بود",
-      detail: parsed.sanitizedReason,
-    });
+  const modelInfo = await gatewayRequest(config, modelInfoUrl(config.baseUrl), { method: "GET" });
+  if (!ok(modelInfo.status)) {
+    const error = asError(modelInfo.status, modelInfo.body);
+    stages.push(stage({ key: "auth", label: "Master key accepted", ok: false, status: modelInfo.status, message: error.message, detail: error.detail }));
     return {
       ok: false,
-      latencyMs,
+      latencyMs: Date.now() - started,
       models: [],
+      error: joinGatewayDetail(error.message, error.detail),
       stages,
-      error: "احراز هویت کلید مدیر دروازه ناموفق بود (401/403)",
-      detail: parsed.sanitizedReason,
     };
   }
+  stages.push(stage({ key: "auth", label: "Master key accepted", ok: true, status: modelInfo.status, message: "کلید مدیر پذیرفته شد." }));
 
-  const models = ok(modelRes.status) ? parseGatewayModels(modelRes.body) : [];
-  stages.push({
-    id: "auth",
-    label: "اعتبارسنجی کلید مدیر (Master Key)",
-    ok: true,
-    detail: models.length > 0 ? `${models.length} مدل تعریف‌شده یافت شد` : "احراز هویت موفق",
-  });
-
-  // Stage 3: Chat model alias exists
-  const targetModel = config.chatModel?.trim() || "pos-chat";
-  if (models.length > 0 && !models.includes(targetModel)) {
-    const errorMsg = `نام مستعار «${targetModel}» در فهرست مدل‌های دروازه یافت نشد`;
-    stages.push({
-      id: "model",
-      label: `بررسی نام مستعار مدل (${targetModel})`,
-      ok: false,
-      error: errorMsg,
-      detail: `مدل‌های موجود: ${models.join(", ")}`,
-    });
+  const models = parseGatewayModels(modelInfo.body);
+  const model = config.chatModel.trim() || options.platformModel?.trim() || "";
+  const modelOk = Boolean(model) && models.includes(model);
+  stages.push(stage({
+    key: "model_alias",
+    label: "Model alias exists",
+    ok: modelOk,
+    status: modelInfo.status,
+    model: model || null,
+    message: modelOk ? "نام مستعار مدل در LiteLLM موجود است." : `مدل ${model || "—"} در /model/info پیدا نشد.`,
+    detail: modelOk ? null : `Available: ${models.join(", ") || "none"}`,
+  }));
+  if (!modelOk) {
     return {
       ok: false,
-      latencyMs,
+      latencyMs: Date.now() - started,
       models,
+      error: `مدل ${model || "—"} در LiteLLM پیدا نشد.`,
       stages,
-      error: errorMsg,
-      detail: `مدل‌های موجود: ${models.join(", ")}`,
     };
   }
-  stages.push({
-    id: "model",
-    label: `بررسی نام مستعار مدل (${targetModel})`,
-    ok: true,
-    detail: `مدل «${targetModel}» در دسترس است`,
+
+  const masterCompletion = await completionProbe(config, {
+    authKey: config.masterKey,
+    model,
+    key: "master_completion",
+    label: "Master-key minimal completion",
   });
-
-  // Stage 4: Minimal chat completion test
-  if (config.masterKey && targetModel) {
-    const testChatUrl = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-    const completionRes = await gatewayRequest(config, testChatUrl, {
-      method: "POST",
-      body: {
-        model: targetModel,
-        messages: [{ role: "user", content: "ping" }],
-        max_tokens: 10,
-      },
-    });
-
-    if (completionRes.status === 200) {
-      stages.push({
-        id: "completion",
-        label: "اجرای تست گفت‌وگو (Minimal Completion)",
-        ok: true,
-        detail: "پاسخ تست با موفقیت دریافت شد",
-      });
-    } else if (completionRes.status === 404) {
-      stages.push({
-        id: "completion",
-        label: "اجرای تست گفت‌وگو (Minimal Completion)",
-        ok: true,
-        detail: "مسیر گفت‌وگو در آزمون سبک در دسترس است",
-      });
-    } else {
-      const parsed = parseProviderError(completionRes.status, stringifyBody(completionRes.body));
-      const errorMsg = `تست گفت‌وگو با مدل «${targetModel}» ناموفق بود`;
-      stages.push({
-        id: "completion",
-        label: "اجرای تست گفت‌وگو (Minimal Completion)",
-        ok: false,
-        error: errorMsg,
-        detail: parsed.sanitizedReason,
-      });
-      return {
-        ok: false,
-        latencyMs,
-        models,
-        stages,
-        error: `${errorMsg}: ${parsed.sanitizedReason}`,
-        detail: parsed.sanitizedReason,
-      };
-    }
+  stages.push(masterCompletion);
+  if (!masterCompletion.ok) {
+    return { ok: false, latencyMs: Date.now() - started, models, error: masterCompletion.message, stages };
   }
 
-  // Stage 5: Virtual keys check
-  if (!config.virtualKeysEnabled) {
-    stages.push({
-      id: "virtual_keys",
-      label: "وضعیت کلیدهای مجازی کسب‌وکارها",
+  if (options.virtualKey) {
+    const virtualCompletion = await completionProbe(config, {
+      authKey: options.virtualKey,
+      model,
+      key: "virtual_key_completion",
+      label: "Business virtual-key completion",
+    });
+    stages.push(virtualCompletion);
+  } else {
+    stages.push(stage({
+      key: "virtual_key_completion",
+      label: "Business virtual-key completion",
       ok: true,
-      detail: "غیرفعال است",
-    });
-  } else if (config.masterKey) {
-    const testKeyRes = await gatewayRequest(config, keyInfoUrl(config.baseUrl, "test-probe-check"), {
-      method: "GET",
-    });
-    if (testKeyRes.status === 401 || testKeyRes.status === 403 || testKeyRes.status >= 500) {
-      const parsed = parseProviderError(testKeyRes.status, stringifyBody(testKeyRes.body));
-      const errorMsg = "سرویس مدیریت کلیدهای مجازی در دسترس نیست یا مجوز ندارد";
-      stages.push({
-        id: "virtual_keys",
-        label: "وضعیت کلیدهای مجازی کسب‌وکارها",
-        ok: false,
-        error: errorMsg,
-        detail: parsed.sanitizedReason,
-      });
-      return {
-        ok: false,
-        latencyMs,
-        models,
-        stages,
-        error: `${errorMsg}: ${parsed.sanitizedReason}`,
-        detail: parsed.sanitizedReason,
-      };
-    }
-    stages.push({
-      id: "virtual_keys",
-      label: "وضعیت کلیدهای مجازی کسب‌وکارها",
-      ok: true,
-      detail: "سرویس کلیدهای مجازی آماده است",
-    });
+      skipped: true,
+      model,
+      message: "کلید مجازی برای تست سراسری انتخاب نشده است؛ از بخش کسب‌وکارها Verify را اجرا کنید.",
+    }));
   }
 
+  const failed = stages.find((item) => !item.ok && !item.skipped);
   return {
-    ok: true,
-    latencyMs,
+    ok: !failed,
+    latencyMs: Date.now() - started,
     models,
+    error: failed?.message ?? null,
     stages,
-    error: null,
   };
 }
 
@@ -643,6 +723,17 @@ export interface VirtualKeyInput {
   locationId?: string | null;
 }
 
+/**
+ * Mint (or refresh) the virtual key for one business or branch and store it.
+ *
+ * Single-architecture rule (migration 0168): the minted key is an IDENTITY —
+ * it carries the alias and business metadata and nothing else. No `models`
+ * allowlist (changing the platform's chat alias would otherwise orphan every
+ * existing key against the new model), and no max_budget / budget_duration /
+ * tpm_limit / rpm_limit (those are LiteLLM's to enforce; a mirrored key budget
+ * used to 429 tenants whose platform wallet still had credit). The platform
+ * gate — wallet affordability — is the only billing stop on the request path.
+ */
 export async function provisionVirtualKey(
   config: AiGatewayConfig,
   input: VirtualKeyInput,
@@ -654,6 +745,8 @@ export async function provisionVirtualKey(
   if (existing?.virtualKey) {
     const res = await gatewayRequest(config, keyUpdateUrl(config.baseUrl), {
       method: "POST",
+      // Only the identity metadata is refreshed; the key keeps whatever the
+      // proxy itself enforces on it.
       body: { key: existing.virtualKey, key_alias: alias },
     });
     if (!ok(res.status)) {
@@ -701,6 +794,14 @@ export async function provisionVirtualKey(
   });
 }
 
+/**
+ * Provision the business-level key immediately after a business is created.
+ *
+ * Business creation must not be rolled back when LiteLLM is temporarily down:
+ * the gateway can be restarted and the admin can retry from the console. When
+ * it is configured, however, a new tenant is ready for AI before the create
+ * request returns — there is no second manual "generate key" step.
+ */
 export async function autoProvisionBusinessVirtualKey(businessId: string): Promise<BusinessGateway | null> {
   try {
     const [gateway] = await Promise.all([getAiGatewayConfig(), getPlatformAiConfig()]);
@@ -712,6 +813,8 @@ export async function autoProvisionBusinessVirtualKey(businessId: string): Promi
     });
   } catch (error) {
     const syncError = error instanceof Error ? error.message : "ai_gateway_provision_failed";
+    // Keep a visible retryable record without exposing the master key or
+    // making tenant creation depend on gateway availability.
     try {
       await withoutTenantScope("platform", async () => {
         await query(
@@ -731,6 +834,22 @@ export async function autoProvisionBusinessVirtualKey(businessId: string): Promi
   }
 }
 
+/**
+ * Lazily guarantee a business's virtual key on the REQUEST path (the root
+ * cause fix for "کلید مجازی این کسب‌وکار صادر نشده است" reaching tenants).
+ *
+ * A tenant whose key was never minted — created while the gateway was down, or
+ * before virtual keys were switched on — used to be refused with
+ * `tenant_virtual_key_missing` until an operator noticed. Now the first
+ * request mints the key itself: the platform console's per-business readiness
+ * read stays a read (it must not mint N keys in one page load), but the
+ * request path, which is about to authenticate as this business, may.
+ *
+ * Failure here is never a hard error: the provisioning attempt is recorded on
+ * the row (sync_error) and the turn fails closed exactly as before. A
+ * per-process, per-business cooldown keeps a down gateway from adding a 10s
+ * management call to every chat turn.
+ */
 const ensureKeyCooldownMs = 60_000;
 const ensureKeyFailures = new Map<string, number>();
 
@@ -763,6 +882,7 @@ export async function ensureTenantVirtualKey(
   }
 }
 
+/** Revoke a business or branch's virtual key at the gateway and drop the row. */
 export async function revokeVirtualKey(
   config: AiGatewayConfig,
   businessId: string,
@@ -779,6 +899,85 @@ export async function revokeVirtualKey(
   await clearVirtualKey(businessId, loc);
 }
 
+export async function rotateVirtualKey(
+  config: AiGatewayConfig,
+  businessId: string,
+  locationId?: string | null,
+): Promise<BusinessGateway> {
+  await revokeVirtualKey(config, businessId, locationId);
+  return provisionVirtualKey(config, { businessId, locationId: locationId ?? null });
+}
+
+export async function verifyVirtualKey(
+  config: AiGatewayConfig,
+  businessId: string,
+  locationId?: string | null,
+  platformModel?: string,
+): Promise<{ gateway: BusinessGateway | null; probe: GatewayProbe }> {
+  const loc = locationId?.trim() || null;
+  const existing = await getBusinessGatewayOrEmpty(businessId, loc);
+  const model = resolveChatModel({
+    platformModel: platformModel || config.chatModel || "",
+    gateway: config,
+    business: loc ? null : existing,
+    branch: loc ? existing : null,
+  });
+  if (!existing?.virtualKey) {
+    return {
+      gateway: existing,
+      probe: {
+        ok: false,
+        latencyMs: null,
+        models: [],
+        error: "کلید مجازی برای این کسب‌وکار وجود ندارد.",
+        stages: [
+          stage({
+            key: "virtual_key_completion",
+            label: "Business virtual-key completion",
+            ok: false,
+            model,
+            message: "کلید مجازی برای این کسب‌وکار وجود ندارد.",
+          }),
+        ],
+      },
+    };
+  }
+  const started = Date.now();
+  const completion = await completionProbe(config, {
+    authKey: existing.virtualKey,
+    model,
+    key: "virtual_key_completion",
+    label: "Business virtual-key completion",
+  });
+  const probe: GatewayProbe = {
+    ok: completion.ok,
+    latencyMs: Date.now() - started,
+    models: [],
+    error: completion.ok ? null : completion.message,
+    stages: [completion],
+  };
+  if (!completion.ok) {
+    await storeVirtualKey({
+      businessId,
+      locationId: loc,
+      virtualKey: existing.virtualKey,
+      keyAlias: existing.keyAlias ?? virtualKeyAlias(businessId, loc),
+      syncError: joinGatewayDetail(completion.message ?? "تست کلید مجازی ناموفق بود.", completion.detail),
+    });
+  } else {
+    await storeVirtualKey({
+      businessId,
+      locationId: loc,
+      virtualKey: existing.virtualKey,
+      keyAlias: existing.keyAlias ?? virtualKeyAlias(businessId, loc),
+    });
+  }
+  return { gateway: (await getBusinessGatewayOrEmpty(businessId, loc)) ?? existing, probe };
+}
+
+/**
+ * Ask the gateway what this key has spent. Diagnostic only.
+ */
 export async function refreshKeySpend(
   config: AiGatewayConfig,
   businessId: string,
@@ -806,6 +1005,7 @@ export async function refreshKeySpend(
   return (await getBusinessGateway(businessId, loc)) ?? existing;
 }
 
+/** Platform-scoped read used by the provisioning path before a write. */
 async function getBusinessGatewayOrEmpty(
   businessId: string,
   locationId?: string | null,
@@ -823,13 +1023,9 @@ export interface GatewayCosting {
 
 export async function resolveGatewayCosting(): Promise<GatewayCosting | null> {
   try {
-    const platform = await getPlatformAiConfig();
-    const usdRate =
-      platform.usdRialRate ??
-      optionalNumber(process.env.LITELLM_USD_RIAL_RATE) ??
-      600_000;
-    if (usdRate && usdRate > 0) return { usdRialRate: usdRate };
-    return null;
+    const gateway = await getAiGatewayConfig();
+    if (!gateway.gatewayCostingEnabled || !gateway.usdRialRate) return null;
+    return { usdRialRate: gateway.usdRialRate };
   } catch (err) {
     console.error("ai gateway costing unavailable; settling on the token rates", err);
     return null;
@@ -852,14 +1048,19 @@ export async function resolveGatewayTurnPricing(
 // Presentation helpers
 // ---------------------------------------------------------------------------
 
+/** Join a business or branch's gateway row to the model its calls will actually use. */
 export function toPublicBusinessGateway(
   business: BusinessGateway,
   config: AiGatewayConfig,
   platformModel: string,
 ): PublicBusinessGateway {
-  const { virtualKey: _virtualKey, ...rest } = business;
   return {
-    ...rest,
+    id: business.id,
+    businessId: business.businessId,
+    locationId: business.locationId,
+    keyAlias: business.keyAlias,
+    syncedAt: business.syncedAt,
+    syncError: business.syncError,
     hasVirtualKey: Boolean(business.virtualKey),
     effectiveModel: resolveChatModel({
       platformModel,
@@ -871,4 +1072,4 @@ export function toPublicBusinessGateway(
 }
 
 export { defaultGatewayConfig, envGatewayConfig };
-export type { AiGatewayConfig, BusinessGateway, GatewayProbe, GatewayProbeStage };
+export type { AiGatewayConfig, BusinessGateway, GatewayProbe };

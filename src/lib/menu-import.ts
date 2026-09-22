@@ -3,6 +3,7 @@
  * for insertion. The onboarding wizard uses its basic columns; Settings also
  * accepts tax and modifier columns for a full operational import.
  */
+import { parseCsv } from "./data-transfer/codecs";
 import { toLatinDigits } from "./digits";
 import { tomanToRial, type Rial } from "./money";
 
@@ -92,54 +93,17 @@ const HEADER_ALIASES: Record<string, keyof RawRow> = {
   modifiers: "modifiers",
 };
 
-/** Split CSV text into rows of fields. Handles quotes, CRLF, BOM, and , ; or tab delimiters. */
-export function parseCsv(text: string): string[][] {
-  const src = text.replace(/^\uFEFF/, "");
-  const firstLine = src.split(/\r?\n/).find((line) => line.trim().length > 0) ?? "";
-  const delimiter = [",", ";", "\t"]
-    .map((item) => ({ item, count: firstLine.split(item).length }))
-    .sort((a, b) => b.count - a.count)[0].item;
-
-  const rows: string[][] = [];
-  let field = "";
-  let row: string[] = [];
-  let inQuotes = false;
-  const pushField = () => {
-    row.push(field);
-    field = "";
-  };
-  const pushRow = () => {
-    pushField();
-    if (row.some((item) => item.trim() !== "")) rows.push(row);
-    row = [];
-  };
-
-  for (let index = 0; index < src.length; index++) {
-    const char = src[index];
-    if (inQuotes) {
-      if (char === '"') {
-        if (src[index + 1] === '"') {
-          field += '"';
-          index++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += char;
-      }
-    } else if (char === '"') {
-      inQuotes = true;
-    } else if (char === delimiter) {
-      pushField();
-    } else if (char === "\n") {
-      pushRow();
-    } else if (char !== "\r") {
-      field += char;
-    }
-  }
-  if (field !== "" || row.length > 0) pushRow();
-  return rows;
-}
+/**
+ * Split CSV text into rows of fields.
+ *
+ * Re-exported from the platform's one parser (`data-transfer/codecs.ts`) —
+ * this module used to carry a third implementation of the same state machine.
+ * Behaviour is unchanged for every file this importer accepts: quotes, doubled
+ * quotes, CRLF, BOM and automatic `,` / `;` / tab detection, with blank lines
+ * dropped. The shared one additionally refuses to be fooled by a delimiter
+ * inside a quoted header cell, which this copy was.
+ */
+export { parseCsv };
 
 function mapHeader(cells: string[]): (keyof RawRow | null)[] {
   return cells.map((cell) => {

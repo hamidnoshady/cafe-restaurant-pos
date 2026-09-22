@@ -154,6 +154,31 @@ export const PERMISSIONS = {
   reportsView: "reports.view",
   reportsExport: "reports.export",
 
+  /**
+   * «ورود و خروج داده» — the platform-wide data transfer engine.
+   *
+   * These two gate the ENGINE, and are always intersected with the entity's
+   * own permission, never substituted for it: exporting the customer directory
+   * needs `data.export` AND `crm.export`; importing a menu needs `data.import`
+   * AND `menu.edit`. That is deliberate and is the whole security model of the
+   * module — one screen that reaches every app must not become a way around
+   * any app's own gate.
+   *
+   * They exist as keys of their own because bulk transfer is a different kind
+   * of trust from the per-record permission it sits on top of. Reading one
+   * customer's file and walking out with fifty thousand rows of them are not
+   * the same act; neither are correcting one price and replacing the entire
+   * catalogue from a spreadsheet. A business that wants its CRM manager to
+   * keep editing customers but never bulk-export them now revokes one key
+   * instead of having no way to express it.
+   *
+   * Nobody loses access they had: every role whose preset already included a
+   * bulk door (the manager's `crm.export`, the accountant's `reports.export`)
+   * receives these, and no floor role had one to lose.
+   */
+  dataImport: "data.import",
+  dataExport: "data.export",
+
   // Administration
   teamManage: "team.manage",
   settingsManage: "settings.manage",
@@ -188,6 +213,7 @@ const {
   workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
   ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
   reportsView, reportsExport,
+  dataImport, dataExport,
   teamManage, settingsManage, locationsManage, backupManage,
 } = PERMISSIONS;
 
@@ -219,6 +245,12 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // business that wants a narrower manager revokes the individual keys.
     workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
     ledgerView, reportsView, reportsExport,
+    // «ورود و خروج داده». The manager already held every bulk door the product
+    // had (crm.export gated both the customer export AND the customer import;
+    // reports.export gated the report download), so granting these two keeps
+    // the access they had rather than handing them a new capability. The
+    // engine still intersects them with each entity's own permission.
+    dataImport, dataExport,
     settingsManage, backupManage,
   ],
   // Phase 16's role: the books, and only the books. No till, no floor. Manages
@@ -232,6 +264,12 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     partiesView, partiesManage,
     ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
     reportsView, reportsExport,
+    // Same reasoning as the manager's: the accountant already downloaded the
+    // financial statements through reports.export, and importing a chart of
+    // accounts or a month of expenses is the accounting work this role exists
+    // for. Which entities they may actually move is still decided by the
+    // entity permissions above — no crm.export here, so no customer dump.
+    dataImport, dataExport,
     // A project is a cost centre the books post against (journal_entries
     // .project_id), so the accountant must be able to read the workspace and
     // the contracts whose values they are accruing. Read only: recording a

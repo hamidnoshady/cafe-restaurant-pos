@@ -72,8 +72,8 @@ export const GET = withPlatformScope(
           keyAlias: pub.keyAlias,
           effectiveModel: pub.effectiveModel,
           hasVirtualKey: pub.hasVirtualKey,
-          spendUsd: pub.spendUsd,
-          spendRial: rate > 0 ? rialFromGatewayUsd(pub.spendUsd, rate) : 0,
+          spendUsd: row.spendUsd,
+          spendRial: rate > 0 ? rialFromGatewayUsd(row.spendUsd, rate) : 0,
           syncedAt: pub.syncedAt,
           syncError: pub.syncError,
         };
@@ -142,8 +142,8 @@ export const POST = withPlatformScope(
           keyAlias: pub.keyAlias,
           effectiveModel: pub.effectiveModel,
           hasVirtualKey: pub.hasVirtualKey,
-          spendUsd: pub.spendUsd,
-          spendRial: rate > 0 ? rialFromGatewayUsd(pub.spendUsd, rate) : 0,
+          spendUsd: row.spendUsd,
+          spendRial: rate > 0 ? rialFromGatewayUsd(row.spendUsd, rate) : 0,
           syncedAt: pub.syncedAt,
           syncError: pub.syncError,
         };

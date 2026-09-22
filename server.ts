@@ -371,6 +371,43 @@ app.prepare().then(async () => {
     runMessagingTick().catch((err) => console.error("messaging tick failed:", err));
   scheduleBackgroundTick(messagingTick, MESSAGE_TICK_INTERVAL_MS, 35_000);
 
+  // «ورود و خروج داده» — the platform data transfer engine (migration 0169).
+  // Two ticks, for two genuinely different jobs.
+  //
+  // The import worker claims ONE queued job per tick (a conditional UPDATE, so
+  // two app instances cannot take the same one) and performs it inside
+  // withTenant. One at a time on purpose: an import can be minutes of work,
+  // and a worker that drained the whole queue would starve every other
+  // business behind whichever one uploaded fifty thousand rows. The queue is
+  // also what keeps the UI non-blocking — the operator confirms and carries on
+  // working while progress lands in the history.
+  const { runImportQueueTick, IMPORT_TICK_INTERVAL_MS } = await import(
+    "./src/lib/data-transfer/import-service"
+  );
+  const importQueueTick = () =>
+    runImportQueueTick().catch((err) => console.error("data import tick failed:", err));
+  scheduleBackgroundTick(importQueueTick, IMPORT_TICK_INTERVAL_MS, 40_000);
+
+  // Scheduled exports («فروش روزانه»، «مشتریان هفتگی»، «حسابداری ماهانه») plus
+  // the retention sweep that drops the stored bytes of expired exports. Five
+  // minutes is fine granularity for an hourly schedule and cheap when nothing
+  // is due — the claim query is one indexed read against a partial index.
+  const { runScheduledExportsTick, SCHEDULED_EXPORT_TICK_INTERVAL_MS } = await import(
+    "./src/lib/data-transfer/schedule-service"
+  );
+  const { pruneExpiredExports } = await import("./src/lib/data-transfer/export-service");
+  const scheduledExportTick = async () => {
+    await runScheduledExportsTick().catch((err) =>
+      console.error("scheduled export tick failed:", err),
+    );
+    // The history row survives; only the copy of the business's data goes.
+    // The service establishes its own documented bypass — see its header.
+    await pruneExpiredExports().catch((err) =>
+      console.error("export retention sweep failed:", err),
+    );
+  };
+  scheduleBackgroundTick(scheduledExportTick, SCHEDULED_EXPORT_TICK_INTERVAL_MS, 55_000);
+
   const requestListener = (req: IncomingMessage, res: ServerResponse) => {
     const t0 = Date.now();
     const parsed = parse(req.url ?? "/", true);
