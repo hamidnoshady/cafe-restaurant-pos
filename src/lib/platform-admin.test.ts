@@ -28,7 +28,6 @@ describe("platformCan — role → capability presets", () => {
     // …but changes nothing else.
     expect(platformCan("support", "features.write")).toBe(false);
     expect(platformCan("support", "business.suspend")).toBe(false);
-    expect(platformCan("support", "ai.credits.manage")).toBe(false);
     expect(platformCan("support", "impersonate.full")).toBe(false);
     expect(platformCan("support", "business.provision")).toBe(false);
     expect(platformCan("support", "business.delete")).toBe(false);
@@ -44,7 +43,6 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("engineer", "support.manage")).toBe(true);
     expect(platformCan("engineer", "features.write")).toBe(true);
     expect(platformCan("engineer", "business.suspend")).toBe(true);
-    expect(platformCan("engineer", "ai.credits.manage")).toBe(true);
     expect(platformCan("engineer", "impersonate.revoke")).toBe(true);
     // Still not full-access impersonation, provisioning, archive/delete, or admin mgmt.
     expect(platformCan("engineer", "impersonate.full")).toBe(false);

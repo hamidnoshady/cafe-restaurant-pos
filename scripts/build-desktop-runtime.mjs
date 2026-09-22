@@ -60,7 +60,22 @@ async function compile(entryPoint, outfile) {
     // file:/// paths; POSIX accepts this as /C:/..., so one value is portable.
     define: { "import.meta.url": JSON.stringify("file:///C:/__desktop_bundle_dependency__.ts") },
     metafile: true,
-    external: ["next", "next/*", "pg-native", "bufferutil", "utf-8-validate"],
+    // `playwright-core` joins the other unbundleable natives: its prebuilt
+    // `coreBundle.js` requires `chromium-bidi` subpaths that are not installed
+    // (they ship inside the browser driver, not the npm tree), so esbuild
+    // cannot resolve them and fails the whole build. It is reachable from the
+    // custom server through the PDF export path, and Next's standalone trace
+    // already stages the real package into the runtime's node_modules — so
+    // leaving the require unbundled resolves correctly at run time, which is
+    // exactly how the reports PDF route has always used it.
+    external: [
+      "next",
+      "next/*",
+      "pg-native",
+      "bufferutil",
+      "utf-8-validate",
+      "playwright-core",
+    ],
     logLevel: "warning",
     logOverride: { "empty-import-meta": "silent" },
   });

@@ -84,7 +84,7 @@ interface ShiftOrderItemRow extends Record<string, unknown> {
   discount_type: string | null; discount_value: string | null; service_charge: string; tax: string;
   tip_amount: string; order_total: string; item_id: string | null; item_name: string | null;
   quantity: number | null; unit_price: string | null;
-  modifiers: { name: string; price_delta: string | number }[] | null;
+  modifiers: { name: string; price_delta: string | number; quantity?: number }[] | null;
   item_status: string | null; note: string | null; void_reason: string | null;
 }
 interface ShiftOrderPaymentRow extends Record<string, unknown> {
@@ -121,8 +121,11 @@ export async function getShiftOrdersReport(
   const where = ["o.location_id = $1"];
   const add = (value: unknown) => (params.push(value), `$${params.length}`);
   if (selected) {
-    const from = add(selected.startedAt); const to = add(selected.endedAt);
-    where.push(`o.opened_at >= ${from}::timestamptz AND (${to}::timestamptz IS NULL OR o.opened_at <= ${to}::timestamptz)`);
+    // ORDER_OPENED_IN_WINDOW is shared with settled-order listing: orders stay
+    // assigned to the shift that opened them, including carried-over bills.
+    add(selected.startedAt);
+    add(selected.endedAt);
+    where.push(ORDER_OPENED_IN_WINDOW);
   }
   const zone = filters.timeZone ?? "Asia/Tehran";
   if (filters.dateFrom) {
@@ -163,7 +166,7 @@ export async function getShiftOrdersReport(
          FROM orders o LEFT JOIN dining_tables dt ON dt.id=o.table_id LEFT JOIN parties c ON c.id=o.customer_id
          LEFT JOIN users ou ON ou.id=o.opened_by LEFT JOIN users cu ON cu.id=o.closed_by
          LEFT JOIN order_items oi ON oi.order_id=o.id
-         LEFT JOIN LATERAL (SELECT json_agg(json_build_object('name', oim.name_snapshot, 'price_delta', oim.price_delta) ORDER BY oim.name_snapshot) AS modifiers FROM order_item_modifiers oim WHERE oim.order_item_id=oi.id) m ON true
+         LEFT JOIN LATERAL (SELECT json_agg(json_build_object('name', oim.name_snapshot, 'price_delta', oim.price_delta, 'quantity', oim.quantity) ORDER BY oim.name_snapshot) AS modifiers FROM order_item_modifiers oim WHERE oim.order_item_id=oi.id) m ON true
         WHERE o.location_id=$1 AND o.id=ANY($2::uuid[])
         ORDER BY o.opened_at DESC, o.id DESC, oi.created_at`, [locationId, ids]),
     query<ShiftOrderPaymentRow>(
@@ -185,7 +188,7 @@ export async function getShiftOrdersReport(
     discountValue: row.discount_value === null ? null : Number(row.discount_value), serviceCharge: Number(row.service_charge),
     tax: Number(row.tax), tipAmount: Number(row.tip_amount ?? 0), orderTotal: Number(row.order_total), itemId: row.item_id,
     itemName: row.item_name, quantity: Number(row.quantity ?? 0), unitPrice: Number(row.unit_price ?? 0),
-    modifiers: (row.modifiers ?? []).map((m): ShiftOrderModifier => ({ name: m.name, priceDelta: Number(m.price_delta) })),
+    modifiers: (row.modifiers ?? []).map((m): ShiftOrderModifier => ({ name: m.name, priceDelta: Number(m.price_delta), quantity: m.quantity })),
     itemStatus: row.item_status, note: row.note, voidReason: row.void_reason,
   }));
   const payments: ShiftOrderPaymentInput[] = paymentRows.map((row) => ({ orderId: row.order_id, method: row.method,

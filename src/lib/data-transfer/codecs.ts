@@ -1,0 +1,520 @@
+/**
+ * The one file codec layer: CSV in and out, XLSX in and out, JSON in and out,
+ * PDF table extraction in and PDF rendering out.
+ *
+ * ## Why one file
+ *
+ * Before the engine there were three CSV parsers (`crm-csv.ts`,
+ * `report-export.ts`, `menu-import.ts`), three XLSX writers
+ * (`report-export.ts`, `tenant-export.ts`, plus the reader in
+ * `xlsx-import.ts`) and no JSON or PDF path at all. Each had learnt a
+ * different subset of the same hard lessons, and only one of them had learnt
+ * the important one:
+ *
+ *  - **Formula injection.** A cell beginning `=`, `+`, `-` or `@` is executed
+ *    by Excel when the file opens, so an exported customer named
+ *    `=HYPERLINK(...)` is an attack on whoever opens the export. `crm-csv`
+ *    guarded it; `report-export` did not, which meant the reports export was
+ *    the unguarded door. Guarded here, once, for every export in the product.
+ *  - **The BOM.** Excel writes `\uFEFF`; unstripped it becomes part of the
+ *    first header name and the importer says "no name column" about a file
+ *    that has one.
+ *  - **Delimiters.** A Persian Windows Excel writes `;` because the locale's
+ *    list separator is a semicolon. `menu-import` auto-detected it; the other
+ *    two did not, so the same file imported into the menu and failed into the
+ *    CRM.
+ *  - **Persian digits.** «۰۹۱۲…» has to normalise before anything compares it.
+ *
+ * Everything below is pure string/buffer work except the exceljs and unpdf
+ * calls, which are lazily imported so that a CSV-only request never pays for
+ * them — the same lazy shape `ai-attachment.ts` uses for `unpdf`.
+ */
+
+import { toPersianDigits } from "../digits";
+import { formatJalali } from "../jalali";
+
+// ---------------------------------------------------------------------------
+// Digits
+// ---------------------------------------------------------------------------
+
+const PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+
+/** Persian/Arabic-Indic digits to ASCII, leaving everything else alone. */
+export function westernDigits(input: string): string {
+  let out = "";
+  for (const char of input) {
+    const p = PERSIAN_DIGITS.indexOf(char);
+    if (p >= 0) {
+      out += String(p);
+      continue;
+    }
+    const a = ARABIC_DIGITS.indexOf(char);
+    out += a >= 0 ? String(a) : char;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// CSV
+// ---------------------------------------------------------------------------
+
+/** The delimiter a CSV file uses. Detected, never assumed. */
+export type CsvDelimiter = "," | ";" | "\t";
+
+/**
+ * Which delimiter the file's first non-empty line is built from.
+ *
+ * Counted on the header line only, and only outside quotes: a header of
+ * `name,"a;b;c;d",phone` must not be read as semicolon-delimited because one
+ * quoted cell happens to contain four of them.
+ */
+export function detectDelimiter(text: string): CsvDelimiter {
+  const firstLine = firstNonEmptyLine(text);
+  const candidates: CsvDelimiter[] = [",", ";", "\t"];
+  let best: CsvDelimiter = ",";
+  let bestCount = 0;
+  for (const candidate of candidates) {
+    const count = countOutsideQuotes(firstLine, candidate);
+    if (count > bestCount) {
+      best = candidate;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function firstNonEmptyLine(text: string): string {
+  const stripped = text.replace(/^\uFEFF/, "");
+  let line = "";
+  let quoted = false;
+  for (const char of stripped) {
+    if (char === '"') quoted = !quoted;
+    if (!quoted && (char === "\n" || char === "\r")) {
+      if (line.trim()) return line;
+      line = "";
+      continue;
+    }
+    line += char;
+  }
+  return line;
+}
+
+function countOutsideQuotes(line: string, needle: string): number {
+  let count = 0;
+  let quoted = false;
+  for (const char of line) {
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && char === needle) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Parse CSV text into rows of cells.
+ *
+ * A real state machine rather than a regex or a split, because quoting is not
+ * expressible in either: `"" `is an escaped quote, a quoted field may span
+ * lines, and `شرکت الف، شعبهٔ ۲` must survive being a single cell.
+ */
+export function parseCsv(text: string, delimiter?: CsvDelimiter): string[][] {
+  const input = text.replace(/^\uFEFF/, "");
+  const sep = delimiter ?? detectDelimiter(input);
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+
+    if (quoted) {
+      if (char === '"') {
+        if (input[i + 1] === '"') {
+          cell += '"';
+          i += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      quoted = true;
+      continue;
+    }
+    if (char === sep) {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+    if (char === "\r") continue;
+    if (char === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+    cell += char;
+  }
+
+  if (cell !== "" || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  // A file ending in "\n\n" is not a row of one empty cell, and importing it
+  // as a nameless customer is nobody's intent.
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+/**
+ * Quote one cell for output.
+ *
+ * The leading apostrophe on a formula-looking cell is the part that matters:
+ * Excel evaluates a cell beginning `=`, `+`, `-` or `@`, so an exported value
+ * of `=cmd|...` runs on the machine of whoever opens the file. Prefixing makes
+ * it inert text and is the standard mitigation.
+ */
+export function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  let text = String(value);
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  if (/[",\n\r;\t]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+  return text;
+}
+
+/**
+ * Render rows as a CSV document.
+ *
+ * Emits the BOM and CRLF, because the overwhelmingly common consumer is Excel
+ * on Windows, which otherwise reads UTF-8 Persian as mojibake.
+ */
+export function toCsv(headers: readonly string[], rows: readonly unknown[][]): string {
+  const lines = [headers.map(csvCell).join(",")];
+  for (const row of rows) lines.push(row.map(csvCell).join(","));
+  return `\uFEFF${lines.join("\r\n")}\r\n`;
+}
+
+/**
+ * Map a parsed header row onto named fields.
+ *
+ * Matching is case-insensitive, whitespace-tolerant and digit-normalised,
+ * because the file comes from a human: «تلفن», «موبایل», `phone` and `Phone `
+ * all mean the same column, and rejecting three of them is pedantry the user
+ * experiences as a broken importer.
+ */
+export function mapHeaders(
+  header: readonly string[],
+  aliases: Record<string, readonly string[]>,
+): Record<string, number> {
+  const normalised = header.map(normaliseHeader);
+  const out: Record<string, number> = {};
+  for (const [field, names] of Object.entries(aliases)) {
+    const index = normalised.findIndex((h) => names.some((n) => normaliseHeader(n) === h));
+    if (index >= 0) out[field] = index;
+  }
+  return out;
+}
+
+/**
+ * The comparison form of a header: ASCII digits, no surrounding space, no
+ * internal runs of space, lower case, and the Arabic ي/ك folded onto the
+ * Persian ی/ک (a file exported from an Arabic-locale Excel writes the former,
+ * and «كد كالا» must match «کد کالا»).
+ */
+export function normaliseHeader(value: string): string {
+  return westernDigits(value)
+    .replace(/[\u064A\u0649]/g, "\u06CC")
+    .replace(/\u0643/g, "\u06A9")
+    .replace(/[\u200C\u200F\u200E]/g, "")
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+// ---------------------------------------------------------------------------
+// XLSX
+// ---------------------------------------------------------------------------
+
+/** One sheet of an Excel export. */
+export interface SheetData {
+  name: string;
+  columns: { key: string; label: string }[];
+  rows: Record<string, unknown>[];
+}
+
+/**
+ * Excel (.xlsx) → string rows. First worksheet, first row = header.
+ *
+ * Short rows are *not* padded here: the caller pads against the header width,
+ * because only it knows how wide the sheet is meant to be.
+ */
+export async function xlsxToRows(buffer: ArrayBuffer): Promise<string[][]> {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return [];
+
+  const rows: string[][] = [];
+  sheet.eachRow((row) => {
+    const cells: string[] = [];
+    // row.values is 1-based; index 0 is always empty.
+    const values = row.values as unknown[];
+    for (let i = 1; i < values.length; i += 1) cells.push(xlsxCellToString(values[i]));
+    rows.push(cells);
+  });
+  return rows;
+}
+
+function xlsxCellToString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if ("result" in record && record.result !== undefined) return String(record.result);
+    if ("richText" in record && Array.isArray(record.richText)) {
+      return (record.richText as { text: string }[]).map((part) => part.text).join("");
+    }
+    if ("text" in record) return String(record.text);
+    if ("hyperlink" in record && "text" in record) return String(record.text);
+    return "";
+  }
+  return String(value);
+}
+
+/**
+ * Sheets → an .xlsx buffer, right-to-left, bold header, sensible widths.
+ *
+ * Multi-sheet because a relational export ("customers, and their deals") is
+ * one workbook with two sheets rather than two downloads. Sheet names are
+ * clipped to Excel's 31-character limit and stripped of the characters Excel
+ * refuses (`[]:*?/\`), which it otherwise rejects by refusing to open the
+ * whole file.
+ */
+export async function sheetsToXlsxBuffer(sheets: readonly SheetData[]): Promise<Buffer> {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  const used = new Set<string>();
+  for (const sheet of sheets) {
+    const name = uniqueSheetName(sheet.name, used);
+    const worksheet = workbook.addWorksheet(name, { views: [{ rightToLeft: true }] });
+    worksheet.columns = sheet.columns.map((column) => ({
+      header: column.label,
+      key: column.key,
+      width: Math.min(Math.max(column.label.length + 4, 14), 60),
+    }));
+    worksheet.getRow(1).font = { bold: true };
+    for (const row of sheet.rows) {
+      worksheet.addRow(
+        Object.fromEntries(sheet.columns.map((column) => [column.key, row[column.key] ?? ""])),
+      );
+    }
+  }
+  // A workbook with no sheet at all is a file Excel refuses to open, which
+  // reads to the operator as "the export is broken" rather than "there was
+  // nothing to export".
+  if (sheets.length === 0) workbook.addWorksheet("خالی", { views: [{ rightToLeft: true }] });
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+function uniqueSheetName(raw: string, used: Set<string>): string {
+  const base = (raw.replace(/[[\]:*?/\\]/g, " ").trim() || "داده").slice(0, 31);
+  let name = base;
+  let n = 2;
+  while (used.has(name)) {
+    const suffix = ` ${n}`;
+    name = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+    n += 1;
+  }
+  used.add(name);
+  return name;
+}
+
+// ---------------------------------------------------------------------------
+// JSON
+// ---------------------------------------------------------------------------
+
+/**
+ * JSON → rows.
+ *
+ * Accepts the three shapes a real file arrives in: a bare array of objects, a
+ * `{ "data": [...] }` / `{ "rows": [...] }` / `{ "items": [...] }` envelope,
+ * and a single object (one row). The union of every object's keys becomes the
+ * header, in first-seen order, so a file whose later rows carry extra fields
+ * does not silently lose them.
+ */
+export function jsonToRows(text: string): string[][] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.replace(/^\uFEFF/, ""));
+  } catch {
+    throw new Error("json_parse_failed");
+  }
+  const list = jsonRecordList(parsed);
+  if (list.length === 0) return [];
+
+  const columns: string[] = [];
+  for (const record of list) {
+    for (const key of Object.keys(record)) if (!columns.includes(key)) columns.push(key);
+  }
+  const rows: string[][] = [columns];
+  for (const record of list) {
+    rows.push(columns.map((key) => jsonCellToString(record[key])));
+  }
+  return rows;
+}
+
+function jsonRecordList(parsed: unknown): Record<string, unknown>[] {
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  if (Array.isArray(parsed)) return parsed.filter(isRecord);
+  if (isRecord(parsed)) {
+    for (const key of ["data", "rows", "items", "records"]) {
+      const value = parsed[key];
+      if (Array.isArray(value)) return value.filter(isRecord);
+    }
+    return [parsed];
+  }
+  return [];
+}
+
+function jsonCellToString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.map((v) => jsonCellToString(v)).join("، ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+/** Rows of records → a pretty-printed JSON document. */
+export function toJsonDocument(
+  columns: readonly { key: string; label: string }[],
+  rows: readonly Record<string, unknown>[],
+): string {
+  return `${JSON.stringify(
+    rows.map((row) => Object.fromEntries(columns.map((c) => [c.key, row[c.key] ?? null]))),
+    null,
+    2,
+  )}\n`;
+}
+
+// ---------------------------------------------------------------------------
+// PDF (extraction)
+// ---------------------------------------------------------------------------
+
+/**
+ * Best-effort table extraction from a PDF.
+ *
+ * A PDF has no table structure — it has glyphs at coordinates — so this is
+ * explicitly a *best effort*, and the UI says so rather than pretending
+ * otherwise. `textTableToRows` below is the heuristic, and it is deliberately
+ * two-pass because real extractors disagree about whitespace:
+ *
+ *  1. Split on runs of two or more spaces (or a tab). Some extractors preserve
+ *     a table's column gutters that way, and when they do it is unambiguous —
+ *     a value containing a single space stays one cell.
+ *  2. If that finds no table, split on single spaces. pdf.js — which `unpdf`
+ *     wraps, and which is what actually runs here — normalises runs of
+ *     whitespace down to one space, so a price list extracts as
+ *     `"A-1 espresso 85000"` and pass one finds nothing at all.
+ *
+ * Either way, the modal column count is taken to be the table's width and
+ * every line that disagrees is dropped as prose, headers or page furniture.
+ * Pass two cannot tell a two-word product name from two columns; that is an
+ * inherent limit of the format, which is why the operator still maps and
+ * previews before anything is written.
+ *
+ * `unpdf` is imported lazily, exactly as `ai-attachment.ts` does it: it is a
+ * heavy dependency and a CSV import must not pay for it.
+ */
+export async function pdfToRows(buffer: ArrayBuffer): Promise<string[][]> {
+  const { extractText, getDocumentProxy } = await import("unpdf");
+  const document = await getDocumentProxy(new Uint8Array(buffer));
+  const { text } = await extractText(document, { mergePages: true });
+  const source = Array.isArray(text) ? text.join("\n") : text;
+  return textTableToRows(source);
+}
+
+/**
+ * The pure half of `pdfToRows`, so the heuristic is unit-testable without a
+ * PDF fixture.
+ */
+export function textTableToRows(source: string): string[][] {
+  const lines = source
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\u00A0/g, " ").trim())
+    .filter((line) => line.length > 0);
+
+  // Pass one: real gutters. Pass two: pdf.js's normalised single spaces.
+  const wide = pickModalTable(lines.map((line) => splitCells(line, /\t|\s{2,}/)));
+  if (wide.length >= 2) return wide;
+  return pickModalTable(lines.map((line) => splitCells(line, /\s+/)));
+}
+
+function splitCells(line: string, separator: RegExp): string[] {
+  return line
+    .split(separator)
+    .map((cell) => cell.trim())
+    .filter((cell) => cell.length > 0);
+}
+
+/**
+ * The rows whose column count is the page's modal one.
+ *
+ * Anything else is prose, a heading or a page number. Ties go to the wider
+ * shape: a spurious two-column reading of a sentence is far more likely than a
+ * spurious five-column one.
+ */
+function pickModalTable(candidates: string[][]): string[][] {
+  const counts = new Map<number, number>();
+  for (const row of candidates) {
+    if (row.length < 2) continue;
+    counts.set(row.length, (counts.get(row.length) ?? 0) + 1);
+  }
+  if (counts.size === 0) return [];
+
+  let width = 0;
+  let best = 0;
+  for (const [candidateWidth, count] of counts) {
+    if (count > best || (count === best && candidateWidth > width)) {
+      width = candidateWidth;
+      best = count;
+    }
+  }
+  // One matching line is a coincidence, not a table: a header with no body is
+  // nothing to import, and returning it would produce an empty job whose
+  // column list is somebody's sentence.
+  if (best < 2) return [];
+  return candidates.filter((row) => row.length === width);
+}
+
+// ---------------------------------------------------------------------------
+// Display coercion shared by every writer
+// ---------------------------------------------------------------------------
+
+/**
+ * A value as it should appear in a file a human opens.
+ *
+ * Dates become Shamsi — the repo's standing rule, and it applies to exports
+ * exactly as it does to screens. jsonb and arrays are rendered rather than
+ * left to stringify into `[object Object]`.
+ */
+export function displayCell(value: unknown): string | number {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return toPersianDigits(formatJalali(value));
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value ? "بله" : "خیر";
+  if (Array.isArray(value)) return value.map((v) => String(displayCell(v))).join("، ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}

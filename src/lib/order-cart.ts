@@ -22,6 +22,7 @@ import {
   effectiveSelectionBounds,
   resolveModifierSelection,
   type AttachedModifierGroup,
+  type ModifierPick,
   type SelectableModifier,
   type SelectedModifier,
 } from "./order-line-modifiers";
@@ -31,6 +32,18 @@ import type { CartLine } from "./orders";
 export interface CartItemInput {
   menuItemId?: string;
   quantity?: number;
+  /**
+   * The line's add-ons, each with its own repeat count («شات اضافه ×۳» is one
+   * entry at quantity 3). A bare id means quantity 1.
+   */
+  modifiers?: (ModifierPick | string)[];
+  /**
+   * The pre-quantity shape every client sent until now — still accepted (the
+   * waiter screen, queued offline payloads, old installs) and equivalent to
+   * `modifiers` with every quantity at 1. When both are present, the two are
+   * concatenated and validated as one selection, so no path can bypass the
+   * duplicate check by splitting its choice across the two fields.
+   */
   modifierIds?: string[];
   note?: string;
 }
@@ -41,7 +54,7 @@ export interface PreparedItem {
   unitPrice: number;
   quantity: number;
   note: string | null;
-  modifiers: { id: string; name: string; priceDelta: number }[];
+  modifiers: { id: string; name: string; priceDelta: number; quantity: number }[];
 }
 
 export type ResolveCartResult =
@@ -67,6 +80,20 @@ export function validateItemShape(items: CartItemInput[]): string | null {
       it.modifierIds !== null &&
       (!Array.isArray(it.modifierIds) ||
         it.modifierIds.some((id) => typeof id !== "string"))
+    ) {
+      return "invalid_modifier";
+    }
+    if (
+      it.modifiers !== undefined &&
+      it.modifiers !== null &&
+      (!Array.isArray(it.modifiers) ||
+        it.modifiers.some(
+          (pick) =>
+            typeof pick !== "string" &&
+            (typeof pick !== "object" ||
+              pick === null ||
+              typeof pick.id !== "string"),
+        ))
     ) {
       return "invalid_modifier";
     }
@@ -224,7 +251,14 @@ export async function resolveCartItems(
   const execute = async <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
   const menuItemIds = [...new Set(items.map((i) => i.menuItemId!))];
-  const modifierIds = [...new Set(items.flatMap((i) => i.modifierIds ?? []))];
+  const modifierIds = [
+    ...new Set(
+      items.flatMap((i) => [
+        ...(i.modifierIds ?? []),
+        ...(i.modifiers ?? []).map((pick) => (typeof pick === "string" ? pick : pick.id)),
+      ]),
+    ),
+  ];
 
   const rows = await loadMenuRuleRows(execute, locationId, menuItemIds, modifierIds);
 
@@ -246,10 +280,10 @@ export async function resolveCartItems(
     const mi = rows.menuItemMap.get(it.menuItemId!)!;
     const quantity = Number(it.quantity);
     // One rule, shared with every other path (order-line-modifiers.ts): the
-    // attachment map is always built for this item — modifierIds or not — so
+    // attachment map is always built for this item — modifiers or not — so
     // a required group cannot be skipped by submitting an empty selection.
     const selection = resolveModifierSelection({
-      modifierIds: it.modifierIds ?? [],
+      selection: [...(it.modifierIds ?? []), ...(it.modifiers ?? [])],
       modifiersById: rows.modifiersById,
       attachedGroups: attachedGroupsForItem(rows, it.menuItemId!),
     });
@@ -259,7 +293,10 @@ export async function resolveCartItems(
     cartLines.push({
       unitPrice: Number(mi.price),
       quantity,
-      modifierDeltas: modifiers.map((m) => m.priceDelta),
+      // A repeated add-on prices once per its own quantity: the deltas list
+      // carries the add-on's delta N times, which is exactly what the pure
+      // totals math already sums per unit of the line.
+      modifierDeltas: modifiers.flatMap((m) => Array.from({ length: m.quantity }, () => m.priceDelta)),
       taxRatePercent: Number(mi.taxRate),
     });
     preparedItems.push({
@@ -293,7 +330,7 @@ export type ResolveLineModifiersResult =
 export async function resolveLineModifiers(
   locationId: string,
   menuItemId: string,
-  modifierIds: string[],
+  modifiers: (ModifierPick | string)[],
   client?: PoolClient,
 ): Promise<ResolveLineModifiersResult> {
   const execute = async <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>
@@ -305,8 +342,9 @@ export async function resolveLineModifiers(
   // pg 9 will throw. Await in order; callers without a client still use the
   // pool through execute(), but these small reads do not justify two
   // different code paths merely to parallelise them.
-  const uniqueIds = [...new Set(modifierIds)];
-  if (uniqueIds.length !== modifierIds.length) {
+  const ids = modifiers.map((pick) => (typeof pick === "string" ? pick : pick.id));
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length !== ids.length) {
     return { ok: false, error: "duplicate_modifier", status: 400 };
   }
 
@@ -318,7 +356,7 @@ export async function resolveLineModifiers(
   }
 
   return resolveModifierSelection({
-    modifierIds,
+    selection: modifiers,
     modifiersById: rows.modifiersById,
     attachedGroups: attachedGroupsForItem(rows, menuItemId),
   });

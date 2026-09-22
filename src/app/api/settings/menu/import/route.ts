@@ -14,7 +14,7 @@ import {
   menuImportConsistencyErrors,
 } from "@/lib/menu-import-apply";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { xlsxToRows } from "@/lib/xlsx-import";
+import { xlsxToRows } from "@/lib/data-transfer/codecs";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 

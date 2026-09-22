@@ -86,7 +86,7 @@ export function TablePickerDialog({
               ? "برای سفارش حضوری پیش از دریافت وجه، میز را انتخاب کنید."
               : intent === "order"
                 ? "برای ثبت سفارش حضوری، میز را انتخاب کنید."
-                : "میز این سفارش را انتخاب کنید. میز اشغال را هم می‌توانید انتخاب کنید؛ سفارش جدید صورت‌حساب جدا دارد."}
+                : "میز این سفارش را انتخاب کنید."}
           </DialogDescription>
         </DialogHeader>
 
@@ -118,16 +118,31 @@ export function TablePickerDialog({
           </p>
         ) : (
           <>
-            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {/*
+              Auto-fit: two columns on a phone, three to four as the pane
+              widens, never a fixed grid a small dialog has to scroll
+              horizontally. Tiles stay compact — name plus one quiet line — and
+              every target clears 44px. An occupied table is marked with a dot
+              and stays pickable (separate bills are a feature, not an error).
+            */}
+            <ul className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
               {choices.map((table) => (
                 <li key={table.id}>
                   <button
                     type="button"
                     disabled={table.unavailable}
                     aria-pressed={draftTableId === table.id}
+                    aria-label={
+                      table.name +
+                      (table.unavailable
+                        ? "، در دسترس نیست"
+                        : table.occupied
+                          ? "، اشغال — صورت‌حساب جداگانه"
+                          : "")
+                    }
                     onClick={() => setDraftTableId(table.id)}
                     className={
-                      "flex min-h-16 w-full flex-col items-center justify-center gap-1 rounded-xl border px-2 text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:cursor-not-allowed motion-reduce:transition-none " +
+                      "flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-1.5 text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:cursor-not-allowed motion-reduce:transition-none " +
                       (draftTableId === table.id
                         ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
                         : table.unavailable
@@ -135,12 +150,20 @@ export function TablePickerDialog({
                           : "border-border/80 text-muted-foreground hover:border-amber-500/60 dark:hover:border-amber-500/60 hover:bg-muted")
                     }
                   >
-                    <span className="truncate">{table.name}</span>
-                    <span className="flex items-center gap-1 text-xs font-normal">
+                    <span className="flex items-center gap-1.5">
+                      {table.occupied && !table.unavailable ? (
+                        <span
+                          className="inline-block size-2 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <span className="truncate">{table.name}</span>
+                    </span>
+                    <span className="flex items-center gap-1 text-[11px] font-normal leading-4">
                       {table.unavailable ? (
                         "در دسترس نیست"
                       ) : table.occupied ? (
-                        "صورت‌حساب جدا"
+                        "اشغال"
                       ) : (
                         <>
                           <UsersIcon className="size-3" aria-hidden="true" />

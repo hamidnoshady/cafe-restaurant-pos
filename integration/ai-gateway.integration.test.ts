@@ -2,7 +2,7 @@
  * Phase 37 & Phase 39 — the gateway's database half, against a real Postgres.
  *
  * Covers gateway singleton round-trips, business gateway rows,
- * and the Phase 39 branch layer (location_id overrides and isolation).
+ * and the Phase 39 branch layer (location_id key rows and isolation).
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -113,26 +113,21 @@ describe("the gateway singleton", () => {
     expect(config.fallbackModels).toEqual([]);
   });
 
-  it("round-trips aliases, the failover chain and the published list", async () => {
+  it("round-trips technical aliases and retires app-owned routing/model mirrors", async () => {
     const saved = await gateway.saveAiGatewayConfig({
       enabled: true,
       baseUrl: "http://litellm:4000/v1",
       chatModel: "pos-chat",
       embeddingModel: "pos-embed",
-      maxTurnRial: 50_000,
-      gatewayCostingEnabled: true,
-      usdRialRate: 600_000,
-      fallbackModels: ["pos-cheap", "pos-last"],
-      allowBusinessModels: true,
-      publishedModels: ["pos-chat", "pos-fast"],
     });
     expect(saved.enabled).toBe(true);
     expect(saved.chatModel).toBe("pos-chat");
     expect(saved.embeddingModel).toBe("pos-embed");
-    expect(saved.fallbackModels).toEqual(["pos-cheap", "pos-last"]);
-    expect(saved.publishedModels).toEqual(["pos-chat", "pos-fast"]);
-    // Migration 0168: the stored config carries no routing/budget/limit
-    // mirror any more — those live in docker/litellm/config.yaml alone.
+    expect(saved.fallbackModels).toEqual([]);
+    expect(saved.publishedModels).toEqual([]);
+    expect(saved.allowBusinessModels).toBe(false);
+    // Migration 0168: the stored config carries no routing/model/budget/limit
+    // mirror any more — those live in LiteLLM and Plan/Billing.
     expect(JSON.stringify(saved)).not.toMatch(/routingStrategy|maxBudgetUsd|tpmLimit|rpmLimit|budgetDuration/);
 
     const reread = await gateway.getAiGatewayConfig();
@@ -167,8 +162,6 @@ describe("one business's gateway row", () => {
       baseUrl: "http://litellm:4000/v1",
       chatModel: "pos-chat",
       virtualKeysEnabled: true,
-      allowBusinessModels: true,
-      publishedModels: ["pos-chat", "pos-fast", "pos-pro"],
       masterKey: "sk-master",
     };
   }
@@ -177,34 +170,20 @@ describe("one business's gateway row", () => {
     expect(await asBusiness(alpha.businessId, () => gateway.getBusinessGateway(alpha.businessId))).toBeNull();
   });
 
-  it("stores a model override only while the platform publishes that model", async () => {
+  it("ignores legacy model override fields because LiteLLM owns model policy", async () => {
     const config = getTestConfig();
     const row = await asBusiness(alpha.businessId, () =>
       gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-fast" }, config),
     );
-    expect(row.modelOverride).toBe("pos-fast");
+    expect(row.modelOverride).toBeNull();
   });
 
-  it("refuses an override the platform has not published", async () => {
+  it("does not validate model choices in the app-owned gateway row", async () => {
     const config = getTestConfig();
-    await expect(
-      asBusiness(alpha.businessId, () =>
-        gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "gpt-4o" }, config),
-      ),
-    ).rejects.toThrow("ai_gateway_model_not_published");
-  });
-
-  it("refuses any override once the platform switches the choice off", async () => {
-    const config = getTestConfig();
-    await expect(
-      asBusiness(alpha.businessId, () =>
-        gateway.saveBusinessGateway(
-          alpha.businessId,
-          { modelOverride: "pos-fast" },
-          { ...config, allowBusinessModels: false },
-        ),
-      ),
-    ).rejects.toThrow("ai_gateway_model_choice_disabled");
+    const row = await asBusiness(alpha.businessId, () =>
+      gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "gpt-4o" }, config),
+    );
+    expect(row.modelOverride).toBeNull();
   });
 
   it.skipIf(!rlsActive)("keeps one business's row out of another business's session", async () => {
@@ -232,9 +211,9 @@ describe("one business's gateway row", () => {
 
     const alphaRow = await asBusiness(alpha.businessId, () => gateway.getBusinessGateway(alpha.businessId));
     const betaRow = await asBusiness(beta.businessId, () => gateway.getBusinessGateway(beta.businessId));
-    expect(alphaRow?.modelOverride).toBe("pos-fast");
-    expect(betaRow?.modelOverride).toBe("pos-pro");
-    // Identity-only rows: no mirrored key budgets or rate limits remain.
+    expect(alphaRow?.modelOverride).toBeNull();
+    expect(betaRow?.modelOverride).toBeNull();
+    // Identity-only rows: no mirrored models, key budgets or rate limits remain.
     expect(JSON.stringify(betaRow)).not.toMatch(/maxBudgetUsd|tpmLimit|rpmLimit|budgetDuration/);
   });
 
@@ -249,8 +228,8 @@ describe("one business's gateway row", () => {
 
     const rows = await gateway.listBusinessGateways();
     expect(rows).toHaveLength(2);
-    expect(rows.find((row) => row.businessId === alpha.businessId)?.modelOverride).toBe("pos-fast");
-    expect(rows.find((row) => row.businessId === beta.businessId)?.modelOverride).toBe("pos-pro");
+    expect(rows.find((row) => row.businessId === alpha.businessId)?.modelOverride).toBeNull();
+    expect(rows.find((row) => row.businessId === beta.businessId)?.modelOverride).toBeNull();
   });
 
   it("reports the model a call would actually use", async () => {
@@ -260,15 +239,17 @@ describe("one business's gateway row", () => {
     );
     expect(gateway.toPublicBusinessGateway(row, config, "gpt-4o-mini").effectiveModel).toBe("pos-chat");
 
-    const overridden = await asBusiness(alpha.businessId, () =>
+    const ignoredOverride = await asBusiness(alpha.businessId, () =>
       gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-fast" }, config),
     );
-    expect(gateway.toPublicBusinessGateway(overridden, config, "gpt-4o-mini").effectiveModel).toBe("pos-fast");
+    expect(gateway.toPublicBusinessGateway(ignoredOverride, config, "gpt-4o-mini").effectiveModel).toBe("pos-chat");
 
-    const withKey = { ...overridden, virtualKey: "sk-tenant" };
+    const withKey = { ...ignoredOverride, virtualKey: "sk-tenant" };
     const pub = gateway.toPublicBusinessGateway(withKey, config, "gpt-4o-mini");
     expect(pub.hasVirtualKey).toBe(true);
     expect(JSON.stringify(pub)).not.toContain("sk-tenant");
+    expect(JSON.stringify(pub)).not.toContain("modelOverride");
+    expect(JSON.stringify(pub)).not.toContain("spendUsd");
   });
 });
 
@@ -280,20 +261,18 @@ describe("Phase 39 branch layer", () => {
       baseUrl: "http://litellm:4000/v1",
       chatModel: "pos-chat",
       virtualKeysEnabled: true,
-      allowBusinessModels: true,
-      publishedModels: ["pos-chat", "pos-fast", "pos-pro"],
       masterKey: "sk-master",
     };
   }
 
-  it("allows setting overrides per branch while business default remains separate", async () => {
+  it("keeps branch rows separate without owning model overrides", async () => {
     const config = getTestConfig();
-    // Business default
+    // Business-level key row.
     await asBusiness(alpha.businessId, () =>
       gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-fast" }, config, null),
     );
 
-    // Branch 1 override
+    // Branch-level key row.
     await asBusiness(alpha.businessId, () =>
       gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-pro" }, config, alpha.location1Id),
     );
@@ -306,17 +285,17 @@ describe("Phase 39 branch layer", () => {
       gateway.getBranchGateway(alpha.businessId, alpha.location2Id),
     );
 
-    expect(bizRow?.modelOverride).toBe("pos-fast");
-    expect(branch1Row?.modelOverride).toBe("pos-pro");
-    expect(branch2Row).toBeNull(); // Branch 2 has no override
+    expect(bizRow?.modelOverride).toBeNull();
+    expect(branch1Row?.modelOverride).toBeNull();
+    expect(branch2Row).toBeNull(); // Branch 2 has no row
 
     const branches = await asBusiness(alpha.businessId, () => gateway.listBranchGateways(alpha.businessId));
     expect(branches).toHaveLength(1);
     expect(branches[0].locationId).toBe(alpha.location1Id);
-    expect(branches[0].modelOverride).toBe("pos-pro");
+    expect(branches[0].modelOverride).toBeNull();
   });
 
-  it("correctly resolves effective models: branch -> business -> platform", async () => {
+  it("correctly resolves effective models: gateway alias -> platform default", async () => {
     const config = getTestConfig();
     const bizRow = await asBusiness(alpha.businessId, () =>
       gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-fast" }, config, null),
@@ -325,12 +304,12 @@ describe("Phase 39 branch layer", () => {
       gateway.saveBusinessGateway(alpha.businessId, { modelOverride: "pos-pro" }, config, alpha.location1Id),
     );
 
-    // Branch 1 public gateway has effective model "pos-pro"
+    // Branch and business rows both use the LiteLLM alias; row-level model
+    // overrides are no longer part of the app-owned gateway contract.
     const pubBranch1 = gateway.toPublicBusinessGateway(branch1Row, config, "gpt-4o-mini");
-    expect(pubBranch1.effectiveModel).toBe("pos-pro");
+    expect(pubBranch1.effectiveModel).toBe("pos-chat");
 
-    // Business public gateway has effective model "pos-fast"
     const pubBiz = gateway.toPublicBusinessGateway(bizRow, config, "gpt-4o-mini");
-    expect(pubBiz.effectiveModel).toBe("pos-fast");
+    expect(pubBiz.effectiveModel).toBe("pos-chat");
   });
 });

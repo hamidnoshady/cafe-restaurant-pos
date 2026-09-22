@@ -11,6 +11,7 @@ import {
   ClipboardCheckIcon,
   CloudCogIcon,
   CreditCardIcon,
+  DatabaseIcon,
   MonitorCogIcon,
   PanelTopIcon,
   PercentIcon,
@@ -42,6 +43,7 @@ import { PrintingManager } from "./printing/printing-manager";
 import { SecurityCenterSettings } from "./security-center-settings";
 import { TwoFactorSettings } from "./two-factor-settings";
 import { BusinessDaySettings } from "./business-day-settings";
+import { DataTransferSettings } from "./transfer/data-transfer-settings";
 import { ShiftHistorySettings } from "./shift-history-settings";
 import { TaxSettings } from "./tax-settings";
 import { cardClass } from "@/app/dashboard/page-chrome";
@@ -85,6 +87,7 @@ const TAB_ICONS: Record<SettingsTabKey, LucideIcon> = {
   "audit-log": ClipboardCheckIcon,
   "security-center": ShieldCheckIcon,
   backup: CloudCogIcon,
+  "data-transfer": DatabaseIcon,
 };
 
 // Every key must appear in exactly one group: the nav renders from this list,
@@ -97,6 +100,10 @@ const SETTINGS_GROUPS: Array<{ label: string; keys: SettingsTabKey[] }> = [
   { label: "فروش آنلاین", keys: ["online-platforms"] },
   { label: "مدیریت", keys: ["team", "menu", "printers", "devices", "notifications", "shifts"] },
   { label: "امنیت و اتصال", keys: ["audit-log", "security-center", "backup"] },
+  // «ورود و خروج داده» reaches every app's records, so it is its own group
+  // rather than a line inside «مدیریت»: it is neither a business setting nor a
+  // security one, and burying it under either is how people fail to find it.
+  { label: "داده‌ها", keys: ["data-transfer"] },
 ];
 
 /**
@@ -236,6 +243,7 @@ export function SettingsManager({
         </div>
       ) : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
+      {activeTab === "data-transfer" ? <DataTransferSettings /> : null}
     </SectionNav>
   );
 }

@@ -45,6 +45,7 @@ import { toolDefinitions } from "@/lib/ai";
 import { businessToday } from "@/lib/business-day-service";
 import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
 import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
+import { providerErrorReason } from "@/lib/ai-provider-errors";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT = 8_000;
@@ -165,8 +166,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const activeLocation = await resolveActiveLocation(session);
   const locationId = floorLocation?.id ?? activeLocation?.id ?? null;
-  // Phase 37 & 39 — resolved through the gateway: the virtual key, the model alias
-  // and the failover chain for THIS business and branch are applied here.
+  // Phase 37 & 39 — resolved through the gateway: the virtual key and model alias
+  // for THIS business and branch are applied here. Routing/fallback stays in LiteLLM.
   const config = await resolveAiConfigFor(session.businessId, locationId, { ensureVirtualKey: true });
   if (!isPlatformAiConfigured(config)) {
     const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: locationId, surface: "chat" });
@@ -445,6 +446,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               onDelta: (content) => emit("delta", { content }),
               onToolCalls: () => emit("reset", {}),
             },
+            requestId,
           });
 
           // Phase F pt.2 — a project-scoped proposal is addressed by the AMBIENT
@@ -582,14 +584,27 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             costRial: settlement.chargedRial,
           });
         } catch (err) {
-          // Phase B — no reservation to refund. A turn that failed before the
-          // provider answered cost nothing, so nothing is settled; a turn that
-          // failed after already paying upstream has (in the happy path) been
-          // settled above. Nothing to undo here.
+          // A turn that failed before the provider answered cost nothing, so
+          // nothing is settled.
           if (err instanceof AiError) {
-            emit("error", { error: err.code, message: err.message });
+            console.error("ai chat provider error", {
+              requestId,
+              businessId: session.businessId,
+              locationId,
+              mode,
+              code: err.code,
+              status: err.providerError?.status ?? null,
+              detail: providerErrorReason(err.providerError),
+            });
+            emit("error", { error: err.code, message: err.message, requestId });
           } else {
-            console.error("ai chat error", err);
+            console.error("ai chat unexpected error", {
+              requestId,
+              businessId: session.businessId,
+              locationId,
+              mode,
+              error: err instanceof Error ? err.message : String(err),
+            });
             emit("error", { error: "ai_unknown", message: "خطای غیرمنتظره در دستیار." });
           }
         } finally {

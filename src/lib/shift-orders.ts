@@ -33,6 +33,8 @@ export interface ShiftOrderModifier {
   name: string;
   /** Per-unit, integer Rial; negative for a discount-shaped add-on. */
   priceDelta: Rial;
+  /** How many times this add-on applies to one unit of the line (migration 0169). */
+  quantity?: number;
 }
 
 /** One order_items row joined onto its order, with its add-on snapshots collapsed into an array. */
@@ -193,7 +195,9 @@ export function groupShiftOrders(
     }
     if (!row.itemId) continue;
     const voided = row.itemStatus === "voided";
-    const addOnsPerUnit = sumModifierDeltas(row.modifiers.map((modifier) => modifier.priceDelta));
+    const addOnsPerUnit = sumModifierDeltas(
+      row.modifiers.map((modifier) => modifier.priceDelta * Math.max(1, modifier.quantity ?? 1)),
+    );
     order.lines.push({
       itemId: row.itemId,
       name: row.itemName ?? "",
@@ -204,7 +208,9 @@ export function groupShiftOrders(
       amount: computeLineSubtotal({
         unitPrice: row.unitPrice,
         quantity: row.quantity,
-        modifierDeltas: row.modifiers.map((modifier) => modifier.priceDelta),
+        modifierDeltas: row.modifiers.map(
+          (modifier) => modifier.priceDelta * Math.max(1, modifier.quantity ?? 1),
+        ),
       }),
       note: row.note,
       voidReason: row.voidReason,

@@ -28,11 +28,17 @@
 
 import { MAX_ORDER_LINE_QUANTITY } from "./order-quantity";
 
+/** One chosen add-on on a till line: which one, and how many of it. */
+export interface PosCartModifierPick {
+  id: string;
+  quantity: number;
+}
+
 /** The fields two lines must share to count as the same sellable configuration. */
 export interface PosCartLineConfig {
   menuItemId: string;
-  /** Modifier ids, already sorted — see `cartLineSignature`. */
-  modifierIds: string[];
+  /** Add-on picks with quantities, sorted by id — «شات ×۳» is one pick. */
+  modifierPicks: PosCartModifierPick[];
   note: string;
 }
 
@@ -42,7 +48,8 @@ export interface PosCartLine extends PosCartLineConfig {
   unitPrice: number;
   quantity: number;
   taxRatePercent: number;
-  modifiers: { name: string; priceDelta: number }[];
+  /** Display data per pick — name, delta, and how many of it (default one). */
+  modifiers: { name: string; priceDelta: number; quantity?: number }[];
 }
 
 /**
@@ -58,8 +65,14 @@ export function sameLineConfig(
   return (
     a.menuItemId === b.menuItemId &&
     a.note === b.note &&
-    a.modifierIds.length === b.modifierIds.length &&
-    a.modifierIds.every((id, index) => id === b.modifierIds[index])
+    // Quantities are part of the configuration: «شات ×۲» and «شات ×۳» are
+    // different drinks and must never merge into one line.
+    a.modifierPicks.length === b.modifierPicks.length &&
+    a.modifierPicks.every(
+      (pick, index) =>
+        pick.id === b.modifierPicks[index].id &&
+        pick.quantity === b.modifierPicks[index].quantity,
+    )
   );
 }
 
@@ -189,7 +202,7 @@ export function countLinesForItem(
 
 /** No add-ons and no note: the default unit the product tile's + rings up. */
 export function isPlainConfiguration(line: PosCartLineConfig): boolean {
-  return line.modifierIds.length === 0 && line.note === "";
+  return line.modifierPicks.length === 0 && line.note === "";
 }
 
 /**
@@ -235,7 +248,7 @@ export function addPlainUnit(
 ): PosCartLine[] {
   return addOrMergeLine(lines, {
     ...incoming,
-    modifierIds: [],
+    modifierPicks: [],
     modifiers: [],
     note: "",
   });

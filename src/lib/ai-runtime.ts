@@ -2,7 +2,7 @@
  * Phase 37 & Phase 39 — the one place that turns stored configuration into the `AiConfig`
  * a call actually goes out with.
  *
- * Resolves AI configuration with branch -> business -> platform fallback hierarchy.
+ * Resolves AI configuration with branch -> business -> platform precedence.
  * In Phase 39 (LiteLLM-only), if the gateway or DB state fails to resolve, we fail closed
  * (enabled: false) to prevent unbilled or uncontrolled vendor execution.
  *

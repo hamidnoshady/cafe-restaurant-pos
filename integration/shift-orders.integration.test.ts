@@ -433,9 +433,11 @@ describe("getShiftOrdersReport", () => {
 
     const report = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, shift));
     const line = report!.orders[0]!.lines[0]!;
+    // Each add-on now carries how many of it the line holds («شات اضافه ×۳»
+    // is one row at quantity 3) — plain picks read back as quantity 1.
     expect(line.modifiers).toEqual([
-      { name: "شات اضافه", priceDelta: 50_000 },
-      { name: "شیر بادام", priceDelta: 30_000 },
+      { name: "شات اضافه", priceDelta: 50_000, quantity: 1 },
+      { name: "شیر بادام", priceDelta: 30_000, quantity: 1 },
     ]);
     expect(line.unitPrice).toBe(600_000);
     expect(line.addOnsPerUnit).toBe(80_000);

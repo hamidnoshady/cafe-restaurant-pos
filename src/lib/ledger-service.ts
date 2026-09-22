@@ -537,6 +537,21 @@ export async function postExactOrderPaymentEntry(
      */
     platformCommission?: RialText;
     /**
+     * The unpaid remainder of a settle-with-difference checkout (the manual
+     * «مبلغ دریافتی» flow): what the tenders fell short of the bill, posted
+     * as a debit to Accounts Receivable — the customer's debt. Mutually
+     * exclusive with `customerCredit` by construction (settlementDifference
+     * never fills both); both zero for an exact settlement.
+     */
+    balanceDue?: RialText;
+    /**
+     * The overpaid excess of a settle-with-difference checkout: what the
+     * tenders exceeded the bill by, posted as a credit to the store-credit
+     * liability (2410) — the customer's credit. Reconstructed per customer
+     * from the `order.customer_credit_issued` domain event, never a column.
+     */
+    customerCredit?: RialText;
+    /**
      * Identity and date of the posting, defaulting to the order itself, today.
      * A closed-order amendment re-posts the corrected sale under its own
      * identity on the original's date — see postExactCogsEntry's note.
@@ -550,18 +565,23 @@ export async function postExactOrderPaymentEntry(
   if (tip < 0n) throw new Error("negative_tip");
   const commission = rialBigInt(params.platformCommission ?? ("0" as RialText));
   if (commission < 0n) throw new Error("negative_commission");
+  const balanceDue = rialBigInt(params.balanceDue ?? ("0" as RialText));
+  if (balanceDue < 0n) throw new Error("negative_balance_due");
+  const customerCredit = rialBigInt(params.customerCredit ?? ("0" as RialText));
+  if (customerCredit < 0n) throw new Error("negative_customer_credit");
+  if (balanceDue > 0n && customerCredit > 0n) throw new Error("difference_is_one_sided");
 
   // What actually changed hands: the bill plus the tip. Whether that arrived
   // as one tender or five, the credit side below is identical — which is the
   // reason a split bill is one entry with several debit lines rather than
   // several entries, each re-crediting the same revenue.
-  const totalCollected = rialBigInt(params.amount) + tip;
+  const totalCollected = rialBigInt(params.amount) + tip + customerCredit - balanceDue;
   // A zero-total order (everything on it was comped or voided) collects
   // nothing, and has no debit line to post — postExactJournalEntry drops the
   // whole entry once the credits are zero too. It reaches here rather than
   // being refused because completing such an order is legitimate.
   const tenders =
-    totalCollected === 0n
+    totalCollected === 0n && balanceDue === 0n
       ? []
       : mergeTendersBySettlement(
           params.tenders?.length
@@ -575,6 +595,9 @@ export async function postExactOrderPaymentEntry(
     if (tender.amount <= 0n) throw new Error("invalid_tender_amount");
   }
   if (tenders.reduce((sum, tender) => sum + tender.amount, 0n) !== totalCollected) {
+    // The invariant, stated plainly: tendered + unpaid remainder − the excess
+    // handed over must equal the bill + tip. Under- and over-payment included,
+    // this is the one equation every settle-with-difference entry satisfies.
     throw new Error("tender_total_mismatch");
   }
   const platformTenderTotal = tenders.reduce(
@@ -607,6 +630,9 @@ export async function postExactOrderPaymentEntry(
   if (tip > 0n) codes.push(WELL_KNOWN_CODES.tipsPayable);
   if (tenders.some((tender) => tender.settlement === "snappfood")) codes.push(WELL_KNOWN_CODES.platformReceivable);
   if (commission > 0n) codes.push(WELL_KNOWN_CODES.platformCommissionExpense);
+  // Only resolved when a settle-with-difference checkout actually created a
+  // customer credit — the ordinary, exact sale never asks for the account.
+  if (customerCredit > 0n) codes.push(WELL_KNOWN_CODES.storeCreditPayable);
   const accounts = await accountIdsByCode(client, params.businessId, codes);
 
   const revenue = rialBigInt(params.amount) - rialBigInt(params.tax);
@@ -638,6 +664,12 @@ export async function postExactOrderPaymentEntry(
       ...(commission > 0n
         ? [{ accountId: accounts.get(WELL_KNOWN_CODES.platformCommissionExpense)!, debit: commission.toString() as RialText, credit: zero }]
         : []),
+      // The unpaid remainder of an underpayment: the customer's debt, on the
+      // same Accounts Receivable a نسیه tender debits, attributed to the
+      // order's customer by the AR subledger's order join.
+      ...(balanceDue > 0n
+        ? [{ accountId: accounts.get(WELL_KNOWN_CODES.accountsReceivable)!, debit: balanceDue.toString() as RialText, credit: zero }]
+        : []),
       {
         accountId: accounts.get(revenueCode)!,
         debit: zero,
@@ -646,6 +678,13 @@ export async function postExactOrderPaymentEntry(
       { accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: zero, credit: params.tax },
       ...(tip > 0n
         ? [{ accountId: accounts.get(WELL_KNOWN_CODES.tipsPayable)!, debit: zero, credit: tip.toString() as RialText }]
+        : []),
+      // The excess of an overpayment: money the business now owes the
+      // customer, on the store-credit liability (2410) — a real obligation,
+      // reconstructed per customer from the order.customer_credit_issued
+      // domain event, never a mutable column.
+      ...(customerCredit > 0n
+        ? [{ accountId: accounts.get(WELL_KNOWN_CODES.storeCreditPayable)!, debit: zero, credit: customerCredit.toString() as RialText }]
         : []),
     ],
   });

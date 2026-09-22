@@ -36,7 +36,7 @@ export const GET = withTenantScope(async () => {
   const items = rankKitchenQueue(rawItems);
 
   const { rows: modifiers } = await query(
-    `SELECT oim.order_item_id, oim.name_snapshot
+    `SELECT oim.order_item_id, oim.name_snapshot, oim.quantity
        FROM order_item_modifiers oim
        JOIN order_items oi ON oi.id = oim.order_item_id
        JOIN orders o ON o.id = oi.order_id

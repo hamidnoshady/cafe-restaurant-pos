@@ -4,22 +4,15 @@
  *
  * A gateway (LiteLLM) fronts many upstream vendors behind one OpenAI-shaped
  * endpoint, so the provider client in ai-service.ts never needs to learn that
- * one exists. What it *does* need is a handful of decisions made before the
- * request goes out — which credential to send, which model alias to ask for,
- * whether to attach a failover chain — and every one of those is a pure
- * function of configuration, so they live here where they can be tested
- * without a proxy, a socket or a Postgres (see ai-gateway.test.ts).
+ * one exists. What it *does* need is a small set of decisions made before the
+ * request goes out — which credential to send and which deployed LiteLLM model
+ * alias to ask for. Routing, fallback chains, provider selection and MCP are
+ * LiteLLM policy and must not be mirrored into request bodies by the app.
  *
- * Phase 39 introduces branch-level overrides:
- * Model resolution: branch override -> business override -> gateway alias -> platform default.
- * Virtual key resolution: branch key -> business key -> gateway master key -> none.
- *
- * Single-architecture rule (migration 0168): the proxy owns routing, model
- * limits, RPM/TPM and provider management. This console mirrors NONE of that —
- * a stored copy of a proxy-side setting is a second source of truth that
- * silently disagrees with the proxy, and the request path must never depend
- * on it. The platform owns only what the proxy cannot know: the tenant credit
- * (wallet), the USD→Rial pricing read-back and the plan-included allowance.
+ * Branch/business scope applies to virtual-key resolution only:
+ * branch key -> business key -> gateway master key -> none. Model resolution is
+ * gateway alias -> platform default; historical per-business model overrides
+ * are deliberately ignored.
  */
 
 import type { AiConfig } from "./ai";
@@ -33,12 +26,13 @@ export interface AiGatewayConfig {
   chatModel: string;
   /** Gateway model alias for embeddings; empty means "use the chat model". */
   embeddingModel: string;
-  /** Failover chain, tried in order after the primary model errors. */
+  /** @deprecated Retired local copy. LiteLLM owns fallback chains. */
   fallbackModels: string[];
   /** Mint and use one virtual key per business or branch. */
   virtualKeysEnabled: boolean;
-  /** Whether a business owner may choose a model, and from which list. */
+  /** @deprecated Retired local copy. LiteLLM owns tenant/model access policy. */
   allowBusinessModels: boolean;
+  /** @deprecated Retired local copy. LiteLLM owns the published model catalogue. */
   publishedModels: string[];
   /** Phase 38b — FX rate turning the gateway's USD cost figures into Rial. */
   usdRialRate: number | null;
@@ -60,9 +54,9 @@ export interface AiGatewayConfig {
    * released back down to LiteLLM's actual reported cost at settlement.
    */
   maxTurnRial: number;
-  /** Phase 38b — whether the proxy may front MCP servers at all. */
+  /** @deprecated Retired local copy. MCP servers are configured in LiteLLM. */
   mcpEnabled: boolean;
-  /** Phase 38b — the MCP servers the proxy may front (agentic tools). */
+  /** @deprecated Retired local copy. MCP servers are configured in LiteLLM. */
   mcpServers: GatewayMcpServer[];
 }
 
@@ -86,14 +80,13 @@ export interface AiGatewayTurnPricing {
   chargedRial: number;
 }
 
-/**
- * Gateway config with the master key replaced by a boolean.
- *
- * Only the master key is a bearer credential and stays server-side; the costing
- * fields (conversion rate, margin, ceilings) are operator settings the LiteLLM
- * console must show and edit.
- */
-export interface PublicAiGatewayConfig extends Omit<AiGatewayConfig, "masterKey"> {
+/** Client-safe technical LiteLLM connection settings for `/platform/ai`. */
+export interface PublicAiGatewayConfig {
+  enabled: boolean;
+  baseUrl: string;
+  chatModel: string;
+  embeddingModel: string;
+  virtualKeysEnabled: boolean;
   hasMasterKey: boolean;
 }
 
@@ -103,18 +96,7 @@ export interface AiGatewayInput {
   masterKey?: string;
   chatModel?: string;
   embeddingModel?: string;
-  fallbackModels?: unknown;
   virtualKeysEnabled?: boolean;
-  allowBusinessModels?: boolean;
-  publishedModels?: unknown;
-  usdRialRate?: number | null;
-  gatewayCostingEnabled?: boolean;
-  inputCostRialPerMillion?: number | null;
-  outputCostRialPerMillion?: number | null;
-  revenueMarginPercent?: number | null;
-  maxTurnRial?: number | null;
-  mcpEnabled?: boolean;
-  mcpServers?: unknown;
 }
 
 /**
@@ -142,21 +124,46 @@ export interface BusinessGateway {
   syncError: string | null;
 }
 
-/** Client-safe shape: the virtual key is a bearer credential and stays server-side. */
-export interface PublicBusinessGateway extends Omit<BusinessGateway, "virtualKey"> {
+/** Client-safe key-lifecycle shape: the virtual key is a bearer credential and stays server-side. */
+export interface PublicBusinessGateway {
+  id?: string;
+  businessId: string;
+  locationId: string | null;
+  keyAlias: string | null;
+  syncedAt: string | null;
+  syncError: string | null;
   hasVirtualKey: boolean;
-  /** Which model this business's calls actually resolve to, gateway included. */
+  /** Which gateway/platform model alias tenant calls resolve to. */
   effectiveModel: string;
+}
+
+export type GatewayProbeStageKey =
+  | "server"
+  | "auth"
+  | "model_alias"
+  | "master_completion"
+  | "virtual_key_completion";
+
+export interface GatewayProbeStage {
+  key: GatewayProbeStageKey;
+  label: string;
+  ok: boolean;
+  skipped?: boolean;
+  status: number | null;
+  model: string | null;
+  message: string | null;
+  detail: string | null;
 }
 
 export interface GatewayProbe {
   ok: boolean;
-  /** Wall-clock milliseconds for the liveliness call. */
+  /** Wall-clock milliseconds for the whole diagnostic. */
   latencyMs: number | null;
   /** Model aliases the gateway is serving, when the admin key allowed listing them. */
   models: string[];
   /** A short, human-readable failure reason — Persian, shown verbatim in the console. */
   error: string | null;
+  stages: GatewayProbeStage[];
 }
 
 // ---------------------------------------------------------------------------
@@ -270,20 +277,12 @@ export function mcpServersFromText(text: string): GatewayMcpServer[] {
 }
 
 /**
- * The `tools` entries that hand the proxy's MCP servers to one call.
+ * Deprecated: core tenant chat no longer injects LiteLLM MCP declarations into
+ * the ordinary OpenAI tools array. MCP remains a separate integration surface;
+ * optional MCP must not be able to break basic chat.
  */
-export function gatewayMcpToolsBody(gateway: AiGatewayConfig | null): Record<string, unknown> {
-  if (!gateway || !gateway.enabled || !gateway.mcpEnabled || gateway.mcpServers.length === 0) {
-    return {};
-  }
-  return {
-    tools: gateway.mcpServers.map((server) => ({
-      type: "mcp",
-      server_url: `litellm_proxy/${server.name}/mcp`,
-      server_label: server.name,
-      require_approval: "never",
-    })),
-  };
+export function gatewayMcpToolsBody(_gateway: AiGatewayConfig | null): Record<string, unknown> {
+  return {};
 }
 
 /**
@@ -319,8 +318,14 @@ export function gatewayTurnPricing(
 }
 
 export function toPublicGatewayConfig(config: AiGatewayConfig): PublicAiGatewayConfig {
-  const { masterKey, ...rest } = config;
-  return { ...rest, hasMasterKey: masterKey.length > 0 };
+  return {
+    enabled: config.enabled,
+    baseUrl: config.baseUrl,
+    chatModel: config.chatModel,
+    embeddingModel: config.embeddingModel,
+    virtualKeysEnabled: config.virtualKeysEnabled,
+    hasMasterKey: config.masterKey.length > 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -460,20 +465,9 @@ export const GATEWAY_ERROR_TEXT: Record<string, string> = {
   ai_gateway_auth: "کلید مدیر دروازه پذیرفته نشد؛ مقدار آن را در «تنظیمات دروازه» بررسی کنید.",
   ai_gateway_error: "دروازه پاسخ خطا داد؛ جزئیات دروازه را در پیام خطا ببینید.",
   ai_gateway_bad_response: "پاسخ دروازه قابل خواندن نبود و کلیدی در آن یافت نشد.",
-  // Validation of the gateway settings form and the per-business form.
+  // Validation of the technical gateway settings form.
   ai_gateway_bad_base_url: "نشانی دروازه باید یک نشانی http یا https معتبر باشد.",
-  ai_gateway_bad_fallbacks: "زنجیرهٔ جایگزین معتبر نیست؛ یک نام مستعار در هر سطر.",
-  ai_gateway_bad_published_models: "فهرست مدل‌های قابل انتخاب معتبر نیست؛ یک نام در هر سطر.",
-  ai_gateway_bad_usd_rate: "نرخ تبدیل دلار به ریال باید عددی بزرگ‌تر از صفر باشد.",
-  ai_gateway_costing_needs_rate:
-    "برای تسویه بر پایهٔ هزینهٔ دروازه، نرخ تبدیل دلار به ریال الزامی است.",
-  ai_gateway_bad_margin: "حاشیهٔ سود باید عددی بزرگ‌تر یا مساوی صفر باشد.",
-  ai_gateway_bad_max_turn: "سقف رزرو اعتبار هر درخواست باید عددی بزرگ‌تر از صفر باشد.",
   ai_gateway_missing_chat_model: "نام مستعار مدل گفت‌وگو الزامی است.",
-  ai_gateway_costing_not_configured: "برای فعال‌سازی، هزینه‌گذاری LiteLLM یا هر دو نرخ دستی ورودی و خروجی باید معتبر باشند.",
-  ai_gateway_bad_mcp_servers: "فهرست سرورهای MCP معتبر نیست.",
-  ai_gateway_model_choice_disabled: "انتخاب مدل توسط کسب‌وکار در تنظیمات دروازه فعال نیست.",
-  ai_gateway_model_not_published: "این مدل در فهرست مدل‌های قابل انتخاب پلتفرم نیست.",
 };
 
 /** The console translation of one `ai_gateway_*` code, when it has one. */
@@ -514,12 +508,13 @@ export function joinGatewayDetail(message: string, detail: string | null | undef
 }
 
 // ---------------------------------------------------------------------------
-// Per-call resolution with Branch -> Business -> Platform fallback
+// Per-call resolution
 // ---------------------------------------------------------------------------
 
 /**
  * The chat model for one call.
- * Precedence: Branch override -> Business override -> Gateway alias -> Platform default.
+ * Precedence: gateway alias -> platform default. Historical business/branch
+ * model overrides are intentionally ignored; LiteLLM owns model access policy.
  */
 export function resolveChatModel(input: {
   platformModel: string;
@@ -527,15 +522,8 @@ export function resolveChatModel(input: {
   business?: BusinessGateway | null;
   branch?: BusinessGateway | null;
 }): string {
-  const { platformModel, gateway, business, branch } = input;
+  const { platformModel, gateway } = input;
   if (!gateway || !gateway.enabled) return platformModel;
-  const published = gateway.publishedModels;
-  if (gateway.allowBusinessModels) {
-    const branchOverride = trimmed(branch?.modelOverride);
-    if (branchOverride && published.includes(branchOverride)) return branchOverride;
-    const businessOverride = trimmed(business?.modelOverride);
-    if (businessOverride && published.includes(businessOverride)) return businessOverride;
-  }
   const alias = trimmed(gateway.chatModel);
   return alias || platformModel;
 }
@@ -576,11 +564,12 @@ export function resolveGatewayAuthKey(input: {
 }
 
 /**
- * Extra top-level request fields for one call — LiteLLM's client-side `fallbacks` chain.
+ * Deprecated: routing, retries and provider fallback are LiteLLM gateway policy.
+ * The application must not send request-level `fallbacks` to `/chat/completions`
+ * because proxy versions and upstream providers disagree on that extension.
  */
-export function gatewayRequestBody(gateway: AiGatewayConfig | null): Record<string, unknown> {
-  if (!gateway || !gateway.enabled || gateway.fallbackModels.length === 0) return {};
-  return { fallbacks: [...gateway.fallbackModels] };
+export function gatewayRequestBody(_gateway: AiGatewayConfig | null): Record<string, unknown> {
+  return {};
 }
 
 /** LiteLLM `key_alias` for a business or branch — stable, short and traceable. */
@@ -602,79 +591,30 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   const base = trimmed(input.baseUrl);
   if (!/^https?:\/\/.+/i.test(base)) errors.push("ai_gateway_bad_base_url");
 
-  if (input.fallbackModels !== undefined && !Array.isArray(input.fallbackModels)) {
-    errors.push("ai_gateway_bad_fallbacks");
-  }
-  if (input.publishedModels !== undefined && !Array.isArray(input.publishedModels)) {
-    errors.push("ai_gateway_bad_published_models");
-  }
-  if (
-    input.usdRialRate !== undefined &&
-    input.usdRialRate !== null &&
-    !(Number.isFinite(input.usdRialRate) && input.usdRialRate > 0)
-  ) {
-    errors.push("ai_gateway_bad_usd_rate");
-  }
-  if (input.gatewayCostingEnabled && !(Number(input.usdRialRate) > 0)) {
-    errors.push("ai_gateway_costing_needs_rate");
-  }
-  if (
-    input.revenueMarginPercent !== undefined &&
-    input.revenueMarginPercent !== null &&
-    !(Number.isFinite(input.revenueMarginPercent) && input.revenueMarginPercent >= 0)
-  ) {
-    errors.push("ai_gateway_bad_margin");
-  }
-  if (
-    input.maxTurnRial !== undefined &&
-    input.maxTurnRial !== null &&
-    !(Number.isFinite(input.maxTurnRial) && input.maxTurnRial >= 0)
-  ) {
-    errors.push("ai_gateway_bad_max_turn");
-  }
   if (input.enabled === true) {
-    if (!(Number(input.maxTurnRial) > 0) && !errors.includes("ai_gateway_bad_max_turn")) {
-      errors.push("ai_gateway_bad_max_turn");
-    }
     if (!trimmed(input.chatModel)) errors.push("ai_gateway_missing_chat_model");
-    if (input.gatewayCostingEnabled !== true && !(Number(input.inputCostRialPerMillion) > 0 && Number(input.outputCostRialPerMillion) > 0)) errors.push("ai_gateway_costing_not_configured");
-  }
-  if (input.mcpServers !== undefined && !Array.isArray(input.mcpServers)) {
-    errors.push("ai_gateway_bad_mcp_servers");
   }
   return errors;
 }
 
 export interface BusinessGatewayInput {
+  /** @deprecated Ignored. Model access policy belongs to LiteLLM. */
   modelOverride?: string | null;
 }
 
 export function validateBusinessGatewayInput(
-  input: BusinessGatewayInput,
-  options: { allowBusinessModels: boolean; allowedModels: string[] },
+  _input: BusinessGatewayInput,
+  _options: { allowBusinessModels: boolean; allowedModels: string[] },
 ): string[] {
-  const errors: string[] = [];
-  if (input.modelOverride !== undefined && input.modelOverride !== null) {
-    const model = trimmed(input.modelOverride);
-    if (model && !options.allowBusinessModels) {
-      errors.push("ai_gateway_model_choice_disabled");
-    } else if (model && !options.allowedModels.includes(model)) {
-      errors.push("ai_gateway_model_not_published");
-    }
-  }
-  return errors;
+  return [];
 }
 
 export function normaliseBusinessGatewayInput(
   businessId: string,
-  input: BusinessGatewayInput,
+  _input: BusinessGatewayInput,
   locationId: string | null = null,
 ): BusinessGateway {
-  const base = emptyBusinessGateway(businessId, locationId);
-  return {
-    ...base,
-    modelOverride: input.modelOverride === undefined ? base.modelOverride : trimmed(input.modelOverride) || null,
-  };
+  return emptyBusinessGateway(businessId, locationId);
 }
 
 export function isGatewayActive(gateway: AiGatewayConfig | null | undefined): boolean {

@@ -1,16 +1,21 @@
 /**
- * Report export — CSV/Excel. Works on a generic tabular shape ({columns,
- * rows}) so it doesn't care whether the rows came from a raw standard-report
- * view dump or an aggregated dim/value custom-report query — the caller
- * (the export API route) is what decides which columns to show.
+ * Report export — the tabular shape the report routes speak, rendered through
+ * the platform's one codec layer.
  *
- * CSV building (rowsToCsv) is a pure string function and unit tested.
- * Excel building needs exceljs (I/O-adjacent, like xlsx-import.ts) so it
- * isn't — same split the repo already uses elsewhere.
+ * `ReportTable` ({columns, rows}) is deliberately still here: it is the shape
+ * the export route builds from a raw view dump or an aggregated dim/value
+ * query, and it is what decides which columns to show.
+ *
+ * What is no longer here is a second CSV writer and a second XLSX writer.
+ * Both now delegate to `data-transfer/codecs.ts`, which is the single
+ * implementation for the whole product. That is not only tidiness: the copy
+ * this file used to carry had **no formula-injection guard**, so a report cell
+ * beginning `=`, `+`, `-` or `@` was executed by Excel when the downloaded
+ * file was opened. The shared writer neutralises it, and the reports export
+ * inherited that fix by losing its private copy.
  */
-import ExcelJS from "exceljs";
-import { toPersianDigits } from "./digits";
-import { formatJalali, formatShiftWindow } from "./jalali";
+import { displayCell, sheetsToXlsxBuffer, toCsv } from "./data-transfer/codecs";
+import { formatShiftWindow } from "./jalali";
 
 export interface ReportColumn {
   key: string;
@@ -22,44 +27,40 @@ export interface ReportTable {
   rows: Record<string, unknown>[];
 }
 
-/** DB date/timestamp columns (e.g. a date-bucketed dimension) come back as JS Date objects — shown in Jalali, like everywhere else in the app (dates are stored ISO/Gregorian, Jalali is display-only). */
+/**
+ * One cell, as it should appear in a file a human opens.
+ *
+ * Dates come back from the driver as JS `Date` objects and are shown in
+ * Jalali, like everywhere else in the app (stored ISO/Gregorian, Shamsi is
+ * display-only); jsonb and array columns are rendered rather than left to
+ * stringify into `[object Object]`. All of that is `displayCell`'s job now —
+ * the one addition here is the shift window, which is a reports-only string
+ * format (`a~b`) that must show both times rather than the raw value.
+ */
 export function cellValue(value: unknown): string | number {
-  if (value === null || value === undefined) return "";
-  if (value instanceof Date) return toPersianDigits(formatJalali(value));
-  if (typeof value === "number") return value;
-  // jsonb columns and array columns (e.g. permissions, invitations.location_ids) —
-  // otherwise Object/Array would stringify to "[object Object]"/no useful text.
-  if (typeof value === "object") return JSON.stringify(value);
   if (typeof value === "string") {
-    // A shift's exact window — an export of the shift reconciliation report
-    // must show both times, not the raw "a~b" string.
     const window = formatShiftWindow(value);
     if (window) return window;
   }
-  return String(value);
+  return displayCell(value);
 }
 
-function csvCell(value: unknown): string {
-  const s = String(cellValue(value));
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
-
-/** UTF-8 BOM prefix so Excel opens Persian text correctly without a manual encoding prompt. */
+/** UTF-8 BOM, CRLF, quoted cells, formula-injection guarded. */
 export function rowsToCsv(table: ReportTable): string {
-  const header = table.columns.map((c) => csvCell(c.label)).join(",");
-  const lines = table.rows.map((row) => table.columns.map((c) => csvCell(row[c.key])).join(","));
-  return "﻿" + [header, ...lines].join("\r\n");
+  return toCsv(
+    table.columns.map((column) => column.label),
+    table.rows.map((row) => table.columns.map((column) => cellValue(row[column.key]))),
+  );
 }
 
 export async function rowsToXlsxBuffer(table: ReportTable, sheetName: string): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet(sheetName.slice(0, 31), { views: [{ rightToLeft: true }] });
-  sheet.columns = table.columns.map((c) => ({ header: c.label, key: c.key, width: Math.max(c.label.length + 4, 14) }));
-  sheet.getRow(1).font = { bold: true };
-  for (const row of table.rows) {
-    sheet.addRow(Object.fromEntries(table.columns.map((c) => [c.key, cellValue(row[c.key])])));
-  }
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  return sheetsToXlsxBuffer([
+    {
+      name: sheetName,
+      columns: table.columns,
+      rows: table.rows.map((row) =>
+        Object.fromEntries(table.columns.map((column) => [column.key, cellValue(row[column.key])])),
+      ),
+    },
+  ]);
 }
