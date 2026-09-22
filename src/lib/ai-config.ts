@@ -1,10 +1,9 @@
 /**
- * Phase 18 & Phase 39 — platform-owned AI provider connection (LiteLLM unified gateway).
+ * Phase 18, 39 & Phase 40 — platform-owned AI provider connection (LiteLLM unified gateway).
  *
- * All platform AI settings are stored in `platform_ai_gateway`.
+ * All platform AI technical connection settings are stored in `platform_ai_gateway`.
  * This module is the runtime's read side: the standard `PlatformAiConfig`
- * reader and the predicates used by runtime resolvers and billing. The only
- * editor of that row is the LiteLLM settings page in the platform console.
+ * reader and the predicates used by runtime resolvers and billing.
  */
 import { defaultConfig, type AiConfig } from "./ai";
 import { query } from "./db";
@@ -18,9 +17,6 @@ export type AiRuntimeUnavailableReason =
   | "tenant_virtual_key_missing"
   | "missing_model"
   | "invalid_max_output_tokens"
-  | "max_turn_credit_missing"
-  | "gateway_costing_rate_missing"
-  | "costing_not_configured"
   | "configuration_load_failed";
 
 export interface AiRuntimeReadiness {
@@ -53,18 +49,9 @@ export interface PlatformAiConfig extends AiConfig {
   inputTokenRialPerMillion: number;
   outputTokenRialPerMillion: number;
   maxTurnRial: number;
-  /** Fixed at 1 since the credit-package catalogue was removed: a credit is a Rial. */
   creditUnitRial: number;
   maxOutputTokens: number;
-  /**
-   * LiteLLM-driven costing: when on, the platform prices each turn from the
-   * gateway's own reported USD cost converted at `usdRialRate`, and the manual
-   * per-million token rates are only a fallback. This is the intended mode —
-   * cost-plus-margin lives inside LiteLLM and the platform merely converts and
-   * decrements the business's Rial credit.
-   */
   gatewayCostingEnabled: boolean;
-  /** FX rate turning the gateway's USD cost into Rial. */
   usdRialRate: number | null;
 }
 
@@ -74,10 +61,10 @@ type GatewayConfigRow = {
   base_url: string;
   master_key: string | null;
   temperature: string | number;
-  input_cost_rial_per_million: string | number;
-  output_cost_rial_per_million: string | number;
-  revenue_margin_percent: string | number;
-  max_turn_rial: string | number;
+  input_cost_rial_per_million: string | number | null;
+  output_cost_rial_per_million: string | number | null;
+  revenue_margin_percent: string | number | null;
+  max_turn_rial: string | number | null;
   max_output_tokens: number;
   gateway_costing_enabled: boolean;
   usd_rial_rate: string | number | null;
@@ -106,10 +93,6 @@ function envKey(): string {
   );
 }
 
-/**
- * Cost-plus pricing: the sale rate is the provider cost with the platform's
- * revenue margin on top, rounded up so a turn never sells below cost.
- */
 export function effectiveRate(costRialPerMillion: number, marginPercent: number): number {
   if (!(costRialPerMillion > 0)) return 0;
   return Math.ceil(costRialPerMillion * (1 + (marginPercent || 0) / 100));
@@ -122,7 +105,7 @@ export function defaultPlatformConfig(): PlatformAiConfig {
   return {
     ...base,
     enabled: process.env.AI_ENABLED === "true",
-    model: process.env.AI_MODEL?.trim() || base.model,
+    model: process.env.AI_MODEL?.trim() || process.env.LITELLM_CHAT_MODEL?.trim() || base.model,
     baseUrl: process.env.AI_BASE_URL?.trim() || process.env.LITELLM_BASE_URL?.trim() || base.baseUrl,
     apiKey: envKey(),
     temperature: temp >= 0 && temp <= 2 ? temp : base.temperature,
@@ -177,7 +160,6 @@ function rowToConfig(row: GatewayConfigRow): PlatformAiConfig {
   };
 }
 
-/** The global config used by every business's assistant call. */
 export async function getPlatformAiConfig(): Promise<PlatformAiConfig> {
   try {
     const { rows } = await query<GatewayConfigRow>(
@@ -190,12 +172,6 @@ export async function getPlatformAiConfig(): Promise<PlatformAiConfig> {
     );
     return rows[0] ? rowToConfig(rows[0]) : defaultPlatformConfig();
   } catch (err) {
-    // Fail closed, not into the environment's defaults: a query error here
-    // (a column missing because 0124 hasn't run yet, a connection blip) is a
-    // real fault, and `defaultPlatformConfig()`'s `AI_ENABLED` env fallback
-    // could silently report the assistant as on when the actual DB-backed
-    // config just failed to load. Log it and disable, matching ai-runtime.ts's
-    // own fail-closed rule for gateway/branch state.
     console.error("platform AI config unavailable; failing closed", err);
     return { ...defaultPlatformConfig(), enabled: false, runtimeUnavailableReason: "configuration_load_failed" };
   }
@@ -210,19 +186,11 @@ function validRuntimeBaseUrl(value: string): boolean {
   }
 }
 
-/** Canonical readiness decision used by every tenant AI surface and the platform console. */
 export function getAiRuntimeReadiness(config: PlatformAiConfig): AiRuntimeReadiness {
   const virtualKeyRequired = Boolean(config.tenantVirtualKeyRequired);
   const virtualKeyReady = !virtualKeyRequired || Boolean(config.tenantVirtualKeyResolved);
   const effectiveCredential = config.gateway?.authKey || config.apiKey;
   const modelReady = Boolean(config.model?.trim());
-  const ceilingReady = config.maxTurnRial > 0;
-  const gatewayCostingReady = config.gatewayCostingEnabled && (config.usdRialRate ?? 0) > 0;
-  const manualCostingReady =
-    !config.gatewayCostingEnabled &&
-    config.inputCostRialPerMillion > 0 &&
-    config.outputCostRialPerMillion > 0;
-  const costingReady = gatewayCostingReady || manualCostingReady;
   const baseUrl = config.baseUrl?.trim() || "";
 
   let reason: AiRuntimeUnavailableReason | null = config.runtimeUnavailableReason ?? null;
@@ -233,35 +201,34 @@ export function getAiRuntimeReadiness(config: PlatformAiConfig): AiRuntimeReadin
   if (!reason && virtualKeyRequired && !virtualKeyReady) reason = "tenant_virtual_key_missing";
   if (!reason && !effectiveCredential) reason = "missing_runtime_credential";
   if (!reason && !(config.maxOutputTokens >= 64)) reason = "invalid_max_output_tokens";
-  if (!reason && !ceilingReady) reason = "max_turn_credit_missing";
-  if (!reason && config.gatewayCostingEnabled && !gatewayCostingReady) reason = "gateway_costing_rate_missing";
-  if (!reason && !costingReady) reason = "costing_not_configured";
+
+  const gatewayReady =
+    !reason ||
+    !["platform_disabled", "gateway_disabled", "missing_base_url", "invalid_base_url", "configuration_load_failed"].includes(reason);
+  const authenticationReady = Boolean(effectiveCredential) && virtualKeyReady;
 
   return {
     ready: reason === null,
     reason,
-    gatewayReady: !reason || !["platform_disabled", "gateway_disabled", "missing_base_url", "invalid_base_url", "configuration_load_failed"].includes(reason),
-    authenticationReady: Boolean(effectiveCredential) && virtualKeyReady,
+    gatewayReady,
+    authenticationReady,
     virtualKeyRequired,
     virtualKeyReady,
-    costingReady,
-    ceilingReady,
+    costingReady: true,
+    ceilingReady: true,
     modelReady,
   };
 }
 
-/** A provider connection that may serve the platform support agent. */
 export function isPlatformAiProviderReady(config: PlatformAiConfig): boolean {
   const readiness = getAiRuntimeReadiness(config);
   return readiness.gatewayReady && readiness.authenticationReady && readiness.modelReady && config.maxOutputTokens >= 64;
 }
 
-/** Whether a resolved config can safely execute and bill a tenant request. */
 export function isPlatformAiConfigured(config: PlatformAiConfig): boolean {
   return getAiRuntimeReadiness(config).ready;
 }
 
-/** Safe structured logging for tenant failures; credentials are deliberately absent. */
 export function logAiRuntimeUnavailable(
   config: PlatformAiConfig,
   context: { businessId: string | null; locationId?: string | null; surface: string },

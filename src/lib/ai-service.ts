@@ -19,7 +19,7 @@ import {
 import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
 import { validateInputRequest, type InputRequestSpec } from "./ai-input-protocol";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
-import { parseResponseCostHeader } from "./ai-gateway";
+import { parseProviderError, parseResponseCostHeader } from "./ai-gateway";
 import { clampRetrievalLimit, formatRetrievalForPrompt, isRetrievalAvailable, retrieveKnowledge } from "./ai-rag";
 import { embedOne, isEmbeddingAvailable } from "./ai-embeddings";
 import {
@@ -107,7 +107,7 @@ function providerHeaders(config: AiConfig): Record<string, string> {
     "Content-Type": "application/json",
     // Phase 37 — a gateway deployment authenticates the call with the calling
     // business's virtual key when one has been provisioned; every other
-    // deployment sends the platform key exactly as it always has.
+    // deployment sends the platform key.
     Authorization: `Bearer ${config.gateway?.authKey || config.apiKey}`,
   };
 }
@@ -155,12 +155,6 @@ function providerUsage(
     : fallback;
 }
 
-/**
- * Phase 38b — the gateway prices every completion from its own model-cost map
- * and reports the figure on the response. A direct vendor never sets the
- * header, which is exactly the fallback: no figure means the settlement
- * prices from the token rates, never from zero.
- */
 function responseCostUsd(response: Response): number | null {
   return parseResponseCostHeader(response.headers.get("x-litellm-response-cost"));
 }
@@ -205,9 +199,6 @@ async function readStreamingProviderResponse(
     if (!delta.tool_calls?.length) return;
     if (!sawToolCalls) {
       sawToolCalls = true;
-      // A provider normally emits no natural-language content in a tool turn.
-      // If one does, the client clears the provisional text before the next,
-      // final response begins.
       callbacks.onToolCalls?.();
     }
     for (const part of delta.tool_calls) {
@@ -277,49 +268,29 @@ async function callProvider(
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
-    // Phase 38b — MCP tool declarations arrive inside the gateway body, but
-    // they must share one `tools` array with the agent's own function tools
-    // (the proxy tells them apart by `type`), so they are pulled out before
-    // the spread and merged below — never silently overwritten by it.
-    const gatewayBody = { ...(config.gateway?.body ?? {}) };
-    const gatewayMcpTools = Array.isArray(gatewayBody.tools)
-      ? (gatewayBody.tools as Record<string, unknown>[])
-      : [];
-    if (Array.isArray(gatewayBody.tools)) delete gatewayBody.tools;
-
     const body: Record<string, unknown> = {
       model: config.model,
       messages,
       temperature: config.temperature,
       max_tokens: config.maxOutputTokens,
       stream: Boolean(stream),
-      // Phase 37 — the gateway's failover chain, when one is configured.
-      // Empty for every deployment that talks to a vendor directly, which is
-      // the whole reason it is merged here rather than branched on above.
-      ...gatewayBody,
     };
     if (stream) {
-      // OpenAI-compatible APIs include final usage in the terminal stream
-      // chunk when this option is supported; a conservative fallback remains
-      // in place for gateways that omit it.
       body.stream_options = { include_usage: true };
     }
-    // Some OpenAI-compatible providers reject an explicit empty tools array.
-    // Proactive Wave 4 digests deliberately have no tools, because their
-    // tenant-scoped facts are collected before the provider is called.
-    if (tools.length > 0 || gatewayMcpTools.length > 0) {
-      body.tools = [...gatewayMcpTools, ...tools];
+    if (tools.length > 0) {
+      body.tools = tools;
       body.tool_choice = "auto";
     }
+
     res = await fetch(chatCompletionsUrl(config.baseUrl), {
       method: "POST",
       headers: providerHeaders(config),
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    // Some OpenAI-compatible gateways accept streaming but not the optional
-    // usage trailer. Retry the same non-mutating provider request once without
-    // it; the documented conservative usage fallback still protects billing.
+
+    // If streaming returned 400, retry once without the optional stream_options
     if (stream && res.status === 400) {
       const fallbackBody = { ...body };
       delete fallbackBody.stream_options;
@@ -340,18 +311,43 @@ async function callProvider(
   clearTimeout(timer);
 
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
+    const rawBody = await res.text().catch(() => "");
+    const parsed = parseProviderError(res.status, rawBody);
+
+    // Structured server-side error logging (never logs secret keys)
+    console.error("ai provider error", {
+      status: res.status,
+      model: config.model,
+      url: chatCompletionsUrl(config.baseUrl),
+      authType: config.gateway?.authKey ? "virtual_key" : "master_key",
+      errorType: parsed.type,
+      errorCode: parsed.code,
+      detail: parsed.sanitizedReason,
+    });
+
     if (res.status === 401 || res.status === 403) {
-      throw new AiError("ai_auth", "کلید سرویس هوش مصنوعی نامعتبر است.", body);
+      throw new AiError("ai_auth", "کلید سرویس هوش مصنوعی نامعتبر است.", parsed.sanitizedReason, res.status);
     }
-    // The gateway's own throttles (RPM/TPM per deployment, per-key budgets)
-    // answer 429. It is a transient, self-healing state — and since migration
-    // 0168 the platform no longer mirrors key budgets, a 429 with wallet
-    // credit left really is a proxy-side throttle, not a billing stop.
+    if (res.status === 404) {
+      throw new AiError("ai_model_not_found", "مدل یا سرویس هوش مصنوعی در دسترس نیست.", parsed.sanitizedReason, res.status);
+    }
     if (res.status === 429) {
-      throw new AiError("ai_rate_limited", "سرویس هوش مصنوعی در حال حاضر پرکاربرد است؛ کمی بعد دوباره تلاش کنید.", body);
+      throw new AiError("ai_rate_limited", "سرویس هوش مصنوعی در حال حاضر پرکاربرد است؛ کمی بعد دوباره تلاش کنید.", parsed.sanitizedReason, res.status);
     }
-    throw new AiError("ai_provider", `سرویس هوش مصنوعی خطا داد (${res.status}).`, body);
+    if (res.status === 400) {
+      throw new AiError(
+        "ai_invalid_request",
+        "درخواست توسط سرویس هوش مصنوعی رد شد. مدیر پلتفرم می‌تواند جزئیات فنی را بررسی کند.",
+        parsed.sanitizedReason,
+        res.status,
+      );
+    }
+    throw new AiError(
+      "ai_provider",
+      "سرویس هوش مصنوعی با خطا مواجه شد.",
+      parsed.sanitizedReason,
+      res.status,
+    );
   }
 
   if (stream && res.headers.get("content-type")?.includes("text/event-stream")) {
@@ -382,235 +378,176 @@ export class AiError extends Error {
     public code: string,
     message: string,
     public detail?: string,
+    public status?: number,
   ) {
     super(message);
     this.name = "AiError";
   }
 }
 
-function parseArgs(raw: string | undefined): Record<string, unknown> {
-  if (!raw) return {};
+function parseArgs(raw: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
   }
 }
 
 function toProposedAction(args: Record<string, unknown>): ProposedAction | null {
-  if (!isKnownAction(args.type)) return null;
-  const payload =
-    args.payload && typeof args.payload === "object"
-      ? (args.payload as Record<string, unknown>)
-      : {};
-  return {
-    type: args.type,
-    title: typeof args.title === "string" ? args.title : "پیشنهاد تغییر",
-    summary: typeof args.summary === "string" ? args.summary : "",
-    payload,
-  };
+  const type = args.type;
+  if (!isKnownAction(type)) return null;
+  const title = typeof args.title === "string" ? args.title.trim() : "";
+  const summary = typeof args.summary === "string" ? args.summary.trim() : "";
+  const payload = args.payload && typeof args.payload === "object" && !Array.isArray(args.payload)
+    ? (args.payload as Record<string, unknown>)
+    : {};
+  if (!title || !summary) return null;
+  return { type, title, summary, payload };
+}
+
+function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrace {
+  const dateFrom = typeof args.dateFrom === "string" ? args.dateFrom : undefined;
+  const dateTo = typeof args.dateTo === "string" ? args.dateTo : undefined;
+  return { name, ...(dateFrom ? { dateFrom } : {}), ...(dateTo ? { dateTo } : {}) };
 }
 
 /**
- * A file attached to one turn only (Wave 5, issue #145, extended to PDFs).
- * Nothing here is ever persisted — not to the conversation transcript, not to
- * any table or object storage. An image is used for exactly one isolated
- * vision call; a PDF has its text extracted server-side and travels inline.
- * `kind` is optional so callers predating the PDF extension keep working —
- * it is derived from the data URL when absent.
+ * Isolated multimodal call for receipt/invoice extraction.
+ * No tools, strict prompt, returns structured draft fields.
  */
-export interface ChatAttachment {
-  kind?: "image" | "pdf";
-  dataUrl?: string;
-  /** PDF only — the extracted text layer, ready to hand to the model. */
-  extractedText?: string | null;
-  /** PDF only — the extraction hit MAX_PDF_TEXT_CHARS. */
-  truncated?: boolean;
-  name?: string;
-}
-
-/** Derives the kind for legacy attachments that only carry a data URL. */
-export function attachmentKind(attachment: ChatAttachment): "image" | "pdf" {
-  if (attachment.kind) return attachment.kind;
-  return attachment.dataUrl?.startsWith("data:application/pdf") ? "pdf" : "image";
-}
-
-/** Normalizes the legacy single-attachment option into the attachment list. */
-function normalizeAttachments(
-  attachments: ChatAttachment[] | undefined,
-  legacy: ChatAttachment | undefined,
-): ChatAttachment[] {
-  const list = attachments && attachments.length > 0 ? attachments : legacy ? [legacy] : [];
-  return list.map((attachment) => ({
-    ...attachment,
-    kind: attachmentKind(attachment),
-  }));
-}
-
-interface ReceiptExtractionResult {
-  fields: ReceiptDraftFields | null;
-  usage: AiTokenUsage;
-  costUsd: number | null;
-}
-
-/**
- * One isolated, non-streaming, tool-less provider call that asks the same
- * configured platform provider (both defaults are vision-capable models) to
- * read a receipt image and return structured JSON. Deliberately its own
- * request rather than folding the image into the main conversation loop —
- * that would resend the image bytes on every later tool round.
- */
-async function extractReceiptDraft(config: AiConfig, dataUrl: string): Promise<ReceiptExtractionResult> {
-  const convo: ProviderMessage[] = [
+async function extractReceiptDraft(
+  config: AiConfig,
+  imageUrl: string,
+): Promise<{ fields: ReceiptDraftFields | null; usage: AiTokenUsage; costUsd: number | null }> {
+  const messages: ProviderMessage[] = [
     { role: "system", content: RECEIPT_EXTRACTION_SYSTEM_PROMPT },
     {
       role: "user",
       content: [
         { type: "text", text: RECEIPT_EXTRACTION_USER_PROMPT },
-        { type: "image_url", image_url: { url: dataUrl } },
+        { type: "image_url", image_url: { url: imageUrl } },
       ],
     },
   ];
-  try {
-    const result = await callProvider(config, convo, []);
-    return {
-      fields: parseReceiptExtractionReply(textOf(result.message.content)),
-      usage: result.usage,
-      costUsd: result.costUsd,
-    };
-  } catch {
-    return { fields: null, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: null };
-  }
-}
 
-/** Both halves of Wave 6 availability, cached per process; never throws. */
-async function isRetrievalEnabledForTurn(config: AiConfig): Promise<boolean> {
-  try {
-    return (await isRetrievalAvailable()) && (await isEmbeddingAvailable(config));
-  } catch {
-    return false;
-  }
+  const result = await callProvider(config, messages, []);
+  const replyText = textOf(result.message.content);
+  return {
+    fields: parseReceiptExtractionReply(replyText),
+    usage: result.usage,
+    costUsd: result.costUsd,
+  };
 }
 
 /**
- * Whether this mode's turn will declare the retrieval tool — exported so a
- * caller resolving the system prompt through the prompt manager can build the
- * same context `runAgentTurn` would (the fallback prompt's retrieval line
- * depends on it). Probes are cached per process, so the double call is free.
- */
-export async function retrievalReadyForMode(
-  config: AiConfig,
-  mode: AgentMode,
-  businessId?: string,
-): Promise<boolean> {
-  return mode === "dashboard" && Boolean(businessId) && (await isRetrievalEnabledForTurn(config));
-}
-
-/**
- * Phase 36 Wave 6 — the `search_business_knowledge` executor. Embeds the
- * question over the shared platform connection (its tokens are metered into
- * the same turn, exit criterion 5), retrieves the nearest knowledge rows, and
- * hands the model prose whose every line names its source. Any failure —
- * provider, dimensions, SQL — is a missing hint, never a failed answer.
+ * Semantic knowledge search tool execution during an agent turn.
  */
 async function runKnowledgeSearch(
   config: AiConfig,
   businessId: string,
-  args: Record<string, unknown>,
-  messages: InboundMessage[],
+  callArgs: Record<string, unknown>,
+  messages: ProviderMessage[],
   usage: AiTokenUsage,
 ): Promise<ToolResult> {
-  const fallbackQuestion = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
-  const query = typeof args.query === "string" && args.query.trim() ? args.query : fallbackQuestion;
-  if (!query.trim()) {
-    return { ok: false, data: { error: "عبارت جست‌وجو خالی است." } };
+  const explicitQuery = typeof callArgs.query === "string" ? callArgs.query.trim() : "";
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
+  const fallbackQuery = typeof lastUserMessage?.content === "string" ? lastUserMessage.content.trim() : "";
+  const searchText = explicitQuery || fallbackQuery;
+  const requestedLimit = typeof callArgs.limit === "number" ? callArgs.limit : undefined;
+  const limit = clampRetrievalLimit(requestedLimit);
+
+  if (!searchText) {
+    return { ok: false, data: { error: "عبارت جست‌وجو مشخص نیست." } };
   }
-  try {
-    const embedded = await embedOne(config, query);
-    usage.inputTokens += embedded.inputTokens;
-    const limit = clampRetrievalLimit(typeof args.limit === "number" ? args.limit : undefined);
-    const results = await retrieveKnowledge(businessId, embedded.vector, { limit });
-    if (results.length === 0) {
-      return {
-        ok: true,
-        data: { results: [], note: "چیزی نزدیک این عبارت در دانش ثبت‌شدهٔ کسب‌وکار پیدا نشد." },
-      };
-    }
-    return { ok: true, data: { count: results.length, knowledge: formatRetrievalForPrompt(results) } };
-  } catch {
-    return { ok: false, data: { error: "جست‌وجوی دانش کسب‌وکار در دسترس نیست." } };
+
+  const embedded = await embedOne(config, searchText);
+  if (!embedded) {
+    return { ok: false, data: { error: "سرویس بردارسازی موقتاً در دسترس نیست." } };
   }
+
+  usage.inputTokens += embedded.inputTokens;
+  const hits = await retrieveKnowledge(businessId, embedded.vector, { limit });
+  if (hits.length === 0) {
+    return {
+      ok: true,
+      data: {
+        matches: [],
+        formatted: "موردی در پایگاه دانش این کسب‌وکار یافت نشد.",
+        note: "اگر کاربر اطلاعات بیشتری خواست بگو در دانش ثبت‌شده موردی نبود.",
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      matchCount: hits.length,
+      matches: hits.map((hit) => ({
+        kind: hit.kind,
+        refId: hit.refId,
+        sourceLabel: hit.sourceLabel,
+        content: hit.content,
+        similarity: Math.round(hit.similarity * 100) / 100,
+      })),
+      formatted: formatRetrievalForPrompt(hits),
+      note: "از این اطلاعات مستند برای پاسخ دقیق با ذکر منبع استفاده کن.",
+    },
+  };
 }
 
-/** Wave 7 — the signature-relevant shape of one tool call: name + date range. */
-function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrace {
-  const trace: AgentToolCallTrace = { name };
-  if (typeof args.dateFrom === "string") trace.dateFrom = args.dateFrom;
-  if (typeof args.dateTo === "string") trace.dateTo = args.dateTo;
-  return trace;
+export async function retrievalReadyForMode(
+  config: AiConfig,
+  mode: AgentMode,
+  businessId?: string | null,
+): Promise<boolean> {
+  if (mode !== "dashboard" || !businessId) return false;
+  const [dbReady, embedReady] = await Promise.all([
+    isRetrievalAvailable(),
+    isEmbeddingAvailable(config),
+  ]);
+  return dbReady && embedReady;
+}
+
+export interface ChatAttachment {
+  kind?: "image" | "pdf";
+  name?: string;
+  dataUrl?: string;
+  extractedText?: string | null;
+  truncated?: boolean;
+  pageCount?: number;
+  byteLength?: number;
+  mimeType?: string;
+}
+
+function normalizeAttachments(
+  attachments?: ChatAttachment[],
+  legacySingle?: ChatAttachment,
+): ChatAttachment[] {
+  if (Array.isArray(attachments) && attachments.length > 0) return attachments;
+  if (legacySingle) return [legacySingle];
+  return [];
 }
 
 /**
- * Run one user turn to completion: resolve any read-tool calls server-side, and
- * stop as soon as the model proposes an action (returned for confirmation) or
- * produces a plain text answer.
- */export async function runAgentTurn(opts: {
+ * Runs one agent turn: system prompt + messages + tools -> next action / answer.
+ */
+export async function runAgentTurn(opts: {
   config: AiConfig;
   mode: AgentMode;
-  /** Tenant turns provide this. Platform support supplies executeReadTool instead. */
-  businessId?: string;
-  /** Present only for the cashier/waiter assistant; it constrains all floor reads. */
+  businessId?: string | null;
+  actorUserId?: string | null;
   floorScope?: FloorReadScope;
-  /**
-   * Phase G — the signed-in member. The workspace read tools resolve «مالِ من»
-   * from this and from nothing else; a model-supplied user id is never
-   * accepted. Absent, those tools decline instead of widening their scope.
-   */
-  actorUserId?: string;
-  /**
-   * A separate read-tool realm can supply its own executor. It is deliberately
-   * invoked only after the tool name is checked against toolDefinitions(mode).
-   */
-  executeReadTool?: ReadToolRunner;
-  /** Optional callbacks turn the provider response into a live UI stream. */
-  stream?: ProviderStreamCallbacks;
   promptContext: PromptContext;
-  /**
-   * An explicit system prompt for this turn; when absent the code-built one
-   * (`buildSystemPrompt`) is used.
-   */
   systemPrompt?: string;
   messages: InboundMessage[];
-  /** Wave 5 (issue #145) — a receipt/invoice image attached to this turn only. */
+  executeReadTool?: ReadToolRunner;
+  stream?: ProviderStreamCallbacks;
   attachment?: ChatAttachment;
-  /** Wave 5 extension — one or more attachments (images and/or PDFs). */
   attachments?: ChatAttachment[];
-  /**
-   * Wave 5 (issue #145) — the composer's "allow action in this message"
-   * toggle. Only drops propose_action from this turn's own tool list; no
-   * change to the confirm-before-apply architecture itself.
-   */
   allowActions?: boolean;
-  /**
-   * Phase 31 — restricts which action types this turn may propose. Narrows the
-   * tool schema the model sees AND is re-checked against the returned proposal,
-   * so a hand-crafted response naming another action is refused rather than
-   * treated as executable.
-   */
   actionTypes?: ActionType[];
-  /**
-   * Phase D — a custom agent's read-tool allowlist. When present, the dashboard
-   * read surface is intersected with it (see `toolDefinitions`), so the turn can
-   * call only the read tools this agent was granted. Paired with `actionTypes`
-   * (the agent's action allowlist) it fully scopes what the agent may do.
-   */
   toolAllowlist?: string[];
-  /**
-   * Phase F pt.2 — the turn's conversation belongs to a project, so
-   * project-scoped actions (project.memory.add) join `propose_action`'s enum.
-   * The ambient project id is injected by the caller, never by the model.
-   */
   projectScoped?: boolean;
 }): Promise<AgentReply> {
   const { config, mode, businessId, floorScope, promptContext, messages } = opts;
@@ -618,11 +555,6 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   const attachments = normalizeAttachments(opts.attachments, opts.attachment);
   const hasAttachment = attachments.length > 0;
 
-  // Phase 36 Wave 6 — the retrieval tool is declared only when the whole chain
-  // can actually serve it: pgvector + the 0113 table (isRetrievalAvailable)
-  // and a platform connection that answers /embeddings. Both probes cache per
-  // process, and neither ever throws — a probe that fails means "off", and off
-  // is exactly the pre-wave behaviour. Desktop installs keep the assistant.
   const retrievalReady = await retrievalReadyForMode(config, mode, businessId);
 
   const tools = toolDefinitions(mode, {
@@ -643,7 +575,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   const toolRunner: ReadToolRunner | null =
     opts.executeReadTool ??
     (businessId
-      ? (name, args) => runReadTool(name, args, businessId, floorScope, opts.actorUserId)
+      ? (name, args) => runReadTool(name, args, businessId, floorScope, opts.actorUserId ?? undefined)
       : null);
   const usage: AiTokenUsage = { inputTokens: 0, outputTokens: 0 };
   let costUsd: number | null = null;
@@ -651,7 +583,13 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
 
   const systemContent =
     opts.systemPrompt?.trim() ||
-    buildSystemPrompt({ ...promptContext, hasAttachment, retrieval: retrievalReady });
+    buildSystemPrompt({
+      ...promptContext,
+      userName: promptContext.userName ?? undefined,
+      role: promptContext.role ?? undefined,
+      hasAttachment,
+      retrieval: retrievalReady,
+    });
 
   const convo: ProviderMessage[] = [
     { role: "system" as const, content: systemContent },
@@ -677,27 +615,20 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
       };
     }
 
-    // A proposed action ends the turn immediately — we never auto-execute it.
+    // A proposed action ends the turn immediately
     const proposal = canPropose
       ? toolCalls.find((c) => c.function.name === "propose_action")
       : undefined;
     if (proposal) {
       const parsed = toProposedAction(parseArgs(proposal.function.arguments));
       const inAllowlist = parsed && (!allowedActionTypes || allowedActionTypes.has(parsed.type));
-      // Phase F pt.2 — a project-scoped action is valid only when the turn is
-      // inside a project. This backstops the enum: a hand-crafted response that
-      // names project.memory.add on a project-less turn is refused, not applied.
       const projectOk = parsed && (!ACTION_CATALOG[parsed.type]?.projectScoped || opts.projectScoped);
       const action = parsed && inAllowlist && projectOk ? parsed : null;
       const text = textOf(message.content).trim() || (action ? action.summary : "پیشنهاد آماده است.");
       return { content: text, proposedAction: action, inputRequest: null, usage, costUsd, toolCalls: toolTrace };
     }
 
-    // Phase E — a structured input request also ends the turn: the model is
-    // waiting on the user, so there is nothing more to generate. A malformed
-    // spec (the model got the shape wrong) is dropped and the loop continues,
-    // so a bad request_input degrades to an ordinary answer rather than a dead
-    // turn.
+    // A structured input request also ends the turn
     const inputCall = canRequestInput
       ? toolCalls.find((c) => c.function.name === "request_input")
       : undefined;
@@ -714,8 +645,6 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
           toolCalls: toolTrace,
         };
       }
-      // Fall through: feed the tool an error so the model can ask again in
-      // prose or fix the spec, rather than silently ending the turn.
       convo.push({ role: "assistant", content: textOf(message.content), tool_calls: toolCalls });
       convo.push({
         role: "tool",
@@ -725,17 +654,15 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
       continue;
     }
 
-    // Otherwise every call must be a read tool — run them and feed results back.
+    // Otherwise execute read tools
     convo.push({ role: "assistant", content: textOf(message.content), tool_calls: toolCalls });
     for (const call of toolCalls) {
       let result: ToolResult;
       const callArgs = parseArgs(call.function.arguments);
       if (call.function.name === "draft_expense_from_receipt" && allowedReadToolNames.has(call.function.name)) {
-        // Images still go through the isolated vision call. A PDF's text was
-        // already extracted by the route and travels here — the model reads
-        // the same structured draft out of it, and the same
-        // "check before you propose" note applies.
-        const image = attachments.find((item) => item.kind === "image" && item.dataUrl);
+        const image = attachments.find(
+          (item) => (item.kind === "image" || (!item.kind && item.dataUrl?.startsWith("data:image/"))) && item.dataUrl,
+        );
         const pdf = attachments.find(
           (item) => item.kind === "pdf" && typeof item.extractedText === "string" && item.extractedText,
         );

@@ -59,9 +59,9 @@ export const GET = withPlatformScope(
     // The LiteLLM side of this business: each virtual key's reported USD spend,
     // converted to Rial at the platform's stored rate so the console can show
     // the real cost the platform is paying LiteLLM for this business.
-    const rate = platform.usdRialRate ?? gateway.usdRialRate ?? 0;
+    const rate = platform.usdRialRate ?? 0;
     const litellm = {
-      costingEnabled: platform.gatewayCostingEnabled && rate > 0,
+      costingEnabled: Boolean(platform.gatewayCostingEnabled && rate > 0),
       usdRialRate: rate > 0 ? rate : null,
       totalSpendUsd: 0,
       totalSpendRial: 0,
@@ -133,7 +133,7 @@ export const POST = withPlatformScope(
             .map((r) => refreshKeySpend(gateway, businessId, r.locationId)),
         );
       }
-      const rate = platform.usdRialRate ?? gateway.usdRialRate ?? 0;
+      const rate = platform.usdRialRate ?? 0;
       const rows = await listBusinessGateways(businessId);
       const keys = rows.map((row) => {
         const pub = toPublicBusinessGateway(row, gateway, platform.model);
@@ -150,7 +150,7 @@ export const POST = withPlatformScope(
       });
       return NextResponse.json({
         litellm: {
-          costingEnabled: platform.gatewayCostingEnabled && rate > 0,
+          costingEnabled: Boolean(platform.gatewayCostingEnabled && rate > 0),
           usdRialRate: rate > 0 ? rate : null,
           totalSpendUsd: keys.reduce((s, k) => s + k.spendUsd, 0),
           totalSpendRial: keys.reduce((s, k) => s + k.spendRial, 0),

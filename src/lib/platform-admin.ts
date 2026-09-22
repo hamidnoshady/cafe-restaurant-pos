@@ -50,7 +50,6 @@ export type PlatformCapability =
   // privileged information.
   | "cms.manage"
   | "business.suspend"
-  | "ai.credits.manage"
   // Platform billing: gateway config, credit packages, plan builder, wallet
   // grants and payment approval.
   | "billing.manage"
@@ -113,7 +112,6 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "impersonate.readOnly",
     "features.write",
     "business.suspend",
-    "ai.credits.manage",
     "billing.manage",
     "impersonate.revoke",
     "knowledge.manage",
@@ -130,7 +128,6 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "impersonate.readOnly",
     "features.write",
     "business.suspend",
-    "ai.credits.manage",
     "billing.manage",
     "impersonate.revoke",
     "knowledge.manage",

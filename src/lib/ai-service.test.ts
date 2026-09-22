@@ -141,7 +141,7 @@ describe("Phase 18b Wave 4 proactive isolation", () => {
 
 describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
   it("runs the isolated extraction call (no tools, multimodal content) and feeds fields back for propose_action", async () => {
-    const fetchMock = vi
+    const chatMock = vi
       .fn()
       .mockResolvedValueOnce(
         providerReply({
@@ -181,6 +181,15 @@ describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
           ],
         }),
       );
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/embeddings")) {
+        return new Response(JSON.stringify({ data: [{ index: 0, embedding: new Array(1536).fill(0.1) }], usage: { total_tokens: 5 } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return chatMock(url, init);
+    });
     vi.stubGlobal("fetch", fetchMock);
     const readTool = vi.fn(async () => ({ ok: true, data: {} }));
 
@@ -194,16 +203,16 @@ describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
       executeReadTool: readTool,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(chatMock).toHaveBeenCalledTimes(3);
     expect(readTool).not.toHaveBeenCalled();
     expect(reply.proposedAction?.type).toBe("expense.categorize");
 
-    const firstPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const firstPayload = JSON.parse(String(chatMock.mock.calls[0][1]?.body));
     expect(firstPayload.tools.map((t: { function: { name: string } }) => t.function.name)).toContain(
       "draft_expense_from_receipt",
     );
 
-    const extractionPayload = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    const extractionPayload = JSON.parse(String(chatMock.mock.calls[1][1]?.body));
     expect(extractionPayload.tools).toBeUndefined();
     expect(extractionPayload.messages[1].content[1]).toEqual({
       type: "image_url",
@@ -400,14 +409,12 @@ describe("Phase 38b gateway cost capture", () => {
     expect(reply.costUsd).toBeNull();
   });
 
-  it("the gateway config the runtime builds is what the request carries", async () => {
-    // The runtime's virtual key and failover chain ride on the request while
-    // the code-built system message stays in place.
+  it("the gateway config uses the virtual key in Authorization header and maintains clean request payload", async () => {
     const gatewayConfig = {
       ...config,
       gateway: {
-        authKey: "sk-virtual",
-        body: { fallbacks: ["pos-cheap"] },
+        authKey: "sk-virtual-123",
+        body: {},
       },
     };
     const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "پاسخ با پرامپت دروازه." }));
@@ -421,10 +428,13 @@ describe("Phase 38b gateway cost capture", () => {
       messages: [{ role: "user", content: "سلام" }],
     });
 
+    const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer sk-virtual-123");
+
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(payload.prompt_id).toBeUndefined();
     expect(payload.prompt_variables).toBeUndefined();
-    expect(payload.fallbacks).toEqual(["pos-cheap"]);
+    expect(payload.fallbacks).toBeUndefined();
     expect(payload.messages[0]).toEqual({ role: "system", content: "نظم سیستمی" });
   });
 
@@ -446,38 +456,20 @@ describe("Phase 38b gateway cost capture", () => {
     expect(payload.messages[0]).toEqual({ role: "system", content: "نظم سیستمی" });
   });
 
-  it("MCP servers declared by the runtime reach the tools array", async () => {
-    const mcpConfig = {
-      ...config,
-      gateway: {
-        body: {
-          tools: [
-            {
-              type: "mcp",
-              server_url: "litellm_proxy/pos_mcp/mcp",
-              server_label: "pos_mcp",
-              require_approval: "never",
-            },
-          ],
-        },
-      },
-    };
+  it("only standard function tools reach the provider tools array without leaking unhandled types", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "با ابزارها پاسخ دادم." }));
     vi.stubGlobal("fetch", fetchMock);
 
     await runAgentTurn({
-      config: mcpConfig,
+      config,
       mode: "dashboard",
       promptContext: { mode: "dashboard" },
       messages: [{ role: "user", content: "سلام" }],
     });
 
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    const tools = payload.tools as { type: string }[];
-    // The proxy's MCP entries lead; the agent's own function tools follow in
-    // the same array — one `tools` field, distinguished by `type`.
-    expect(tools[0]).toEqual(mcpConfig.gateway.body.tools[0]);
-    expect(tools.slice(1).every((tool) => tool.type === "function")).toBe(true);
+    const tools = payload.tools as { type: string; function: { name: string } }[];
+    expect(tools.every((tool) => tool.type === "function")).toBe(true);
     expect(tools.length).toBeGreaterThan(1);
   });
 });

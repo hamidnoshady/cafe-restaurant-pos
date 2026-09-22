@@ -582,14 +582,27 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             costRial: settlement.chargedRial,
           });
         } catch (err) {
-          // Phase B — no reservation to refund. A turn that failed before the
-          // provider answered cost nothing, so nothing is settled; a turn that
-          // failed after already paying upstream has (in the happy path) been
-          // settled above. Nothing to undo here.
+          // A turn that failed before the provider answered cost nothing, so
+          // nothing is settled.
           if (err instanceof AiError) {
+            console.error("ai chat provider error", {
+              requestId,
+              businessId: session.businessId,
+              locationId,
+              mode,
+              code: err.code,
+              status: err.status,
+              detail: err.detail,
+            });
             emit("error", { error: err.code, message: err.message });
           } else {
-            console.error("ai chat error", err);
+            console.error("ai chat unexpected error", {
+              requestId,
+              businessId: session.businessId,
+              locationId,
+              mode,
+              error: err instanceof Error ? err.message : String(err),
+            });
             emit("error", { error: "ai_unknown", message: "خطای غیرمنتظره در دستیار." });
           }
         } finally {

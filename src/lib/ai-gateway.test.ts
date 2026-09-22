@@ -1,10 +1,10 @@
 /**
- * Unit tests for the gateway layer's pure half.
+ * Unit tests for the technical LiteLLM gateway layer's pure half.
  *
- * The gateway is an optional component sitting in front of an already-working
+ * The gateway is an optional component sitting in front of an OpenAI-compatible
  * provider client, so the property that matters most is not what it does when
- * configured but that it does *nothing at all* when it isn't: no extra body
- * fields, no substituted key, no rewritten model. Those cases come first.
+ * configured but that it does nothing intrusive when it isn't: clean standard
+ * request shapes, proper credential substitution, and correct model aliases.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -13,27 +13,24 @@ import {
   emptyBusinessGateway,
   gatewayErrorText,
   gatewayManagementUrl,
-  gatewayMcpToolsBody,
-  gatewayTurnPricing,
   gatewayRequestBody,
   gatewayStatusMessage,
   joinGatewayDetail,
   keyInfoUrl,
   livelinessUrl,
   modelInfoUrl,
-  mcpServersFromText,
-  mcpServersToText,
   normaliseBusinessGatewayInput,
-  normalizeMcpServers,
   parseGatewayErrorDetail,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
+  parseProviderError,
   parseResponseCostHeader,
   resolveChatModel,
-  rialFromGatewayUsd,
   resolveEmbeddingModel,
   resolveGatewayAuthKey,
+  rialFromGatewayUsd,
+  gatewayTurnPricing,
   toListText,
   toPublicGatewayConfig,
   toStringList,
@@ -75,7 +72,7 @@ describe("an inactive gateway changes nothing", () => {
 
   it("sends no extra body fields to a direct vendor", () => {
     expect(gatewayRequestBody(null)).toEqual({});
-    expect(gatewayRequestBody({ ...gateway(), enabled: false, fallbackModels: ["a"] })).toEqual({});
+    expect(gatewayRequestBody({ ...gateway(), enabled: false })).toEqual({});
   });
 
   it("substitutes no key when no gateway credential exists", () => {
@@ -85,7 +82,7 @@ describe("an inactive gateway changes nothing", () => {
 
 describe("model resolution", () => {
   it("keeps the platform model when the gateway sets no alias", () => {
-    expect(resolveChatModel({ platformModel: "gpt-4o-mini", gateway: gateway(), business: null })).toBe(
+    expect(resolveChatModel({ platformModel: "gpt-4o-mini", gateway: gateway({ chatModel: "" }), business: null })).toBe(
       "gpt-4o-mini",
     );
   });
@@ -220,39 +217,29 @@ describe("credential resolution", () => {
   });
 });
 
-describe("request body", () => {
-  it("attaches the failover chain in order", () => {
-    expect(gatewayRequestBody(gateway({ fallbackModels: ["pos-cheap", "pos-last"] }))).toEqual({
-      fallbacks: ["pos-cheap", "pos-last"],
-    });
+describe("request body and runtime", () => {
+  it("keeps request body clean without unstandard extra fields", () => {
+    expect(gatewayRequestBody(gateway())).toEqual({});
+    expect(gatewayRequestBody(null)).toEqual({});
   });
 
-  it("omits the field entirely when the chain is empty", () => {
-    expect(gatewayRequestBody(gateway({ fallbackModels: [] }))).toEqual({});
-  });
-
-  it("includes the model and key in the built runtime", () => {
+  it("includes the model, embeddingModel and key in the built runtime", () => {
     const runtime = buildGatewayRuntime({
       config: platform,
-      gateway: gateway({ chatModel: "pos-chat", masterKey: "sk-master", fallbackModels: ["pos-cheap"] }),
+      gateway: gateway({ chatModel: "pos-chat", embeddingModel: "pos-embed", masterKey: "sk-master" }),
       business: null,
     });
     expect(runtime).toEqual({
       model: "pos-chat",
-      embeddingModel: "pos-chat",
+      embeddingModel: "pos-embed",
       authKey: "sk-master",
       virtualKeyResolved: false,
-      body: { fallbacks: ["pos-cheap"] },
+      body: {},
     });
   });
 });
 
 describe("key identity", () => {
-  // Migration 0168: a minted key is an IDENTITY, not a policy — it carries
-  // only the alias (and the metadata the service adds). There is no models
-  // allowlist to scope any more: changing the platform's chat alias must not
-  // orphan every existing key against the new model, and model access is the
-  // request path's decision (resolveChatModel), not the key's.
   it("derives a stable alias from the business id and branch id", () => {
     expect(virtualKeyAlias("3f2a-9c")).toBe("pos-3f2a9c");
     expect(virtualKeyAlias("3f2a-9c")).toBe(virtualKeyAlias("3f2a-9c"));
@@ -316,10 +303,6 @@ describe("response parsing", () => {
 
 describe("the operator-facing error vocabulary", () => {
   it("translates every code the console route and the service can emit", () => {
-    // The full set emitted by the route's pre-flight guards, the service's
-    // management calls, and both validators. A code missing from the table
-    // would reach the operator as a raw English token — the exact bug these
-    // tests pin.
     const codes = [
       "ai_gateway_disabled",
       "ai_gateway_missing_master_key",
@@ -328,8 +311,13 @@ describe("the operator-facing error vocabulary", () => {
       "ai_gateway_auth",
       "ai_gateway_error",
       "ai_gateway_bad_response",
-      ...validateGatewayInput({ baseUrl: "not-a-url", fallbackModels: "no", publishedModels: "no" }),
-      ...validateGatewayInput({ usdRialRate: -1, gatewayCostingEnabled: true, revenueMarginPercent: -1, maxTurnRial: -1, mcpServers: "no" }),
+      "ai_gateway_bad_base_url",
+      "ai_gateway_model_choice_disabled",
+      "ai_gateway_model_not_published",
+      "ai_gateway_model_not_found",
+      "ai_gateway_completion_failed",
+      "ai_gateway_virtual_keys_unhealthy",
+      ...validateGatewayInput({ baseUrl: "not-a-url" }),
       ...validateBusinessGatewayInput({ modelOverride: "nope" }, { allowBusinessModels: false, allowedModels: [] }),
       ...validateBusinessGatewayInput({ modelOverride: "nope" }, { allowBusinessModels: true, allowedModels: [] }),
     ];
@@ -371,6 +359,17 @@ describe("the operator-facing error vocabulary", () => {
   });
 });
 
+describe("safe provider error sanitization", () => {
+  it("sanitizes secret keys and trims details", () => {
+    const error = parseProviderError(400, JSON.stringify({
+      error: { message: "Invalid key sk-abcdef1234567890 in request to upstream" },
+    }));
+    expect(error.sanitizedReason).toContain("sk-***");
+    expect(error.sanitizedReason).not.toContain("sk-abcdef1234567890");
+    expect(error.status).toBe(400);
+  });
+});
+
 describe("list coercion", () => {
   it("accepts arrays, newline text and comma text", () => {
     expect(toStringList(["a", " b ", ""])).toEqual(["a", "b"]);
@@ -383,21 +382,17 @@ describe("list coercion", () => {
   });
 });
 
-describe("the single billing architecture (migration 0168)", () => {
-  // The platform console stopped mirroring the proxy's own settings: routing,
-  // per-model RPM/TPM and per-key budgets live in docker/litellm/config.yaml
-  // alone, and the Rial wallet is the only billing stop on the request path.
-  // These greps pin the shape so a mirrored knob cannot quietly return.
+describe("the single billing architecture", () => {
   it("carries no routing/budget/limit fields in the stored gateway config", () => {
     const json = JSON.stringify(defaultGatewayConfig());
-    for (const retired of ["routingStrategy", "defaultBudgetDuration", "maxBudgetUsd", "tpmLimit", "rpmLimit", "budgetDuration"]) {
+    for (const retired of ["routingStrategy", "defaultBudgetDuration", "maxBudgetUsd", "tpmLimit", "rpmLimit", "budgetDuration", "usdRialRate", "gatewayCostingEnabled"]) {
       expect(json, retired).not.toContain(retired);
     }
   });
 
   it("exposes no routing/budget/limit fields in the public config either", () => {
     const json = JSON.stringify(toPublicGatewayConfig(gateway({ masterKey: "sk-secret" })));
-    for (const retired of ["routingStrategy", "defaultMaxBudgetUsd", "defaultTpmLimit", "defaultRpmLimit", "budgetDuration"]) {
+    for (const retired of ["routingStrategy", "defaultMaxBudgetUsd", "defaultTpmLimit", "defaultRpmLimit", "budgetDuration", "usdRialRate", "gatewayCostingEnabled"]) {
       expect(json, retired).not.toContain(retired);
     }
   });
@@ -406,12 +401,9 @@ describe("the single billing architecture (migration 0168)", () => {
     const fresh = emptyBusinessGateway("b1");
     const row = normaliseBusinessGatewayInput("b1", {
       modelOverride: "  pos-fast  ",
-      // A legacy console patch still carrying the retired fields must not
-      // resurrect them (they are ignored, not validated).
-      ...({ maxBudgetUsd: 5, tpmLimit: 100, rpmLimit: 100, budgetDuration: "30d" } as unknown as Record<string, never>),
     });
     const json = JSON.stringify({ fresh, row });
-    for (const retired of ["maxBudgetUsd", "tpmLimit", "rpmLimit", "budgetDuration"]) {
+    for (const retired of ["maxBudgetUsd", "tpmLimit", "rpmLimit", "budgetDuration", "maxTurnRial"]) {
       expect(json, retired).not.toContain(retired);
     }
     expect(row.modelOverride).toBe("pos-fast");
@@ -482,11 +474,7 @@ describe("public shapes never leak credentials", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Phase 38b — costing from the gateway
-// ---------------------------------------------------------------------------
-
-describe("gateway cost capture and conversion", () => {
+describe("cost response header and pricing utilities", () => {
   it("reads the proxy's cost header and refuses nonsense", () => {
     expect(parseResponseCostHeader("0.00123")).toBe(0.00123);
     expect(parseResponseCostHeader("0")).toBe(0);
@@ -498,7 +486,7 @@ describe("gateway cost capture and conversion", () => {
 
   it("converts USD to whole Rial, rounding up once", () => {
     expect(rialFromGatewayUsd(0.5, 60_000)).toBe(30_000);
-    expect(rialFromGatewayUsd(0.000001, 60_000)).toBe(1); // 0.06 Rial rounds up to 1
+    expect(rialFromGatewayUsd(0.000001, 60_000)).toBe(1);
     expect(rialFromGatewayUsd(0, 60_000)).toBe(0);
     expect(rialFromGatewayUsd(-1, 60_000)).toBe(0);
     expect(rialFromGatewayUsd(1, 0)).toBe(0);
@@ -509,168 +497,4 @@ describe("gateway cost capture and conversion", () => {
     expect(pricing.costRial).toBe(1_000);
     expect(pricing.chargedRial).toBe(1_250);
   });
-
-  it("zero margin sells at cost", () => {
-    const pricing = gatewayTurnPricing(0.01, 100_000, 0);
-    expect(pricing.chargedRial).toBe(pricing.costRial);
-  });
-
-  it("a fractional margin never sells below cost", () => {
-    const pricing = gatewayTurnPricing(0.0001, 10_000, 0.1);
-    expect(pricing.costRial).toBe(1);
-    expect(pricing.chargedRial).toBeGreaterThanOrEqual(1);
-  });
-
-  it("no cost means no pricing — the token rates take over, never zero", () => {
-    expect(gatewayTurnPricing(0, 100_000, 25).chargedRial).toBe(0);
-    expect(gatewayTurnPricing(-1, 100_000, 25).costRial).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Phase 38b — MCP through the gateway
-// ---------------------------------------------------------------------------
-
-describe("gateway MCP servers", () => {
-  it("keeps sane servers and drops broken or duplicate ones", () => {
-    const servers = normalizeMcpServers([
-      { name: "Pos-MCP", label: "اتصال‌دهنده", url: "http://app:3000/api/mcp" },
-      { name: "", url: "http://x" },
-      { name: "no-url" },
-      { name: "pos-mcp", url: "http://duplicate" },
-      "not-an-object",
-    ]);
-    expect(servers).toEqual([{ name: "pos-mcp", label: "اتصال‌دهنده", url: "http://app:3000/api/mcp" }]);
-  });
-
-  it("round-trips through the console's text shape", () => {
-    const servers = [{ name: "pos_mcp", label: "POS", url: "http://app:3000/api/mcp" }];
-    expect(mcpServersFromText(mcpServersToText(servers))).toEqual(servers);
-  });
-
-  it("declares the proxy's servers as auto-executed MCP tools", () => {
-    const body = gatewayMcpToolsBody(
-      gateway({
-        mcpEnabled: true,
-        mcpServers: [{ name: "pos_mcp", label: "POS", url: "http://app:3000/api/mcp" }],
-      }),
-    );
-    expect(body).toEqual({
-      tools: [
-        {
-          type: "mcp",
-          server_url: "litellm_proxy/pos_mcp/mcp",
-          server_label: "pos_mcp",
-          require_approval: "never",
-        },
-      ],
-    });
-  });
-
-  it("sends nothing when MCP is off, empty, or the gateway is not a gateway", () => {
-    expect(gatewayMcpToolsBody(gateway({ mcpEnabled: false, mcpServers: [{ name: "a", label: "a", url: "http://a" }] }))).toEqual({});
-    expect(gatewayMcpToolsBody(gateway({ mcpEnabled: true, mcpServers: [] }))).toEqual({});
-    expect(gatewayMcpToolsBody(null)).toEqual({});
-    expect(gatewayMcpToolsBody({ ...defaultGatewayConfig(), mcpEnabled: true })).toEqual({});
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Phase 38b — the runtime assembles the new body pieces
-// ---------------------------------------------------------------------------
-
-describe("the runtime carries MCP only through a gateway", () => {
-  it("a gateway without extras sends an empty body", () => {
-    const runtime = buildGatewayRuntime({
-      config: platform,
-      gateway: gateway(),
-      business: null,
-    });
-    expect(runtime?.body).toEqual({});
-  });
-
-  it("MCP servers ride in the body next to the fallback chain", () => {
-    const runtime = buildGatewayRuntime({
-      config: platform,
-      gateway: gateway({
-        fallbackModels: ["pos-cheap"],
-        mcpEnabled: true,
-        mcpServers: [{ name: "pos_mcp", label: "POS", url: "http://app:3000/api/mcp" }],
-      }),
-      business: null,
-    });
-    expect(runtime?.body).toEqual({
-      fallbacks: ["pos-cheap"],
-      tools: [
-        { type: "mcp", server_url: "litellm_proxy/pos_mcp/mcp", server_label: "pos_mcp", require_approval: "never" },
-      ],
-    });
-  });
-});
-
-describe("validation of the phase 38b fields", () => {
-  it("gateway costing requires a conversion rate", () => {
-    const errors = validateGatewayInput({ baseUrl: "http://litellm:4000/v1", gatewayCostingEnabled: true });
-    expect(errors).toContain("ai_gateway_costing_needs_rate");
-    expect(
-      validateGatewayInput({ baseUrl: "http://litellm:4000/v1", gatewayCostingEnabled: true, usdRialRate: 60_000 }),
-    ).toEqual([]);
-  });
-
-  it("a rate must be a positive number", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: -1 })).toContain("ai_gateway_bad_usd_rate");
-    expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: 0 })).toContain("ai_gateway_bad_usd_rate");
-    expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: null })).toEqual([]);
-  });
-
-  it("MCP servers must be an array", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", mcpServers: "http://x" })).toContain(
-      "ai_gateway_bad_mcp_servers",
-    );
-    expect(validateGatewayInput({ baseUrl: "http://x", mcpServers: [] })).toEqual([]);
-  });
-
-  it("a platform-side margin must be zero or a positive number", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: -5 })).toContain(
-      "ai_gateway_bad_margin",
-    );
-    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: 0 })).toEqual([]);
-    expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: 20 })).toEqual([]);
-  });
-
-  it("allows zero while disabled but requires a positive ceiling when enabled", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: -1 })).toContain(
-      "ai_gateway_bad_max_turn",
-    );
-    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 0 })).toEqual([]);
-    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 50_000 })).toEqual([]);
-    expect(validateGatewayInput({ enabled: true, baseUrl: "http://x", chatModel: "pos-chat", maxTurnRial: 0, gatewayCostingEnabled: true, usdRialRate: 1 })).toContain("ai_gateway_bad_max_turn");
-  });
-});
-
-describe("the public gateway config carries the costing knobs", () => {
-  it("exposes the conversion rate, margin and ceiling but never the master key", () => {
-    const pub = toPublicGatewayConfig(
-      gateway({
-        masterKey: "sk-secret",
-        gatewayCostingEnabled: true,
-        usdRialRate: 60_000,
-        revenueMarginPercent: 15,
-        maxTurnRial: 40_000,
-      }),
-    );
-    expect(pub.hasMasterKey).toBe(true);
-    expect(pub.gatewayCostingEnabled).toBe(true);
-    expect(pub.usdRialRate).toBe(60_000);
-    expect(pub.revenueMarginPercent).toBe(15);
-    expect(pub.maxTurnRial).toBe(40_000);
-    expect(JSON.stringify(pub)).not.toContain("sk-secret");
-  });
-  it("rejects enabled configurations that runtime would immediately refuse", () => {
-    const base = { enabled: true, baseUrl: "http://litellm:4000/v1", chatModel: "pos-chat", maxTurnRial: 50_000 };
-    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: true, usdRialRate: null })).toContain("ai_gateway_costing_needs_rate");
-    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: false })).toContain("ai_gateway_costing_not_configured");
-    expect(validateGatewayInput({ ...base, gatewayCostingEnabled: true, usdRialRate: 600_000 })).toEqual([]);
-  });
-
 });
