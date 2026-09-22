@@ -37,10 +37,11 @@
  * ## Tenancy
  *
  * Some tables carry `business_id`; some are branch-scoped and reach the tenant
- * through `locations`. Both shapes are declared here (`scope`) so the generated
- * UPDATE can never move a row across tenants even if an id leaked into a
- * request. There is no third shape — a new table that has neither is `blocked`
- * by construction, which is the correct answer.
+ * through `locations`; some reach it through a parent row (a workspace task
+ * through its project). All three shapes are declared here (`scope`) so the
+ * generated UPDATE can never move a row across tenants even if an id leaked
+ * into a request. A table that fits none of them is `blocked` by construction,
+ * which is the correct answer.
  *
  * Framework-free and side-effect-free: no `pg` import, no SQL execution. It is
  * a policy document the service reads, which is what makes it unit-testable.
@@ -54,7 +55,31 @@ export type MergeScope =
   /** The table has its own `business_id`. */
   | "business"
   /** The table is branch-scoped: join `locations` on `location_id`. */
-  | "location";
+  | "location"
+  /**
+   * The table has neither column and reaches the tenant through a parent row
+   * that does — declare the hop in `parent`.
+   *
+   * `ai_project_tasks` is why this exists. A task is tenanted by the project
+   * that contains it and deliberately carries no `business_id` of its own (one
+   * owner of the tenancy fact, checked by the same RLS policy that guards the
+   * project). Before this shape existed, the merge generated an UPDATE naming
+   * a `business_id` column the table has not got: PostgreSQL answered 42703,
+   * which aborted the surrounding transaction and took the whole merge with
+   * it. Modelling the hop is the fix; widening the table would have been a
+   * duplicate tenancy column.
+   */
+  | "parent";
+
+/** The hop a `parent`-scoped table takes to reach `business_id`. */
+export interface MergeParentScope {
+  /** The parent table, which must itself carry `business_id`. */
+  table: string;
+  /** The child column holding the parent's id. */
+  childColumn: string;
+  /** The parent's key column. Practically always `id`. */
+  parentColumn: string;
+}
 
 export interface PartyReference {
   /** The referencing table. */
@@ -62,6 +87,8 @@ export interface PartyReference {
   /** The column holding the party id. */
   column: string;
   scope: MergeScope;
+  /** Required when `scope` is `"parent"`, meaningless otherwise. */
+  parent?: MergeParentScope;
   disposition: MergeDisposition;
   /**
    * Why this disposition, in one line. Required — a classification without a
@@ -376,6 +403,52 @@ export const PARTY_REFERENCES: readonly PartyReference[] = [
     scope: "business",
     disposition: "move",
     reason: "An unsent draft addressed to the person should address the surviving record.",
+  },
+
+  // -- My Workspace (Phase G) -----------------------------------------------
+  // All four are `move`, for one reason: every one of these columns names the
+  // real-world counterparty of a live commitment. A project is being delivered
+  // FOR that customer, a contract is signed WITH that company, and neither
+  // fact stops being true because two duplicate records were merged. Left on
+  // the loser, the project header and the contract file would show an archived
+  // customer's name and phone while the work is still running — the same bug
+  // `suppliers.party_id` above exists to prevent.
+  {
+    table: "ai_projects",
+    column: "party_id",
+    scope: "business",
+    disposition: "move",
+    reason:
+      "The project's client. The project is still being delivered for this person; pointing it at an archived record hides the live work from the surviving customer file.",
+    preview: true,
+    previewLabel: "پروژه‌ها",
+  },
+  {
+    table: "workspace_contracts",
+    column: "party_id",
+    scope: "business",
+    disposition: "move",
+    reason:
+      "The contract's counterparty. A signed agreement outlives a duplicate-record cleanup, and its expiry reminders must reach the surviving file.",
+    preview: true,
+    previewLabel: "قراردادهای اجرایی",
+  },
+  {
+    table: "ai_project_tasks",
+    column: "party_id",
+    scope: "parent",
+    parent: { table: "ai_projects", childColumn: "project_id", parentColumn: "id" },
+    disposition: "move",
+    reason:
+      "The customer a task is being done for. Same rule as the project that contains it — an open task belongs to the surviving record.",
+  },
+  {
+    table: "workspace_documents",
+    column: "party_id",
+    scope: "business",
+    disposition: "move",
+    reason:
+      "A document filed against the customer. Leaving it on the loser removes it from the surviving file's document list, which is how a signed contract scan goes missing.",
   },
 
   // -- Historical / audit: deliberately NOT moved ---------------------------

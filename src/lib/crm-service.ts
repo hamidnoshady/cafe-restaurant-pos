@@ -725,6 +725,13 @@ function movePartyReferenceSql(reference: PartyReference): string {
              WHERE l.id = t.location_id AND l.business_id = $1
                AND t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
   }
+  if (reference.scope === "parent" && reference.parent) {
+    const p = reference.parent;
+    return `UPDATE ${reference.table} t SET ${reference.column} = $3
+              FROM ${p.table} pt
+             WHERE pt.${p.parentColumn} = t.${p.childColumn} AND pt.business_id = $1
+               AND t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
+  }
   return `UPDATE ${reference.table} AS t SET ${reference.column} = $3
            WHERE t.business_id = $1 AND t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
 }
@@ -776,6 +783,12 @@ function countPartyReferenceSql(reference: PartyReference): string {
   if (reference.scope === "location") {
     return `SELECT count(*)::text AS count FROM ${reference.table} t
               JOIN locations l ON l.id = t.location_id AND l.business_id = $1
+             WHERE t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
+  }
+  if (reference.scope === "parent" && reference.parent) {
+    const p = reference.parent;
+    return `SELECT count(*)::text AS count FROM ${reference.table} t
+              JOIN ${p.table} pt ON pt.${p.parentColumn} = t.${p.childColumn} AND pt.business_id = $1
              WHERE t.${reference.column} = $2${partyReferenceFilter(reference, "t")}`;
   }
   return `SELECT count(*)::text AS count FROM ${reference.table} AS t

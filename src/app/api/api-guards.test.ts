@@ -281,6 +281,24 @@ function isPlatformGuarded(src: string): boolean {
   return /requirePlatformAdmin\(/.test(src) || /requirePlatformCapability\(/.test(src);
 }
 
+/**
+ * Phase G — the workspace routes guard through `workspaceOwner(PERMISSIONS.x)`
+ * in `src/app/api/workspace/guard.ts`, which is a one-line wrapper whose only
+ * body is `requirePermission(permission)` from `@/lib/auth`. It exists because
+ * ten route files would otherwise repeat the same four lines, and the tenth
+ * would be the one that forgot.
+ *
+ * This scanner reads route source text, so it cannot follow that call into the
+ * helper. Recognising it here is therefore a narrowing, not a loosening: the
+ * route must call `workspaceOwner(` AND name a `PERMISSIONS.workspace…` key,
+ * so a workspace route with no permission at all still fails above. The
+ * per-permission assertions further down pin which key each route uses, and
+ * `guard.ts` itself is asserted to be a real `requirePermission` call.
+ */
+function isWorkspaceGuarded(src: string): boolean {
+  return /workspaceOwner\(/.test(src) && /PERMISSIONS\.workspace[A-Za-z]+/.test(src);
+}
+
 /** Public API routes are session-less only because api-auth.ts authenticates a scoped key. */
 function isApiKeyGuarded(src: string): boolean {
   return /withApiKeyScope\(/.test(src) && /requireApiScope\(/.test(src);
@@ -398,6 +416,9 @@ describe("every API route is guarded", () => {
       // requirePlatformCapability, the platform-realm equivalents of the
       // tenant requireRole/requirePermission guards.
       if (isPlatformGuarded(src)) return;
+      // Phase G — `workspaceOwner(PERMISSIONS.workspace…)`, which is
+      // `requirePermission` behind one shared helper. See isWorkspaceGuarded.
+      if (isWorkspaceGuarded(src)) return;
       // Phase 35 — `requireMember` is the fourth guard: any signed-in member,
       // for endpoints where every member acts only on their own rows and there
       // is therefore no role left to gate (notification devices, rules, inbox).
@@ -570,6 +591,58 @@ describe("back-office/financial surfaces exclude floor roles", () => {
       for (const roles of calls) {
         expect(roles, `src/app/api/${key}/route.ts`).toEqual(["owner"]);
       }
+    }
+  });
+});
+
+/**
+ * Phase G — «میز کار من». The workspace routes are the one group in the
+ * product that reaches `requirePermission` through a shared helper, so the
+ * three things that makes implicit are asserted explicitly here.
+ */
+describe("the workspace module's API guards", () => {
+  const workspaceRoutes = [...sources].filter(
+    ([key]) => key === "workspace" || key.startsWith("workspace/"),
+  );
+
+  it("has routes to check", () => {
+    expect(workspaceRoutes.length).toBeGreaterThan(5);
+  });
+
+  it("guards every workspace route on a workspace.* permission", () => {
+    for (const [key, src] of workspaceRoutes) {
+      expect(src, `src/app/api/${key}/route.ts`).toMatch(/workspaceOwner\(/);
+      expect(src, `src/app/api/${key}/route.ts`).toMatch(/PERMISSIONS\.workspace[A-Za-z]+/);
+      // A role list would bypass the per-member overrides entirely — the same
+      // rule team/* and branches/* are held to.
+      expect(requireRoleCalls(src), `src/app/api/${key}/route.ts uses requireRole`).toEqual([]);
+    }
+  });
+
+  it("the shared helper really is requirePermission and nothing weaker", () => {
+    const guard = readFileSync(join(API_ROOT, "workspace", "guard.ts"), "utf8");
+    expect(guard).toMatch(/requirePermission\(permission\)/);
+    expect(guard).toMatch(/from "@\/lib\/auth"/);
+  });
+
+  it("keeps writing separated from deciding, and contracts from everything else", () => {
+    const read = (key: string) => {
+      const src = sources.get(key);
+      expect(src, `src/app/api/${key}/route.ts is missing`).toBeTruthy();
+      return src as string;
+    };
+    // Deciding an approval is its own permission: if the requester could also
+    // approve, the gate would be decorative.
+    expect(read("workspace/approvals/[id]")).toMatch(/PERMISSIONS\.workspaceApprove/);
+    expect(read("workspace/approvals/[id]")).not.toMatch(/PERMISSIONS\.workspaceManage/);
+    // Recording an execution contract commits the business to money, so it is
+    // carved out of the general manage permission.
+    expect(read("workspace/contracts")).toMatch(/PERMISSIONS\.workspaceContractsManage/);
+    expect(read("workspace/contracts/[id]")).toMatch(/PERMISSIONS\.workspaceContractsManage/);
+    // The read-only surfaces never ask for more than view.
+    for (const key of ["workspace/dashboard", "workspace/reports"]) {
+      expect(read(key)).toMatch(/PERMISSIONS\.workspaceView/);
+      expect(read(key)).not.toMatch(/PERMISSIONS\.workspaceManage/);
     }
   });
 });

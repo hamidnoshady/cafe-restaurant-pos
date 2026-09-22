@@ -766,6 +766,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "برای سؤال‌هایی مثل «حساب‌هایم را بررسی کن»، «اشتباهی هست؟» یا «چه چیزی جا افتاده؟» حتماً run_accounting_review را صدا بزن و دقیقاً همان یافته‌ها را با درجهٔ اهمیت و پیشنهاد اصلاحشان گزارش کن. هرگز از خودت مورد اضافه نکن و هرگز نگو حسابی مشکل دارد مگر این ابزار گفته باشد.",
       "کاربر می‌تواند کارهای تکرارشونده را به «همکار هوشمند» بسپارد (مثلاً «هر شب با بستن شیفت، ماندهٔ نان را ضایعات بزن» یا «هر روز صبح حساب‌ها را بررسی کن»). با list_coworker_jobs می‌توانی کارهای فعلی و تعداد اجراهای منتظر تأیید را ببینی؛ برای ساختن کار جدید کاربر را به بخش «همکار هوشمند» در صفحهٔ هوش مصنوعی راهنمایی کن.",
       "برای پیام‌رسانی به مشتریان: با list_message_templates قالب‌ها و با list_message_campaigns وضعیت کمپین‌ها را می‌بینی. برای ساختن کمپین جدید، اول templateId را از list_message_templates و segmentId را از list_customer_segments بگیر، سپس propose_action از نوع messaging.campaign.create بساز؛ این کار فقط یک پیش‌نویس می‌سازد و هیچ پیامی نمی‌فرستد — ارسال را خود کاربر از صفحهٔ رشد انجام می‌دهد.",
+      "«میز کار من» جایی است که پروژه‌ها، وظایف، اسناد، قراردادهای اجرایی و تأییدها نگهداری می‌شوند. برای «وضعیت پروژهٔ فلان چیست» از get_workspace_project_status، برای «کارهای امروزِ من» از list_workspace_tasks با mine=true، برای «چه قراردادهایی ماه آینده منقضی می‌شوند» از list_expiring_contracts با withinDays=۳۰ و برای «چه چیزی منتظر تأیید من است» از list_workspace_approvals با mine=true استفاده کن. اگر چند پروژه هم‌نام بودند، ابزار فهرست نامزدها را برمی‌گرداند؛ حدس نزن و از کاربر بپرس کدام را می‌خواهد.",
+      "تقسیم مسئولیت قراردادها را رعایت کن: قراردادهای اجرایی پروژه (پیمانکار، تأمین‌کننده، مشاور، پیمانکار جزء) در میز کار هستند و با list_expiring_contracts خوانده می‌شوند؛ قراردادهای رابطه‌ای با مشتری در پروندهٔ همان مشتری در CRM هستند. اگر کاربر دنبال قرارداد فروش یا خدماتِ یک مشتری بود، او را به پروندهٔ مشتری در CRM راهنمایی کن و نگو چنین قراردادی وجود ندارد.",
+      "عدد هزینهٔ پروژه که get_workspace_project_status می‌دهد از اسناد حسابداری همان پروژه خوانده می‌شود، نه از برآورد؛ آن را به‌عنوان رقم قطعی دفتر گزارش کن و با بودجه مقایسه کن.",
       "برای افزودن مشتری یا تأمین‌کننده از party.customer.create یا party.supplier.create استفاده کن و فقط نام و اطلاعات تماس را پر کن؛ کد حسابداری، درصد مالیات و اطلاعات بانکی را نگذار. برای ثبت دریافت وجه از مشتری، اول با find_customers شناسهٔ مشتری را پیدا کن و سپس ar.receipt.record را با مبلغ ریالی و روش (نقد/بانک) پیشنهاد بده.",
       "برای هر تغییر در داده‌ها هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
       "قبل از پیشنهاد، اطلاعات لازم را با پرسیدن سؤال از کاربر کامل کن؛ فیلدها را با حدس‌های نامطمئن پر نکن.",
@@ -1241,6 +1244,94 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
       "list_message_campaigns",
       "کمپین‌های پیام کسب‌وکار (پیش‌نویس، در حال ارسال، پایان‌یافته) با شناسه، نام، کانال، وضعیت و شمارش گیرنده/ارسال/تحویل/ناموفق.",
     ),
+    // Phase G — «میز کار من». Four reads, one per question the module was
+    // built to answer. None of them takes a user id: «مالِ من» is resolved
+    // from the session in the executor, never from a model-supplied value.
+    {
+      type: "function",
+      function: {
+        name: "get_workspace_project_status",
+        description:
+          "وضعیت کامل یک پروژه در میز کار: پیشرفت وظایف، فازها، تیم، مهلت، بودجه و هزینهٔ ثبت‌شده در دفتر، قراردادهای اجرایی و تأییدهای باز. پروژه را با نام یا شناسه بده؛ اگر چند پروژه هم‌نام باشند فهرست نامزدها برمی‌گردد و باید از کاربر بپرسی.",
+        parameters: {
+          type: "object",
+          properties: {
+            projectName: { type: "string", description: "نام پروژه، همان‌طور که کاربر گفت" },
+            projectId: { type: "string", description: "شناسهٔ پروژه، اگر از ابزار دیگری داری" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_workspace_tasks",
+        description:
+          "وظایف میز کار با پروژه، مسئول، اولویت، وضعیت و مهلت. برای «کارهای امروزِ من» پارامتر mine را true و dueBefore را تاریخ امروز بده. تاریخ‌ها میلادی ISO (YYYY-MM-DD).",
+        parameters: {
+          type: "object",
+          properties: {
+            mine: { type: "boolean", description: "فقط وظایف واگذارشده به خودِ کاربر" },
+            projectName: { type: "string", description: "محدود به یک پروژه، اختیاری" },
+            projectId: { type: "string", description: "شناسهٔ پروژه، اختیاری" },
+            status: {
+              type: "string",
+              enum: ["open_only", "all", "open", "in_progress", "blocked", "done"],
+              description: "پیش‌فرض open_only یعنی هرچه هنوز انجام نشده",
+            },
+            priority: { type: "string", enum: ["low", "normal", "high", "urgent"] },
+            dueBefore: { type: "string", description: "مهلت پیش از این تاریخ (ISO)" },
+            dueAfter: { type: "string", description: "مهلت پس از این تاریخ (ISO)" },
+            search: { type: "string", description: "جست‌وجو در عنوان وظیفه" },
+            limit: { type: "number", description: "تعداد، پیش‌فرض ۵۰ و حداکثر ۱۰۰" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_expiring_contracts",
+        description:
+          "قراردادهای اجرایی پروژه (پیمانکار، تأمین‌کننده، مشاور، پیمانکار جزء) که تا N روز آینده منقضی می‌شوند، با طرف قرارداد، پروژه، مبلغ و تاریخ انقضا به شمسی. برای «ماه آینده» مقدار withinDays را ۳۰ بگذار. قراردادهای رابطه‌ای مشتری اینجا نیستند؛ آن‌ها در پروندهٔ مشتری در CRM هستند.",
+        parameters: {
+          type: "object",
+          properties: {
+            withinDays: { type: "number", description: "افق بررسی بر حسب روز، پیش‌فرض ۳۰ و حداکثر ۳۶۵" },
+            status: {
+              type: "string",
+              enum: ["all", "draft", "pending_approval", "active", "expired", "terminated", "completed"],
+              description: "پیش‌فرض all",
+            },
+            projectId: { type: "string", description: "محدود به یک پروژه، اختیاری" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_workspace_approvals",
+        description:
+          "درخواست‌های تأیید میز کار (قرارداد، سند، وظیفه، پروژه) با موضوع، درخواست‌کننده، تأییدکننده و مهلت. برای «چه چیزی منتظر تأیید من است» پارامتر mine را true بده.",
+        parameters: {
+          type: "object",
+          properties: {
+            mine: { type: "boolean", description: "فقط مواردی که خودِ کاربر تأییدکنندهٔ آن‌هاست" },
+            status: {
+              type: "string",
+              enum: ["pending", "approved", "rejected", "cancelled", "all"],
+              description: "پیش‌فرض pending",
+            },
+            limit: { type: "number", description: "تعداد، پیش‌فرض ۵۰ و حداکثر ۱۰۰" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
   ];
 
   const receiptTool: OpenAiTool = {

@@ -16,6 +16,12 @@
  */
 import { query } from "./db";
 import {
+  PROJECT_STATUSES,
+  type WorkspaceProjectStatus,
+  TASK_STATUSES,
+  type WorkspaceTaskStatus,
+} from "./workspace-shared";
+import {
   PROJECT_INSTRUCTION_CHAR_LIMIT,
   PROJECT_MEMORY_CHAR_LIMIT,
   PROJECT_MEMORY_MAX_ENTRIES,
@@ -36,7 +42,14 @@ export {
   clampInstructions,
 } from "./ai-projects-shared";
 
-export type AiProjectStatus = "active" | "paused" | "completed";
+/**
+ * Phase G widened this from the original three values: `planning` and
+ * `cancelled` were added by migration 0167. The list now comes from
+ * `workspace-shared.ts` so the service, the API and the UI cannot drift, and
+ * the three original values are unchanged — every existing row still reads
+ * back as one of them.
+ */
+export type AiProjectStatus = WorkspaceProjectStatus;
 
 export interface AiProject {
   id: string;
@@ -96,7 +109,14 @@ export interface AiProjectTask {
   id: string;
   projectId: string;
   title: string;
-  status: "open" | "done";
+  /**
+   * Phase G widened this too (migration 0167): `in_progress` and `blocked` sit
+   * between the original two, which keep their exact meaning. The richer task
+   * record — assignee, due date, checklist, dependencies — is read and written
+   * through `workspace.ts`; this narrow shape stays for the assistant's
+   * «کارهای باز» prompt context and the two AI actions that write it.
+   */
+  status: WorkspaceTaskStatus;
   /** 'user' when a person added it; 'ai' when a confirmed assistant action did. */
   source: "user" | "ai";
   createdBy: string;
@@ -230,7 +250,7 @@ export async function updateProject(
   const ownerUserId = input.ownerUserId === undefined ? existing.ownerUserId : input.ownerUserId;
   const defaultAgentId =
     input.defaultAgentId === undefined ? existing.defaultAgentId : input.defaultAgentId;
-  if (!["active", "paused", "completed"].includes(status)) throw new Error("invalid_project_status");
+  if (!(PROJECT_STATUSES as readonly string[]).includes(status)) throw new Error("invalid_project_status");
   if (budgetRial !== null && (!Number.isSafeInteger(budgetRial) || budgetRial < 0)) throw new Error("invalid_project_budget");
   if (ownerUserId) {
     const { rows: members } = await query<{ id: string }>(
@@ -551,7 +571,12 @@ type TaskRow = {
 function toTask(row: TaskRow): AiProjectTask {
   return {
     id: row.id, projectId: row.project_id, title: row.title,
-    status: row.status === "done" ? "done" : "open",
+    // Phase G: four statuses, not two. Collapsing the middle two onto "open"
+    // here would have made the assistant's «کارهای باز» list call an
+    // in-progress task untouched and a blocked one available.
+    status: (TASK_STATUSES as readonly string[]).includes(row.status)
+      ? (row.status as WorkspaceTaskStatus)
+      : "open",
     source: row.source === "ai" ? "ai" : "user",
     createdBy: row.created_by, createdAt: row.created_at,
     completedAt: row.completed_at, updatedAt: row.updated_at,
@@ -579,7 +604,7 @@ export async function addTask(
   if (!project) throw new Error("Project not found");
 
   const { rows: countRows } = await query<{ count: string }>(
-    `SELECT count(*) AS count FROM ai_project_tasks WHERE project_id = $1 AND status = 'open'`,
+    `SELECT count(*) AS count FROM ai_project_tasks WHERE project_id = $1 AND status <> 'done'`,
     [owner.projectId],
   );
   if (Number(countRows[0].count) >= PROJECT_TASK_MAX_OPEN) {
@@ -605,7 +630,7 @@ export async function listTasks(
     `SELECT id, project_id, title, status, source, created_by, created_at, completed_at, updated_at
        FROM ai_project_tasks
       WHERE project_id = $1
-      ORDER BY (status = 'open') DESC, created_at DESC`,
+      ORDER BY (status <> 'done') DESC, created_at DESC`,
     [owner.projectId],
   );
   return rows.map(toTask);
@@ -697,7 +722,7 @@ export async function getProjectPromptContext(
     instructions: project.instructions,
     notes,
     memory,
-    openTasks: tasks.filter((t) => t.status === "open"),
+    openTasks: tasks.filter((t) => t.status !== "done"),
     defaultAgentId: project.defaultAgentId,
   };
 }

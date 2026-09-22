@@ -1,0 +1,604 @@
+"use client";
+
+/**
+ * «وظایف» — one task set, three views.
+ *
+ * List, Kanban and Calendar are the same `/api/workspace/tasks` response
+ * grouped three ways on the client, not three endpoints: the counts in the
+ * board columns and the rows in the list can therefore never disagree, and
+ * switching view costs no round trip.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CheckSquareIcon,
+  KanbanIcon,
+  ListIcon,
+  CalendarDaysIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
+import {
+  EmptyState,
+  LoadingSkeleton,
+  SectionCard,
+  TabBar,
+  TabPanel,
+  cardClass,
+  overlayPanelClass,
+} from "@/app/dashboard/page-chrome";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  Td,
+  Th,
+} from "@/app/dashboard/data-table";
+import { FilterChip, FilterChipRow, SearchField } from "@/app/dashboard/filters";
+import {
+  api,
+  ErrorBox,
+  Field,
+  inputClass,
+  PrimaryButton,
+  SecondaryButton,
+} from "@/app/dashboard/ui";
+import { cn } from "@/lib/utils";
+import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
+import {
+  PRIORITIES,
+  PRIORITY_LABELS,
+  TASK_BOARD_COLUMNS,
+  TASK_STATUSES,
+  TASK_STATUS_LABELS,
+  compareTasksForList,
+  type WorkspacePriority,
+  type WorkspaceTaskStatus,
+} from "@/lib/workspace-shared";
+import {
+  DateCell,
+  DateField,
+  PickerField,
+  PriorityBadge,
+  SelectField,
+  TaskStatusBadge,
+  workspaceError,
+} from "./workspace-ui";
+import type { WorkspaceLookups } from "./use-workspace-lookups";
+
+export interface TaskRow {
+  id: string;
+  projectId: string;
+  projectName: string;
+  title: string;
+  description: string;
+  status: WorkspaceTaskStatus;
+  priority: WorkspacePriority;
+  assigneeUserId: string | null;
+  assigneeName: string | null;
+  dueDate: string | null;
+  partyName: string | null;
+  phaseName: string | null;
+  checklistTotal: number;
+  checklistDone: number;
+  commentCount: number;
+  blockedBy: number;
+}
+
+type View = "list" | "board" | "calendar";
+
+const VIEW_TABS = [
+  { key: "list" as const, label: "فهرست", icon: ListIcon },
+  { key: "board" as const, label: "کانبان", icon: KanbanIcon },
+  { key: "calendar" as const, label: "تقویم", icon: CalendarDaysIcon },
+];
+
+export function TasksSection({
+  lookups,
+  canManage,
+  initialMine = false,
+  projectId,
+}: {
+  lookups: WorkspaceLookups;
+  canManage: boolean;
+  initialMine?: boolean;
+  projectId?: string;
+}) {
+  const [tasks, setTasks] = useState<TaskRow[] | null>(null);
+  const [error, setError] = useState("");
+  const [view, setView] = useState<View>("list");
+  const [mine, setMine] = useState(initialMine);
+  const [openOnly, setOpenOnly] = useState(true);
+  const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<TaskRow | null>(null);
+
+  const load = useCallback(() => {
+    const params = new URLSearchParams();
+    if (projectId) params.set("projectId", projectId);
+    if (mine) params.set("mine", "true");
+    if (openOnly) params.set("status", "open_only");
+    if (search.trim()) params.set("q", search.trim());
+    const qs = params.toString();
+    api<{ tasks: TaskRow[] }>(`/api/workspace/tasks${qs ? `?${qs}` : ""}`).then(({ ok, data }) => {
+      if (ok) setTasks(data.tasks);
+      else setError(workspaceError((data as unknown as { error?: string }).error));
+    });
+  }, [projectId, mine, openOnly, search]);
+
+  useEffect(load, [load]);
+
+  async function move(task: TaskRow, status: WorkspaceTaskStatus) {
+    const { ok, data } = await api(`/api/workspace/tasks/${task.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+    if (ok) load();
+    else setError(workspaceError((data as unknown as { error?: string }).error));
+  }
+
+  const sorted = useMemo(
+    () => (tasks ?? []).slice().sort(compareTasksForList),
+    [tasks],
+  );
+
+  const byColumn = useMemo(() => {
+    const map = new Map<WorkspaceTaskStatus, TaskRow[]>();
+    for (const column of TASK_BOARD_COLUMNS) map.set(column, []);
+    for (const task of sorted) map.get(task.status)?.push(task);
+    return map;
+  }, [sorted]);
+
+  const byDate = useMemo(() => {
+    const map = new Map<string, TaskRow[]>();
+    for (const task of sorted) {
+      if (!task.dueDate) continue;
+      const list = map.get(task.dueDate);
+      if (list) list.push(task);
+      else map.set(task.dueDate, [task]);
+    }
+    return [...map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  }, [sorted]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {error ? <ErrorBox>{error}</ErrorBox> : null}
+
+      <SectionCard
+        title="وظایف"
+        description="یک مجموعه، سه نما: فهرست، تختهٔ کانبان و نمای تقویمی"
+        actions={
+          canManage ? (
+            <PrimaryButton type="button" onClick={() => setCreating(true)}>
+              <PlusIcon className="size-4" aria-hidden />
+              وظیفهٔ جدید
+            </PrimaryButton>
+          ) : null
+        }
+        flush
+      >
+        <div className="flex flex-col gap-3 border-b border-border/80 p-4">
+          <TabBar
+            idPrefix="workspace-tasks"
+            label="نمای وظایف"
+            tabs={VIEW_TABS}
+            active={view}
+            onChange={setView}
+          />
+          <SearchField
+            label="جست‌وجوی وظیفه"
+            value={search}
+            onChange={setSearch}
+            placeholder="عنوان وظیفه…"
+            onClear={() => setSearch("")}
+          />
+          <FilterChipRow label="فیلتر وظایف">
+            <FilterChip selected={mine} onClick={() => setMine((prev) => !prev)}>
+              واگذارشده به من
+            </FilterChip>
+            <FilterChip selected={openOnly} onClick={() => setOpenOnly((prev) => !prev)}>
+              فقط باز
+            </FilterChip>
+          </FilterChipRow>
+        </div>
+
+        {tasks === null ? (
+          <LoadingSkeleton rows={5} label="در حال بارگذاری وظایف" />
+        ) : sorted.length === 0 ? (
+          <EmptyState
+            icon={CheckSquareIcon}
+            title="وظیفه‌ای یافت نشد"
+          >
+            وظایف هر پروژه اینجا و در صفحهٔ همان پروژه دیده می‌شوند.
+          </EmptyState>
+        ) : (
+          <TabPanel idPrefix="workspace-tasks" active={view}>
+            {view === "list" ? (
+              <DataTable caption="فهرست وظایف میز کار" frame={false}>
+                <DataTableHead>
+                  <Th>عنوان</Th>
+                  <Th>پروژه</Th>
+                  <Th>مسئول</Th>
+                  <Th>وضعیت</Th>
+                  <Th>اولویت</Th>
+                  <Th>مهلت</Th>
+                  <Th>چک‌لیست</Th>
+                </DataTableHead>
+                <DataTableBody>
+                  {sorted.map((task) => (
+                    <DataTableRow key={task.id} onClick={() => setEditing(task)}>
+                      <Td>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{task.title}</span>
+                          {task.blockedBy > 0 ? (
+                            <span className="text-xs text-rose-700 dark:text-rose-300">
+                              منتظر {toPersianDigits(String(task.blockedBy))} وظیفهٔ دیگر
+                            </span>
+                          ) : null}
+                        </div>
+                      </Td>
+                      <Td>{task.projectName}</Td>
+                      <Td>{task.assigneeName ?? <span className="text-muted-foreground">—</span>}</Td>
+                      <Td>
+                        <TaskStatusBadge status={task.status} />
+                      </Td>
+                      <Td>
+                        <PriorityBadge priority={task.priority} />
+                      </Td>
+                      <Td>
+                        <DateCell date={task.dueDate} />
+                      </Td>
+                      <Td className="tabular-nums">
+                        {task.checklistTotal === 0 ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          `${toPersianDigits(String(task.checklistDone))}/${toPersianDigits(String(task.checklistTotal))}`
+                        )}
+                      </Td>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
+            ) : view === "board" ? (
+              <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+                {TASK_BOARD_COLUMNS.map((column) => {
+                  const items = byColumn.get(column) ?? [];
+                  return (
+                    <section key={column} className="flex min-w-0 flex-col gap-2">
+                      <header className="flex items-center justify-between px-1">
+                        <h3 className="text-sm font-semibold">{TASK_STATUS_LABELS[column]}</h3>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {toPersianDigits(String(items.length))}
+                        </span>
+                      </header>
+                      <div className="flex min-h-24 flex-col gap-2 rounded-xl bg-muted/40 p-2">
+                        {items.map((task) => (
+                          <article key={task.id} className={cn(cardClass, "flex flex-col gap-2 p-3")}>
+                            <button
+                              type="button"
+                              onClick={() => setEditing(task)}
+                              className="text-start text-sm font-medium underline-offset-4 hover:underline"
+                            >
+                              {task.title}
+                            </button>
+                            <p className="truncate text-xs text-muted-foreground">{task.projectName}</p>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <PriorityBadge priority={task.priority} />
+                              <DateCell date={task.dueDate} relative={false} className="text-xs" />
+                            </div>
+                            {canManage ? (
+                              <label className="block">
+                                <span className="sr-only">ستون «{task.title}»</span>
+                                <select
+                                  className={inputClass}
+                                  value={task.status}
+                                  onChange={(event) =>
+                                    move(task, event.target.value as WorkspaceTaskStatus)
+                                  }
+                                >
+                                  {TASK_STATUSES.map((status) => (
+                                    <option key={status} value={status}>
+                                      {TASK_STATUS_LABELS[status]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ) : null}
+                          </article>
+                        ))}
+                        {items.length === 0 ? (
+                          <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+                            خالی
+                          </p>
+                        ) : null}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 p-4">
+                {byDate.length === 0 ? (
+                  <EmptyState
+                    icon={CalendarDaysIcon}
+                    title="وظیفهٔ مهلت‌دار نداریم"
+                  >
+                    برای دیدن وظایف در تقویم، به آن‌ها تاریخ مهلت بدهید.
+                  </EmptyState>
+                ) : (
+                  byDate.map(([date, items]) => (
+                    <section key={date} className={cn(cardClass, "overflow-hidden")}>
+                      <header className="flex items-center justify-between border-b border-border/80 bg-muted/60 px-4 py-2">
+                        <h3 className="text-sm font-semibold">{formatJalali(date)}</h3>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {toPersianDigits(String(items.length))} وظیفه
+                        </span>
+                      </header>
+                      <ul className="divide-y divide-border/80">
+                        {items.map((task) => (
+                          <li key={task.id} className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => setEditing(task)}
+                              className="min-w-0 flex-1 truncate text-start font-medium underline-offset-4 hover:underline"
+                            >
+                              {task.title}
+                            </button>
+                            <span className="truncate text-xs text-muted-foreground">
+                              {task.projectName}
+                            </span>
+                            <TaskStatusBadge status={task.status} />
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ))
+                )}
+              </div>
+            )}
+          </TabPanel>
+        )}
+      </SectionCard>
+
+      {creating ? (
+        <TaskDialog
+          lookups={lookups}
+          projectId={projectId}
+          onClose={() => setCreating(false)}
+          onSaved={() => {
+            setCreating(false);
+            load();
+          }}
+          onError={setError}
+        />
+      ) : null}
+
+      {editing ? (
+        <TaskDialog
+          lookups={lookups}
+          task={editing}
+          canManage={canManage}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            load();
+          }}
+          onError={setError}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+
+interface ChecklistItem {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+/**
+ * One dialog for creating and editing, because the fields are identical and
+ * two dialogs would be two places to add the next one. Editing additionally
+ * loads the task's checklist, which only exists once the task does.
+ */
+function TaskDialog({
+  lookups,
+  task,
+  projectId,
+  canManage = true,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  lookups: WorkspaceLookups;
+  task?: TaskRow;
+  projectId?: string;
+  canManage?: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [title, setTitle] = useState(task?.title ?? "");
+  const [description, setDescription] = useState(task?.description ?? "");
+  const [project, setProject] = useState(task?.projectId ?? projectId ?? "");
+  const [status, setStatus] = useState<WorkspaceTaskStatus | "">(task?.status ?? "open");
+  const [priority, setPriority] = useState<WorkspacePriority | "">(task?.priority ?? "normal");
+  const [assignee, setAssignee] = useState(task?.assigneeUserId ?? "");
+  const [dueDate, setDueDate] = useState(task?.dueDate ?? "");
+  const [saving, setSaving] = useState(false);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [newItem, setNewItem] = useState("");
+
+  const taskId = task?.id;
+
+  useEffect(() => {
+    if (!taskId) return;
+    api<{ checklist: ChecklistItem[] }>(`/api/workspace/tasks/${taskId}/checklist`).then(
+      ({ ok, data }) => {
+        if (ok) setChecklist(data.checklist);
+      },
+    );
+  }, [taskId]);
+
+  async function submit() {
+    if (!title.trim() || saving) return;
+    setSaving(true);
+    const payload = {
+      projectId: project,
+      title,
+      description,
+      status: status || "open",
+      priority: priority || "normal",
+      assigneeUserId: assignee || null,
+      dueDate: dueDate || null,
+    };
+    const { ok, data } = taskId
+      ? await api(`/api/workspace/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(payload) })
+      : await api("/api/workspace/tasks", { method: "POST", body: JSON.stringify(payload) });
+    setSaving(false);
+    if (ok) onSaved();
+    else onError(workspaceError((data as unknown as { error?: string }).error));
+  }
+
+  async function addItem() {
+    if (!taskId || !newItem.trim()) return;
+    const { ok, data } = await api<{ checklist: ChecklistItem[] }>(
+      `/api/workspace/tasks/${taskId}/checklist`,
+      { method: "POST", body: JSON.stringify({ title: newItem }) },
+    );
+    if (ok) {
+      setChecklist(data.checklist);
+      setNewItem("");
+    } else onError(workspaceError((data as unknown as { error?: string }).error));
+  }
+
+  async function toggleItem(item: ChecklistItem) {
+    if (!taskId) return;
+    const { ok, data } = await api<{ checklist: ChecklistItem[] }>(
+      `/api/workspace/tasks/${taskId}/checklist`,
+      { method: "PATCH", body: JSON.stringify({ itemId: item.id, done: !item.done }) },
+    );
+    if (ok) setChecklist(data.checklist);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/30 p-4 backdrop-blur-sm">
+      <div className={`${overlayPanelClass} w-full max-w-2xl`}>
+        <div className="flex items-center justify-between border-b border-border/80 p-4">
+          <h2 className="text-base font-semibold">{taskId ? "ویرایش وظیفه" : "وظیفهٔ جدید"}</h2>
+          <SecondaryButton onClick={onClose}>
+            <XIcon className="size-4" aria-hidden />
+            <span className="sr-only">بستن</span>
+          </SecondaryButton>
+        </div>
+        <div className="grid gap-3 p-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Field label="عنوان">
+              <input
+                className={inputClass}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                autoFocus
+              />
+            </Field>
+          </div>
+          <PickerField
+            label="پروژه"
+            value={project}
+            onChange={setProject}
+            options={lookups.projects.map((p) => ({ id: p.id, label: p.name }))}
+          />
+          <PickerField
+            label="مسئول"
+            value={assignee}
+            onChange={setAssignee}
+            options={lookups.members.map((m) => ({ id: m.id, label: m.fullName }))}
+          />
+          <SelectField
+            label="وضعیت"
+            value={status}
+            onChange={setStatus}
+            options={TASK_STATUSES}
+            labels={TASK_STATUS_LABELS}
+          />
+          <SelectField
+            label="اولویت"
+            value={priority}
+            onChange={setPriority}
+            options={PRIORITIES}
+            labels={PRIORITY_LABELS}
+          />
+          <DateField label="مهلت" value={dueDate} onChange={setDueDate} />
+          <div className="sm:col-span-2">
+            <Field label="توضیح">
+              <textarea
+                className={`${inputClass} min-h-20`}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {taskId ? (
+            <div className="sm:col-span-2">
+              <h3 className="mb-2 text-sm font-medium">چک‌لیست</h3>
+              <ul className="mb-2 flex flex-col gap-1">
+                {checklist.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={item.done}
+                      onChange={() => toggleItem(item)}
+                      id={`check-${item.id}`}
+                      className="size-4 rounded border-border accent-amber-600 dark:accent-amber-400"
+                    />
+                    <label
+                      htmlFor={`check-${item.id}`}
+                      className={item.done ? "text-muted-foreground line-through" : ""}
+                    >
+                      {item.title}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-2">
+                <input
+                  className={inputClass}
+                  value={newItem}
+                  onChange={(e) => setNewItem(e.target.value)}
+                  placeholder="مورد تازه…"
+                  aria-label="مورد تازهٔ چک‌لیست"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addItem();
+                    }
+                  }}
+                />
+                <SecondaryButton onClick={addItem} disabled={!newItem.trim()}>
+                  افزودن
+                </SecondaryButton>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border/80 p-4">
+          <SecondaryButton onClick={onClose}>بستن</SecondaryButton>
+          {canManage ? (
+            <PrimaryButton
+              type="button"
+              onClick={submit}
+              disabled={!title.trim() || !project || saving}
+            >
+              {saving ? "در حال ذخیره" : "ذخیره"}
+            </PrimaryButton>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

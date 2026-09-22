@@ -48,7 +48,7 @@ import {
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
-import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
+import { ACCOUNTING_WORKSPACE_HREFS, WORKSPACE_MODULE_HOME } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
 import { appForModule, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
@@ -391,7 +391,7 @@ function SidebarNavigation({
 /**
  * The workspace rail (Phase 35 Wave 2).
  *
- * Every entry is the same flat button — «گفت‌وگوی جدید», «پروژه‌ها», and the
+ * Every entry is the same flat button — «گفت‌وگوی جدید», «میز کار من», and the
  * two apps the business works in: «حسابداری» (which owns the day-to-day
  * surfaces: فروش, عملیات, اتصال‌ها and تنظیمات live behind its classic
  * sidebar) and «رشد و بازاریابی» (وفاداری، کمپین‌ها و پورسانت). No dropdowns,
@@ -452,15 +452,19 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
+            {/* Phase G — «پروژه‌ها» is the Projects SECTION of «میز کار من»
+                now, so the rail's entry names the module and opens its
+                overview. `/projects` still resolves (middleware forwards it),
+                but nothing in the product links there any more. */}
             <SidebarMenuButton
               asChild
-              isActive={pathname.startsWith("/projects")}
-              tooltip="پروژه‌ها"
+              isActive={pathname.startsWith(WORKSPACE_MODULE_HOME)}
+              tooltip="میز کار من"
               className={APP_NAV_BUTTON_CLASS}
             >
-              <Link href="/projects">
+              <Link href={WORKSPACE_MODULE_HOME}>
                 <FolderIcon aria-hidden="true" className="size-5 shrink-0" />
-                <span className={NAV_LABEL_CLASS}>پروژه‌ها</span>
+                <span className={NAV_LABEL_CLASS}>میز کار من</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -475,7 +479,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
               برنامه‌ها
             </p>
             {/* Collapsed to icons the heading is gone, so the apps would run
-                into «پروژه‌ها» as one undifferentiated column of glyphs. A
+                into «میز کار من» as one undifferentiated column of glyphs. A
                 hairline keeps the two groups apart at 4rem wide. */}
             <div
               aria-hidden="true"
@@ -771,7 +775,7 @@ function DashboardSidebarFooter({
  * Closes the phone drawer whenever the route actually changes.
  *
  * Every menu wires an `onNavigate` for this, but the ones that forgot (the
- * workspace rail's «گفت‌وگوی جدید» and «پروژه‌ها», an app launcher, a link
+ * workspace rail's «گفت‌وگوی جدید» and «میز کار من», an app launcher, a link
  * inside a page rendered under the open drawer) left the sheet sitting over the
  * page the member had just asked for. Watching the pathname covers all of them
  * at once, and it also handles the browser's back button, which no click

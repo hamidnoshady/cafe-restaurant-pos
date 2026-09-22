@@ -23,6 +23,7 @@
  */
 
 import { partyDirectoryHref } from "./party-directory";
+import { WORKSPACE_SECTIONS, type WorkspaceSection } from "./workspace-shared";
 import { aiPanelHref, isAiPanelSectionKey } from "./ai-panel";
 import {
   accountingDirectoryViewForLegacySection,
@@ -54,6 +55,30 @@ export const WORKSPACE_TOP_HREFS = {
 
 /** The top-level workspace routes, for canonical-pathname checks. */
 const WORKSPACE_TOP_ROUTES: readonly string[] = Object.values(WORKSPACE_TOP_HREFS);
+
+/**
+ * Phase G — «میز کار من» (My Workspace).
+ *
+ * The module that used to be one page at `/projects` is a ten-section platform
+ * area now, so it gets a prefix of its own and `/projects` joins the legacy
+ * table below (`/projects/42` → `/workspace/projects/42`). It is deliberately
+ * NOT an entry in `APP_ROUTE_PREFIXES`: the four apps there are
+ * availability-gated products a business can be without, while the workspace
+ * is platform furniture like `/settings` — every business has it, and
+ * `appForPagePath` must keep returning null for it so it can never be switched
+ * off. See `docs/phases/Phase-G-My-Workspace.md`.
+ */
+export const WORKSPACE_MODULE_HOME = "/workspace";
+
+/** One workspace section's canonical URL. The home is the overview. */
+export function workspaceSectionHref(section: WorkspaceSection): string {
+  return `${WORKSPACE_MODULE_HOME}/${section}`;
+}
+
+/** One project's page, inside the workspace's projects section. */
+export function workspaceProjectHref(projectId: string): string {
+  return `${WORKSPACE_MODULE_HOME}/projects/${projectId}`;
+}
 
 /**
  * The business work areas that belong to the primary Accounting workspace.
@@ -104,7 +129,10 @@ export const PLATFORM_ROUTES = [
   // Technical connections are a platform utility, not an app section: every
   // connection surface inside an app links here rather than keeping a copy.
   "/settings/connections",
-  "/projects",
+  // Phase G — the workspace module's ten sections. Platform routes, not an
+  // app: available to every business, never availability-gated.
+  WORKSPACE_MODULE_HOME,
+  ...WORKSPACE_SECTIONS.map((section) => `${WORKSPACE_MODULE_HOME}/${section}`),
 ] as const;
 
 /** The apps with a top-level public prefix of their own. */
@@ -230,7 +258,11 @@ const LEGACY_PREFIX_MAP: readonly (readonly [string, string])[] = [
   ["/dashboard/growth", "/growth"],
   ["/dashboard/crm", "/crm"],
   ["/dashboard/website", "/websites"],
-  ["/dashboard/projects", "/projects"],
+  // Phase G — «پروژه‌ها» became the Projects SECTION of «میز کار من», so both
+  // the old top-level address and the older dashboard one land on it, suffix
+  // intact: /projects/42 → /workspace/projects/42.
+  ["/dashboard/projects", "/workspace/projects"],
+  ["/projects", "/workspace/projects"],
   ["/dashboard/settings", "/settings"],
 ];
 
@@ -378,8 +410,8 @@ export function isCanonicalAppPathname(pathname: string): boolean {
   return (
     appPrefixForPathname(pathname) !== null ||
     isPlatformSettingsPathname(pathname) ||
-    pathname === "/projects" ||
-    pathname.startsWith("/projects/") ||
+    pathname === WORKSPACE_MODULE_HOME ||
+    pathname.startsWith(`${WORKSPACE_MODULE_HOME}/`) ||
     WORKSPACE_TOP_ROUTES.some(
       (route) => pathname === route || pathname.startsWith(`${route}/`),
     )

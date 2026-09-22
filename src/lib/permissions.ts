@@ -112,6 +112,37 @@ export const PERMISSIONS = {
    */
   crmConfigure: "crm.configure",
 
+  /**
+   * My Workspace — «میز کار من» (Phase G).
+   *
+   * Split by blast radius, the same way the CRM block above is, because the
+   * four acts are four different kinds of trust. `workspace.view` is "may see
+   * the projects I am on"; `workspace.manage` is the day-to-day write across
+   * projects, tasks, documents and the calendar; the remaining two are carved
+   * out because each can commit the business to something.
+   *
+   * These gate the AREA. Which projects a member may touch, and how deeply, is
+   * the member's project role in `workspace_members` (owner/manager/editor/
+   * contributor/viewer) — the two are intersected, never substituted. That is
+   * not a second permission system: a project role can only ever narrow what
+   * the permission below already allows.
+   */
+  workspaceView: "workspace.view",
+  workspaceManage: "workspace.manage",
+  /**
+   * Create and amend execution contracts. Its own key because a contract is a
+   * financial commitment to a third party: whoever holds this can record that
+   * the business owes a contractor 500 million Rial. Logging a site visit and
+   * signing a supplier agreement are not the same act.
+   */
+  workspaceContractsManage: "workspace.contracts_manage",
+  /**
+   * Decide an approval. The approval gate exists precisely so that one person
+   * proposes and another accepts; letting everyone who can request also
+   * approve would make the whole mechanism decorative.
+   */
+  workspaceApprove: "workspace.approve",
+
   // Accounting
   ledgerView: "ledger.view",
   ledgerPost: "ledger.post",
@@ -154,6 +185,7 @@ const {
   inventoryView, inventoryAdjust, purchasesManage,
   partiesView, partiesManage,
   crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure,
+  workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
   ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
   reportsView, reportsExport,
   teamManage, settingsManage, locationsManage, backupManage,
@@ -180,6 +212,12 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // improvement. A business that wants a narrower manager revokes
     // individual capabilities per member.
     crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure,
+    // Phase G, same rule as the CRM block: before these keys existed the
+    // project pages gated on requireMember, so every manager could already
+    // open them and do everything on them. Introducing a permission must not
+    // remove access somebody already had, so the preset grants all four. A
+    // business that wants a narrower manager revokes the individual keys.
+    workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
     ledgerView, reportsView, reportsExport,
     settingsManage, backupManage,
   ],
@@ -194,6 +232,12 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     partiesView, partiesManage,
     ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
     reportsView, reportsExport,
+    // A project is a cost centre the books post against (journal_entries
+    // .project_id), so the accountant must be able to read the workspace and
+    // the contracts whose values they are accruing. Read only: recording a
+    // cost is accounting work, committing the business to a new contractor is
+    // not.
+    workspaceView,
   ],
   cashier: [
     ordersCreate, ordersDiscount, paymentsTake,
@@ -206,11 +250,17 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // crmView: the 360° file, segments and pipeline are not. No merge, no
     // consent, no export.
     crmManage,
+    // Sees the projects they are a member of and works the tasks on them —
+    // the floor-staff case the workspace is for. No contracts, no approvals.
+    workspaceView, workspaceManage,
   ],
   waiter: [
     ordersCreate,
     tablesManage, reservationsManage,
     menuView,
+    // Read-only: a waiter may be a contributor on a project (a refit, an
+    // event) and needs to see the tasks assigned to them.
+    workspaceView,
   ],
   kitchen: [
     kitchenView,

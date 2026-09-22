@@ -26,6 +26,9 @@ import {
   toolDefinitions,
   type ActionType,
 } from "./ai";
+// From the pure module, not from the executor: this file is reachable from a
+// client component, and `ai-workspace-tools` imports the database layer.
+import { WORKSPACE_TOOL_LABELS } from "./workspace-shared";
 
 export const MAX_AGENT_NAME = 80;
 export const MAX_AGENT_INSTRUCTIONS = 4000;
@@ -139,6 +142,9 @@ export const AGENT_TOOL_LABELS: Record<string, string> = {
   list_message_campaigns: "فهرست کمپین‌های پیام",
   search_business_knowledge: "جست‌وجو در دانش کسب‌وکار",
   request_input: "درخواست ورودی ساختارمند از کاربر",
+  // Phase G — «میز کار من». Spread from the module's own table so an agent
+  // builder cannot offer a workspace tool the executor does not implement.
+  ...WORKSPACE_TOOL_LABELS,
 };
 
 /** The Persian label for a tool name, or the raw name if none is registered. */

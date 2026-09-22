@@ -415,6 +415,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             config,
             mode,
             businessId: session.businessId,
+            // Phase G — «مالِ من» in the workspace tools is this member and
+            // only this member; the model never names a user id.
+            actorUserId: session.sub,
             systemPrompt,
             floorScope:
               mode === "floor" && floorLocation && (session.role === "cashier" || session.role === "waiter")

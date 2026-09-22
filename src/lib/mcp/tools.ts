@@ -132,6 +132,14 @@ export const MCP_READ_TOOL_SUMMARIES: Record<string, string> = {
   // Phase C — the messaging reads that feed the campaign-create action.
   list_message_templates: "Saved message templates by id, channel (sms/email), name and body. Get a template id here before creating a campaign.",
   list_message_campaigns: "The business's message campaigns (draft, sending, done) with id, name, channel, status and recipient / sent / delivered / failed counts.",
+  // Phase G — «میز کار من». These four answer over the workspace module, and
+  // each one needs a caller identity: `callTool` passes the connection's
+  // authorizing user, and where a connection has none the tool declines rather
+  // than widening "mine" to "everybody" (see `runReadTool`'s actorUserId).
+  get_workspace_project_status: "One project's status in full: phase progress, task counts by status, overdue tasks, team members and their roles, contracts, pending approvals, and budget against spend taken from the accounting ledger. Name the project in plain words — an ambiguous name comes back as a candidate list rather than a guess.",
+  list_workspace_tasks: "Workspace tasks filtered by project, assignee, status, priority or due date. Pass mine:true for the calling user's own tasks; that resolves from the connection's identity, never from a name in the request.",
+  list_expiring_contracts: "Project-execution contracts (contractor, supplier, consultant, subcontractor, vendor) expiring within a window of days, with counterparty, value in integer Rial, project and days remaining. Relationship contracts live on the CRM customer file and are not returned here.",
+  list_workspace_approvals: "Pending and recently decided workspace approvals with subject (project, task, document or contract), requester, approver, due date and decision. Pass mine:true for approvals waiting on the calling user.",
 };
 
 function readDescriptor(tool: OpenAiTool): McpToolDescriptor {

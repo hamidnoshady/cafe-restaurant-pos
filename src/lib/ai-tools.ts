@@ -43,6 +43,7 @@ import { listSegmentsWithCounts, previewSegment } from "./crm-segments-service";
 import { listWebsitePostsTool, listWebsiteProductsTool, websiteStatusTool } from "./website/content-service";
 import { listMessageCampaigns, listMessageTemplates } from "./message-campaigns-service";
 import { CAMPAIGN_CHANNELS, type CampaignChannel } from "./campaign-channels";
+import { isWorkspaceToolName, runWorkspaceReadTool, WORKSPACE_TOOL_NAMES } from "./ai-workspace-tools";
 import { WEBSITE_ERROR_LABELS } from "./website/adapter";
 import {
   describeSegment,
@@ -1250,7 +1251,28 @@ export async function runReadTool(
   args: Record<string, unknown>,
   businessId: string,
   floorScope?: FloorReadScope,
+  /**
+   * Phase G — the signed-in member, needed by the workspace tools and by
+   * nothing else. It is the ONLY source of "mine": `list_workspace_tasks`
+   * with `mine: true` means this user, never a user id the model wrote, which
+   * is what keeps a prompt from reading somebody else's task list. Absent
+   * (a platform turn, a scheduled job) the workspace tools decline rather
+   * than falling back to "everyone".
+   */
+  actorUserId?: string,
 ): Promise<ToolResult> {
+  // Phase G — «میز کار من». Kept out of the switch below because the four
+  // tools share one executor and one extra gate (a caller identity).
+  if (isWorkspaceToolName(name)) {
+    if (!actorUserId) {
+      return { ok: false, data: { error: "این ابزار به کاربر وارد‌شده نیاز دارد." } };
+    }
+    const result = await runWorkspaceReadTool(name, args, businessId, actorUserId);
+    return result.ok
+      ? { ok: true, data: result.data }
+      : { ok: false, data: { error: result.error ?? "خطا در خواندن میز کار" } };
+  }
+
   switch (name) {
     case "get_setup_state": {
       const state = await computeSetupState(businessId);
@@ -1607,4 +1629,6 @@ export const READ_TOOL_NAMES = new Set([
   "get_website_status",
   "list_message_templates",
   "list_message_campaigns",
+  // Phase G — «میز کار من».
+  ...WORKSPACE_TOOL_NAMES,
 ]);
