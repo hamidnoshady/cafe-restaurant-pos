@@ -10,7 +10,16 @@ on:
   pull_request:
     paths:
       - 'electron/**'
+      # The packaged desktop ships the web app, so app-source changes rebuild
+      # the installer — but test files never ship, so test-only changes don't.
+      # Order matters: later patterns override, so the three posture tests this
+      # workflow actually executes are re-included after the exclusion.
       - 'src/**'
+      - '!src/**/*.test.ts'
+      - '!src/**/*.test.tsx'
+      - 'src/lib/desktop-runtime-posture.test.ts'
+      - 'src/lib/desktop-network-interfaces.test.ts'
+      - 'src/lib/chromium-executable.test.ts'
       - 'public/**'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
@@ -36,7 +45,15 @@ on:
     branches: [main, 'arena/**']
     paths:
       - 'electron/**'
+      # Same app-ships-in-installer rule as the pull_request trigger above:
+      # rebuild on real app changes, skip test-only changes, keep the three
+      # executed posture tests as triggers.
       - 'src/**'
+      - '!src/**/*.test.ts'
+      - '!src/**/*.test.tsx'
+      - 'src/lib/desktop-runtime-posture.test.ts'
+      - 'src/lib/desktop-network-interfaces.test.ts'
+      - 'src/lib/chromium-executable.test.ts'
       - 'public/**'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
