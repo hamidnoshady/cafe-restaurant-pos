@@ -440,6 +440,13 @@ export interface CosmeticVariantSummary {
   healthPermit: string | null;
   authenticityRegistration: string | null;
   tags: string[];
+  /** Phase 42 — the products workspace's list columns, the same three every
+   * other trade-goods board returns. Without them the shared «لیست محصولات»
+   * read `isSellable` as undefined and flagged every cosmetics variant
+   * «غیر قابل فروش» while the barcode and unit columns fell back silently. */
+  barcode: string | null;
+  unit: string | null;
+  isSellable: boolean;
 }
 
 /** The cosmetics board: every family and variant at this branch, with attributes, stock, pricing and (for batch-tracked items) their batches. */
@@ -464,11 +471,14 @@ export async function listCosmeticBoard(locationId: string): Promise<CosmeticVar
     health_permit: string | null;
     authenticity_registration: string | null;
     tags: string[] | null;
+    barcode: string | null;
+    unit: string | null;
+    is_sellable: boolean;
   }>(
     `SELECT i.id, i.parent_item_id, p.name AS parent_name, i.name, i.sku, i.kind, i.tracking, i.is_active,
             s.quantity, s.unit_cost, s.unit_price,
             i.brand_id, b.name AS brand_name, i.irc_code, i.health_permit,
-            i.authenticity_registration, i.tags,
+            i.authenticity_registration, i.tags, i.barcode, i.unit, i.is_sellable,
             COALESCE(
               (SELECT json_agg(json_build_object('name', a.name, 'value', a.value) ORDER BY a.name)
                  FROM item_variant_attributes a WHERE a.item_id = i.id),
@@ -528,6 +538,9 @@ export async function listCosmeticBoard(locationId: string): Promise<CosmeticVar
       healthPermit: r.health_permit,
       authenticityRegistration: r.authenticity_registration,
       tags: r.tags ?? [],
+      barcode: r.barcode,
+      unit: r.unit,
+      isSellable: r.is_sellable,
     };
   });
 }
