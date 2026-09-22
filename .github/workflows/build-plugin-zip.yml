@@ -39,6 +39,16 @@
 #     backslashes on Windows, which WordPress's unzipper treats as part of the
 #     filename — the plugin then installs as one flat file. The zip is built
 #     explicitly with ZipArchive so the separators are correct.
+#   * **Every `run:` block must stay pure ASCII.** The runner saves each script
+#     as UTF-8 *without* a BOM, and Windows PowerShell 5.1 reads BOM-less
+#     scripts as Windows-1252. Non-ASCII bytes then become mojibake — and some
+#     land on code points the tokenizer counts as string delimiters: U+0644
+#     (Persian LAM) is bytes 0xD9 0x84 in UTF-8, and 0x84 in Windows-1252 is
+#     U+201E, the German low-9 double quote, which PowerShell accepts as a
+#     double quote — so a literal Persian string in a script kills the whole
+#     script with parse errors before a single line runs. Persian text that
+#     must reach the output is therefore built from code points via
+#     `[regex]::Unescape`, never written literally.
 name: build-plugin-zip
 
 on:
@@ -111,9 +121,14 @@ jobs:
           if ($parts.Count -ne 3) { Write-Error "expected a plain X.Y.Z version, found $current"; exit 1 }
 
           switch ($env:BUMP) {
-            "major" { $parts = @([int]$parts[0] + 1, 0, 0) }
-            "minor" { $parts = @($parts[0], [int]$parts[1] + 1, 0) }
-            default { $parts = @($parts[0], $parts[1], [int]$parts[2] + 1) }
+            # The bumped component is parenthesized on purpose. PowerShell's
+            # comma operator binds TIGHTER than +, so an unparenthesized
+            # `@($parts[0], $parts[1], [int]$parts[2] + 1)` parses as
+            # `@($parts[0], $parts[1], [int]$parts[2]) + 1` - the + 1 appends a
+            # fourth element and the "patch" bump turned 1.6.0 into 1.6.0.1.
+            "major" { $parts = @(([int]$parts[0] + 1), "0", "0") }
+            "minor" { $parts = @($parts[0], ([int]$parts[1] + 1), "0") }
+            default { $parts = @($parts[0], $parts[1], ([int]$parts[2] + 1)) }
           }
           $next = $parts -join "."
 
@@ -140,7 +155,7 @@ jobs:
           # exists, so the answer is its *output* and never its exit code.
           #
           # This is load-bearing. The previous `git rev-parse -q --verify` exits
-          # **1** for the normal, healthy case — the tag is free — and the runner
+          # **1** for the normal, healthy case - the tag is free - and the runner
           # appends this epilogue to every powershell/pwsh step:
           #
           #   if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit $LASTEXITCODE }
@@ -175,12 +190,12 @@ jobs:
           $readme = "$root/readme.txt"
           $next   = $env:NEXT
 
-          # UTF-8 with no BOM — see this workflow's header comment.
+          # UTF-8 with no BOM - see this workflow's header comment.
           $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
           # Replace-once, done with the *instance* Regex.Replace(input,
           # replacement, count) overload. The static [regex]::Replace's fourth
-          # parameter is RegexOptions, not a count — passing 1 there would mean
+          # parameter is RegexOptions, not a count - passing 1 there would mean
           # IgnoreCase and rewrite every match instead of only the first.
           function Replace-Once([string]$text, [string]$pattern, [string]$replacement) {
             return (New-Object System.Text.RegularExpressions.Regex $pattern).Replace($text, $replacement, 1)
@@ -200,7 +215,16 @@ jobs:
 
           $notes = ""
           if ($env:NOTES) { $notes = $env:NOTES.Trim() }
-          if (-not $notes) { $notes = "بهبودها و رفع اشکال." }
+          if (-not $notes) {
+            # The default note is Persian ("bug fixes and improvements") but is
+            # NEVER written as literal text: the runner saves this script UTF-8
+            # without a BOM, Windows PowerShell 5.1 reads it as Windows-1252,
+            # and the byte for the Persian LAM (U+0644) lands on 0x84 - the
+            # German low-9 double quote, U+201E, which terminates the string and kills the whole
+            # script with parse errors. Code points keep this script pure
+            # ASCII; the string they render to is byte-for-byte identical.
+            $notes = [regex]::Unescape("\u0628\u0647\u0628\u0648\u062f\u0647\u0627 \u0648 \u0631\u0641\u0639 \u0627\u0634\u06a9\u0627\u0644.")
+          }
           $bullets = ($notes -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { "* $($_.Trim())" }) -join "`n"
           $entry = "= $next =`n$bullets`n"
 
@@ -321,16 +345,20 @@ jobs:
           if (Test-Path -LiteralPath "update.json") {
             $manifestNote = " together with ``update.json`` - the manifest sits next to the zip"
           }
+          # Persian for "check for updates" - built from code points for the
+          # same reason as the default note above: this script must stay pure
+          # ASCII, or PowerShell 5.1 reads it as Windows-1252 mojibake.
+          $checkLabel = [regex]::Unescape("\u00ab\u0628\u0631\u0631\u0633\u06cc \u0628\u0647\u200c\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc\u00bb")
           @"
           ## Plugin v$env:NEXT built
 
           1. Download **pos-accounting-connector-v$env:NEXT** from this run's artifacts.
           2. Upload ``pos-accounting-connector.zip``$manifestNote to your update folder on your host.
-          3. Done - stores pick it up on their next update check (or immediately via «بررسی به‌روزرسانی»).
+          3. Done - stores pick it up on their next update check (or immediately via $checkLabel).
 
           The version bump was committed and tagged ``v$env:NEXT`` in this repository.
           "@ | ForEach-Object {
-            # BOM-free, like GITHUB_OUTPUT above — the summary is rendered as
+            # BOM-free, like GITHUB_OUTPUT above - the summary is rendered as
             # markdown and a BOM shows up as a stray glyph before the heading.
             [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$_`n", (New-Object System.Text.UTF8Encoding($false)))
           }
