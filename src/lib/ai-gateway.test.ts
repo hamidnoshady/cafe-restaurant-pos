@@ -725,12 +725,13 @@ describe("validation of the phase 38b fields", () => {
     expect(validateGatewayInput({ baseUrl: "http://x", revenueMarginPercent: 20 })).toEqual([]);
   });
 
-  it("the per-turn reservation ceiling must be positive when provided", () => {
+  it("allows zero while disabled but requires a positive ceiling when enabled", () => {
     expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: -1 })).toContain(
       "ai_gateway_bad_max_turn",
     );
-    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 0 })).toContain("ai_gateway_bad_max_turn");
+    expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 0 })).toEqual([]);
     expect(validateGatewayInput({ baseUrl: "http://x", maxTurnRial: 50_000 })).toEqual([]);
+    expect(validateGatewayInput({ enabled: true, baseUrl: "http://x", chatModel: "pos-chat", maxTurnRial: 0, gatewayCostingEnabled: true, usdRialRate: 1 })).toContain("ai_gateway_bad_max_turn");
   });
 });
 

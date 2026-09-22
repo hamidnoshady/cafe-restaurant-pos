@@ -863,7 +863,7 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   if (
     input.maxTurnRial !== undefined &&
     input.maxTurnRial !== null &&
-    !(Number.isFinite(input.maxTurnRial) && input.maxTurnRial > 0)
+    !(Number.isFinite(input.maxTurnRial) && input.maxTurnRial >= 0)
   ) {
     errors.push("ai_gateway_bad_max_turn");
   }
