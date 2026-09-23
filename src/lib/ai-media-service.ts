@@ -16,6 +16,7 @@
 import { chatCompletionsUrl, type AiConfig } from "./ai";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
 import { parseResponseCostHeader } from "./ai-gateway";
+import { assertPublicHttpsUrl } from "./ssrf";
 import {
   imageEditsUrl,
   MEDIA_ENHANCE_PROMPT,
@@ -207,7 +208,11 @@ export async function runMediaEnhance(input: {
   if ("b64" in parsed) {
     bytes = Buffer.from(parsed.b64, "base64");
   } else {
-    const dl = await fetch(parsed.url, { signal: AbortSignal.timeout(ENHANCE_TIMEOUT_MS) });
+    const target = await assertPublicHttpsUrl(parsed.url);
+    if (!target.ok) {
+      throw new MediaAiError("ai_reply_invalid", "آدرس تصویر ویرایش‌شده معتبر نیست.");
+    }
+    const dl = await fetch(target.url, { signal: AbortSignal.timeout(ENHANCE_TIMEOUT_MS) });
     if (!dl.ok) throw new MediaAiError("ai_provider", "دریافت تصویر ویرایش‌شده ناموفق بود.");
     bytes = Buffer.from(await dl.arrayBuffer());
   }
