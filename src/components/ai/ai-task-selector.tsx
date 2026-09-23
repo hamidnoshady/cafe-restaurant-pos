@@ -49,7 +49,7 @@ const TASK_ICONS: Record<AiTaskId, LucideIcon> = {
   custom: PenLineIcon,
 };
 
-export function TaskIcon({
+function TaskIcon({
   id,
   className,
 }: {

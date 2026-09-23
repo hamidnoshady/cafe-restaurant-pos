@@ -210,7 +210,7 @@ export function AiChatHub({
   return (
     <section className="flex h-full min-h-0 w-full flex-col lg:flex-row">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex min-h-12 items-center gap-2 border-b border-border/80 bg-card/80 backdrop-blur px-2 py-1.5 backdrop-blur sm:px-3">
+      <header className="flex min-h-12 items-center gap-2 border-b border-border/80 bg-card/80 px-2 py-1.5 backdrop-blur sm:px-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">دستیار هوشمند</p>
           {taskLabel ? (
@@ -363,10 +363,9 @@ export function AiChatHub({
         )}
       </div>
 
-      <div className="border-t border-border/80 bg-card/80 backdrop-blur px-2 py-2 backdrop-blur sm:px-4 sm:py-3">
+      <div className="border-t border-border/80 bg-card/80 px-2 py-2 backdrop-blur sm:px-4 sm:py-3">
         <div className="mx-auto max-w-3xl">
           <ChatComposer
-            variant="page"
             mode="dashboard"
             input={input}
             setInput={setInput}

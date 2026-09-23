@@ -15,7 +15,7 @@ identity — it mirrors no budget, no rate limit and no model list.**
 ## The money story of one turn
 
 ```
-tenant request (chat / estimate / vision / ocr / rag / media)
+tenant request (chat / vision / ocr / rag / media)
   │
   ├─ resolveAiConfigFor(businessId, locationId, { ensureVirtualKey: true })
   │     └─ lazily mints the business key when virtual keys are on        (ai-runtime.ts)

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * One chat bubble, shared by the floating launcher and the /dashboard/ai hub
- * so the two surfaces can never drift apart again (Phase 36c redesign).
+ * One chat bubble on the assistant's chat home (`/dashboard`), built from the
+ * shared `useAiChat` core so the surface and its state can never drift.
  *
  * ChatGPT-style: the assistant speaks from the start side (the right, in
  * RTL) under a name and avatar, the user answers from the end side in a
@@ -23,14 +23,6 @@ import {
   reducedMotion,
 } from "./chat-animations";
 import type { AiChatMessage } from "./use-ai-chat";
-
-export interface BubbleAttachment {
-  id: string;
-  kind: "image" | "pdf";
-  dataUrl: string;
-  name: string;
-  sizeBytes: number;
-}
 
 export function formatAttachmentSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} بایت`;
