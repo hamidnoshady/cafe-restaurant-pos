@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
-import { deleteActivity, getActivity, updateActivity } from "@/lib/crm-service";
+import { deleteActivity, updateActivity } from "@/lib/crm-service";
 import {
   ACTIVITY_ASSIGNEE_MAX,
   ACTIVITY_BODY_MAX,
@@ -18,19 +18,10 @@ import { isUuid } from "@/lib/uuid";
  * edit dialog's fields, because a follow-up whose date or owner changed is the
  * same commitment, not a new one. Only the keys present are written, so a tick
  * never silently blanks a moeed.
+ *
+ * No `GET`: the list screen holds every row it shows, and a single-activity
+ * read existed only as an unused twin of the list's own data.
  */
-export const GET = withTenantScope(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.partiesView);
-    if (error) return error;
-
-    const { id } = await params;
-    const activity = await getActivity(session.businessId, id);
-    if (!activity) return NextResponse.json({ error: "activity_not_found" }, { status: 404 });
-    return NextResponse.json({ activity });
-  },
-);
-
 interface PatchBody {
   completed?: boolean;
   kind?: string;

@@ -38,9 +38,10 @@ import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { DUPLICATE_REASON_LABELS, type DuplicateReason } from "@/lib/crm-shared";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, InfoBox } from "@/app/dashboard/ui";
 import { crmCustomerHref } from "./crm-routes";
+import { CrmCardHeading } from "./crm-card-heading";
 
 interface Side {
   id: string;
@@ -116,10 +117,7 @@ export function DuplicatesSection() {
 
       <SectionCard
         title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یکپارچه‌سازی داده‌ها</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان تکراری</h2>
-          </div>
+          <CrmCardHeading kicker="یکپارچه‌سازی داده‌ها" title="مشتریان تکراری" />
         }
         description="پرونده‌هایی که احتمالاً یک نفرند. هیچ‌کدام خودکار ادغام نمی‌شوند."
         actions={

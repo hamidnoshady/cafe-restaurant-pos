@@ -60,6 +60,7 @@ import {
   inputClass,
   InfoBox,
 } from "@/app/dashboard/ui";
+import { CrmCardHeading } from "./crm-card-heading";
 
 interface Segment {
   id: string;
@@ -206,26 +207,40 @@ function rulesForBuilder(
   return Array.isArray(rules) ? rules.map(normalizeRuleForBuilder) : [];
 }
 
+/** The body both error presentations share: the message plus its problem list. */
+function ErrorProblems({
+  message,
+  problems,
+}: {
+  message: string;
+  problems: string[];
+}) {
+  return (
+    <>
+      <p>{message}</p>
+      {problems.length > 0 ? (
+        <ul className="mt-1 list-disc space-y-1 pe-5 text-xs leading-6">
+          {problems.map((problem, index) => (
+            <li key={`${problem}-${index}`}>{problem}</li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
+
+/** A save/validation error, at the top of the dialog. */
 function SegmentError({
   message,
   problems,
 }: {
   message: string;
-  problems?: string[];
+  problems: string[];
 }) {
   if (!message) return null;
   return (
     <ErrorBox>
-      <div className="space-y-2">
-        <p>{message}</p>
-        {problems && problems.length > 0 ? (
-          <ul className="list-disc space-y-1 pe-5 text-xs leading-6">
-            {problems.map((problem, index) => (
-              <li key={`${problem}-${index}`}>{problem}</li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+      <ErrorProblems message={message} problems={problems} />
     </ErrorBox>
   );
 }
@@ -288,10 +303,7 @@ export function SegmentsSection() {
 
       <SectionCard
         title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">رفتار خرید</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">بخش‌بندی مشتریان</h2>
-          </div>
+          <CrmCardHeading kicker="رفتار خرید" title="بخش‌بندی مشتریان" />
         }
         description="گروه‌های پویا بر پایهٔ رفتار خرید، برچسب، رضایت ارتباط و ماندهٔ حساب. هر بار که باز می‌شوند، دوباره محاسبه می‌شوند."
         actions={
@@ -613,15 +625,8 @@ function SegmentDialog({
                 label="در حال محاسبه برآورد بخش"
               />
             ) : previewError ? (
-              <div className="mt-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs leading-6 text-destructive">
-                <p>{previewError}</p>
-                {previewProblems.length > 0 ? (
-                  <ul className="mt-1 list-disc pe-5">
-                    {previewProblems.map((problem, index) => (
-                      <li key={`${problem}-${index}`}>{problem}</li>
-                    ))}
-                  </ul>
-                ) : null}
+              <div className="mt-2 space-y-1 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs leading-6 text-destructive">
+                <ErrorProblems message={previewError} problems={previewProblems} />
               </div>
             ) : !preview ? (
               <p className="mt-1 text-xs text-muted-foreground">

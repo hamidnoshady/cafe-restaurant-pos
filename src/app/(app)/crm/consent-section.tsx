@@ -33,6 +33,7 @@ import {
 import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import { crmCustomerHref } from "./crm-routes";
+import { CrmCardHeading } from "./crm-card-heading";
 
 interface Coverage {
   total: number;
@@ -102,10 +103,7 @@ export function ConsentSection() {
         <ErrorBox>{error || "بارگذاری سابقهٔ رضایت ناموفق بود."}</ErrorBox>
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">پوشش رضایت ارتباط</h2>
-            </div>
+            <CrmCardHeading kicker="حریم و رضایت" title="پوشش رضایت ارتباط" />
           }
         >
           <EmptyState>بارگذاری اطلاعات رضایت ناموفق بود.</EmptyState>
@@ -129,10 +127,7 @@ export function ConsentSection() {
 
       <SectionCard
         title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">پوشش رضایت ارتباط</h2>
-          </div>
+          <CrmCardHeading kicker="حریم و رضایت" title="پوشش رضایت ارتباط" />
         }
         description="چه سهمی از مشتریان اجازه داده‌اند، و چه سهمی واقعاً قابل ارسال‌اند."
       >
@@ -162,10 +157,7 @@ export function ConsentSection() {
 
       <SectionCard
         title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ممیزی رضایت</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">سابقهٔ تغییرات رضایت</h2>
-          </div>
+          <CrmCardHeading kicker="ممیزی رضایت" title="سابقهٔ تغییرات رضایت" />
         }
         description="فقط افزودنی است؛ هیچ ردیفی ویرایش یا حذف نمی‌شود."
         actions={

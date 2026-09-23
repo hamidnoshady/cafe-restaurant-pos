@@ -36,6 +36,7 @@ import type { CrmOverview } from "@/lib/crm-overview";
 import { EmptyState, KpiCard, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import { crmCustomerHref, type CrmSectionKey } from "./crm-routes";
+import { CrmCardHeading } from "./crm-card-heading";
 
 /** A labelled proportion bar — lifecycle mix and consent coverage both read better as a shape. */
 function ShareBar({ parts }: { parts: { key: string; label: string; count: number; tone: string }[] }) {
@@ -149,10 +150,7 @@ export function CrmOverviewSection({
       {firstRun ? (
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شروع سریع</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">شروع کار با پروندهٔ مشتریان</h2>
-            </div>
+            <CrmCardHeading kicker="شروع سریع" title="شروع کار با پروندهٔ مشتریان" />
           }
           description="هنوز مشتری‌ای ثبت نشده است. سه قدم اول برنامهٔ ارتباط با مشتری:"
         >
@@ -221,10 +219,7 @@ export function CrmOverviewSection({
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تحلیل رفتار (RFM)</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">چرخهٔ عمر مشتریان</h2>
-            </div>
+            <CrmCardHeading kicker="تحلیل رفتار (RFM)" title="چرخهٔ عمر مشتریان" />
           }
           description="بر پایهٔ تازگی، تکرار و مبلغ خرید (RFM)"
           actions={
@@ -278,10 +273,7 @@ export function CrmOverviewSection({
 
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">معامله و فروش</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">قیف فروش</h2>
-            </div>
+            <CrmCardHeading kicker="معامله و فروش" title="قیف فروش" />
           }
           description="معامله‌های باز و ارزش وزنی آن‌ها"
           actions={
@@ -329,10 +321,7 @@ export function CrmOverviewSection({
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملکرد فروش</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">بهترین مشتریان</h2>
-            </div>
+            <CrmCardHeading kicker="عملکرد فروش" title="بهترین مشتریان" />
           }
           description="بیشترین خرید تحقق‌یافته"
           actions={
@@ -364,10 +353,7 @@ export function CrmOverviewSection({
 
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">میز خدمت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">خدمات و رسیدگی</h2>
-            </div>
+            <CrmCardHeading kicker="میز خدمت" title="خدمات و رسیدگی" />
           }
           description="تیکت‌های باز و زمان رسیدگی"
           actions={
@@ -402,10 +388,7 @@ export function CrmOverviewSection({
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">رضایت ارتباط</h2>
-            </div>
+            <CrmCardHeading kicker="حریم و رضایت" title="رضایت ارتباط" />
           }
           description="چه سهمی از مشتریان واقعاً قابل پیام دادن‌اند"
           actions={
@@ -437,10 +420,7 @@ export function CrmOverviewSection({
 
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دفاتر مالی</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">پل حسابداری</h2>
-            </div>
+            <CrmCardHeading kicker="دفاتر مالی" title="پل حسابداری" />
           }
           description="اعدادی که این برنامه با دفتر حساب‌ها مشترک دارد"
           actions={
@@ -472,10 +452,7 @@ export function CrmOverviewSection({
       {overview.duplicates > 0 ? (
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یکپارچه‌سازی</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان تکراری</h2>
-            </div>
+            <CrmCardHeading kicker="یکپارچه‌سازی" title="مشتریان تکراری" />
           }
           description="پرونده‌هایی که احتمالاً یک نفرند"
           actions={

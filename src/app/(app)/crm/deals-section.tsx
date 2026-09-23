@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
  * The sales pipeline (Phase 36) — a kanban over `crm_deals`.
@@ -49,6 +49,8 @@ import {
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
 import { crmCustomerHref, crmDealOrderHref } from "./crm-routes";
+import { CustomerSearchField } from "./customer-search";
+import { CrmCardHeading } from "./crm-card-heading";
 
 interface Deal {
   id: string;
@@ -147,10 +149,7 @@ export function DealsSection() {
 
       <SectionCard
         title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">معامله و فروش</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">قیف فروش</h2>
-          </div>
+          <CrmCardHeading kicker="معامله و فروش" title="قیف فروش" />
         }
         description="کارت‌ها را بین مرحله‌ها بکشید، یا از منوی «جابه‌جایی» روی هر کارت استفاده کنید. رسیدن به «برنده» هیچ سندی ثبت نمی‌کند."
         actions={
@@ -399,40 +398,9 @@ function DealDialog({
   const [source, setSource] = useState(deal?.source ?? "");
   const [lostReason, setLostReason] = useState(deal?.lostReason ?? "");
   const [customerId, setCustomerId] = useState<string | null>(deal?.customerId ?? null);
-  const [customerQuery, setCustomerQuery] = useState(deal?.customerName ?? "");
-  const [matches, setMatches] = useState<{ id: string; name: string }[]>([]);
-  const [matchesLoading, setMatchesLoading] = useState(false);
+  const [customerName, setCustomerName] = useState(deal?.customerName ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  // Same live-directory search the activity and ticket dialogs use — a deal
-  // attached to a customer is what makes it show on that customer's 360° file
-  // and lets the pipeline link back to them.
-  useEffect(() => {
-    if (customerQuery.trim().length < 2 || customerId) {
-      setMatches([]);
-      setMatchesLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setMatchesLoading(true);
-    const timer = setTimeout(() => {
-      void api<{ customers: { id: string; name: string }[] }>(
-        `/api/parties?q=${encodeURIComponent(customerQuery.trim())}`,
-      )
-        .then(({ ok, data }) => {
-          if (!cancelled && ok) setMatches(data.customers.slice(0, 6));
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (!cancelled) setMatchesLoading(false);
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [customerQuery, customerId]);
 
   const save = async () => {
     if (!title.trim()) {
@@ -497,53 +465,22 @@ function DealDialog({
           <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
         <Field label="مشتری (اختیاری)">
-          {customerId ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-foreground">{customerQuery}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => {
-                  setCustomerId(null);
-                  setCustomerQuery("");
-                }}
-              >
-                تغییر
-              </Button>
-            </div>
-          ) : (
-            <>
-              <input
-                className={inputClass}
-                placeholder="جستجوی نام یا شماره…"
-                value={customerQuery}
-                onChange={(e) => setCustomerQuery(e.target.value)}
-              />
-              {matchesLoading ? (
-                <LoadingSkeleton rows={1} compact className="mt-1" label="در حال جست‌وجوی مشتری" />
-              ) : matches.length > 0 ? (
-                <ul className="mt-1 flex flex-wrap gap-1.5">
-                  {matches.map((match) => (
-                    <li key={match.id}>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="xs"
-                        onClick={() => {
-                          setCustomerId(match.id);
-                          setCustomerQuery(match.name);
-                          setMatches([]);
-                        }}
-                      >
-                        {match.name}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
-          )}
+          {/* Same live-directory search the activity and ticket dialogs use — a
+              deal attached to a customer is what makes it show on that
+              customer's 360° file and lets the pipeline link back to them. */}
+          <CustomerSearchField
+            selectedId={customerId}
+            selectedName={customerName}
+            onPick={(match) => {
+              setCustomerId(match.id);
+              setCustomerName(match.name);
+            }}
+            onClear={() => {
+              setCustomerId(null);
+              setCustomerName("");
+            }}
+            emptyText="مشتری‌ای با این نام یا شماره پیدا نشد."
+          />
         </Field>
         <Field label={`مبلغ (${money.unitLabel})`} hint="انتظار فروش؛ هیچ سند حسابداری از این مبلغ ساخته نمی‌شود.">
           <PersianNumberInput

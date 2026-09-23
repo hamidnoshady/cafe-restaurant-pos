@@ -41,12 +41,10 @@ import {
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, inputClass } from "@/app/dashboard/ui";
 import { crmCustomerHref } from "./crm-routes";
+import { useCustomerSearch, type CustomerSearchMatch } from "./customer-search";
+import { CrmCardHeading } from "./crm-card-heading";
 
-interface Match {
-  id: string;
-  name: string;
-  phone: string | null;
-}
+type Match = CustomerSearchMatch;
 
 const ERROR_TEXT: Record<string, string> = {
   self_link: "نمی‌توان یک شخص را به خودش متصل کرد.",
@@ -69,9 +67,14 @@ export function CustomerRelationshipsCard({
 
   const [kind, setKind] = useState<RelationshipKind>("contact_of");
   const [query, setQuery] = useState("");
-  const [matches, setMatches] = useState<Match[] | null>(null);
   const [picked, setPicked] = useState<Match | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Debounced, and aborted when superseded — the same hook every CRM picker
+  // uses. `excludeId` is this card's «the other end of a link is never this
+  // same record» rule: filtering here keeps the "cannot link to self" error
+  // off a path the user can see coming.
+  const { matches, searched } = useCustomerSearch(query, { excludeId: customerId });
 
   const load = useCallback(async () => {
     setFailed(false);
@@ -88,32 +91,6 @@ export function CustomerRelationshipsCard({
   useEffect(() => {
     void load();
   }, [load]);
-
-  // Debounced, and aborted when superseded — the same shape the customer
-  // picker uses, so a fast typist does not race two responses into the list.
-  useEffect(() => {
-    if (query.trim().length < 2) {
-      setMatches(null);
-      return;
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      void api<{ customers: Match[] }>(
-        `/api/parties?roles=Customer&q=${encodeURIComponent(query.trim())}`,
-        { signal: controller.signal },
-      ).then(({ ok, data, aborted }) => {
-        if (aborted) return;
-        // The other end of a link is never this same record; filtering here
-        // keeps the "cannot link to self" error off a path the user can see
-        // coming.
-        setMatches(ok ? (data.customers ?? []).filter((m) => m.id !== customerId) : []);
-      });
-    }, 250);
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [query, customerId]);
 
   async function submit() {
     if (!picked || saving) return;
@@ -134,7 +111,6 @@ export function CustomerRelationshipsCard({
     setAdding(false);
     setPicked(null);
     setQuery("");
-    setMatches(null);
     await load();
   }
 
@@ -149,10 +125,7 @@ export function CustomerRelationshipsCard({
   return (
     <SectionCard
       title={
-        <div>
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شبکهٔ ارتباط</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">ارتباط‌ها</h2>
-        </div>
+        <CrmCardHeading kicker="شبکهٔ ارتباط" title="ارتباط‌ها" />
       }
       description="این شخص با چه کسان دیگری در ارتباط است."
       actions={
@@ -191,7 +164,7 @@ export function CustomerRelationshipsCard({
             />
           </div>
 
-          {!picked && matches && matches.length > 0 ? (
+          {!picked && matches.length > 0 ? (
             <ul className="max-h-40 divide-y divide-border/80 overflow-y-auto text-sm">
               {matches.map((match) => (
                 <li key={match.id}>
@@ -211,7 +184,7 @@ export function CustomerRelationshipsCard({
               ))}
             </ul>
           ) : null}
-          {!picked && matches && matches.length === 0 ? (
+          {!picked && searched && matches.length === 0 ? (
             <p className="text-xs text-muted-foreground">شخصی با این نام پیدا نشد.</p>
           ) : null}
 
