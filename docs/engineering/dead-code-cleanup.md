@@ -6,7 +6,7 @@ the confirmed removals implemented and guarded.
 | | |
 | --- | --- |
 | Starting commit | `7429b38b842b8ee1d53cd9dc8137e16c323c5be4` (`main`) |
-| Ending commit | `eb0c6d3dae30ecc4746583d3bddd2d9ecbd1cb0b` |
+| Ending commit | `0fe980a` (report commit; code complete at `eb0c6d3`) |
 | Branch | `arena/01a0cd88-cafe-restaurant-pos` |
 | Net change | 21 files changed, **350 insertions, 1053 deletions** (−703 lines) |
 
