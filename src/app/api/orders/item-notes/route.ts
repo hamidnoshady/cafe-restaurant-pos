@@ -27,8 +27,8 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     `SELECT btrim(oi.note) AS note,
             max(oi.created_at) AS last_used
        FROM order_items oi
-       JOIN orders o ON o.id = oi.order_id
-      WHERE o.business_id = $1
+       JOIN locations l ON l.id = oi.location_id
+      WHERE l.business_id = $1
         AND oi.menu_item_id = $2::uuid
         AND oi.note IS NOT NULL
         AND btrim(oi.note) <> ''
