@@ -27,7 +27,11 @@ import {
 import type { CoworkerTemplate } from "@/lib/ai-coworker-templates";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 import { Field, inputClass } from "../ui";
-import { formatDateTime, type CoworkerCatalogue, type CoworkerJobView } from "./coworker-types";
+import {
+  formatDateTime,
+  type CoworkerCatalogue,
+  type CoworkerJobView,
+} from "./coworker-types";
 
 const WEEKDAYS = [
   { value: "", label: "هر روز" },
@@ -57,15 +61,25 @@ interface TopUpLine {
 }
 
 function triggerSummary(job: CoworkerJobView): string {
-  if (job.triggerKind === "event" && job.eventKind) return COWORKER_EVENT_LABELS[job.eventKind];
+  if (job.triggerKind === "event" && job.eventKind)
+    return COWORKER_EVENT_LABELS[job.eventKind];
   if (job.triggerKind === "schedule" && job.scheduleHour !== null) {
-    const day = WEEKDAYS.find((entry) => entry.value === String(job.scheduleWeekday ?? ""))?.label ?? "هر روز";
+    const day =
+      WEEKDAYS.find(
+        (entry) => entry.value === String(job.scheduleWeekday ?? ""),
+      )?.label ?? "هر روز";
     return `${day}، ساعت ${job.scheduleHour}`;
   }
   return "فقط با درخواست شما";
 }
 
-export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean; onChange?: () => void }) {
+export function CoworkerJobs({
+  canAutoApply,
+  onChange,
+}: {
+  canAutoApply: boolean;
+  onChange?: () => void;
+}) {
   const locked = useFeatureLocked();
   const [catalogue, setCatalogue] = useState<CoworkerCatalogue | null>(null);
   const [jobs, setJobs] = useState<CoworkerJobView[]>([]);
@@ -73,7 +87,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
   const [busyId, setBusyId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [draftTemplate, setDraftTemplate] = useState<CoworkerTemplate | null>(null);
+  const [draftTemplate, setDraftTemplate] = useState<CoworkerTemplate | null>(
+    null,
+  );
   const [title, setTitle] = useState("");
   const [locationId, setLocationId] = useState("");
   const [triggerKind, setTriggerKind] = useState<CoworkerTriggerKind>("event");
@@ -96,13 +112,22 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
         fetch("/api/ai/coworker/templates"),
         fetch("/api/ai/coworker/jobs"),
       ]);
-      const catalogueBody = (await catalogueResponse.json().catch(() => ({}))) as Partial<CoworkerCatalogue>;
-      const jobsBody = (await jobsResponse.json().catch(() => ({}))) as { jobs?: CoworkerJobView[] };
-      if (!catalogueResponse.ok || !jobsResponse.ok) throw new Error("خواندن کارهای همکار هوشمند ممکن نشد.");
+      const catalogueBody = (await catalogueResponse
+        .json()
+        .catch(() => ({}))) as Partial<CoworkerCatalogue>;
+      const jobsBody = (await jobsResponse.json().catch(() => ({}))) as {
+        jobs?: CoworkerJobView[];
+      };
+      if (!catalogueResponse.ok || !jobsResponse.ok)
+        throw new Error("خواندن کارهای همکار هوشمند ممکن نشد.");
       setCatalogue(catalogueBody as CoworkerCatalogue);
       setJobs(jobsBody.jobs ?? []);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "خواندن کارهای همکار هوشمند ممکن نشد.");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "خواندن کارهای همکار هوشمند ممکن نشد.",
+      );
     } finally {
       setLoading(false);
     }
@@ -127,10 +152,21 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
     setApprovalMode("ask");
     setNote("");
     setMinSeverity("medium");
-    setMessageChannel("sms"); setMessageTemplateId(""); setMessageProjectId("");
-    setWasteLines([{ inventoryItemId: "", mode: "remaining", quantity: "", reason: "spoilage" }]);
+    setMessageChannel("sms");
+    setMessageTemplateId("");
+    setMessageProjectId("");
+    setWasteLines([
+      {
+        inventoryItemId: "",
+        mode: "remaining",
+        quantity: "",
+        reason: "spoilage",
+      },
+    ]);
     setFormulaLines([{ formulaId: "", batches: "1" }]);
-    setTopUpLines([{ inventoryItemId: "", purchaseQty: "", totalCostRial: "" }]);
+    setTopUpLines([
+      { inventoryItemId: "", purchaseQty: "", totalCostRial: "" },
+    ]);
   }
 
   function buildParams(): Record<string, unknown> {
@@ -153,7 +189,10 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
           note: note || undefined,
           runs: formulaLines
             .filter((line) => line.formulaId)
-            .map((line) => ({ formulaId: line.formulaId, batches: line.batches })),
+            .map((line) => ({
+              formulaId: line.formulaId,
+              batches: line.batches,
+            })),
         };
       case "shift_open_stock_topup":
         return {
@@ -171,7 +210,11 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
       case "accounting_review":
         return { minSeverity };
       case "customer_event_message":
-        return { channel: messageChannel, templateId: messageTemplateId, ...(messageProjectId ? { projectId: messageProjectId } : {}) };
+        return {
+          channel: messageChannel,
+          templateId: messageTemplateId,
+          ...(messageProjectId ? { projectId: messageProjectId } : {}),
+        };
     }
   }
 
@@ -188,21 +231,33 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
           locationId: locationId || null,
           triggerKind,
           eventKind: triggerKind === "event" ? eventKind : null,
-          scheduleHour: triggerKind === "schedule" ? Number(scheduleHour) : null,
-          scheduleWeekday: triggerKind === "schedule" && scheduleWeekday ? Number(scheduleWeekday) : null,
+          scheduleHour:
+            triggerKind === "schedule" ? Number(scheduleHour) : null,
+          scheduleWeekday:
+            triggerKind === "schedule" && scheduleWeekday
+              ? Number(scheduleWeekday)
+              : null,
           params: buildParams(),
           approvalMode,
           enabled: true,
         }),
       });
-      const body = (await response.json().catch(() => ({}))) as { messages?: string[]; error?: string };
-      if (!response.ok) throw new Error(body.messages?.[0] ?? body.error ?? "ثبت این کار ممکن نشد.");
+      const body = (await response.json().catch(() => ({}))) as {
+        messages?: string[];
+        error?: string;
+      };
+      if (!response.ok)
+        throw new Error(
+          body.messages?.[0] ?? body.error ?? "ثبت این کار ممکن نشد.",
+        );
       toast.success("کار جدید به همکار هوشمند سپرده شد.");
       setDraftTemplate(null);
       await load();
       onChange?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "ثبت این کار ممکن نشد.");
+      toast.error(
+        error instanceof Error ? error.message : "ثبت این کار ممکن نشد.",
+      );
     } finally {
       setSaving(false);
     }
@@ -219,7 +274,11 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
       if (!response.ok) throw new Error("تغییر وضعیت این کار ممکن نشد.");
       await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "تغییر وضعیت این کار ممکن نشد.");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "تغییر وضعیت این کار ممکن نشد.",
+      );
     } finally {
       setBusyId(null);
     }
@@ -228,12 +287,16 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
   async function remove(job: CoworkerJobView) {
     setBusyId(job.id);
     try {
-      const response = await fetch(`/api/ai/coworker/jobs/${job.id}`, { method: "DELETE" });
+      const response = await fetch(`/api/ai/coworker/jobs/${job.id}`, {
+        method: "DELETE",
+      });
       if (!response.ok) throw new Error("حذف این کار ممکن نشد.");
       toast.success("کار حذف شد.");
       await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "حذف این کار ممکن نشد.");
+      toast.error(
+        error instanceof Error ? error.message : "حذف این کار ممکن نشد.",
+      );
     } finally {
       setBusyId(null);
     }
@@ -242,13 +305,17 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
   async function runNow(job: CoworkerJobView) {
     setBusyId(job.id);
     try {
-      const response = await fetch(`/api/ai/coworker/jobs/${job.id}/run`, { method: "POST" });
+      const response = await fetch(`/api/ai/coworker/jobs/${job.id}/run`, {
+        method: "POST",
+      });
       if (!response.ok) throw new Error("اجرای این کار ممکن نشد.");
       toast.success("اجرا شد — نتیجه را در «در انتظار تأیید» ببینید.");
       await load();
       onChange?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "اجرای این کار ممکن نشد.");
+      toast.error(
+        error instanceof Error ? error.message : "اجرای این کار ممکن نشد.",
+      );
     } finally {
       setBusyId(null);
     }
@@ -261,40 +328,79 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
   return (
     <div className="space-y-4">
-      <SectionCard title="کارهای سپرده‌شده" description="کارهایی که همکار هوشمند برای شما انجام می‌دهد." flush>
+      <SectionCard
+        title="کارهای سپرده‌شده"
+        description="کارهایی که همکار هوشمند برای شما انجام می‌دهد."
+        flush
+      >
         {loading ? (
-          <div className="p-4 sm:p-5"><LoadingSkeleton rows={4} /></div>
+          <div className="p-4 sm:p-5">
+            <LoadingSkeleton rows={4} />
+          </div>
         ) : jobs.length === 0 ? (
           <div className="p-4 sm:p-5">
-            <EmptyState>هنوز کاری به همکار هوشمند نسپرده‌اید. از پایین یکی را انتخاب کنید.</EmptyState>
+            <EmptyState>
+              هنوز کاری به همکار هوشمند نسپرده‌اید. از پایین یکی را انتخاب کنید.
+            </EmptyState>
           </div>
         ) : (
           <ul className="divide-y divide-border/80">
             {jobs.map((job) => (
-              <li key={job.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-5">
+              <li
+                key={job.id}
+                className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-5"
+              >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-foreground">{job.title}</span>
+                    <span className="font-medium text-foreground">
+                      {job.title}
+                    </span>
                     <StatusBadge tone={job.enabled ? "positive" : "neutral"}>
                       {job.enabled ? "فعال" : "خاموش"}
                     </StatusBadge>
-                    <StatusBadge tone={job.approvalMode === "auto" ? "active" : "neutral"}>
+                    <StatusBadge
+                      tone={job.approvalMode === "auto" ? "active" : "neutral"}
+                    >
                       {COWORKER_APPROVAL_LABELS[job.approvalMode]}
                     </StatusBadge>
                   </div>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{triggerSummary(job)}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">آخرین اجرا: {formatDateTime(job.lastRunAt)}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {triggerSummary(job)}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    آخرین اجرا: {formatDateTime(job.lastRunAt)}
+                  </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => void runNow(job)} disabled={busyId === job.id}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void runNow(job)}
+                    disabled={busyId === job.id}
+                  >
                     <PlayIcon className="size-4" />
                     اجرای فوری
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => void toggle(job)} disabled={busyId === job.id}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void toggle(job)}
+                    disabled={busyId === job.id}
+                  >
                     {job.enabled ? "خاموش" : "روشن"}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void remove(job)} disabled={busyId === job.id}>
-                    <Trash2Icon className="size-4 text-destructive" />
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => void remove(job)}
+                    disabled={busyId === job.id}
+                    aria-label="حذف این کار"
+                    title="حذف این کار"
+                  >
+                    <Trash2Icon
+                      className="size-4 text-destructive"
+                      aria-hidden="true"
+                    />
                   </Button>
                 </div>
               </li>
@@ -319,8 +425,12 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                   : "border-border/80 hover:bg-muted"
               }`}
             >
-              <span className="block text-sm font-medium">{template.title}</span>
-              <span className="mt-1 block text-xs leading-5 text-muted-foreground">{template.description}</span>
+              <span className="block text-sm font-medium">
+                {template.title}
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                {template.description}
+              </span>
             </button>
           ))}
         </div>
@@ -328,7 +438,11 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
         {draftTemplate ? (
           <div className="mt-4 space-y-4 rounded-xl border border-border/80 p-4">
             <Field label="عنوان این کار">
-              <input className={inputClass} value={title} onChange={(event) => setTitle(event.target.value)} />
+              <input
+                className={inputClass}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+              />
             </Field>
 
             {draftTemplate.scope === "location" && branches.length > 1 ? (
@@ -352,7 +466,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
               <select
                 className={inputClass}
                 value={triggerKind}
-                onChange={(event) => setTriggerKind(event.target.value as CoworkerTriggerKind)}
+                onChange={(event) =>
+                  setTriggerKind(event.target.value as CoworkerTriggerKind)
+                }
               >
                 {draftTemplate.triggers.map((trigger) => (
                   <option key={trigger} value={trigger}>
@@ -367,13 +483,17 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                 <select
                   className={inputClass}
                   value={eventKind}
-                  onChange={(event) => setEventKind(event.target.value as CoworkerEventKind)}
+                  onChange={(event) =>
+                    setEventKind(event.target.value as CoworkerEventKind)
+                  }
                 >
-                  {Object.entries(COWORKER_EVENT_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
+                  {Object.entries(COWORKER_EVENT_LABELS).map(
+                    ([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ),
+                  )}
                 </select>
               </Field>
             ) : null}
@@ -406,7 +526,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
             {draftTemplate.key === "shift_close_waste" ? (
               <div className="space-y-2">
-                <span className="text-sm font-medium text-foreground">کالاها و دلیل ضایعات</span>
+                <span className="text-sm font-medium text-foreground">
+                  کالاها و دلیل ضایعات
+                </span>
                 {wasteLines.map((line, index) => (
                   <div key={index} className="grid gap-2 sm:grid-cols-4">
                     <select
@@ -415,7 +537,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       onChange={(event) =>
                         setWasteLines((lines) =>
                           lines.map((row, i) =>
-                            i === index ? { ...row, inventoryItemId: event.target.value } : row,
+                            i === index
+                              ? { ...row, inventoryItemId: event.target.value }
+                              : row,
                           ),
                         )
                       }
@@ -433,7 +557,14 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       onChange={(event) =>
                         setWasteLines((lines) =>
                           lines.map((row, i) =>
-                            i === index ? { ...row, mode: event.target.value as "remaining" | "fixed" } : row,
+                            i === index
+                              ? {
+                                  ...row,
+                                  mode: event.target.value as
+                                    | "remaining"
+                                    | "fixed",
+                                }
+                              : row,
                           ),
                         )
                       }
@@ -441,14 +572,19 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       <option value="remaining">هرچه مانده</option>
                       <option value="fixed">مقدار ثابت</option>
                     </select>
-                    <PersianNumberInput inputMode="decimal"
+                    <PersianNumberInput
+                      inputMode="decimal"
                       className={inputClass}
                       placeholder="مقدار"
                       disabled={line.mode !== "fixed"}
                       value={line.quantity}
                       onChange={(event) =>
                         setWasteLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, quantity: event.target.value } : row)),
+                          lines.map((row, i) =>
+                            i === index
+                              ? { ...row, quantity: event.target.value }
+                              : row,
+                          ),
                         )
                       }
                     />
@@ -457,7 +593,11 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       value={line.reason}
                       onChange={(event) =>
                         setWasteLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, reason: event.target.value } : row)),
+                          lines.map((row, i) =>
+                            i === index
+                              ? { ...row, reason: event.target.value }
+                              : row,
+                          ),
                         )
                       }
                     >
@@ -475,7 +615,12 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                   onClick={() =>
                     setWasteLines((lines) => [
                       ...lines,
-                      { inventoryItemId: "", mode: "remaining", quantity: "", reason: "spoilage" },
+                      {
+                        inventoryItemId: "",
+                        mode: "remaining",
+                        quantity: "",
+                        reason: "spoilage",
+                      },
                     ])
                   }
                 >
@@ -487,7 +632,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
             {draftTemplate.key === "shift_open_production" ? (
               <div className="space-y-2">
-                <span className="text-sm font-medium text-foreground">فرمول‌ها و تعداد بچ</span>
+                <span className="text-sm font-medium text-foreground">
+                  فرمول‌ها و تعداد بچ
+                </span>
                 {formulaLines.map((line, index) => (
                   <div key={index} className="grid gap-2 sm:grid-cols-2">
                     <select
@@ -495,7 +642,11 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       value={line.formulaId}
                       onChange={(event) =>
                         setFormulaLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, formulaId: event.target.value } : row)),
+                          lines.map((row, i) =>
+                            i === index
+                              ? { ...row, formulaId: event.target.value }
+                              : row,
+                          ),
                         )
                       }
                     >
@@ -506,13 +657,18 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                         </option>
                       ))}
                     </select>
-                    <PersianNumberInput inputMode="decimal"
+                    <PersianNumberInput
+                      inputMode="decimal"
                       className={inputClass}
                       placeholder="تعداد بچ"
                       value={line.batches}
                       onChange={(event) =>
                         setFormulaLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, batches: event.target.value } : row)),
+                          lines.map((row, i) =>
+                            i === index
+                              ? { ...row, batches: event.target.value }
+                              : row,
+                          ),
                         )
                       }
                     />
@@ -521,7 +677,12 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setFormulaLines((lines) => [...lines, { formulaId: "", batches: "1" }])}
+                  onClick={() =>
+                    setFormulaLines((lines) => [
+                      ...lines,
+                      { formulaId: "", batches: "1" },
+                    ])
+                  }
                 >
                   <PlusIcon className="size-4" />
                   فرمول دیگر
@@ -531,7 +692,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
             {draftTemplate.key === "shift_open_stock_topup" ? (
               <div className="space-y-2">
-                <span className="text-sm font-medium text-foreground">کالاها، مقدار و بهای هر بار</span>
+                <span className="text-sm font-medium text-foreground">
+                  کالاها، مقدار و بهای هر بار
+                </span>
                 {topUpLines.map((line, index) => (
                   <div key={index} className="grid gap-2 sm:grid-cols-3">
                     <select
@@ -540,7 +703,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       onChange={(event) =>
                         setTopUpLines((lines) =>
                           lines.map((row, i) =>
-                            i === index ? { ...row, inventoryItemId: event.target.value } : row,
+                            i === index
+                              ? { ...row, inventoryItemId: event.target.value }
+                              : row,
                           ),
                         )
                       }
@@ -552,13 +717,18 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                         </option>
                       ))}
                     </select>
-                    <PersianNumberInput inputMode="decimal"
+                    <PersianNumberInput
+                      inputMode="decimal"
                       className={inputClass}
                       placeholder="مقدار در واحد خرید"
                       value={line.purchaseQty}
                       onChange={(event) =>
                         setTopUpLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, purchaseQty: event.target.value } : row)),
+                          lines.map((row, i) =>
+                            i === index
+                              ? { ...row, purchaseQty: event.target.value }
+                              : row,
+                          ),
                         )
                       }
                     />
@@ -569,7 +739,11 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       value={line.totalCostRial}
                       onChange={(event) =>
                         setTopUpLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, totalCostRial: event.target.value } : row)),
+                          lines.map((row, i) =>
+                            i === index
+                              ? { ...row, totalCostRial: event.target.value }
+                              : row,
+                          ),
                         )
                       }
                     />
@@ -579,7 +753,14 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                   size="sm"
                   variant="outline"
                   onClick={() =>
-                    setTopUpLines((lines) => [...lines, { inventoryItemId: "", purchaseQty: "", totalCostRial: "" }])
+                    setTopUpLines((lines) => [
+                      ...lines,
+                      {
+                        inventoryItemId: "",
+                        purchaseQty: "",
+                        totalCostRial: "",
+                      },
+                    ])
                   }
                 >
                   <PlusIcon className="size-4" />
@@ -590,9 +771,54 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
             {draftTemplate.key === "customer_event_message" ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="کانال"><select className={inputClass} value={messageChannel} onChange={(event) => { setMessageChannel(event.target.value as "sms" | "email"); setMessageTemplateId(""); }}><option value="sms">پیامک</option><option value="email">ایمیل</option></select></Field>
-                <Field label="الگوی پیام"><select className={inputClass} value={messageTemplateId} onChange={(event) => setMessageTemplateId(event.target.value)} required><option value="">انتخاب الگو</option>{(catalogue?.options.messageTemplates ?? []).filter((template) => template.channel === messageChannel).map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select></Field>
-                <Field label="پروژه / مرکز هزینه (اختیاری)"><select className={inputClass} value={messageProjectId} onChange={(event) => setMessageProjectId(event.target.value)}><option value="">بدون پروژه</option>{(catalogue?.options.projects ?? []).map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></Field>
+                <Field label="کانال">
+                  <select
+                    className={inputClass}
+                    value={messageChannel}
+                    onChange={(event) => {
+                      setMessageChannel(event.target.value as "sms" | "email");
+                      setMessageTemplateId("");
+                    }}
+                  >
+                    <option value="sms">پیامک</option>
+                    <option value="email">ایمیل</option>
+                  </select>
+                </Field>
+                <Field label="الگوی پیام">
+                  <select
+                    className={inputClass}
+                    value={messageTemplateId}
+                    onChange={(event) =>
+                      setMessageTemplateId(event.target.value)
+                    }
+                    required
+                  >
+                    <option value="">انتخاب الگو</option>
+                    {(catalogue?.options.messageTemplates ?? [])
+                      .filter((template) => template.channel === messageChannel)
+                      .map((template) => (
+                        <option value={template.id} key={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+                <Field label="پروژه / مرکز هزینه (اختیاری)">
+                  <select
+                    className={inputClass}
+                    value={messageProjectId}
+                    onChange={(event) =>
+                      setMessageProjectId(event.target.value)
+                    }
+                  >
+                    <option value="">بدون پروژه</option>
+                    {(catalogue?.options.projects ?? []).map((project) => (
+                      <option value={project.id} key={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
               </div>
             ) : null}
 
@@ -610,9 +836,14 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
               </Field>
             ) : null}
 
-            {draftTemplate.key !== "accounting_review" && draftTemplate.key !== "customer_event_message" ? (
+            {draftTemplate.key !== "accounting_review" &&
+            draftTemplate.key !== "customer_event_message" ? (
               <Field label="یادداشت (اختیاری)">
-                <input className={inputClass} value={note} onChange={(event) => setNote(event.target.value)} />
+                <input
+                  className={inputClass}
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                />
               </Field>
             ) : null}
 
@@ -621,20 +852,27 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                 <select
                   className={inputClass}
                   value={approvalMode}
-                  onChange={(event) => setApprovalMode(event.target.value as CoworkerApprovalMode)}
+                  onChange={(event) =>
+                    setApprovalMode(event.target.value as CoworkerApprovalMode)
+                  }
                 >
                   <option value="ask">{COWORKER_APPROVAL_LABELS.ask}</option>
                   {/* Only the Owner may pre-approve an unattended write, the
                       same rule the autopilot money category follows. */}
-                  {canAutoApply ? <option value="auto">{COWORKER_APPROVAL_LABELS.auto}</option> : null}
+                  {canAutoApply ? (
+                    <option value="auto">
+                      {COWORKER_APPROVAL_LABELS.auto}
+                    </option>
+                  ) : null}
                 </select>
               </Field>
             ) : null}
 
             {approvalMode === "auto" ? (
               <p className="text-xs leading-5 text-amber-800 dark:text-amber-300">
-                حتی در این حالت، هر اقدام از سقف‌های «اجرای خودکار» شما رد می‌شود؛ هرچه از سقف بگذرد باز هم برای
-                تأیید شما کنار گذاشته می‌شود.
+                حتی در این حالت، هر اقدام از سقف‌های «اجرای خودکار» شما رد
+                می‌شود؛ هرچه از سقف بگذرد باز هم برای تأیید شما کنار گذاشته
+                می‌شود.
               </p>
             ) : null}
 
@@ -642,7 +880,11 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
               <Button onClick={() => void save()} disabled={saving}>
                 {saving ? "در حال سپردن…" : "سپردن این کار"}
               </Button>
-              <Button variant="outline" onClick={() => setDraftTemplate(null)} disabled={saving}>
+              <Button
+                variant="outline"
+                onClick={() => setDraftTemplate(null)}
+                disabled={saving}
+              >
                 انصراف
               </Button>
             </div>
