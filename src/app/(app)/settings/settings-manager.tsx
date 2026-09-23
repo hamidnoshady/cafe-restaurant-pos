@@ -12,6 +12,7 @@ import {
   CloudCogIcon,
   CreditCardIcon,
   DatabaseIcon,
+  FileTextIcon,
   MonitorCogIcon,
   PanelTopIcon,
   PercentIcon,
@@ -34,6 +35,7 @@ import { AccountsSettings } from "./accounts-settings";
 import { AuditLogSettings } from "./audit-log-settings";
 import { BusinessSettings } from "./business-settings";
 import { DeviceSettings } from "./device-settings";
+import { LogsPanel } from "./logs-panel";
 import { MenuSettings } from "./menu-settings";
 import { NotificationSettings } from "./notification-settings";
 import { OnlinePlatformsSettings } from "./online-platforms-settings";
@@ -87,6 +89,7 @@ const TAB_ICONS: Record<SettingsTabKey, LucideIcon> = {
   "audit-log": ClipboardCheckIcon,
   "security-center": ShieldCheckIcon,
   backup: CloudCogIcon,
+  logs: FileTextIcon,
   "data-transfer": DatabaseIcon,
 };
 
@@ -99,7 +102,7 @@ const SETTINGS_GROUPS: Array<{ label: string; keys: SettingsTabKey[] }> = [
   // owners scan past management and security sections to find it.
   { label: "فروش آنلاین", keys: ["online-platforms"] },
   { label: "مدیریت", keys: ["team", "menu", "printers", "devices", "notifications", "shifts"] },
-  { label: "امنیت و اتصال", keys: ["audit-log", "security-center", "backup"] },
+  { label: "امنیت و اتصال", keys: ["audit-log", "security-center", "backup", "logs"] },
   // «ورود و خروج داده» reaches every app's records, so it is its own group
   // rather than a line inside «مدیریت»: it is neither a business setting nor a
   // security one, and burying it under either is how people fail to find it.
@@ -243,6 +246,7 @@ export function SettingsManager({
         </div>
       ) : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
+      {activeTab === "logs" ? <LogsPanel /> : null}
       {activeTab === "data-transfer" ? <DataTransferSettings /> : null}
     </SectionNav>
   );

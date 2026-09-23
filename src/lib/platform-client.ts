@@ -90,6 +90,7 @@ export async function platformFetch<T = unknown>(
 ): Promise<PlatformResult<T>> {
   const { body, params, headers, signal, ...rest } = options;
   const finalUrl = withParams(url, params);
+  const method = (rest as { method?: string }).method ?? "GET";
 
   let res: Response;
   try {
@@ -106,6 +107,10 @@ export async function platformFetch<T = unknown>(
     if (err instanceof DOMException && err.name === "AbortError") {
       return { ok: false, status: 0, code: "request_cancelled", cancelled: true };
     }
+    // Section 12 follow-up: a transport failure (offline, DNS, dropped
+    // connection) never reached a server to fail meaningfully — worth the
+    // same exportable log entry a render error gets. See error-report.ts.
+    await recordNotableFailure({ method, url: finalUrl, status: 0, code: "network_error" });
     return { ok: false, status: 0, code: "network_error" };
   }
 
@@ -124,6 +129,7 @@ export async function platformFetch<T = unknown>(
         return { ok: false, status: res.status, code: "parse_error" };
       }
       // A non-OK non-JSON body (e.g. an HTML error page) — use the status.
+      await recordNotableFailure({ method, url: finalUrl, status: res.status });
       return { ok: false, status: res.status, code: codeForStatus(res.status) };
     }
   }
@@ -133,10 +139,30 @@ export async function platformFetch<T = unknown>(
   }
 
   const errBody = (parsed ?? {}) as Partial<PlatformApiErrorBody>;
+  const code = typeof errBody.error === "string" && errBody.error ? errBody.error : codeForStatus(res.status);
+  await recordNotableFailure({ method, url: finalUrl, status: res.status, code });
   return {
     ok: false,
     status: res.status,
-    code: typeof errBody.error === "string" && errBody.error ? errBody.error : codeForStatus(res.status),
+    code,
     fields: errBody.fields,
   };
+}
+
+/**
+ * Logs a server-side (5xx) or transport failure into the same exportable
+ * client-error ring buffer a render error uses — see error-report.ts's
+ * module doc for why only these, not ordinary validation rejections, are
+ * worth recording. A dynamic import keeps this module's own dependency
+ * surface (and its existing unit tests, which stub `fetch` directly with no
+ * DOM/localStorage) unchanged for every caller that never hits this path.
+ */
+async function recordNotableFailure(context: { method: string; url: string; status: number; code?: string }): Promise<void> {
+  if (context.status !== 0 && context.status < 500) return;
+  try {
+    const { recordApiFailure } = await import("./error-report");
+    recordApiFailure(context);
+  } catch {
+    // Best-effort only — logging a failure must never itself throw.
+  }
 }

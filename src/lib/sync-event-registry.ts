@@ -15,6 +15,20 @@ export interface SyncEventDefinition {
   dependencyErrors: readonly string[];
   payloadFields: readonly string[];
   legacy?: boolean;
+  /**
+   * Section 5 offline-queue-extension audit: whether the client's local
+   * Dexie queue (src/lib/offline-db.ts) is allowed to flush this event type
+   * through POST /api/sync/events. This is a narrower allowlist than "every
+   * transactional definition" on purpose — the offline queue is a
+   * deliberately small surface (see docs/phases/Phase-5-Offline-Queue-Hardware.md),
+   * and a type is only added here alongside real client wiring (a
+   * PendingActionType, a resolveQueueRecordRef case, and a UI call site),
+   * never merely because the server-side handler happens to already exist.
+   * sync-event-registry.test.ts enforces that every flagged type here has
+   * the matching client wiring, the same way it already enforces one switch
+   * case per transactional definition.
+   */
+  offlineQueueEligible?: boolean;
 }
 
 const ORDER_ROLES = ["owner", "manager", "cashier", "waiter"] as const;
@@ -46,7 +60,12 @@ export const SYNC_EVENT_REGISTRY = [
   { type: "inventory.transfer.received", schemaVersion: 1, handler: "inventory.transfer.received", roles: INVENTORY_ROLES, effectClass: "transfer", locationRule: "business_transfer", dependencyErrors: ["transfer_not_found", "invalid_transfer_status"], payloadFields: ["transferId"] },
   { type: "inventory.transfer.cancelled", schemaVersion: 1, handler: "inventory.transfer.cancelled", roles: INVENTORY_ROLES, effectClass: "transfer", locationRule: "business_transfer", dependencyErrors: ["transfer_not_found"], payloadFields: ["transferId"] },
 
-  { type: "inventory.waste.recorded", schemaVersion: 1, handler: "inventory.waste.recorded", roles: INVENTORY_ROLES, effectClass: "inventory", locationRule: "event_location", dependencyErrors: ["item_not_found"], payloadFields: ["inventoryItemId", "quantity", "reason", "note"] },
+  // offlineQueueEligible (Section 5 audit): the only non-order client queue
+  // action so far, wired through src/app/dashboard/inventory/waste-section.tsx.
+  // The waste handler was already fully transactional/idempotent (Phase 32) —
+  // this only opens the existing server behaviour to the client's offline
+  // queue, it does not add new server logic.
+  { type: "inventory.waste.recorded", schemaVersion: 1, handler: "inventory.waste.recorded", roles: INVENTORY_ROLES, effectClass: "inventory", locationRule: "event_location", dependencyErrors: ["item_not_found"], payloadFields: ["inventoryItemId", "quantity", "reason", "note"], offlineQueueEligible: true },
   { type: "inventory.stock_count.recorded", schemaVersion: 1, handler: "inventory.stock_count.recorded", roles: INVENTORY_ROLES, effectClass: "inventory", locationRule: "event_location", dependencyErrors: ["item_not_found"], payloadFields: ["note", "lines"] },
   { type: "inventory.stock_count.reversed", schemaVersion: 1, handler: "inventory.stock_count.reversed", roles: INVENTORY_ROLES, effectClass: "inventory", locationRule: "event_location", dependencyErrors: ["count_not_found"], payloadFields: ["countId", "note"] },
   { type: "retail.stock_count.recorded", schemaVersion: 1, handler: "retail.stock_count.recorded", roles: INVENTORY_ROLES, effectClass: "inventory", locationRule: "event_location", dependencyErrors: ["item_not_found"], payloadFields: ["note", "lines"] },
@@ -68,6 +87,18 @@ export function syncEventDefinition(type: unknown, schemaVersion: unknown): Sync
 
 export function isSyncEventType(type: unknown): type is SyncEventType {
   return typeof type === "string" && SYNC_EVENT_REGISTRY.some((entry) => entry.type === type);
+}
+
+/**
+ * Whether the client offline queue (POST /api/sync/events, src/lib/offline-db.ts)
+ * may flush this (type, schemaVersion) pair. True for the three legacy order
+ * actions (the queue's original scope) and for any definition explicitly
+ * opted in via `offlineQueueEligible` (Section 5 audit extension).
+ */
+export function isOfflineQueueEligible(type: unknown, schemaVersion: unknown): boolean {
+  const definition = syncEventDefinition(type, schemaVersion);
+  if (!definition) return false;
+  return Boolean(definition.legacy) || Boolean(definition.offlineQueueEligible);
 }
 
 export function publicSyncEventRegistry() {

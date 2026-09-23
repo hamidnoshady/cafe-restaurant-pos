@@ -26,7 +26,17 @@ import { PLATFORM_SETTINGS_HOME } from "./app-routes";
 export type PlatformUserMenuItem =
   | { key: string; label: string; kind: "link"; href: string }
   | { key: string; label: string; kind: "bug-report" }
-  | { key: string; label: string; kind: "logout"; returnTo: string };
+  | { key: string; label: string; kind: "logout"; returnTo: string }
+  /**
+   * Audit fix — "Switch account": signs out exactly like `logout`, but
+   * always lands on the staff door's login-type chooser (never straight back
+   * into a remembered door), and forgets this browser's remembered login
+   * type so the chooser is shown again. Distinct from `logout` because a
+   * member who wants to hand the terminal to someone signing in a *different
+   * way* (an owner stepping aside for a cashier, or vice versa) should not
+   * have to also clear their browser's storage by hand to see the chooser.
+   */
+  | { key: string; label: string; kind: "switch-account" };
 
 /** Roles that sign in with a PIN (`team.ts`'s PIN_ROLES) — they return to the staff door. */
 const PIN_ROLES = ["cashier", "waiter", "kitchen"];
@@ -51,6 +61,7 @@ export function platformUserMenuItems(role: string): PlatformUserMenuItem[] {
     { key: "connections", label: "اتصال‌های فنی", kind: "link", href: "/settings/connections" },
     { key: "support", label: "پشتیبانی", kind: "link", href: "/support" },
     { key: "bug-report", label: "گزارش مشکل", kind: "bug-report" },
+    { key: "switch-account", label: "تعویض حساب", kind: "switch-account" },
     { key: "logout", label: "خروج", kind: "logout", returnTo: logoutReturnTo(role) },
   ];
 }

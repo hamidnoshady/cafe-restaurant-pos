@@ -1,5 +1,20 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { platformFetch, withParams } from "./platform-client";
+import { exportClientErrorLog } from "./error-report";
+
+function fakeStorage(): Storage {
+  const store = new Map<string, string>();
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => void store.set(key, value),
+    removeItem: (key: string) => void store.delete(key),
+    clear: () => store.clear(),
+    key: () => null,
+    get length() {
+      return store.size;
+    },
+  } as Storage;
+}
 
 function mockFetch(impl: (url: string, init?: RequestInit) => Promise<Response> | Response) {
   vi.stubGlobal("fetch", vi.fn(impl as typeof fetch));
@@ -102,5 +117,51 @@ describe("platformFetch", () => {
     const init = spy.mock.calls[0][1] as RequestInit;
     expect(init.body).toBe(JSON.stringify({ a: 1 }));
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+  });
+
+  // Section 12 follow-up (error-report.ts): a server-side (5xx) or transport
+  // failure is logged into the same exportable client-error ring buffer a
+  // render error uses — a browser-facing `window` is stubbed here since this
+  // suite otherwise runs under vitest's node environment.
+  describe("logs notable failures for the audit's Logs export (error-report.ts)", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("records a 5xx server error", async () => {
+      const storage = fakeStorage();
+      vi.stubGlobal("window", { localStorage: storage });
+      mockFetch(() => new Response(JSON.stringify({ error: "server_error" }), { status: 500 }));
+      await platformFetch("/api/platform/x");
+      expect(exportClientErrorLog(storage)).toContain("HTTP 500");
+    });
+
+    it("records a transport (network) failure", async () => {
+      const storage = fakeStorage();
+      vi.stubGlobal("window", { localStorage: storage });
+      mockFetch(() => {
+        throw new TypeError("boom");
+      });
+      await platformFetch("/api/platform/x");
+      expect(exportClientErrorLog(storage)).toContain("(no response)");
+    });
+
+    it("does not record an ordinary 4xx rejection", async () => {
+      const storage = fakeStorage();
+      vi.stubGlobal("window", { localStorage: storage });
+      mockFetch(() => new Response(JSON.stringify({ error: "subdomain_taken" }), { status: 409 }));
+      await platformFetch("/api/platform/x", { method: "POST", body: {} });
+      expect(exportClientErrorLog(storage)).toBe("");
+    });
+
+    it("does not record a caller-driven abort", async () => {
+      const storage = fakeStorage();
+      vi.stubGlobal("window", { localStorage: storage });
+      mockFetch(() => {
+        throw new DOMException("aborted", "AbortError");
+      });
+      await platformFetch("/api/platform/x");
+      expect(exportClientErrorLog(storage)).toBe("");
+    });
   });
 });

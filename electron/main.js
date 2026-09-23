@@ -10,6 +10,9 @@ const { createCertificateManager } = require("./certificate-manager");
 const { FirewallManager } = require("./firewall-manager");
 const { GatewayManager } = require("./gateway-manager");
 const { createLogger } = require("./logger");
+const nativePrinting = require("./native-printing");
+const localStorageChecks = require("./local-storage");
+const { computePaths, migrateLegacyLayout } = require("./app-paths");
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -66,12 +69,30 @@ if (!gotSingleInstanceLock) {
   function registerIpc() {
     if (ipcRegistered) return;
     ipcRegistered = true;
-    ipcMain.handle("pick-folder", async () => {
+    ipcMain.handle("pick-folder", async (_event, payload) => {
+      const title = typeof payload?.title === "string" && payload.title ? payload.title : "پوشهٔ پشتیبان‌گیری";
       const { canceled, filePaths } = await dialog.showOpenDialog({
         properties: ["openDirectory", "createDirectory"],
-        title: "پوشهٔ پشتیبان‌گیری",
+        title,
       });
       return canceled ? null : filePaths[0];
+    });
+
+    // Local storage configuration (Section 3 of the desktop audit): let the
+    // first-run wizard check a candidate folder's free space and actually
+    // prove it is writable, BEFORE Postgres/attachments/backups are pointed
+    // at it — see local-storage.js's header for the full rationale.
+    ipcMain.handle("desktop:storage-suggest-root", async () => localStorageChecks.suggestedDefaultRoot());
+    ipcMain.handle("desktop:storage-default-layout", async (_event, payload) => {
+      const root = typeof payload?.root === "string" ? payload.root : "";
+      if (!root.trim()) return null;
+      return localStorageChecks.defaultLayout(root);
+    });
+    ipcMain.handle("desktop:storage-check-folder", async (_event, payload) => {
+      const target = typeof payload?.path === "string" ? payload.path : "";
+      const result = await localStorageChecks.evaluateFolder(target);
+      if (!result.ok) logger.warn("Local storage folder check failed", { path: target, result });
+      return result;
     });
     ipcMain.handle("desktop:gateway-status", gatewayStatus);
     ipcMain.handle("desktop:gateway-enable", async (_event, payload) => {
@@ -116,6 +137,45 @@ if (!gotSingleInstanceLock) {
       shell.showItemInFolder(logger.path);
       return logger.path;
     });
+
+    // Native printing (Section 7 of the desktop audit): the desktop app talks
+    // to Windows queues and network ESC/POS printers directly from this main
+    // process — see native-printing.js's header for why the browser/cloud
+    // product's separate loopback "print connector" is not needed here.
+    ipcMain.handle("desktop:print-list-windows-printers", async () => {
+      const result = await nativePrinting.listWindowsPrinters();
+      if (!result.ok) logger.warn("Windows printer enumeration failed", result.detail);
+      return result;
+    });
+    ipcMain.handle("desktop:print-discover-network", async () => {
+      try {
+        const printers = await nativePrinting.discoverNetworkPrinters();
+        return { ok: true, printers };
+      } catch (error) {
+        logger.warn("Network printer discovery failed", error);
+        return { ok: false, error: "print_failed", detail: error?.message };
+      }
+    });
+    ipcMain.handle("desktop:print-probe", async (_event, payload) => {
+      const target = payload?.target;
+      const result = await nativePrinting.probeTarget(target);
+      if (result.ok && result.reachable === false) logger.info("Printer probe unreachable", { target, detail: result.detail });
+      return result;
+    });
+    ipcMain.handle("desktop:print-send-raw", async (_event, payload) => {
+      const target = payload?.target;
+      const dataBase64 = typeof payload?.dataBase64 === "string" ? payload.dataBase64 : "";
+      let bytes;
+      try {
+        bytes = Buffer.from(dataBase64, "base64");
+      } catch {
+        return { ok: false, error: "invalid_printer", detail: "Print data is invalid." };
+      }
+      const result = await nativePrinting.sendRawToTarget(target, bytes);
+      if (result.ok) logger.info("Native print delivered", { target, bytes: bytes.length });
+      else logger.warn("Native print failed", { target, error: result.error, detail: result.detail });
+      return result;
+    });
   }
 
   async function runSmokeProbe(appUrl) {
@@ -150,8 +210,120 @@ if (!gotSingleInstanceLock) {
       needsBootstrap: Boolean(state.needsBootstrap),
       authenticated,
       instanceId: backend.config.instanceId,
-      pgdata: require("node:fs").existsSync(path.join(app.getPath("userData"), "pgdata", "PG_VERSION")),
+      pgdata: require("node:fs").existsSync(path.join(computePaths(app.getPath("userData")).pgDataDir, "PG_VERSION")),
     }, null, 2));
+  }
+
+  /**
+   * First-run local storage location (Section 3 of the desktop audit): ask
+   * ONCE, before Postgres/config/logs land anywhere, whether this install's
+   * data should live at the OS default `userData` path or on a drive/folder
+   * the owner picks (a bigger disk, an external drive). Every later launch
+   * reuses the answer via the marker file — see local-storage.js's header.
+   *
+   * Deliberately native dialogs rather than a second renderer window: this
+   * runs before the application server (and therefore the whole Next.js UI)
+   * exists, so there is nothing to load a web page against yet, and the
+   * three questions here (default vs. custom, browse, confirm with the
+   * space/access check result) map cleanly onto `dialog`'s built-in flows
+   * without needing an HTML asset pipeline of its own.
+   *
+   * Never runs in packaged/CI smoke mode (`DESKTOP_SMOKE_MARKER`): an
+   * unattended run must never block on a dialog nobody can answer, so it
+   * always takes the default path there, exactly like every automated boot
+   * before this feature existed.
+   */
+  async function runStorageBootstrap() {
+    if (process.env.DESKTOP_SMOKE_MARKER) return;
+    const fs = require("node:fs");
+    try {
+      const defaultUserDataDir = app.getPath("userData");
+      // Checks BOTH the pre-Section-8 flat path and the post-migration
+      // Configuration/ path: `migrateLegacyLayout()` (below, after this
+      // function returns) moves config.json out of the flat location on
+      // its first run, so an existing default-path install's SECOND launch
+      // must still be recognised as "already has data here" — otherwise it
+      // would incorrectly look like a fresh install and re-prompt for a
+      // storage location every launch after the very first migration.
+      const hasExistingConfigAtDefault =
+        fs.existsSync(path.join(defaultUserDataDir, "config.json")) ||
+        fs.existsSync(computePaths(defaultUserDataDir).configPath);
+      const { root: markerRoot } = await localStorageChecks.readStorageRootMarker(defaultUserDataDir);
+      const decision = localStorageChecks.decideStorageBootstrap({ hasExistingConfigAtDefault, markerRoot });
+      if (decision.action === "use_marker_root") {
+        app.setPath("userData", decision.root);
+        return;
+      }
+      if (decision.action === "use_default") return;
+      await promptForStorageLocation(defaultUserDataDir);
+    } catch (error) {
+      // A failure here must never prevent the app from starting: fall back
+      // silently to whatever Electron's own default already is. `logger` is
+      // not created yet at this point in boot, so this is a plain console
+      // write rather than the structured logger the rest of main.js uses.
+      console.error("Local storage bootstrap failed; using the default location.", error);
+    }
+  }
+
+  async function promptForStorageLocation(defaultUserDataDir) {
+    const choice = await dialog.showMessageBox({
+      type: "question",
+      title: "محل ذخیرهٔ اطلاعات",
+      message: "اطلاعات این نصب — پایگاه‌داده، تنظیمات، گزارش‌ها و نسخه‌های پشتیبان — کجا ذخیره شود؟",
+      detail: `مسیر پیش‌فرض ویندوز:\n${defaultUserDataDir}\n\nبرای استفاده از درایو یا پوشهٔ دیگری (مثلاً دیسکی بزرگ‌تر یا یک هارد خارجی)، «انتخاب پوشهٔ دیگر» را بزنید. این انتخاب فقط یک بار پرسیده می‌شود.`,
+      buttons: ["استفاده از مسیر پیش‌فرض", "انتخاب پوشهٔ دیگر"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (choice.response !== 1) return;
+
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+      title: "پوشهٔ ذخیرهٔ اطلاعات را انتخاب کنید",
+    });
+    if (canceled || !filePaths[0]) return;
+    const chosenRoot = filePaths[0];
+
+    const evaluation = await localStorageChecks.evaluateFolder(chosenRoot);
+    if (!evaluation.ok) {
+      const detailLines = [];
+      if (evaluation.access && !evaluation.access.ok) {
+        detailLines.push(`دسترسی نوشتن: ناموفق (${evaluation.access.error || "unknown"})`);
+      }
+      if (evaluation.space && !evaluation.space.ok) {
+        detailLines.push(`بررسی فضای دیسک: ناموفق (${evaluation.space.error || "unknown"})`);
+      }
+      await dialog.showMessageBox({
+        type: "warning",
+        title: "این پوشه قابل استفاده نیست",
+        message: "بررسی پوشهٔ انتخابی موفق نبود؛ مسیر پیش‌فرض استفاده می‌شود.",
+        detail: detailLines.join("\n") || "خطای نامشخص.",
+        buttons: ["باشه"],
+        noLink: true,
+      });
+      return;
+    }
+
+    const spaceNote = evaluation.space?.ok
+      ? `فضای آزاد: ${evaluation.space.freeLabel}${
+          evaluation.space.recommended ? "" : " — کمتر از مقدار پیشنهادشدهٔ ۱ گیگابایت است"
+        }`
+      : "بررسی فضای دیسک ممکن نشد؛ ادامه دادن به مسئولیت شما است.";
+    const confirm = await dialog.showMessageBox({
+      type: "info",
+      title: "تأیید پوشهٔ ذخیره‌سازی",
+      message: `اطلاعات این نصب در پوشهٔ زیر ذخیره خواهد شد:\n${chosenRoot}`,
+      detail: `دسترسی نوشتن: موفق\n${spaceNote}\n\nپس از تأیید، این مسیر همیشه استفاده می‌شود.`,
+      buttons: ["تأیید و ادامه", "انصراف (استفاده از مسیر پیش‌فرض)"],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (confirm.response !== 0) return;
+
+    app.setPath("userData", chosenRoot);
+    await localStorageChecks.writeStorageRootMarker(defaultUserDataDir, chosenRoot);
   }
 
   async function initialiseBackend() {
@@ -257,6 +429,28 @@ if (!gotSingleInstanceLock) {
   }
 
   app.whenReady().then(async () => {
+    // Runs before the logger/backend so a first-run choice of storage
+    // location also decides where logs and Postgres data end up — not just
+    // where the config marker recording the choice lives.
+    await runStorageBootstrap();
+    // Section 8 folder split: one-time, idempotent move of an existing
+    // install's flat config.json/pgdata/logs/gateway-certificates/
+    // emergency-backups into Configuration/Data/Backup/Logs. Must run
+    // AFTER the storage-location choice above (so it operates on the final
+    // `userData` root) and BEFORE the logger/backend/certificate manager
+    // below compute any path from that root, so nothing ever reads from
+    // the pre-split flat locations. A failure here must never block
+    // startup — the app keeps working from whatever layout already exists
+    // (see app-paths.js's `migrateLegacyLayout` for why a failed move
+    // leaves the source untouched rather than losing data).
+    try {
+      const migration = migrateLegacyLayout(app.getPath("userData"));
+      if (migration.migrated && migration.results?.some((entry) => entry.action === "moved")) {
+        console.log("Migrated existing install to the Configuration/Data/Backup/Logs folder layout.", migration.results);
+      }
+    } catch (error) {
+      console.error("Folder-layout migration failed; continuing with the existing layout.", error);
+    }
     logger = createLogger(app.getPath("userData"));
     logger.info("Desktop process starting", { version: app.getVersion(), packaged: app.isPackaged });
     process.on("uncaughtException", (error) => logger.error("Uncaught desktop exception", error));

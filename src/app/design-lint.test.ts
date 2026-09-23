@@ -84,6 +84,11 @@ const RULES: readonly Rule[] = [
     why: "A loading region reserves its shape with a skeleton and announces itself through the skeleton's aria-label, not a lone visible sentence. docs/design-system.md §Charts and loading.",
     pattern: /<(?:p|div|span)\b[^>]*>\s*در حال (?:بارگذاری|خواندن|جستجو|جست‌وجو|محاسبه)[^<{]*</,
   },
+  {
+    id: "gradient backgrounds",
+    why: "Desktop UI audit: pages use a solid canvas (bg-background) plus cardClass surfaces, never a decorative gradient wash. A bg-gradient-*/from-*-to-* glow reads as a marketing landing page, not the desktop application shell, and drifts between screens depending on who added it last.",
+    pattern: /\bbg-gradient-(?:to|radial|conic)-|(?<![\w-])from-[a-z]+-\d{2,3}\/?\d*\b/,
+  },
 ];
 
 function walk(root: string, prefix: string): string[] {

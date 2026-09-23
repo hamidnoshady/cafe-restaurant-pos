@@ -243,6 +243,89 @@ describe("the wizard's draft test print", () => {
   });
 });
 
+describe("the desktop app's native printing bridge (no loopback connector at all)", () => {
+  /**
+   * This suite's default (node) environment has no `window`, so every test
+   * above exercises the loopback-connector branch. These tests stub a
+   * `window.businessSuiteDesktop.printing` exactly like `electron/preload.js`
+   * exposes it, and assert the client prefers it over ever touching
+   * 127.0.0.1:9123 — see client.ts's header for why the desktop app skips
+   * the connector entirely.
+   */
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubDesktopBridge(bridge: Record<string, ReturnType<typeof vi.fn>>) {
+    vi.stubGlobal("window", { businessSuiteDesktop: { isDesktop: true, printing: bridge } });
+  }
+
+  it("reports connector health as always-ready — there is nothing to install", async () => {
+    stubDesktopBridge({});
+    const result = await connectorHealth({ force: true });
+    expect(result.ok).toBe(true);
+    expect(result.data?.service).toBe("cafe-pos-desktop-native");
+  });
+
+  it("lists Windows queues through the bridge, never fetching 127.0.0.1", async () => {
+    const { fetchMock } = mockFetch({});
+    const listWindowsPrintersMock = vi.fn().mockResolvedValue({ ok: true, printers: [{ name: "EPSON TM-T20III", isDefault: true, likelyThermal: true }] });
+    stubDesktopBridge({ listWindowsPrinters: listWindowsPrintersMock });
+    const result = await listWindowsPrinters();
+    expect(result.ok).toBe(true);
+    expect(result.data?.printers[0].name).toBe("EPSON TM-T20III");
+    expect(listWindowsPrintersMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("discovers network printers through the bridge", async () => {
+    const { fetchMock } = mockFetch({});
+    const discoverMock = vi.fn().mockResolvedValue({ ok: true, printers: [{ ip: "192.168.1.45", port: 9100, latencyMs: 5 }] });
+    stubDesktopBridge({ discoverNetworkPrinters: discoverMock });
+    const result = await discoverNetworkPrinters();
+    expect(result.ok).toBe(true);
+    expect(result.data?.printers).toHaveLength(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("probes a target through the bridge and maps an unreachable one to the canonical code", async () => {
+    const probeMock = vi.fn().mockResolvedValue({ ok: true, reachable: false });
+    stubDesktopBridge({ probe: probeMock });
+    const result = await probePrinterTarget(WINDOWS_TARGET);
+    expect(result.ok).toBe(true);
+    expect(result.data?.reachable).toBe(false);
+    expect(result.error).toBe("printer_offline");
+    expect(probeMock).toHaveBeenCalledWith(WINDOWS_TARGET);
+  });
+
+  it("renders on the server, then delivers through the bridge instead of the connector", async () => {
+    const { calls, fetchMock } = mockFetch({
+      "/api/printing/print": () => respondJson({ ok: true, target: NETWORK_TARGET, dataBase64: RENDERED_B64 }),
+    });
+    const sendRawMock = vi.fn().mockResolvedValue({ ok: true });
+    stubDesktopBridge({ sendRaw: sendRawMock });
+
+    const result = await printReceipt("printer-1", RECEIPT);
+    expect(result.ok).toBe(true);
+    expect(sendRawMock).toHaveBeenCalledWith(NETWORK_TARGET, RENDERED_B64);
+    // The only network call is the render request; the connector's loopback
+    // origin is never touched.
+    expect(calls.every((c) => !c.url.startsWith(CONNECTOR))).toBe(true);
+    void fetchMock;
+  });
+
+  it("classifies a bridge delivery failure into the canonical code", async () => {
+    mockFetch({
+      "/api/printing/print": () => respondJson({ ok: true, target: WINDOWS_TARGET, dataBase64: RENDERED_B64 }),
+    });
+    const sendRawMock = vi.fn().mockResolvedValue({ ok: false, error: "printer_not_found", detail: "OpenPrinter failed" });
+    stubDesktopBridge({ sendRaw: sendRawMock });
+    const result = await printReceipt("printer-1", RECEIPT);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("printer_not_found");
+  });
+});
+
 describe("the browser-dialog fallback", () => {
   it("a label with no configured printer never touches a backend", async () => {
     const { calls } = mockFetch({});

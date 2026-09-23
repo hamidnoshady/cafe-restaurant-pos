@@ -50,16 +50,8 @@ export default function WelcomePage() {
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10 sm:px-6">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-amber-50/80 to-transparent"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -start-24 top-24 size-64 rounded-full bg-primary/5 blur-3xl"
-      />
-      <div className="relative z-10 w-full">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10 sm:px-6">
+      <div className="w-full">
         {stage !== "choosing" ? (
           <div
             className="mx-auto mb-4 flex w-full max-w-md items-center justify-center gap-2 text-xs text-muted-foreground"

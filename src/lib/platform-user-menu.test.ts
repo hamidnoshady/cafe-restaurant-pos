@@ -11,6 +11,7 @@ describe("the sidebar's identity menu", () => {
       "connections",
       "support",
       "bug-report",
+      "switch-account",
       "logout",
     ]);
   });
@@ -56,5 +57,10 @@ describe("the sidebar's identity menu", () => {
 
     const logout = platformUserMenuItems("cashier").at(-1);
     expect(logout).toEqual({ key: "logout", label: "خروج", kind: "logout", returnTo: "/login" });
+  });
+
+  it("offers «تعویض حساب» as a distinct action from a plain logout", () => {
+    const item = platformUserMenuItems("owner").find((entry) => entry.key === "switch-account");
+    expect(item).toEqual({ key: "switch-account", label: "تعویض حساب", kind: "switch-account" });
   });
 });

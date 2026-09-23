@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { classifySyncDomainError } from "./sync-events";
 import { SyncPayloadError } from "./sync-domain-handlers";
 import {
+  isOfflineQueueEligible,
   publicSyncEventRegistry,
   SYNC_EVENT_REGISTRY,
   syncEventDefinition,
@@ -48,6 +49,31 @@ describe("authoritative sync event registry", () => {
     for (const entry of SYNC_EVENT_REGISTRY) {
       expect(entry.locationRule === "business_transfer").toBe(entry.effectClass === "transfer");
     }
+  });
+});
+
+describe("offline queue eligibility (Section 5 audit extension)", () => {
+  it("accepts the three legacy order actions the client queue originally shipped with", () => {
+    expect(isOfflineQueueEligible("order.create", 1)).toBe(true);
+    expect(isOfflineQueueEligible("order.add_items", 1)).toBe(true);
+    expect(isOfflineQueueEligible("order_item.status", 1)).toBe(true);
+  });
+
+  it("accepts inventory.waste.recorded, the one domain explicitly opted in", () => {
+    expect(isOfflineQueueEligible("inventory.waste.recorded", 1)).toBe(true);
+  });
+
+  it("rejects every other transactional definition — existing in the server-to-server registry is not enough on its own", () => {
+    for (const entry of SYNC_EVENT_REGISTRY) {
+      const legacy = "legacy" in entry && entry.legacy;
+      if (legacy || entry.type === "inventory.waste.recorded") continue;
+      expect(isOfflineQueueEligible(entry.type, entry.schemaVersion)).toBe(false);
+    }
+  });
+
+  it("rejects an unknown type/schema version", () => {
+    expect(isOfflineQueueEligible("not.a.real.type", 1)).toBe(false);
+    expect(isOfflineQueueEligible("order.create", 999)).toBe(false);
   });
 });
 

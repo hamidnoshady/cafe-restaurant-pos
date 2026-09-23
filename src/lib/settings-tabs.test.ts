@@ -36,6 +36,7 @@ describe("visibleSettingsTabs", () => {
       "printers",
       "devices",
       "notifications",
+      "logs",
     ]);
   });
 
