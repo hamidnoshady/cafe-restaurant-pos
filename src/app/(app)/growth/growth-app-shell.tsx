@@ -9,7 +9,7 @@
  * look like a page of accounting with a sub-menu of its own.
  *
  * The app now owns the sidebar itself: `src/lib/app-shells.ts` hands the slot to
- * `growth/growth-app-nav.tsx` for every route under `/dashboard/growth`, so this
+ * `growth/growth-app-nav.tsx` for every route under `/growth`, so this
  * shell is the header and the page, at the width the rest of the dashboard uses.
  * The bridge to accounting is deliberately not surfaced here either: the work
  * passes through the ledger in the backend, and the app shows only its own

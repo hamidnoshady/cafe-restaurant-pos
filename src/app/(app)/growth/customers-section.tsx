@@ -23,6 +23,7 @@ import type { GrowthCustomer } from "@/app/api/growth/customers/route";
 import { Button } from "@/components/ui/button";
 import { crmCustomerHref } from "@/app/(app)/crm/crm-routes";
 import {
+  CardTitle,
   EmptyState,
   SectionCard,
   SectionCardSkeleton,
@@ -44,14 +45,6 @@ const PAGE_SIZE = 50;
 function stageLabel(stage: string | null): string {
   if (!stage) return "—";
   return LIFECYCLE_STAGES[stage as LifecycleStage]?.label ?? stage;
-}
-
-/** A stage's badge tone, so the table reads at a glance the way the CRM's does. */
-function stageTone(
-  stage: string | null,
-): "active" | "positive" | "neutral" | "danger" {
-  if (!stage) return "neutral";
-  return LIFECYCLE_STAGES[stage as LifecycleStage]?.tone ?? "neutral";
 }
 
 /** A purchase date is a business day (`YYYY-MM-DD`), shown in Jalali like every other date. */
@@ -208,16 +201,7 @@ export function GrowthCustomersSection({
       <ErrorBox>{error}</ErrorBox>
       <InfoBox>{info}</InfoBox>
       <SectionCard
-        title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-              مشتریان وفادار
-            </p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">
-              مشتریان
-            </h2>
-          </div>
-        }
+        title={<CardTitle eyebrow="مشتریان وفادار" title="مشتریان" />}
         description="این فهرست رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ستون‌ها برای کار رشد‌اند — چرخهٔ حیات، امتیاز و خرید. افزودن و ویرایش در همین بخش انجام می‌شود و پروندهٔ کامل (یادداشت‌ها و تاریخچه) در CRM است."
         actions={
           canManage ? (

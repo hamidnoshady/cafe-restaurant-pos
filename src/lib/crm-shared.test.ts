@@ -33,8 +33,6 @@ import {
   mergeConsent,
   mergeTags,
   OPEN_DEAL_STAGES,
-  previousWindow,
-  rollingWindow,
   sortTimeline,
   TIMELINE_KINDS,
   TIMELINE_KIND_LABELS,
@@ -332,43 +330,5 @@ describe("consent vocabulary", () => {
 
   it("includes «merge» as a source, so a consent lost to a merge is explainable", () => {
     expect(CONSENT_SOURCES).toContain("merge");
-  });
-});
-
-describe("windows", () => {
-  it("builds an inclusive rolling window ending today", () => {
-    expect(rollingWindow("2026-03-10", 30)).toEqual({ from: "2026-02-09", to: "2026-03-10" });
-    expect(rollingWindow("2026-03-10", 1)).toEqual({ from: "2026-03-10", to: "2026-03-10" });
-  });
-
-  it("crosses a month and a leap day correctly", () => {
-    expect(rollingWindow("2028-03-01", 2)).toEqual({ from: "2028-02-29", to: "2028-03-01" });
-  });
-
-  it("returns the immediately preceding window of the same length", () => {
-    const current = rollingWindow("2026-03-10", 30);
-    const prior = previousWindow(current);
-    expect(prior.to).toBe("2026-02-08");
-    expect(prior).toEqual({ from: "2026-01-10", to: "2026-02-08" });
-  });
-
-  it("never overlaps the current window", () => {
-    // An overlap would let the same order count as both «این دوره» and
-    // «دورهٔ قبل», making every trend arrow lie.
-    for (const days of [1, 7, 30, 90, 365]) {
-      const current = rollingWindow("2026-03-10", days);
-      const prior = previousWindow(current);
-      expect(prior.to < current.from).toBe(true);
-    }
-  });
-
-  it("gives the prior window the same length as the current one", () => {
-    for (const days of [7, 30, 90]) {
-      const current = rollingWindow("2026-03-10", days);
-      const prior = previousWindow(current);
-      const length = (from: string, to: string) =>
-        Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
-      expect(length(prior.from, prior.to)).toBe(length(current.from, current.to));
-    }
   });
 });

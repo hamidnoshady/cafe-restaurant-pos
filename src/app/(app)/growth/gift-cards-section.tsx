@@ -13,7 +13,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
-import { SectionCard } from "@/app/dashboard/page-chrome";
+import { CardTitle, SectionCard } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessageOrRaw, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 /**
@@ -131,12 +131,7 @@ export function GiftCardsSection() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
-          title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">اعتبار هدیه</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">صدور کارت هدیه</h2>
-            </div>
-          }
+          title={<CardTitle eyebrow="اعتبار هدیه" title="صدور کارت هدیه" />}
           bodyClassName="space-y-3 p-4 sm:p-5"
         >
           <form
@@ -176,12 +171,7 @@ export function GiftCardsSection() {
         </SectionCard>
 
         <SectionCard
-          title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">استعلام و استفاده</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مصرف و مانده</h2>
-            </div>
-          }
+          title={<CardTitle eyebrow="استعلام و استفاده" title="مصرف و مانده" />}
           bodyClassName="space-y-3 p-4 sm:p-5"
         >
           <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_1fr_auto] sm:gap-2">

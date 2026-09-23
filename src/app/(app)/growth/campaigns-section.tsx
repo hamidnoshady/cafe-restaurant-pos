@@ -38,7 +38,17 @@ import { Button } from "@/components/ui/button";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
-import { classifyCampaign, rollingWindow, type CampaignState } from "@/lib/growth-shared";
+// Labels, tones and the ordered state list are the Growth app's shared
+// vocabulary — this screen used to keep private copies whose tones disagreed
+// with the dashboard's, so the same campaign changed colour between screens.
+import {
+  CAMPAIGN_STATES,
+  CAMPAIGN_STATE_LABELS,
+  CAMPAIGN_STATE_TONES,
+  campaignStateCounts,
+  classifyCampaign,
+  rollingWindow,
+} from "@/lib/growth-shared";
 import {
   CAMPAIGN_KIND_LABELS,
   CAMPAIGN_KINDS,
@@ -53,11 +63,13 @@ import {
   validateCampaignDraft,
 } from "@/lib/campaign-rules";
 import {
+  CardTitle,
   EmptyState,
   SectionCard,
   SectionCardSkeleton,
   StatusBadge,
 } from "@/app/dashboard/page-chrome";
+import { FilterChip, FilterChipRow } from "@/app/dashboard/filters";
 import { CampaignAudiencePanel } from "./campaign-audience-panel";
 import {
   api,
@@ -95,38 +107,18 @@ interface EffectivenessRow {
   totalDiscountRial: number;
 }
 
-const STATE_LABELS: Record<CampaignState, string> = {
-  live: "در حال اجرا",
-  scheduled: "زمان‌بندی‌شده",
-  ended: "پایان‌یافته",
-  paused: "متوقف",
-};
-
-function stateTone(state: CampaignState): "active" | "positive" | "neutral" | "danger" {
-  if (state === "live") return "active";
-  if (state === "scheduled") return "positive";
-  return "neutral";
-}
-
-/** The filters the list offers, in the order an owner scans them. */
-const STATE_FILTERS = ["all", "live", "scheduled", "paused", "ended"] as const;
+/**
+ * The filters the list offers: «همه» first, then the life-cycle states in
+ * `CAMPAIGN_STATES`'s own order, so this bar can never offer a different set —
+ * or a different order — from the dashboard's badge row.
+ */
+const STATE_FILTERS = ["all", ...CAMPAIGN_STATES] as const;
 type StateFilter = (typeof STATE_FILTERS)[number];
 
 const STATE_FILTER_LABELS: Record<StateFilter, string> = {
   all: "همه",
-  ...STATE_LABELS,
+  ...CAMPAIGN_STATE_LABELS,
 };
-
-/**
- * The pressed-chip recipe from the design system (amber = selection), stated
- * once here rather than per button.
- */
-const chipClass = (active: boolean) =>
-  `min-h-11 rounded-xl border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 ${
-    active
-      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-stone-700 dark:text-stone-300 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-stone-950 dark:hover:text-stone-100"
-  }`;
 
 export function CampaignsSection() {
   const money = useMoney();
@@ -198,8 +190,7 @@ export function CampaignsSection() {
 
   if (!promotions) return <SectionCardSkeleton rows={4} />;
 
-  const counts: Record<CampaignState, number> = { live: 0, scheduled: 0, ended: 0, paused: 0 };
-  for (const state of states) counts[state] += 1;
+  const counts = campaignStateCounts(states);
 
   const rows = promotions
     .map((promotion, index) => ({ promotion, state: states[index] }))
@@ -230,12 +221,7 @@ export function CampaignsSection() {
           }}
         />
         <SectionCard
-          title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">اثربخشی کمپین</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">اثربخشی کمپین‌ها</h2>
-            </div>
-          }
+          title={<CardTitle eyebrow="اثربخشی کمپین" title="اثربخشی کمپین‌ها" />}
           description="چند بار هر کمپین روی فروش اعمال شد و چقدر تخفیف داد — ۳۰ روز گذشته"
         >
           {!effect || effect.length === 0 ? (
@@ -270,14 +256,17 @@ export function CampaignsSection() {
         </SectionCard>
       </div>
 
+      {/*
+        The description reads «۳ در حال اجرا · ۱ زمان‌بندی‌شده · …», built from
+        the shared labels so the summary line cannot name a state differently
+        from the chip directly beside it — which is what four hand-typed
+        labels allowed.
+      */}
       <SectionCard
-        title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت کمپین‌ها</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">کمپین‌ها</h2>
-          </div>
-        }
-        description={`${formatPersianNumber(counts.live)} در حال اجرا · ${formatPersianNumber(counts.scheduled)} زمان‌بندی‌شده · ${formatPersianNumber(counts.paused)} متوقف · ${formatPersianNumber(counts.ended)} پایان‌یافته`}
+        title={<CardTitle eyebrow="مدیریت کمپین‌ها" title="کمپین‌ها" />}
+        description={CAMPAIGN_STATES.map(
+          (state) => `${formatPersianNumber(counts[state])} ${CAMPAIGN_STATE_LABELS[state]}`,
+        ).join(" · ")}
         actions={
           promotions.length > 0 ? (
             /*
@@ -287,24 +276,19 @@ export function CampaignsSection() {
               phone. Full width below `sm` gives them a row of their own to
               wrap inside.
             */
-            <div
-              role="group"
-              aria-label="فیلتر وضعیت کمپین"
-              className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto"
-            >
+            <FilterChipRow label="فیلتر وضعیت کمپین" className="w-full gap-1.5 sm:w-auto">
               {STATE_FILTERS.map((key) => (
-                <button
+                <FilterChip
                   key={key}
-                  type="button"
-                  aria-pressed={filter === key}
+                  selected={filter === key}
                   onClick={() => setFilter(key)}
-                  className={chipClass(filter === key)}
+                  className="text-xs"
                 >
                   {STATE_FILTER_LABELS[key]}
                   {key === "all" ? "" : ` (${formatPersianNumber(counts[key])})`}
-                </button>
+                </FilterChip>
               ))}
-            </div>
+            </FilterChipRow>
           ) : null
         }
       >
@@ -331,7 +315,9 @@ export function CampaignsSection() {
                   <div className="min-w-0 flex-1 basis-56">
                     <p className="flex flex-wrap items-center gap-2 leading-6">
                       <span className="font-medium text-foreground break-words">{p.name}</span>
-                      <StatusBadge tone={stateTone(state)}>{STATE_LABELS[state]}</StatusBadge>
+                      <StatusBadge tone={CAMPAIGN_STATE_TONES[state]}>
+                        {CAMPAIGN_STATE_LABELS[state]}
+                      </StatusBadge>
                     </p>
                     <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
                       {CAMPAIGN_KIND_LABELS[p.kind]} ·{" "}
@@ -641,15 +627,14 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
         <Field label="روزهای هفته" as="div" hint="هیچ‌کدام انتخاب نشود یعنی همهٔ روزها.">
           <div role="group" aria-label="روزهای هفته" className="flex flex-wrap gap-1.5">
             {CAMPAIGN_WEEKDAYS.map((day) => (
-              <button
+              <FilterChip
                 key={day.value}
-                type="button"
-                aria-pressed={daysOfWeek.includes(day.value)}
+                selected={daysOfWeek.includes(day.value)}
                 onClick={() => toggleDay(day.value)}
-                className={`${chipClass(daysOfWeek.includes(day.value))} min-w-11`}
+                className="min-h-11 min-w-11 px-3 text-xs"
               >
                 {day.label}
-              </button>
+              </FilterChip>
             ))}
           </div>
         </Field>

@@ -9,7 +9,7 @@ import { GrowthAppShell } from "./growth-app-shell";
  * Two layers make the app, and they are deliberately in different places:
  *
  * - the **main menu** lives in the dashboard's sidebar slot, taken over for
- *   every `/dashboard/growth` route by `src/lib/app-shells.ts` (its entries are
+ *   every `/growth` route by `src/lib/app-shells.ts` (its entries are
  *   `growth-app-nav.tsx`);
  * - the **page chrome** is this layout's shell — the app's header over the
  *   section the route renders.

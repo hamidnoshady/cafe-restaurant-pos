@@ -476,30 +476,10 @@ export function duplicateConfidence(reason: DuplicateReason): number {
 // Windows
 // ---------------------------------------------------------------------------
 
-/**
- * A rolling N-day window ending on `today`, inclusive at both ends.
- *
- * Rolling rather than calendar-month, matching `growth-shared.ts`: a number
- * means the same thing on any day it is opened, instead of being tiny on the
- * first of the month.
- */
-export function rollingWindow(today: string, days = 30): { from: string; to: string } {
-  const to = new Date(`${today}T00:00:00Z`);
-  to.setUTCDate(to.getUTCDate() - (days - 1));
-  return { from: to.toISOString().slice(0, 10), to: today };
-}
-
-/** The window immediately before `window`, of the same length — for period-over-period comparison. */
-export function previousWindow(window: { from: string; to: string }): { from: string; to: string } {
-  const from = new Date(`${window.from}T00:00:00Z`);
-  const to = new Date(`${window.to}T00:00:00Z`);
-  const lengthDays = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
-  const priorTo = new Date(from);
-  priorTo.setUTCDate(priorTo.getUTCDate() - 1);
-  const priorFrom = new Date(priorTo);
-  priorFrom.setUTCDate(priorFrom.getUTCDate() - (lengthDays - 1));
-  return { from: priorFrom.toISOString().slice(0, 10), to: priorTo.toISOString().slice(0, 10) };
-}
+// The window maths is `date-window.ts`'s — neither this app nor Growth owns
+// "the last 30 days", and the two apps used to keep identical copies of it.
+// Re-exported here so every existing CRM caller keeps its one import.
+export { previousWindow, rollingWindow } from "./date-window";
 
 // ---------------------------------------------------------------------------
 // Party relationships

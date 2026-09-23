@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { resolveActiveLocation } from "@/lib/setup-state";
-import { businessToday, getBusinessDayStatus } from "@/lib/business-day-service";
-import { growthOverview } from "@/lib/growth-overview";
+import { growthOverviewForSession } from "@/lib/growth-overview";
 
 /**
  * Growth & Marketing data as seen from accounting (Phase 36b, revised).
@@ -14,18 +12,15 @@ import { growthOverview } from "@/lib/growth-overview";
  * the rolling KPIs, reconstructed from `journal_lines` exactly the way the trial
  * balance reconstructs them, so a number here can never disagree with the
  * books. Owner, manager and accountant may read it.
+ *
+ * It answers with a subset rather than the whole overview: accounting has no
+ * business reading the repurchase list or the growth activity feed.
  */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
-  const location = await resolveActiveLocation(session);
-  const businessDay = location ? await getBusinessDayStatus(location.id) : null;
-  const overview = await growthOverview(session.businessId, {
-    locationId: location?.id ?? null,
-    today: businessDay?.businessDate ?? (await businessToday(session.businessId)),
-  });
-
+  const overview = await growthOverviewForSession(session);
   return NextResponse.json({
     window: overview.window,
     bridge: overview.bridge,

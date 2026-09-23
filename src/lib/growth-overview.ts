@@ -20,11 +20,15 @@
  */
 
 import { query } from "./db";
+import type { SessionPayload } from "./auth";
+import { businessToday, getBusinessDayStatus } from "./business-day-service";
+import { resolveActiveLocation } from "./setup-state";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { customersDueForRepurchase, getDefaultProgram, type DueForRepurchaseRow } from "./loyalty-service";
 import {
   accountBalance,
   campaignStateCounts,
+  campaignStateOrder,
   classifyCampaign,
   GROWTH_BRIDGE_CODES,
   rollingWindow,
@@ -35,9 +39,6 @@ import {
 // here so server callers have one door into the Growth app's data layer.
 export { accountBalance, campaignStateCounts, classifyCampaign, GROWTH_BRIDGE_CODES, rollingWindow };
 export type { CampaignState };
-
-/** The campaign ordering the dashboard lists in: what is running first, what is next, history last. */
-const STATE_ORDER: Record<CampaignState, number> = { live: 0, scheduled: 1, paused: 2, ended: 3 };
 
 export interface CampaignSummaryRow {
   id: string;
@@ -292,7 +293,11 @@ export async function growthOverview(
     activeFrom: row.active_from,
     activeTo: row.active_to,
   }));
-  campaignList.sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || a.name.localeCompare(b.name));
+  // Running first, then scheduled, held and finished — `CAMPAIGN_STATES`'s own
+  // order, the same one the campaigns list's filter bar offers.
+  campaignList.sort(
+    (a, b) => campaignStateOrder(a.state) - campaignStateOrder(b.state) || a.name.localeCompare(b.name),
+  );
 
   const performance: CampaignPerformanceRow[] = perfRows.rows
     .map((row) => ({
@@ -363,4 +368,27 @@ export async function growthOverview(
       sourceType: row.source_type ?? null,
     })),
   };
+}
+
+/**
+ * The overview for whoever is asking, resolving *their* branch and *their*
+ * business day first.
+ *
+ * `api/growth/overview` and `api/growth/accounting` both answer with this data
+ * and both had to get there the same way — resolve the active location, read
+ * that branch's open business day, fall back to the business's own «امروز»
+ * when there is no branch or no open day — and both wrote those four lines out
+ * by hand. Two copies of a date fallback is two chances for one endpoint to
+ * report «۳۰ روز گذشته» ending on a different day from the other, which is
+ * exactly the kind of disagreement this file exists to prevent. The two routes
+ * differ in who may call them and in how much of the answer they return; that
+ * is all they should differ in.
+ */
+export async function growthOverviewForSession(session: SessionPayload): Promise<GrowthOverview> {
+  const location = await resolveActiveLocation(session);
+  const businessDay = location ? await getBusinessDayStatus(location.id) : null;
+  return growthOverview(session.businessId, {
+    locationId: location?.id ?? null,
+    today: businessDay?.businessDate ?? (await businessToday(session.businessId)),
+  });
 }

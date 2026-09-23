@@ -40,7 +40,17 @@ import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { WELL_KNOWN_CODES } from "@/lib/coa-template";
 import type { GrowthOverview } from "@/lib/growth-overview";
+// The campaign life-cycle vocabulary (states, their Persian labels and their
+// badge tones) is `growth-shared.ts`'s, not this screen's. The private copies
+// that used to live here disagreed with the campaigns list about which tone a
+// running campaign wears, so one campaign changed colour between two screens.
 import {
+  CAMPAIGN_STATES,
+  CAMPAIGN_STATE_LABELS,
+  CAMPAIGN_STATE_TONES,
+} from "@/lib/growth-shared";
+import {
+  CardTitle,
   EmptyState,
   KpiCard,
   KpiRow,
@@ -49,23 +59,8 @@ import {
   SectionCardSkeleton,
   StatusBadge,
 } from "@/app/dashboard/page-chrome";
-import { api, ErrorBox } from "@/app/dashboard/ui";
+import { api } from "@/app/dashboard/ui";
 import type { GrowthSectionKey } from "./growth-routes";
-
-const CAMPAIGN_STATE_LABELS: Record<string, string> = {
-  live: "در حال اجرا",
-  scheduled: "زمان‌بندی‌شده",
-  ended: "پایان‌یافته",
-  paused: "متوقف",
-};
-
-/** A campaign's state, in the four tones `StatusBadge` draws. */
-const CAMPAIGN_STATE_TONES: Record<string, "active" | "positive" | "neutral" | "danger"> = {
-  live: "positive",
-  scheduled: "active",
-  paused: "danger",
-  ended: "neutral",
-};
 
 const ACTIVITY_KIND_LABELS: Record<string, string> = {
   campaign: "کمپین",
@@ -98,18 +93,6 @@ function LoadFailed({ message, onRetry }: { message: string; onRetry: () => void
           تلاش دوباره
         </Button>
       </div>
-    </div>
-  );
-}
-
-/** An eyebrow + heading card title, the shape every Growth card uses. */
-function CardTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">{eyebrow}</p>
-      <h2 className="mt-1 text-base font-semibold text-stone-950 sm:text-lg dark:text-stone-100">
-        {title}
-      </h2>
     </div>
   );
 }
@@ -368,7 +351,8 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           ) : (
             <>
               <div className="mb-3 flex flex-wrap gap-2">
-                {(["live", "scheduled", "paused", "ended"] as const).map((state) => (
+                {/* The shared ordered list, not a fifth copy of the four keys. */}
+                {CAMPAIGN_STATES.map((state) => (
                   <span key={state} className="text-xs text-muted-foreground">
                     <StatusBadge tone={CAMPAIGN_STATE_TONES[state]}>
                       {CAMPAIGN_STATE_LABELS[state]} {formatPersianNumber(overview.campaigns.counts[state])}
@@ -389,8 +373,14 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
                           : "بدون بازهٔ زمانی"}
                       </span>
                     </div>
-                    <StatusBadge tone={CAMPAIGN_STATE_TONES[row.state] ?? "neutral"}>
-                      {CAMPAIGN_STATE_LABELS[row.state] ?? row.state}
+                    {/*
+                      `row.state` is a `CampaignState`, so both lookups are
+                      total — the `?? "neutral"` / `?? row.state` fallbacks that
+                      used to sit here were unreachable, and the second one
+                      would have printed a raw English token if it ever ran.
+                    */}
+                    <StatusBadge tone={CAMPAIGN_STATE_TONES[row.state]}>
+                      {CAMPAIGN_STATE_LABELS[row.state]}
                     </StatusBadge>
                   </li>
                 ))}

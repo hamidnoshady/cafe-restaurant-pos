@@ -14,7 +14,14 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
-import { EmptyState, LoadingSkeleton, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
+import {
+  CardTitle,
+  EmptyState,
+  LoadingSkeleton,
+  SectionCard,
+  SectionCardSkeleton,
+  StatusBadge,
+} from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 interface Program {
@@ -202,12 +209,7 @@ export function LoyaltySection({ canManage = true }: { canManage?: boolean }) {
       </div>
 
       <SectionCard
-        title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">بازگشت مشتری</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتریان آمادهٔ خرید مجدد</h2>
-          </div>
-        }
+        title={<CardTitle eyebrow="بازگشت مشتری" title="مشتریان آمادهٔ خرید مجدد" />}
         description="پیش‌بینی از تاریخچهٔ خرید همان مشتری در شعبهٔ فعال؛ موعد گذشته یعنی زمان تماس یا پیام"
       >
         {due.length === 0 ? (
@@ -338,12 +340,7 @@ function ProgramsPanel({
 
   return (
     <SectionCard
-      title={
-        <div>
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">طرح‌های امتیازدهی</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">برنامهٔ وفاداری</h2>
-        </div>
-      }
+      title={<CardTitle eyebrow="طرح‌های امتیازدهی" title="برنامهٔ وفاداری" />}
       description={canManage ? "نرخ کسب، ارزش بازخرید و انقضای امتیازها را اینجا مدیریت کنید." : "تنظیم برنامه‌ها فقط برای مدیر و مالک مجاز است."}
       bodyClassName="space-y-4 p-4 sm:p-5"
     >
@@ -556,12 +553,7 @@ function CustomerPanel({
 
   return (
     <SectionCard
-      title={
-        <div>
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امور مالی مشتریان</p>
-          <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">مشتری و اعتبار</h2>
-        </div>
-      }
+      title={<CardTitle eyebrow="امور مالی مشتریان" title="مشتری و اعتبار" />}
       description="مانده‌ها از دفتر امتیاز و رویدادهای حسابداری خوانده می‌شوند، نه از یک ستون قابل ویرایش."
       bodyClassName="space-y-4 p-4 sm:p-5"
     >

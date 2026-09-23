@@ -4,7 +4,7 @@
  * The Growth app's own main sidebar (Phase 36b, revised again).
  *
  * Rendered in the dashboard's app slot for every route under
- * `/dashboard/growth` — `src/lib/app-shells.ts` is the rule that hands the slot
+ * `/growth` — `src/lib/app-shells.ts` is the rule that hands the slot
  * over. Three things change for the app here:
  *
  * - its sections are the *main* menu, at the level the business's own pages sit
