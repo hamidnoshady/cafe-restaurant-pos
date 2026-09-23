@@ -190,14 +190,41 @@ describe("the route tree resolves every promised URL", () => {
 
   it("finds the workspace's own pages at their top-level routes", () => {
     for (const pathname of [
-      "/overview",
-      "/ai",
       "/media",
       "/knowledge",
       "/knowledge/a/pos-basics",
       "/support",
     ]) {
       expectRoute(pathname);
+    }
+  });
+
+  it("keeps the two retired homes out of the route tree entirely", () => {
+    // `/overview` (the old quick-report dashboard) and `/ai` (the standalone
+    // AI application) are compatibility *redirects*, owned by the central
+    // table in `src/lib/app-routes.ts` and issued by middleware. They used to
+    // ALSO have redirect-only `page.tsx` files here — a second implementation
+    // of the same rule, and exactly the "duplicate legacy page" the canonical
+    // route rule in AGENTS.md forbids. A `page.tsx` reappearing at either
+    // address means the duplicate has crept back.
+    //
+    // `route-smoke.test.ts` holds the other half: that each address still 308s
+    // to `/dashboard` (and each `/ai/<section>` to its `?aiPanel=` panel), so
+    // deleting the pages did not delete the compatibility promise.
+    for (const pathname of [
+      "/overview",
+      "/ai",
+      "/ai/agents",
+      "/ai/coworkers",
+      "/ai/automations",
+      "/ai/activity",
+      "/ai/knowledge",
+      "/ai/usage",
+    ]) {
+      expect(
+        resolves(pathname),
+        `${pathname} must be a middleware redirect, not a page`,
+      ).toBe(false);
     }
   });
 
