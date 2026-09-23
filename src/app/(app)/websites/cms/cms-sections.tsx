@@ -40,7 +40,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { formatPersianNumber, toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import type { CmsConnectionSummary } from "@/lib/cms/connections";
-import type { CmsOrder, type CmsPost, type CmsProduct, type SiteDescriptor } from "@/lib/cms/types";
+import type { CmsOrder, CmsPost, CmsProduct, SiteDescriptor } from "@/lib/cms/types";
 import { lexicalToMarkdown } from "@/lib/website/providers/payload-content";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
