@@ -19,7 +19,7 @@ explicitly wherever it applies below, per the standing instruction not to
 claim hardware verification that never happened.
 
 **Baseline at completion:** `npx tsc --noEmit` clean · `npx eslint .` clean ·
-`npx vitest run` → **385 files / 5496 tests, all passing**. Branch
+`npx vitest run` → **385 files / 5499 tests, all passing**. Branch
 `arena/01a0c899-cafe-restaurant-pos`; see the commit-chain table in §3 for
 the full, current list of commits (each tagged with the section(s) and
 files it covers).
@@ -326,15 +326,47 @@ the one environment variable it depended on. Fixed by adding the `options`
 parameter to `desktopServerEnvironment()` and wiring both values into the
 returned environment (`PG_TOOLS_DIR`, `RESTORE_EMERGENCY_DIR`). See
 `src/lib/backend-manager-environment.test.ts`.
-**Tests:** `src/lib/app-paths.test.ts` (10 tests: fresh-install no-op,
+**Tests:** `src/lib/app-paths.test.ts` (13 tests: fresh-install no-op,
 full migration, marker prevents re-running, pre-existing-destination is
 skipped not overwritten, a failed move does not write the marker, a
 legacy `logs/` folder is not mistaken for an occupied destination, EXDEV
-cross-device fallback, non-EXDEV errors re-throw) and
-`src/lib/backend-manager-environment.test.ts` (4 tests, pinning the
+cross-device fallback, non-EXDEV errors re-throw, and a dedicated
+Windows/NTFS case-insensitive-filesystem regression suite — see below)
+and `src/lib/backend-manager-environment.test.ts` (4 tests, pinning the
 `PG_TOOLS_DIR`/`RESTORE_EMERGENCY_DIR` fix).
-**Residual:** none — the folder split and the environment-variable bug it
-surfaced are both fixed and tested this cycle.
+**CI caught two real regressions in this feature that the sandbox (Linux,
+no Electron) could not (this is exactly why `.github/workflows/test.yml`'s
+`unit tests`/`packaged Windows end-to-end` jobs run on `windows-latest` —
+"clean in the sandbox" was never treated as sufficient for Windows-only
+code paths):**
+1. **`electron/main.js` referenced `computePaths()` without importing it**
+   — a plain missed destructured import (`const { migrateLegacyLayout } =
+   require("./app-paths")` should have included `computePaths` too). This
+   broke the packaged app outright — every launch crashed at startup with
+   `ReferenceError: computePaths is not defined`, caught by the
+   `packaged Windows end-to-end` CI job's real install-and-launch smoke
+   test. Fixed by adding `computePaths` to the same destructure.
+2. **The migration's "does the destination already exist?" conflict check
+   broke specifically for `logs` → `Logs`** on NTFS. NTFS is
+   case-insensitive but case-preserving: legacy `logs` and the new `Logs`
+   are the *same physical directory entry* one level under the storage
+   root, so `existsSync("…/Logs")` was `true` the instant `existsSync
+   ("…/logs")` was — the generic pre-existing-destination guard
+   misidentified this always-safe rename as an unrelated conflict and
+   permanently skipped it, silently leaving every real Windows install's
+   logs un-migrated. Caught by the `unit tests` CI job (Windows), not
+   reproducible on this sandbox's Linux/case-sensitive filesystem. Fixed
+   with a new `isCaseOnlyRename()` helper: the conflict check now
+   special-cases a same-path-different-case pair, and `moveEntry()` routes
+   a case-only rename through a distinct intermediate name (some
+   platforms/tools no-op a direct `rename(src, dest)` when the two names
+   differ only by case on a case-insensitive filesystem). Regression-tested
+   with an in-memory fake filesystem that emulates NTFS's case-folding
+   lookup (`makeCaseInsensitiveFakeFs()` in the test file), since this
+   sandbox has no real Windows/NTFS volume to reproduce it on directly.
+**Residual:** none — the folder split, the environment-variable bug it
+surfaced, and the two Windows-only regressions CI caught are all fixed and
+tested this cycle.
 
 ### Section 9 — Desktop Settings Center (Storage, Backup, Sync, Printer,
 Devices, Updates, Logs, Account)
@@ -542,7 +574,7 @@ This document, plus `TESTING_CHECKLIST.md` in the repo root.
 
 - `npx tsc --noEmit` — clean, throughout and at final HEAD.
 - `npx eslint .` — clean, throughout and at final HEAD.
-- `npx vitest run` — **385 test files / 5496 tests, all passing** at final
+- `npx vitest run` — **385 test files / 5499 tests, all passing** at final
   HEAD. This includes 17 tests for the sync queue state machine, 16 for the
   error-report helpers, this cycle's 10 new tests for the offline-queue
   domain extension (registry eligibility, the new `resolveQueueRecordRef`

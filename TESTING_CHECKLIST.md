@@ -224,7 +224,7 @@ real-world verification yet — prioritize these first.
 ## 9. General regression pass
 
 - [ ] Run `npx tsc --noEmit` and `npx eslint .` — both must be clean.
-- [ ] Run `npx vitest run` — should be **≥ 385 files / ≥ 5496 tests**,
+- [ ] Run `npx vitest run` — should be **≥ 385 files / ≥ 5499 tests**,
       zero failures (this was the state at audit completion; a regression
       below this count means something in this audit's work broke).
 - [ ] Spot-check Persian RTL rendering and Shamsi (Jalali) date display on

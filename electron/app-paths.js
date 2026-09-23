@@ -80,13 +80,47 @@ function migrationMarkerPath(userDataDir) {
 }
 
 /**
+ * True when `a` and `b` name the same directory entry on a case-insensitive,
+ * case-preserving filesystem (NTFS — the only filesystem this app's
+ * packaged Windows build actually runs on) but differ in letter case. This
+ * matters for exactly one entry in `legacyMoves()`: legacy `logs` and the
+ * new `Logs` live in the SAME parent directory and differ only by case. On
+ * Windows, `fs.existsSync(next)` is true THE MOMENT `legacy` exists (they
+ * are the identical on-disk entry), which would make the generic
+ * "does the destination already exist?" conflict check in
+ * `migrateLegacyLayout` misidentify a normal, always-safe rename as an
+ * unrelated pre-existing destination and skip it — the exact bug this
+ * function exists to route around.
+ */
+function isCaseOnlyRename(a, b) {
+  const resolvedA = path.resolve(a);
+  const resolvedB = path.resolve(b);
+  return resolvedA !== resolvedB && resolvedA.toLowerCase() === resolvedB.toLowerCase();
+}
+
+/**
  * Move one file or directory from `src` to `dest`. `fs.renameSync` covers
  * the overwhelming majority of real installs (everything under one
  * `userData` root is on one volume); the EXDEV fallback (copy, then remove
  * the original) exists only for the rare case of a `userData` root that a
  * prior manual configuration pointed at a mount spanning volumes.
+ *
+ * A case-only rename (see `isCaseOnlyRename`) goes through a distinct
+ * intermediate name rather than a direct `rename(src, dest)`: on a
+ * case-insensitive filesystem, `src` and `dest` are the same directory
+ * entry, and some platforms/tools silently no-op (rather than actually
+ * update the stored case) when the source and destination differ only in
+ * case. Renaming through a genuinely different name is the portable way to
+ * force the case to change, and it degrades to two perfectly ordinary
+ * renames — harmless — on a case-sensitive filesystem too.
  */
 function moveEntry(src, dest, fsImpl) {
+  if (isCaseOnlyRename(src, dest)) {
+    const intermediate = `${src}.case-migrate-tmp-${process.pid}`;
+    fsImpl.renameSync(src, intermediate);
+    fsImpl.renameSync(intermediate, dest);
+    return;
+  }
   try {
     fsImpl.renameSync(src, dest);
   } catch (error) {
@@ -149,7 +183,14 @@ function migrateLegacyLayout(userDataDir, opts = {}) {
       results.push({ key, legacy, next, action: "not_present" });
       continue;
     }
-    if (fsImpl.existsSync(next)) {
+    // `legacy` and `next` are the SAME on-disk entry for the one case-only
+    // rename in `legacyMoves()` (legacy `logs` -> new `Logs`) whenever the
+    // filesystem is case-insensitive (NTFS — every real packaged Windows
+    // install). `fsImpl.existsSync(next)` would be true there purely
+    // because `legacy` itself exists, which is not a genuine conflict — it
+    // must still go through `moveEntry` to actually correct the on-disk
+    // case, not be mistaken for a pre-existing, unrelated destination.
+    if (fsImpl.existsSync(next) && !isCaseOnlyRename(legacy, next)) {
       // A previous partially-completed migration (or a coincidental
       // pre-existing file) already occupies the destination. Leave both
       // alone rather than guess which one is authoritative — an operator
@@ -182,6 +223,7 @@ module.exports = {
   LEGACY_MIGRATION_MARKER,
   computePaths,
   migrationMarkerPath,
+  isCaseOnlyRename,
   moveEntry,
   legacyMoves,
   migrateLegacyLayout,

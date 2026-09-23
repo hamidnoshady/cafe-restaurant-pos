@@ -12,7 +12,7 @@ const { GatewayManager } = require("./gateway-manager");
 const { createLogger } = require("./logger");
 const nativePrinting = require("./native-printing");
 const localStorageChecks = require("./local-storage");
-const { migrateLegacyLayout } = require("./app-paths");
+const { computePaths, migrateLegacyLayout } = require("./app-paths");
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {

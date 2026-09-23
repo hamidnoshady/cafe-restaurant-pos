@@ -22,6 +22,7 @@ const appPaths = require("../../electron/app-paths.js") as {
   LEGACY_MIGRATION_MARKER: string;
   computePaths: (userDataDir: string) => Record<string, string>;
   migrationMarkerPath: (userDataDir: string) => string;
+  isCaseOnlyRename: (a: string, b: string) => boolean;
   moveEntry: (src: string, dest: string, fsImpl: unknown) => void;
   legacyMoves: (
     userDataDir: string,
@@ -59,6 +60,104 @@ describe("computePaths", () => {
   it("resolves a relative root the same way path.resolve would", () => {
     const relative = appPaths.computePaths("relative-dir");
     expect(relative.root).toBe(path.resolve("relative-dir"));
+  });
+});
+
+/**
+ * A minimal in-memory filesystem that emulates NTFS's case-insensitive,
+ * case-preserving path lookup — this is what actually caught the CI
+ * failure (`unit tests` runs on `windows-latest`; this sandbox's real disk
+ * is Linux/case-sensitive and could not reproduce it). Every legacy entry
+ * maps 1:1 onto a differently-cased destination except one: legacy `logs`
+ * -> new `Logs`, same parent, same name except case. On a real NTFS
+ * volume `existsSync("…/Logs")` is true the instant `…/logs` exists — the
+ * two paths name the identical on-disk entry — which made the original
+ * "does the destination already exist?" conflict check misidentify that
+ * one rename as an unrelated pre-existing destination and skip it, so the
+ * legacy `logs` folder was silently left in place, un-migrated, on every
+ * real Windows install.
+ */
+function makeCaseInsensitiveFakeFs() {
+  const entries = new Map<string, { kind: "file" | "dir"; content?: string }>();
+  const key = (p: string) => path.resolve(p).toLowerCase();
+  const parentDirsOf = (p: string) => {
+    const dirs: string[] = [];
+    let current = path.dirname(path.resolve(p));
+    for (;;) {
+      dirs.push(current);
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+    return dirs;
+  };
+  for (const dir of parentDirsOf(root)) entries.set(key(dir), { kind: "dir" });
+  entries.set(key(root), { kind: "dir" });
+
+  return {
+    existsSync: (p: string) => entries.has(key(p)),
+    mkdirSync: (p: string) => {
+      entries.set(key(p), { kind: "dir" });
+    },
+    writeFileSync: (p: string, content: string) => {
+      entries.set(key(p), { kind: "file", content });
+    },
+    readFileSync: (p: string) => {
+      const entry = entries.get(key(p));
+      if (!entry) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      return entry.content ?? "";
+    },
+    renameSync: (from: string, to: string) => {
+      const entry = entries.get(key(from));
+      if (!entry) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      entries.delete(key(from));
+      entries.set(key(to), entry);
+    },
+    cpSync: () => {
+      throw new Error("cpSync should not be needed for a same-volume case-only rename");
+    },
+    rmSync: () => {
+      throw new Error("rmSync should not be needed for a same-volume case-only rename");
+    },
+  };
+}
+
+describe("migrateLegacyLayout on a case-insensitive filesystem (Windows/NTFS regression)", () => {
+  it("actually migrates legacy logs/ into Logs/ rather than treating the identical on-disk entry as an occupied destination", () => {
+    const fakeFs = makeCaseInsensitiveFakeFs();
+    const legacyLogsPath = path.join(root, "logs");
+    fakeFs.mkdirSync(legacyLogsPath);
+    fakeFs.writeFileSync(path.join(legacyLogsPath, "desktop.log"), "log line");
+
+    const result = appPaths.migrateLegacyLayout(root, { fs: fakeFs });
+    const logsEntry = result.results?.find((entry) => entry.key === "logs");
+    // This is the exact assertion that failed in CI before the fix:
+    // action came back "skipped_target_exists" instead of "moved".
+    expect(logsEntry?.action).toBe("moved");
+    expect(result.migrated).toBe(true);
+
+    const paths = appPaths.computePaths(root);
+    expect(fakeFs.existsSync(path.join(paths.logsDir, "desktop.log"))).toBe(true);
+  });
+
+  // Note: there is deliberately no "an unrelated Logs/ pre-exists with no
+  // legacy logs/" case here — on a real case-insensitive, case-preserving
+  // filesystem (NTFS) `logs` and `Logs` are the SAME directory entry, so
+  // that state cannot occur for this one case-only pair: if anything named
+  // `Logs` (in either case) exists at all, `existsSync("…/logs")` is
+  // already true too. This is exactly why `isCaseOnlyRename` needs to
+  // short-circuit the generic "already occupied" check instead of trying
+  // to distinguish the two — on Windows there is nothing to distinguish.
+});
+
+describe("isCaseOnlyRename", () => {
+  it("is exported and identifies same-path-different-case pairs", () => {
+    expect(appPaths.isCaseOnlyRename(path.join(root, "logs"), path.join(root, "Logs"))).toBe(true);
+  });
+
+  it("is false for genuinely different paths and for identical paths", () => {
+    expect(appPaths.isCaseOnlyRename(path.join(root, "logs"), path.join(root, "Data"))).toBe(false);
+    expect(appPaths.isCaseOnlyRename(path.join(root, "logs"), path.join(root, "logs"))).toBe(false);
   });
 });
 
