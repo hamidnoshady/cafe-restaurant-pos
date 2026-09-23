@@ -209,7 +209,7 @@ export const SEED_ARTICLES: SeedArticle[] = [
   {
     slug: "orders-queue",
     file: "orders-queue.md",
-    title: "سفارش‌ها: پیگیری، اصلاح و ثبت سفارش گذشته",
+    title: "سفارش‌ها: پیگیری، اصلاح و ابطال",
     summary: "صف سفارش‌های باز و تسویه‌شده، جزئیات هر سفارش، اصلاح سفارش بسته‌شده با تأیید مدیر.",
     category: "daily-ops",
     sectionKeys: ["orders"],

@@ -41,6 +41,27 @@ export interface PaymentDraft {
    * customer named before the payment can go through.
    */
   receivedAmount?: string;
+  /**
+   * Whether the cashier opened the «مبلغ دریافتی» entry at all.
+   *
+   * The field used to be a permanently visible box, so "is a manual amount in
+   * play" was inferred from whether it happened to be non-empty — which made
+   * a stale keystroke behind a later mode change able to change what was
+   * charged. Now the entry is a deliberate, collapsible action beside «تقسیم
+   * بین چند روش», and this flag *is* the mode: false (the ordinary sale) means
+   * the chosen way covers the whole invoice and no amount is sent, whatever
+   * text `receivedAmount` still holds.
+   *
+   * Mutually exclusive with `split` by construction: every reader below
+   * ignores it while splitting, and the two toggles turn each other off, so a
+   * slice can never be charged twice.
+   */
+  manualReceived?: boolean;
+}
+
+/** Whether this draft is in the manual «مبلغ دریافتی» mode (never while splitting). */
+export function draftUsesManualAmount(draft: PaymentDraft): boolean {
+  return !draft.split && draft.manualReceived === true;
 }
 
 let rowCounter = 0;
@@ -53,7 +74,13 @@ export function newDraftRow(methodId: string, amount = ""): PaymentDraftRow {
 /** The draft a screen opens with: the first way offered, whole bill, no split. */
 export function emptyPaymentDraft(methods: readonly PaymentMethodView[]): PaymentDraft {
   const first = methods[0]?.id ?? "";
-  return { split: false, methodId: first, rows: [newDraftRow(first)], receivedAmount: "" };
+  return {
+    split: false,
+    methodId: first,
+    rows: [newDraftRow(first)],
+    receivedAmount: "",
+    manualReceived: false,
+  };
 }
 
 /** A row's amount in Rial, or null while it is empty or not a number yet. */
@@ -72,7 +99,9 @@ export function draftRowRial(row: PaymentDraftRow, unit: MoneyUnit = "toman"): R
  * a number yet. Only meaningful when not splitting — a split types each slice.
  */
 export function draftReceivedRial(draft: PaymentDraft, unit: MoneyUnit = "toman"): Rial | null {
-  if (draft.split) return null;
+  // Splitting types each slice, and a collapsed «مبلغ دریافتی» means "the
+  // whole invoice" no matter what text is left in the (hidden) box.
+  if (!draftUsesManualAmount(draft)) return null;
   const text = draft.receivedAmount?.trim();
   if (!text) return null;
   try {
@@ -156,12 +185,17 @@ export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: string
  * draft isn't payable yet. The error codes are the API's own, so a screen
  * shows the same Persian sentence whether the check failed here or there.
  *
- * Not splitting sends no amount at all — *unless* the cashier typed a manual
- * «مبلغ دریافتی», which is sent explicitly so the server can settle the
- * difference (debt or credit) onto the customer's account. Otherwise "take
- * the whole bill this way" stays one field, and the server is the only place
- * that decides what the whole bill is — a screen that computed it from a
- * stale total would be the one bug this costs nothing to make impossible.
+ * Not splitting sends no amount at all — *unless* the cashier opened «مبلغ
+ * دریافتی» and typed one, which is sent explicitly so the server can settle
+ * the difference (debt or credit) onto the customer's account. Otherwise
+ * "take the whole bill this way" stays one field, and the server is the only
+ * place that decides what the whole bill is — a screen that computed it from
+ * a stale total would be the one bug this costs nothing to make impossible.
+ *
+ * The three modes cannot overlap: a split sends its slices and never the
+ * manual figure; a collapsed «مبلغ دریافتی» sends no amount even if text is
+ * left in the box (see `draftUsesManualAmount`); and an open one sends
+ * exactly what it holds. So no amount is ever charged twice.
  */
 export function paymentDraftBody(
   draft: PaymentDraft,
@@ -171,7 +205,9 @@ export function paymentDraftBody(
 ): DraftResult<PaymentDraftBody[]> {
   const rows = draft.split
     ? draft.rows
-    : [{ ...newDraftRow(draft.methodId), amount: draft.receivedAmount ?? "" }];
+    : // One implicit row for the chosen way. Its amount is decided below by
+      // the mode, not by whatever text the collapsed box still holds.
+      [{ ...newDraftRow(draft.methodId), reference: draft.rows[0]?.reference ?? "" }];
   if (rows.length === 0) return { ok: false, error: "no_payment" };
 
   const body: PaymentDraftBody[] = [];

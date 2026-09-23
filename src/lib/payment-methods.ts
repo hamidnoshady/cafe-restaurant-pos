@@ -275,7 +275,7 @@ export const MAX_TENDERS = 10;
 /**
  * The part of a split bill an ordering platform charges commission on.
  *
- * Checkout and backdated-order tender lists contain the bill only. Tips are
+ * Checkout and imported-sale tender lists contain the bill only. Tips are
  * stored separately on the order and added later by `tendersWithTip` for the
  * ledger, so summing the SnapFood tender here keeps the tip out of the
  * commission base by construction.
@@ -301,7 +301,7 @@ export interface TenderValidationOptions {
    * leaves the excess as customer credit (store-credit liability). Both are
    * a person's balance, so both still require `hasCustomer`.
    *
-   * Default false — every pre-existing caller (amendments, backdated sales,
+   * Default false — every pre-existing caller (amendments, imported sales,
    * retail invoices) keeps the exact-settlement rule it was written against.
    */
   allowDifference?: boolean;

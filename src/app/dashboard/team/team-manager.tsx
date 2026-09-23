@@ -59,7 +59,6 @@ const PERMISSION_LABELS: Record<string, string> = {
   "orders.create": "ثبت سفارش",
   "orders.void": "ابطال سفارش",
   "orders.amend_closed": "ویرایش یا حذف سفارش بسته‌شده",
-  "orders.backdate": "ثبت سفارش گذشته",
   "orders.discount": "اعمال تخفیف",
   "payments.take": "دریافت وجه",
   "payments.refund": "بازپرداخت",

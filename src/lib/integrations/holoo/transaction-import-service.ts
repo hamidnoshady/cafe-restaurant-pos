@@ -21,7 +21,7 @@ import { receivePayment } from "../../ar-service";
 import { payBill } from "../../ap-service";
 import { importableTransactions, type HolooTransaction, type TransactionDiscrepancy } from "./transaction-plan";
 import { writeIntegrationAudit } from "../audit";
-import { recordBackdatedOrder } from "../../backdated-order-service";
+import { recordImportedSale } from "./imported-sale-service";
 import { createRetailInvoice, type RetailInvoiceLineInput } from "../../retail-invoice-service";
 import { isTradeGoodsIndustry } from "../../trade-goods";
 import { receiveItemPurchase } from "../../retail-stock-service";
@@ -103,21 +103,17 @@ async function importSale(
     await client.query("BEGIN");
     if (profile.salesModel === "order_ticket") {
       const quantity = Math.max(1, Math.round(Number(positiveQuantity(tx))));
-      const sale = await recordBackdatedOrder(client, {
+      const sale = await recordImportedSale(client, {
         businessId,
         locationId,
         actorId: createdBy,
-        input: {
-          occurredAt: new Date(tx.occurredAt),
-          type: "takeaway",
-          reason: "واردشده از هلو",
-          note: `Holoo ${tx.remoteId}`,
-          customerId,
-          lines: [{ menuItemId: localGoodsId, quantity, note: null, modifierIds: [] }],
-          discount: { type: null, value: 0 },
-          tipAmount: 0,
-          payments: [{ method: "cash" }],
-        },
+        occurredAt: new Date(tx.occurredAt),
+        type: "takeaway",
+        note: `Holoo ${tx.remoteId}`,
+        customerId,
+        lines: [{ menuItemId: localGoodsId, quantity }],
+        paymentMethodCode: "cash",
+        source: { system: "holoo", remoteId: tx.remoteId },
       });
       await upsertMapping(businessId, connectionId, "holoo_invoice", tx.remoteId, sale.orderId, importRunId);
     } else if (industry === "accessories" || industry === "cosmetics" || isTradeGoodsIndustry(industry)) {

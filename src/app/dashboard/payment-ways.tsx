@@ -8,13 +8,25 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * in both places (see src/lib/payment-draft.ts for the arithmetic).
  */
 import { useCallback, useEffect, useState } from "react";
-import { BanknoteIcon, CreditCardIcon, PlusIcon, ReceiptTextIcon, ScrollTextIcon, SmartphoneIcon, WalletIcon, XIcon } from "lucide-react";
+import {
+  BanknoteIcon,
+  CoinsIcon,
+  CreditCardIcon,
+  PlusIcon,
+  ReceiptTextIcon,
+  ScrollTextIcon,
+  SmartphoneIcon,
+  SplitIcon,
+  WalletIcon,
+  XIcon,
+} from "lucide-react";
 import { useMoney } from "@/components/money/money-context";
 import {
   draftDifference,
   draftReceivedRial,
   draftRemaining,
   draftRequiresCustomer,
+  draftUsesManualAmount,
   newDraftRow,
   type PaymentDraft,
 } from "@/lib/payment-draft";
@@ -109,14 +121,18 @@ export function PaymentWays({
   // The typed amount versus the bill — the whole underpay/overpay decision,
   // computed here so the cashier sees it before the ۴-second hold, not in an
   // error toast after. Only meaningful when the bill isn't being split.
+  const manual = draftUsesManualAmount(draft);
   const receivedRial = draftReceivedRial(draft);
   const difference = draftDifference(receivedRial ?? due, due);
   const needsCustomer = draftRequiresCustomer(draft, methods, due) && !customer;
+  const selectedMethod = methods.find((method) => method.id === draft.methodId) ?? null;
 
   /**
    * Tapping a way while splitting *adds* it, pre-filled with whatever is still
    * owed — the two-tap "۲۰۰٬۰۰۰ نقدی، rest on card" case, which is most of
-   * them. Tapping it while not splitting just selects it.
+   * them. Tapping it while not splitting just selects it, and does so whether
+   * or not «مبلغ دریافتی» is open: the method stays editable while the amount
+   * is being entered, which is the whole point of the entry living under it.
    */
   function chooseWay(methodId: string) {
     if (!draft.split) {
@@ -132,11 +148,48 @@ export function PaymentWays({
       // Collapsing keeps the way of the first slice, so the cashier doesn't
       // land back on an unrelated button.
       const methodId = draft.rows[0]?.methodId ?? draft.methodId;
-      onChange({ split: false, methodId, rows: [newDraftRow(methodId)] });
+      onChange({
+        split: false,
+        methodId,
+        rows: [newDraftRow(methodId)],
+        receivedAmount: "",
+        manualReceived: false,
+      });
       return;
     }
     const prefill = due > 0 ? String(money.toInput(due)) : "";
-    onChange({ ...draft, split: true, rows: [newDraftRow(draft.methodId, prefill)] });
+    // Turning the split on turns the manual amount off: the slices are the
+    // amounts now, and leaving both live is how a bill gets charged twice.
+    onChange({
+      ...draft,
+      split: true,
+      manualReceived: false,
+      receivedAmount: "",
+      rows: [newDraftRow(draft.methodId, prefill)],
+    });
+  }
+
+  /**
+   * «مبلغ دریافتی» — the other half of the same choice, and its exact visual
+   * peer. Opening it turns any split off (same reason as above) and pre-fills
+   * the invoice total, so the common case is "adjust the figure", not "type
+   * it from scratch". Closing it returns the sale to the ordinary one, where
+   * the chosen way simply covers the whole invoice.
+   */
+  function toggleManualAmount() {
+    if (manual) {
+      onChange({ ...draft, manualReceived: false, receivedAmount: "" });
+      return;
+    }
+    const methodId = draft.split ? (draft.rows[0]?.methodId ?? draft.methodId) : draft.methodId;
+    onChange({
+      ...draft,
+      split: false,
+      methodId,
+      rows: [newDraftRow(methodId)],
+      manualReceived: true,
+      receivedAmount: due > 0 ? String(money.toInput(due)) : "",
+    });
   }
 
   function patchRow(key: string, patch: { amount?: string; reference?: string }) {
@@ -149,52 +202,48 @@ export function PaymentWays({
 
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-xs font-bold text-muted-foreground">روش دریافت وجه</p>
-        <button
-          type="button"
-          onClick={toggleSplit}
-          disabled={disabled || methods.length === 0}
-          className={
-            "rounded-lg border px-2 py-1 text-xs font-bold transition disabled:opacity-55 " +
-            (draft.split ? CHIP_ON : CHIP_OFF)
-          }
-        >
-          {draft.split ? "پرداخت یکجا" : "تقسیم بین چند روش"}
-        </button>
-      </div>
-
       {/*
-        The amount actually handed over — separate from the method choice,
-        because "cash" says nothing about how much of the bill it covers. Left
-        empty it means the whole bill; typed over or under it becomes a
-        customer balance, which the preview below prices before the hold.
-        Splitting hides it: the slices are the amounts then.
+        The two ways a bill can depart from "this way covers it all", as two
+        peers of the same shape. «مبلغ دریافتی» used to be a permanently
+        visible, full-width box — a third of the payment panel spent on a
+        field that is empty in almost every sale, on the phone screen where
+        that space is scarcest. It is now the same compact toggle its sibling
+        «تقسیم بین چند روش» always was, and the entry it opens appears *under
+        the selected way*, which stays visible and editable throughout.
       */}
-      {!draft.split && loaded && methods.length > 0 ? (
-        <div className="mb-2.5">
-          <label
-            className="mb-1 flex items-center justify-between text-xs font-bold text-muted-foreground"
-            htmlFor={idPrefix + "-received"}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-bold text-muted-foreground">روش دریافت وجه</p>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={toggleManualAmount}
+            disabled={disabled || methods.length === 0}
+            aria-pressed={manual}
+            aria-expanded={manual}
+            aria-controls={idPrefix + "-received-panel"}
+            className={
+              "inline-flex min-h-9 items-center gap-1 rounded-lg border px-2 text-xs font-bold transition disabled:opacity-55 " +
+              (manual ? CHIP_ON : CHIP_OFF)
+            }
           >
-            <span>مبلغ دریافتی</span>
-            <span className="font-normal">
-              صورتحساب: {money.format(due)}
-            </span>
-          </label>
-          <PersianNumberInput
-            id={idPrefix + "-received"}
-            className={AMOUNT_INPUT + " h-12 text-base font-bold"}
-            dir="ltr"
-            inputMode="numeric"
-            value={draft.receivedAmount}
-            disabled={disabled}
-            onChange={(event) => onChange({ ...draft, receivedAmount: event.target.value })}
-            placeholder={money.unit === "rial" ? "کل مبلغ صورتحساب" : "کل مبلغ صورتحساب"}
-            aria-label="مبلغ دریافتی از مشتری"
-          />
+            <CoinsIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            مبلغ دریافتی
+          </button>
+          <button
+            type="button"
+            onClick={toggleSplit}
+            disabled={disabled || methods.length === 0}
+            aria-pressed={draft.split}
+            className={
+              "inline-flex min-h-9 items-center gap-1 rounded-lg border px-2 text-xs font-bold transition disabled:opacity-55 " +
+              (draft.split ? CHIP_ON : CHIP_OFF)
+            }
+          >
+            <SplitIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            {draft.split ? "پرداخت یکجا" : "تقسیم بین چند روش"}
+          </button>
         </div>
-      ) : null}
+      </div>
 
       {!loaded ? (
         <div
@@ -236,12 +285,69 @@ export function PaymentWays({
       ) : null}
 
       {/*
+        The amount actually handed over, expanded beneath the way it was taken
+        with — the two belong together, because "cash" says nothing about how
+        much of the bill it covers. It only exists while the cashier asked for
+        it: a normal payment leaves this collapsed and the selected way covers
+        the whole invoice (no amount is sent at all — see paymentDraftBody).
+      */}
+      {manual && loaded && methods.length > 0 ? (
+        <div
+          id={idPrefix + "-received-panel"}
+          className="mt-2.5 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 p-2.5"
+        >
+          <label
+            className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-xs font-bold text-muted-foreground"
+            htmlFor={idPrefix + "-received"}
+          >
+            <span>
+              مبلغ دریافتی
+              {selectedMethod ? (
+                <span className="font-normal"> — {selectedMethod.name}</span>
+              ) : null}
+            </span>
+            <span className="font-normal">صورتحساب: {money.format(due)}</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <PersianNumberInput
+              id={idPrefix + "-received"}
+              className={AMOUNT_INPUT + " h-12 text-base font-bold"}
+              dir="ltr"
+              inputMode="numeric"
+              autoFocus
+              value={draft.receivedAmount ?? ""}
+              disabled={disabled}
+              onChange={(event) => onChange({ ...draft, receivedAmount: event.target.value })}
+              placeholder="کل مبلغ صورتحساب"
+              aria-label="مبلغ دریافتی از مشتری"
+            />
+            <button
+              type="button"
+              onClick={toggleManualAmount}
+              disabled={disabled}
+              aria-label="بستن مبلغ دریافتی و دریافت کل صورتحساب"
+              className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-card text-muted-foreground hover:bg-muted disabled:opacity-55"
+            >
+              <XIcon className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+          {/* Still owed, where it is actually actionable — the figure that used
+              to live permanently in the order dialog's footer. */}
+          {receivedRial !== null && receivedRial < due ? (
+            <p className="mt-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+              باقی‌مانده {money.format(due - receivedRial)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/*
         The settle-with-difference preview — جمع سفارش / دریافتی / بدهی یا
         اعتبار — shown the moment the typed amount leaves the bill, so the
         cashier books the difference deliberately instead of discovering it in
         a rejection. Split payments keep the exact-arithmetic rows below.
       */}
-      {!draft.split && receivedRial !== null && receivedRial !== due ? (
+      {manual && receivedRial !== null && receivedRial !== due ? (
         <div className="mt-2.5 space-y-1 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 p-2.5 text-xs">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">جمع سفارش</span>

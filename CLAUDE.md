@@ -276,14 +276,17 @@ date instead of splitting it at midnight. See the "The business day" section of
   step with every other one.
 - **Don't derive a "today" window in a route.** `getBusinessDayStatus` (`src/lib/business-day-service.ts`)
   already answers it, including a manual close; the pure half is `src/lib/business-day.ts`.
-- **A sale may be recorded after the fact.** «ثبت سفارش گذشته» (`/api/orders/backdated`,
-  `src/lib/backdated-order-service.ts`) writes an *ordinary* `orders` row whose `opened_at`,
-  `closed_at`, `payments.received_at`, `stock_movements.occurred_at` and `journal_entries.entry_date`
-  are all the instant the sale happened — which is why reports, COGS, costing and the fiscal-period
-  lock needed no special case. Don't build a second model for "a sale we typed in late"; the
-  `backdated_orders` row records only what the order cannot say (who, why, and when it was actually
-  entered). The day and time are the *branch's* wall clock, resolved server-side — never the
-  browser's.
+- **There is no "record a past sale" till action.** «ثبت سفارش گذشته» and `/api/orders/backdated`
+  were removed: typing a sale in after the fact writes revenue, VAT, COGS and stock into a day that
+  has already been reported and reconciled. Correct a wrongly-rung sale with an amendment
+  (`/api/orders/[id]/amend`), which posts a dated correction. Don't reintroduce a second model for
+  "a sale we typed in late". *Importing* history from another system is a different act and keeps
+  the pattern: `src/lib/integrations/holoo/imported-sale-service.ts` writes an *ordinary* `orders`
+  row whose `opened_at`, `closed_at`, `payments.received_at`, `stock_movements.occurred_at` and
+  `journal_entries.entry_date` are all the instant the sale happened — which is why reports, COGS,
+  costing and the fiscal-period lock need no special case. `businessDateOf`
+  (`src/lib/business-day.ts`) is the only TypeScript twin of `app_business_date`; write no second
+  one.
 - **The night ends at the cash-up.** The live window starts at the branch's last
   `employee_shifts.ended_at` once nobody is clocked in (a handover doesn't count); «بستن روز کاری» is
   the override for branches that don't clock in. A start time alone can only say when a day begins.
@@ -578,7 +581,7 @@ Two more, because both of these are load-bearing and easy to undo by accident:
 - **The answer cache key is the *business day*, not the calendar date, plus a tool
   signature.** A café trading 18:00–03:00 runs one service; a key built from the calendar
   date carries the pre-midnight answer into the next service. The signature is what makes a
-  backdated order (`/api/orders/backdated`) invalidate the range it landed in. And only
+  late-arriving sale — an amendment, an imported invoice — invalidate the range it landed in. And only
   read-only turns are ever cached — `isCacheableTurn()` fails closed and is checked inside
   `storeCachedAnswer()`, not just at the call site.
 - **The Growth & Marketing app (`/dashboard/growth`) is the container for every

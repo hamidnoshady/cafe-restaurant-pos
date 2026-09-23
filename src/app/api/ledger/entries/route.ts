@@ -20,10 +20,10 @@ import { query } from "@/lib/db";
  * pretending the book ends there.
  *
  * Ordering is `entry_date DESC, posted_at DESC` — the document's own date
- * first, then when it was recorded. A journal is read by document date, and a
- * sale recorded after the fact (`/api/orders/backdated`) carries the date it
- * happened, so ordering purely by `posted_at` filed it at the top of today
- * instead of on its own day. The accounting dashboard's «اسناد اخیر» still
+ * first, then when it was recorded. A journal is read by document date, and an
+ * entry whose document belongs to an earlier day (an amendment, an imported
+ * sale) carries the date it happened, so ordering purely by `posted_at` filed
+ * it at the top of today instead of on its own day. The accounting dashboard's «اسناد اخیر» still
  * orders by `posted_at`: that list answers "what was entered last", which is a
  * different question.
  */

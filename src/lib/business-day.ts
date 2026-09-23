@@ -192,6 +192,34 @@ export function resolveLiveWindow(input: LiveWindowInput): LiveWindow {
 
 
 /**
+ * The branch's business date for an instant — the TypeScript twin of SQL's
+ * `app_business_date(ts, tz, start_minutes)` (migration 0076), returning
+ * `YYYY-MM-DD`.
+ *
+ * The database answers this for everything it buckets itself. This exists for
+ * the one case that cannot ask it: a writer that must *supply* the trading day
+ * a row belongs to — `journal_entries.entry_date` for a sale whose instant is
+ * not `now()`, which is what the Holoo sales import writes — and so the rule
+ * can be unit-tested against the same fixtures the SQL was written for.
+ *
+ * `startMinutes` NULL means the branch has no business day configured, which is
+ * the calendar day in its own zone — exactly what the SQL function returns for
+ * it.
+ */
+export function businessDateOf(instant: Date, timezone: string, startMinutes: number | null): string {
+  const shifted = new Date(instant.getTime() - (startMinutes ?? 0) * 60_000);
+  // `en-CA` renders as YYYY-MM-DD, and the timeZone option does the
+  // `AT TIME ZONE` half. Intl is the only zone database in the runtime, so
+  // this is also the only way to agree with Postgres without asking it.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone || "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(shifted);
+}
+
+/**
  * Plain calendar arithmetic on a `YYYY-MM-DD` business date — no timezone
  * involved, because a business date is already the answer to "which day", not
  * an instant. Returns the input unchanged if it is not a date this understands,

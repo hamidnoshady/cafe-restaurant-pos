@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  businessDateOf,
   businessDateRange,
   businessDayHours,
   formatStartTime,
@@ -268,5 +269,31 @@ describe("businessDateRange", () => {
       const { dateFrom, dateTo } = businessDateRange(preset, today);
       expect(dateFrom <= dateTo).toBe(true);
     }
+  });
+});
+
+describe("businessDateOf", () => {
+  it("is the calendar day in the branch's own zone when no business day is configured", () => {
+    // 20:30 UTC on the 16th is 00:00 on the 17th in Tehran (UTC+3:30).
+    expect(businessDateOf(new Date("2026-08-16T20:30:00.000Z"), "Asia/Tehran", null)).toBe("2026-08-17");
+  });
+
+  it("keeps a night service on one date for a branch whose day starts at 18:00", () => {
+    const startMinutes = 18 * 60;
+    // 20:00 and 01:00 Tehran are the same trading day for an 18:00 start.
+    const evening = new Date("2026-08-16T16:30:00.000Z"); // 20:00 Tehran, 16th
+    const afterMidnight = new Date("2026-08-16T21:30:00.000Z"); // 01:00 Tehran, 17th
+    expect(businessDateOf(evening, "Asia/Tehran", startMinutes)).toBe("2026-08-16");
+    expect(businessDateOf(afterMidnight, "Asia/Tehran", startMinutes)).toBe("2026-08-16");
+  });
+
+  it("rolls to the next trading day once the start time passes", () => {
+    const startMinutes = 18 * 60;
+    const nextEvening = new Date("2026-08-17T14:30:00.000Z"); // 18:00 Tehran, 17th
+    expect(businessDateOf(nextEvening, "Asia/Tehran", startMinutes)).toBe("2026-08-17");
+  });
+
+  it("falls back to UTC rather than throwing on a branch with no zone recorded", () => {
+    expect(businessDateOf(new Date("2026-08-16T23:30:00.000Z"), "", null)).toBe("2026-08-16");
   });
 });

@@ -124,7 +124,7 @@ describe("signatureTouchesRange — invalidation", () => {
     { tool: "get_sales_summary", from: "2026-08-20", to: "2026-08-27" },
   ]);
 
-  it("invalidates a backdated order landing inside the signed range", () => {
+  it("invalidates a sale posted onto an earlier day inside the signed range", () => {
     expect(signatureTouchesRange(sig, { from: "2026-08-22", to: "2026-08-22" })).toBe(true);
   });
 

@@ -8,6 +8,8 @@ import {
   draftRemaining,
   draftRequiresCustomer,
   draftRowRial,
+  draftTotal,
+  draftUsesManualAmount,
   emptyPaymentDraft,
   newDraftRow,
   paymentDraftBody,
@@ -216,8 +218,9 @@ describe("draftReceiptPayments", () => {
 });
 
 describe("manual received amount (مبلغ دریافتی)", () => {
+  /** The «مبلغ دریافتی» entry opened, with `receivedAmount` typed into it. */
   function manual(receivedAmount: string): PaymentDraft {
-    return { ...emptyPaymentDraft(METHODS), receivedAmount };
+    return { ...emptyPaymentDraft(METHODS), manualReceived: true, receivedAmount };
   }
 
   it("sends no amount when nothing is typed — the ordinary whole-bill sale", () => {
@@ -246,6 +249,48 @@ describe("manual received amount (مبلغ دریافتی)", () => {
   it("reads Persian digits and thousand separators like every money input", () => {
     expect(draftReceivedRial(manual("۷۰۰٬۰۰۰"))).toBe(7_000_000);
     expect(draftReceivedRial(manual("700,000"))).toBe(7_000_000);
+  });
+
+  it("is ignored while collapsed — the chosen way covers the whole invoice", () => {
+    // The box is closed but still holds text (the cashier typed, then closed
+    // it). The ordinary sale must send no amount at all, or that stale figure
+    // would silently become a customer debt.
+    const collapsed: PaymentDraft = {
+      ...emptyPaymentDraft(METHODS),
+      manualReceived: false,
+      receivedAmount: "400000",
+    };
+    expect(draftUsesManualAmount(collapsed)).toBe(false);
+    expect(draftReceivedRial(collapsed)).toBeNull();
+    expect(draftRequiresCustomer(collapsed, METHODS, DUE)).toBe(false);
+    expect(paymentDraftBody(collapsed, METHODS, DUE)).toMatchObject({
+      ok: true,
+      value: [{ methodId: "cash", amount: undefined }],
+    });
+    expect(draftReceiptPayments(collapsed, METHODS, DUE)).toEqual([
+      { label: "نقدی", amount: DUE },
+    ]);
+  });
+
+  it("and the split are mutually exclusive, so nothing is charged twice", () => {
+    const both: PaymentDraft = {
+      ...split([
+        { methodId: "cash", amount: "200000" },
+        { methodId: "card", amount: "300000" },
+      ]),
+      manualReceived: true,
+      receivedAmount: "700000",
+    };
+    expect(draftUsesManualAmount(both)).toBe(false);
+    // Exactly the two slices — the manual figure contributes nothing.
+    expect(paymentDraftBody(both, METHODS, DUE)).toMatchObject({
+      ok: true,
+      value: [
+        { methodId: "cash", amount: 2_000_000 },
+        { methodId: "card", amount: undefined },
+      ],
+    });
+    expect(draftTotal(both, DUE)).toBe(DUE);
   });
 
   it("is ignored while splitting — the split's own rows are the amounts", () => {
