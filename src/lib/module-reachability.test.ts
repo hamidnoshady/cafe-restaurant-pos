@@ -168,16 +168,29 @@ for (const file of allFiles) {
   imports.set(file, [...resolved]);
 }
 
-/** App Router files the framework loads by name rather than by import. */
+/**
+ * App Router files the framework loads by name rather than by import.
+ *
+ * Matched against a `/`-normalised path. `node:path` emits `\` on Windows and
+ * CI runs the unit suite on `windows-latest`, so a pattern anchored on `/`
+ * would match nothing there — every page would stop counting as an entry
+ * point and the whole graph would look orphaned. `posix()` below is what
+ * keeps this test platform-independent; `separatorAgnostic` pins it.
+ */
 const NEXT_SPECIAL_FILE =
   /(?:^|\/)(page|layout|template|loading|error|global-error|not-found|route|default|sitemap|robots|manifest|opengraph-image|twitter-image|icon|apple-icon|instrumentation)\.(?:ts|tsx|js|jsx)$/;
+
+/** A path with `/` separators, whatever platform produced it. */
+function posix(path: string): string {
+  return path.split("\\").join("/");
+}
 
 const APP_DIR = join(SRC_DIR, "app");
 
 function isEntryPoint(file: string): boolean {
-  if (file.startsWith(APP_DIR) && NEXT_SPECIAL_FILE.test(file)) return true;
+  if (file.startsWith(APP_DIR) && NEXT_SPECIAL_FILE.test(posix(file))) return true;
   if (file === join(SRC_DIR, "middleware.ts")) return true;
-  if (/\.test\.(ts|tsx)$/.test(file)) return true;
+  if (/\.test\.(ts|tsx)$/.test(posix(file))) return true;
   return outerFiles.includes(file);
 }
 
@@ -200,7 +213,7 @@ describe("every module is reachable from a real entry point", () => {
   it("has no orphaned modules under src/", () => {
     const orphans = sourceFiles
       .filter((file) => !reachable.has(file))
-      .map((file) => relative(SRC_DIR, file).split("\\").join("/"))
+      .map((file) => posix(relative(SRC_DIR, file)))
       .filter((path) => !(path in REACHABLE_BY_OTHER_MEANS))
       .sort();
 
@@ -234,6 +247,30 @@ describe("every module is reachable from a real entry point", () => {
         `${path} is reachable now — remove it from REACHABLE_BY_OTHER_MEANS`,
       ).toBe(false);
     }
+  });
+
+  it("recognises App Router entry points with either path separator", () => {
+    // CI runs the unit suite on windows-latest, where `node:path` emits `\`.
+    // The first version of this test anchored its special-file pattern on `/`
+    // only, so on Windows NO page matched, every page stopped being an entry
+    // point, and the orphan list exploded. Pin both spellings.
+    for (const spelling of [
+      "src/app/dashboard/page.tsx",
+      "src\\app\\dashboard\\page.tsx",
+      "src/app/api/health/route.ts",
+      "src\\app\\api\\health\\route.ts",
+      "src/app/(app)/layout.tsx",
+      "src\\app\\(app)\\layout.tsx",
+    ]) {
+      expect(
+        NEXT_SPECIAL_FILE.test(posix(spelling)),
+        `${spelling} should be recognised as an App Router entry point`,
+      ).toBe(true);
+    }
+    // A component that merely lives beside a page is not one.
+    expect(NEXT_SPECIAL_FILE.test(posix("src/app/dashboard/data-table.tsx"))).toBe(
+      false,
+    );
   });
 
   it("finds the entry points it claims to — the walk is not vacuously green", () => {
