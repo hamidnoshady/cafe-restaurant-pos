@@ -219,7 +219,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
             and comes to full strength on touch/hover/focus, so the control you
             are actually reaching for is the solid one.
           */
-          className="fixed bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] left-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground opacity-70 shadow-[0_12px_32px_-6px_rgb(41_37_36/0.25)] ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 hover:opacity-100 focus-visible:opacity-100 active:scale-95 active:opacity-100 md:bottom-5 md:left-5"
+          className="fixed bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] left-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-70 shadow-[0_12px_32px_-6px_rgb(41_37_36/0.25)] ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 hover:opacity-100 focus-visible:opacity-100 active:scale-95 active:opacity-100 md:bottom-5 md:left-5"
         >
           <SparklesIcon className="size-6" />
           {unseenCount > 0 && (

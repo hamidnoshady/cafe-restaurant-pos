@@ -35,12 +35,14 @@ export const BACK_TO_WORKSPACE_BUTTON_CLASS =
 export const NAV_LABEL_CLASS = "min-w-0 flex-1 truncate text-start group-data-[state=collapsed]/sidebar:hidden";
 
 /**
- * One skin for the stacked controls in the sidebar footer — شیفت، قفل صفحه،
- * ورود بیومتریک، خروج و چیدمان نوار پایین. They are four different components
- * (`shift-panel.tsx`, `lock-screen.tsx`, `biometric-settings.tsx`,
- * `logout-button.tsx`), and each used to spell its own `py-1.5` button: the
- * result was a stack of controls that were nearly, but not quite, the same
- * height and never tall enough for a thumb on a POS tablet.
+ * One skin for the stacked controls in the sidebar footer — شیفت، قفل صفحه و
+ * ورود بیومتریک. They are separate components (`shift-panel.tsx`,
+ * `lock-screen.tsx`, `biometric-settings.tsx`), and each used to spell its
+ * own `py-1.5` button: the result was a stack of controls that were nearly,
+ * but not quite, the same height and never tall enough for a thumb on a POS
+ * tablet. Sign-out itself lives entirely in `platform-user-menu.tsx` now — a
+ * second, dead `logout-button.tsx` implementation that duplicated it (unused
+ * anywhere in the sidebar) was removed rather than kept beside it.
  *
  * `min-h-10` (44px on the phone drawer via the touch bump below) with an icon
  * slot at the start and the label pushed to the inline start, so the column

@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { nextPath, prevPath, stepIndex, stepsFor, STEPS } from "./steps";
 import type { WizardStep } from "@/lib/wizard-steps";
 import { useSetupIndustry } from "./industry-context";
+import { isNotableApiFailure, recordApiFailure } from "@/lib/error-report";
 
 export async function api<T = Record<string, unknown>>(
   url: string,
@@ -28,6 +29,17 @@ export async function api<T = Record<string, unknown>>(
     data = (await res.json()) as T;
   } catch {
     data = {} as T;
+  }
+  // Section 12 follow-up (see error-report.ts): a wizard step that fails
+  // with a 5xx is worth the same exportable log entry a render error gets —
+  // logged only, the on-screen message this returns is unchanged.
+  if (!res.ok && isNotableApiFailure(res.status)) {
+    recordApiFailure({
+      method: init?.method ?? "GET",
+      url,
+      status: res.status,
+      code: typeof (data as { error?: unknown })?.error === "string" ? (data as { error: string }).error : undefined,
+    });
   }
   return { ok: res.ok, status: res.status, data };
 }

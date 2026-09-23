@@ -7,6 +7,7 @@ import { compareUnsignedDecimalText, validateQuantityText } from "@/lib/numeric-
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { api, Field, inputClass } from "../ui";
+import { apiOrQueue } from "../offline-queue";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { InventoryItem, Runner } from "./inventory-manager";
@@ -45,6 +46,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
   const [reason, setReason] = useState("spoilage");
   const [note, setNote] = useState("");
   const [quantityTouched, setQuantityTouched] = useState(false);
+  const [queuedInfo, setQueuedInfo] = useState(false);
 
   const loadEntries = useCallback(() => {
     setLoadFailed(false);
@@ -78,17 +80,32 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
     // Keep this in step with the API's exact decimal contract. In particular,
     // exponent notation and values beyond the database's 9-place scale fail.
     if (!inventoryItemId || !validateQuantityText(qty).valid) return;
-    const ok = await run(() =>
-      api("/api/inventory/waste", {
-        method: "POST",
-        body: JSON.stringify(buildWasteRequestBody(inventoryItemId, qty, reason, note)),
-      }),
-    );
+    setQueuedInfo(false);
+    // Section 5 offline-queue-extension: a LAN drop no longer loses a waste
+    // submission — apiOrQueue queues it locally (src/lib/offline-db.ts) and
+    // it flushes to the same server handler once reconnected, same as an
+    // order action. The item name is shown in the queue panel's description
+    // (StatusBadge on the Devices settings tab), not looked up here.
+    let wasQueued = false;
+    const ok = await run(async () => {
+      const { ok, queued, data } = await apiOrQueue<{ error?: string }>(
+        "/api/inventory/waste",
+        { method: "POST", body: buildWasteRequestBody(inventoryItemId, qty, reason, note) },
+        {
+          type: "inventory.waste.recorded",
+          payload: { inventoryItemId, quantity: qty, reason, note: note || undefined },
+          description: "ثبت ضایعات",
+        },
+      );
+      wasQueued = queued;
+      return { ok, data };
+    });
     if (ok) {
       setQuantity("");
       setQuantityTouched(false);
       setNote("");
-      loadEntries();
+      setQueuedInfo(wasQueued);
+      if (!wasQueued) loadEntries();
     }
   }
 
@@ -103,6 +120,14 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
         }
         description="ضایعات مستقل از فروش است و تنها موجودی را کاهش می‌دهد؛ در ارقام فروش اثری ندارد."
       >
+        {queuedInfo ? (
+          <p
+            className="mb-3 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-4 py-3 text-sm leading-6 text-amber-800 dark:text-amber-300"
+            role="status"
+          >
+            اتصال به سرور محلی قطع است — این ضایعات ذخیره شد و پس از اتصال مجدد ارسال می‌شود (صف همگام‌سازی محلی، تنظیمات ← دستگاه‌ها).
+          </p>
+        ) : null}
         <form onSubmit={submit} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Field label="قلم انبار">
             <SearchableSelect

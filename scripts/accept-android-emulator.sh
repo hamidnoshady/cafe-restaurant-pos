@@ -66,7 +66,7 @@ ensure_adb_root() {
   return 1
 }
 
-CA_CERT="$RUNNER_TEMP/mobile-android/gateway-certificates/business-suite-local-ca.crt"
+CA_CERT="$RUNNER_TEMP/mobile-android/Data/gateway-certificates/business-suite-local-ca.crt"
 RESULT="$RUNNER_TEMP/mobile-android/browser-result.json"
 SERVER_LOG="$RUNNER_TEMP/mobile-android/server.log"
 

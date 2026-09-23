@@ -2,15 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { applySyncEvent, type SyncEventInput } from "@/lib/sync-events";
-import { syncEventDefinition } from "@/lib/sync-event-registry";
+import { isOfflineQueueEligible } from "@/lib/sync-event-registry";
 
 /**
- * Offline-queue flush endpoint (Phase 5): a client that queued actions in
- * its local IndexedDB (src/lib/offline-db.ts) while it couldn't reach the
- * server POSTs them here, in the order it queued them, once reconnected.
- * Every role that can take an order/kitchen action while connected can also
- * replay one here — sync-events.ts enforces the same per-event-type
- * permissions the synchronous routes do.
+ * Offline-queue flush endpoint (Phase 5, extended by the Section 5 audit): a
+ * client that queued actions in its local IndexedDB (src/lib/offline-db.ts)
+ * while it couldn't reach the server POSTs them here, in the order it
+ * queued them, once reconnected. Every role that can take an order/kitchen
+ * action while connected can also replay one here — sync-events.ts enforces
+ * the same per-event-type permissions the synchronous routes do.
+ *
+ * `isOfflineQueueEligible` (not merely "is this a known event type") is the
+ * gate: the offline queue is a deliberately narrow surface (originally the
+ * three legacy order actions), and a transactional definition existing in
+ * the registry for the *server-to-server* sync engine does not by itself
+ * mean the client's local Dexie queue is allowed to post it here — only
+ * types explicitly flagged `offlineQueueEligible` (alongside real client
+ * wiring) may.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
@@ -40,7 +48,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       !e.clientEventId ||
       typeof e.occurredAt !== "string" ||
       !e.type ||
-      !syncEventDefinition(e.type, 1)?.legacy ||
+      !isOfflineQueueEligible(e.type, 1) ||
       typeof e.payload !== "object" ||
       e.payload === null
     ) {

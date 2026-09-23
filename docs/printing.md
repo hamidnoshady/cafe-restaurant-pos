@@ -22,14 +22,47 @@ hardware question the product ever asks («چاپگر کجاست؟»):
 
 | Connection | Reached by | Needs |
 | --- | --- | --- |
-| `windows` | the Cafe POS Windows connector → the Windows spooler (RAW), by queue name | the printer installed in Windows' «Printers & scanners» |
-| `network` | the same local connector → raw TCP to the printer's address (port 9100) | the printer on the café LAN |
+| `windows` | the print backend → the Windows spooler (RAW), by queue name | the printer installed in Windows' «Printers & scanners» |
+| `network` | the same backend → raw TCP to the printer's address (port 9100) | the printer on the café LAN |
 
 That is the whole list. USB thermal printers install in Windows and are
 `windows`; LAN/Wi-Fi ESC/POS printers are `network`. There is no WebUSB, no
-raw device path, no driver-mode picker, no «چاپ با مرورگر» transport, and no
-Node.js anywhere on the cashier's machine — those were implementation details
-a restaurant employee should never have to understand, and they are gone.
+raw device path, no driver-mode picker, no «چاپ با مرورگر» transport — those
+were implementation details a restaurant employee should never have to
+understand, and they are gone.
+
+### Two products, two hardware backends, one target shape
+
+"The same backend" above means one of two things depending on where the app
+is running, decided automatically and invisibly to the operator:
+
+| Product | Backend | Why |
+| --- | --- | --- |
+| Browser / cloud (`pos.<domain>` in a normal browser tab) | the Cafe POS Windows Print Connector, a small loopback helper installed once on the cashier's machine | a browser tab has no OS access of its own — it needs *something* on the machine to reach `winspool.drv` or a raw socket |
+| **Desktop (Electron) app** | **`electron/native-printing.js`, called in-process from the main process** | the desktop app already **is** a Node/Electron process on the same Windows machine as the printer — it never needs a second, separate helper next to itself |
+
+Both backends implement the identical `PrinterTarget` shape
+(`src/lib/printing/types.ts`: `{type:"windows", systemName}` /
+`{type:"network", ip, port}`) and the identical canonical error codes
+(`src/lib/printing/errors.ts`), so every printer, template and route above
+this line is unaware of which backend actually moved the bytes.
+`src/lib/printing/client.ts` is the one place that picks: it prefers
+`window.businessSuiteDesktop.printing` (exposed by `electron/preload.js`)
+when present, and falls back to the loopback connector otherwise — see that
+file's header comment. `connectorHealth()` reports the desktop bridge as
+always "installed": there is nothing to install, since it ships inside the
+app itself.
+
+**Desktop native printing is implementation + unit/logic tests only.**
+`electron/native-printing.js`'s pure logic (Windows-printer JSON parsing,
+error classification, the RAW-print PowerShell script text, subnet
+derivation) is covered by `src/lib/native-printing.test.ts` with every
+side-effecting call (PowerShell, TCP sockets, network interfaces) injected as
+a fake. It has **not** been exercised against a real Windows spooler, a real
+installed printer queue, or a real network thermal printer in this
+environment (no Windows host is available here) — a hardware verification
+pass on an actual Windows machine is required before this path is trusted as
+the desktop build's primary printing backend in production.
 
 ### The delivery flow
 
@@ -42,13 +75,15 @@ authenticated app server  (POST /api/printing/print)
    │ renders the canonical document (Persian shaping, template, paper width)
    │ packs it into ESC/POS bytes
    ▼
-browser  (src/lib/printing/client.ts)
-   │ forwards the bytes + the resolved target
+browser or desktop app  (src/lib/printing/client.ts)
+   │ forwards the bytes + the resolved target to whichever backend is present
    ▼
-Cafe POS Windows connector  (127.0.0.1:9123, exact-origin)
-   │
-   ├── windows  → native winspool.drv, RAW
-   └── network  → TCP, port 9100
+   ├── Cafe POS Windows connector (browser/cloud, 127.0.0.1:9123, exact-origin)
+   │      ├── windows  → native winspool.drv, RAW
+   │      └── network  → TCP, port 9100
+   └── electron/native-printing.js (desktop app, in-process, no loopback hop)
+          ├── windows  → native winspool.drv, RAW (same technique, called directly)
+          └── network  → TCP, port 9100 (a plain Node socket)
    ▼
 physical printer
 ```
@@ -57,17 +92,18 @@ The split follows what each side actually has. The **app server** owns
 authorization, the saved printer, templates and the Chromium raster pipeline
 (Persian/RTL text needs a real browser engine — see `src/lib/escpos.ts`; it is
 never rendered as ESC/POS text-mode). The **cashier's machine** owns the
-hardware: the local connector is the only thing that enumerates Windows
-queues, sweeps the café LAN for printers, and sends bytes to a device.
+hardware: the local connector (browser/cloud) or the desktop app's own
+process (desktop) is the only thing that enumerates Windows queues, sweeps
+the café LAN for printers, and sends bytes to a device.
 
 Because of that split the server never accepts a hardware address from a
 browser: a print job carries only a `printerId`, and the server resolves it
 against the authenticated business + active location. A hand-edited request
 can neither aim the server at an arbitrary IP or queue, nor print through
 another branch's printer. The server does not scan the café LAN, ever —
-network discovery runs inside the connector.
+network discovery runs on the cashier's own machine, never on the server.
 
-### The Windows connector
+### The Windows connector (browser / cloud)
 
 `public/windows/cafe-pos-print-connector.ps1` — protocol v3, dependency-free
 Windows PowerShell, installed per-user from «چاپگرها → افزودن چاپگر» with one
@@ -164,7 +200,11 @@ canonical model.
 | `src/app/api/printing/connector/installer` | Authenticated per-origin Windows connector installer download. |
 | `src/lib/printing/connector-release.ts` | Protocol/release versions, allowed-origin normalisation and the download-base resolution (the file above depends on both halves of this contract). Pure. |
 | `src/lib/printing/connector-payload.ts` | Runtime SHA-256 fingerprint of the shipped payload for installer integrity pinning. Server-only. |
-| `public/windows/cafe-pos-print-connector.ps1` | The one Windows hardware gateway: queue discovery, LAN discovery, probe, RAW/TCP delivery. |
+| `public/windows/cafe-pos-print-connector.ps1` | The browser/cloud Windows hardware gateway: queue discovery, LAN discovery, probe, RAW/TCP delivery. |
+| `electron/native-printing.js` | The desktop app's own hardware gateway — the same queue discovery/LAN discovery/probe/RAW-TCP delivery, called directly from the Electron main process. No separate install. |
+| `electron/main.js` / `electron/preload.js` | Wire `native-printing.js` to `window.businessSuiteDesktop.printing` over IPC (`desktop:print-*` handlers). |
+| `src/lib/desktop-bridge.ts` | The one typed shape of `window.businessSuiteDesktop`, shared by the printing client and the Local Devices panel. |
+| `src/lib/native-printing.test.ts` | Unit/logic coverage of `native-printing.js`'s pure decision logic and injected-collaborator dispatch — no real Windows/printer/network dependency. |
 | `src/app/(app)/settings/printing/**` | The section: gallery, designer, printers panel (shared with the setup wizard), logo. |
 
 ## Papers
@@ -278,8 +318,12 @@ roll, and that `starterTemplate` cannot alias the preset it copied.
 58/80mm widths); `printing/raster.test.ts` the PNG decode; `printing/types.test.ts`
 and `printing/printer-input.test.ts` the model and its write boundary;
 `printing/render-service.test.ts` the render pipeline; `printing/client.test.ts`
-the browser client; `windows-print-connector*.test.ts` the connector/installer
-contract; `api/printing/**` the route security model; and
+the browser client (both backends, via the desktop-bridge branch);
+`windows-print-connector*.test.ts` the browser/cloud connector/installer
+contract; `native-printing.test.ts` the desktop app's own hardware gateway
+(unit/logic only — see "Two products, two hardware backends" above for why a
+real-Windows verification pass is still outstanding); `api/printing/**` the
+route security model; and
 `integration/printer-connection-migration.integration.test.ts` migration 0155
 on a real database.
 

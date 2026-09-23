@@ -20,6 +20,16 @@ npm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Electron build/packaging output and logs — never committed. electron/dist/
+# is the electron-builder output directory (installer artifacts, unpacked
+# app); electron/*.log is any captured build log (electron-builder, verify
+# scripts). These previously slipped into the repo (electron/build-output.log)
+# and inflated checkout size for no reason — packaged artifacts belong in CI
+# outputs/releases, not in git.
+electron/dist/
+electron/*.log
+electron/**/*.log
+
 .DS_Store
 
 # design-sync

@@ -19,6 +19,7 @@ import {
 } from "@/lib/device-token";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "@/app/dashboard/ui";
+import { SyncQueuePanel } from "./sync-queue-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -393,6 +394,8 @@ export function DeviceSettings() {
           </details>
         ) : null}
       </SectionCard>
+
+      <SyncQueuePanel />
 
       <Dialog
         open={Boolean(editingDevice)}

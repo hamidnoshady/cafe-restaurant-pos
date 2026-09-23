@@ -1,0 +1,420 @@
+"use strict";
+
+/**
+ * Native Windows printing for the desktop app — the audit fix for Section 7.
+ *
+ * The browser/cloud product reaches hardware through the Cafe POS Windows
+ * Print Connector (public/windows/cafe-pos-print-connector.ps1): a small
+ * loopback helper a cashier installs once, because a plain browser tab has
+ * no OS access of its own. The DESKTOP app is not a browser tab — it is
+ * already a Node/Electron process running on the same Windows machine as the
+ * printer, with `child_process` and raw sockets available directly. Asking a
+ * desktop install to also install a *second*, separate print helper next to
+ * itself was the bug: a needless extra step, a second thing to go stale, and
+ * a second install log to debug. This module is that direct path instead:
+ * the same two connection types (`windows` queue name / `network` ip:port)
+ * the product already models in `src/lib/printing/types.ts`, delivered
+ * without any loopback HTTP hop.
+ *
+ * `windows` targets go through the exact same technique the connector uses —
+ * `winspool.drv`'s `WritePrinter` RAW path via a tiny embedded C# helper,
+ * because Node has no built-in Windows spooler binding — just invoked
+ * in-process via PowerShell rather than requiring a separate always-running
+ * service. `network` targets are a plain Node TCP socket; Electron's main
+ * process needs no PowerShell at all for those.
+ *
+ * Every exported side-effecting function accepts its collaborators
+ * (`run`, `connect`, `listInterfaces`, `tmpdir`) as overridable options
+ * so the pure decision logic (JSON parsing, error classification, script
+ * building, subnet derivation) is unit-testable without touching a real
+ * printer, spooler or network — see src/lib/native-printing.test.ts.
+ */
+
+const { spawn } = require("node:child_process");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const net = require("node:net");
+const os = require("node:os");
+const path = require("node:path");
+const { listLanInterfaces } = require("./network-interfaces");
+
+/** Same heuristic the browser connector uses, kept identical on purpose. */
+const LIKELY_THERMAL_RE = /(thermal|receipt|pos|xp-|rp-|tm-|80mm|58mm)/i;
+
+function psQuote(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+/** Run one PowerShell command and return stdout, or reject with stderr/timeout. Windows-only. */
+function runPowerShell(script, { timeoutMs = 20_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const encoded = Buffer.from(script, "utf16le").toString("base64");
+    const child = spawn(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
+      { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      reject(new Error("PowerShell timed out"));
+    }, timeoutMs);
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code === 0) resolve(stdout);
+      else reject(new Error(stderr.trim() || `PowerShell exited ${code}`));
+    });
+  });
+}
+
+function likelyThermalName(name) {
+  return LIKELY_THERMAL_RE.test(String(name || ""));
+}
+
+/* ─────────────────────────── Windows queues ─────────────────────────── */
+
+function listWindowsPrintersScript() {
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    "$items = @(Get-CimInstance -ClassName Win32_Printer -ErrorAction Stop)",
+    "$result = foreach ($p in $items) { [PSCustomObject]@{ name = [string]$p.Name; driver = [string]$p.DriverName; isDefault = [bool]$p.Default } }",
+    "ConvertTo-Json -InputObject @($result) -Depth 4 -Compress",
+  ].join("; ");
+}
+
+/**
+ * `ConvertTo-Json -InputObject @($x)` still serialises a *one-item* array as
+ * a bare object, not `[{...}]` — a well-known PowerShell quirk. Both shapes
+ * are accepted here so a machine with exactly one printer is not mistaken
+ * for a parse failure.
+ */
+function parseWindowsPrinterListJson(raw) {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (error) {
+    throw new Error(`Could not parse the Windows printer list: ${error.message}`);
+  }
+  const items = Array.isArray(parsed) ? parsed : [parsed];
+  return items
+    .filter((item) => item && typeof item.name === "string" && item.name.trim() !== "")
+    .map((item) => ({
+      name: item.name,
+      driver: typeof item.driver === "string" && item.driver.trim() !== "" ? item.driver : null,
+      isDefault: Boolean(item.isDefault),
+      likelyThermal: likelyThermalName(item.name),
+    }));
+}
+
+/** The queues installed in Windows' own «Printers & scanners» — no helper process required. */
+async function listWindowsPrinters({ run = runPowerShell } = {}) {
+  try {
+    const stdout = await run(listWindowsPrintersScript());
+    return { ok: true, printers: parseWindowsPrinterListJson(stdout) };
+  } catch (error) {
+    return { ok: false, error: "print_failed", detail: error.message };
+  }
+}
+
+/** Is this queue name currently installed? Used to probe a saved `windows` target. */
+async function probeWindowsPrinter(printerName, opts = {}) {
+  const result = await listWindowsPrinters(opts);
+  if (!result.ok) return { ok: false, error: result.error, detail: result.detail };
+  const reachable = result.printers.some((printer) => printer.name === printerName);
+  return { ok: true, reachable, detail: reachable ? undefined : "printer_not_found" };
+}
+
+/**
+ * The same native winspool RAW bridge the browser connector embeds
+ * (`OpenPrinter` → `StartDocPrinter` → `StartPagePrinter` → `WritePrinter`
+ * loop → matching `End*`/`Close*`), reused verbatim because it is the one
+ * correct way to send raw ESC/POS bytes through Windows' own spooler.
+ */
+const RAW_PRINT_CSHARP = `
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public static class CafePosNativePrinter
+{
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private class DOC_INFO_1
+    {
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDocName = "Cafe POS";
+        [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile = null;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDatatype = "RAW";
+    }
+
+    [DllImport("winspool.drv", EntryPoint = "OpenPrinterW", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool OpenPrinter(string printerName, out IntPtr printer, IntPtr defaults);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    private static extern bool ClosePrinter(IntPtr printer);
+
+    [DllImport("winspool.drv", EntryPoint = "StartDocPrinterW", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern int StartDocPrinter(IntPtr printer, int level, [In] DOC_INFO_1 info);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    private static extern bool EndDocPrinter(IntPtr printer);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    private static extern bool StartPagePrinter(IntPtr printer);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    private static extern bool EndPagePrinter(IntPtr printer);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    private static extern bool WritePrinter(IntPtr printer, IntPtr bytes, int count, out int written);
+
+    private static void ThrowLastError(string operation)
+    {
+        throw new Win32Exception(Marshal.GetLastWin32Error(), operation + " failed");
+    }
+
+    public static void Send(string printerName, byte[] data)
+    {
+        if (String.IsNullOrWhiteSpace(printerName)) throw new ArgumentException("Printer name is required.");
+        if (data == null || data.Length == 0) throw new ArgumentException("Print data is empty.");
+
+        IntPtr printer = IntPtr.Zero;
+        IntPtr unmanaged = IntPtr.Zero;
+        bool documentStarted = false;
+        bool pageStarted = false;
+
+        try
+        {
+            if (!OpenPrinter(printerName, out printer, IntPtr.Zero)) ThrowLastError("OpenPrinter");
+            if (StartDocPrinter(printer, 1, new DOC_INFO_1()) == 0) ThrowLastError("StartDocPrinter");
+            documentStarted = true;
+            if (!StartPagePrinter(printer)) ThrowLastError("StartPagePrinter");
+            pageStarted = true;
+
+            unmanaged = Marshal.AllocCoTaskMem(data.Length);
+            Marshal.Copy(data, 0, unmanaged, data.Length);
+            int offset = 0;
+            while (offset < data.Length)
+            {
+                int written;
+                IntPtr cursor = new IntPtr(unmanaged.ToInt64() + offset);
+                if (!WritePrinter(printer, cursor, data.Length - offset, out written)) ThrowLastError("WritePrinter");
+                if (written <= 0) throw new Win32Exception("WritePrinter wrote zero bytes.");
+                offset += written;
+            }
+        }
+        finally
+        {
+            if (unmanaged != IntPtr.Zero) Marshal.FreeCoTaskMem(unmanaged);
+            if (pageStarted) EndPagePrinter(printer);
+            if (documentStarted) EndDocPrinter(printer);
+            if (printer != IntPtr.Zero) ClosePrinter(printer);
+        }
+    }
+}
+`.trim();
+
+function sendRawScript(tempFilePath, printerName) {
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `Add-Type -TypeDefinition @'\n${RAW_PRINT_CSHARP}\n'@ -Language CSharp`,
+    `$bytes = [IO.File]::ReadAllBytes(${psQuote(tempFilePath)})`,
+    `[CafePosNativePrinter]::Send(${psQuote(printerName)}, $bytes)`,
+  ].join("\r\n");
+}
+
+function classifyWindowsSendError(message) {
+  const text = String(message || "").toLowerCase();
+  if (text.includes("openprinter") || text.includes("invalid printer") || text.includes("printer name")) {
+    return "printer_not_found";
+  }
+  return "print_failed";
+}
+
+/** Deliver raw ESC/POS bytes to an installed Windows queue — no connector, no network hop. */
+async function sendRawBytesToWindowsPrinter(printerName, bytes, { run = runPowerShell, tmpdir = os.tmpdir() } = {}) {
+  if (!printerName || !String(printerName).trim()) return { ok: false, error: "invalid_printer", detail: "Printer name is required." };
+  if (!bytes || bytes.length === 0) return { ok: false, error: "invalid_printer", detail: "Print data is empty." };
+
+  const tempPath = path.join(tmpdir, `cafe-pos-native-print-${crypto.randomBytes(8).toString("hex")}.bin`);
+  await fs.promises.writeFile(tempPath, bytes);
+  try {
+    await run(sendRawScript(tempPath, printerName));
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: classifyWindowsSendError(error.message), detail: error.message };
+  } finally {
+    fs.promises.unlink(tempPath).catch(() => {});
+  }
+}
+
+/* ─────────────────────────── network printers ─────────────────────────── */
+
+function classifyNetworkError(error) {
+  const code = error && error.code;
+  if (code === "ETIMEDOUT" || code === "ECONNREFUSED" || code === "EHOSTUNREACH" || code === "ENETUNREACH") {
+    return "network_unreachable";
+  }
+  const message = String((error && error.message) || "").toLowerCase();
+  if (message.includes("timed out") || message.includes("refused") || message.includes("unreachable")) {
+    return "network_unreachable";
+  }
+  return "print_failed";
+}
+
+/** Is a raw-print TCP port (9100 by convention) answering at this address? */
+function probeNetworkPrinter(ip, port = 9100, { timeoutMs = 2000, connect = net.createConnection } = {}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let socket;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      try { socket?.destroy(); } catch { /* already gone */ }
+      resolve(result);
+    };
+    try {
+      socket = connect({ host: ip, port, timeout: timeoutMs });
+    } catch (error) {
+      finish({ ok: true, reachable: false, detail: error.message });
+      return;
+    }
+    socket.once("connect", () => finish({ ok: true, reachable: true }));
+    socket.once("timeout", () => finish({ ok: true, reachable: false, detail: "The connection timed out." }));
+    socket.once("error", (error) => finish({ ok: true, reachable: false, detail: error.message }));
+  });
+}
+
+/** Deliver raw ESC/POS bytes to a LAN/Wi-Fi ESC/POS printer over TCP — no connector needed. */
+function sendRawBytesToNetworkPrinter(ip, port, bytes, { timeoutMs = 15_000, connect = net.createConnection } = {}) {
+  return new Promise((resolve) => {
+    if (!bytes || bytes.length === 0) {
+      resolve({ ok: false, error: "invalid_printer", detail: "Print data is empty." });
+      return;
+    }
+    let settled = false;
+    let socket;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      try { socket?.destroy(); } catch { /* already gone */ }
+      resolve(result);
+    };
+    try {
+      socket = connect({ host: ip, port: port || 9100, timeout: timeoutMs });
+    } catch (error) {
+      finish({ ok: false, error: classifyNetworkError(error), detail: error.message });
+      return;
+    }
+    socket.once("connect", () => {
+      socket.write(bytes, (writeError) => {
+        if (writeError) {
+          finish({ ok: false, error: classifyNetworkError(writeError), detail: writeError.message });
+          return;
+        }
+        socket.end();
+      });
+    });
+    socket.once("close", () => finish({ ok: true }));
+    socket.once("timeout", () => finish({ ok: false, error: "network_unreachable", detail: "The connection timed out." }));
+    socket.once("error", (error) => finish({ ok: false, error: classifyNetworkError(error), detail: error.message }));
+  });
+}
+
+/** The /24 prefixes this machine sits on — the same subnets a person on this LAN could reach. */
+function localSubnets({ listInterfaces = listLanInterfaces } = {}) {
+  const prefixes = new Set();
+  for (const item of listInterfaces()) {
+    const parts = String(item.address || "").split(".");
+    if (parts.length === 4) prefixes.add(`${parts[0]}.${parts[1]}.${parts[2]}`);
+  }
+  return [...prefixes];
+}
+
+/**
+ * Sweep this machine's own local subnets for an open raw-print port, in
+ * bounded concurrency windows — the same idea as the browser connector's
+ * `Find-NetworkPrinters`, run here in Node instead of PowerShell because the
+ * desktop app already has direct socket access.
+ */
+async function discoverNetworkPrinters({
+  port = 9100,
+  timeoutMs = 400,
+  concurrency = 64,
+  listInterfaces,
+  connect,
+} = {}) {
+  const subnets = localSubnets({ listInterfaces });
+  if (subnets.length === 0) return [];
+
+  const targets = [];
+  for (const subnet of subnets) {
+    for (let host = 1; host <= 254; host += 1) targets.push(`${subnet}.${host}`);
+  }
+
+  const found = [];
+  for (let index = 0; index < targets.length; index += concurrency) {
+    const batch = targets.slice(index, index + concurrency);
+    const results = await Promise.all(
+      batch.map(async (ip) => {
+        const start = Date.now();
+        const probe = await probeNetworkPrinter(ip, port, { timeoutMs, connect });
+        if (!probe.reachable) return null;
+        return { ip, port, latencyMs: Date.now() - start };
+      }),
+    );
+    for (const entry of results) if (entry) found.push(entry);
+  }
+  return found.sort((a, b) => a.latencyMs - b.latencyMs);
+}
+
+/* ─────────────────────────── one entry point ─────────────────────────── */
+
+/** Dispatch a probe by the same `{type, systemName}` / `{type, ip, port}` shape the app already models. */
+async function probeTarget(target, opts = {}) {
+  if (!target || typeof target !== "object") return { ok: false, error: "invalid_printer" };
+  if (target.type === "windows") return probeWindowsPrinter(target.systemName, opts);
+  if (target.type === "network") return probeNetworkPrinter(target.ip, target.port || 9100, opts);
+  return { ok: false, error: "invalid_printer" };
+}
+
+/** Dispatch raw byte delivery by the same target shape. */
+async function sendRawToTarget(target, bytes, opts = {}) {
+  if (!target || typeof target !== "object") return { ok: false, error: "invalid_printer" };
+  if (target.type === "windows") return sendRawBytesToWindowsPrinter(target.systemName, bytes, opts);
+  if (target.type === "network") return sendRawBytesToNetworkPrinter(target.ip, target.port || 9100, bytes, opts);
+  return { ok: false, error: "invalid_printer" };
+}
+
+module.exports = {
+  likelyThermalName,
+  listWindowsPrintersScript,
+  parseWindowsPrinterListJson,
+  listWindowsPrinters,
+  probeWindowsPrinter,
+  sendRawScript,
+  classifyWindowsSendError,
+  sendRawBytesToWindowsPrinter,
+  classifyNetworkError,
+  probeNetworkPrinter,
+  sendRawBytesToNetworkPrinter,
+  localSubnets,
+  discoverNetworkPrinters,
+  probeTarget,
+  sendRawToTarget,
+  runPowerShell,
+};

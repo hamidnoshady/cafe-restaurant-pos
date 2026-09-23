@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - 'electron/app-paths.js'
       - 'electron/certificate-manager.js'
       - 'electron/gateway-manager.js'
       - 'electron/firewall-manager.js'
@@ -107,8 +108,8 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::simulator boot failed ($rc)"; exit $rc; }
           # simctl's keychain API expects a DER certificate. The gateway's
           # downloadable/onboarding CA remains PEM; convert only the test copy.
-          openssl x509 -in "$RUNNER_TEMP/mobile-ios/gateway-certificates/business-suite-local-ca.crt" -outform DER -out "$RUNNER_TEMP/mobile-ios/gateway-certificates/business-suite-local-ca.cer"
-          xcrun simctl keychain "$UDID" add-root-cert "$RUNNER_TEMP/mobile-ios/gateway-certificates/business-suite-local-ca.cer" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::CA installation failed ($rc)"; exit $rc; }
+          openssl x509 -in "$RUNNER_TEMP/mobile-ios/Data/gateway-certificates/business-suite-local-ca.crt" -outform DER -out "$RUNNER_TEMP/mobile-ios/Data/gateway-certificates/business-suite-local-ca.cer"
+          xcrun simctl keychain "$UDID" add-root-cert "$RUNNER_TEMP/mobile-ios/Data/gateway-certificates/business-suite-local-ca.cer" || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::CA installation failed ($rc)"; exit $rc; }
           xcrun simctl openurl "$UDID" 'https://127.0.0.1:9443/acceptance?platform=ios-simulator' || { rc=$?; echo "::error file=.github/workflows/mobile-emulator-acceptance.yml,title=iOS trust fixture::Safari openurl failed ($rc)"; exit $rc; }
           for i in $(seq 1 45); do
             if grep -q '"completed": true' "$RUNNER_TEMP/mobile-ios/browser-result.json"; then
