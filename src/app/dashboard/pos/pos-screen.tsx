@@ -106,6 +106,7 @@ import {
   type SelectOption,
 } from "@/components/ui/searchable-select";
 import { BranchSwitcher } from "../branch-switcher";
+import { FilterChip } from "../filters";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
@@ -1090,7 +1091,15 @@ export function PosScreen({
       <div
         className={`flex flex-col overflow-hidden ${cardClass} md:min-h-0 md:flex-1`}
       >
-        <div className="border-b border-border/80 p-3 md:p-4">
+        {/*
+          Item 8 — the phone's sell header is deliberately tighter than the
+          desktop's: `p-2` rather than `p-3`, a 44px search row rather than 48,
+          and a 44px category strip rather than 56. Three rows of chrome at
+          desktop proportions cost about a third of a 360px screen before the
+          first product tile, which is the row a cashier is actually reaching
+          for. From `md` up nothing changes — that till is not short of space.
+        */}
+        <div className="border-b border-border/80 p-2 md:p-4">
           <div className="mb-3 hidden flex-wrap items-center gap-2 md:flex">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
@@ -1169,7 +1178,7 @@ export function PosScreen({
                 id="pos-product-search"
                 className={
                   inputClass +
-                  " min-h-12 border-border/80 bg-muted ps-10 shadow-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-500/25 dark:focus-visible:ring-amber-400/45"
+                  " min-h-11 border-border/80 bg-muted ps-10 shadow-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-500/25 dark:focus-visible:ring-amber-400/45 md:min-h-12"
                 }
                 value={searchQuery}
                 onChange={(event) => {
@@ -1239,28 +1248,39 @@ export function PosScreen({
               <KnowledgeHelpButton section="pos" />
             </span>
           </div>
+          {/*
+            One horizontal lane, never a wrapping block: on a phone a wrapped
+            category row grew a second and third line as a menu gained
+            sections, and each line pushed the grid further down. The
+            scrollbar is hidden because a visible one on a 44px strip is
+            noise, and the negative margin lets the first and last chip reach
+            the panel's real edge so neither looks clipped mid-scroll.
+          */}
           <div
-            className="mt-3 flex min-h-14 gap-2 overflow-x-auto pb-1"
+            className="-mx-2 mt-2 flex min-h-11 flex-nowrap gap-1.5 overflow-x-auto px-2 pb-0.5 [scrollbar-width:none] md:-mx-0 md:mt-3 md:min-h-14 md:gap-2 md:px-0 md:pb-1 [&::-webkit-scrollbar]:hidden"
             aria-label="دسته‌های فعال"
           >
+            {/*
+              The shared chip, at the till's own density: `dense` is its 44px
+              touch target, and the only thing added is the desktop's taller
+              56px lane. Writing the amber selected state again here is what
+              gave the product three different active fills.
+            */}
             {activeCategories.map((category, index) => (
-              <button
+              <FilterChip
                 key={category.id}
-                type="button"
+                dense
+                selected={activeCategory === category.id}
                 onClick={() => {
                   setActiveCategory(category.id);
                   setSearchQuery("");
                   setSearchActiveIndex(0);
                 }}
-                className={`min-h-14 shrink-0 rounded-xl border px-4 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] motion-reduce:transition-none ${
-                  activeCategory === category.id
-                    ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 shadow-none"
-                    : "border-border/80 bg-card text-muted-foreground hover:border-amber-200 dark:hover:border-amber-500/30 hover:bg-muted"
-                }`}
+                className="whitespace-nowrap px-3 text-[13px] md:min-h-14 md:px-4 md:text-sm"
                 aria-keyshortcuts={index < 9 ? `Alt+${index + 1}` : undefined}
               >
                 {category.name}
-              </button>
+              </FilterChip>
             ))}
           </div>
         </div>
