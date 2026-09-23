@@ -28,26 +28,6 @@ import type { WpOverviewStats } from "@/lib/integrations/wp-manager-service";
 import { PluginWaitNote } from "./plugin-wait-note";
 import { useWpStore } from "./wp-store-context";
 
-interface Connection {
-  id: string;
-  name: string;
-  baseUrl: string;
-  linkMode: "rest_api" | "plugin";
-  status: "active" | "paused" | "error";
-  currencyUnit: string;
-  syncOrders: boolean;
-  syncProducts: boolean;
-  syncCustomers: boolean;
-  lastSyncAt: string | null;
-  lastCatalogueSyncAt: string | null;
-  lastOrderSyncAt: string | null;
-  lastCustomerSyncAt: string | null;
-  lastContentSyncAt: string | null;
-  lastPluginSeenAt: string | null;
-  lastError: string | null;
-  pluginVersion: string | null;
-}
-
 type SyncKind = "products" | "orders" | "customers" | "content";
 
 const SYNC_LABELS: Record<SyncKind, string> = {

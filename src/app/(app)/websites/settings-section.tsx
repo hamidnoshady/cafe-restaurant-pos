@@ -13,7 +13,7 @@
  * somebody else's page.
  */
 
-import { GlobeIcon, PlugZapIcon, RefreshCwIcon } from "lucide-react";
+import { GlobeIcon, RefreshCwIcon } from "lucide-react";
 import {
   AppSettingsPanel,
   type AppSettingsGroup,

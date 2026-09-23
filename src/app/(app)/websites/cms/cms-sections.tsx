@@ -40,11 +40,10 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { formatPersianNumber, toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import type { CmsConnectionSummary } from "@/lib/cms/connections";
-import { lexicalToPlainText, type CmsMedia, type CmsOrder, type CmsPost, type CmsProduct, type SiteDescriptor } from "@/lib/cms/types";
+import type { CmsOrder, type CmsPost, type CmsProduct, type SiteDescriptor } from "@/lib/cms/types";
 import { lexicalToMarkdown } from "@/lib/website/providers/payload-content";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  cardClass,
   EmptyState,
   LoadingSkeleton,
   SectionCard,
@@ -130,7 +129,10 @@ interface CmsSite {
   setOverview: React.Dispatch<React.SetStateAction<WebsiteOverview | null>>;
 }
 
-function useCmsSite({ withDns = false }: { withDns?: boolean } = {}): CmsSite {
+function useCmsSite({
+  withDns = false,
+  withOverview = true,
+}: { withDns?: boolean; withOverview?: boolean } = {}): CmsSite {
   const [connection, setConnection] = useState<CmsConnectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [stateError, setStateError] = useState("");
@@ -220,7 +222,7 @@ function useCmsSite({ withDns = false }: { withDns?: boolean } = {}): CmsSite {
         setStateError("");
         setConnection(data.connection);
         if (data.connection) {
-          loadOverview();
+          if (withOverview) loadOverview();
           if (withDns) checkDns();
         } else {
           setOverview(null);
@@ -230,7 +232,7 @@ function useCmsSite({ withDns = false }: { withDns?: boolean } = {}): CmsSite {
         }
       },
     );
-  }, [loadOverview, checkDns, withDns]);
+  }, [loadOverview, checkDns, withDns, withOverview]);
 
   useEffect(reload, [reload]);
 
@@ -654,7 +656,7 @@ export function CmsStoreSection() {
 /* ------------------------------------------------------------------ */
 
 export function CmsSettingsSection() {
-  const site = useCmsSite();
+  const site = useCmsSite({ withOverview: false });
 
   if (site.loading) return <SectionCardSkeleton rows={4} />;
   if (!site.connection) return <NoSiteYet what="تنظیمات همگام‌سازی" />;
