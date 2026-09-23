@@ -19,3 +19,6 @@
 **Learning:** When a list view (like the POS screen products list) calls a seemingly lightweight helper function (`attachedGroups`) that filters arrays under the hood on every item mapping iteration, it causes significant typing delay in search bars due to repeated O(N * M) calculations on the main thread.
 
 **Action:** Identify and lift expensive O(N) array filtering operations from inside `.map()` render loops by using `useMemo` to construct a pre-computed data structure (like a `Map`) keyed by the entity ID, allowing the render loop to perform fast O(1) lookups instead.
+## 2025-02-27 - Pre-Grouping Relations for O(1) Component Render
+**Learning:** React component lists (like ItemRow in MenuManager) frequently filter secondary arrays inside their render scope (`links.filter(l => l.menuItemId === item.id)`). This turns an O(N) render into an O(N^2) operation, causing severe bottlenecks on menus with hundreds of items.
+**Action:** Always extract relational array filtering into a parent `useMemo` that builds a `Map<id, RelatedItem[]>`. Pass down `map.get(id) ?? []` to child components to reduce relation lookup time from O(N) to O(1).

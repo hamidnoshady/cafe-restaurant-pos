@@ -33,7 +33,13 @@ import {
   SecondaryButton,
 } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { ChevronDown, ChevronDownIcon, ChevronUpIcon, SearchIcon, XIcon } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react";
 import { EmptyState, SectionCard } from "../page-chrome";
 import { MediaImageField, mediaFileUrl } from "../media/media-picker";
 
@@ -86,12 +92,9 @@ export function MenuManager({
       setLoadFailed(true);
     }
   }, []);
-  useEffect(
-    () => {
-      void load();
-    },
-    [load, refreshToken],
-  );
+  useEffect(() => {
+    void load();
+  }, [load, refreshToken]);
 
   async function run(
     fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
@@ -121,8 +124,12 @@ export function MenuManager({
     if (loadFailed) {
       return (
         <SectionCard title="منو">
-          <ErrorBox>بارگذاری منو ممکن نشد. اتصال را بررسی و دوباره تلاش کنید.</ErrorBox>
-          <SecondaryButton onClick={() => void load()}>تلاش دوباره</SecondaryButton>
+          <ErrorBox>
+            بارگذاری منو ممکن نشد. اتصال را بررسی و دوباره تلاش کنید.
+          </ErrorBox>
+          <SecondaryButton onClick={() => void load()}>
+            تلاش دوباره
+          </SecondaryButton>
         </SectionCard>
       );
     }
@@ -281,7 +288,10 @@ function CategorySection({
                     <ChevronDownIcon className="size-4" aria-hidden="true" />
                   </button>
                 </span>
-                <SecondaryButton disabled={busy} onClick={() => setEditingId(c.id)}>
+                <SecondaryButton
+                  disabled={busy}
+                  onClick={() => setEditingId(c.id)}
+                >
                   ویرایش
                 </SecondaryButton>
                 <SecondaryButton
@@ -343,7 +353,10 @@ function EditCategoryRow({
     event.preventDefault();
     if (!name.trim()) return;
     const rate = taxRate.trim();
-    if (rate !== "" && (Number.isNaN(Number(rate)) || Number(rate) < 0 || Number(rate) > 100)) {
+    if (
+      rate !== "" &&
+      (Number.isNaN(Number(rate)) || Number(rate) < 0 || Number(rate) > 100)
+    ) {
       return;
     }
     // Only the fields the operator actually changed are sent, so saving a
@@ -375,10 +388,7 @@ function EditCategoryRow({
             autoFocus
           />
         </Field>
-        <Field
-          label="نرخ مالیات (٪)"
-          hint="فقط با تغییر مقدار ذخیره می‌شود"
-        >
+        <Field label="نرخ مالیات (٪)" hint="فقط با تغییر مقدار ذخیره می‌شود">
           <PersianNumberInput
             className={inputClass}
             dir="ltr"
@@ -530,6 +540,20 @@ function ItemSection({
     [filteredItems],
   );
 
+  // ⚡ Bolt: Pre-group item modifiers to avoid O(N^2) filtering inside each ItemRow
+  const linksByItem = useMemo(() => {
+    const map = new Map<string, ItemModifierGroupLink[]>();
+    for (const link of data.itemModifierGroups) {
+      let arr = map.get(link.menuItemId);
+      if (!arr) {
+        arr = [];
+        map.set(link.menuItemId, arr);
+      }
+      arr.push(link);
+    }
+    return map;
+  }, [data.itemModifierGroups]);
+
   return (
     <SectionCard title="آیتم‌ها">
       <form
@@ -667,6 +691,7 @@ function ItemSection({
                         categories={data.categories}
                         groups={data.modifierGroups}
                         links={data.itemModifierGroups}
+                        itemLinks={linksByItem.get(i.id) ?? []}
                         siblings={items}
                         busy={busy}
                         run={run}
@@ -693,6 +718,7 @@ function ItemSection({
                     categories={data.categories}
                     groups={data.modifierGroups}
                     links={data.itemModifierGroups}
+                    itemLinks={linksByItem.get(i.id) ?? []}
                     siblings={uncategorizedItems}
                     busy={busy}
                     run={run}
@@ -712,6 +738,7 @@ function ItemRow({
   categories,
   groups,
   links,
+  itemLinks,
   siblings,
   busy,
   run,
@@ -720,6 +747,7 @@ function ItemRow({
   categories: Category[];
   groups: ModifierGroup[];
   links: ItemModifierGroupLink[];
+  itemLinks: ItemModifierGroupLink[];
   siblings: Item[];
   busy: boolean;
   run: Runner;
@@ -729,9 +757,10 @@ function ItemRow({
   const [showingPricing, setShowingPricing] = useState(false);
   const money = useMoney();
 
-  const itemLinks = links.filter((l) => l.menuItemId === item.id);
   const activeGroupNames = groups
-    .filter((g) => itemLinks.some((l) => l.modifierGroupId === g.id && l.isActive))
+    .filter((g) =>
+      itemLinks.some((l) => l.modifierGroupId === g.id && l.isActive),
+    )
     .map((g) => g.name);
   const categoryName =
     categories.find((c) => c.id === item.categoryId)?.name ?? "—";
@@ -780,7 +809,9 @@ function ItemRow({
             <p
               className={`flex items-center gap-2 ${item.isActive ? "" : "text-muted-foreground"}`}
             >
-              <span className={`truncate font-medium ${item.isActive ? "" : "line-through"}`}>
+              <span
+                className={`truncate font-medium ${item.isActive ? "" : "line-through"}`}
+              >
                 {item.name}
               </span>
               {item.sku ? (
@@ -875,7 +906,7 @@ function ItemRow({
         <ItemModifierGroupsPanel
           item={item}
           groups={groups}
-          links={links}
+          itemLinks={itemLinks}
           busy={busy}
           run={run}
         />
@@ -1042,18 +1073,16 @@ function EditItemRow({
 function ItemModifierGroupsPanel({
   item,
   groups,
-  links,
+  itemLinks,
   busy,
   run,
 }: {
   item: Item;
   groups: ModifierGroup[];
-  links: ItemModifierGroupLink[];
+  itemLinks: ItemModifierGroupLink[];
   busy: boolean;
   run: Runner;
 }) {
-  const itemLinks = links.filter((l) => l.menuItemId === item.id);
-
   async function attach(groupId: string) {
     await run(() =>
       api("/api/menu/item-modifier-groups", {
@@ -1076,7 +1105,11 @@ function ItemModifierGroupsPanel({
     await run(() =>
       api("/api/menu/item-modifier-groups", {
         method: "PATCH",
-        body: JSON.stringify({ menuItemId: item.id, modifierGroupId: groupId, ...patch }),
+        body: JSON.stringify({
+          menuItemId: item.id,
+          modifierGroupId: groupId,
+          ...patch,
+        }),
       }),
     );
   }
@@ -1084,8 +1117,8 @@ function ItemModifierGroupsPanel({
   return (
     <div className="mt-3 space-y-2 rounded-xl border border-border/80 bg-muted/30 p-3">
       <p className="text-xs font-medium text-muted-foreground">
-        گروه‌های افزودنی این آیتم — بردار «مقدار پیش‌فرض گروه» را می‌توانید برای همین
-        آیتم محدودتر کنید.
+        گروه‌های افزودنی این آیتم — بردار «مقدار پیش‌فرض گروه» را می‌توانید برای
+        همین آیتم محدودتر کنید.
       </p>
       {groups.length === 0 ? (
         <p className="text-xs text-muted-foreground">
@@ -1183,7 +1216,9 @@ function ItemGroupLinkRow({
             aria-label={`افزودن گروه ${group.name} به این آیتم`}
             checked={Boolean(link)}
             disabled={busy}
-            onChange={(event) => (event.target.checked ? onAttach() : onDetach())}
+            onChange={(event) =>
+              event.target.checked ? onAttach() : onDetach()
+            }
           />
           <span
             className={`truncate ${group.isActive ? "" : "text-muted-foreground"}`}
@@ -1201,7 +1236,8 @@ function ItemGroupLinkRow({
             <span className="text-xs text-muted-foreground">
               پیش‌فرض گروه: {toPersianDigits(group.minSelect)}–
               {toPersianDigits(group.maxSelect)}
-              {effectiveMin !== group.minSelect || effectiveMax !== group.maxSelect ? (
+              {effectiveMin !== group.minSelect ||
+              effectiveMax !== group.maxSelect ? (
                 <>
                   {" "}
                   · مؤثر: {toPersianDigits(effectiveMin)}–
@@ -1386,7 +1422,9 @@ function PricingPanel({
             placeholder="پیش‌فرض"
           />
           {marginError ? (
-            <span className="mt-1 block text-xs text-destructive">{marginError}</span>
+            <span className="mt-1 block text-xs text-destructive">
+              {marginError}
+            </span>
           ) : null}
         </Field>
         <div className="mb-4 flex items-end">
@@ -1453,6 +1491,20 @@ function ModifierSection({
     }
   }
 
+  // ⚡ Bolt: Pre-group modifiers by group to avoid O(N^2) filtering in ModifierGroupRow
+  const modifiersByGroup = useMemo(() => {
+    const map = new Map<string, Modifier[]>();
+    for (const modifier of data.modifiers) {
+      let arr = map.get(modifier.groupId);
+      if (!arr) {
+        arr = [];
+        map.set(modifier.groupId, arr);
+      }
+      arr.push(modifier);
+    }
+    return map;
+  }, [data.modifiers]);
+
   return (
     <SectionCard title="گروه‌های افزودنی">
       <form
@@ -1503,7 +1555,7 @@ function ModifierSection({
             key={g.id}
             group={g}
             groups={data.modifierGroups}
-            modifiers={data.modifiers.filter((m) => m.groupId === g.id)}
+            modifiers={modifiersByGroup.get(g.id) ?? []}
             busy={busy}
             run={run}
           />
@@ -1685,7 +1737,9 @@ function ModifierGroupRow({
           <p
             className={`text-sm font-medium ${group.isActive ? "" : "text-muted-foreground"}`}
           >
-            <span className={group.isActive ? "" : "line-through"}>{group.name}</span>{" "}
+            <span className={group.isActive ? "" : "line-through"}>
+              {group.name}
+            </span>{" "}
             <span className="text-xs text-muted-foreground">
               (انتخاب {toPersianDigits(group.minSelect)} تا{" "}
               {toPersianDigits(group.maxSelect)})
@@ -1697,7 +1751,9 @@ function ModifierGroupRow({
                 type="button"
                 aria-label={"جابه‌جایی " + group.name + " به بالا"}
                 title="جابه‌جایی به بالا"
-                disabled={busy || groups.findIndex((g) => g.id === group.id) === 0}
+                disabled={
+                  busy || groups.findIndex((g) => g.id === group.id) === 0
+                }
                 onClick={() => void moveGroup(-1)}
                 className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
               >
@@ -1709,7 +1765,8 @@ function ModifierGroupRow({
                 title="جابه‌جایی به پایین"
                 disabled={
                   busy ||
-                  groups.findIndex((g) => g.id === group.id) === groups.length - 1
+                  groups.findIndex((g) => g.id === group.id) ===
+                    groups.length - 1
                 }
                 onClick={() => void moveGroup(1)}
                 className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
@@ -1867,7 +1924,9 @@ function ModifierRow({
             type="button"
             aria-label={"جابه‌جایی " + modifier.name + " به بالا"}
             title="جابه‌جایی به بالا"
-            disabled={busy || siblings.findIndex((m) => m.id === modifier.id) === 0}
+            disabled={
+              busy || siblings.findIndex((m) => m.id === modifier.id) === 0
+            }
             onClick={() => void move(-1)}
             className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
           >
@@ -1879,7 +1938,8 @@ function ModifierRow({
             title="جابه‌جایی به پایین"
             disabled={
               busy ||
-              siblings.findIndex((m) => m.id === modifier.id) === siblings.length - 1
+              siblings.findIndex((m) => m.id === modifier.id) ===
+                siblings.length - 1
             }
             onClick={() => void move(1)}
             className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
