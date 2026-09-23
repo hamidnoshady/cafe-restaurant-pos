@@ -189,7 +189,7 @@ exit /b 0
     sourceUrl = "https://ftp.postgresql.org/pub/source/v$PostgresVersion/postgresql-$PostgresVersion.tar.gz"
     sourceSha256 = $SourceSha256
     zlibVersion = $ZlibVersion
-    zlibSourceUrl = "https://zlib.net/zlib-$ZlibVersion.tar.gz"
+    zlibSourceUrl = "https://github.com/madler/zlib/releases/download/v$ZlibVersion/zlib-$ZlibVersion.tar.gz"
     zlibSourceSha256 = $ZlibSourceSha256
     compression = "gzip"
     artifactSha256 = $archiveHash
