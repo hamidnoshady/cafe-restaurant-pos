@@ -36,6 +36,23 @@ const appPaths = require("../../electron/app-paths.js") as {
 
 let root: string;
 
+/**
+ * Whether `name` exists as an exactly-cased entry directly inside `dir`.
+ * Plain `fs.existsSync(path.join(dir, name))` is NOT a safe way to assert
+ * "the legacy `logs` entry is gone" on a case-insensitive, case-preserving
+ * filesystem (NTFS): once the migration renames `logs` to `Logs`,
+ * `existsSync(".../logs")` is STILL true on Windows — the differently-cased
+ * path resolves to the very same, now-renamed entry. `readdirSync` returns
+ * the actual on-disk (case-preserved) names, so it is the only reliable way
+ * to assert that the legacy lowercase name specifically no longer exists
+ * (elsewhere in this file, `root` is a real temp dir on whatever filesystem
+ * the test runs on — case-sensitive here in the sandbox, case-insensitive
+ * on the `windows-latest` CI runner this migration ships to).
+ */
+function exactCaseEntryExists(dir: string, name: string): boolean {
+  return fs.readdirSync(dir).includes(name);
+}
+
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "cafe-pos-app-paths-"));
 });
@@ -207,7 +224,7 @@ describe("migrateLegacyLayout", () => {
     expect(fs.existsSync(path.join(root, "pgdata"))).toBe(false);
     expect(fs.existsSync(path.join(root, "gateway-certificates"))).toBe(false);
     expect(fs.existsSync(path.join(root, "emergency-backups"))).toBe(false);
-    expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
+    expect(exactCaseEntryExists(root, "logs")).toBe(false);
   });
 
   it("never re-runs once the marker exists, even if a legacy folder reappears", () => {
@@ -233,7 +250,7 @@ describe("migrateLegacyLayout", () => {
     expect(logsEntry?.action).toBe("moved");
     const paths = appPaths.computePaths(root);
     expect(fs.readFileSync(path.join(paths.logsDir, "desktop.log"), "utf8")).toBe("log line");
-    expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
+    expect(exactCaseEntryExists(root, "logs")).toBe(false);
   });
 
   it("skips a legacy entry instead of overwriting a pre-existing destination", () => {
