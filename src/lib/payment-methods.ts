@@ -294,16 +294,32 @@ export interface TenderValidationOptions {
   due: Rial;
   /** Whether a customer was named — a `credit` tender is a debt, so it needs one. */
   hasCustomer: boolean;
+  /**
+   * Whether the tenders may settle the bill *with a difference* rather than
+   * exactly (the manual «مبلغ دریافتی» flow): less than the bill leaves the
+   * remainder as customer debt (accounts receivable), more than the bill
+   * leaves the excess as customer credit (store-credit liability). Both are
+   * a person's balance, so both still require `hasCustomer`.
+   *
+   * Default false — every pre-existing caller (amendments, backdated sales,
+   * retail invoices) keeps the exact-settlement rule it was written against.
+   */
+  allowDifference?: boolean;
 }
 
 /**
  * Whether these tenders settle the bill.
  *
- * Deliberately exact: the tenders must sum to what is owed, to the Rial. A
+ * Exact by default: the tenders must sum to what is owed, to the Rial. A
  * cashier who takes ۵۰۰٬۰۰۰ نقدی against a ۴۷۰٬۰۰۰ bill hands back ۳۰٬۰۰۰ and
  * the drawer holds the difference, but the *payment* is ۴۷۰٬۰۰۰ — recording
  * the ۵۰۰٬۰۰۰ would post revenue that was never earned and leave the entry
  * unbalanced. `changeDue` is what the screen shows; this is what it sends.
+ *
+ * With `allowDifference` the sum may sit either side of the bill, and the
+ * caller settles the difference through `settlementDifference` — debt to the
+ * customer's account, or credit to their store-credit balance — inside the
+ * same transaction.
  */
 export function validateTenders(
   tenders: readonly TenderInput[],
@@ -331,8 +347,35 @@ export function validateTenders(
       reference: tender.reference?.trim() || null,
     });
   }
-  if (tenderTotal(resolved) !== options.due) return { ok: false, error: "payment_total_mismatch" };
+  const total = tenderTotal(resolved);
+  if (total !== options.due) {
+    if (!options.allowDifference) return { ok: false, error: "payment_total_mismatch" };
+    // A difference is a balance on a person's account — never a walk-in's.
+    if (!options.hasCustomer) return { ok: false, error: "customer_required" };
+  }
   return { ok: true, value: resolved };
+}
+
+/** How a tender set that differs from the bill splits into debt and credit. */
+export interface SettlementDifference {
+  /** The unpaid remainder — posted as a debit to accounts receivable. */
+  balanceDue: Rial;
+  /** The overpaid excess — posted as a credit to the store-credit liability. */
+  customerCredit: Rial;
+}
+
+/**
+ * The difference between what was tendered and what the bill came to, split
+ * into the two balances it can become: underpayment is the customer's debt,
+ * overpayment is the customer's credit. Zero/zero for an exact settlement.
+ */
+export function settlementDifference(
+  tenders: readonly { amount: Rial }[],
+  due: Rial,
+): SettlementDifference {
+  const total = tenderTotal(tenders);
+  if (total <= due) return { balanceDue: due - total, customerCredit: 0 };
+  return { balanceDue: 0, customerCredit: total - due };
 }
 
 /**

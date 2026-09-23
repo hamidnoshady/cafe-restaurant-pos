@@ -120,4 +120,32 @@ describe("packaged desktop production posture", () => {
       (process.env as Record<string, string | undefined>).NODE_ENV = previous;
     }
   });
+
+  /**
+   * `playwright-core` ships a prebuilt `coreBundle.js` that requires
+   * `chromium-bidi` subpaths which are not present in the npm tree, so esbuild
+   * cannot resolve them and fails the entire desktop bundle. It stays external.
+   *
+   * This is a regression test with a real history: adding a background tick to
+   * `server.ts` that reached the PDF export path pulled `playwright-core` into
+   * the bundle for the first time and broke `npm run desktop:runtime`, taking
+   * both the `verify-shippables` and `build-desktop-installer` workflows with
+   * it — while every other gate stayed green, because nothing else compiles
+   * `server.ts` with esbuild. Marking it external is safe precisely because
+   * Next's standalone trace already stages the real package into the runtime's
+   * `node_modules`, so the unbundled `require` resolves at run time.
+   */
+  it("keeps playwright-core out of the esbuild bundle", () => {
+    const builder = readFileSync(
+      path.join(process.cwd(), "scripts", "build-desktop-runtime.mjs"),
+      "utf8",
+    );
+    const external = builder.match(/external:\s*\[([\s\S]*?)\]/)?.[1] ?? "";
+    expect(external).toContain('"playwright-core"');
+    // The natives that were already unbundleable must not be dropped while
+    // editing that list.
+    for (const dependency of ['"pg-native"', '"bufferutil"', '"utf-8-validate"']) {
+      expect(external).toContain(dependency);
+    }
+  });
 });

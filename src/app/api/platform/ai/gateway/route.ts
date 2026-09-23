@@ -1,7 +1,9 @@
 /**
- * Phase 37 & Phase 39 — the console's gateway operations.
+ * Phase 37, Phase 39 & Phase 40 — technical LiteLLM administration API.
  *
- * Supports global LiteLLM settings, business virtual keys, and branch-level overrides.
+ * Exclusively handles LiteLLM connection parameters, model aliases, and
+ * business/branch virtual-key management. All billing, money, revenue,
+ * allowances and tenant monetization belong strictly to Plan/Billing.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getAiRuntimeReadiness, getPlatformAiConfig } from "@/lib/ai-config";
@@ -14,25 +16,22 @@ import {
   mergeGatewayConfig,
   probeGateway,
   provisionVirtualKey,
-  refreshKeySpend,
+  rotateVirtualKey,
+  verifyVirtualKey,
   revokeVirtualKey,
   saveAiGatewayConfig,
-  saveBusinessGateway,
   toPublicAiGatewayConfig,
   toPublicBusinessGateway,
 } from "@/lib/ai-gateway-service";
 import {
   isGatewayActive,
-  toStringList,
   validateGatewayInput,
-  type AiGatewayConfig,
   type AiGatewayInput,
-  type BusinessGatewayInput,
 } from "@/lib/ai-gateway";
 import { platformAudit, requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
 import { query, withoutTenantScope } from "@/lib/db";
 
-/** Gateway state, plus a live probe when the operator asked for one. */
+/** Technical LiteLLM gateway status, models, readiness and virtual keys. */
 export const GET = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.read");
   if (error) return error;
@@ -76,7 +75,10 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
 
   const canManage = session.role === "owner";
   const wantsProbe = request.nextUrl.searchParams.get("probe") === "1";
-  const status = canManage && wantsProbe ? await probeGateway(gateway) : null;
+  const firstVirtualKey = gateways.find((row) => Boolean(row.virtualKey))?.virtualKey ?? null;
+  const status = canManage && wantsProbe
+    ? await probeGateway(gateway, { platformModel: platform.model, virtualKey: firstVirtualKey })
+    : null;
 
   return NextResponse.json({
     gateway: canManage ? toPublicAiGatewayConfig(gateway) : null,
@@ -102,21 +104,8 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
   });
 });
 
-function safeNumber(value: unknown): number | null {
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : null;
-}
 
-function safeInteger(value: unknown): number | null {
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isSafeInteger(n) ? n : null;
-}
-
-function optionalText(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-/** Owner-only: the gateway connection, and an on-demand connection test. */
+/** Owner/Admin: LiteLLM connection setup and on-demand comprehensive probe. */
 export const PUT = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.config.manage");
   if (error) return error;
@@ -135,7 +124,9 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
     }
     const current = await getAiGatewayConfig();
     const merged = mergeGatewayConfig(draft as AiGatewayInput, current);
-    return NextResponse.json({ status: await probeGateway(merged) });
+    const [platform, gatewayRows] = await Promise.all([getPlatformAiConfig(), listBusinessGateways()]);
+    const firstVirtualKey = gatewayRows.find((row) => Boolean(row.virtualKey))?.virtualKey ?? null;
+    return NextResponse.json({ status: await probeGateway(merged, { platformModel: platform.model, virtualKey: firstVirtualKey }) });
   }
 
   if (body.action === "config") {
@@ -157,9 +148,9 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
       payload: {
         enabled: saved.enabled,
         baseUrl: saved.baseUrl,
+        chatModel: saved.chatModel,
+        embeddingModel: saved.embeddingModel,
         virtualKeysEnabled: saved.virtualKeysEnabled,
-        allowBusinessModels: saved.allowBusinessModels,
-        fallbackCount: saved.fallbackModels.length,
       },
     });
     return NextResponse.json({ gateway: toPublicAiGatewayConfig(saved) });
@@ -168,9 +159,9 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
 });
 
-/** Engineer/owner: per-business and per-branch key lifecycle and spend controls. */
+/** Engineer/owner: per-business and per-branch virtual-key lifecycle and diagnostics. */
 export const POST = withPlatformScope(async (request: NextRequest) => {
-  const { session, error } = await requirePlatformCapability("ai.credits.manage");
+  const { session, error } = await requirePlatformCapability("ai.config.manage");
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -188,33 +179,21 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
   const gateway = await getAiGatewayConfig();
 
   if (body.action === "sync_key") {
-    // Pre-flight: each of these states would end in a guaranteed-failing or
-    // guaranteed-useless key, so the operator hears *that* instead of an
-    // opaque 502 from a call that was never going to work. They are 400s —
-    // operator-fixable configuration, not an upstream failure.
     if (!isGatewayActive(gateway)) {
       return NextResponse.json({ error: "ai_gateway_disabled" }, { status: 400 });
     }
     if (!gateway.masterKey) {
       return NextResponse.json({ error: "ai_gateway_missing_master_key" }, { status: 400 });
     }
-    // A key minted while the toggle is off would never authenticate anything:
-    // resolveGatewayAuthKey only consults business keys once virtual keys are
-    // enabled, so the console must not let one be minted into that limbo.
     if (!gateway.virtualKeysEnabled) {
       return NextResponse.json({ error: "ai_gateway_virtual_keys_disabled" }, { status: 400 });
     }
 
     const existing = await getBusinessGateway(businessId, locationId);
     try {
-      const row = await provisionVirtualKey(gateway, platform.model, {
+      const row = await provisionVirtualKey(gateway, {
         businessId,
         locationId,
-        models: toStringList(body.models),
-        maxBudgetUsd: pickNumber(body.maxBudgetUsd, gateway.defaultMaxBudgetUsd),
-        budgetDuration: optionalText(body.budgetDuration) ?? gateway.defaultBudgetDuration,
-        tpmLimit: safeInteger(body.tpmLimit) ?? gateway.defaultTpmLimit,
-        rpmLimit: safeInteger(body.rpmLimit) ?? gateway.defaultRpmLimit,
       });
       await platformAudit({
         adminId: session.padmin,
@@ -227,8 +206,6 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
       return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
     } catch (err) {
       if (err instanceof GatewayProvisioningError) {
-        // The gateway answered but refused — the proxy's own explanation is
-        // the most actionable thing the operator can be shown.
         return NextResponse.json({ error: err.code, detail: err.detail }, { status: 502 });
       }
       if (err instanceof Error && err.message.startsWith("ai_gateway")) {
@@ -251,28 +228,30 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
     return NextResponse.json({ ok: true });
   }
 
-  if (body.action === "refresh_spend") {
-    const row = await refreshKeySpend(gateway, businessId, locationId);
-    if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
+  if (body.action === "verify_key") {
+    const result = await verifyVirtualKey(gateway, businessId, locationId, platform.model);
+    if (!result.gateway) return NextResponse.json({ error: "not_found", status: result.probe }, { status: 404 });
+    return NextResponse.json({
+      gateway: toPublicBusinessGateway(result.gateway, gateway, platform.model),
+      status: result.probe,
+    });
   }
 
-  if (body.action === "business") {
+  if (body.action === "rotate_key") {
     try {
-      const input = businessInput(body);
-      const row = await saveBusinessGateway(businessId, input, gateway, locationId);
+      const row = await rotateVirtualKey(gateway, businessId, locationId);
       await platformAudit({
         adminId: session.padmin,
         businessId,
-        action: "ai.gateway.business.save",
+        action: "ai.gateway.key.rotate",
         entity: "ai_business_gateway",
         entityId: locationId ? `${businessId}:${locationId}` : businessId,
-        payload: { ...input, locationId },
+        payload: { keyAlias: row.keyAlias, locationId, syncError: row.syncError },
       });
       return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
     } catch (err) {
-      if (err instanceof Error && err.message.startsWith("ai_gateway")) {
-        return NextResponse.json({ error: err.message }, { status: 400 });
+      if (err instanceof GatewayProvisioningError) {
+        return NextResponse.json({ error: err.code, detail: err.detail }, { status: 502 });
       }
       throw err;
     }
@@ -280,19 +259,3 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
 
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
 });
-
-function pickNumber(value: unknown, fallback: number | null): number | null {
-  const n = safeNumber(value);
-  if (n === null) return fallback;
-  return n > 0 ? n : null;
-}
-
-function businessInput(body: Record<string, unknown>): BusinessGatewayInput {
-  return {
-    modelOverride: body.modelOverride === null ? null : optionalText(body.modelOverride),
-    maxBudgetUsd: body.maxBudgetUsd === null ? null : safeNumber(body.maxBudgetUsd),
-    budgetDuration: body.budgetDuration === null ? null : optionalText(body.budgetDuration),
-    tpmLimit: body.tpmLimit === null ? null : safeInteger(body.tpmLimit),
-    rpmLimit: body.rpmLimit === null ? null : safeInteger(body.rpmLimit),
-  };
-}

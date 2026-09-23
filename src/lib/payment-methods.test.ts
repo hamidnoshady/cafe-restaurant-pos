@@ -16,12 +16,17 @@ import {
   tipTenderIndex,
   validatePaymentMethodInput,
   validateTenders,
+  settlementDifference,
 } from "./payment-methods";
 
 describe("builtinPaymentMethodsFor", () => {
   it("gives SnapFood to food service only", () => {
-    expect(builtinPaymentMethodsFor("food_service").map((m) => m.code)).toContain("snappfood");
-    expect(builtinPaymentMethodsFor("jewelry").map((m) => m.code)).not.toContain("snappfood");
+    expect(
+      builtinPaymentMethodsFor("food_service").map((m) => m.code),
+    ).toContain("snappfood");
+    expect(
+      builtinPaymentMethodsFor("jewelry").map((m) => m.code),
+    ).not.toContain("snappfood");
   });
 
   it("gives every trade the five common ways", () => {
@@ -35,7 +40,9 @@ describe("builtinPaymentMethodsFor", () => {
   });
 
   it("marks only cash as opening the drawer", () => {
-    expect(BUILTIN_PAYMENT_METHODS.filter((m) => m.opensDrawer).map((m) => m.code)).toEqual(["cash"]);
+    expect(
+      BUILTIN_PAYMENT_METHODS.filter((m) => m.opensDrawer).map((m) => m.code),
+    ).toEqual(["cash"]);
   });
 });
 
@@ -50,7 +57,10 @@ describe("sortPaymentMethods", () => {
   });
 
   it("does not mutate its input", () => {
-    const input = [{ sortOrder: 2, name: "ب" }, { sortOrder: 1, name: "الف" }];
+    const input = [
+      { sortOrder: 2, name: "ب" },
+      { sortOrder: 1, name: "الف" },
+    ];
     sortPaymentMethods(input);
     expect(input.map((m) => m.name)).toEqual(["ب", "الف"]);
   });
@@ -60,13 +70,21 @@ describe("isExactPaymentMethodOrder", () => {
   const current = ["cash-id", "card-id", "online-id"];
 
   it("accepts every current id exactly once in any order", () => {
-    expect(isExactPaymentMethodOrder(current, ["online-id", "cash-id", "card-id"])).toBe(true);
+    expect(
+      isExactPaymentMethodOrder(current, ["online-id", "cash-id", "card-id"]),
+    ).toBe(true);
   });
 
   it("rejects subsets, duplicates, and foreign ids", () => {
-    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id"])).toBe(false);
-    expect(isExactPaymentMethodOrder(current, ["cash-id", "cash-id", "online-id"])).toBe(false);
-    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id", "foreign-id"])).toBe(false);
+    expect(isExactPaymentMethodOrder(current, ["cash-id", "card-id"])).toBe(
+      false,
+    );
+    expect(
+      isExactPaymentMethodOrder(current, ["cash-id", "cash-id", "online-id"]),
+    ).toBe(false);
+    expect(
+      isExactPaymentMethodOrder(current, ["cash-id", "card-id", "foreign-id"]),
+    ).toBe(false);
   });
 });
 
@@ -78,7 +96,9 @@ describe("paymentMethodCodeFor", () => {
   it("falls back to 'custom' for a Persian name, then de-duplicates", () => {
     expect(paymentMethodCodeFor("کیف پول", [])).toBe("custom");
     expect(paymentMethodCodeFor("کیف پول", ["custom"])).toBe("custom_2");
-    expect(paymentMethodCodeFor("کیف پول", ["custom", "custom_2"])).toBe("custom_3");
+    expect(paymentMethodCodeFor("کیف پول", ["custom", "custom_2"])).toBe(
+      "custom_3",
+    );
   });
 
   it("never collides with a built-in code", () => {
@@ -88,22 +108,30 @@ describe("paymentMethodCodeFor", () => {
 
 describe("validatePaymentMethodInput", () => {
   it("rejects an empty or over-long name", () => {
-    expect(validatePaymentMethodInput({ name: "  ", settlement: "cash" })).toEqual({
+    expect(
+      validatePaymentMethodInput({ name: "  ", settlement: "cash" }),
+    ).toEqual({
       ok: false,
       error: "invalid_name",
     });
-    expect(validatePaymentMethodInput({ name: "ی".repeat(41), settlement: "cash" })).toEqual({
+    expect(
+      validatePaymentMethodInput({ name: "ی".repeat(41), settlement: "cash" }),
+    ).toEqual({
       ok: false,
       error: "invalid_name",
     });
   });
 
   it("rejects a settlement a business may not mint", () => {
-    expect(validatePaymentMethodInput({ name: "اسنپ دوم", settlement: "snappfood" })).toEqual({
+    expect(
+      validatePaymentMethodInput({ name: "اسنپ دوم", settlement: "snappfood" }),
+    ).toEqual({
       ok: false,
       error: "invalid_settlement",
     });
-    expect(validatePaymentMethodInput({ name: "بیت‌کوین", settlement: "crypto" })).toEqual({
+    expect(
+      validatePaymentMethodInput({ name: "بیت‌کوین", settlement: "crypto" }),
+    ).toEqual({
       ok: false,
       error: "invalid_settlement",
     });
@@ -111,31 +139,71 @@ describe("validatePaymentMethodInput", () => {
   });
 
   it("defaults opensDrawer to whether it settles as cash", () => {
-    const cashLike = validatePaymentMethodInput({ name: "صندوق دوم", settlement: "cash" });
+    const cashLike = validatePaymentMethodInput({
+      name: "صندوق دوم",
+      settlement: "cash",
+    });
     expect(cashLike).toEqual({
       ok: true,
-      value: { name: "صندوق دوم", settlement: "cash", opensDrawer: true, requiresReference: false },
+      value: {
+        name: "صندوق دوم",
+        settlement: "cash",
+        opensDrawer: true,
+        requiresReference: false,
+      },
     });
-    const cardLike = validatePaymentMethodInput({ name: "پوز ملت", settlement: "card", requiresReference: true });
+    const cardLike = validatePaymentMethodInput({
+      name: "پوز ملت",
+      settlement: "card",
+      requiresReference: true,
+    });
     expect(cardLike).toEqual({
       ok: true,
-      value: { name: "پوز ملت", settlement: "card", opensDrawer: false, requiresReference: true },
+      value: {
+        name: "پوز ملت",
+        settlement: "card",
+        opensDrawer: false,
+        requiresReference: true,
+      },
     });
   });
 
   it("honours an explicit opensDrawer over the default", () => {
-    expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: false })).toEqual({
+    expect(
+      validatePaymentMethodInput({
+        name: "تنخواه",
+        settlement: "cash",
+        opensDrawer: false,
+      }),
+    ).toEqual({
       ok: true,
-      value: { name: "تنخواه", settlement: "cash", opensDrawer: false, requiresReference: false },
+      value: {
+        name: "تنخواه",
+        settlement: "cash",
+        opensDrawer: false,
+        requiresReference: false,
+      },
     });
   });
 
   it("rejects truthy strings instead of silently treating them as enabled", () => {
-    expect(validatePaymentMethodInput({ name: "تنخواه", settlement: "cash", opensDrawer: "false" })).toEqual({
+    expect(
+      validatePaymentMethodInput({
+        name: "تنخواه",
+        settlement: "cash",
+        opensDrawer: "false",
+      }),
+    ).toEqual({
       ok: false,
       error: "bad_request",
     });
-    expect(validatePaymentMethodInput({ name: "پوز", settlement: "card", requiresReference: 1 })).toEqual({
+    expect(
+      validatePaymentMethodInput({
+        name: "پوز",
+        settlement: "card",
+        requiresReference: 1,
+      }),
+    ).toEqual({
       ok: false,
       error: "bad_request",
     });
@@ -154,7 +222,9 @@ describe("tenderTotal / remainingAfterTenders", () => {
 
 describe("changeDue", () => {
   it("gives back an overshoot that was paid in cash", () => {
-    expect(changeDue([{ settlement: "cash", amount: 5_000_000 }], 4_700_000)).toBe(300_000);
+    expect(
+      changeDue([{ settlement: "cash", amount: 5_000_000 }], 4_700_000),
+    ).toBe(300_000);
   });
 
   it("is zero when the tenders land exactly", () => {
@@ -189,10 +259,15 @@ describe("validateTenders", () => {
   const ok = { due, hasCustomer: false };
 
   it("accepts a single tender covering the bill", () => {
-    const result = validateTenders([{ methodId: "m1", settlement: "cash", amount: due }], ok);
+    const result = validateTenders(
+      [{ methodId: "m1", settlement: "cash", amount: due }],
+      ok,
+    );
     expect(result).toEqual({
       ok: true,
-      value: [{ methodId: "m1", settlement: "cash", amount: due, reference: null }],
+      value: [
+        { methodId: "m1", settlement: "cash", amount: due, reference: null },
+      ],
     });
   });
 
@@ -200,7 +275,12 @@ describe("validateTenders", () => {
     const result = validateTenders(
       [
         { methodId: "m1", settlement: "cash", amount: 2_000_000 },
-        { methodId: "m2", settlement: "card", amount: 3_000_000, reference: " 4421 " },
+        {
+          methodId: "m2",
+          settlement: "card",
+          amount: 3_000_000,
+          reference: " 4421 ",
+        },
       ],
       ok,
     );
@@ -214,17 +294,24 @@ describe("validateTenders", () => {
   it("lets one slice take whatever is left", () => {
     // «۲۰۰٬۰۰۰ نقدی، بقیه با کارت» — the card slice carries no amount.
     const result = validateTenders(
-      [
-        { settlement: "cash", amount: 2_000_000 },
-        { settlement: "card" },
-      ],
+      [{ settlement: "cash", amount: 2_000_000 }, { settlement: "card" }],
       ok,
     );
     expect(result).toEqual({
       ok: true,
       value: [
-        { methodId: null, settlement: "cash", amount: 2_000_000, reference: null },
-        { methodId: null, settlement: "card", amount: 3_000_000, reference: null },
+        {
+          methodId: null,
+          settlement: "cash",
+          amount: 2_000_000,
+          reference: null,
+        },
+        {
+          methodId: null,
+          settlement: "card",
+          amount: 3_000_000,
+          reference: null,
+        },
       ],
     });
   });
@@ -235,7 +322,9 @@ describe("validateTenders", () => {
   });
 
   it("refuses more than one open slice — 'the rest' has to mean one thing", () => {
-    expect(validateTenders([{ settlement: "cash" }, { settlement: "card" }], ok)).toEqual({
+    expect(
+      validateTenders([{ settlement: "cash" }, { settlement: "card" }], ok),
+    ).toEqual({
       ok: false,
       error: "payment_total_mismatch",
     });
@@ -243,7 +332,10 @@ describe("validateTenders", () => {
 
   it("refuses an open slice with nothing left for it", () => {
     expect(
-      validateTenders([{ settlement: "cash", amount: due }, { settlement: "card" }], ok),
+      validateTenders(
+        [{ settlement: "cash", amount: due }, { settlement: "card" }],
+        ok,
+      ),
     ).toEqual({ ok: false, error: "invalid_amount" });
   });
 
@@ -270,16 +362,29 @@ describe("validateTenders", () => {
 
   it("rejects an empty, zero, fractional or negative slice", () => {
     expect(validateTenders([], ok)).toEqual({ ok: false, error: "no_payment" });
-    expect(validateTenders([{ settlement: "cash", amount: 0 }], { due: 0, hasCustomer: false })).toEqual({
+    expect(
+      validateTenders([{ settlement: "cash", amount: 0 }], {
+        due: 0,
+        hasCustomer: false,
+      }),
+    ).toEqual({
       ok: false,
       error: "invalid_amount",
     });
-    expect(validateTenders([{ settlement: "cash", amount: -5 }], ok)).toEqual({ ok: false, error: "invalid_amount" });
-    expect(validateTenders([{ settlement: "cash", amount: 1.5 }], ok)).toEqual({ ok: false, error: "invalid_amount" });
+    expect(validateTenders([{ settlement: "cash", amount: -5 }], ok)).toEqual({
+      ok: false,
+      error: "invalid_amount",
+    });
+    expect(validateTenders([{ settlement: "cash", amount: 1.5 }], ok)).toEqual({
+      ok: false,
+      error: "invalid_amount",
+    });
   });
 
   it("rejects an unknown settlement", () => {
-    expect(validateTenders([{ settlement: "bitcoin" as never, amount: due }], ok)).toEqual({
+    expect(
+      validateTenders([{ settlement: "bitcoin" as never, amount: due }], ok),
+    ).toEqual({
       ok: false,
       error: "invalid_payment_method",
     });
@@ -290,16 +395,121 @@ describe("validateTenders", () => {
       { settlement: "cash" as const, amount: 3_000_000 },
       { settlement: "credit" as const, amount: 2_000_000 },
     ];
-    expect(validateTenders(tenders, { due, hasCustomer: false })).toEqual({ ok: false, error: "customer_required" });
+    expect(validateTenders(tenders, { due, hasCustomer: false })).toEqual({
+      ok: false,
+      error: "customer_required",
+    });
     expect(validateTenders(tenders, { due, hasCustomer: true }).ok).toBe(true);
   });
 
   it("caps how many slices one bill can be cut into", () => {
-    const tenders = Array.from({ length: 11 }, () => ({ settlement: "cash" as const, amount: 1 }));
-    expect(validateTenders(tenders, { due: 11, hasCustomer: false })).toEqual({ ok: false, error: "too_many_tenders" });
+    const tenders = Array.from({ length: 11 }, () => ({
+      settlement: "cash" as const,
+      amount: 1,
+    }));
+    expect(validateTenders(tenders, { due: 11, hasCustomer: false })).toEqual({
+      ok: false,
+      error: "too_many_tenders",
+    });
   });
 });
 
+describe("validateTenders — settle with a difference", () => {
+  const due = 600_000_000; // 600,000 Toman in Rial
+
+  it("still refuses a mismatched sum by default (exact settlement)", () => {
+    const result = validateTenders(
+      [{ settlement: "cash", amount: 500_000_000 }],
+      { due, hasCustomer: true },
+    );
+    expect(result).toEqual({ ok: false, error: "payment_total_mismatch" });
+  });
+
+  it("accepts an underpayment as customer debt when a customer is named", () => {
+    const result = validateTenders(
+      [{ settlement: "cash", amount: 500_000_000 }],
+      { due, hasCustomer: true, allowDifference: true },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: [{ settlement: "cash", amount: 500_000_000 }],
+    });
+  });
+
+  it("accepts an overpayment as customer credit when a customer is named", () => {
+    const result = validateTenders(
+      [{ settlement: "card", amount: 700_000_000 }],
+      { due, hasCustomer: true, allowDifference: true },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: [{ settlement: "card", amount: 700_000_000 }],
+    });
+  });
+
+  it("refuses either difference without a customer — a balance is a person's", () => {
+    expect(
+      validateTenders([{ settlement: "cash", amount: 500_000_000 }], {
+        due,
+        hasCustomer: false,
+        allowDifference: true,
+      }),
+    ).toEqual({ ok: false, error: "customer_required" });
+    expect(
+      validateTenders([{ settlement: "cash", amount: 700_000_000 }], {
+        due,
+        hasCustomer: false,
+        allowDifference: true,
+      }),
+    ).toEqual({ ok: false, error: "customer_required" });
+  });
+
+  it("keeps requiring a customer for an explicit credit slice", () => {
+    expect(
+      validateTenders(
+        [
+          { settlement: "cash", amount: 200_000_000 },
+          { settlement: "credit", amount: 400_000_000 },
+        ],
+        { due, hasCustomer: false, allowDifference: true },
+      ),
+    ).toEqual({ ok: false, error: "customer_required" });
+  });
+});
+
+describe("settlementDifference", () => {
+  const due = 600_000_000;
+
+  it("is zero/zero for an exact settlement", () => {
+    expect(settlementDifference([{ amount: 600_000_000 }], due)).toEqual({
+      balanceDue: 0,
+      customerCredit: 0,
+    });
+  });
+
+  it("splits an underpayment into debt only", () => {
+    expect(settlementDifference([{ amount: 500_000_000 }], due)).toEqual({
+      balanceDue: 100_000_000,
+      customerCredit: 0,
+    });
+  });
+
+  it("splits an overpayment into credit only", () => {
+    expect(settlementDifference([{ amount: 700_000_000 }], due)).toEqual({
+      balanceDue: 0,
+      customerCredit: 100_000_000,
+    });
+  });
+
+  it("sums several tenders before comparing", () => {
+    expect(
+      settlementDifference(
+        [{ amount: 200_000_000 }, { amount: 500_000_000 }],
+        due,
+      ),
+    ).toEqual({ balanceDue: 0, customerCredit: 100_000_000 });
+  });
+});
 describe("tendersBySettlement", () => {
   it("merges slices sharing a settlement, in settlement order", () => {
     expect(

@@ -10,7 +10,16 @@ on:
   pull_request:
     paths:
       - 'electron/**'
+      # The packaged desktop ships the web app, so app-source changes rebuild
+      # the installer — but test files never ship, so test-only changes don't.
+      # Order matters: later patterns override, so the three posture tests this
+      # workflow actually executes are re-included after the exclusion.
       - 'src/**'
+      - '!src/**/*.test.ts'
+      - '!src/**/*.test.tsx'
+      - 'src/lib/desktop-runtime-posture.test.ts'
+      - 'src/lib/desktop-network-interfaces.test.ts'
+      - 'src/lib/chromium-executable.test.ts'
       - 'public/**'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
@@ -36,7 +45,15 @@ on:
     branches: [main, 'arena/**']
     paths:
       - 'electron/**'
+      # Same app-ships-in-installer rule as the pull_request trigger above:
+      # rebuild on real app changes, skip test-only changes, keep the three
+      # executed posture tests as triggers.
       - 'src/**'
+      - '!src/**/*.test.ts'
+      - '!src/**/*.test.tsx'
+      - 'src/lib/desktop-runtime-posture.test.ts'
+      - 'src/lib/desktop-network-interfaces.test.ts'
+      - 'src/lib/chromium-executable.test.ts'
       - 'public/**'
       - 'migrations/**'
       - 'scripts/build-desktop-runtime.mjs'
@@ -164,7 +181,12 @@ jobs:
             $tail = Get-Content electron-builder.log -Tail 120
             $summary = "## Electron installer build failure`n`n``````text`n$($tail -join "`n")`n```````n"
             [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $summary, (New-Object System.Text.UTF8Encoding($false)))
-            $important = $tail | Where-Object { $_ -match '(error|failed|ERR_|⨯|invalid|cannot|exception)' } | Select-Object -Last 8
+            # \u2a2f is the multiplication-X marker (U+2A2F) that build tools
+            # print for errors - written as an escape because Windows
+            # PowerShell 5.1 reads this BOM-less UTF-8 script as Windows-1252,
+            # which would silently garble a literal character into one that
+            # never matches anything.
+            $important = $tail | Where-Object { $_ -match '(error|failed|ERR_|\u2a2f|invalid|cannot|exception)' } | Select-Object -Last 8
             foreach ($line in $important) {
               $escaped = ([string]$line).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
               Write-Output "::error file=electron/package.json,title=Electron installer build failed::$escaped"
@@ -377,7 +399,7 @@ jobs:
           $summary = @"
           ## Business Suite Windows package
 
-          - Installer: **$env:NAME** — **$env:INSTALLER MiB**
+          - Installer: **$env:NAME** - **$env:INSTALLER MiB**
           - Unpacked installed payload: **$env:INSTALLED MiB**
           - PostgreSQL backup tools: **$env:PG_TOOLS MiB**, built from pinned PostgreSQL $env:PG_SOURCE_VERSION and zlib $env:ZLIB_SOURCE_VERSION sources with gzip compression
           - Runtime: Next standalone trace + bundled custom server; no root node_modules

@@ -32,7 +32,7 @@ export async function recomputeOrderTotals(
     category_id: string | null;
   }>(
     `SELECT oi.unit_price, oi.quantity, COALESCE(mc.tax_rate, 0) AS tax_rate,
-            ARRAY(SELECT price_delta FROM order_item_modifiers oim
+            ARRAY(SELECT oim.price_delta * oim.quantity FROM order_item_modifiers oim
                    WHERE oim.order_item_id = oi.id) AS mod_deltas,
             oi.menu_item_id, mc.id AS category_id
        FROM order_items oi

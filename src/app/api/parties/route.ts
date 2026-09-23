@@ -3,6 +3,8 @@ import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { PartyValidationError, createParty, listParties, searchParties } from "@/lib/parties-service";
 import { PARTY_ROLES, parsePartyRequestBody, type PartyRole } from "@/lib/parties";
+import { arBalancesForCustomers } from "@/lib/ar-service";
+import { storeCreditBalancesFor } from "@/lib/loyalty-service";
 
 /**
  * The party directory — one endpoint for «اشخاص» in every app.
@@ -40,6 +42,22 @@ export const GET = withTenantScope(async (request: NextRequest) => {
       roles,
       limit: params.get("limit") ? Number(params.get("limit")) : undefined,
     });
+    // The till's customer picker asks for the balance beside the name (a
+    // subtle «بدهی/اعتبار» line) so the cashier knows before ringing up a
+    // tab. Opt-in because the CRM's own pickers don't need the extra reads.
+    if (params.get("withBalance") === "1" && parties.length > 0) {
+      const ids = parties.map((party) => party.id);
+      const [arBalances, storeCredits] = await Promise.all([
+        arBalancesForCustomers(session.businessId, ids),
+        storeCreditBalancesFor(session.businessId, ids),
+      ]);
+      const withBalances = parties.map((party) => ({
+        ...party,
+        balance: arBalances.get(party.id) ?? 0,
+        storeCredit: storeCredits.get(party.id) ?? 0,
+      }));
+      return NextResponse.json({ parties: withBalances, customers: withBalances });
+    }
     return NextResponse.json({ parties, customers: parties });
   }
 

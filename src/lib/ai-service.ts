@@ -20,6 +20,7 @@ import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
 import { validateInputRequest, type InputRequestSpec } from "./ai-input-protocol";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
 import { parseResponseCostHeader } from "./ai-gateway";
+import { normalizeProviderError, tenantProviderErrorMessage, type NormalizedProviderError } from "./ai-provider-errors";
 import { clampRetrievalLimit, formatRetrievalForPrompt, isRetrievalAvailable, retrieveKnowledge } from "./ai-rag";
 import { embedOne, isEmbeddingAvailable } from "./ai-embeddings";
 import {
@@ -81,11 +82,109 @@ type ProviderContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
+
 interface ProviderMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | ProviderContentPart[] | null;
   tool_calls?: ProviderToolCall[];
   tool_call_id?: string;
+}
+
+export interface AiProviderRequestDiagnostics {
+  requestId?: string;
+  endpoint: "chat_completions";
+  url: string;
+  model: string;
+  credentialSource: "tenant_virtual_key" | "gateway_master_key" | "platform_key" | "missing";
+  streaming: boolean;
+  streamOptions: boolean;
+  toolCount: number;
+  functionToolCount: number;
+  mcpToolCount: number;
+  toolTypes: string[];
+  fallbackCount: number;
+  hasFallbacks: boolean;
+  hasMcpTools: boolean;
+}
+
+function credentialSource(config: AiConfig): AiProviderRequestDiagnostics["credentialSource"] {
+  const runtime = config as AiConfig & {
+    tenantVirtualKeyResolved?: boolean;
+    tenantVirtualKeyRequired?: boolean;
+  };
+  if (config.gateway?.authKey && runtime.tenantVirtualKeyResolved) return "tenant_virtual_key";
+  if (config.gateway?.authKey) return "gateway_master_key";
+  if (config.apiKey) return "platform_key";
+  return "missing";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateJsonSchemaObject(schema: unknown, path: string, errors: string[]): void {
+  if (!isRecord(schema)) {
+    errors.push(`${path}: parameters must be a JSON object`);
+    return;
+  }
+  if (schema.type !== "object") {
+    errors.push(`${path}.type: root schema must be object`);
+  }
+  const properties = schema.properties;
+  if (properties !== undefined && !isRecord(properties)) {
+    errors.push(`${path}.properties: must be an object when present`);
+  }
+  const required = schema.required;
+  if (required !== undefined) {
+    if (!Array.isArray(required) || required.some((item) => typeof item !== "string")) {
+      errors.push(`${path}.required: must be an array of strings`);
+    } else if (isRecord(properties)) {
+      for (const key of required) {
+        if (!Object.prototype.hasOwnProperty.call(properties, key)) {
+          errors.push(`${path}.required: ${key} is not defined in properties`);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Validate the exact function-tool catalogue before it reaches LiteLLM/OpenAI.
+ * A single malformed definition makes the entire chat-completions request a 400;
+ * failing locally gives operators a precise application error instead.
+ */
+export function validateOpenAiTools(tools: unknown[]): string[] {
+  const errors: string[] = [];
+  const names = new Set<string>();
+  tools.forEach((tool, index) => {
+    const path = `tools[${index}]`;
+    if (!isRecord(tool)) {
+      errors.push(`${path}: tool must be an object`);
+      return;
+    }
+    if (tool.type !== "function") {
+      errors.push(`${path}.type: only OpenAI function tools are allowed in core chat`);
+      return;
+    }
+    if (!isRecord(tool.function)) {
+      errors.push(`${path}.function: missing function definition`);
+      return;
+    }
+    const fn = tool.function;
+    const name = typeof fn.name === "string" ? fn.name.trim() : "";
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) {
+      errors.push(`${path}.function.name: invalid OpenAI function name`);
+    } else if (names.has(name)) {
+      errors.push(`${path}.function.name: duplicate tool name ${name}`);
+    } else {
+      names.add(name);
+    }
+    if (typeof fn.description !== "string" || !fn.description.trim()) {
+      errors.push(`${path}.function.description: description is required`);
+    }
+    validateJsonSchemaObject(fn.parameters, `${path}.function.parameters`, errors);
+  });
+  return errors;
 }
 
 export interface InboundMessage {
@@ -272,31 +371,46 @@ async function callProvider(
   messages: ProviderMessage[],
   tools: ReturnType<typeof toolDefinitions>,
   stream?: ProviderStreamCallbacks,
+  requestId?: string,
 ): Promise<ProviderResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const url = chatCompletionsUrl(config.baseUrl);
+  const toolErrors = validateOpenAiTools(tools);
+  const requestDiagnostics: AiProviderRequestDiagnostics = {
+    ...(requestId ? { requestId } : {}),
+    endpoint: "chat_completions",
+    url,
+    model: config.model,
+    credentialSource: credentialSource(config),
+    streaming: Boolean(stream),
+    streamOptions: Boolean(stream),
+    toolCount: tools.length,
+    functionToolCount: tools.length,
+    mcpToolCount: 0,
+    toolTypes: tools.length > 0 ? ["function"] : [],
+    fallbackCount: 0,
+    hasFallbacks: false,
+    hasMcpTools: false,
+  };
+  if (toolErrors.length > 0) {
+    throw new AiError(
+      "ai_invalid_tools",
+      "تعریف ابزارهای هوش مصنوعی معتبر نیست و درخواست ارسال نشد.",
+      toolErrors.join("; "),
+      undefined,
+      requestDiagnostics,
+    );
+  }
+
   let res: Response;
   try {
-    // Phase 38b — MCP tool declarations arrive inside the gateway body, but
-    // they must share one `tools` array with the agent's own function tools
-    // (the proxy tells them apart by `type`), so they are pulled out before
-    // the spread and merged below — never silently overwritten by it.
-    const gatewayBody = { ...(config.gateway?.body ?? {}) };
-    const gatewayMcpTools = Array.isArray(gatewayBody.tools)
-      ? (gatewayBody.tools as Record<string, unknown>[])
-      : [];
-    if (Array.isArray(gatewayBody.tools)) delete gatewayBody.tools;
-
     const body: Record<string, unknown> = {
       model: config.model,
       messages,
       temperature: config.temperature,
       max_tokens: config.maxOutputTokens,
       stream: Boolean(stream),
-      // Phase 37 — the gateway's failover chain, when one is configured.
-      // Empty for every deployment that talks to a vendor directly, which is
-      // the whole reason it is merged here rather than branched on above.
-      ...gatewayBody,
     };
     if (stream) {
       // OpenAI-compatible APIs include final usage in the terminal stream
@@ -305,13 +419,14 @@ async function callProvider(
       body.stream_options = { include_usage: true };
     }
     // Some OpenAI-compatible providers reject an explicit empty tools array.
-    // Proactive Wave 4 digests deliberately have no tools, because their
-    // tenant-scoped facts are collected before the provider is called.
-    if (tools.length > 0 || gatewayMcpTools.length > 0) {
-      body.tools = [...gatewayMcpTools, ...tools];
+    // MCP and per-request LiteLLM fallbacks are intentionally not merged here:
+    // routing/fallback/provider tools are gateway policy, and optional MCP must
+    // never make ordinary tenant chat invalid.
+    if (tools.length > 0) {
+      body.tools = tools;
       body.tool_choice = "auto";
     }
-    res = await fetch(chatCompletionsUrl(config.baseUrl), {
+    res = await fetch(url, {
       method: "POST",
       headers: providerHeaders(config),
       body: JSON.stringify(body),
@@ -323,7 +438,8 @@ async function callProvider(
     if (stream && res.status === 400) {
       const fallbackBody = { ...body };
       delete fallbackBody.stream_options;
-      res = await fetch(chatCompletionsUrl(config.baseUrl), {
+      requestDiagnostics.streamOptions = false;
+      res = await fetch(url, {
         method: "POST",
         headers: providerHeaders(config),
         body: JSON.stringify(fallbackBody),
@@ -333,18 +449,26 @@ async function callProvider(
   } catch (err) {
     clearTimeout(timer);
     if (err instanceof Error && err.name === "AbortError") {
-      throw new AiError("ai_timeout", "پاسخ سرویس هوش مصنوعی به‌موقع نرسید.");
+      throw new AiError("ai_timeout", "پاسخ سرویس هوش مصنوعی به‌موقع نرسید.", undefined, undefined, requestDiagnostics);
     }
-    throw new AiError("ai_network", "اتصال به سرویس هوش مصنوعی برقرار نشد.");
+    throw new AiError("ai_network", "اتصال به سرویس هوش مصنوعی برقرار نشد.", undefined, undefined, requestDiagnostics);
   }
   clearTimeout(timer);
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    const providerError = normalizeProviderError(res.status, body);
     if (res.status === 401 || res.status === 403) {
-      throw new AiError("ai_auth", "کلید سرویس هوش مصنوعی نامعتبر است.", body);
+      throw new AiError("ai_auth", tenantProviderErrorMessage(res.status), body, providerError, requestDiagnostics);
     }
-    throw new AiError("ai_provider", `سرویس هوش مصنوعی خطا داد (${res.status}).`, body);
+    // The gateway's own throttles (RPM/TPM per deployment, per-key budgets)
+    // answer 429. It is a transient, self-healing state — and since migration
+    // 0168 the platform no longer mirrors key budgets, a 429 with wallet
+    // credit left really is a proxy-side throttle, not a billing stop.
+    if (res.status === 429) {
+      throw new AiError("ai_rate_limited", tenantProviderErrorMessage(res.status), body, providerError, requestDiagnostics);
+    }
+    throw new AiError("ai_provider", tenantProviderErrorMessage(res.status), body, providerError, requestDiagnostics);
   }
 
   if (stream && res.headers.get("content-type")?.includes("text/event-stream")) {
@@ -375,6 +499,8 @@ export class AiError extends Error {
     public code: string,
     message: string,
     public detail?: string,
+    public providerError?: NormalizedProviderError,
+    public requestDiagnostics?: AiProviderRequestDiagnostics,
   ) {
     super(message);
     this.name = "AiError";
@@ -568,6 +694,8 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   executeReadTool?: ReadToolRunner;
   /** Optional callbacks turn the provider response into a live UI stream. */
   stream?: ProviderStreamCallbacks;
+  /** Server-generated id used only for sanitized diagnostics/log correlation. */
+  requestId?: string;
   promptContext: PromptContext;
   /**
    * An explicit system prompt for this turn; when absent the code-built one
@@ -652,7 +780,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   ];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const result = await callProvider(config, convo, tools, opts.stream);
+    const result = await callProvider(config, convo, tools, opts.stream, opts.requestId);
     usage.inputTokens += result.usage.inputTokens;
     usage.outputTokens += result.usage.outputTokens;
     if (result.costUsd !== null) costUsd = (costUsd ?? 0) + result.costUsd;

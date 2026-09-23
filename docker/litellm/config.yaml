@@ -14,18 +14,21 @@
 # Model names below are *aliases* (model_name); a business only ever asks for
 # the alias, so which vendor actually serves it stays a platform decision that
 # can change without touching this application. The application's own aliases
-# live in /platform/ai/gateway and must match these.
+# live in /platform/ai and must match these.
 #
-# The console values this file expects (super-admin → /platform/ai/gateway):
+# The console values this file expects (super-admin → /platform/ai):
 #
 #   نشانی دروازه            http://litellm:4000/v1
 #   کلید مدیر                $LITELLM_MASTER_KEY   (same secret as below)
 #   مدل گفت‌وگو              pos-chat
 #   مدل بردارسازی            pos-embed
 #   زنجیرهٔ جایگزین          pos-cheap
-#   روش توزیع                simple-shuffle        (mirror of router_settings)
 #   مدل‌های قابل انتخاب      pos-chat, pos-cheap   (only if the business model
 #                                                  picker is switched on)
+#
+# Routing, per-model RPM/TPM and per-key budgets are configured HERE and only
+# here — the platform console stopped mirroring them (migration 0168), so this
+# file is the single home of the proxy's own settings.
 #
 # A routing strategy only has something to do when an alias has more than one
 # deployment behind it. Each alias below has exactly one, so today the router's
@@ -50,9 +53,8 @@ model_list:
       rpm: 60
 
   # Failover: a different vendor entirely, so a single provider outage stops
-  # being a platform-wide outage. The application sends this as its client-side
-  # `fallbacks` chain, but declaring it here as well means a direct call to the
-  # gateway fails over even without that parameter.
+  # being a platform-wide outage. The application no longer sends request-level
+  # `fallbacks`; the proxy/router policy below is the source of truth.
   - model_name: pos-cheap
     litellm_params:
       model: openai/gpt-4.1-nano
@@ -145,7 +147,7 @@ router_settings:
   # The router's own choice of deployment when an alias has several. This is a
   # proxy-side setting: LiteLLM has no endpoint that changes it at runtime
   # (`GET /router/settings` is read-only), so it is edited here and the
-  # application's /platform/ai/gateway field must say the same thing — the
+  # application's /platform/ai field must say the same thing — the
   # console's "بررسی ارتباط" reads the live value and reports a disagreement.
   #
   # simple-shuffle is LiteLLM's documented production default: it is the only
@@ -163,8 +165,7 @@ router_settings:
   allowed_fails: 3
   cooldown_time: 30
 
-  # Tried in order; also sent per-request by the application, which keeps the
-  # chain editable from /platform/ai/gateway without restarting this service.
+  # Tried in order. This is gateway policy and is not mirrored by /platform/ai.
   fallbacks:
     - pos-chat:
         - pos-cheap

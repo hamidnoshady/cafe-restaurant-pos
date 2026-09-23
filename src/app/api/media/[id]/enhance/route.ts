@@ -44,7 +44,7 @@ export const POST = withTenantScope(async (_request: NextRequest, context: { par
     );
   }
 
-  const config = await resolveAiConfigFor(session.businessId, null);
+  const config = await resolveAiConfigFor(session.businessId, null, { ensureVirtualKey: true });
   if (!isPlatformAiConfigured(config)) {
     const reason = logAiRuntimeUnavailable(config, { businessId: session.businessId, locationId: null, surface: "media_enhance" });
     return NextResponse.json(

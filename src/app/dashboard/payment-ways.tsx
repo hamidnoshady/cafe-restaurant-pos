@@ -11,13 +11,18 @@ import { useCallback, useEffect, useState } from "react";
 import { BanknoteIcon, CreditCardIcon, PlusIcon, ReceiptTextIcon, ScrollTextIcon, SmartphoneIcon, WalletIcon, XIcon } from "lucide-react";
 import { useMoney } from "@/components/money/money-context";
 import {
+  draftDifference,
+  draftReceivedRial,
   draftRemaining,
+  draftRequiresCustomer,
   newDraftRow,
   type PaymentDraft,
 } from "@/lib/payment-draft";
 import type { PaymentMethodView, PaymentSettlement } from "@/lib/payment-methods";
+import { toPersianDigits } from "@/lib/digits";
 import { api } from "./ui";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UserIcon } from "lucide-react";
 
 /** A settlement's icon — a way a business added is recognisable by how it settles. */
 const SETTLEMENT_ICONS: Record<PaymentSettlement, typeof BanknoteIcon> = {
@@ -79,11 +84,34 @@ export interface PaymentWaysProps {
   loaded?: boolean;
   /** Distinguishes the ids of two panels rendered at once (the POS has a desktop and a sheet copy). */
   idPrefix?: string;
+  /**
+   * The sale's customer, for the under/over-payment rules: a difference
+   * (بدهی/اعتبار) can only be booked against a named person. The panel itself
+   * stays picker-free — `onChooseCustomer` opens the surface's own picker.
+   */
+  customer?: { id: string; name: string } | null;
+  onChooseCustomer?: () => void;
 }
 
-export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = true, idPrefix = "pay" }: PaymentWaysProps) {
+export function PaymentWays({
+  methods,
+  draft,
+  onChange,
+  due,
+  disabled,
+  loaded = true,
+  idPrefix = "pay",
+  customer = null,
+  onChooseCustomer,
+}: PaymentWaysProps) {
   const money = useMoney();
   const remaining = draftRemaining(draft, due, money.unit);
+  // The typed amount versus the bill — the whole underpay/overpay decision,
+  // computed here so the cashier sees it before the ۴-second hold, not in an
+  // error toast after. Only meaningful when the bill isn't being split.
+  const receivedRial = draftReceivedRial(draft);
+  const difference = draftDifference(receivedRial ?? due, due);
+  const needsCustomer = draftRequiresCustomer(draft, methods, due) && !customer;
 
   /**
    * Tapping a way while splitting *adds* it, pre-filled with whatever is still
@@ -136,9 +164,41 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
         </button>
       </div>
 
+      {/*
+        The amount actually handed over — separate from the method choice,
+        because "cash" says nothing about how much of the bill it covers. Left
+        empty it means the whole bill; typed over or under it becomes a
+        customer balance, which the preview below prices before the hold.
+        Splitting hides it: the slices are the amounts then.
+      */}
+      {!draft.split && loaded && methods.length > 0 ? (
+        <div className="mb-2.5">
+          <label
+            className="mb-1 flex items-center justify-between text-xs font-bold text-muted-foreground"
+            htmlFor={idPrefix + "-received"}
+          >
+            <span>مبلغ دریافتی</span>
+            <span className="font-normal">
+              صورتحساب: {money.format(due)}
+            </span>
+          </label>
+          <PersianNumberInput
+            id={idPrefix + "-received"}
+            className={AMOUNT_INPUT + " h-12 text-base font-bold"}
+            dir="ltr"
+            inputMode="numeric"
+            value={draft.receivedAmount}
+            disabled={disabled}
+            onChange={(event) => onChange({ ...draft, receivedAmount: event.target.value })}
+            placeholder={money.unit === "rial" ? "کل مبلغ صورتحساب" : "کل مبلغ صورتحساب"}
+            aria-label="مبلغ دریافتی از مشتری"
+          />
+        </div>
+      ) : null}
+
       {!loaded ? (
         <div
-          className="grid grid-cols-3 gap-2"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-3"
           role="status"
           aria-live="polite"
           aria-busy="true"
@@ -149,7 +209,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {methods.map((method) => {
             const Icon = paymentWayIcon(method);
             const selected = !draft.split && draft.methodId === method.id;
@@ -173,6 +233,62 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
       )}
       {loaded && methods.length === 0 ? (
         <p className="mt-2 text-xs text-muted-foreground">روشی برای دریافت وجه تعریف نشده است.</p>
+      ) : null}
+
+      {/*
+        The settle-with-difference preview — جمع سفارش / دریافتی / بدهی یا
+        اعتبار — shown the moment the typed amount leaves the bill, so the
+        cashier books the difference deliberately instead of discovering it in
+        a rejection. Split payments keep the exact-arithmetic rows below.
+      */}
+      {!draft.split && receivedRial !== null && receivedRial !== due ? (
+        <div className="mt-2.5 space-y-1 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 p-2.5 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">جمع سفارش</span>
+            <span className="font-bold tabular-nums">{money.format(due)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">دریافتی</span>
+            <span className="font-bold tabular-nums">{money.format(receivedRial)}</span>
+          </div>
+          <div className="flex items-center justify-between border-t border-amber-200/70 dark:border-amber-500/30 pt-1">
+            <span className="text-muted-foreground">
+              {difference.balanceDue > 0 ? "بدهی مشتری" : "اعتبار مشتری"}
+            </span>
+            <span
+              className={
+                "font-black tabular-nums " +
+                (difference.balanceDue > 0
+                  ? "text-amber-700 dark:text-amber-300"
+                  : "text-emerald-700 dark:text-emerald-300")
+              }
+            >
+              {money.format(difference.balanceDue > 0 ? difference.balanceDue : difference.customerCredit)}
+            </span>
+          </div>
+          {needsCustomer ? (
+            <div className="rounded-lg bg-card/80 dark:bg-card/60 p-2">
+              <p className="leading-5 text-amber-700 dark:text-amber-300">
+                برای ثبت بدهی یا اعتبار، ابتدا مشتری را انتخاب کنید.
+              </p>
+              {onChooseCustomer ? (
+                <button
+                  type="button"
+                  onClick={onChooseCustomer}
+                  disabled={disabled}
+                  className="mt-1.5 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg bg-amber-500 dark:bg-amber-400 px-3 text-xs font-bold text-amber-950 disabled:opacity-55"
+                >
+                  <UserIcon className="size-4" aria-hidden="true" />
+                  انتخاب یا افزودن مشتری
+                </button>
+              ) : null}
+            </div>
+          ) : customer && (difference.balanceDue > 0 || difference.customerCredit > 0) ? (
+            <p className="leading-5 text-muted-foreground">
+              روی حساب «{customer.name}» ثبت می‌شود.
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {draft.split ? (

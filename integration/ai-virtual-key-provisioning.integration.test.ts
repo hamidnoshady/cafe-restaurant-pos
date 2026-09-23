@@ -156,9 +156,6 @@ async function configuredGateway(overrides: Record<string, unknown> = {}) {
     baseUrl: mockGatewayUrl,
     masterKey: "sk-master",
     chatModel: "pos-chat",
-    maxTurnRial: 50_000,
-    gatewayCostingEnabled: true,
-    usdRialRate: 600_000,
     ...overrides,
   });
   return service.getAiGatewayConfig();
@@ -167,13 +164,7 @@ async function configuredGateway(overrides: Record<string, unknown> = {}) {
 describe("minting a virtual key", () => {
   it("stores the minted key against the business", async () => {
     const config = await configuredGateway();
-    const row = await service.provisionVirtualKey(config, "platform-model", {
-      businessId,
-      maxBudgetUsd: 5,
-      budgetDuration: "30d",
-      tpmLimit: null,
-      rpmLimit: null,
-    });
+    const row = await service.provisionVirtualKey(config, { businessId });
     expect(row.virtualKey).toBe("sk-minted-123");
     expect(row.keyAlias).toBeTruthy();
     expect(row.syncError).toBeNull();
@@ -185,15 +176,41 @@ describe("minting a virtual key", () => {
     expect((generate?.body as Record<string, unknown>).key_alias).toBe(row.keyAlias);
   });
 
+  it("mints an identity-only key: alias and metadata, nothing else", async () => {
+    const config = await configuredGateway();
+    const row = await service.provisionVirtualKey(config, { businessId });
+
+    const generate = seenRequests.find((r) => r.url === "/key/generate");
+    const body = generate?.body as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(["key_alias", "metadata"]);
+    // Migration 0168: no models allowlist (changing the platform's chat alias
+    // would orphan every existing key) and no mirrored budget or rate limits
+    // (the Rial wallet is the single billing stop).
+    expect(JSON.stringify(body)).not.toMatch(/"models"|max_budget|budget_duration|tpm_limit|rpm_limit/);
+    expect((body.metadata as Record<string, unknown>).business_id).toBe(businessId);
+    expect((body.metadata as Record<string, unknown>).source).toBe("cafe-pos");
+    expect(JSON.stringify(row)).not.toMatch(/maxBudgetUsd|budgetDuration|tpmLimit|rpmLimit/);
+  });
+
+  it("carries the branch id in the alias and metadata for a location key", async () => {
+    const config = await configuredGateway();
+    const locationId = "9f1c2d3e-4a5b-4067-8089-101112131415";
+    await db.query(
+      `INSERT INTO locations (id, business_id, name) VALUES ($1, $2, 'شعبهٔ مرکزی')`,
+      [locationId, businessId],
+    );
+    const row = await service.provisionVirtualKey(config, { businessId, locationId });
+    // The alias embeds the branch id's first 8 hex chars (see virtualKeyAlias).
+    expect(row.keyAlias).toContain("9f1c2d3e");
+
+    const generate = seenRequests.find((r) => r.url === "/key/generate");
+    const metadata = (generate?.body as Record<string, unknown>).metadata as Record<string, unknown>;
+    expect(metadata.location_id).toBe(locationId);
+  });
+
   it("authenticates the management call with the master key, never a business key", async () => {
     const config = await configuredGateway();
-    await service.provisionVirtualKey(config, "platform-model", {
-      businessId,
-      maxBudgetUsd: null,
-      budgetDuration: null,
-      tpmLimit: null,
-      rpmLimit: null,
-    });
+    await service.provisionVirtualKey(config, { businessId });
     expect(seenRequests.at(-1)?.auth).toBe("Bearer sk-master");
   });
 
@@ -203,15 +220,7 @@ describe("minting a virtual key", () => {
       body: { error: { message: " budgets must be greater than 0" } },
     };
     const config = await configuredGateway();
-    const err = await service
-      .provisionVirtualKey(config, "platform-model", {
-        businessId,
-        maxBudgetUsd: 5,
-        budgetDuration: "30d",
-        tpmLimit: null,
-        rpmLimit: null,
-      })
-      .catch((error: unknown) => error);
+    const err = await service.provisionVirtualKey(config, { businessId }).catch((error: unknown) => error);
     expect(err).toBeInstanceOf(service.GatewayProvisioningError);
     const provisioningError = err as GatewayProvisioningError;
     // The message stays the machine code — the route's contract — while the
@@ -225,15 +234,7 @@ describe("minting a virtual key", () => {
 
   it("fails with the unreachable code when nothing is listening", async () => {
     const config = await configuredGateway({ baseUrl: DEAD_GATEWAY_URL });
-    const err = await service
-      .provisionVirtualKey(config, "platform-model", {
-        businessId,
-        maxBudgetUsd: null,
-        budgetDuration: null,
-        tpmLimit: null,
-        rpmLimit: null,
-      })
-      .catch((error: unknown) => error);
+    const err = await service.provisionVirtualKey(config, { businessId }).catch((error: unknown) => error);
     expect(err).toBeInstanceOf(service.GatewayProvisioningError);
     expect((err as GatewayProvisioningError).code).toBe("ai_gateway_unreachable");
     expect((err as GatewayProvisioningError).message).toBe("ai_gateway_unreachable");
@@ -241,23 +242,11 @@ describe("minting a virtual key", () => {
 
   it("keeps the old key and records the reason when a re-sync is refused", async () => {
     const config = await configuredGateway();
-    await service.provisionVirtualKey(config, "platform-model", {
-      businessId,
-      maxBudgetUsd: 5,
-      budgetDuration: "30d",
-      tpmLimit: null,
-      rpmLimit: null,
-    });
+    await service.provisionVirtualKey(config, { businessId });
 
     // The next sync takes the update path; make the proxy refuse it.
     generateResponse = { status: 401, body: { error: { message: "invalid master key" } } };
-    const row = await service.provisionVirtualKey(config, "platform-model", {
-      businessId,
-      maxBudgetUsd: 5,
-      budgetDuration: "30d",
-      tpmLimit: null,
-      rpmLimit: null,
-    });
+    const row = await service.provisionVirtualKey(config, { businessId });
     expect(row.virtualKey).toBe("sk-minted-123");
     expect(row.syncError).toContain("کلید مدیر دروازه پذیرفته نشد");
     expect(row.syncError).toContain("invalid master key");
@@ -267,27 +256,17 @@ describe("minting a virtual key", () => {
 
   it("updates the same key in place instead of minting a second one", async () => {
     const config = await configuredGateway();
-    await service.provisionVirtualKey(config, "platform-model", {
-      businessId,
-      maxBudgetUsd: 5,
-      budgetDuration: "30d",
-      tpmLimit: null,
-      rpmLimit: null,
-    });
+    await service.provisionVirtualKey(config, { businessId });
     generateResponse = { status: 200, body: { key: "sk-minted-123", data: {} } };
-    const row = await service.provisionVirtualKey(config, "platform-model", {
-      businessId,
-      maxBudgetUsd: 9,
-      budgetDuration: "7d",
-      tpmLimit: 1000,
-      rpmLimit: 60,
-    });
+    const row = await service.provisionVirtualKey(config, { businessId });
     expect(seenRequests.filter((r) => r.url === "/key/generate")).toHaveLength(1);
     expect(seenRequests.filter((r) => r.url === "/key/update")).toHaveLength(1);
-    expect(row.maxBudgetUsd).toBe(9);
-    expect(row.budgetDuration).toBe("7d");
-    expect(row.tpmLimit).toBe(1000);
-    expect(row.rpmLimit).toBe(60);
+    expect(row.virtualKey).toBe("sk-minted-123");
     expect(row.syncError).toBeNull();
+
+    // The update refreshes only the identity metadata — the key keeps
+    // whatever the proxy itself enforces on it.
+    const update = seenRequests.find((r) => r.url === "/key/update")?.body as Record<string, unknown>;
+    expect(Object.keys(update).sort()).toEqual(["key", "key_alias"]);
   });
 });

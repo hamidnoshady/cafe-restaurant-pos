@@ -40,11 +40,10 @@ describe("canonical AI runtime readiness", () => {
     expect(getAiRuntimeReadiness(config({ apiKey: "" })).reason).toBe("missing_runtime_credential");
   });
 
-  it("requires a positive ceiling and a complete costing method", () => {
-    expect(getAiRuntimeReadiness(config({ maxTurnRial: 0 })).reason).toBe("max_turn_credit_missing");
-    expect(getAiRuntimeReadiness(config({ usdRialRate: null })).reason).toBe("gateway_costing_rate_missing");
-    expect(getAiRuntimeReadiness(config({ gatewayCostingEnabled: false, inputCostRialPerMillion: 10, outputCostRialPerMillion: 20 })).ready).toBe(true);
-    expect(getAiRuntimeReadiness(config({ gatewayCostingEnabled: false, inputCostRialPerMillion: 10, outputCostRialPerMillion: 0 })).reason).toBe("costing_not_configured");
+  it("requires valid model and output tokens technical settings without depending on legacy billing rates", () => {
+    expect(getAiRuntimeReadiness(config({ model: "" })).reason).toBe("missing_model");
+    expect(getAiRuntimeReadiness(config({ maxOutputTokens: 0 })).reason).toBe("invalid_max_output_tokens");
+    expect(getAiRuntimeReadiness(config()).ready).toBe(true);
   });
 
   it("surfaces database/schema failures without leaking their details", () => {

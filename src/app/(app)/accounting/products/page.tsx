@@ -3,14 +3,14 @@ import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
 import { ProductsListSection } from "@/app/dashboard/products/products-list-section";
 import { requireProductWorkspace } from "@/app/dashboard/products/workspace-context";
 
-/** «لیست محصولات» — the catalogue board as a filterable, paginated table. */
+/** «لیست محصولات» — the shared catalogue board: KPIs, filters, table, pager. */
 export default async function ProductsListPage() {
   const { apiBase } = await requireProductWorkspace();
   return (
     <PageShell>
       <PageHeader
         title="محصولات"
-        description="نمایش کالاها و تنوع‌هایشان با موجودی، قیمت و بارکد — همان برد کالای صنف، با درِ مشترک محصولات."
+        description="نمایش و مدیریت محصولات، موجودی، قیمت و اطلاعات فروش."
         actions={<KnowledgeHelpButton section="pos" />}
       />
       <ProductsListSection apiBase={apiBase} />

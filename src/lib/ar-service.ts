@@ -146,6 +146,31 @@ export async function listCustomerBalances(businessId: string): Promise<Customer
 }
 
 /**
+ * The A/R balances of a *named* set of customers — the till's picker, which
+ * knows the twenty rows it is showing and must not scan the whole subledger
+ * to price them. Same attribution as every other A/R number (the shared SQL
+ * above); an empty id list answers an empty map without touching the ledger.
+ */
+export async function arBalancesForCustomers(
+  businessId: string,
+  customerIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (customerIds.length === 0) return new Map();
+  const accountId = await arAccountId(businessId);
+  if (!accountId) return new Map();
+  const { rows } = await query<{ customer_id: string; balance: string }>(
+    `SELECT ${AR_CUSTOMER_ID_SQL} AS customer_id,
+            sum(jl.debit - jl.credit)::text AS balance
+     ${AR_CUSTOMER_ATTRIBUTION_SQL}
+     WHERE je.business_id = $1 AND jl.account_id = $2
+       AND ${AR_CUSTOMER_ID_SQL} = ANY($3::uuid[])
+     GROUP BY ${AR_CUSTOMER_ID_SQL}`,
+    [businessId, accountId, customerIds],
+  );
+  return new Map(rows.map((row) => [row.customer_id, Number(row.balance)]));
+}
+
+/**
  * The canonical "which customer does this A/R line belong to?" SQL.
  *
  * Exported as a fragment because there are two legitimate shapes for the same

@@ -273,6 +273,44 @@ export async function deleteConversation(owner: Owner & { conversationId: string
 }
 
 /**
+ * Rename a conversation (the history sidebar's «تغییر نام»). The title is
+ * normalised with the same rules `deriveConversationTitle` applies to a
+ * generated one: one line, trimmed, capped. Returns false when the id is
+ * unknown, foreign, or the title is empty after trimming — the caller answers
+ * with a 404/400 rather than a silent no-op.
+ */
+export async function renameConversation(
+  owner: Owner & { conversationId: string; title: string },
+): Promise<AiConversationSummary | null> {
+  const title = owner.title.replace(/\s+/g, " ").trim();
+  if (!title) return null;
+  const { rows } = await query<{
+    id: string;
+    mode: AgentMode;
+    title: string;
+    last_message_at: string;
+    created_at: string;
+    project_id: string | null;
+  }>(
+    `UPDATE ai_conversations
+        SET title = $4
+      WHERE id = $1 AND business_id = $2 AND actor_user_id = $3
+      RETURNING id, mode, title, last_message_at, created_at, project_id`,
+    [owner.conversationId, owner.businessId, owner.actorUserId, title.slice(0, TITLE_MAX_LENGTH)],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    mode: row.mode,
+    title: row.title,
+    lastMessageAt: row.last_message_at,
+    createdAt: row.created_at,
+    projectId: row.project_id,
+  };
+}
+
+/**
  * Phase 35 Wave 3 — list conversations belonging to a specific project.
  * Same ownership rules as listConversations.
  */

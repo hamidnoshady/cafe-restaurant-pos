@@ -13,12 +13,12 @@
  * Restoring that SQL back into a target database is not built yet — this
  * covers the export half of the Phase 17 scope item; see the phase doc.
  */
-import ExcelJS from "exceljs";
 import { getBusinessDek } from "./business-keys";
 import { query, withTenant } from "./db";
 import { decryptOptional } from "./field-crypto";
 import { ENCRYPTED_TABLES } from "./encrypted-columns";
 import { cellValue } from "./report-export";
+import { sheetsToXlsxBuffer } from "./data-transfer/codecs";
 import { selfReferencingColumns, sortRowsByParent, tenantTablesInDependencyOrder, listForeignKeys } from "./tenant-tables";
 
 export interface TenantExportTable {
@@ -155,17 +155,24 @@ export function tenantDataToSql(tables: TenantExportTable[]): string {
   return lines.join("\n");
 }
 
-/** Renders an export as one Excel workbook, one sheet per non-empty table. */
+/**
+ * Renders an export as one Excel workbook, one sheet per non-empty table.
+ *
+ * The workbook itself is built by the platform's one XLSX writer
+ * (`data-transfer/codecs.ts`); this function's job is only the projection —
+ * which sheets, which columns, and each cell through `cellValue`. It used to
+ * carry its own `ExcelJS` loop, identical to the report exporter's except for
+ * the details each had drifted on (sheet-name sanitisation, the empty-workbook
+ * case). One writer, one set of those decisions.
+ */
 export async function tenantDataToXlsxBuffer(tables: TenantExportTable[]): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-  for (const table of tables) {
-    const sheet = workbook.addWorksheet(table.name.slice(0, 31), { views: [{ rightToLeft: true }] });
-    sheet.columns = table.columns.map((c) => ({ header: c, key: c, width: Math.max(c.length + 4, 14) }));
-    sheet.getRow(1).font = { bold: true };
-    for (const row of table.rows) {
-      sheet.addRow(Object.fromEntries(table.columns.map((c) => [c, cellValue(row[c])])));
-    }
-  }
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  return sheetsToXlsxBuffer(
+    tables.map((table) => ({
+      name: table.name,
+      columns: table.columns.map((column) => ({ key: column, label: column })),
+      rows: table.rows.map((row) =>
+        Object.fromEntries(table.columns.map((column) => [column, cellValue(row[column])])),
+      ),
+    })),
+  );
 }

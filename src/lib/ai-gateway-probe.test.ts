@@ -1,11 +1,13 @@
 /**
  * The probe's gateway half, against a stubbed proxy.
  *
- * `probeGateway` is the console's only view of what the gateway is actually
- * doing, so what matters is that it reports the proxy's own answers rather than
- * an echo of the stored settings: the aliases the proxy serves, and the routing
- * strategy the proxy is running — including the case where the two disagree,
- * which is the whole reason the check exists.
+ * `probeGateway` is the console's view of what the gateway is actually doing,
+ * so what matters is that it reports the proxy's own answers rather than an
+ * echo of the stored settings: whether the proxy is alive (and how fast it
+ * answered) and the aliases it is serving. Migration 0168 stopped the console
+ * mirroring the proxy's router settings, budgets and rate limits — routing is
+ * configured in docker/litellm/config.yaml and nowhere else — so the probe
+ * must not ask about them at all, which the last test pins.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { probeGateway } from "./ai-gateway-service";
@@ -19,18 +21,22 @@ const CONFIG: AiGatewayConfig = {
   chatModel: "pos-chat",
   embeddingModel: "pos-embed",
   fallbackModels: ["pos-cheap"],
-  routingStrategy: "simple-shuffle",
 };
 
 type Stub = { status: number; body: unknown };
 
 function stubProxy(routes: Record<string, Stub>) {
   const urls: string[] = [];
+  const auth: string[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: string) => {
+    vi.fn(async (input: string, init?: RequestInit) => {
       const url = String(input);
       urls.push(url);
+      const headerValue = init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)
+        ? (init.headers as Record<string, string>).Authorization
+        : undefined;
+      if (headerValue) auth.push(headerValue);
       const match = Object.entries(routes).find(([path]) => url.endsWith(path));
       const answer = match?.[1] ?? { status: 404, body: { error: "not found" } };
       return {
@@ -39,18 +45,8 @@ function stubProxy(routes: Record<string, Stub>) {
       } as Response;
     }),
   );
-  return urls;
+  return { urls, auth };
 }
-
-const ROUTER_SETTINGS = {
-  current_values: {
-    routing_strategy: "latency-based-routing",
-    fallbacks: [{ "pos-chat": ["pos-cheap"] }],
-  },
-  fields: [
-    { field_name: "routing_strategy", field_value: "latency-based-routing", options: ["simple-shuffle"] },
-  ],
-};
 
 const MODEL_INFO = {
   data: [
@@ -70,74 +66,75 @@ afterEach(() => {
 });
 
 describe("the probe", () => {
-  it("reads the strategy the proxy is running and flags a disagreement", async () => {
-    const urls = stubProxy({
+  it("reports liveliness, latency and the aliases the proxy is serving", async () => {
+    const { urls } = stubProxy({
       "/health/liveliness": { status: 200, body: "I'm alive!" },
       "/model/info": { status: 200, body: MODEL_INFO },
-      "/router/settings": { status: 200, body: ROUTER_SETTINGS },
+      "/v1/chat/completions": { status: 200, body: { choices: [{ message: { role: "assistant", content: "pong" } }] } },
     });
 
     const probe = await probeGateway(CONFIG);
 
     expect(probe.ok).toBe(true);
+    expect(probe.latencyMs).toBeGreaterThanOrEqual(0);
     expect(probe.models).toEqual(["pos-chat", "pos-cheap", "pos-embed"]);
-    expect(probe.proxyRoutingStrategy).toBe("latency-based-routing");
-    expect(probe.routingMismatch).toBe(true);
-    // The management root, not the /v1 data plane.
-    expect(urls).toContain("http://litellm:4000/router/settings");
+    expect(probe.error).toBeNull();
+    // The data plane URL the console stores is answered at its management
+    // root, not under /v1.
+    expect(urls).toContain("http://litellm:4000/health/liveliness");
+    expect(urls).toContain("http://litellm:4000/model/info");
   });
 
-  it("reports no mismatch when the proxy runs what is stored", async () => {
-    stubProxy({
-      "/health/liveliness": { status: 200, body: "I'm alive!" },
-      "/model/info": { status: 200, body: MODEL_INFO },
-      "/router/settings": {
-        status: 200,
-        body: { ...ROUTER_SETTINGS, current_values: { routing_strategy: "simple-shuffle" } },
-      },
-    });
-
-    const probe = await probeGateway(CONFIG);
-
-    expect(probe.proxyRoutingStrategy).toBe("simple-shuffle");
-    expect(probe.routingMismatch).toBe(false);
-  });
-
-  it("treats a proxy that does not answer as unreadable, not as a fault", async () => {
-    stubProxy({
-      "/health/liveliness": { status: 200, body: "I'm alive!" },
-      "/model/info": { status: 200, body: MODEL_INFO },
-      // No /router/settings route: an older proxy build answers 404.
-    });
-
-    const probe = await probeGateway(CONFIG);
-
-    expect(probe.ok).toBe(true);
-    expect(probe.proxyRoutingStrategy).toBeNull();
-    expect(probe.routingMismatch).toBe(false);
-  });
-
-  it("never asks the proxy for router settings without an admin key", async () => {
-    const urls = stubProxy({
+  it("fails precisely when the master key is missing", async () => {
+    const { urls } = stubProxy({
       "/health/liveliness": { status: 200, body: "I'm alive!" },
     });
 
     const probe = await probeGateway({ ...CONFIG, masterKey: "" });
 
-    expect(probe.ok).toBe(true);
-    expect(probe.proxyRoutingStrategy).toBeNull();
-    expect(probe.routingMismatch).toBe(false);
-    expect(urls.some((url) => url.includes("/router/settings"))).toBe(false);
+    expect(probe.ok).toBe(false);
+    expect(probe.error).toContain("کلید مدیر");
+    expect(probe.models).toEqual([]);
+    expect(urls.some((url) => url.includes("/model/info"))).toBe(false);
   });
 
-  it("reports a failure without inventing a routing strategy", async () => {
+  it("treats a missing model listing as a model-alias diagnostic failure", async () => {
+    // Health only proves the server exists; /model/info must expose the alias
+    // before the application can safely send chat turns.
+    stubProxy({
+      "/health/liveliness": { status: 200, body: "I'm alive!" },
+    });
+
+    const probe = await probeGateway(CONFIG);
+
+    expect(probe.ok).toBe(false);
+    expect(probe.models).toEqual([]);
+    expect(probe.error).toBeTruthy();
+  });
+
+  it("tests a business virtual key with the same selected model", async () => {
+    const { auth } = stubProxy({
+      "/health/liveliness": { status: 200, body: "I'm alive!" },
+      "/model/info": { status: 200, body: MODEL_INFO },
+      "/v1/chat/completions": { status: 200, body: { choices: [{ message: { role: "assistant", content: "pong" } }] } },
+    });
+
+    const probe = await probeGateway(CONFIG, { virtualKey: "sk-tenant" });
+
+    expect(probe.ok).toBe(true);
+    expect(probe.stages.find((stage) => stage.key === "virtual_key_completion")?.ok).toBe(true);
+    expect(auth).toContain("Bearer sk-master");
+    expect(auth).toContain("Bearer sk-tenant");
+  });
+
+  it("reports a failure with the proxy's own words, without inventing a model list", async () => {
     stubProxy({});
 
     const probe = await probeGateway(CONFIG);
 
     expect(probe.ok).toBe(false);
-    expect(probe.proxyRoutingStrategy).toBeNull();
-    expect(probe.routingMismatch).toBe(false);
+    expect(probe.latencyMs).toBeNull();
+    expect(probe.models).toEqual([]);
     expect(probe.error).toBeTruthy();
   });
 });

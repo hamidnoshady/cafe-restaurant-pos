@@ -31,6 +31,16 @@ export interface PaymentDraft {
   /** The chosen way when not splitting. */
   methodId: string;
   rows: PaymentDraftRow[];
+  /**
+   * The manual «مبلغ دریافتی» — what the customer actually handed over — as
+   * typed, in the business's display unit, when NOT splitting. Empty means
+   * "take the whole bill this way" (the ordinary sale, no amount sent).
+   *
+   * A value that differs from the bill is settled onto the customer's
+   * account: less is their debt, more is their credit — both of which need a
+   * customer named before the payment can go through.
+   */
+  receivedAmount?: string;
 }
 
 let rowCounter = 0;
@@ -43,7 +53,7 @@ export function newDraftRow(methodId: string, amount = ""): PaymentDraftRow {
 /** The draft a screen opens with: the first way offered, whole bill, no split. */
 export function emptyPaymentDraft(methods: readonly PaymentMethodView[]): PaymentDraft {
   const first = methods[0]?.id ?? "";
-  return { split: false, methodId: first, rows: [newDraftRow(first)] };
+  return { split: false, methodId: first, rows: [newDraftRow(first)], receivedAmount: "" };
 }
 
 /** A row's amount in Rial, or null while it is empty or not a number yet. */
@@ -57,9 +67,25 @@ export function draftRowRial(row: PaymentDraftRow, unit: MoneyUnit = "toman"): R
   }
 }
 
+/**
+ * The manually typed «مبلغ دریافتی» in Rial, or null while it is empty or not
+ * a number yet. Only meaningful when not splitting — a split types each slice.
+ */
+export function draftReceivedRial(draft: PaymentDraft, unit: MoneyUnit = "toman"): Rial | null {
+  if (draft.split) return null;
+  const text = draft.receivedAmount?.trim();
+  if (!text) return null;
+  try {
+    const rial = parseToRial(text, unit);
+    return rial > 0 ? rial : null;
+  } catch {
+    return null;
+  }
+}
+
 /** What the typed rows come to so far — rows still being typed count as zero. */
 export function draftTotal(draft: PaymentDraft, due: Rial, unit: MoneyUnit = "toman"): Rial {
-  if (!draft.split) return due;
+  if (!draft.split) return draftReceivedRial(draft, unit) ?? due;
   return draft.rows.reduce((sum, row) => sum + (draftRowRial(row, unit) ?? 0), 0);
 }
 
@@ -84,6 +110,38 @@ export function draftNeedsCustomer(draft: PaymentDraft, methods: readonly Paymen
   return ids.some((id) => methodOf(methods, id)?.settlement === "credit");
 }
 
+/**
+ * How a draft's received amount differs from the bill: the shortfall that
+ * would become customer debt, or the excess that would become customer
+ * credit. Zero/zero when nothing has been typed (or it matches exactly) —
+ * which is what makes it safe to call on every render for the live preview.
+ *
+ * Needs the draft's *received* total, not the due-echoing default, so this
+ * takes the numbers already computed by the caller (or draftTotal) in Rial.
+ */
+export function draftDifference(received: Rial, due: Rial): { balanceDue: Rial; customerCredit: Rial } {
+  if (received <= due) return { balanceDue: due - received, customerCredit: 0 };
+  return { balanceDue: 0, customerCredit: received - due };
+}
+
+/**
+ * Whether this draft, as it stands, settles onto a person's account and so
+ * needs a customer named before it can be sent: a نسیه way, a typed received
+ * amount short of the bill (debt), or one beyond it (credit).
+ */
+export function draftRequiresCustomer(
+  draft: PaymentDraft,
+  methods: readonly PaymentMethodView[],
+  due: Rial,
+  unit: MoneyUnit = "toman",
+): boolean {
+  if (draftNeedsCustomer(draft, methods)) return true;
+  const received = draftReceivedRial(draft, unit);
+  if (received === null) return false;
+  const { balanceDue, customerCredit } = draftDifference(received, due);
+  return balanceDue > 0 || customerCredit > 0;
+}
+
 export interface PaymentDraftBody {
   methodId: string;
   /** Absent means "take whatever is left" — see TenderInput.amount in payment-methods.ts. */
@@ -98,10 +156,12 @@ export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: string
  * draft isn't payable yet. The error codes are the API's own, so a screen
  * shows the same Persian sentence whether the check failed here or there.
  *
- * Not splitting sends no amount at all: "take the whole bill this way" stays
- * one field, and the server is the only place that decides what the whole bill
- * is — a screen that computed it from a stale total would be the one bug this
- * costs nothing to make impossible.
+ * Not splitting sends no amount at all — *unless* the cashier typed a manual
+ * «مبلغ دریافتی», which is sent explicitly so the server can settle the
+ * difference (debt or credit) onto the customer's account. Otherwise "take
+ * the whole bill this way" stays one field, and the server is the only place
+ * that decides what the whole bill is — a screen that computed it from a
+ * stale total would be the one bug this costs nothing to make impossible.
  */
 export function paymentDraftBody(
   draft: PaymentDraft,
@@ -109,7 +169,9 @@ export function paymentDraftBody(
   due: Rial,
   unit: MoneyUnit = "toman",
 ): DraftResult<PaymentDraftBody[]> {
-  const rows = draft.split ? draft.rows : [{ ...newDraftRow(draft.methodId), amount: "" }];
+  const rows = draft.split
+    ? draft.rows
+    : [{ ...newDraftRow(draft.methodId), amount: draft.receivedAmount ?? "" }];
   if (rows.length === 0) return { ok: false, error: "no_payment" };
 
   const body: PaymentDraftBody[] = [];
@@ -120,7 +182,15 @@ export function paymentDraftBody(
       return { ok: false, error: "payment_reference_required" };
     }
     if (!draft.split) {
-      body.push({ methodId: method.id, reference: row.reference.trim() || undefined });
+      // The typed received amount rides along only when it parses — an empty
+      // or half-typed box still means "take the whole bill" rather than a
+      // refusal, so the cashier can pick the way first and the figure after.
+      const received = draftReceivedRial(draft, unit);
+      body.push({
+        methodId: method.id,
+        amount: received ?? undefined,
+        reference: row.reference.trim() || undefined,
+      });
       continue;
     }
     const amount = draftRowRial(row, unit);
@@ -147,6 +217,8 @@ export function paymentDraftBody(
  * The tender lines to print: the name the business gave each way, with what it
  * took. A bill that wasn't split still prints one line — the way's own name,
  * which is the point of letting a business rename «کارت‌خوان» to «پوز ملت».
+ * A manually typed received amount prints what was actually taken, so the
+ * receipt restates the change/credit the customer is owed.
  */
 export function draftReceiptPayments(
   draft: PaymentDraft,
@@ -156,7 +228,8 @@ export function draftReceiptPayments(
 ): { label: string; amount: Rial }[] {
   if (!draft.split) {
     const method = methodOf(methods, draft.methodId);
-    return method ? [{ label: method.name, amount: due }] : [];
+    const received = draftReceivedRial(draft, unit);
+    return method ? [{ label: method.name, amount: received ?? due }] : [];
   }
   return draft.rows.flatMap((row) => {
     const method = methodOf(methods, row.methodId);

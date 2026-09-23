@@ -53,8 +53,8 @@ export interface AiGatewayRuntime {
    */
   authKey?: string;
   /**
-   * Extra top-level fields forwarded in the request body — currently LiteLLM's
-   * client-side `fallbacks` chain, plus Phase 38b's MCP tool declarations.
+   * Reserved for safe, version-compatible request extensions. Core chat leaves
+   * this empty: LiteLLM owns routing/fallback/MCP policy outside the app.
    */
   body?: Record<string, unknown>;
 }

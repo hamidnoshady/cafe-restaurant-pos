@@ -40,7 +40,7 @@ import { rialBigInt, rialText, type RialText } from "./inventory-exact";
 import { postExactCogsEntry, postExactOrderPaymentEntry } from "./ledger-service";
 import { getOnlinePlatformsConfig } from "./online-platforms-service";
 import { commissionAmountFor } from "./online-platforms-calculation";
-import { captureInventorySnapshot } from "./order-mutations";
+import { captureInventorySnapshot, insertOrderItemModifiers } from "./order-mutations";
 import { resolveCartItems } from "./order-cart";
 import { computeOrderTotals } from "./orders";
 import {
@@ -205,23 +205,12 @@ export async function recordBackdatedOrder(
       [locationId, orderId, item.menuItemId, item.name, item.unitPrice, item.quantity, item.note, occurredAtIso],
     );
     const orderItemId = itemRows[0].id;
-    if (item.modifiers.length > 0) {
-      await client.query(
-        `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-         SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[])`,
-        [
-          orderItemId,
-          item.modifiers.map((m) => m.id),
-          item.modifiers.map((m) => m.name),
-          item.modifiers.map((m) => m.priceDelta),
-        ],
-      );
-    }
+    await insertOrderItemModifiers(client, orderItemId, item.modifiers);
     await captureInventorySnapshot(
       client,
       orderItemId,
       item.menuItemId,
-      item.modifiers.map((m) => m.id),
+      item.modifiers,
     );
   }
 

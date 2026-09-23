@@ -2,12 +2,22 @@
  * Phase 37 & Phase 39 — the one place that turns stored configuration into the `AiConfig`
  * a call actually goes out with.
  *
- * Resolves AI configuration with branch -> business -> platform fallback hierarchy.
+ * Resolves AI configuration with branch -> business -> platform precedence.
  * In Phase 39 (LiteLLM-only), if the gateway or DB state fails to resolve, we fail closed
  * (enabled: false) to prevent unbilled or uncontrolled vendor execution.
+ *
+ * Root-cause fix (migration 0168 rebuild): a tenant request whose business has
+ * no virtual key yet now mints one on the way through (`ensureVirtualKey`),
+ * instead of failing with `tenant_virtual_key_missing` until an operator
+ * noticed. The platform console's readiness reads stay pure reads — only a
+ * request that is about to authenticate AS the business may mint its key.
  */
 import { getPlatformAiConfig, type PlatformAiConfig } from "./ai-config";
-import { getAiGatewayConfig, getBusinessGateway } from "./ai-gateway-service";
+import {
+  ensureTenantVirtualKey,
+  getAiGatewayConfig,
+  getBusinessGateway,
+} from "./ai-gateway-service";
 import { buildGatewayRuntime, isGatewayActive } from "./ai-gateway";
 import type { AiConfig } from "./ai";
 
@@ -15,13 +25,19 @@ import type { AiConfig } from "./ai";
  * The config for a tenant call.
  * `businessId` scopes which virtual key is used; pass null for platform support.
  * `locationId` scopes branch-level model overrides and branch virtual keys.
+ *
+ * `ensureVirtualKey` (default false) is what a request path that is about to
+ * send as this tenant passes: it lazily mints the missing business virtual key
+ * (see ensureTenantVirtualKey). Read-only surfaces — the console's readiness
+ * list, projections, background digests — leave it off.
  */
 export async function resolveAiConfigFor(
   businessId: string | null,
   locationId?: string | null,
+  options: { ensureVirtualKey?: boolean } = {},
 ): Promise<PlatformAiConfig> {
   const config = await getPlatformAiConfig();
-  return decorate(config, businessId, locationId);
+  return decorate(config, businessId, locationId, options);
 }
 
 /**
@@ -32,13 +48,14 @@ export async function decorateAiConfig(
   businessId: string | null,
   locationId?: string | null,
 ): Promise<PlatformAiConfig> {
-  return decorate(config, businessId, locationId);
+  return decorate(config, businessId, locationId, {});
 }
 
 async function decorate(
   config: PlatformAiConfig,
   businessId: string | null,
   locationId?: string | null,
+  options: { ensureVirtualKey?: boolean } = {},
 ): Promise<PlatformAiConfig> {
   if (!config.enabled) return { ...config, runtimeUnavailableReason: config.runtimeUnavailableReason ?? "platform_disabled" };
 
@@ -55,6 +72,12 @@ async function decorate(
       business = await getBusinessGateway(businessId, null);
       if (locationId) {
         branch = await getBusinessGateway(businessId, locationId);
+      }
+      // A request-path resolve may lazily mint the missing business key. The
+      // branch key stays optional: a branch without its own key correctly
+      // rides the business key.
+      if (options.ensureVirtualKey && gateway.virtualKeysEnabled && !business?.virtualKey) {
+        business = await ensureTenantVirtualKey(businessId, null);
       }
     }
   } catch (err) {

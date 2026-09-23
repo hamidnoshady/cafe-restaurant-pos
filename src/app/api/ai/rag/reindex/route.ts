@@ -19,7 +19,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const guard = await requireManager();
   if (guard.error) return guard.error;
 
-  const config = await resolveAiConfigFor(guard.session.businessId);
+  const config = await resolveAiConfigFor(guard.session.businessId, null, { ensureVirtualKey: true });
   if (!isPlatformAiConfigured(config)) {
     const reason = logAiRuntimeUnavailable(config, { businessId: guard.session.businessId, locationId: null, surface: "rag_reindex" });
     return NextResponse.json(

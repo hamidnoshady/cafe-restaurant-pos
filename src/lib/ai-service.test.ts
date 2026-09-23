@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultConfig } from "./ai";
-import { runAgentTurn } from "./ai-service";
+import { defaultConfig, toolDefinitions } from "./ai";
+import { runAgentTurn, validateOpenAiTools } from "./ai-service";
 
 const config = {
   ...defaultConfig("litellm"),
@@ -400,9 +400,9 @@ describe("Phase 38b gateway cost capture", () => {
     expect(reply.costUsd).toBeNull();
   });
 
-  it("the gateway config the runtime builds is what the request carries", async () => {
-    // The runtime's virtual key and failover chain ride on the request while
-    // the code-built system message stays in place.
+  it("the gateway runtime key is used without sending request-level fallbacks", async () => {
+    // LiteLLM owns failover/routing policy. Legacy gateway body fields must not
+    // become /chat/completions request parameters.
     const gatewayConfig = {
       ...config,
       gateway: {
@@ -424,7 +424,7 @@ describe("Phase 38b gateway cost capture", () => {
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(payload.prompt_id).toBeUndefined();
     expect(payload.prompt_variables).toBeUndefined();
-    expect(payload.fallbacks).toEqual(["pos-cheap"]);
+    expect(payload.fallbacks).toBeUndefined();
     expect(payload.messages[0]).toEqual({ role: "system", content: "نظم سیستمی" });
   });
 
@@ -446,7 +446,7 @@ describe("Phase 38b gateway cost capture", () => {
     expect(payload.messages[0]).toEqual({ role: "system", content: "نظم سیستمی" });
   });
 
-  it("MCP servers declared by the runtime reach the tools array", async () => {
+  it("MCP declarations in legacy runtime body do not reach ordinary chat tools", async () => {
     const mcpConfig = {
       ...config,
       gateway: {
@@ -474,11 +474,62 @@ describe("Phase 38b gateway cost capture", () => {
 
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     const tools = payload.tools as { type: string }[];
-    // The proxy's MCP entries lead; the agent's own function tools follow in
-    // the same array — one `tools` field, distinguished by `type`.
-    expect(tools[0]).toEqual(mcpConfig.gateway.body.tools[0]);
-    expect(tools.slice(1).every((tool) => tool.type === "function")).toBe(true);
-    expect(tools.length).toBeGreaterThan(1);
+    expect(tools.every((tool) => tool.type === "function")).toBe(true);
+    expect(tools).not.toContainEqual(mcpConfig.gateway.body.tools[0]);
+  });
+  it("preserves sanitized LiteLLM 400 detail on AiError while tenant message stays generic", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "litellm.BadRequestError: invalid tools schema",
+            type: "invalid_request_error",
+            code: "400",
+          },
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      runAgentTurn({
+        config,
+        mode: "proactive",
+        promptContext: { mode: "proactive" },
+        messages: [{ role: "user", content: "ping" }],
+        requestId: "req-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "ai_provider",
+      message: "درخواست توسط سرویس هوش مصنوعی رد شد. مدیر پلتفرم می‌تواند جزئیات فنی را بررسی کند.",
+      providerError: {
+        status: 400,
+        type: "invalid_request_error",
+        code: "400",
+        detail: "litellm.BadRequestError: invalid tools schema",
+      },
+      requestDiagnostics: { requestId: "req-1", model: config.model, hasFallbacks: false, hasMcpTools: false },
+    });
+  });
+
+  it("validates every production tool schema before provider execution", () => {
+    const modes = ["wizard", "dashboard", "floor", "platform", "autopilot", "proactive"] as const;
+    for (const mode of modes) {
+      const tools = mode === "autopilot" ? [] : mode === "proactive" ? [] : toolDefinitions(mode, {
+        hasAttachment: true,
+        retrieval: true,
+        projectScoped: true,
+      });
+      expect(validateOpenAiTools(tools), mode).toEqual([]);
+    }
+  });
+
+  it("detects an invalid function tool before fetch is called", async () => {
+    const errors = validateOpenAiTools([
+      { type: "function", function: { name: "bad name", description: "x", parameters: { type: "object", properties: {}, required: ["missing"] } } },
+    ]);
+    expect(errors.join(" ")).toMatch(/invalid OpenAI function name|required/);
   });
 });
 

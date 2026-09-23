@@ -25,6 +25,7 @@ export const SETTINGS_TAB_KEYS = [
   "security-center",
   "backup",
   "logs",
+  "data-transfer",
 ] as const;
 
 export type SettingsTabKey = (typeof SETTINGS_TAB_KEYS)[number];
@@ -204,6 +205,17 @@ export const SETTINGS_TABS: SettingsTab[] = [
     label: "گزارش‌ها",
     description: "خطاهای ثبت‌شدهٔ این مرورگر و — روی نسخهٔ دسکتاپ — گزارش کامل سرور محلی",
     requiredAnyPermission: [PERMISSIONS.settingsManage],
+  },
+  {
+    key: "data-transfer",
+    label: "ورود و خروج داده",
+    description:
+      "ورود گروهی از CSV/Excel/JSON/PDF و خروجی گرفتن از همهٔ بخش‌ها، با نگاشت ستون‌ها، قالب‌ها، زمان‌بندی و تاریخچه",
+    // Either key is enough to open the tab; the screen then shows only the
+    // directions this member actually holds, and every route re-checks the
+    // *entity's* own permission on top. A tab gated on both would hide the
+    // export screen from somebody who may export but not import.
+    requiredAnyPermission: [PERMISSIONS.dataExport, PERMISSIONS.dataImport],
   },
 ];
 
