@@ -12,7 +12,6 @@ import { createServer as createHttpsServer } from "https";
 import fs from "fs";
 import path from "path";
 import type { Duplex } from "stream";
-import { parse } from "url";
 import { WebSocketServer } from "ws";
 
 const port = Number(process.env.PORT) || 3000;
@@ -60,6 +59,30 @@ const next = require("next") as typeof import("next").default;
 
 const app = next({ dev });
 const handle = app.getRequestHandler();
+
+/** Parse an HTTP request target without Node's deprecated, non-standard url.parse(). */
+function parseRequestUrl(value: string) {
+  const url = new URL(value, "http://localhost");
+  const query: Record<string, string | string[]> = {};
+  for (const [key, item] of url.searchParams) {
+    const existing = query[key];
+    query[key] = existing === undefined ? item : Array.isArray(existing) ? [...existing, item] : [existing, item];
+  }
+  return {
+    auth: null,
+    hash: url.hash || null,
+    host: null,
+    hostname: null,
+    href: value,
+    path: `${url.pathname}${url.search}`,
+    pathname: url.pathname,
+    port: null,
+    protocol: null,
+    query,
+    search: url.search || null,
+    slashes: null,
+  };
+}
 
 function readCookie(header: string | undefined, name: string): string | null {
   if (!header) return null;
@@ -125,28 +148,14 @@ app.prepare().then(async () => {
   // Registering a listener here is also what stops Node's default fatal
   // handler from firing at all, so this must be installed unconditionally —
   // installObservability() above is a no-op when no collector is configured.
-  const { isBenignNetworkError, describeNetworkError } = await import("./src/lib/network-errors");
+  const { isBenignNetworkError } = await import("./src/lib/network-errors");
 
-  // Rate-limit the log line: a flapping mobile client can produce hundreds a
-  // minute, and "the network is unreliable" only needs saying occasionally.
-  let droppedConnections = 0;
-  let lastDroppedLogAt = 0;
-  const noteDroppedConnection = (error: unknown) => {
-    droppedConnections += 1;
-    const now = Date.now();
-    if (now - lastDroppedLogAt < 60_000) return;
-    lastDroppedLogAt = now;
-    console.warn(
-      `> client connection dropped: ${describeNetworkError(error)}` +
-        (droppedConnections > 1 ? ` (${droppedConnections} since start)` : ""),
-    );
-  };
+  // Disconnects are normal transport lifecycle events (including managed-edge
+  // health probes), not actionable application warnings. Handle them at the
+  // stream/socket boundary but keep production logs for actual failures.
 
   process.on("uncaughtException", (error) => {
-    if (isBenignNetworkError(error)) {
-      noteDroppedConnection(error);
-      return;
-    }
+    if (isBenignNetworkError(error)) return;
     // Anything else is a real bug: print it and let the platform restart us
     // rather than serve from a process in an unknown state.
     console.error("> FATAL: uncaughtException:", error);
@@ -154,10 +163,7 @@ app.prepare().then(async () => {
   });
 
   process.on("unhandledRejection", (reason) => {
-    if (isBenignNetworkError(reason)) {
-      noteDroppedConnection(reason);
-      return;
-    }
+    if (isBenignNetworkError(reason)) return;
     console.error("> unhandledRejection:", reason);
   });
 
@@ -410,16 +416,14 @@ app.prepare().then(async () => {
 
   const requestListener = (req: IncomingMessage, res: ServerResponse) => {
     const t0 = Date.now();
-    const parsed = parse(req.url ?? "/", true);
+    const parsed = parseRequestUrl(req.url ?? "/");
     // Own the per-request error events too, so the common case never even
     // reaches the process-level handler above.
     req.on("error", (error: unknown) => {
-      if (isBenignNetworkError(error)) noteDroppedConnection(error);
-      else console.error("> request stream error:", error);
+      if (!isBenignNetworkError(error)) console.error("> request stream error:", error);
     });
     res.on("error", (error: unknown) => {
-      if (isBenignNetworkError(error)) noteDroppedConnection(error);
-      else console.error("> response stream error:", error);
+      if (!isBenignNetworkError(error)) console.error("> response stream error:", error);
     });
     res.on("finish", () => {
       // Only noteworthy requests get shipped: a status >= 400 (something
@@ -468,13 +472,12 @@ app.prepare().then(async () => {
   });
 
   server.on("upgrade", async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const { pathname } = parse(req.url ?? "/", true);
+    const { pathname } = parseRequestUrl(req.url ?? "/");
 
     // An upgrade socket is raw: without this, a tablet that drops mid-handshake
     // emits ECONNRESET with no listener and crashes the process.
     socket.on("error", (error: unknown) => {
-      if (isBenignNetworkError(error)) noteDroppedConnection(error);
-      else console.error("> upgrade socket error:", error);
+      if (!isBenignNetworkError(error)) console.error("> upgrade socket error:", error);
     });
 
     if (pathname !== "/ws") {
