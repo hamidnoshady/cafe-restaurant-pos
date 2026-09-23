@@ -46,7 +46,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const LEGACY_MIGRATION_MARKER = ".folder-layout-v1";
+const LEGACY_MIGRATION_MARKER = ".folder-layout-v1"; // schemaVersion 1 in migrateLegacyLayout()'s marker payload — bump alongside any future layout change.
 
 /**
  * The canonical Configuration/Data/Backup/Logs layout for one `userData`
