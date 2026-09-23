@@ -8,11 +8,18 @@ export function OfflineBanner() {
   const { pendingCount, connectionState } = useOfflineQueue();
   const localUnavailable = connectionState.localServer === "local_server_unreachable";
   const cloudPaused = connectionState.cloudSync === "cloud_sync_paused";
-  if (!localUnavailable && !cloudPaused && pendingCount === 0) return null;
+  const needsAttention = connectionState.attentionNeeded > 0;
+  if (!localUnavailable && !cloudPaused && !needsAttention && pendingCount === 0) return null;
 
   let message: string;
   let className: string;
-  if (localUnavailable) {
+  if (needsAttention) {
+    // Highest priority: a failed/conflicted entry needs a human decision and
+    // will not resolve itself just because the connection comes back — see
+    // the Sync Queue panel under Settings → Devices.
+    message = `${toPersianDigits(connectionState.attentionNeeded)} اقدام در صف همگام‌سازی نیازمند بررسی است (ناموفق یا در تداخل). برای بررسی به «تنظیمات ← دستگاه‌ها» بروید.`;
+    className = "bg-destructive/10 text-destructive";
+  } else if (localUnavailable) {
     message = "سرور محلی در دسترس نیست — فقط عملیات‌های پشتیبانی‌شده در این دستگاه ذخیره می‌شوند؛ سایر تغییرها تا بازگشت اتصال مسدودند.";
     className = "bg-destructive/10 text-destructive";
   } else if (pendingCount > 0) {
@@ -26,7 +33,7 @@ export function OfflineBanner() {
   return (
     <div className={`px-4 py-2 text-center text-sm font-medium ${className}`}>
       {message}
-      {pendingCount > 0 ? ` (${toPersianDigits(pendingCount)} اقدام در صف محلی)` : ""}
+      {pendingCount > 0 && !needsAttention ? ` (${toPersianDigits(pendingCount)} اقدام در صف محلی)` : ""}
     </div>
   );
 }

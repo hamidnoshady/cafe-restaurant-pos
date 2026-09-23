@@ -37,10 +37,15 @@ trying to prune a copied development checkout with broad exclusion globs.
 - Next.js binds to `127.0.0.1` by default.
 - The Electron `BrowserWindow` always uses that loopback origin.
 - Embedded PostgreSQL listens on loopback only.
-- The print connector remains `127.0.0.1:9123`.
+- Printing does **not** go through the browser/cloud product's loopback print
+  connector (`127.0.0.1:9123`) here: the desktop app reaches Windows printers
+  and network ESC/POS printers directly from the Electron main process
+  (`electron/native-printing.js`), so a desktop install never needs to
+  install that separate helper. See [printing.md](printing.md) for the full
+  two-backend split.
 - Phones/tablets use the dedicated HTTPS gateway. It terminates TLS and proxies
   both HTTP and WebSocket traffic to the internal server.
-- The gateway exposes neither PostgreSQL nor the print connector.
+- The gateway exposes neither PostgreSQL nor the desktop's native printing IPC.
 
 The Owner's **Settings → Connections → Local Devices** panel selects a valid
 Private LAN adapter, enables/disables the gateway, displays the HTTPS address
@@ -55,8 +60,9 @@ origin, CSRF and WebSocket checks. The gateway does not enable
 
 ## Persistent state
 
-Installation resources are immutable. The following remain beneath Electron
-`userData` so they survive app updates and reinstall/uninstall by default:
+Installation resources are immutable. The following remain beneath the
+app's data directory so they survive app updates and reinstall/uninstall by
+default:
 
 - PostgreSQL data directory
 - generated database password (the restricted runtime-role URL is derived at boot)
@@ -65,6 +71,50 @@ Installation resources are immutable. The following remain beneath Electron
 - local CA/server certificates
 - gateway configuration
 - application/Electron logs
+
+By default that data directory is Electron's standard OS-appropriate
+`userData` path. Since Section 3 of the desktop audit, a genuinely first
+launch (no `config.json` at the default path, no previously recorded choice)
+asks once whether to keep that default or use a different drive/folder — a
+bigger disk, an external drive — via `electron/local-storage.js`'s
+`evaluateFolder` (a real free-space check plus a write/read/delete round
+trip on the candidate folder, not just a typed path) and `main.js`'s
+`runStorageBootstrap`/`promptForStorageLocation`. The answer is written once
+to a small marker file at the *default* `userData` path (so it is always
+findable regardless of what was chosen) and reused silently on every later
+launch — the prompt never repeats. An automated/CI boot
+(`DESKTOP_SMOKE_MARKER` set) always takes the default path, unattended, so
+this never blocks a scripted run. Relocating an *already-initialised*
+`pgdata` directory later is out of scope for this feature and belongs with
+the Section 10 backup/restore wizard instead.
+
+Within whichever root that resolves to, Section 8 of the desktop audit
+splits it into four subfolders rather than leaving everything flat —
+`electron/app-paths.js`'s `computePaths()` is the single source of truth:
+
+- `Configuration/config.json` — generated secrets, ports, instance identity
+- `Data/pgdata` — the embedded PostgreSQL data directory
+- `Data/gateway-certificates` — the local mobile-access CA/server certificates
+- `Backup/emergency-backups` — automatic pre-restore safety dumps
+- `Logs/desktop.log` (+ Postgres's own log) — everything `electron/logger.js` writes
+
+An install that predates this split has all of the above sitting directly
+in the `userData` root instead. `main.js` runs `app-paths.js`'s
+`migrateLegacyLayout()` exactly once per install, immediately after the
+storage-location choice above resolves and before the logger, backend
+manager or certificate manager compute a single path from the result — it
+moves each legacy entry that exists into its new home and records
+completion in a `.folder-layout-v1` marker file at the root, so it never
+re-runs and a fresh install (nothing to move) is a no-op. A move failure
+(locked file, permissions) is not recorded as migrated, so it is retried on
+the next launch, and a partially-migrated entry never causes data loss —
+the source is only removed after a successful copy.
+
+The in-app **Setup wizard → Backup destination** step and the packaged app's
+own first-run prompt both call through to the same `evaluateFolder` check —
+disk-space and a real write/read/delete round trip — via
+`window.businessSuiteDesktop.storage` (see `src/lib/desktop-bridge.ts`), so a
+folder is never accepted purely because its path string looked valid.
 
 The NSIS package is per-user by default. Ordinary install and startup therefore
 do not need administrator rights. The uninstaller deliberately does not delete
@@ -76,13 +126,19 @@ application data.
 service directly:
 
 1. Acquire the single-instance lock.
-2. Load or create protected persistent configuration.
-3. Start embedded PostgreSQL and wait for readiness.
-4. Apply forward-only migrations.
-5. Derive the restricted `pos_app` runtime database URL.
-6. choose a free loopback application port and start the staged server.
-7. Verify identity-aware `/api/health` before opening the window.
-8. Restore the configured HTTPS gateway where possible.
+2. On a genuinely first launch, ask once where local data should live
+   (default `userData` path or an owner-chosen folder) and record the
+   answer — see "Persistent state" above.
+3. Migrate an existing install's flat layout into
+   Configuration/Data/Backup/Logs, once, idempotently — see "Persistent
+   state" above.
+4. Load or create protected persistent configuration.
+5. Start embedded PostgreSQL and wait for readiness.
+6. Apply forward-only migrations.
+7. Derive the restricted `pos_app` runtime database URL.
+8. choose a free loopback application port and start the staged server.
+9. Verify identity-aware `/api/health` before opening the window.
+9. Restore the configured HTTPS gateway where possible.
 
 If another process owns a required resource, startup fails with a diagnostic
 rather than attaching to an unrelated service. Shutdown stops the gateway,

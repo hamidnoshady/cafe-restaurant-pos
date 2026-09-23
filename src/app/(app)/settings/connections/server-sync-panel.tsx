@@ -513,12 +513,14 @@ function SyncStatusPanels({
       {appUpdateStatus && appUpdateStatus.error !== "sync_not_configured" ? (
         <SectionCard title="به‌روزرسانی نرم‌افزار">
           <p className="mb-4 text-sm text-muted-foreground">
-            نسخهٔ نصب‌شده روی این دستگاه در برابر نسخهٔ در حال اجرا روی سرور مرکزی. دریافت نسخهٔ جدید هنگام روشن‌شدن
-            سیستم انجام می‌شود، نه به‌صورت خودکار در طول کار.
+            نسخهٔ نصب‌شده روی این دستگاه در برابر نسخهٔ در حال اجرا روی سرور مرکزی. این فقط یک اعلان است — نصب نسخهٔ
+            جدید خودکار نیست و باید توسط مدیر انجام شود.
           </p>
           {appUpdateStatus.updateAvailable ? (
             <InfoBox>
-              نسخهٔ جدیدی در دسترس است ({appUpdateStatus.latestVersion}). دفعهٔ بعد که سیستم روشن شود دریافت می‌شود.
+              نسخهٔ جدیدی در دسترس است ({appUpdateStatus.latestVersion}). قبل از نصب حتماً یک پشتیبان تهیه کنید،
+              سپس نصب‌کنندهٔ جدید را از مدیر سیستم دریافت و اجرا نمایید. پس از نصب، از سالم بودن داده‌ها اطمینان
+              حاصل کنید.
             </InfoBox>
           ) : null}
           <StatusRow label="نسخهٔ فعلی" value={appUpdateStatus.currentVersion || "—"} />

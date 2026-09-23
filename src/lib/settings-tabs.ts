@@ -24,6 +24,7 @@ export const SETTINGS_TAB_KEYS = [
   "audit-log",
   "security-center",
   "backup",
+  "logs",
   "data-transfer",
 ] as const;
 
@@ -198,6 +199,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     description: "وضعیت، اجرای دستی و زمان‌بندی پشتیبان‌گیری",
     allowedRoles: ["owner", "manager"],
     feature: "backup",
+  },
+  {
+    key: "logs",
+    label: "گزارش‌ها",
+    description: "خطاهای ثبت‌شدهٔ این مرورگر و — روی نسخهٔ دسکتاپ — گزارش کامل سرور محلی",
+    requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {
     key: "data-transfer",

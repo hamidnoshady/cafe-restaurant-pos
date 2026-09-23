@@ -10,9 +10,16 @@ import {
 } from "@simplewebauthn/browser";
 import { PinPad } from "@/components/auth/pin-pad";
 import { PhoneOtpStep, type PhoneOtpSendSpec } from "@/components/auth/phone-otp-step";
+import {
+  ChangeLoginTypeLink,
+  LoginDoorChooser,
+  OfflineLoginNote,
+  type DoorChoice,
+} from "@/components/auth/login-door-chooser";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { readDeviceToken } from "@/lib/device-token";
+import { clearRememberedLoginDoor, readRememberedLoginDoor } from "@/lib/login-door";
 import {
   lockoutMessage,
   retryAfterMs,
@@ -41,8 +48,63 @@ import { roleLabel } from "@/lib/role-labels";
  * Under the roster, «ورود با شمارهٔ موبایل» opens the direct phone login that
  * every member — managers and owners included — can use once their number is
  * verified; admins keep the email+password door at /admin.
+ *
+ * Login-type chooser (audit fix): before this fix the route jumped straight
+ * into the staff roster on every single visit — a fresh install, a brand-new
+ * browser, a cleared profile — with no way to discover that `/admin` existed
+ * at all. `LoginDoorChooser` is the missing front door: shown once per
+ * browser unless that browser asked to be remembered, and always reachable
+ * again through «تغییر نوع ورود» underneath the roster, so a device that
+ * picked "staff" and needs to switch to "admin" (or just doesn't want to be
+ * remembered anymore) is never stuck.
  */
 export default function LoginForm() {
+  // `null` = "not decided yet" (still reading localStorage, first paint must
+  // not flash the wrong screen); `false` = show the chooser now.
+  const [remembered, setRemembered] = useState<boolean | null>(null);
+  const [offlineNote, setOfflineNote] = useState(false);
+
+  useEffect(() => {
+    setRemembered(readRememberedLoginDoor() === "staff");
+  }, []);
+
+  function chooseDoor(choice: DoorChoice) {
+    // "admin" already navigated away inside the chooser; only "staff" and
+    // "offline" (the same staff door, with a note) render in place.
+    setOfflineNote(choice === "offline");
+    setRemembered(true);
+  }
+
+  function changeLoginType() {
+    clearRememberedLoginDoor();
+    setRemembered(false);
+    setOfflineNote(false);
+  }
+
+  if (remembered === null) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <div className={`w-full max-w-sm ${cardClass} p-8`}>
+          <Skeleton className="mx-auto mb-2 h-6 w-40" />
+          <Skeleton className="mx-auto mb-6 h-4 w-28" />
+          <div className="grid grid-cols-3 gap-2">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!remembered) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <LoginDoorChooser onChoose={chooseDoor} />
+      </main>
+    );
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
       <div className={`w-full max-w-sm ${cardClass} p-8`}>
@@ -54,6 +116,8 @@ export default function LoginForm() {
         </p>
 
         <PinLogin />
+        {offlineNote ? <OfflineLoginNote /> : null}
+        <ChangeLoginTypeLink onClick={changeLoginType} />
       </div>
     </main>
   );

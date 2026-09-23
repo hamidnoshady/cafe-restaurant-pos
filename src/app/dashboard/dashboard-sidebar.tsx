@@ -103,7 +103,6 @@ import { BugReportFooterButton } from "@/components/bug-report/report-buttons";
 import { BiometricSettingsButton } from "./biometric-settings";
 import { BranchSwitcher } from "./branch-switcher";
 import { LockButton } from "./lock-screen";
-import { LogoutButton } from "./logout-button";
 import { PlatformUserMenu } from "./platform-user-menu";
 import { ShiftButton } from "./shift-panel";
 

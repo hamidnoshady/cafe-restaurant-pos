@@ -34,11 +34,14 @@
     "files": [
       "main.js",
       "preload.js",
+      "app-paths.js",
       "backend-manager.js",
       "certificate-manager.js",
       "firewall-manager.js",
       "gateway-manager.js",
       "network-interfaces.js",
+      "native-printing.js",
+      "local-storage.js",
       "logger.js",
       "package.json"
     ],

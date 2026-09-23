@@ -45,7 +45,10 @@ export const DASHBOARD_HOME = "/dashboard";
  * 404s. `/overview` and `/ai` once stood beside these as top-level routes;
  * both are retired (the old quick-report dashboard and the second AI
  * application), and their addresses now resolve to `/dashboard` itself — see
- * `legacyAssistantTarget`.
+ * `legacyAssistantTarget`. They have **no route files of their own**: the
+ * redirect-only `page.tsx` files that used to answer them were a second
+ * implementation of a rule this table already owns, so the redirect is issued
+ * here, in middleware, like every other legacy address.
  */
 export const WORKSPACE_TOP_HREFS = {
   media: "/media",
@@ -367,8 +370,11 @@ function legacyWpTarget(pathname: string, search: string): string {
  * `?conversation=` deep link still opens its thread after the hop.
  */
 function legacyAssistantTarget(pathname: string, search: string): string {
-  if (pathname === "/dashboard/overview") return withSearch("/dashboard", search);
-  const rest = pathname.slice("/dashboard/ai".length).replace(/^\//, "");
+  if (pathname === "/dashboard/overview" || pathname === "/overview") {
+    return withSearch("/dashboard", search);
+  }
+  const prefix = pathname.startsWith("/dashboard/ai") ? "/dashboard/ai" : "/ai";
+  const rest = pathname.slice(prefix.length).replace(/^\//, "");
   const [first] = rest.split("/");
   const canonical = isAiPanelSectionKey(first) ? aiPanelHref(first) : "/dashboard";
   return withSearch(canonical, search);
@@ -393,7 +399,14 @@ export function legacyRedirectTarget(pathname: string, search = ""): string | nu
   if (
     pathname === "/dashboard/overview" ||
     pathname === "/dashboard/ai" ||
-    pathname.startsWith("/dashboard/ai/")
+    pathname.startsWith("/dashboard/ai/") ||
+    // The same two retired homes at their top-level addresses. These used to
+    // be answered by redirect-only `page.tsx` files under `(app)/overview` and
+    // `(app)/ai/*` — a second, duplicate implementation of a rule this table
+    // already owns. The pages are gone; the compatibility promise is not.
+    pathname === "/overview" ||
+    pathname === "/ai" ||
+    pathname.startsWith("/ai/")
   ) {
     return legacyAssistantTarget(pathname, search);
   }

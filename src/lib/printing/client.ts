@@ -1,19 +1,32 @@
 /**
- * The browser's printing client — one hardware backend, one fallback.
+ * The browser's printing client — one hardware backend per surface.
  *
- * Hardware printing has exactly one path: the app server renders the
- * canonical ESC/POS bytes for a saved printer ID (POST /api/printing/print),
- * and THIS page hands them to the local Cafe POS connector on loopback, which
- * owns every printer the cashier's machine can reach (Windows queues and
- * network TCP alike). There is deliberately no agent/server/WebUSB/system
- * fallback chain to decide between: the connector is the hardware
- * abstraction, and if it is not running that fact is reported plainly
- * instead of being routed around.
+ * Two products, two ways to reach a printer, same `PrinterTarget` shape and
+ * same canonical error codes either way:
  *
- * The no-hardware path stays: `printViaBrowser` opens the browser's own
- * print dialog on a rendered document — the right output for A4 invoices,
- * label sheets, and tills with no configured hardware printer. It is an
- * output action, not a printer connection type, and is never saved as one.
+ *  - the browser/cloud product has no OS access of its own, so it hands the
+ *    canonical bytes to the local Cafe POS Windows Print Connector on
+ *    loopback — a small helper the operator installs once, which owns every
+ *    printer the cashier's machine can reach (Windows queues and network TCP
+ *    alike);
+ *  - the DESKTOP app (Electron) already runs as a process on the same
+ *    Windows machine as the printer, so it never needs that connector: the
+ *    preload bridge (`window.businessSuiteDesktop.printing`, backed by
+ *    `electron/native-printing.js`) talks to `winspool.drv` and raw TCP
+ *    sockets directly from the app's own main process. Section 7 of the
+ *    desktop audit was exactly this — the desktop build should not force an
+ *    unrelated second installer next to itself.
+ *
+ * `desktopPrintingBridge()` is the one place that decides which backend a
+ * given browser tab has available; every exported function below is written
+ * against it so callers (the settings UI, the POS, labels) never branch on
+ * "am I inside Electron?" themselves.
+ *
+ * The no-hardware path stays on both: `printViaBrowser` opens the browser's
+ * own print dialog on a rendered document — the right output for A4
+ * invoices, label sheets, and tills with no configured hardware printer. It
+ * is an output action, not a printer connection type, and is never saved as
+ * one.
  */
 import type { KitchenTicketData } from "../kitchen-ticket-template";
 import { renderLabelHtml, type LabelData } from "../label-template";
@@ -23,6 +36,8 @@ import { CONNECTOR_PROTOCOL_VERSION, CONNECTOR_PORT } from "./connector-release"
 import { classifyDeliveryError, type PrinterErrorCode } from "./errors";
 import type { PrintJob } from "./render-service";
 import type { PrinterTarget } from "./types";
+import type { DesktopPrintingBridge } from "../desktop-bridge";
+import "../desktop-bridge"; // registers the `Window.businessSuiteDesktop` global augmentation
 
 export type { PrintJob } from "./render-service";
 
@@ -32,6 +47,13 @@ const CONNECTOR_VERSION = CONNECTOR_PROTOCOL_VERSION;
 function connectorBaseUrl(): string {
   return process.env.NEXT_PUBLIC_PRINT_CONNECTOR_URL || `http://127.0.0.1:${CONNECTOR_PORT}`;
 }
+
+/** Are we inside the desktop app, with its direct native-printing bridge available? */
+function desktopPrintingBridge(): DesktopPrintingBridge | null {
+  if (typeof window === "undefined") return null;
+  return window.businessSuiteDesktop?.printing ?? null;
+}
+
 
 // A cloud page must not hammer a missing loopback service: one failed health
 // attempt suppresses further calls for a short window, and the explicit
@@ -127,6 +149,12 @@ async function callConnector<T = { ok: boolean }>(
  * the one-click reinstall upgrades it.
  */
 export async function connectorHealth(opts: { force?: boolean } = {}): Promise<ConnectorResult<ConnectorHealth>> {
+  // The desktop app never needs the loopback connector — its native bridge
+  // is part of the app process itself, so there is nothing to "install" and
+  // nothing that can be "outdated" independently of the app build itself.
+  if (desktopPrintingBridge()) {
+    return { ok: true, data: { ok: true, service: "cafe-pos-desktop-native", version: CONNECTOR_VERSION, platform: "windows" } };
+  }
   if (healthInFlight && !opts.force) return healthInFlight;
   const probe = (async (): Promise<ConnectorResult<ConnectorHealth>> => {
     const result = await callConnector<ConnectorHealth>("/health", {}, {
@@ -157,8 +185,14 @@ export interface WindowsPrinter {
   likelyThermal: boolean;
 }
 
-/** The print queues installed on this Windows machine (Printers & scanners). */
-export function listWindowsPrinters(): Promise<ConnectorResult<{ printers: WindowsPrinter[] }>> {
+/** The print queues installed on this Windows machine (Printers & scanners). Desktop bridge first, connector otherwise. */
+export async function listWindowsPrinters(): Promise<ConnectorResult<{ printers: WindowsPrinter[] }>> {
+  const bridge = desktopPrintingBridge();
+  if (bridge) {
+    const result = await bridge.listWindowsPrinters();
+    if (!result.ok) return { ok: false, error: (result.error as PrinterErrorCode) ?? "print_failed", detail: result.detail };
+    return { ok: true, data: { printers: result.printers ?? [] } };
+  }
   return callConnector<{ printers: WindowsPrinter[] }>("/printers/windows", {}, { method: "GET", timeoutMs: 20_000 });
 }
 
@@ -168,15 +202,32 @@ export interface DiscoveredPrinter {
   latencyMs: number;
 }
 
-/** Sweep this machine's local subnets for network printers (port 9100). Runs on the connector, never on the app server. */
-export function discoverNetworkPrinters(): Promise<ConnectorResult<{ printers: DiscoveredPrinter[] }>> {
+/** Sweep this machine's local subnets for network printers (port 9100). Desktop bridge first, else the connector — never the app server. */
+export async function discoverNetworkPrinters(): Promise<ConnectorResult<{ printers: DiscoveredPrinter[] }>> {
+  const bridge = desktopPrintingBridge();
+  if (bridge) {
+    const result = await bridge.discoverNetworkPrinters();
+    if (!result.ok) return { ok: false, error: (result.error as PrinterErrorCode) ?? "print_failed", detail: result.detail };
+    return { ok: true, data: { printers: result.printers ?? [] } };
+  }
   return callConnector<{ printers: DiscoveredPrinter[] }>("/printers/network/discover", {}, { timeoutMs: 60_000 });
 }
 
-/** Is this printer answering right now, as seen from the cashier's machine? */
+/** Is this printer answering right now, as seen from the cashier's machine? Desktop bridge first, else the connector. */
 export async function probePrinterTarget(
   target: PrinterTarget,
 ): Promise<ConnectorResult<{ reachable: boolean; detail?: string }>> {
+  const bridge = desktopPrintingBridge();
+  if (bridge) {
+    const result = await bridge.probe(target);
+    if (!result.ok) return { ok: false, error: (result.error as PrinterErrorCode) ?? "print_failed", detail: result.detail };
+    const reachable = result.reachable === true;
+    return {
+      ok: true,
+      data: { reachable, detail: result.detail },
+      error: reachable ? undefined : target.type === "network" ? "network_unreachable" : "printer_offline",
+    };
+  }
   const result = await callConnector<{ reachable: boolean; detail?: string }>("/printers/probe", { target }, { timeoutMs: 10_000 });
   if (result.ok && !result.data?.reachable) {
     return { ...result, error: target.type === "network" ? "network_unreachable" : "printer_offline" };
@@ -201,6 +252,14 @@ function base64ToBytes(encoded: string): Uint8Array {
 
 /** Deliver raw ESC/POS bytes to a printer through the local connector. */
 export async function sendRawToPrinter(target: PrinterTarget, bytes: Uint8Array): Promise<ConnectorResult> {
+  const bridge = desktopPrintingBridge();
+  if (bridge) {
+    const result = await bridge.sendRaw(target, bytesToBase64(bytes));
+    if (!result.ok) {
+      return { ok: false, error: (result.error as PrinterErrorCode) ?? classifyDeliveryError(result.detail, target), detail: result.detail };
+    }
+    return { ok: true };
+  }
   const result = await callConnector("/print/raw", { target, dataBase64: bytesToBase64(bytes) }, { timeoutMs: 30_000 });
   if (!result.ok && !result.unreachable) {
     // A refused queue or an unanswered TCP dial is a different sentence in

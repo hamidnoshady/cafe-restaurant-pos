@@ -4,6 +4,7 @@
 import { CircleAlertIcon, InfoIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { recordApiFailure } from "@/lib/error-report";
 
 /**
  * The dashboard's fetch wrapper.
@@ -39,6 +40,18 @@ export async function api<T = Record<string, unknown>>(
       // A 204, an HTML error page from a proxy, or a body cut off mid-flight.
       data = {} as T;
     }
+    // Section 12 (professional error handling) follow-up: a 5xx is the
+    // server itself failing, not a validation rejection — worth capturing in
+    // the same exportable log a render error uses, without changing what the
+    // caller sees on screen. See error-report.ts's isNotableApiFailure.
+    if (!res.ok) {
+      recordApiFailure({
+        method: init?.method ?? "GET",
+        url,
+        status: res.status,
+        code: typeof (data as { error?: unknown })?.error === "string" ? (data as { error: string }).error : undefined,
+      });
+    }
     return { ok: res.ok, status: res.status, data, aborted: false };
   } catch (err) {
     // Consumers use the result to release their busy state. Letting a dropped
@@ -51,6 +64,9 @@ export async function api<T = Record<string, unknown>>(
     // failure. Callers that pass `init.signal` check `aborted` and return.
     const aborted =
       init?.signal?.aborted === true || (err instanceof DOMException && err.name === "AbortError");
+    if (!aborted) {
+      recordApiFailure({ method: init?.method ?? "GET", url, status: 0, code: "network_error" });
+    }
     return {
       ok: false,
       status: 0,
