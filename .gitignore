@@ -48,3 +48,8 @@ wordpress-plugin/pos-accounting-connector.zip
 # Visual-regression diff output is a local artifact of a failing run; the
 # baselines beside it are committed, the diffs never are.
 docs/design/visual/__diff__/
+
+# Desktop build logs are local artifacts of `npm run dist`, never reviewed
+# output. One was committed once and went stale against a two-version-old
+# electron-builder; ignore the shape so it cannot happen again.
+electron/build-output.log

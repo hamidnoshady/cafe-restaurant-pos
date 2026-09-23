@@ -27,6 +27,11 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { middleware } from "@/middleware";
 import { signSession, type SessionPayload } from "@/lib/auth-edge";
 import {
+  AI_PANEL_PARAM,
+  AI_PANEL_SECTION_KEYS,
+  aiPanelHref,
+} from "@/lib/ai-panel";
+import {
   APP_HOME_HREFS,
   APP_ROUTE_PREFIXES,
   APP_SETTINGS_HREFS,
@@ -276,6 +281,19 @@ describe("the legacy addresses", () => {
     // back onto the one home rather than onto a successor page.
     ["/dashboard/overview", "/dashboard"],
     ["/dashboard/ai", "/dashboard"],
+    // The same two retired homes at their top-level addresses. These were
+    // answered by redirect-only `page.tsx` files until the dead-code cleanup
+    // removed that duplicate; the promise now lives where every other legacy
+    // URL's does — the central table, applied by middleware. A `/ai/<section>`
+    // bookmark still opens the assistant's management panel.
+    ["/overview", "/dashboard"],
+    ["/ai", "/dashboard"],
+    ["/ai/agents", "/dashboard"],
+    ["/ai/coworkers", "/dashboard"],
+    ["/ai/automations", "/dashboard"],
+    ["/ai/activity", "/dashboard"],
+    ["/ai/knowledge", "/dashboard"],
+    ["/ai/usage", "/dashboard"],
     ["/dashboard/media", "/media"],
     ["/dashboard/knowledge", "/knowledge"],
     ["/dashboard/knowledge/a/pos-basics", "/knowledge/a/pos-basics"],
@@ -338,6 +356,39 @@ describe("the legacy addresses", () => {
     expect(location?.searchParams.get("next")).toBe(
       "/accounting/directory?view=suppliers",
     );
+  });
+
+  it("opens each retired AI section as the dashboard's management panel, not a page", async () => {
+    // The `?aiPanel=` value is the substance of these redirects — landing on a
+    // bare `/dashboard` would silently lose the section the bookmark named.
+    // `aiPanelHref` is the one producer of the address, so the assertion reads
+    // it rather than re-spelling the query string.
+    for (const section of AI_PANEL_SECTION_KEYS) {
+      for (const legacy of [`/ai/${section}`, `/dashboard/ai/${section}`]) {
+        const { status, location } = await visit(legacy, { authed: true });
+        expect(status, `${legacy} should be a permanent redirect`).toBe(308);
+        expect(location?.pathname).toBe("/dashboard");
+        expect(
+          location?.searchParams.get(AI_PANEL_PARAM),
+          `${legacy} should open the ${section} panel`,
+        ).toBe(section);
+        expect(`${location?.pathname}${location?.search}`).toBe(
+          aiPanelHref(section),
+        );
+      }
+    }
+  });
+
+  it("carries an assistant deep link's query through the retired /ai address", async () => {
+    // `/ai?conversation=…` was a real, working deep link into the standalone
+    // application's chat. The hub on `/dashboard` reads the same parameter, so
+    // the thread must survive the hop.
+    const { status, location } = await visit("/ai?conversation=abc123", {
+      authed: true,
+    });
+    expect(status).toBe(308);
+    expect(location?.pathname).toBe("/dashboard");
+    expect(location?.searchParams.get("conversation")).toBe("abc123");
   });
 
   it("redirects a signed-out visitor too, so the bookmark lands before the login bounce", async () => {
