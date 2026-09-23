@@ -6,7 +6,7 @@ import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali } from "@/lib/jalali";
+import { formatJalali, todayIsoDate } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api, ErrorBox, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
@@ -32,17 +32,6 @@ interface ExpenseListResponse {
   hasMore?: boolean;
   totalAmount?: number;
   totalCount?: number;
-}
-
-/** Today in ISO, in the business's own timezone — the ceiling for «تاریخ هزینه». */
-function todayIso(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tehran",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-  return parts;
 }
 
 /**
@@ -115,7 +104,7 @@ export function ExpenseSection({
   const [filterAccountId, setFilterAccountId] = useState("");
   const [q, setQ] = useState("");
 
-  const today = todayIso();
+  const today = todayIsoDate();
 
   const loadUrl = useMemo(() => {
     const params = new URLSearchParams();

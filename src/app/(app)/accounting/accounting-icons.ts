@@ -19,7 +19,6 @@ import {
   ScrollTextIcon,
   SettingsIcon,
   TrendingUpIcon,
-  TruckIcon,
   UsersIcon,
   type LucideIcon,
 } from "lucide-react";

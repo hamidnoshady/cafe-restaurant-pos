@@ -67,9 +67,6 @@ export function accountingSectionHref(key: AccountingSectionKey): string {
   return key === "dashboard" ? ACCOUNTING_HOME : `/accounting/${key}`;
 }
 
-/** Accounting's own settings page — never the platform settings page. */
-export const ACCOUNTING_SETTINGS_HREF = "/accounting/settings";
-
 /**
  * The customers view of the one directory — where every «برو به مشتری» link in
  * Accounting lands. A filter on the canonical screen, not a screen of its own.

@@ -45,7 +45,6 @@ import {
   ArrowLeftRightIcon,
   HandCoinsIcon,
   EyeIcon,
-  MoreHorizontalIcon,
   FilterIcon,
   LandmarkIcon,
   FileTextIcon,
@@ -94,7 +93,6 @@ import {
   Field,
   FieldLabel,
   FieldDescription,
-  FieldError,
 } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -113,7 +111,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
+import { formatJalali, todayIsoDate } from "@/lib/jalali";
 import { normalizePosSearchText } from "@/lib/pos-selection";
 import { useMoney } from "@/components/money/money-context";
 import {
@@ -232,22 +230,12 @@ function daysBetween(a: string, b: string): number {
   return Math.floor((db - da) / 86_400_000);
 }
 
-/**
- * Today, as the reader's own calendar names it. `new Date().toISOString()` is
- * the date in *UTC*, which is still yesterday for the first three and a half
- * hours of every Tehran day — so a cheque due today read «۱ روز گذشته» to
- * anyone opening the register before 03:30.
- */
-function todayIso(): string {
-  return isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
-}
-
 function dueState(
   dueDate: string,
   status: ChequeStatus,
 ): "overdue" | "due_soon" | "ok" | "terminal" {
   if (["cleared", "bounced", "cancelled"].includes(status)) return "terminal";
-  const t = todayIso();
+  const t = todayIsoDate();
   const diff = daysBetween(t, dueDate); // negative = overdue
   if (diff < 0) return "overdue";
   if (diff <= 7) return "due_soon";
@@ -480,7 +468,7 @@ export function ChequesSection({
   // KPIs
   const kpis = useMemo(() => {
     if (!cheques) return null;
-    const t = todayIso();
+    const t = todayIsoDate();
     const active = cheques.filter(
       (c) => !["cleared", "bounced", "cancelled"].includes(c.status),
     );
@@ -880,7 +868,7 @@ export function ChequesSection({
                                       {toPersianDigits(
                                         String(
                                           Math.abs(
-                                            daysBetween(c.dueDate, todayIso()),
+                                            daysBetween(c.dueDate, todayIsoDate()),
                                           ),
                                         ),
                                       )}{" "}
@@ -894,7 +882,7 @@ export function ChequesSection({
                                       <Clock3Icon className="size-3" />
                                       {toPersianDigits(
                                         String(
-                                          daysBetween(todayIso(), c.dueDate),
+                                          daysBetween(todayIsoDate(), c.dueDate),
                                         ),
                                       )}{" "}
                                       روز مانده
@@ -1045,7 +1033,7 @@ export function ChequesSection({
                                     String(
                                       Math.max(
                                         0,
-                                        daysBetween(todayIso(), c.dueDate),
+                                        daysBetween(todayIsoDate(), c.dueDate),
                                       ),
                                     ),
                                   )}{" "}
@@ -1700,7 +1688,7 @@ function CreateChequeDialog({
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [amount, setAmount] = useState("");
-  const [issueDate, setIssueDate] = useState(todayIso());
+  const [issueDate, setIssueDate] = useState(todayIsoDate());
   const [dueDate, setDueDate] = useState("");
   const [counterpartyId, setCounterpartyId] = useState("");
   const [counterpartyName, setCounterpartyName] = useState("");
@@ -1729,7 +1717,7 @@ function CreateChequeDialog({
       setBankName("");
       setAccountNumber("");
       setAmount("");
-      setIssueDate(todayIso());
+      setIssueDate(todayIsoDate());
       setDueDate("");
       setCounterpartyId("");
       setCounterpartyName("");
@@ -2049,7 +2037,7 @@ function ChequeActionDialog({
   onError: (m: string) => void;
 }) {
   const money = useMoney();
-  const [occurredOn, setOccurredOn] = useState(todayIso());
+  const [occurredOn, setOccurredOn] = useState(todayIsoDate());
   const [memo, setMemo] = useState("");
   // No default: preselecting `suppliers[0]` meant one careless «ظهرنویسی»
   // handed a customer's cheque to whichever supplier sorted first.

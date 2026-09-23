@@ -17,7 +17,6 @@ import Link from "next/link";
 import {
   ArrowUpRightIcon,
   BarChart3Icon,
-  CalculatorIcon,
   ClipboardListIcon,
   PercentIcon,
   ScrollTextIcon,
