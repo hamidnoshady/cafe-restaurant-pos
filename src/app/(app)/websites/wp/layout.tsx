@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
 import { featureLockedForPage } from "@/lib/features";
 import { FeatureLock } from "@/components/feature-lock";
 import { WpManagerShell } from "./wp-app-shell";
+import { requireWpSection } from "./wp-guard";
 
 /**
  * The WordPress & WooCommerce manager's layout — one of the two managers
@@ -17,9 +16,7 @@ import { WpManagerShell } from "./wp-app-shell";
  * calls in that state.
  */
 export default async function WpManagerLayout({ children }: { children: React.ReactNode }) {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  const session = await requireWpSection("overview");
   const locked = await featureLockedForPage(session.businessId, "integrations");
 
   return (

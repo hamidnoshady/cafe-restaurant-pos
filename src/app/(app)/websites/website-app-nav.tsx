@@ -19,10 +19,9 @@
  * the member is never trapped inside.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRightIcon,
   ChevronDownIcon,
   ContactIcon,
   CreditCardIcon,
@@ -46,9 +45,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { AppShellNavProps } from "@/app/dashboard/app-shell-nav";
 import {
   APP_NAV_BUTTON_CLASS,
-  BACK_TO_WORKSPACE_BUTTON_CLASS,
   NAV_LABEL_CLASS,
 } from "@/app/dashboard/sidebar-nav-styles";
+import { BackToWorkspaceMenu } from "@/app/dashboard/app-section-nav";
+import { NAV_GROUP_RULE_CLASS } from "@/app/dashboard/sidebar-nav-group";
+import { useOpenNavGroups } from "@/app/dashboard/use-open-nav-groups";
 import { api } from "@/app/dashboard/ui";
 import { CMS_NAV_ITEMS, WEBSITE_NAV_GROUPS, WP_NAV_ITEMS } from "./website-nav";
 import {
@@ -89,15 +90,6 @@ const WP_ICONS: Record<WpSectionKey, typeof LayoutDashboardIcon> = {
 /** Which collapsible manager groups the member left open, per device. */
 const OPEN_NAV_GROUPS_KEY = "website-sidebar-open-groups";
 
-function readOpenGroups(): Record<string, boolean> {
-  try {
-    const raw = window.localStorage.getItem(OPEN_NAV_GROUPS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-  } catch {
-    return {};
-  }
-}
-
 /** The menu's own loading shape: two group headings and a few rows each. */
 function WebsiteNavSkeleton() {
   return (
@@ -116,21 +108,7 @@ function WebsiteNavSkeleton() {
 
 export function WebsiteAppNav({ shell, role, pathname, onNavigate }: AppShellNavProps) {
   const [state, setState] = useState<WebsiteManagersState | null>(null);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-
-  useEffect(() => setOpenGroups(readOpenGroups()), []);
-
-  const toggleGroup = useCallback((label: string) => {
-    setOpenGroups((current) => {
-      const next = { ...current, [label]: !current[label] };
-      try {
-        window.localStorage.setItem(OPEN_NAV_GROUPS_KEY, JSON.stringify(next));
-      } catch {
-        // A device that refuses storage keeps the choice for the session.
-      }
-      return next;
-    });
-  }, []);
+  const { toggleGroup, isOpen: groupIsOpen } = useOpenNavGroups(OPEN_NAV_GROUPS_KEY);
 
   useEffect(() => {
     let alive = true;
@@ -146,8 +124,6 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate }: AppShellNav
     };
   }, []);
 
-  const backHref = "/dashboard";
-  const backLabel = "بازگشت به میز کار";
   const canManage = role === "owner" || role === "manager";
 
   const cmsKeys = state ? visibleCmsSections(state) : [];
@@ -155,6 +131,19 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate }: AppShellNav
 
   const cmsItems = CMS_NAV_ITEMS.filter((item) => cmsKeys.includes(item.key));
   const wpItems = WP_NAV_ITEMS.filter((item) => wpKeys.includes(item.key));
+
+  // A manager whose section you are reading opens itself; the remembered
+  // choice wins over that once the member has expressed one.
+  const cmsGroupLabel = WEBSITE_NAV_GROUPS[0].label;
+  const wpGroupLabel = WEBSITE_NAV_GROUPS[1].label;
+  const cmsOpen = groupIsOpen(
+    cmsGroupLabel,
+    cmsItems.some((item) => isCmsSectionPathname(pathname, item.key)),
+  );
+  const wpOpen = groupIsOpen(
+    wpGroupLabel,
+    wpItems.some((item) => isWpSectionPathname(pathname, item.key)),
+  );
 
   return (
     <SidebarContent className="px-3 py-4">
@@ -165,17 +154,7 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate }: AppShellNav
         </div>
 
         {/* The way out, first — and drawn as a control, not as another section. */}
-        <SidebarMenu className="space-y-1.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
-              <Link href={backHref} onClick={onNavigate}>
-                <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
-                <span className={NAV_LABEL_CLASS}>{backLabel}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <div aria-hidden="true" className="border-t border-border/80" />
+        <BackToWorkspaceMenu onNavigate={onNavigate} />
 
         <SidebarMenu className="space-y-1.5">
           <SidebarMenuItem>
@@ -232,8 +211,8 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate }: AppShellNav
               hrefFor={(key) => cmsSectionHref(key as CmsSectionKey)}
               activeFor={(key) => isCmsSectionPathname(pathname, key as CmsSectionKey)}
               iconFor={(key) => CMS_ICONS[key as CmsSectionKey]}
-              open={Boolean(openGroups[WEBSITE_NAV_GROUPS[0].label]) || cmsItems.some((item) => isCmsSectionPathname(pathname, item.key))}
-              onToggle={() => toggleGroup(WEBSITE_NAV_GROUPS[0].label)}
+              open={cmsOpen}
+              onToggle={() => toggleGroup(cmsGroupLabel, cmsOpen)}
               onNavigate={onNavigate}
             />
             <CollapsibleNavGroup
@@ -242,8 +221,8 @@ export function WebsiteAppNav({ shell, role, pathname, onNavigate }: AppShellNav
               hrefFor={(key) => wpSectionHref(key as WpSectionKey)}
               activeFor={(key) => isWpSectionPathname(pathname, key as WpSectionKey)}
               iconFor={(key) => WP_ICONS[key as WpSectionKey]}
-              open={Boolean(openGroups[WEBSITE_NAV_GROUPS[1].label]) || wpItems.some((item) => isWpSectionPathname(pathname, item.key))}
-              onToggle={() => toggleGroup(WEBSITE_NAV_GROUPS[1].label)}
+              open={wpOpen}
+              onToggle={() => toggleGroup(wpGroupLabel, wpOpen)}
               onNavigate={onNavigate}
             />
           </>
@@ -279,7 +258,7 @@ function CollapsibleNavGroup({
           the WordPress sections would read as one undivided column of glyphs. */}
       <div
         aria-hidden="true"
-        className="mx-2 hidden border-t border-border/70 group-data-[state=collapsed]/sidebar:block"
+        className={NAV_GROUP_RULE_CLASS}
       />
       <button
         type="button"

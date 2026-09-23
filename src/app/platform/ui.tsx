@@ -172,8 +172,16 @@ export const selectClass =
 
 /**
  * A sub-navigation strip shared by every section of the console that has
- * sub-pages (AI, and inside a business). Rendered as tabs under the section
- * header on all viewports — horizontal scrolling keeps it usable on phones.
+ * sub-pages (system, the site builder, and inside a business). Rendered as
+ * tabs under the section header on all viewports — horizontal scrolling keeps
+ * it usable on phones.
+ *
+ * This is the console's only sub-nav. A second, near-identical
+ * `PlatformSubNav` lived in `@/components/platform/sub-nav` and was exported
+ * from that kit's barrel file, but nothing ever rendered it — two strips with
+ * two different active-tab skins, one of which no page could reach. It was
+ * removed rather than kept as a trap for the next person who imported the
+ * wrong one.
  */
 export function SubNav({
   items,
@@ -187,7 +195,12 @@ export function SubNav({
       className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1"
     >
       {items.map((item) => {
-        const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+        // A prefix match has to stop at a path boundary: without it
+        // `/platform/cms` would light on `/platform/cms-anything`, and a tab
+        // whose href is a prefix of a sibling's would light alongside it.
+        const active = item.exact
+          ? pathname === item.href
+          : pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <Link
             key={item.href}

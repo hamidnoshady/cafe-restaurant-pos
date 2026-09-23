@@ -80,7 +80,7 @@ export function useKbSearch() {
 }
 
 /** Placeholder rows while the catalogue loads (a *Skeleton by the loading rule). */
-export function SideMenuSkeleton({ rows = 4 }: { rows?: number }) {
+function SideMenuSkeleton({ rows = 4 }: { rows?: number }) {
   return (
     <div role="status" aria-busy="true" aria-label="در حال آماده‌سازی فهرست" className="space-y-2">
       {Array.from({ length: rows }).map((_, i) => (
@@ -198,7 +198,7 @@ function CategoryNode({
 }
 
 /** The full side menu (tree + tags). Renders a skeleton while the catalogue loads. */
-export function KbSideMenu({
+function KbSideMenu({
   catalogue,
   query,
   onQueryChange,

@@ -1,11 +1,8 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { requireWpSection } from "../wp-guard";
 import { TaxonomiesSectionHost } from "../store-section-host";
 
 /** درخت دسته‌بندی، برچسب و ویژگی‌های فروشگاه. */
 export default async function WpTaxonomiesPage() {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  await requireWpSection("taxonomies");
   return <TaxonomiesSectionHost />;
 }
