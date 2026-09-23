@@ -106,8 +106,8 @@ jobs:
       - name: Build compressed-backup PostgreSQL 16 tools from pinned official sources
         run: |
           $ErrorActionPreference = 'Stop'
-          Invoke-WebRequest -Uri $env:PG_SOURCE_URL -OutFile "$env:RUNNER_TEMP\postgresql-source.tar.gz" -MaximumRedirection 0
-          Invoke-WebRequest -Uri $env:ZLIB_SOURCE_URL -OutFile "$env:RUNNER_TEMP\zlib-source.tar.gz" -MaximumRedirection 0
+          Invoke-WebRequest -Uri $env:PG_SOURCE_URL -MaximumRedirection 5 -OutFile "$env:RUNNER_TEMP\postgresql-source.tar.gz"
+          Invoke-WebRequest -Uri $env:ZLIB_SOURCE_URL -MaximumRedirection 5 -OutFile "$env:RUNNER_TEMP\zlib-source.tar.gz"
           .\scripts\build-postgresql-tools-from-source.ps1 `
             -SourceArchive "$env:RUNNER_TEMP\postgresql-source.tar.gz" `
             -SourceSha256 $env:PG_SOURCE_SHA256 `
