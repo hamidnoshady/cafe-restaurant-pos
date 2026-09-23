@@ -6,9 +6,9 @@ the confirmed removals implemented and guarded.
 | | |
 | --- | --- |
 | Starting commit | `7429b38b842b8ee1d53cd9dc8137e16c323c5be4` (`main`) |
-| Ending commit | `0fe980a` (report commit; code complete at `eb0c6d3`) |
+| Ending commit | see PR head (branch merged with `main` @ `fa34a2b9` after PR #710 landed) |
 | Branch | `arena/01a0cd88-cafe-restaurant-pos` |
-| Net change | 21 files changed, **350 insertions, 1053 deletions** (−703 lines) |
+| Net change vs `main` | 21 files changed, **627 insertions, 912 deletions** (−285 net; −570 excluding the new guard test) |
 
 **Governing principle applied:** remove what can be *demonstrated* unused,
 preserve what may still be legitimately consumed. Four candidates that a naive
@@ -161,8 +161,8 @@ Run on this sandbox (Linux, Node 22.22.3) at the ending commit.
 | `npm ci` | **pass** | 1048 packages |
 | `npm run lint` | **pass** | `--max-warnings=0`, clean |
 | `npx tsc --noEmit` | **pass** | clean |
-| `npm test` | **pass** | **389 files, 5568 tests** |
-| `npm run test:design` | **pass** | 5 files, 36 tests |
+| `npm test` | **pass** | **399 files, 5724 tests** (re-run after the `main` merge) |
+| `npm run test:design` | **pass** | 5 files, 37 tests |
 | `npm run db:migrate` | **pass** | 210 migrations against real PostgreSQL 16 |
 | `npm run db:migrate` (re-run) | **pass** | "Nothing to do" — idempotency confirmed |
 | `npm run test:db` | **pass** | **132 files, 1508 passed, 1 skipped**, real PostgreSQL |
@@ -199,12 +199,42 @@ Stated explicitly; none of these is claimed as passing.
 
 ---
 
+## 7a. Merge with `main` (PR #710) — conflict resolution
+
+While this work was in review, PR #710 landed on `main`, producing two
+**modify/delete** conflicts:
+
+- `src/components/ai/ai-assistant.tsx`
+- `src/components/ai/ai-chat-header.tsx`
+
+Both were files this PR deletes and `main` had edited. A modify/delete conflict
+is exactly the case where "keep my side" is the wrong reflex — if `main` had
+re-wired these into a live surface, the deletion would no longer be correct. So
+the resolution was checked rather than assumed:
+
+1. **What `main` changed.** Both edits are purely cosmetic, from a repo-wide
+   "remove gradients" pass: `bg-gradient-to-br from-primary to-primary/80` →
+   `bg-primary`, and the equivalent on the chat header. No imports, no exports,
+   no wiring.
+2. **Whether the island is still closed.** Re-ran the importer search against
+   `origin/main`: `AiAssistant`'s only importer is still
+   `src/app/setup/setup-assistant.tsx`, which is itself still imported by
+   nothing; the three subcomponents are still imported only by `ai-assistant.tsx`.
+   The component graph is unchanged — `main` restyled dead code.
+
+The deletion therefore still holds, and the conflicts were resolved in its
+favour. The full gate was re-run against the **merged** tree (§7), including the
+reachability guard, which passes — confirming `main`'s new modules
+(`electron/app-paths.js`, `local-storage.js`, `native-printing.js` and others)
+are all properly wired and that this PR's guard does not flag them.
+
 ## 8. Measured improvements
 
 Reproducibly measured:
 
-- **12 files deleted**, 703 net lines removed (1053 deleted / 350 added, the
-  additions being almost entirely new test coverage).
+- **12 files deleted**, 912 lines deleted against 627 added (−285 net; −570
+  excluding the new guard test, since the additions are almost entirely new
+  test coverage).
 - **8 duplicate redirect-only pages removed** from the App Router tree,
   confirmed absent from the production route manifest.
 - **0 legacy redirects lost** — all 8 addresses still 308, now with 14 explicit
