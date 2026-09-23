@@ -40,7 +40,7 @@ export interface ShiftOrderModifier {
 /** One order_items row joined onto its order, with its add-on snapshots collapsed into an array. */
 export interface ShiftOrderItemInput {
   orderId: string;
-  orderNumber: number;
+  orderNumber: number | string;
   type: OrderKind;
   status: string;
   tableName: string | null;
@@ -112,7 +112,7 @@ export interface ShiftOrderLine {
 
 export interface ShiftOrder {
   id: string;
-  orderNumber: number;
+  orderNumber: number | string;
   type: OrderKind;
   status: string;
   tableName: string | null;

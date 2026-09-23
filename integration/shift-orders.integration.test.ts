@@ -123,6 +123,7 @@ async function insertOrder(
     };
     guestCount?: number;
     note?: string | null;
+    customerId?: string;
     payments?: { method: string; amount: number; reference?: string | null; receivedAt?: string }[];
     /**
      * When the bill was actually settled. Defaults to `openedAt` — most fixtures
@@ -139,8 +140,8 @@ async function insertOrder(
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO orders (location_id, order_number, type, status, total, opened_at,
                          subtotal, discount, discount_type, discount_value,
-                         service_charge, tax, tip_amount, guest_count, note, opened_by)
-     VALUES ($1, $2, 'dine_in', 'open', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                         service_charge, tax, tip_amount, guest_count, note, opened_by, customer_id)
+     VALUES ($1, $2, 'dine_in', 'open', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      RETURNING id`,
     [
       locationId,
@@ -157,6 +158,7 @@ async function insertOrder(
       opts.guestCount ?? null,
       opts.note ?? null,
       employeeId,
+      opts.customerId ?? null,
     ],
   );
   const orderId = rows[0].id;
@@ -559,5 +561,48 @@ describe("getShiftOrdersReport", () => {
     const report = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, current));
     expect(report!.orders).toHaveLength(1);
     expect(report!.orders[0]!.payments.map((p) => p.method)).toEqual(["card"]);
+  });
+
+  it("searches all historical shifts by localized order number and intersects date filters", async () => {
+    await insertShift(mainId, "2026-01-01T06:00:00Z", "2026-01-01T14:00:00Z");
+    await insertShift(mainId, "2026-08-11T06:00:00Z", null);
+    await insertOrder(mainId, "2026-01-01T08:00:00Z", { orderNumber: 1835, total: 700_000, itemName: "قدیمی" });
+    await insertOrder(mainId, "2026-08-11T08:00:00Z", { orderNumber: 2, total: 900_000, itemName: "جدید" });
+
+    const allDates = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, { shiftId: null, orderNumber: "1835" }));
+    expect(allDates!.orders.map((order) => order.orderNumber)).toEqual([1835]);
+    expect(allDates!.totalCount).toBe(1);
+    expect(allDates!.totalAmount).toBe(700_000);
+
+    const excluded = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, {
+      shiftId: null, orderNumber: "1835", dateFrom: "2026-08-01", dateTo: "2026-08-31", timeZone: "Asia/Tehran",
+    }));
+    expect(excluded!.orders).toEqual([]);
+  });
+
+  it("matches partial Persian customer names and keeps summaries and pages filtered", async () => {
+    await insertShift(mainId, "2026-08-11T06:00:00Z", null);
+    const { rows: customers } = await db.query<{ id: string }>(
+      "INSERT INTO parties (business_id, location_id, name) VALUES ($1, $2, 'علی رضایی') RETURNING id",
+      [businessId, mainId],
+    );
+    for (let number = 1; number <= 4; number += 1) {
+      await insertOrder(mainId, `2026-08-11T0${number + 6}:00:00Z`, {
+        orderNumber: number, total: number * 100_000, itemName: "چای",
+        customerId: number !== 4 ? customers[0].id : undefined,
+      });
+    }
+
+    const first = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, {
+      shiftId: null, customerQuery: "علي", page: 1, pageSize: 2,
+    }));
+    const second = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, {
+      shiftId: null, customerQuery: "علی", page: 2, pageSize: 2,
+    }));
+    expect(first!.totalCount).toBe(3);
+    expect(first!.totalAmount).toBe(600_000);
+    expect(first!.orders.map((order) => order.orderNumber)).toEqual([3, 2]);
+    expect(second!.orders.map((order) => order.orderNumber)).toEqual([1]);
+    expect([...first!.orders, ...second!.orders].every((order) => order.customerName === "علی رضایی")).toBe(true);
   });
 });

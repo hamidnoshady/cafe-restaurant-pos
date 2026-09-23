@@ -1,48 +1,8 @@
-/**
- * Item-by-item order detail for the current shift — the DB-touching half
- * (not unit-tested directly, per repo convention; the grouping rule lives in
- * shift-orders.ts and is covered by shift-orders.test.ts).
- *
- * The default shift is the most recently started one at the branch, open or
- * closed, and its window is [started_at, ended_at] with a running shift's end
- * left open (`ORDER_OPENED_IN_WINDOW`). Deliberately *not*
- * "the newest shift with ended_at IS NULL": that would make the report go
- * blank the moment someone clocks out, and it would silently widen to
- * yesterday's window if an employee forgot to clock out. Taking the newest
- * shift either way means the report covers the shift that is running now, or
- * the one that just finished, and rolls over on its own when the next shift
- * starts — no cleanup, no stored state.
- *
- * The caller can name an earlier one instead (`shiftId`), which is why the
- * report carries the branch's recent shifts as the picker's options. The
- * chosen shift is looked up *within* that list rather than by its own query:
- * the list is already branch-scoped, so a shift id belonging to another
- * branch simply isn't found and reports nothing.
- *
- * Orders are the ones *opened* inside that window, at any status: a shift
- * review is about the work that came in during the shift, including what is
- * still open, held, or was voided. That rule — `ORDER_OPENED_IN_WINDOW`, now
- * shared with the orders screen's settled list — is why a bill the shift opened
- * and could not close stays this shift's bill however late it is finally
- * settled, and why the shift that takes that last payment is not credited with
- * a sale it did not make.
- *
- * It is a wider net than the shift's *cash* figures, which are deliberately a
- * different question: `shiftCashSummary` answers "what is in this employee's
- * till" (orders they closed, so the drawer count reconciles against money they
- * actually held), not "what did this shift sell". The two are not expected to
- * tie out on a night that carried a bill over — see the doc comment on `total`
- * in shift-orders.ts.
- *
- * Each order is read whole — its add-on snapshots by name, its notes and void
- * reasons, its money breakdown, and its payments — so the review answers "why
- * was this order this much?" without sending the reader to the orders screen.
- * Everything comes from the immutable *_snapshot columns written at the sale,
- * never from today's menu, so a renamed or repriced add-on still reads the way
- * it was sold.
- */
+/** Server-side, branch-scoped order reporting for the shift-orders report. */
 import { query } from "./db";
 import { ORDER_OPENED_IN_WINDOW } from "./order-read-service";
+import { normalizePosSearchText } from "./pos-selection";
+import type { ReportOrderFilters } from "./report-order-filters";
 import {
   groupShiftOrders,
   type ShiftOrder,
@@ -58,217 +18,181 @@ export interface ShiftOption {
   endedAt: string | null;
 }
 
-/**
- * The branch's recent shifts, newest first — the options behind every shift
- * picker (this report's, and the orders screen's since it gained one).
- *
- * A shift whose `location_id` is null is included: a shift only records a
- * branch when the session that opened it had one, so rows written before
- * openShift took a fallback branch have none, and excluding them would hide
- * exactly the shifts a single-branch business worked. Nothing branch-scoped
- * leaks by including them — every caller filters the orders themselves by
- * `location_id`, so an unattributed shift can only ever name a time window.
- */
-export async function listRecentShiftOptions(
-  locationId: string,
-  limit = 50,
-): Promise<ShiftOption[]> {
+interface ShiftWindowRow extends Record<string, unknown> {
+  id: string; employee_name: string; started_at: Date; ended_at: Date | null;
+}
+
+function shiftFromRow(row: ShiftWindowRow): ShiftOption {
+  return { id: row.id, employeeName: row.employee_name, startedAt: row.started_at.toISOString(), endedAt: row.ended_at?.toISOString() ?? null };
+}
+
+/** Recent picker options. Retained for the orders screen and legacy callers. */
+export async function listRecentShiftOptions(locationId: string, limit = 50): Promise<ShiftOption[]> {
   const { rows } = await query<ShiftWindowRow>(
     `SELECT s.id, u.full_name AS employee_name, s.started_at, s.ended_at
-       FROM employee_shifts s
-       JOIN users u ON u.id = s.employee_id
+       FROM employee_shifts s JOIN users u ON u.id = s.employee_id
       WHERE (s.location_id = $1 OR s.location_id IS NULL)
-      ORDER BY s.started_at DESC
-      LIMIT $2`,
-    [locationId, limit],
-  );
-  return rows.map((row) => ({
-    id: row.id,
-    employeeName: row.employee_name,
-    startedAt: row.started_at.toISOString(),
-    endedAt: row.ended_at ? row.ended_at.toISOString() : null,
-  }));
+      ORDER BY s.started_at DESC, s.id DESC LIMIT $2`, [locationId, limit]);
+  return rows.map(shiftFromRow);
+}
+
+async function resolveShift(locationId: string, shiftId?: string): Promise<ShiftOption | null> {
+  const params: unknown[] = [locationId];
+  const idClause = shiftId ? (params.push(shiftId), `AND s.id = $2`) : "";
+  const { rows } = await query<ShiftWindowRow>(
+    `SELECT s.id, u.full_name AS employee_name, s.started_at, s.ended_at
+       FROM employee_shifts s JOIN users u ON u.id = s.employee_id
+      WHERE (s.location_id = $1 OR s.location_id IS NULL) ${idClause}
+      ORDER BY s.started_at DESC, s.id DESC LIMIT 1`, params);
+  return rows[0] ? shiftFromRow(rows[0]) : null;
+}
+
+/** Date-scoped options make an old custom period selectable without loading years of shifts. */
+async function listReportShiftOptions(locationId: string, filters: ReportOrderFilters, selected: ShiftOption | null) {
+  if (!filters.dateFrom && !filters.dateTo) {
+    const recent = await listRecentShiftOptions(locationId);
+    return selected && !recent.some((s) => s.id === selected.id) ? [selected, ...recent] : recent;
+  }
+  const params: unknown[] = [locationId, filters.dateFrom ?? null, filters.dateTo ?? null, filters.timeZone ?? "Asia/Tehran"];
+  const { rows } = await query<ShiftWindowRow>(
+    `SELECT s.id, u.full_name AS employee_name, s.started_at, s.ended_at
+       FROM employee_shifts s JOIN users u ON u.id = s.employee_id
+      WHERE (s.location_id = $1 OR s.location_id IS NULL)
+        AND ($2::date IS NULL OR coalesce(s.ended_at, now()) >= ($2::date::timestamp AT TIME ZONE $4))
+        AND ($3::date IS NULL OR s.started_at < ((($3::date + 1)::timestamp) AT TIME ZONE $4))
+      ORDER BY s.started_at DESC, s.id DESC`, params);
+  const options = rows.map(shiftFromRow);
+  return selected && !options.some((s) => s.id === selected.id) ? [selected, ...options] : options;
 }
 
 export interface ShiftOrdersReport {
-  shift: ShiftOption;
-  /** The branch's recent shifts, newest first — the picker's options, always including `shift`. */
+  shift: ShiftOption | null;
   shifts: ShiftOption[];
   orders: ShiftOrder[];
-}
-
-interface ShiftWindowRow extends Record<string, unknown> {
-  id: string;
-  employee_name: string;
-  started_at: Date;
-  ended_at: Date | null;
+  totalCount: number;
+  totalAmount: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
 }
 
 interface ShiftOrderItemRow extends Record<string, unknown> {
-  order_id: string;
-  order_number: string; // bigint — pg returns it as a string
-
-  type: string;
-  status: string;
-  table_name: string | null;
-  guest_count: number | null;
-  customer_name: string | null;
-  opened_at: Date;
-  closed_at: Date | null;
-  opened_by_name: string | null;
-  closed_by_name: string | null;
-  order_note: string | null;
-  voided_reason: string | null;
-  amended_at: Date | null;
-  subtotal: string;
-  discount: string;
-  discount_type: string | null;
-  discount_value: string | null;
-  service_charge: string;
-  tax: string;
-  tip_amount: string;
-  order_total: string;
-  item_id: string | null;
-  item_name: string | null;
-  quantity: number | null;
-  unit_price: string | null;
-  /** [{ name, price_delta, quantity }] in selection order — json rather than two parallel arrays so a name can never drift off its price. */
+  order_id: string; order_number: string; type: string; status: string; table_name: string | null;
+  guest_count: number | null; customer_name: string | null; opened_at: Date; closed_at: Date | null;
+  opened_by_name: string | null; closed_by_name: string | null; order_note: string | null;
+  voided_reason: string | null; amended_at: Date | null; subtotal: string; discount: string;
+  discount_type: string | null; discount_value: string | null; service_charge: string; tax: string;
+  tip_amount: string; order_total: string; item_id: string | null; item_name: string | null;
+  quantity: number | null; unit_price: string | null;
   modifiers: { name: string; price_delta: string | number; quantity?: number }[] | null;
-  item_status: string | null;
-  note: string | null;
-  void_reason: string | null;
+  item_status: string | null; note: string | null; void_reason: string | null;
+}
+interface ShiftOrderPaymentRow extends Record<string, unknown> {
+  order_id: string; method: string; method_name: string | null; amount: string; reference: string | null;
+  received_at: Date; received_by_name: string | null;
 }
 
-interface ShiftOrderPaymentRow extends Record<string, unknown> {
-  order_id: string;
-  method: string;
-  method_name: string | null;
-  amount: string;
-  reference: string | null;
-  received_at: Date;
-  received_by_name: string | null;
+function escapedLike(value: string): string {
+  return `%${normalizePosSearchText(value).replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 }
 
 /**
- * The branch's order detail for one shift, newest order first. Returns null
- * when the branch has never had a shift — the caller renders an empty state
- * rather than an arbitrary date range, since without a shift there is no
- * "until the next shift" window to report on — and also when `shiftId` names
- * a shift outside the branch's recent list, so a stale or foreign id can
- * never leak another branch's orders.
+ * Reads full bills after first paging matching order ids. Thus LIMIT applies to orders, never joined
+ * lines, and summaries are computed over the complete filtered set. Shift membership remains based
+ * exclusively on opened_at. Date upper bounds are exclusive at the next local midnight.
  */
+type ShiftSpecificOrdersReport = Omit<ShiftOrdersReport, "shift"> & { shift: ShiftOption };
+
+export async function getShiftOrdersReport(locationId: string, shiftId?: string): Promise<ShiftSpecificOrdersReport | null>;
+export async function getShiftOrdersReport(locationId: string, filters: ReportOrderFilters): Promise<ShiftOrdersReport | null>;
 export async function getShiftOrdersReport(
   locationId: string,
-  shiftId?: string,
+  shiftIdOrFilters?: string | ReportOrderFilters,
 ): Promise<ShiftOrdersReport | null> {
-  const shifts = await listRecentShiftOptions(locationId);
+  const filters: ReportOrderFilters = typeof shiftIdOrFilters === "string" ? { shiftId: shiftIdOrFilters } : (shiftIdOrFilters ?? {});
+  const page = Math.max(1, Math.floor(filters.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(filters.pageSize ?? 25)));
+  // undefined means the existing newest-shift behaviour; null explicitly means all shifts.
+  const selected = filters.shiftId === null ? null : await resolveShift(locationId, filters.shiftId);
+  if (filters.shiftId !== null && !selected) return null;
+  const shifts = await listReportShiftOptions(locationId, filters, selected);
 
-  const index = shiftId ? shifts.findIndex((option) => option.id === shiftId) : 0;
-  const shift = index === -1 ? undefined : shifts[index];
-  if (!shift) return null;
+  const params: unknown[] = [locationId];
+  const where = ["o.location_id = $1"];
+  const add = (value: unknown) => (params.push(value), `$${params.length}`);
+  if (selected) {
+    // ORDER_OPENED_IN_WINDOW is shared with settled-order listing: orders stay
+    // assigned to the shift that opened them, including carried-over bills.
+    add(selected.startedAt);
+    add(selected.endedAt);
+    where.push(ORDER_OPENED_IN_WINDOW);
+  }
+  const zone = filters.timeZone ?? "Asia/Tehran";
+  if (filters.dateFrom) {
+    const value = add(filters.dateFrom); const tz = add(zone);
+    where.push(`o.opened_at >= (${value}::date::timestamp AT TIME ZONE ${tz})`);
+  }
+  if (filters.dateTo) {
+    const value = add(filters.dateTo); const tz = add(zone);
+    where.push(`o.opened_at < (((${value}::date + 1)::timestamp) AT TIME ZONE ${tz})`);
+  }
+  if (filters.orderNumber) where.push(`o.order_number = ${add(filters.orderNumber)}::bigint`);
+  if (filters.customerQuery) {
+    const pattern = add(escapedLike(filters.customerQuery));
+    where.push(`regexp_replace(translate(coalesce(c.name, ''), 'يك٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', 'یک01234567890123456789'), '[ً-ٰٟ]', '', 'g') ILIKE ${pattern} ESCAPE '\\'`);
+  }
+  if (filters.status) where.push(`o.status = ${add(filters.status)}::order_status`);
+  if (filters.type) where.push(`o.type = ${add(filters.type)}::order_type`);
+  const predicate = where.join(" AND ");
 
-  const window = [locationId, shift.startedAt, shift.endedAt];
+  const limit = add(pageSize); const offset = add((page - 1) * pageSize);
+  const [{ rows: idRows }, { rows: totals }] = await Promise.all([
+    query<{ id: string }>(`SELECT o.id FROM orders o LEFT JOIN parties c ON c.id = o.customer_id WHERE ${predicate} ORDER BY o.opened_at DESC, o.id DESC LIMIT ${limit} OFFSET ${offset}`, params),
+    query<{ total_count: string; total_amount: string }>(`SELECT count(*)::text AS total_count, coalesce(sum(o.total), 0)::text AS total_amount FROM orders o LEFT JOIN parties c ON c.id = o.customer_id WHERE ${predicate}`, params.slice(0, -2)),
+  ]);
+  const ids = idRows.map((row) => row.id);
+  const totalCount = Number(totals[0]?.total_count ?? 0);
+  const totalAmount = Number(totals[0]?.total_amount ?? 0);
+  if (ids.length === 0) return { shift: selected, shifts, orders: [], totalCount, totalAmount, page, pageSize, pageCount: Math.ceil(totalCount / pageSize) };
 
-  // Two reads rather than one: an order can carry more than one payment row —
-  // a refund, or the re-settlement a closed-order amendment writes — so
-  // joining payments beside the items would multiply every line by every
-  // payment. They are stitched back together by groupShiftOrders.
   const [{ rows }, { rows: paymentRows }] = await Promise.all([
     query<ShiftOrderItemRow>(
-      `SELECT o.id AS order_id, o.order_number, o.type, o.status, dt.name AS table_name,
-              o.guest_count, c.name AS customer_name,
-              o.opened_at, o.closed_at, ou.full_name AS opened_by_name, cu.full_name AS closed_by_name,
-              o.note AS order_note, o.voided_reason, o.amended_at,
-              o.subtotal, o.discount, o.discount_type, o.discount_value,
-              o.service_charge, o.tax, o.tip_amount, o.total AS order_total,
-              oi.id AS item_id, oi.name_snapshot AS item_name, oi.quantity, oi.unit_price,
-              oi.status AS item_status, oi.note, oi.void_reason,
-              m.modifiers
-         FROM orders o
-         LEFT JOIN dining_tables dt ON dt.id = o.table_id
-         LEFT JOIN parties c ON c.id = o.customer_id
-         LEFT JOIN users ou ON ou.id = o.opened_by
-         LEFT JOIN users cu ON cu.id = o.closed_by
-         LEFT JOIN order_items oi ON oi.order_id = o.id
-         LEFT JOIN LATERAL (
-           SELECT json_agg(
-                    json_build_object('name', oim.name_snapshot, 'price_delta', oim.price_delta, 'quantity', oim.quantity)
-                    ORDER BY oim.name_snapshot
-                  ) AS modifiers
-             FROM order_item_modifiers oim
-            WHERE oim.order_item_id = oi.id
-         ) m ON true
-        WHERE o.location_id = $1
-          AND ${ORDER_OPENED_IN_WINDOW}
-        ORDER BY o.opened_at DESC, o.id DESC, oi.created_at`,
-      window,
-    ),
+      `SELECT o.id AS order_id, o.order_number, o.type, o.status, dt.name AS table_name, o.guest_count,
+              c.name AS customer_name, o.opened_at, o.closed_at, ou.full_name AS opened_by_name,
+              cu.full_name AS closed_by_name, o.note AS order_note, o.voided_reason, o.amended_at,
+              o.subtotal, o.discount, o.discount_type, o.discount_value, o.service_charge, o.tax,
+              o.tip_amount, o.total AS order_total, oi.id AS item_id, oi.name_snapshot AS item_name,
+              oi.quantity, oi.unit_price, oi.status AS item_status, oi.note, oi.void_reason, m.modifiers
+         FROM orders o LEFT JOIN dining_tables dt ON dt.id=o.table_id LEFT JOIN parties c ON c.id=o.customer_id
+         LEFT JOIN users ou ON ou.id=o.opened_by LEFT JOIN users cu ON cu.id=o.closed_by
+         LEFT JOIN order_items oi ON oi.order_id=o.id
+         LEFT JOIN LATERAL (SELECT json_agg(json_build_object('name', oim.name_snapshot, 'price_delta', oim.price_delta, 'quantity', oim.quantity) ORDER BY oim.name_snapshot) AS modifiers FROM order_item_modifiers oim WHERE oim.order_item_id=oi.id) m ON true
+        WHERE o.location_id=$1 AND o.id=ANY($2::uuid[])
+        ORDER BY o.opened_at DESC, o.id DESC, oi.created_at`, [locationId, ids]),
     query<ShiftOrderPaymentRow>(
-      `SELECT p.order_id, p.method, pm.name AS method_name, p.amount, p.reference, p.received_at,
-              u.full_name AS received_by_name
-         FROM payments p
-         JOIN orders o ON o.id = p.order_id
-         LEFT JOIN users u ON u.id = p.received_by
-         LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id
-        WHERE o.location_id = $1
-          AND ${ORDER_OPENED_IN_WINDOW}
-        ORDER BY p.received_at`,
-      window,
-    ),
+      `SELECT p.order_id,p.method,pm.name AS method_name,p.amount,p.reference,p.received_at,u.full_name AS received_by_name
+         FROM payments p JOIN orders o ON o.id=p.order_id LEFT JOIN users u ON u.id=p.received_by
+         LEFT JOIN payment_methods pm ON pm.id=p.payment_method_id
+        WHERE o.location_id=$1 AND o.id=ANY($2::uuid[]) ORDER BY p.received_at,p.id`, [locationId, ids]),
   ]);
 
   const inputs: ShiftOrderItemInput[] = rows.map((row) => ({
     orderId: row.order_id,
-    orderNumber: Number(row.order_number),
-    type: row.type as ShiftOrderItemInput["type"],
-    status: row.status,
-    tableName: row.table_name,
-    guestCount: row.guest_count === null ? null : Number(row.guest_count),
-    customerName: row.customer_name,
-    openedAt: row.opened_at.toISOString(),
-    closedAt: row.closed_at ? row.closed_at.toISOString() : null,
-    openedByName: row.opened_by_name,
-    closedByName: row.closed_by_name,
-    orderNote: row.order_note,
-    voidedReason: row.voided_reason,
-    amendedAt: row.amended_at ? row.amended_at.toISOString() : null,
-    subtotal: Number(row.subtotal),
-    discount: Number(row.discount),
-    discountType: (row.discount_type as ShiftOrderItemInput["discountType"]) ?? null,
-    discountValue: row.discount_value === null ? null : Number(row.discount_value),
-    serviceCharge: Number(row.service_charge),
-    tax: Number(row.tax),
-    tipAmount: Number(row.tip_amount ?? 0),
-    orderTotal: Number(row.order_total),
-    itemId: row.item_id,
-    itemName: row.item_name,
-    quantity: Number(row.quantity ?? 0),
-    unitPrice: Number(row.unit_price ?? 0),
-    modifiers: (row.modifiers ?? []).map(
-      (modifier): ShiftOrderModifier => ({
-        name: modifier.name,
-        priceDelta: Number(modifier.price_delta),
-        quantity: modifier.quantity,
-      }),
-    ),
-    itemStatus: row.item_status,
-    note: row.note,
-    voidReason: row.void_reason,
+    orderNumber: BigInt(row.order_number) <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(row.order_number) : row.order_number,
+    type: row.type as ShiftOrderItemInput["type"], status: row.status, tableName: row.table_name,
+    guestCount: row.guest_count === null ? null : Number(row.guest_count), customerName: row.customer_name,
+    openedAt: row.opened_at.toISOString(), closedAt: row.closed_at?.toISOString() ?? null,
+    openedByName: row.opened_by_name, closedByName: row.closed_by_name, orderNote: row.order_note,
+    voidedReason: row.voided_reason, amendedAt: row.amended_at?.toISOString() ?? null,
+    subtotal: Number(row.subtotal), discount: Number(row.discount), discountType: row.discount_type as ShiftOrderItemInput["discountType"],
+    discountValue: row.discount_value === null ? null : Number(row.discount_value), serviceCharge: Number(row.service_charge),
+    tax: Number(row.tax), tipAmount: Number(row.tip_amount ?? 0), orderTotal: Number(row.order_total), itemId: row.item_id,
+    itemName: row.item_name, quantity: Number(row.quantity ?? 0), unitPrice: Number(row.unit_price ?? 0),
+    modifiers: (row.modifiers ?? []).map((m): ShiftOrderModifier => ({ name: m.name, priceDelta: Number(m.price_delta), quantity: m.quantity })),
+    itemStatus: row.item_status, note: row.note, voidReason: row.void_reason,
   }));
-
-  const payments: ShiftOrderPaymentInput[] = paymentRows.map((row) => ({
-    orderId: row.order_id,
-    method: row.method,
-    methodName: row.method_name,
-    amount: Number(row.amount),
-    reference: row.reference,
-    receivedAt: row.received_at.toISOString(),
-    receivedByName: row.received_by_name,
-  }));
-
-  return {
-    shift,
-    shifts,
-    orders: groupShiftOrders(inputs, payments),
-  };
+  const payments: ShiftOrderPaymentInput[] = paymentRows.map((row) => ({ orderId: row.order_id, method: row.method,
+    methodName: row.method_name, amount: Number(row.amount), reference: row.reference,
+    receivedAt: row.received_at.toISOString(), receivedByName: row.received_by_name }));
+  return { shift: selected, shifts, orders: groupShiftOrders(inputs, payments), totalCount, totalAmount, page, pageSize, pageCount: Math.ceil(totalCount / pageSize) };
 }
