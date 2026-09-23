@@ -133,7 +133,10 @@ export function HoldRepeatButton({
       const current = timerRef.current;
       pointerRef.current = null;
       if (!current?.isHeld) return;
-      const added = current.occurrenceCount > 0;
+      // *This* press, not the button's history: a lifetime counter would make
+      // every press after the first successful hold look like a hold, and the
+      // double tap could never be recognised again.
+      const added = current.holdOccurrenceCount > 0;
       current.cancel();
       stopLoop();
       setHeld(false);

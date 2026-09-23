@@ -30,7 +30,10 @@
  *
  * `cancel` resets the hold (a released confirm-timer loses its progress; a
  * released repeat-timer stops adding), which is the behaviour both gestures
- * specify: letting go early must never complete the action.
+ * specify: letting go early must never complete the action. A confirm-timer
+ * that *does* complete releases itself, so `isHeld` is false from the
+ * completion onward and the finger still resting on the glass is holding
+ * nothing.
  */
 
 export type HoldTimerMode = "confirm" | "repeat";
@@ -67,6 +70,8 @@ export class HoldTimer {
   private startedAt: number | null = null;
   private lastFireAt: number | null = null;
   private fires = 0;
+  /** Fires produced by the hold in progress — reset by every `start()`. */
+  private firesThisHold = 0;
   /** Confirm mode only: once completed, no further start can ever complete again. */
   private completedOnce = false;
 
@@ -88,6 +93,7 @@ export class HoldTimer {
     if (this.startedAt !== null) return;
     this.startedAt = now;
     this.lastFireAt = null;
+    this.firesThisHold = 0;
     if (this.options.mode === "repeat" && this.options.fireOnStart !== false) {
       this.fire(now);
     }
@@ -101,6 +107,7 @@ export class HoldTimer {
 
   private fire(now: number): void {
     this.fires += 1;
+    this.firesThisHold += 1;
     this.lastFireAt = now;
     this.options.onComplete(this.fires);
   }
@@ -112,6 +119,13 @@ export class HoldTimer {
     if (mode === "confirm") {
       if (!this.completedOnce && now - this.startedAt >= durationMs) {
         this.completedOnce = true;
+        // The hold is over the moment it completes, even though the finger is
+        // still down: `isHeld` false is what stops the animation loop and
+        // what tells a component reacting to its own disabling (payment is in
+        // flight now) that there is no live hold left to tear down. Without
+        // it the teardown ran and reset the fill to empty at the exact
+        // instant the cashier needed to see it full.
+        this.startedAt = null;
         this.fire(now);
       }
       return;
@@ -148,8 +162,22 @@ export class HoldTimer {
     return this.completedOnce;
   }
 
+  /** Total fires over the timer's whole life. */
   get occurrenceCount(): number {
     return this.fires;
+  }
+
+  /**
+   * Fires produced by the *current* (or most recently ended) hold.
+   *
+   * This, not `occurrenceCount`, is what answers "was that press a tap?" — a
+   * press adds nothing iff it produced no fire of its own. Asking the lifetime
+   * total instead made every press after the first successful hold look like a
+   * hold, which silently killed the add-on picker's double-tap decrement on any
+   * option a cashier had already added to.
+   */
+  get holdOccurrenceCount(): number {
+    return this.firesThisHold;
   }
 }
 
