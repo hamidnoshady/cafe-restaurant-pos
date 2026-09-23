@@ -163,7 +163,6 @@ export type ActionType =
   | "reservation.create"
   | "reservation.reschedule"
   | "table.merge"
-  | "table.split"
   | "courier.assign"
   | "customer.note.add"
   | "crm.customer.tag"
@@ -368,14 +367,6 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     method: "PATCH",
     label: "ادغام میز به یک نشست باز",
     payloadHint: '{ tableSessionId: string, action: "merge", tableId: string }',
-  },
-  "table.split": {
-    type: "table.split",
-    endpoint: "/api/table-sessions/{tableSessionId}/split",
-    method: "POST",
-    label: "تقسیم صورت‌حساب میز",
-    payloadHint:
-      '{ tableSessionId: string, mode: "even"|"itemized", guests: number, assignments?: Record<string, number> /* itemized فقط: orderItemId → شمارهٔ مهمان */ }',
   },
   "courier.assign": {
     type: "courier.assign",

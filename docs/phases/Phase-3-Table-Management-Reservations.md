@@ -67,6 +67,34 @@ Defaults chosen to keep moving; each is easy to revisit.
 | Walk-in seated at a free table opens a correct `TableSession` | `openSession` (`src/lib/table-session-service.ts`) via `POST /api/table-sessions`; dine-in orders auto-attach through `ensureSessionForTable` in `POST /api/orders` |
 | Reservation booked, shown on the floor at its window, seating converts to an active session | Booking + conflict check in `POST /api/reservations`; upcoming-reservation overlay in `GET /api/floor`; `PATCH /api/reservations/[id]` `action:"seat"` → `openSession` |
 | Two overlapping reservations on the same table are flagged | `findConflicts`/`windowsOverlap` (`src/lib/reservations.ts`) enforced in `tableConflicts` (`src/lib/reservation-service.ts`); returns `409 reservation_conflict` |
-| Splitting a bill across N guests → correct, separately payable amounts | `evenSplit` / `itemizedSplit` (`src/lib/table-sessions.ts`) over `computeSessionBill`, via `POST /api/table-sessions/[id]/split`; UI in `session-panel.tsx` |
+| Splitting a bill across N guests → correct, separately payable amounts | **Superseded** — see the note below. Each guest who wants their own bill gets their own order on the table (`ensureSessionForTable` joins them to the same session), and each order is settled on its own at `POST /api/orders/[id]/pay`. `evenSplit` survives only as the assistant's read-only preview (`get_bill_split_preview`). |
 
-Schema: `migrations/0004_table_management_reservations.sql`. Unit tests: `src/lib/table-sessions.test.ts`, `src/lib/reservations.test.ts`.
+Schema: `migrations/0004_table_management_reservations.sql`. Unit tests: `src/lib/table-sessions.test.ts`, `src/lib/reservations.test.ts`, `src/lib/table-session-release.test.ts`.
+
+## Superseded by the table-billing removal
+
+Decisions 5 and 6 above, and the Phase 4 note, describe a table that carries
+its own bill and is closed by hand. That is no longer how the product works:
+
+- **Table-level billing is gone.** `POST /api/table-sessions/[id]/pay` and
+  `POST /api/table-sessions/[id]/split` were deleted, along with the
+  split-bill dialog and the payment buttons in `session-panel.tsx`. They were
+  a second checkout that knew nothing about payment ways, tips, نسیه, store
+  credit or the hold-to-confirm gesture. A bill belongs to an order;
+  `POST /api/orders/[id]/pay` is the only place one is taken. Several
+  independent orders on one table are unchanged and still settle separately.
+- **`itemizedSplit` was removed** with the split route that was its only
+  caller. `evenSplit` stays for the assistant preview.
+- **No manual close.** `requestBill` and the `request_bill` / `close` PATCH
+  actions are gone. Settling a session's **last active order** (`open` or
+  `held`) frees its tables automatically, inside the checkout transaction —
+  `releaseTableAfterOrderSettled` in `src/lib/table-session-service.ts`. A
+  seated table with nothing to settle is released by `action: "release"`,
+  which is refused while any order is still live.
+- **Freed, not `cleaning`.** Decision 6's mandatory cleaning step made a paid
+  table unsellable until someone walked over to it. Settlement now returns a
+  table straight to `free`; `cleaning` remains an optional manual transition,
+  and `out_of_service` tables are never auto-freed. `bill_requested` is
+  retained in the enum and the labels for rows written by the old flow, but
+  nothing can enter that state any more, so the floor legend no longer lists
+  it. The effective state machine is `free → seated → free`.

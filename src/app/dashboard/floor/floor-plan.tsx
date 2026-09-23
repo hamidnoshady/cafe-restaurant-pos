@@ -87,13 +87,13 @@ const STATUS_ICON: Record<TableStatus, LucideIcon> = {
   cleaning: SparklesIcon,
   out_of_service: BanIcon,
 };
-const LEGEND: TableStatus[] = [
-  "free",
-  "seated",
-  "bill_requested",
-  "cleaning",
-  "out_of_service",
-];
+/*
+  'bill_requested' is deliberately not advertised here: no action puts a table
+  into it any more (the bill belongs to an order, settled at the order's own
+  checkout). Its style and icon above are kept so a table left in that state by
+  the old flow still renders correctly and can be moved out of it.
+*/
+const LEGEND: TableStatus[] = ["free", "seated", "cleaning", "out_of_service"];
 const GRID = 10;
 const snap = (n: number) => Math.max(0, Math.round(n / GRID) * GRID);
 const SURFACE = cardClass;

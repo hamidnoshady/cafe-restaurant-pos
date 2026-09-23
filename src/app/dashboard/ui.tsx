@@ -199,8 +199,9 @@ const ERROR_MESSAGES: Record<string, string> = {
     seat_via_session: "برای نشاندن مهمان از «باز کردن میز» استفاده کنید.",
     session_not_found: "نشست میز پیدا نشد.",
     employee_session_not_found: "نشست پیدا نشد یا قبلاً پایان یافته است.",
-    invalid_guests: "تعداد مهمان‌ها برای تقسیم صورتحساب معتبر نیست.",
-    invalid_split: "تقسیم صورتحساب معتبر نیست.",
+    invalid_guests: "فهرست مهمان‌های میز معتبر نیست.",
+    session_has_active_orders:
+      "این میز سفارش باز دارد؛ ابتدا سفارش را تسویه کنید تا میز آزاد شود.",
     reservation_conflict: "این میز در این بازهٔ زمانی رزرو دیگری دارد.",
     reservation_not_found: "رزرو پیدا نشد.",
     reservation_not_booked: "این رزرو دیگر در وضعیت رزرو نیست.",

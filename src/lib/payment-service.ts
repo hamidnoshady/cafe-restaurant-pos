@@ -11,6 +11,7 @@ import { lockOpenOrder } from "./order-lock";
 import { rialBigInt, rialText, type RialText } from "./inventory-exact";
 import { markScoringDirtyIn } from "./crm-scoring-freshness";
 import { earnPoints } from "./loyalty-service";
+import { releaseTableAfterOrderSettled } from "./table-session-service";
 
 export const PAYMENT_METHODS = [
   "cash",
@@ -42,12 +43,19 @@ export interface CompleteOrderPaymentResult {
   amount: RialText;
   tipAmount: number;
   duplicate?: boolean;
+  /** Set when settling this order freed its dine-in table. */
+  releasedSessionId?: string | null;
 }
 
 /**
  * Completes one open order inside the caller's transaction. Keeping the
  * inventory event, payment row, order status, and two ledger entries together
- * is what makes a table-wide payment safe to retry or roll back.
+ * is what makes a replayed offline payment safe to retry or roll back.
+ *
+ * Like the online checkout it also hands a dine-in table back to the floor
+ * when this was the session's last active order — a sale that syncs up from a
+ * till that was offline must leave the floor in the same state as one taken
+ * online, or tables would silently stay occupied after every outage.
  */
 export async function completeOrderPayment(
   input: CompleteOrderPaymentInput,
@@ -193,7 +201,9 @@ export async function completeOrderPayment(
   // money. The background tick picks this up (crm-scoring-freshness.ts).
   await markScoringDirtyIn(client, businessId);
 
-  return { amount, tipAmount, duplicate: false };
+  const released = await releaseTableAfterOrderSettled(client, locationId, orderId, receivedBy);
+
+  return { amount, tipAmount, duplicate: false, releasedSessionId: released?.sessionId ?? null };
 }
 
 export function paymentErrorDetails(error: unknown): { error: string; status: number } | null {

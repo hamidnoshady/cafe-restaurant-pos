@@ -47,7 +47,7 @@ and lets the credit-pricing assumptions get validated against real usage before 
 ### Wave 2 — widen the `propose_action` catalogue (still human-confirmed, same UX)
 - **Menu/orders:** `menu.item.priceUpdate`, `menu.item.disable`, `order.discount.apply`.
 - **Inventory:** `inventory.reorder.draftPO`, `inventory.adjustment.propose`.
-- **Reservations/floor:** `reservation.create`, `reservation.reschedule`, `table.merge`, `table.split`.
+- **Reservations/floor:** `reservation.create`, `reservation.reschedule`, `table.merge`. (`table.split` was later removed with the table-level split-bill endpoint it pointed at — see Phase 3's "Superseded by the table-billing removal".)
 - **Delivery:** `courier.assign`, `delivery.eta.adjust`.
 - **Customers:** `customer.note.add`, `customer.creditLimit.propose`.
 - **Accounting:** `journal.manual.propose` (drafts into Phase 16's existing manual-journal *approval
@@ -218,8 +218,7 @@ setup-wizard actions before them:
 (→ `POST /api/inventory/purchases`, status `draft`), `inventory.adjustment.propose`
 (→ `POST /api/inventory/stock-counts`), `reservation.create` (→ `POST /api/reservations`),
 `reservation.reschedule` (→ `PATCH /api/reservations/{id}`), `table.merge` (→
-`PATCH /api/table-sessions/{id}`, `action: "merge"`), `table.split` (→
-`POST /api/table-sessions/{id}/split`), `courier.assign` (→ `PATCH /api/deliveries/{id}`,
+`PATCH /api/table-sessions/{id}`, `action: "merge"`), `courier.assign` (→ `PATCH /api/deliveries/{id}`,
 `action: "assign"`), `customer.note.add` (→ `PUT /api/customers/{id}`), `journal.manual.propose`
 (→ `POST /api/ledger/entries/drafts`, feeding Phase 16's existing approval queue, never posting
 directly), and `expense.categorize` (→ `POST /api/ledger/expenses`).

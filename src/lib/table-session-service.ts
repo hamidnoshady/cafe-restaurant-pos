@@ -7,7 +7,6 @@ import type { PoolClient } from "pg";
 import { query } from "./db";
 import { computeOrderTotals, type CartLine, type DiscountInput } from "./orders";
 import type { Rial } from "./money";
-import type { SplitLine } from "./table-sessions";
 
 export interface OpenSessionInput {
   locationId: string;
@@ -147,48 +146,131 @@ export async function mergeTableIntoSession(
   await client.query("UPDATE dining_tables SET status = 'seated' WHERE id = $1", [tableId]);
 }
 
-/** Mark the whole session as awaiting checkout; its tables show 'bill_requested'. */
-export async function requestBill(client: PoolClient, locationId: string, sessionId: string): Promise<void> {
-  const { rows } = await client.query<{ id: string }>(
-    "UPDATE table_sessions SET bill_requested_at = COALESCE(bill_requested_at, now()) WHERE id = $1 AND location_id = $2 AND status = 'open' RETURNING id",
-    [sessionId, locationId],
-  );
-  if (rows.length === 0) throw Object.assign(new Error("session_not_found"), { code: "session_not_found", status: 404 });
-  await client.query(
-    `UPDATE dining_tables SET status = 'bill_requested'
-      WHERE id IN (SELECT table_id FROM table_session_tables WHERE session_id = $1 AND released_at IS NULL)
-        AND status = 'seated'`,
-    [sessionId],
-  );
-}
-
 /**
- * Close a session (checkout). Releases its tables to 'cleaning' (needs-cleaning
- * step) and stamps closed_at/closed_by. Any still-open orders are left as-is
- * for the payment flow arriving in Phase 4 — closing here is the manual
- * end-of-visit action until payments post automatically.
+ * Release a session that has nothing left to settle. Marks the session closed,
+ * releases its table memberships, and returns every table it held to 'free'.
+ *
+ * Deliberately NOT 'cleaning': a table sat in 'cleaning' until somebody walked
+ * over and tapped it clean, which meant a paid table stayed unsellable for as
+ * long as the busiest moment of service lasted. Freeing on settlement is the
+ * default; a floor that wants a cleaning beat still has the manual
+ * seated/bill_requested → cleaning transition on the table itself.
+ *
+ * 'out_of_service' tables are left exactly as they are — a broken table does
+ * not become sellable because somebody paid a bill on the table beside it.
  */
-export async function closeSession(
+async function releaseSessionTables(
   client: PoolClient,
-  locationId: string,
   sessionId: string,
   closedBy: string | null,
 ): Promise<void> {
-  const { rows } = await client.query<{ id: string }>(
-    "UPDATE table_sessions SET status = 'closed', closed_at = now(), closed_by = $3 WHERE id = $1 AND location_id = $2 AND status = 'open' RETURNING id",
-    [sessionId, locationId, closedBy],
+  await client.query(
+    "UPDATE table_sessions SET status = 'closed', closed_at = now(), closed_by = $2 WHERE id = $1 AND status = 'open'",
+    [sessionId, closedBy],
   );
-  if (rows.length === 0) throw Object.assign(new Error("session_not_found"), { code: "session_not_found", status: 404 });
-
   const { rows: freed } = await client.query<{ table_id: string }>(
     "UPDATE table_session_tables SET released_at = now() WHERE session_id = $1 AND released_at IS NULL RETURNING table_id",
     [sessionId],
   );
   const tableIds = freed.map((r) => r.table_id);
   if (tableIds.length > 0) {
-    await client.query("UPDATE dining_tables SET status = 'cleaning' WHERE id = ANY($1::uuid[])", [tableIds]);
+    await client.query(
+      "UPDATE dining_tables SET status = 'free' WHERE id = ANY($1::uuid[]) AND status <> 'out_of_service'",
+      [tableIds],
+    );
   }
-  // Detach the reservation link's seated marker stays; nothing else to do.
+}
+
+/**
+ * Free a table once its last active order is finalized — the automatic
+ * end-of-visit that replaced the cashier's manual «بستن میز».
+ *
+ * Call this inside the checkout transaction, AFTER the order's own status has
+ * been written. It asks the only question that actually decides occupancy:
+ * does this session still have an order somebody could add to or pay? An
+ * 'open' or 'held' order means the party is still being served — a second
+ * round on the same table is a separate order and settles separately, so one
+ * paid bill must not evict a table that is still eating. Only when the last
+ * one is finalized does the table go back to the floor.
+ *
+ * What it deliberately does not look at is money. Comparing cash taken against
+ * the bill total re-derives occupancy from a number that legitimately differs
+ * from the total (نسیه leaves a balance, an overpayment leaves credit, a
+ * voided round is worth nothing) and would strand exactly the tables whose
+ * checkout was unusual. Order status is the canonical finalization state, and
+ * it is the same state the orders list, the floor plan and the KDS already
+ * read.
+ *
+ * Idempotent (a session already closed is simply not re-closed), and
+ * concurrency-safe: the session row is locked before the surviving orders are
+ * counted, so two cashiers settling the last two orders at the same moment
+ * serialize, and exactly the later one sees a zero count and frees the table.
+ *
+ * @returns the session that was released, or null if there was nothing to do.
+ */
+export async function releaseTableAfterOrderSettled(
+  client: PoolClient,
+  locationId: string,
+  orderId: string,
+  closedBy: string | null,
+): Promise<{ sessionId: string } | null> {
+  const { rows: orderRows } = await client.query<{ table_session_id: string | null }>(
+    "SELECT table_session_id FROM orders WHERE id = $1 AND location_id = $2",
+    [orderId, locationId],
+  );
+  const sessionId = orderRows[0]?.table_session_id ?? null;
+  if (!sessionId) return null;
+
+  // Lock first, count second: this is what makes the "last order wins" check
+  // safe when two checkouts race on the same table.
+  const { rows: sessionRows } = await client.query<{ id: string }>(
+    "SELECT id FROM table_sessions WHERE id = $1 AND location_id = $2 AND status = 'open' FOR UPDATE",
+    [sessionId, locationId],
+  );
+  if (sessionRows.length === 0) return null;
+
+  const { rows: active } = await client.query<{ id: string }>(
+    `SELECT id FROM orders
+      WHERE table_session_id = $1 AND status IN ('open', 'held')
+      LIMIT 1`,
+    [sessionId],
+  );
+  if (active.length > 0) return null;
+
+  await releaseSessionTables(client, sessionId, closedBy);
+  return { sessionId };
+}
+
+/**
+ * Free a table that is seated but has nothing to settle — the walk-away case
+ * (a party seated by mistake, or one that left without ordering). Refuses when
+ * the session still holds an active order, because that table's exit is the
+ * checkout's job, not a manual override.
+ */
+export async function releaseSessionWithoutOrders(
+  client: PoolClient,
+  locationId: string,
+  sessionId: string,
+  closedBy: string | null,
+): Promise<void> {
+  const { rows } = await client.query<{ id: string }>(
+    "SELECT id FROM table_sessions WHERE id = $1 AND location_id = $2 AND status = 'open' FOR UPDATE",
+    [sessionId, locationId],
+  );
+  if (rows.length === 0) {
+    throw Object.assign(new Error("session_not_found"), { code: "session_not_found", status: 404 });
+  }
+  const { rows: active } = await client.query<{ id: string }>(
+    `SELECT id FROM orders WHERE table_session_id = $1 AND status IN ('open', 'held') LIMIT 1`,
+    [sessionId],
+  );
+  if (active.length > 0) {
+    throw Object.assign(new Error("session_has_active_orders"), {
+      code: "session_has_active_orders",
+      status: 409,
+    });
+  }
+  await releaseSessionTables(client, sessionId, closedBy);
 }
 
 export interface SessionBill {
@@ -263,12 +345,4 @@ export async function computeSessionBill(sessionId: string): Promise<SessionBill
     });
   }
   return { total, lines };
-}
-
-/** Assemble {@link SplitLine}s from a bill + an assignment map (itemId → guest index). */
-export function billToSplitLines(bill: SessionBill, assignments: Record<string, number>): SplitLine[] {
-  return bill.lines.map((l) => {
-    const g = assignments[l.orderItemId];
-    return { amount: l.amount, guest: Number.isInteger(g) ? g : null };
-  });
 }

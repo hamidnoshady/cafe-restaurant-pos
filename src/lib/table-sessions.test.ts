@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canTransitionTable, evenSplit, itemizedSplit, type SplitLine } from "./table-sessions";
+import { canTransitionTable, evenSplit } from "./table-sessions";
 
 describe("canTransitionTable", () => {
   it("allows the core lifecycle path", () => {
@@ -47,42 +47,5 @@ describe("evenSplit", () => {
   it("rejects a non-positive guest count", () => {
     expect(() => evenSplit(100, 0)).toThrow();
     expect(() => evenSplit(100, -2)).toThrow();
-  });
-});
-
-describe("itemizedSplit", () => {
-  it("charges each line to its assigned payer", () => {
-    const lines: SplitLine[] = [
-      { amount: 120_000, guest: 0 },
-      { amount: 80_000, guest: 1 },
-      { amount: 50_000, guest: 0 },
-    ];
-    expect(itemizedSplit(lines, 2)).toEqual([170_000, 80_000]);
-  });
-
-  it("splits shared (guest = null) lines evenly across all payers", () => {
-    const lines: SplitLine[] = [
-      { amount: 90_000, guest: 0 },
-      { amount: 100, guest: null }, // shared → 34/33/33
-    ];
-    const totals = itemizedSplit(lines, 3);
-    expect(totals).toEqual([90_034, 33, 33]);
-    expect(totals.reduce((a, b) => a + b, 0)).toBe(90_100);
-  });
-
-  it("sums exactly to the sum of all lines", () => {
-    const lines: SplitLine[] = [
-      { amount: 33_333, guest: 0 },
-      { amount: 33_333, guest: 1 },
-      { amount: 33_334, guest: null },
-      { amount: 10_000, guest: 2 },
-    ];
-    const totals = itemizedSplit(lines, 3);
-    const billTotal = lines.reduce((a, l) => a + l.amount, 0);
-    expect(totals.reduce((a, b) => a + b, 0)).toBe(billTotal);
-  });
-
-  it("rejects a line assigned to an out-of-range payer", () => {
-    expect(() => itemizedSplit([{ amount: 1, guest: 5 }], 2)).toThrow();
   });
 });
