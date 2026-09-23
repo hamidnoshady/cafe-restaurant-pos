@@ -8,7 +8,11 @@ import {
   useDeferredValue,
 } from "react";
 import {
+  CalendarDaysIcon,
+  ClockIcon,
   InfoIcon,
+  LayoutGridIcon,
+  ListFilterIcon,
   RefreshCwIcon,
   SearchIcon,
   ShoppingBagIcon,
@@ -21,7 +25,13 @@ import { formatQueueLabel } from "@/lib/orders";
 import { useRealtime } from "../use-realtime";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { EmptyState, PageShell, cardClass } from "../page-chrome";
-import { FilterChip } from "../filters";
+import {
+  FilterChip,
+  FilterChipRow,
+  FilterToolbar,
+  FilterToolbarButton,
+  FilterToolbarSearch,
+} from "../filters";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
@@ -308,6 +318,24 @@ export function OrdersList({
       ).sort((a, b) => a.localeCompare(b, "fa")),
     [orderRows],
   );
+  /** What «شیفت» reads when no specific shift is being reviewed. */
+  const currentShiftLabel = businessDay?.enabled
+    ? "روز کاری جاری"
+    : shiftStartedAt
+      ? "شیفت جاری"
+      : "امروز";
+  /**
+   * Status and type share one toolbar slot on a phone — they are one question
+   * («کدام سفارش‌ها؟») asked twice, and two separate icons for them would cost
+   * a target without telling anyone more.
+   */
+  const mobileStatusValue =
+    [
+      statusFilter === "all" ? null : STATUS_LABELS[statusFilter],
+      typeFilter === "all" ? null : TYPE_LABELS[typeFilter],
+    ]
+      .filter(Boolean)
+      .join(" · ") || undefined;
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   // ⚡ Bolt: Pre-compute the searchable string for each order to avoid
@@ -488,8 +516,122 @@ export function OrdersList({
         </div>
       ) : null}
 
+      {/*
+        Two layouts for one set of filters. The phone gets a single scrolling
+        row of icon targets (FilterToolbar) so the list itself stays above the
+        fold; from `sm:` up the comfortable panel below takes over unchanged.
+        Both read and write the *same* filter state, so nothing is lost by
+        crossing the breakpoint — and neither touches the order selection or
+        the list's scroll position.
+      */}
+      <section className={`mb-3 ${cardClass} p-2 sm:hidden`} aria-label="فیلتر سفارش‌ها">
+        <FilterToolbar onClearAll={hasActiveFilters ? clearFilters : undefined}>
+          <FilterToolbarSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            label="جستجو در شماره، نوع یا میز سفارش"
+            placeholder="جستجو…"
+          />
+
+          <FilterToolbarButton
+            icon={ListFilterIcon}
+            label="وضعیت و نوع سفارش"
+            value={mobileStatusValue}
+            onClear={() => {
+              setStatusFilter("all");
+              setTypeFilter("all");
+            }}
+          >
+            <div className="space-y-3">
+              <FilterChipRow label="فیلتر وضعیت سفارش" className="gap-1.5">
+                <FilterChip dense selected={statusFilter === "all"} onClick={() => setStatusFilter("all")}>
+                  همهٔ وضعیت‌ها
+                </FilterChip>
+                {availableStatuses.map((status) => (
+                  <FilterChip
+                    key={status}
+                    dense
+                    selected={statusFilter === status}
+                    onClick={() => setStatusFilter(status)}
+                  >
+                    {STATUS_LABELS[status]}
+                  </FilterChip>
+                ))}
+              </FilterChipRow>
+              <FilterChipRow label="فیلتر نوع سفارش" className="gap-1.5">
+                <FilterChip dense selected={typeFilter === "all"} onClick={() => setTypeFilter("all")}>
+                  همهٔ انواع
+                </FilterChip>
+                {(["dine_in", "takeaway", "delivery"] as OrderType[]).map((type) => (
+                  <FilterChip
+                    key={type}
+                    dense
+                    selected={typeFilter === type}
+                    onClick={() => setTypeFilter((current) => (current === type ? "all" : type))}
+                  >
+                    {TYPE_LABELS[type]}
+                  </FilterChip>
+                ))}
+              </FilterChipRow>
+            </div>
+          </FilterToolbarButton>
+
+          {shifts.length > 0 ? (
+            <FilterToolbarButton
+              icon={ClockIcon}
+              label="شیفت"
+              value={reviewedShift ? shiftOptionLabel(reviewedShift) : undefined}
+              onClear={() => setShiftFilter("")}
+            >
+              <SearchableSelect
+                value={shiftFilter}
+                onChange={setShiftFilter}
+                className="min-h-11 w-full"
+                ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
+                options={[
+                  { value: "", label: currentShiftLabel },
+                  ...shifts.map((shift) => ({ value: shift.id, label: shiftOptionLabel(shift) })),
+                ]}
+              />
+            </FilterToolbarButton>
+          ) : null}
+
+          <FilterToolbarButton
+            icon={LayoutGridIcon}
+            label="میز"
+            value={tableFilter === "all" ? undefined : tableFilter}
+            onClear={() => setTableFilter("all")}
+          >
+            <SearchableSelect
+              value={tableFilter}
+              onChange={setTableFilter}
+              className="min-h-11 w-full"
+              ariaLabel="فیلتر میز سفارش"
+              options={[
+                { value: "all", label: "همهٔ میزها" },
+                ...tableNames.map((tableName) => ({ value: tableName, label: tableName })),
+              ]}
+            />
+          </FilterToolbarButton>
+
+          <FilterToolbarButton
+            icon={CalendarDaysIcon}
+            label="تاریخ"
+            value={dateFilter ? formatJalali(dateFilter) : undefined}
+            onClear={() => setDateFilter("")}
+          >
+            <JalaliDatePicker
+              value={dateFilter}
+              onChange={setDateFilter}
+              placeholder="همهٔ روزها"
+              className="min-h-11 w-full"
+            />
+          </FilterToolbarButton>
+        </FilterToolbar>
+      </section>
+
       <section
-        className={`mb-3 ${cardClass} p-3`}
+        className={`mb-3 hidden ${cardClass} p-3 sm:block`}
         aria-label="جستجو و فیلتر سفارش‌ها"
       >
         <label className="sr-only" htmlFor="orders-search">
@@ -549,14 +691,7 @@ export function OrdersList({
               className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none"
               ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
               options={[
-                {
-                  value: "",
-                  label: businessDay?.enabled
-                    ? "روز کاری جاری"
-                    : shiftStartedAt
-                      ? "شیفت جاری"
-                      : "امروز",
-                },
+                { value: "", label: currentShiftLabel },
                 ...shifts.map((shift) => ({
                   value: shift.id,
                   label: shiftOptionLabel(shift),
