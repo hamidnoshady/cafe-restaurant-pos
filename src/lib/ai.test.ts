@@ -123,7 +123,6 @@ describe("Phase 18b Wave 2 — propose_action catalogue expansion", () => {
     "reservation.create",
     "reservation.reschedule",
     "table.merge",
-    "table.split",
     "courier.assign",
     "customer.note.add",
     "journal.manual.propose",
@@ -455,7 +454,6 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
       "reservation.create",
       "reservation.reschedule",
       "table.merge",
-      "table.split",
       "courier.assign",
     ] as const) {
       expect(ACTION_CATALOG[type].autopilotCategory, type).toBeUndefined();

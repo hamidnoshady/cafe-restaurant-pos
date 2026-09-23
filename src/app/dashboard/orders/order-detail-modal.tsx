@@ -165,7 +165,7 @@ interface OrderRow {
   status: "open" | "held" | "completed" | "voided";
   table_id: string | null;
   table_name: string | null;
-  /** Whom the sale is attributed to — set at the till, by a credit checkout, or by a backdated sale. */
+  /** Whom the sale is attributed to — set at the till, by a credit checkout, or by an imported sale. */
   customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
@@ -1676,8 +1676,16 @@ export function OrderDetailModal({
 
           {/*
             Pinned, so scrolling a long bill never takes the amount being
-            collected off-screen. Compact by design: total, what is paid, what
-            remains — the breakdown lives in the صندوق tab.
+            collected off-screen. One figure only: the order total, with the
+            compact item count beside it — «جمع کل · ۲ قلم — ۳۰۰٬۰۰۰ تومان».
+
+            The باقی‌مانده badge that used to sit here is gone on purpose. A
+            persistent footer is the wrong place for a figure that only means
+            anything mid-checkout: it competed with the total on every width,
+            and on a phone it pushed the total itself to the edge. The
+            remaining balance is still computed and still shown — inside the
+            صندوق (payment) section, next to the amount being entered, which
+            is the only moment it is actionable.
           */}
           {order ? (
             <div
@@ -1690,21 +1698,9 @@ export function OrderDetailModal({
                   {toPersianDigits(itemCount)} قلم
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                {remainingDue > 0 && order.status === "open" ? (
-                  <span className="inline-flex min-h-8 items-center rounded-lg border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-2 text-xs font-bold text-amber-700 dark:text-amber-300">
-                    باقی‌مانده {money.format(remainingDue)}
-                  </span>
-                ) : null}
-                {paidSum > 0 ? (
-                  <span className="inline-flex min-h-8 items-center rounded-lg border border-emerald-500/25 dark:border-emerald-500/25 bg-emerald-50 dark:bg-emerald-500/15 px-2 text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                    پرداخت‌شده {money.format(paidSum)}
-                  </span>
-                ) : null}
-                <span className="text-base font-bold tabular-nums text-amber-700 dark:text-amber-300">
-                  {money.format(Number(order.total))}
-                </span>
-              </div>
+              <span className="text-base font-bold tabular-nums text-amber-700 dark:text-amber-300">
+                {money.format(Number(order.total))}
+              </span>
             </div>
           ) : null}
         </DialogContent>

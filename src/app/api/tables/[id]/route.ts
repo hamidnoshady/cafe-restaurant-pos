@@ -103,7 +103,10 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
   if (body.status !== undefined) {
     const to = body.status;
-    const validTargets: TableStatus[] = ["free", "seated", "bill_requested", "cleaning", "out_of_service"];
+    // 'bill_requested' is intentionally absent: asking for the bill is no
+    // longer a table state anyone can set, because the bill is not the
+    // table's. Existing rows still render it; nothing creates a new one.
+    const validTargets: TableStatus[] = ["free", "seated", "cleaning", "out_of_service"];
     if (!validTargets.includes(to)) return NextResponse.json({ error: "invalid_status" }, { status: 400 });
     if (existing[0].status !== to && !canTransitionTable(existing[0].status, to)) {
       return NextResponse.json({ error: "invalid_transition" }, { status: 409 });

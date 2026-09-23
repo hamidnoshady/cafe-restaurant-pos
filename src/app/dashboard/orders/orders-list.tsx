@@ -8,7 +8,11 @@ import {
   useDeferredValue,
 } from "react";
 import {
+  CalendarDaysIcon,
+  ClockIcon,
   InfoIcon,
+  LayoutGridIcon,
+  ListFilterIcon,
   RefreshCwIcon,
   SearchIcon,
   ShoppingBagIcon,
@@ -21,11 +25,16 @@ import { formatQueueLabel } from "@/lib/orders";
 import { useRealtime } from "../use-realtime";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { EmptyState, PageShell, cardClass } from "../page-chrome";
-import { FilterChip } from "../filters";
+import {
+  FilterChip,
+  FilterChipRow,
+  FilterToolbar,
+  FilterToolbarButton,
+  FilterToolbarSearch,
+} from "../filters";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
-import { BackdatedOrderPanel } from "./backdated-order-panel";
 import { OrderDetailModal } from "./order-detail-modal";
 
 type OrderStatus = "open" | "held" | "completed" | "voided";
@@ -180,25 +189,16 @@ function OrderRowsSkeleton() {
 export function OrdersList({
   canEdit,
   canAmendClosed = false,
-  canBackdate = false,
   initialOrderId = null,
 }: {
   /** May work an open order — add lines, discount it, take payment. */
   canEdit: boolean;
   /** May edit or remove an order that has already been paid for. */
   canAmendClosed?: boolean;
-  /** May record a sale that already happened — see backdated-order-panel.tsx. */
-  canBackdate?: boolean;
   /** `?order=<id>` from the URL: the dialog opens on it once, on first render. */
   initialOrderId?: string | null;
 }) {
-  /**
-   * The back-dating form is a panel on this screen rather than a page of its
-   * own: it is the same subject (this branch's sales), reached from the same
-   * place, and closed again the moment the paper receipts are typed in.
-   */
   const money = useMoney();
-  const [showBackdated, setShowBackdated] = useState(false);
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
   /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
@@ -318,6 +318,24 @@ export function OrdersList({
       ).sort((a, b) => a.localeCompare(b, "fa")),
     [orderRows],
   );
+  /** What «شیفت» reads when no specific shift is being reviewed. */
+  const currentShiftLabel = businessDay?.enabled
+    ? "روز کاری جاری"
+    : shiftStartedAt
+      ? "شیفت جاری"
+      : "امروز";
+  /**
+   * Status and type share one toolbar slot on a phone — they are one question
+   * («کدام سفارش‌ها؟») asked twice, and two separate icons for them would cost
+   * a target without telling anyone more.
+   */
+  const mobileStatusValue =
+    [
+      statusFilter === "all" ? null : STATUS_LABELS[statusFilter],
+      typeFilter === "all" ? null : TYPE_LABELS[typeFilter],
+    ]
+      .filter(Boolean)
+      .join(" · ") || undefined;
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   // ⚡ Bolt: Pre-compute the searchable string for each order to avoid
@@ -462,16 +480,6 @@ export function OrdersList({
                   ? ` · ${toPersianDigits(closedOrders.length)} بسته‌شده`
                   : "")}
           </span>
-          {canBackdate && (
-            <button
-              type="button"
-              onClick={() => setShowBackdated((open) => !open)}
-              aria-expanded={showBackdated}
-              className="flex min-h-12 items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-xs font-bold text-muted-foreground transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
-            >
-              {showBackdated ? "بستن فرم گذشته" : "ثبت سفارش گذشته"}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => void load()}
@@ -492,12 +500,6 @@ export function OrdersList({
         </div>
       </header>
 
-      {canBackdate && showBackdated ? (
-        <div className="mb-3">
-          <BackdatedOrderPanel />
-        </div>
-      ) : null}
-
       {loadError && orders ? (
         <div
           className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs text-muted-foreground"
@@ -514,8 +516,122 @@ export function OrdersList({
         </div>
       ) : null}
 
+      {/*
+        Two layouts for one set of filters. The phone gets a single scrolling
+        row of icon targets (FilterToolbar) so the list itself stays above the
+        fold; from `sm:` up the comfortable panel below takes over unchanged.
+        Both read and write the *same* filter state, so nothing is lost by
+        crossing the breakpoint — and neither touches the order selection or
+        the list's scroll position.
+      */}
+      <section className={`mb-3 ${cardClass} p-2 sm:hidden`} aria-label="فیلتر سفارش‌ها">
+        <FilterToolbar onClearAll={hasActiveFilters ? clearFilters : undefined}>
+          <FilterToolbarSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            label="جستجو در شماره، نوع یا میز سفارش"
+            placeholder="جستجو…"
+          />
+
+          <FilterToolbarButton
+            icon={ListFilterIcon}
+            label="وضعیت و نوع سفارش"
+            value={mobileStatusValue}
+            onClear={() => {
+              setStatusFilter("all");
+              setTypeFilter("all");
+            }}
+          >
+            <div className="space-y-3">
+              <FilterChipRow label="فیلتر وضعیت سفارش" className="gap-1.5">
+                <FilterChip dense selected={statusFilter === "all"} onClick={() => setStatusFilter("all")}>
+                  همهٔ وضعیت‌ها
+                </FilterChip>
+                {availableStatuses.map((status) => (
+                  <FilterChip
+                    key={status}
+                    dense
+                    selected={statusFilter === status}
+                    onClick={() => setStatusFilter(status)}
+                  >
+                    {STATUS_LABELS[status]}
+                  </FilterChip>
+                ))}
+              </FilterChipRow>
+              <FilterChipRow label="فیلتر نوع سفارش" className="gap-1.5">
+                <FilterChip dense selected={typeFilter === "all"} onClick={() => setTypeFilter("all")}>
+                  همهٔ انواع
+                </FilterChip>
+                {(["dine_in", "takeaway", "delivery"] as OrderType[]).map((type) => (
+                  <FilterChip
+                    key={type}
+                    dense
+                    selected={typeFilter === type}
+                    onClick={() => setTypeFilter((current) => (current === type ? "all" : type))}
+                  >
+                    {TYPE_LABELS[type]}
+                  </FilterChip>
+                ))}
+              </FilterChipRow>
+            </div>
+          </FilterToolbarButton>
+
+          {shifts.length > 0 ? (
+            <FilterToolbarButton
+              icon={ClockIcon}
+              label="شیفت"
+              value={reviewedShift ? shiftOptionLabel(reviewedShift) : undefined}
+              onClear={() => setShiftFilter("")}
+            >
+              <SearchableSelect
+                value={shiftFilter}
+                onChange={setShiftFilter}
+                className="min-h-11 w-full"
+                ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
+                options={[
+                  { value: "", label: currentShiftLabel },
+                  ...shifts.map((shift) => ({ value: shift.id, label: shiftOptionLabel(shift) })),
+                ]}
+              />
+            </FilterToolbarButton>
+          ) : null}
+
+          <FilterToolbarButton
+            icon={LayoutGridIcon}
+            label="میز"
+            value={tableFilter === "all" ? undefined : tableFilter}
+            onClear={() => setTableFilter("all")}
+          >
+            <SearchableSelect
+              value={tableFilter}
+              onChange={setTableFilter}
+              className="min-h-11 w-full"
+              ariaLabel="فیلتر میز سفارش"
+              options={[
+                { value: "all", label: "همهٔ میزها" },
+                ...tableNames.map((tableName) => ({ value: tableName, label: tableName })),
+              ]}
+            />
+          </FilterToolbarButton>
+
+          <FilterToolbarButton
+            icon={CalendarDaysIcon}
+            label="تاریخ"
+            value={dateFilter ? formatJalali(dateFilter) : undefined}
+            onClear={() => setDateFilter("")}
+          >
+            <JalaliDatePicker
+              value={dateFilter}
+              onChange={setDateFilter}
+              placeholder="همهٔ روزها"
+              className="min-h-11 w-full"
+            />
+          </FilterToolbarButton>
+        </FilterToolbar>
+      </section>
+
       <section
-        className={`mb-3 ${cardClass} p-3`}
+        className={`mb-3 hidden ${cardClass} p-3 sm:block`}
         aria-label="جستجو و فیلتر سفارش‌ها"
       >
         <label className="sr-only" htmlFor="orders-search">
@@ -575,14 +691,7 @@ export function OrdersList({
               className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none"
               ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
               options={[
-                {
-                  value: "",
-                  label: businessDay?.enabled
-                    ? "روز کاری جاری"
-                    : shiftStartedAt
-                      ? "شیفت جاری"
-                      : "امروز",
-                },
+                { value: "", label: currentShiftLabel },
                 ...shifts.map((shift) => ({
                   value: shift.id,
                   label: shiftOptionLabel(shift),

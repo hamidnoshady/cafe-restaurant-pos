@@ -1,13 +1,24 @@
 /**
  * Table state machine + bill-splitting — pure functions, integer Rial in/out.
  *
- * State machine (see docs/phases/Phase-3-...): a table moves
- *   free → seated → bill_requested → cleaning → free
- * with free ⇄ out_of_service as a manual maintenance side-track. Reserved is a
- * display overlay derived from upcoming reservations, not a stored transition.
+ * State machine: a table moves
+ *   free → seated → free
+ * on the ordinary path, because settling the session's last active order frees
+ * its tables automatically (see releaseTableAfterOrderSettled). 'cleaning' is
+ * an optional manual beat a floor can choose to insert, and free ⇄
+ * out_of_service is the maintenance side-track. Reserved is a display overlay
+ * derived from upcoming reservations, not a stored transition.
  *
- * Bill splitting produces separately-payable integer-Rial shares that sum
- * EXACTLY to the bill total (no rial is created or lost to rounding).
+ * 'bill_requested' is legacy: it was set by a table-level "request the bill"
+ * action that no longer exists. It stays in the type and the labels so tables
+ * left in that state by the old flow still render and can still be moved out
+ * of it — no code path puts a table into it any more.
+ *
+ * evenSplit remains for the assistant's read-only "what would each guest owe"
+ * preview: integer-Rial shares that sum EXACTLY to the bill total, so no rial
+ * is created or lost to rounding. The itemized variant went with the
+ * table-level split-bill screen that used to be its only caller — a bill is an
+ * order's, and an order is settled whole at POST /api/orders/[id]/pay.
  */
 import type { Rial } from "./money";
 
@@ -48,42 +59,4 @@ export function evenSplit(total: Rial, guests: number): Rial[] {
   const step = remainder >= 0 ? 1 : -1;
   remainder = Math.abs(remainder);
   return Array.from({ length: n }, (_, i) => base + (i < remainder ? step : 0));
-}
-
-export interface SplitLine {
-  /** the line's total charge (post-discount incl. tax), integer Rial */
-  amount: Rial;
-  /**
-   * payer index this line is assigned to (0-based), or null for a shared line
-   * that is split evenly across all payers.
-   */
-  guest: number | null;
-}
-
-/**
- * Itemized split: each line is charged to one payer, or (guest = null) shared
- * evenly across all `guests`. Shared lines are pooled and split once with
- * {@link evenSplit} so no rial is lost. Returns `guests` totals summing exactly
- * to the sum of all line amounts.
- */
-export function itemizedSplit(lines: SplitLine[], guests: number): Rial[] {
-  const n = Math.trunc(guests);
-  if (n <= 0) throw new Error("guests must be a positive integer");
-  const totals = new Array<number>(n).fill(0);
-  let sharedPool = 0;
-  for (const line of lines) {
-    if (line.guest === null) {
-      sharedPool += line.amount;
-    } else {
-      if (!Number.isInteger(line.guest) || line.guest < 0 || line.guest >= n) {
-        throw new Error(`line assigned to out-of-range payer ${line.guest}`);
-      }
-      totals[line.guest] += line.amount;
-    }
-  }
-  if (sharedPool !== 0) {
-    const shares = evenSplit(sharedPool, n);
-    for (let i = 0; i < n; i += 1) totals[i] += shares[i];
-  }
-  return totals;
 }

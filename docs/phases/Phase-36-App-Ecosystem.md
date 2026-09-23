@@ -124,9 +124,12 @@ it order-independent: the model may call the same two tools in either order and
 must land on one key.
 
 That signature is what makes «فروش امروز» survive neither the trading day
-rolling over nor a **backdated** order (`/api/orders/backdated`) landing inside
-the same range. A sale typed in late changes the very window the answer
-summarised, and `signatureTouchesRange()` is the predicate that notices.
+rolling over nor a **late-arriving** sale landing inside the same range — a
+closed-order amendment, or an invoice brought across by a migration import. (It
+was written against the back-dated-order flow, since removed; the invalidation
+path is unchanged and now serves those two writers.) A figure that changes after
+the fact changes the very window the answer summarised, and
+`signatureTouchesRange()` is the predicate that notices.
 
 ### A hit needs all four
 
@@ -170,8 +173,8 @@ live assistant, on the same degradation rules:
   miss (no proposal, only read tools, no attachment) is stored with its true
   `tool_signature`, built from the turn's traced tool calls.
 - **Invalidation on writes**: a fresh order (`createOrder`) drops answers
-  covering the current trading day; a backdated order drops answers covering
-  its `entry_date`. `*..*` signatures (range-less tool calls) are covered by
+  covering the current trading day; a sale posted onto an earlier day (an
+  amendment, an imported invoice) drops answers covering its `entry_date`. `*..*` signatures (range-less tool calls) are covered by
   both, because `signatureTouchesRange` treats them as unbounded.
 
 ## Follow-up — the prompt manager (two layers) and cost-plus pricing
@@ -241,7 +244,7 @@ names both.
 | 6 | No new reason added to `withoutTenantScope` | Retrieval always runs inside the caller's `withTenant` |
 | 7 | A repeated read-only question costs nothing the second time and is labelled | `lookupCachedAnswer()` + `CACHE_NOTICE`; measurement row 10 |
 | 8 | Crossing the branch's business day — not calendar midnight — misses | `business_date` in the key, from `app_business_date` |
-| 9 | A backdated order in the signed range invalidates that range | `signatureTouchesRange()` + `invalidateByRange()` |
+| 9 | A sale posted onto an earlier day inside the signed range invalidates that range | `signatureTouchesRange()` + `invalidateByRange()` |
 | 10 | No turn that proposed an action is ever cached | `isCacheableTurn()`, unit-tested |
 | 11 | «دوباره بپرس» always builds a fresh turn | `LookupOptions.bypass` |
 | 12 | One business's cache never hits for another | RLS policy in `0114`; `business_id = $1` in every statement |

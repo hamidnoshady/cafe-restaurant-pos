@@ -18,9 +18,9 @@
  *
  * On top of that the key carries a **tool signature** — the names and ranges
  * the answer was built from. That is what makes «فروش امروز» survive neither
- * the trading day rolling over nor a backdated order (`/api/orders/backdated`)
- * landing inside the same range: a sale typed in late changes the very window
- * the answer summarised.
+ * the trading day rolling over nor a late-arriving sale (a closed-order
+ * amendment, an imported invoice) landing inside the same range: a figure that
+ * changes after the fact changes the very window the answer summarised.
  *
  * Like Wave 6, the whole thing is off when pgvector is absent, and off means
  * exactly today's behaviour.
@@ -289,8 +289,9 @@ export async function storeCachedAnswer(
 /**
  * Invalidates every cached answer whose signature covers `[from, to]`. Called
  * by the write paths — a new order, a payment, a stock movement, a ledger
- * entry, and crucially a **backdated** order, which is the case a naive
- * "today's cache expires tonight" scheme gets wrong.
+ * entry, and crucially a sale posted onto an *earlier* day (an amendment, an
+ * imported invoice), which is the case a naive "today's cache expires tonight"
+ * scheme gets wrong.
  *
  * Done in SQL against the stored signature rather than in TypeScript so a
  * single statement covers whatever is in the table.

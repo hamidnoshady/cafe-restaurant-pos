@@ -10,8 +10,9 @@
  * till session with inventory movements, a journal entry and a payment behind
  * it. Importing a row into `orders` would produce revenue with no COGS, no
  * stock decrement and no ledger — a number that looks like a sale and
- * reconciles with nothing. Historical sales belong in the backdated-order flow
- * (`orders.backdate`), which does all of that properly.
+ * reconciles with nothing. Historical sales belong in a migration importer
+ * (`integrations/holoo/imported-sale-service.ts`), which posts stock, ledger
+ * and payment alongside the order the way the till does.
  */
 
 import { query } from "../../db";

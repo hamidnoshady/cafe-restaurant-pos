@@ -2,19 +2,14 @@
 
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
-import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { BanknoteIcon, CreditCardIcon, UsersIcon } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Button } from "@/components/ui/button";
+import { ACCOUNTING_WORKSPACE_HREFS } from "@/lib/app-routes";
 import {
   api,
   errorMessage,
@@ -59,14 +54,24 @@ interface SessionDetail {
   };
 }
 
-interface Customer {
-  id: string;
-  name: string;
-  phone: string | null;
-}
+/** Orders a guest could still add to or pay — the ones that hold the table. */
+const ACTIVE_ORDER_STATUSES = new Set(["open", "held"]);
 
-type PaymentMethod = "cash" | "card" | "card_to_card" | "snappfood";
-
+/**
+ * The seating side of a table: who is sitting there, what they have ordered,
+ * and the two things the floor actually does — merge another table in, or let
+ * an empty table go.
+ *
+ * Deliberately not a checkout. This panel used to carry «درخواست صورتحساب»,
+ * «تقسیم صورتحساب» (with its own guest/customer editor, its own split modes and
+ * its own three payment-method buttons) and «بستن میز», which made the floor
+ * screen a second, parallel till: a bill could be taken here with a payment UI
+ * that knew nothing about payment ways, tips, نسیه, store credit or the
+ * 4-second hold, and the table then had to be closed by hand afterwards. Money
+ * belongs to an order, so every amount below links to that order's detail —
+ * the one canonical checkout — and settling the last of them frees the table
+ * on its own.
+ */
 export function SessionPanel({
   sessionId,
   onChange,
@@ -83,7 +88,6 @@ export function SessionPanel({
     [],
   );
   const [mergeTableId, setMergeTableId] = useState("");
-  const [showSplit, setShowSplit] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -141,6 +145,7 @@ export function SessionPanel({
   }
 
   const { session, tables, orders, bill } = detail;
+  const activeOrders = orders.filter((o) => ACTIVE_ORDER_STATUSES.has(o.status));
 
   return (
     <div className="mt-4 border-t border-border pt-4">
@@ -167,12 +172,23 @@ export function SessionPanel({
         ) : (
           <ul className="space-y-1">
             {orders.map((o) => (
-              <li key={o.id} className="flex justify-between gap-2">
-                <span className="text-muted-foreground">
-                  سفارش #{toPersianDigits(o.order_number)}
-                  {o.status === "voided" ? " (باطل)" : ""}
-                </span>
-                <span>{money.format(Number(o.total))}</span>
+              <li key={o.id}>
+                {/*
+                  Each round is its own order and is settled on its own, so
+                  each one links to its own checkout rather than being folded
+                  into a single table-level total that could be taken here.
+                */}
+                <Link
+                  href={`${ACCOUNTING_WORKSPACE_HREFS.orders}?order=${o.id}`}
+                  className="flex min-h-11 items-center justify-between gap-2 rounded-lg px-1 transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
+                >
+                  <span className="text-muted-foreground">
+                    سفارش #{toPersianDigits(o.order_number)}
+                    {o.status === "voided" ? " (باطل)" : ""}
+                    {o.status === "completed" ? " (تسویه‌شده)" : ""}
+                  </span>
+                  <span>{money.format(Number(o.total))}</span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -181,36 +197,40 @@ export function SessionPanel({
           <span>جمع صورتحساب</span>
           <span>{money.format(bill.total)}</span>
         </div>
+        {activeOrders.length > 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            پرداخت از صفحهٔ همان سفارش انجام می‌شود؛ با تسویهٔ آخرین سفارشِ باز،
+            میز خودبه‌خود آزاد می‌شود.
+          </p>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {!session.bill_requested_at ? (
-          <SecondaryButton
-            onClick={() => void action({ action: "request_bill" })}
+        {activeOrders.length > 0 ? (
+          <Button asChild size="lg" className="w-full px-5 font-semibold">
+            <Link
+              href={`${ACCOUNTING_WORKSPACE_HREFS.orders}?order=${activeOrders[0].id}`}
+            >
+              رفتن به سفارش #{toPersianDigits(activeOrders[0].order_number)}
+            </Link>
+          </Button>
+        ) : (
+          /*
+            Nothing to settle: the party never ordered, or every round is
+            already finalized and the table simply has not been let go. One tap
+            gives the table back — no bill, no payment, no cleaning detour.
+          */
+          <PrimaryButton
+            type="button"
+            onClick={async () => {
+              if (await action({ action: "release" }))
+                toast.success("میز آزاد شد");
+            }}
             disabled={busy}
           >
-            درخواست صورتحساب
-          </SecondaryButton>
-        ) : (
-          <span className="rounded-lg bg-purple-50 dark:bg-purple-950 px-3 py-2 text-xs text-purple-700 dark:text-purple-300">
-            صورتحساب درخواست شد
-          </span>
+            آزادکردن میز
+          </PrimaryButton>
         )}
-        <SecondaryButton
-          onClick={() => setShowSplit(true)}
-          disabled={busy || bill.total <= 0}
-        >
-          تقسیم صورتحساب
-        </SecondaryButton>
-        <PrimaryButton
-          type="button"
-          onClick={async () => {
-            if (await action({ action: "close" })) toast.success("میز بسته شد");
-          }}
-          disabled={busy}
-        >
-          بستن میز
-        </PrimaryButton>
       </div>
 
       <div className="mt-3 flex items-center gap-2">
@@ -233,381 +253,6 @@ export function SessionPanel({
           ادغام
         </SecondaryButton>
       </div>
-
-      {showSplit ? (
-        <SplitDialog
-          sessionId={sessionId}
-          bill={bill}
-          initialGuests={detail.guests}
-          onClose={() => setShowSplit(false)}
-          onChanged={onChange}
-          setError={setError}
-        />
-      ) : null}
     </div>
-  );
-}
-
-function SplitDialog({
-  sessionId,
-  bill,
-  initialGuests,
-  onClose,
-  onChanged,
-  setError,
-}: {
-  sessionId: string;
-  bill: SessionDetail["bill"];
-  initialGuests: SessionDetail["guests"];
-  onClose: () => void;
-  onChanged: () => void;
-  setError: (s: string) => void;
-}) {
-  const money = useMoney();
-  const [mode, setMode] = useState<"even" | "itemized">("even");
-  const [guests, setGuests] = useState(
-    String(Math.max(2, initialGuests.length || 2)),
-  );
-  const [customerIds, setCustomerIds] = useState<(string | null)[]>(() => {
-    const count = Math.max(2, initialGuests.length || 2);
-    return Array.from(
-      { length: count },
-      (_, index) => initialGuests[index]?.customerId ?? null,
-    );
-  });
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [customerQuery, setCustomerQuery] = useState("");
-  const [customersLoading, setCustomersLoading] = useState(true);
-  const [assignments, setAssignments] = useState<Record<string, number>>({});
-  const [shares, setShares] = useState<number[] | null>(null);
-  const [shareCustomerNames, setShareCustomerNames] = useState<string[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
-  const [busy, setBusy] = useState(false);
-
-  const guestCount = Math.max(1, Math.min(50, Number(guests) || 1));
-
-  // ⚡ Bolt: Prevent array recreation on every keystroke. customerOptions was recomputed
-  // on every render (e.g. typing in the customerQuery box), running string normalizations.
-  const customerOptions = useMemo(
-    () => [
-      { value: "", label: "بدون مشتری" },
-      ...customers.map((customer) => ({
-        value: customer.id,
-        label: customer.phone
-          ? `${customer.name} — ${toPersianDigits(customer.phone)}`
-          : customer.name,
-        searchString: `${customer.name} ${customer.phone ?? ""}`,
-      })),
-    ],
-    [customers],
-  );
-
-  // ⚡ Bolt: Prevent O(G * L) array recreation. When mode is "itemized", every line item
-  // rendered its own identical array of guest options. This computes it once per guest count change.
-  const guestOptions = useMemo(
-    () => [
-      { value: "", label: "مشترک" },
-      ...Array.from({ length: guestCount }, (_, index) => ({
-        value: String(index),
-        label: `مهمان ${toPersianDigits(index + 1)}`,
-      })),
-    ],
-    [guestCount],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    setCustomersLoading(true);
-    const timer = setTimeout(
-      () => {
-        void api<{ customers: Customer[] }>(
-          `/api/parties?q=${encodeURIComponent(customerQuery)}`,
-        )
-          .then(({ ok, data }) => {
-            if (!cancelled && ok) setCustomers(data.customers);
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            if (!cancelled) setCustomersLoading(false);
-          });
-      },
-      customerQuery.trim() ? 200 : 0,
-    );
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [customerQuery]);
-
-  function setGuestCount(value: string) {
-    setGuests(value);
-    const count = Math.max(1, Math.min(50, Number(value) || 1));
-    setCustomerIds((previous) =>
-      Array.from({ length: count }, (_, index) => previous[index] ?? null),
-    );
-    setShares(null);
-  }
-
-  async function saveGuests() {
-    const ids = Array.from(
-      { length: guestCount },
-      (_, index) => customerIds[index] ?? null,
-    );
-    const result = await api<{ error?: string }>(
-      `/api/table-sessions/${sessionId}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ action: "set_guests", customerIds: ids }),
-      },
-    );
-    if (!result.ok) {
-      setError(errorMessage(result.data.error));
-      return false;
-    }
-    return true;
-  }
-
-  async function compute() {
-    setBusy(true);
-    setError("");
-    setShares(null);
-    if (!(await saveGuests())) {
-      setBusy(false);
-      return;
-    }
-    const res = await api<{ error?: string; shares?: number[] }>(
-      `/api/table-sessions/${sessionId}/split`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          mode,
-          guests: guestCount,
-          assignments: mode === "itemized" ? assignments : undefined,
-        }),
-      },
-    );
-    setBusy(false);
-    if (!res.ok) return setError(errorMessage(res.data.error));
-    setShares(res.data.shares ?? null);
-    const names = customerIds.map((id, index) => {
-      const customer = customers.find((item) => item.id === id);
-      return (
-        customer?.name ??
-        initialGuests.find((guest) => guest.customerId === id)?.customerName ??
-        `مهمان ${toPersianDigits(index + 1)}`
-      );
-    });
-    setShareCustomerNames(names);
-  }
-
-  async function payAll() {
-    setBusy(true);
-    setError("");
-    if (!(await saveGuests())) {
-      setBusy(false);
-      return;
-    }
-    const payerCustomerId =
-      customerIds.find((id): id is string => Boolean(id)) ?? null;
-    const result = await api<{ error?: string }>(
-      `/api/table-sessions/${sessionId}/pay`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          method: paymentMethod,
-          customerId: payerCustomerId,
-        }),
-      },
-    );
-    setBusy(false);
-    if (!result.ok) return setError(errorMessage(result.data.error));
-    onChanged();
-    onClose();
-    toast.success("کل صورتحساب با یک پرداخت ثبت شد");
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[92dvh] max-w-lg overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>تقسیم صورتحساب و مشتری‌ها</DialogTitle>
-        </DialogHeader>
-
-        <section
-          className="rounded-xl border border-border/80 bg-muted p-3"
-          aria-label="مشتری‌های میز"
-        >
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-sm font-bold">مشتری‌های این میز</h3>
-            <UsersIcon
-              className="size-4 text-amber-700 dark:text-amber-300"
-              aria-hidden="true"
-            />
-          </div>
-          <label className="mb-3 flex items-center gap-2 text-sm">
-            <span className="shrink-0">تعداد نفر</span>
-            <PersianNumberInput
-              className={`${inputClass} w-24`}
-              inputMode="numeric"
-              dir="ltr"
-              value={guests}
-              onChange={(event) => setGuestCount(event.target.value)}
-            />
-          </label>
-          <div className="space-y-2">
-            {Array.from({ length: guestCount }, (_, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <span className="w-16 shrink-0 text-xs text-muted-foreground">
-                  مهمان {toPersianDigits(index + 1)}
-                </span>
-                <SearchableSelect
-                  className={`${inputClass} min-h-11 flex-1`}
-                  value={customerIds[index] ?? ""}
-                  onChange={(value) =>
-                    setCustomerIds((previous) =>
-                      previous.map((current, itemIndex) =>
-                        itemIndex === index ? value || null : current,
-                      ),
-                    )
-                  }
-                  onQueryChange={setCustomerQuery}
-                  loading={customersLoading}
-                  options={customerOptions}
-                  ariaLabel={`مشتری مهمان ${index + 1}`}
-                  searchPlaceholder="جستجوی نام یا شماره…"
-                  placeholder="بدون مشتری"
-                />
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="flex gap-1 rounded-xl bg-muted p-1 text-sm">
-          <button
-            type="button"
-            aria-pressed={mode === "even"}
-            onClick={() => {
-              setMode("even");
-              setShares(null);
-            }}
-            className={`min-h-11 flex-1 rounded-lg font-medium transition-colors outline-none focus-visible:ring focus-visible:ring-ring/50 ${mode === "even" ? "bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
-          >
-            تقسیم مساوی
-          </button>
-          <button
-            type="button"
-            aria-pressed={mode === "itemized"}
-            onClick={() => {
-              setMode("itemized");
-              setShares(null);
-            }}
-            className={`min-h-11 flex-1 rounded-lg font-medium transition-colors outline-none focus-visible:ring focus-visible:ring-ring/50 ${mode === "itemized" ? "bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
-          >
-            به تفکیک اقلام
-          </button>
-        </div>
-
-        {mode === "itemized" ? (
-          <div className="max-h-56 space-y-1 overflow-y-auto overscroll-contain rounded-lg border border-border p-2 text-sm">
-            {bill.lines.map((line) => (
-              <div
-                key={line.orderItemId}
-                className="flex items-center justify-between gap-2"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  {line.name}{" "}
-                  <span className="text-xs text-muted-foreground">
-                    {money.format(line.amount)}
-                  </span>
-                </span>
-                <SearchableSelect
-                  className={`${inputClass} w-28 py-1 text-xs`}
-                  value={assignments[line.orderItemId]?.toString() ?? ""}
-                  onChange={(value) =>
-                    setAssignments((previous) => {
-                      const next = { ...previous };
-                      if (value === "") delete next[line.orderItemId];
-                      else next[line.orderItemId] = Number(value);
-                      return next;
-                    })
-                  }
-                  options={guestOptions}
-                />
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <PrimaryButton
-          type="button"
-          onClick={() => void compute()}
-          disabled={busy}
-        >
-          محاسبه سهم‌ها
-        </PrimaryButton>
-
-        {shares ? (
-          <div className="rounded-lg bg-muted/50 p-3 text-sm">
-            <p className="mb-2 font-semibold">سهم هر مشتری:</p>
-            <ul className="space-y-1">
-              {shares.map((share, index) => (
-                <li key={index} className="flex justify-between gap-2">
-                  <span>
-                    {shareCustomerNames[index] ??
-                      `مهمان ${toPersianDigits(index + 1)}`}
-                  </span>
-                  <span className="font-medium">{money.format(share)}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold">
-              <span>جمع</span>
-              <span>{money.format(shares.reduce((a, b) => a + b, 0))}</span>
-            </div>
-          </div>
-        ) : null}
-
-        <section
-          className="border-t border-border pt-3"
-          aria-label="پرداخت یکجای صورتحساب"
-        >
-          <p className="mb-2 text-xs font-semibold text-muted-foreground">
-            پرداخت کل با یک پرداخت
-          </p>
-          <div className="mb-2 grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => setPaymentMethod("cash")}
-              className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold outline-none focus-visible:ring focus-visible:ring-ring/50 ${paymentMethod === "cash" ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "border-border"}`}
-            >
-              <BanknoteIcon className="size-4" aria-hidden="true" />
-              نقدی
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentMethod("card")}
-              className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold outline-none focus-visible:ring focus-visible:ring-ring/50 ${paymentMethod === "card" ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "border-border"}`}
-            >
-              <CreditCardIcon className="size-4" aria-hidden="true" />
-              کارت
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentMethod("card_to_card")}
-              className={`flex min-h-12 items-center justify-center rounded-lg border text-xs font-bold outline-none focus-visible:ring focus-visible:ring-ring/50 ${paymentMethod === "card_to_card" ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "border-border"}`}
-            >
-              کارت‌به‌کارت
-            </button>
-          </div>
-          <PrimaryButton
-            type="button"
-            onClick={() => void payAll()}
-            disabled={busy || bill.total <= 0}
-          >
-            پرداخت کل {money.format(bill.total)}
-          </PrimaryButton>
-        </section>
-      </DialogContent>
-    </Dialog>
   );
 }

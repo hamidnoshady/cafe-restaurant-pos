@@ -1058,48 +1058,24 @@ Two things it deliberately does **not** do, both of which matter when correcting
   customer return (`/api/orders/[id]/returns`) is the more faithful record — an amendment says
   the sale never should have been rung up that way.
 
-### Recording a past sale (ثبت سفارش گذشته)
+### Recording a past sale — removed
 
-Two things happen to every café eventually: an evening when the POS was down and the bills were
-written on paper, and the week of trading that predates the install. Both leave real sales with
-no row. «ثبت سفارش گذشته» — a panel on `/dashboard/orders`, behind the `orders.backdate`
-permission (owner and manager by default) — is where they get typed in.
+«ثبت سفارش گذشته» (a panel on the orders screen, the `orders.backdate` permission and
+`POST /api/orders/backdated`) has been removed. Typing a sale in after the fact writes revenue,
+VAT, COGS and stock into a day that has already been reported on and reconciled, and in practice
+the same branches used it to paper over counting mistakes rather than to enter genuine paper
+bills. The orders already recorded through it remain ordinary `orders` rows and are untouched, as
+is migration `0093_backdated_orders.sql` and the `backdated_orders` rows it holds; nothing was
+deleted from the books.
 
-A back-dated order is **an ordinary `orders` row**, not a second kind of sale. What differs is
-that every timestamp it writes is the instant the sale happened rather than `now()`:
-
-- `orders.opened_at` / `closed_at` and `payments.received_at`, so every day-bucketed report
-  (which reads `app_business_date(o.closed_at, …)`) files it under the trading day it belongs
-  to — including for a branch whose day starts at 18:00, where an after-midnight sale stays on
-  the previous date;
-- `stock_movements.occurred_at`, so the stock ledger agrees with the sales ledger about when the
-  goods moved; and
-- `journal_entries.entry_date`, which also puts the posting under migration 0024's
-  fiscal-period lock **for the back-dated month**. A closed or soft-closed period refuses the
-  sale (`fiscal_period_locked`) rather than quietly absorbing it into the current one.
-
-The day and time are entered as the **branch's** wall clock and resolved server-side against its
-timezone (`instantInTimeZone`), so a till whose clock is set to the wrong country cannot shift a
-sale — by hours, or by a whole trading day. A sale dated in the future is refused; so is one more
-than a year old, which is overwhelmingly a mistyped Jalali year rather than a real sale.
-
-Three things are deliberately **not** back-dated:
-
-- **The order number**, which comes off the branch's ordinary counter. Numbers are the sequence
-  bills were issued in, not a second date.
-- **The table.** A back-dated dine-in sale carries `type = 'dine_in'` as a channel label but never
-  a `table_id` — occupying table 4 tonight because of a bill from last Tuesday is a lie the floor
-  screen cannot correct.
-- **`backdated_orders.created_at`**, which is when it was actually typed in. That row (migration
-  0093) also carries the actor and a mandatory reason, alongside an `audit_log` entry — a sale
-  entered days late is the same shape as one invented days late, so the *why* is recorded next to
-  it. As with an amendment, a business pushing daily summaries to a central server (Phase 9) has
-  its push high-water mark wound back to the back-dated day so central converges.
-
-**Not covered:** retail invoices (jewelry/watch/accessories/cosmetics). Their sale posts through
-each industry's own sell service and posting rules rather than through `postExactOrderPaymentEntry`,
-so back-dating them means threading an `occurredAt` through four sell services, their serial/FEFO
-stock layers, and the commission and loyalty accruals — a separate piece of work, not a flag.
+A closed sale that was rung up wrongly is still corrected through the amendment flow above
+(`/api/orders/[id]/amend`), which posts a dated correction instead of a new past sale. Migrating
+historical trading from another system is an import rather than a till action: the Holoo migration
+writes order-ticket sales through `src/lib/integrations/holoo/imported-sale-service.ts`, which
+dates `orders.opened_at`/`closed_at`, `payments.received_at`, `stock_movements.occurred_at` and
+`journal_entries.entry_date` to when the sale happened — so a closed fiscal period refuses the
+import (`fiscal_period_locked`) rather than absorbing it into the current one — while taking the
+order number off the branch's ordinary counter and never attaching a `table_id`.
 
 ## Feature Gating & Platform Hardening (Phase 17)
 

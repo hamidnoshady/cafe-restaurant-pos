@@ -3,10 +3,9 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
-  closeSession,
   computeSessionBill,
   mergeTableIntoSession,
-  requestBill,
+  releaseSessionWithoutOrders,
 } from "@/lib/table-session-service";
 import { broadcast } from "@/lib/realtime";
 
@@ -58,7 +57,14 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
 });
 
 interface PatchBody {
-  action?: "request_bill" | "close" | "merge" | "set_note" | "set_guests";
+  /**
+   * A table's *seating* lifecycle only. Paying is not here and has no
+   * table-level equivalent: a bill belongs to an order and is settled at
+   * POST /api/orders/[id]/pay, which also frees the table when it settles the
+   * session's last active order. `release` is the walk-away case — a party
+   * seated and gone without ordering — and is refused while any order is live.
+   */
+  action?: "release" | "merge" | "set_note" | "set_guests";
   tableId?: string; // for merge
   note?: string; // for set_note
   customerIds?: (string | null)[]; // 1-based guest order; null leaves a guest anonymous
@@ -123,10 +129,8 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
         );
       }
       await client.query(`UPDATE table_sessions SET party_size = $2 WHERE id = $1`, [id, partySize]);
-    } else if (body.action === "request_bill") {
-      await requestBill(client, location.id, id);
-    } else if (body.action === "close") {
-      await closeSession(client, location.id, id, session.sub);
+    } else if (body.action === "release") {
+      await releaseSessionWithoutOrders(client, location.id, id, session.sub);
     } else if (body.action === "merge") {
       if (!body.tableId) throw Object.assign(new Error("table_required"), { code: "table_required", status: 400 });
       await mergeTableIntoSession(client, location.id, id, body.tableId);

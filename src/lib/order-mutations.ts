@@ -262,7 +262,7 @@ export async function createOrder(
   }
 
   // The till asks for the table before it places a dine-in order, but a table
-  // is still optional here: a backdated sale or a queue-first workflow assigns
+  // is still optional here: an imported sale or a queue-first workflow assigns
   // one afterwards from the order-progress screen. Takeaway/delivery remain
   // table-less as before. An already-seated table is accepted — a second order
   // on it is a party splitting its bill, and `ensureSessionForTable` below

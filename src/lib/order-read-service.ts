@@ -18,7 +18,7 @@ export interface ListOrdersOptions {
  * columns.
  *
  * The customer rides along with the table: `orders.customer_id` is set at the
- * till, by the credit checkout, and by a backdated sale, and "whose order is
+ * till, by the credit checkout, and by an imported sale, and "whose order is
  * this" is a question every order list is asked — the shift report
  * (shift-orders-service.ts) has always answered it, and the orders screen
  * reading the same rows should not be the one screen that cannot. Joined

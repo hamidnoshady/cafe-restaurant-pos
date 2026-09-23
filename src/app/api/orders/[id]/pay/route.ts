@@ -26,6 +26,7 @@ import { listPaymentMethods } from "@/lib/payment-methods-service";
 import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-producer";
 import { emitDomainEvent } from "@/lib/posting-engine";
 import { earnPoints } from "@/lib/loyalty-service";
+import { releaseTableAfterOrderSettled } from "@/lib/table-session-service";
 
 interface PayTenderBody {
   /** `payment_methods.id` — the way the cashier tapped. */
@@ -64,17 +65,19 @@ interface PayBody {
 /**
  * Checkout: records the payment and completes the order. This is the
  * "payment completion" trigger Phase 5's cash-drawer/receipt exit criteria
- * hook into — nothing in the app reached order status 'completed' before
- * this (the table-session `close` action just frees the table; see
- * src/lib/table-session-service.ts's closeSession comment). Since migration
+ * hook into — this is the only place an order reaches status 'completed'.
+ * It is therefore also where a dine-in table is handed back to the floor:
+ * settling the session's last active order frees its tables automatically
+ * (releaseTableAfterOrderSettled), so there is no manual "close the table"
+ * step and no second place that decides whether a table is occupied. Since migration
  * 0091 one order may be settled across several payment ways at once — ۲۰۰٬۰۰۰
  * نقدی plus ۳۰۰٬۰۰۰ کارت‌خوان is one checkout, one `payments` row per slice,
  * and one journal entry with a debit line per slice. What has not changed is
  * that a checkout settles the bill *in full*: the slices must add up to the
  * order total, while a separately entered tip is added to the ledger and
- * receipt, so there is still no partial payment and no balance left open. (A dine-in table session's "split the bill" flow (Phase 3,
- * /api/table-sessions/[id]/split) is a different thing again: it cuts one
- * table's bill into several orders, each of which is then paid here.)
+ * receipt, so there is still no partial payment and no balance left open.
+ * Several parties on one table stay several orders, each settled here on its
+ * own; the table is only released once the last of them is finalized.
  *
  * This is also the inventory deduction trigger (Phase 6): completing an
  * order is the one place order_items become immutable (they can only be
@@ -148,6 +151,9 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   // credit. Both zero for the ordinary, exact checkout.
   let balanceDue = 0;
   let customerCredit = 0;
+  // Set when this checkout settled the last active order on a dine-in table,
+  // so the floor plan can be told the table is back.
+  let releasedSession: { sessionId: string } | null = null;
   try {
     await client.query("BEGIN");
     const locked = await lockOpenOrder(client, location.id, id);
@@ -319,6 +325,10 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     }
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
     await enqueueHolooSaleForOrder(client, session.businessId, id);
+    // Same transaction as the completion it reacts to: a settled bill and a
+    // freed table commit together or not at all, so a rolled-back checkout can
+    // never leave a table that looks empty but still owes money.
+    releasedSession = await releaseTableAfterOrderSettled(client, location.id, id, session.sub);
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
@@ -333,8 +343,15 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   }
 
   broadcast(location.id, { type: "order.updated", orderId: id });
+  if (releasedSession) {
+    // The floor plan, the waiter board and the POS table picker all listen for
+    // this; without it a freed table keeps showing as occupied until someone
+    // reloads, which is exactly the stale-occupancy problem being fixed.
+    broadcast(location.id, { type: "table_session.updated", sessionId: releasedSession.sessionId });
+  }
   return NextResponse.json({
     ok: true,
+    tableReleased: Boolean(releasedSession),
     amount: total,
     method: paid[0]?.settlement ?? null,
     payments: paid.map((tender) => ({

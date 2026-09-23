@@ -5,9 +5,10 @@
  * open-order editor), redesigned around action buttons instead of checkbox
  * rows:
  *
- *  * every option is a compact action button — tap toggles, press-and-hold
- *    (۲ ثانیه, with a visible ramp) adds another of the *same* add-on:
- *    «شات اضافه ×۳» is one button held, not three rows,
+ *  * every option is a compact action button — press-and-hold (۲ ثانیه, with
+ *    a visible fill) adds one unit and each further ۲ ثانیه adds another, so
+ *    «شات اضافه ×۳» is one button held for ۶ ثانیه, not three rows; a short
+ *    tap deliberately does nothing, and two quick taps take one unit off,
  *  * the item's own quantity stays a separate [-] n [+] stepper in the
  *    footer — the two counts never share a control,
  *  * a group's min/max counts the TOTAL chosen quantity (an extra shot ×۳
@@ -54,6 +55,14 @@ import type { RestaurantGroupView } from "@/lib/restaurant-menu";
  * pick add-ons against the exact same resolved bounds.
  */
 export type ModifierGroupWithModifiers = RestaurantGroupView;
+
+/**
+ * The add-on gesture, in one sentence, reused by the visible hint and by every
+ * option's accessible name so the instruction a screen reader hears and the
+ * one a cashier reads cannot drift apart.
+ */
+export const MODIFIER_HOLD_HINT =
+  "برای افزودن، دکمه را ۲ ثانیه نگه دارید؛ نگه‌داشتن بیشتر، هر ۲ ثانیه یکی اضافه می‌کند. دو ضربهٔ سریع یکی کم می‌کند.";
 
 /** What the picker hands back: add-on ids with their chosen quantities. */
 export interface ModifierPickResult {
@@ -195,35 +204,48 @@ export function ModifierPicker({
   }
 
   /**
-   * A quick tap on an add-on button. Off → one unit; one unit → off; several
-   * units → one fewer. Single-choice groups (size) replace their selection.
+   * Each ۲-second step of a hold: one more of the same add-on.
+   *
+   * Written as a state updater rather than off the render's `selected`, so a
+   * hold that fires several increments between two renders (a long frame, a
+   * fake-timer test advancing 6s at once) still counts every one of them and
+   * still honours the group's ceiling on each.
    */
-  function tap(group: ModifierGroupWithModifiers, modifierId: string) {
-    const groupSelection = selected[group.id] ?? {};
-    const current = groupSelection[modifierId] ?? 0;
-    if (group.maxSelect === 1) {
-      if (current > 0) setQuantityOf(group.id, modifierId, 0);
-      else setSelected({ ...selected, [group.id]: { [modifierId]: 1 } });
-      return;
-    }
-    if (current === 0) setQuantityOf(group.id, modifierId, 1);
-    else setQuantityOf(group.id, modifierId, current - 1);
-  }
-
-  /** Each ۲-second step of a hold: one more of the same add-on. */
   function repeatAdd(group: ModifierGroupWithModifiers, modifierId: string) {
-    const current = (selected[group.id] ?? {})[modifierId] ?? 0;
-    const ceilingReached =
-      group.maxSelect > 1 && groupTotal(selected[group.id] ?? {}) >= group.maxSelect;
-    if (ceilingReached) return;
-    setQuantityOf(group.id, modifierId, current + 1);
+    setSelected((prev) => {
+      const groupSelection = prev[group.id] ?? {};
+      const current = groupSelection[modifierId] ?? 0;
+      // A single-choice group (اندازه) holds exactly one unit of one option:
+      // holding it selects it and then has nothing more to add.
+      if (group.maxSelect <= 1) {
+        if (current > 0) return prev;
+        return { ...prev, [group.id]: { [modifierId]: 1 } };
+      }
+      if (groupTotal(groupSelection) >= group.maxSelect) return prev;
+      return { ...prev, [group.id]: { ...groupSelection, [modifierId]: current + 1 } };
+    });
   }
 
-  /** Whether a tap or a hold can still add a unit to this option. */
-  function atCeiling(group: ModifierGroupWithModifiers, modifierId: string): boolean {
-    if (group.maxSelect <= 1) return false; // single-choice taps replace, never blocked
+  /** Two quick taps on a chosen add-on: one unit fewer; zero unselects it. */
+  function decrement(group: ModifierGroupWithModifiers, modifierId: string) {
     const current = (selected[group.id] ?? {})[modifierId] ?? 0;
-    return current === 0 && groupTotal(selected[group.id] ?? {}) >= group.maxSelect;
+    if (current <= 0) return;
+    setQuantityOf(group.id, modifierId, current - 1);
+  }
+
+  /**
+   * A button with nothing left to do: the group is full *and* this option
+   * holds no unit, so neither the hold (add) nor the double tap (decrease)
+   * could change anything. An option that still has units stays enabled even
+   * at the ceiling — that is exactly when a cashier needs to take one off.
+   */
+  function optionBlocked(group: ModifierGroupWithModifiers, modifierId: string): boolean {
+    const current = (selected[group.id] ?? {})[modifierId] ?? 0;
+    if (current > 0) return false; // holds units → can always be decreased
+    // Single-choice (اندازه): holding another option *replaces* the current
+    // one, so a full group never blocks its siblings.
+    if (group.maxSelect <= 1) return false;
+    return groupTotal(selected[group.id] ?? {}) >= group.maxSelect;
   }
 
   const chosen = useMemo(
@@ -299,43 +321,76 @@ export function ModifierPicker({
                     {modifierGroupProgressLabel(total, group.maxSelect)}
                   </span>
                 </legend>
-                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                {/*
+                  Discoverability: the gesture is not guessable, so it is
+                  written once per group, right above the buttons it applies
+                  to — quiet enough not to compete with the options, present
+                  enough that nobody has to be told twice.
+                */}
+                {group.modifiers.length > 0 ? (
+                  <p className="mt-1.5 px-1 text-[11px] leading-4 text-muted-foreground">
+                    {MODIFIER_HOLD_HINT}
+                  </p>
+                ) : null}
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                   {group.modifiers.map((modifier) => {
                     const quantity = groupSelection[modifier.id] ?? 0;
                     const isOn = quantity > 0;
-                    const blocked = atCeiling(group, modifier.id);
+                    const blocked = optionBlocked(group, modifier.id);
                     return (
-                      <HoldRepeatButton
-                        key={modifier.id}
-                        intervalMs={2000}
-                        ariaLabel={`${modifier.name}، ${formatModifierDelta(modifier.priceDelta)}${
-                          isOn ? `، ${toPersianDigits(quantity)} عدد انتخاب شده` : ""
-                        }. برای اضافه‌کردن، نگه دارید.`}
-                        ariaPressed={isOn}
-                        disabled={blocked}
-                        onPress={() => tap(group, modifier.id)}
-                        onRepeat={() => repeatAdd(group, modifier.id)}
-                        className={`flex min-h-11 items-center justify-between gap-1 rounded-xl border px-2.5 py-1.5 text-start ${FOCUS} ${
-                          isOn ? palette.optionSelected : palette.option
-                        }`}
-                      >
-                        <span className="flex min-w-0 flex-col">
-                          <span className="truncate text-[13px] font-bold leading-5">
-                            {modifier.name}
-                            {quantity > 1 ? (
-                              <span className="ms-1 font-black">×{toPersianDigits(quantity)}</span>
-                            ) : null}
+                      <div key={modifier.id} className="group relative min-w-0">
+                        <HoldRepeatButton
+                          intervalMs={2000}
+                          doubleTapMs={320}
+                          ariaLabel={`${modifier.name}، ${formatModifierDelta(modifier.priceDelta)}${
+                            isOn ? `، ${toPersianDigits(quantity)} عدد انتخاب شده` : ""
+                          }. ${MODIFIER_HOLD_HINT}`}
+                          ariaPressed={isOn}
+                          disabled={blocked}
+                          onRepeat={() => repeatAdd(group, modifier.id)}
+                          onDoubleTap={() => decrement(group, modifier.id)}
+                          className={`flex min-h-11 w-full items-center justify-between gap-1 rounded-xl border px-2.5 py-1.5 text-start ${FOCUS} ${
+                            isOn ? palette.optionSelected : palette.option
+                          }`}
+                        >
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate text-[13px] font-bold leading-5">
+                              {modifier.name}
+                              {quantity > 1 ? (
+                                <span className="ms-1 font-black">×{toPersianDigits(quantity)}</span>
+                              ) : null}
+                            </span>
+                            <span
+                              className={`truncate text-[10px] leading-4 ${isOn ? "" : palette.chipPrice}`}
+                            >
+                              {formatModifierDelta(modifier.priceDelta)}
+                              {quantity > 1 && modifier.priceDelta !== 0
+                                ? ` × ${toPersianDigits(quantity)}`
+                                : ""}
+                            </span>
                           </span>
-                          <span
-                            className={`truncate text-[10px] leading-4 ${isOn ? "" : palette.chipPrice}`}
+                        </HoldRepeatButton>
+                        {/*
+                          The accessible decrement. A double tap is a pointer
+                          idiom with no keyboard or screen-reader equivalent,
+                          so the same act gets a real button — hidden until it
+                          is focused (or the option holds units and the pointer
+                          hovers), which keeps the grid uncluttered without
+                          leaving keyboard and AT users with an add-only
+                          control.
+                        */}
+                        {isOn ? (
+                          <button
+                            type="button"
+                            onClick={() => decrement(group, modifier.id)}
+                            aria-label={`کاهش ${modifier.name}، اکنون ${toPersianDigits(quantity)} عدد`}
+                            className={`absolute -top-1.5 flex size-7 items-center justify-center rounded-lg border border-border/80 bg-card text-muted-foreground opacity-0 transition-opacity hover:bg-muted focus-visible:opacity-100 group-hover:opacity-100 sm:hover:opacity-100 ${FOCUS}`}
+                            style={{ insetInlineEnd: "-0.375rem" }}
                           >
-                            {formatModifierDelta(modifier.priceDelta)}
-                            {quantity > 1 && modifier.priceDelta !== 0
-                              ? ` × ${toPersianDigits(quantity)}`
-                              : ""}
-                          </span>
-                        </span>
-                      </HoldRepeatButton>
+                            <MinusIcon className="size-3.5" aria-hidden="true" />
+                          </button>
+                        ) : null}
+                      </div>
                     );
                   })}
                   {group.modifiers.length === 0 ? (
