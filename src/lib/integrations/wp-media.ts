@@ -40,3 +40,39 @@ export function safeWpExternalUrl(value: unknown): string | null {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Adding media — the `media_create` operation's input
+// ---------------------------------------------------------------------------
+
+/** WordPress titles are TEXT, but a title is a caption, not an essay. */
+export const WP_MEDIA_TITLE_MAX = 200;
+
+export interface WpMediaCreateInput {
+  /** The public file URL the store will sideload. Already validated. */
+  url: string;
+  /** Optional attachment title/caption. Trimmed; null when absent. */
+  title: string | null;
+}
+
+export type WpMediaCreateParseResult =
+  | { ok: true; input: WpMediaCreateInput }
+  | { ok: false; error: "invalid_media_url" | "media_title_too_long" };
+
+/**
+ * Validate one add-media request before it becomes an outbox job.
+ *
+ * The URL rule is `safeWpExternalUrl`'s: absolute http/https, no embedded
+ * credentials, bounded length. The *store* fetches this URL (WordPress's own
+ * `media_sideload_image`), never this server — which is why a URL is all the
+ * transport needs and why this endpoint does not touch the network itself.
+ */
+export function parseWpMediaCreateInput(body: Record<string, unknown>): WpMediaCreateParseResult {
+  const url = safeWpExternalUrl(body.url);
+  if (!url) return { ok: false, error: "invalid_media_url" };
+
+  const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
+  if (rawTitle.length > WP_MEDIA_TITLE_MAX) return { ok: false, error: "media_title_too_long" };
+
+  return { ok: true, input: { url, title: rawTitle || null } };
+}

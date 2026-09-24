@@ -673,10 +673,11 @@ export function WpConnectionPanel() {
         <ol className="list-inside list-decimal space-y-1 text-xs leading-6 text-muted-foreground">
           <li>افزونهٔ «POS Accounting Connector» را در وردپرس نصب و فعال کنید.</li>
           <li>
-            در «ووکامرس ← اتصال حسابداری»، آدرس <span dir="ltr" className="font-mono">{origin}</span> و توکنی که
+            در پیشخوان وردپرس، منوی «اشوبه» را باز کنید؛ در بخش «اتصال» (در نصب تازه، راهنمای راه‌اندازی
+            خودش نمایش داده می‌شود) آدرس <span dir="ltr" className="font-mono">{origin}</span> و توکنی که
             اینجا ساخته‌اید را وارد کنید.
           </li>
-          <li>«آزمایش اتصال» را بزنید؛ پس از موفقیت، همگام‌سازی خودکار هر پنج دقیقه اجرا می‌شود.</li>
+          <li>«آزمایش اتصال از وردپرس» را بزنید؛ پس از موفقیت، همگام‌سازی خودکار هر پنج دقیقه اجرا می‌شود.</li>
         </ol>
         <InfoBox>
           افزونه هیچ‌گاه به پایگاه‌دادهٔ این سامانه وصل نمی‌شود؛ همهٔ ارتباط‌ها امضاشده (HMAC-SHA256) و دارای

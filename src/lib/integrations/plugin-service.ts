@@ -39,6 +39,7 @@ import {
   hashPluginToken,
   verifyPluginEnvelope,
 } from "./plugin-link";
+import { pluginAdvertisedJobTypes, pluginSupportsJobType } from "./plugin-capabilities";
 import { ingestPluginEvent, type PluginEventInput } from "./webhook-ingest-service";
 
 /** How many jobs one pull may lease. Bounded so a WP-Cron run finishes inside PHP's time limit. */
@@ -48,12 +49,8 @@ const JOB_LEASE_MS = 5 * 60 * 1000;
 /** Cap on one push, so a compromised or looping plugin cannot submit unbounded work in one request. */
 const MAX_EVENTS_PER_PUSH = 100;
 
-const LEGACY_PLUGIN_JOB_TYPES = ["stock", "price", "catalogue_export", "customer_export", "orders_export"];
-
 function supportedPluginJobTypes(connection: ConnectionRow): string[] {
-  const raw = connection.plugin_capabilities?.jobTypes;
-  const advertised = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
-  return advertised.length > 0 ? advertised : LEGACY_PLUGIN_JOB_TYPES;
+  return pluginAdvertisedJobTypes(connection.plugin_capabilities);
 }
 
 /**
@@ -259,10 +256,15 @@ export async function pluginHandshake(
     // WordPress content/media. Each is upserted on a unique key, so a later
     // manual request only refreshes the one outstanding export row.
     if (firstContact) {
-      await enqueuePluginExport(connection.business_id, connection.id, "catalogue_export");
-      await enqueuePluginExport(connection.business_id, connection.id, "customer_export");
-      await enqueuePluginExport(connection.business_id, connection.id, "orders_export");
-      await enqueuePluginExport(connection.business_id, connection.id, "content_export");
+      // Only the exports this plugin can actually apply. The lease query
+      // filters by supported type, so an export queued past an older
+      // plugin's capability set would never be leased — a row sitting
+      // «pending» forever on the queue screen with nothing wrong to fix.
+      const exports = ["catalogue_export", "customer_export", "orders_export", "content_export"] as const;
+      for (const exportType of exports) {
+        if (!pluginSupportsJobType(capabilities, exportType)) continue;
+        await enqueuePluginExport(connection.business_id, connection.id, exportType);
+      }
       await writeIntegrationAudit({
         businessId: connection.business_id,
         connectionId: connection.id,
