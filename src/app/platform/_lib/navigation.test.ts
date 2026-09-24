@@ -6,7 +6,7 @@ import {
   breadcrumbsForPath,
   type NavItem,
 } from "./navigation";
-import { CAPABILITIES_FOR } from "@/lib/platform-admin";
+import { CAPABILITIES_FOR, PLATFORM_ADMIN_ROLES, platformCan } from "@/lib/platform-admin";
 
 describe("console navigation IA", () => {
   it("groups the sections under the prescribed headings", () => {
@@ -51,6 +51,20 @@ describe("console navigation IA", () => {
   describe("navItemVisible", () => {
     const supportCaps = CAPABILITIES_FOR("support");
     const ownerCaps = CAPABILITIES_FOR("owner");
+
+    it("agrees with every role's capability preset for every actual console item", () => {
+      for (const role of PLATFORM_ADMIN_ROLES) {
+        const caps = CAPABILITIES_FOR(role);
+        for (const item of NAV_GROUPS.flatMap((group) => group.items)) {
+          const required = item.cap ? (Array.isArray(item.cap) ? item.cap : [item.cap]) : [];
+          const expected = required.length === 0 || required.some((cap) => platformCan(role, cap));
+          expect(
+            navItemVisible(item, caps),
+            `${role} visibility for ${item.href} must follow the capability source of truth`,
+          ).toBe(expected);
+        }
+      }
+    });
 
     it("hides admins from a support operator, shows it to an owner", () => {
       const admins: NavItem = { label: "مدیران", href: "/platform/admins", cap: "admins.manage" };

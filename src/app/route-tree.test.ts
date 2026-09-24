@@ -45,6 +45,7 @@ import {
   settingsTabHref,
 } from "@/lib/settings-routes";
 import { SETTINGS_TAB_KEYS } from "@/lib/settings-tabs";
+import { NAV_GROUPS } from "./platform/_lib/navigation";
 
 const APP_DIR = fileURLToPath(new URL("./", import.meta.url));
 
@@ -186,6 +187,31 @@ describe("the route tree resolves every promised URL", () => {
     for (const key of SETTINGS_TAB_KEYS) expectRoute(settingsTabHref(key));
     for (const page of PLATFORM_SETTINGS_PAGES)
       expectRoute(`/settings/${page}`);
+  });
+
+  it("finds every super-admin navigation and business-workspace section", () => {
+    // Super-admin is a different realm, but it is still an app-router tree:
+    // console-nav must never offer an item whose page was removed or moved.
+    for (const pathname of NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href))) {
+      expectRoute(pathname);
+    }
+    for (const pathname of [
+      "/platform/login",
+      "/platform/cms/connection",
+      "/platform/cms/logs",
+      "/platform/cms/sites",
+      "/platform/cms/sync",
+      "/platform/system/logs",
+      "/platform/businesses/business-1",
+      "/platform/businesses/business-1/settings",
+      "/platform/businesses/business-1/plan",
+      "/platform/businesses/business-1/billing",
+      "/platform/businesses/business-1/features",
+      "/platform/businesses/business-1/support",
+      "/platform/businesses/business-1/danger",
+    ]) {
+      expectRoute(pathname);
+    }
   });
 
   it("finds the workspace's own pages at their top-level routes", () => {
