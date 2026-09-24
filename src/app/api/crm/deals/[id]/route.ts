@@ -1,26 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { deleteDeal, getDeal, moveDealStage } from "@/lib/crm-service";
-import { defaultPipeline, moveDealToStage } from "@/lib/crm-pipeline-service";
-import { dealStageHistory } from "@/lib/crm-pipeline-service";
+import { defaultPipeline, dealStageHistory, moveDealToStage } from "@/lib/crm-pipeline-service";
 import { isDealStage, type DealStage } from "@/lib/crm-shared";
 import { isUuid } from "@/lib/uuid";
 
-/** One deal. `PATCH` is the kanban's drag — a stage move and nothing else. */
-export const GET = withTenantScope(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
-    if (error) return error;
-
-    const { id } = await params;
-    const deal = await getDeal(session.businessId, id);
-    if (!deal) return NextResponse.json({ error: "deal_not_found" }, { status: 404 });
-    return NextResponse.json({ deal });
-  },
-);
-
 /**
- * Move a deal to another stage.
+ * One deal. `PATCH` is the kanban's drag — a stage move and nothing else.
+ *
+ * No `GET`: the board holds every card it shows, and a single-deal read
+ * existed only as an unused twin of the board's own data.
  *
  * Separate from the full upsert because dragging a card is one small,
  * frequent, well-defined act, and routing it through a whole-object PUT is how

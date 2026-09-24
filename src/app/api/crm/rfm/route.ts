@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { recomputeRfm, scoredPopulation } from "@/lib/crm-service";
+import { recomputeRfm } from "@/lib/crm-service";
 import { recordManualScoringRun, scoringFreshness } from "@/lib/crm-scoring-freshness";
 
 /**
  * RFM scores and lifecycle stages (Phase 36).
  *
- * `GET` reads the stored scores; `POST` recomputes them for the whole customer
- * base.
+ * `POST` recomputes the scores for the whole customer base — the overview's
+ * «محاسبهٔ دوباره» button.
  *
  * Recomputing is an explicit act rather than a read-time calculation because
  * quintiles are a **whole-population** property: a customer's score only means
@@ -21,21 +21,11 @@ import { recordManualScoringRun, scoringFreshness } from "@/lib/crm-scoring-fres
  *
  * The button is no longer the only way scores get updated: a background tick
  * rescores dirty businesses and refreshes everyone daily
- * (`crm-scoring-freshness.ts`). `GET` returns how old the numbers are so the
- * screen can label them, because a score presented as current when it is two
- * days old is a lie the reader has no way to detect.
+ * (`crm-scoring-freshness.ts`). There is no read verb of its own — the stored
+ * scores travel inside `/api/crm/overview` (`crmOverview` reads the same
+ * `scoredPopulation`), so a second endpoint returning them would be a second
+ * copy of the same answer that could drift from the dashboard's.
  */
-export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
-  if (error) return error;
-
-  const [scores, freshness] = await Promise.all([
-    scoredPopulation(session.businessId),
-    scoringFreshness(session.businessId),
-  ]);
-  return NextResponse.json({ scores, freshness });
-});
-
 export const POST = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;

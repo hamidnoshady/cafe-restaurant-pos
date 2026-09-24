@@ -3,55 +3,28 @@
 /**
  * Search-and-open for the customer file (Phase 36).
  *
- * Deliberately thin: it reuses `/api/parties?q=` — the same search the POS's
- * credit-payment picker calls — rather than adding a CRM-specific lookup, so
- * there is one definition of "find a customer by what someone typed".
+ * Deliberately thin: the debounced `/api/parties` search lives in the shared
+ * `useCustomerSearch` hook (the same one the activity, ticket and deal dialogs
+ * pick with), so there is one definition of "find a customer by what someone
+ * typed" — this screen only adds its own presentation: results as links that
+ * open the 360° file, with each person's phone beside their name.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { toPersianDigits } from "@/lib/digits";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { EmptyState, LoadingSkeleton } from "@/app/dashboard/page-chrome";
-import { api, inputClass } from "@/app/dashboard/ui";
+import { inputClass } from "@/app/dashboard/ui";
 import { crmCustomerHref } from "../crm-routes";
-
-interface Match {
-  id: string;
-  name: string;
-  phone: string | null;
-}
+import { useCustomerSearch } from "../customer-search";
 
 export function CustomerPicker({ directoryHref }: { directoryHref: string }) {
   const [query, setQuery] = useState("");
-  const [matches, setMatches] = useState<Match[] | null>(null);
-  const [searching, setSearching] = useState(false);
-
-  useEffect(() => {
-    if (query.trim().length < 2) {
-      setMatches(null);
-      setSearching(false);
-      return;
-    }
-    let cancelled = false;
-    setSearching(true);
-    const timer = setTimeout(() => {
-      void api<{ customers: Match[] }>(`/api/parties?roles=Customer&q=${encodeURIComponent(query.trim())}`)
-        .then(({ ok, data }) => {
-          if (!cancelled) setMatches(ok ? data.customers : []);
-        })
-        .catch(() => {
-          if (!cancelled) setMatches([]);
-        })
-        .finally(() => {
-          if (!cancelled) setSearching(false);
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query]);
+  // `searched` is what separates «type at least two characters» from «searched
+  // and found nobody» — the question a person looking at an empty list is
+  // actually asking.
+  const { matches, searching, searched } = useCustomerSearch(query);
 
   return (
     <div className="space-y-3">
@@ -65,7 +38,7 @@ export function CustomerPicker({ directoryHref }: { directoryHref: string }) {
 
       {searching ? (
         <LoadingSkeleton rows={3} compact label="در حال جست‌وجوی مشتری" />
-      ) : matches === null ? (
+      ) : !searched ? (
         <p className="text-xs text-muted-foreground">
           حداقل دو نویسه بنویسید. برای مدیریت فهرست کامل،{" "}
           <Link href={directoryHref} className="underline">

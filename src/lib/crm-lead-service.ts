@@ -61,9 +61,9 @@ export type LeadRating = (typeof LEAD_RATINGS)[number];
  * three copies of `status !== 'converted' && status !== 'unqualified'` is how
  * they drift.
  */
-export const CLOSED_LEAD_STATUSES: readonly LeadStatus[] = ["converted", "unqualified"];
+const CLOSED_LEAD_STATUSES: readonly LeadStatus[] = ["converted", "unqualified"];
 
-export interface CrmLead extends Record<string, unknown> {
+interface CrmLead extends Record<string, unknown> {
   id: string;
   name: string;
   organization: string;
@@ -102,7 +102,7 @@ const LEAD_COLUMNS = `id, name, organization, phone, phone_e164 AS "phoneE164", 
   converted_at AS "convertedAt", converted_by AS "convertedBy",
   created_by AS "createdBy", created_at AS "createdAt", updated_at AS "updatedAt"`;
 
-export interface ListLeadsOptions {
+interface ListLeadsOptions {
   status?: LeadStatus | "open";
   ownerUserId?: string;
   rating?: LeadRating;
@@ -199,7 +199,7 @@ export async function getLead(businessId: string, leadId: string): Promise<CrmLe
   return rows[0] ?? null;
 }
 
-export interface SaveLeadInput {
+interface SaveLeadInput {
   id?: string;
   name: string;
   organization?: string;
@@ -351,7 +351,7 @@ export async function saveLead(
   return getLead(businessId, rows[0].id);
 }
 
-export interface LeadDuplicate {
+interface LeadDuplicate {
   partyId: string;
   name: string;
   matchedOn: "phone" | "email";
@@ -414,7 +414,7 @@ export async function findLeadDuplicates(
   return [...found.values()];
 }
 
-export interface ConvertLeadInput {
+interface ConvertLeadInput {
   /** Link to this existing customer instead of creating one. */
   partyId?: string;
   /** Open a deal at the same time. */
@@ -429,7 +429,7 @@ export interface ConvertLeadInput {
   acknowledgeDuplicates?: boolean;
 }
 
-export type ConvertLeadResult =
+type ConvertLeadResult =
   | { ok: true; partyId: string; dealId: string | null; linkedExisting: boolean }
   | { ok: false; error: "not_found" | "already_converted" | "party_not_found" }
   | { ok: false; error: "duplicates_found"; duplicates: LeadDuplicate[] };
@@ -630,22 +630,4 @@ export async function convertLead(
     };
   }
   return result;
-}
-
-export interface LeadFunnel {
-  status: LeadStatus;
-  count: number;
-}
-
-/** Lead counts by status — the funnel on the leads board. */
-export async function leadFunnel(businessId: string): Promise<LeadFunnel[]> {
-  const { rows } = await query<{ status: LeadStatus; count: number }>(
-    `SELECT status, count(*)::int AS count FROM crm_leads
-      WHERE business_id = $1 GROUP BY status`,
-    [businessId],
-  );
-  const bySatus = new Map(rows.map((row) => [row.status, row.count]));
-  // Every status is present with a zero rather than absent, so the funnel has
-  // a stable shape and a stage with no leads reads as empty instead of missing.
-  return LEAD_STATUSES.map((status) => ({ status, count: bySatus.get(status) ?? 0 }));
 }

@@ -37,12 +37,7 @@
  */
 
 import { AGING_BUCKET_LABELS, oldestOverdueBucket } from "./aging";
-import {
-  getArAging,
-  getCustomerArBalance,
-  getCustomerStatement,
-  type ArStatementLine,
-} from "./ar-service";
+import { getArAging, getCustomerArBalance } from "./ar-service";
 
 /**
  * What the CRM is allowed to know about one customer's finances.
@@ -122,73 +117,4 @@ export async function customerFinancialSummary(
     oldestBucketLabel,
     hasOpenBalance: balance.balance > 0,
   };
-}
-
-/**
- * The customer's A/R statement, straight from Accounting.
- *
- * Passed through unchanged. The CRM renders it; it does not recompute the
- * running balance, because a second running-balance implementation is a second
- * chance to be wrong about the first one.
- */
-export async function customerStatement(
-  businessId: string,
-  customerId: string,
-): Promise<ArStatementLine[]> {
-  return getCustomerStatement(businessId, customerId);
-}
-
-/**
- * Financial summaries for a list of customers, for the directory's money
- * column.
- *
- * One aging report for the whole set rather than one per customer: aging is a
- * whole-book aggregation, and calling it per row turns a list page into N
- * scans of the ledger. This is the same N+1 that made the segment list
- * unusable, avoided the same way.
- */
-export async function customerFinancialSummaries(
-  businessId: string,
-  customerIds: readonly string[],
-): Promise<Map<string, CustomerFinancialSummary>> {
-  const result = new Map<string, CustomerFinancialSummary>();
-  if (customerIds.length === 0) return result;
-
-  let aging: Awaited<ReturnType<typeof getArAging>> | null = null;
-  try {
-    aging = await getArAging(businessId);
-  } catch {
-    aging = null;
-  }
-
-  if (!aging) {
-    for (const id of customerIds) result.set(id, EMPTY_SUMMARY);
-    return result;
-  }
-
-  const byCustomer = new Map(aging.rows.map((row) => [row.customerId, row]));
-  for (const id of customerIds) {
-    const row = byCustomer.get(id);
-    if (!row) {
-      // Present in the directory, absent from aging: they have no receivable.
-      // That is a real zero, not an unavailable one — the ledger answered.
-      result.set(id, {
-        available: true,
-        balanceRial: 0,
-        overdueRial: 0,
-        oldestBucketLabel: null,
-        hasOpenBalance: false,
-      });
-      continue;
-    }
-    const bucket = oldestOverdueBucket(row);
-    result.set(id, {
-      available: true,
-      balanceRial: row.total,
-      overdueRial: Math.max(0, row.total - row.current),
-      oldestBucketLabel: bucket ? AGING_BUCKET_LABELS[bucket] : null,
-      hasOpenBalance: row.total > 0,
-    });
-  }
-  return result;
 }

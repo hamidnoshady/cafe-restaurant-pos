@@ -41,7 +41,6 @@ import {
 } from "@/lib/crm-shared";
 import {
   EmptyState,
-  LoadingSkeleton,
   SectionCard,
   SectionCardSkeleton,
   StatusBadge,
@@ -49,6 +48,8 @@ import {
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { crmCustomerHref } from "./crm-routes";
+import { CustomerSearchField } from "./customer-search";
+import { CrmCardHeading } from "./crm-card-heading";
 
 interface Activity {
   id: string;
@@ -237,10 +238,7 @@ export function ActivitiesSection() {
 
       <SectionCard
         title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پیگیری‌ها و وظایف</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">کارها و پیگیری‌ها</h2>
-          </div>
+          <CrmCardHeading kicker="پیگیری‌ها و وظایف" title="کارها و پیگیری‌ها" />
         }
         description={
           overdue > 0
@@ -514,45 +512,12 @@ function ActivityDialog({
   );
   const [dueTime, setDueTime] = useState(activity?.dueAt ? timeInTehran(activity.dueAt) : "");
   const [assignedTo, setAssignedTo] = useState(activity?.assignedTo ?? "");
-  const [customerQuery, setCustomerQuery] = useState(activity?.customerName ?? "");
-  const [customerId, setCustomerId] = useState<string | null>(activity?.customerId ?? null);
-  const [matches, setMatches] = useState<{ id: string; name: string }[]>([]);
-  const [matchesLoading, setMatchesLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
   // Attaching an activity to a customer is what makes it show on their file, so
   // the picker searches the live directory rather than asking for an id.
-  useEffect(() => {
-    if (customerQuery.trim().length < 2 || customerId) {
-      setMatches([]);
-      setMatchesLoading(false);
-      setSearched(false);
-      return;
-    }
-    const controller = new AbortController();
-    setMatchesLoading(true);
-    const timer = setTimeout(() => {
-      void api<{ customers?: { id: string; name: string }[] }>(
-        `/api/parties?role=Customer&q=${encodeURIComponent(customerQuery.trim())}`,
-        { signal: controller.signal },
-      )
-        .then(({ ok, data, aborted }) => {
-          if (aborted || controller.signal.aborted) return;
-          setMatches(ok ? (data.customers ?? []).slice(0, 6) : []);
-          setSearched(true);
-          setMatchesLoading(false);
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) setMatchesLoading(false);
-        });
-    }, 250);
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [customerQuery, customerId]);
+  const [customerName, setCustomerName] = useState(activity?.customerName ?? "");
+  const [customerId, setCustomerId] = useState<string | null>(activity?.customerId ?? null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const save = async () => {
     const trimmed = subject.trim();
@@ -639,61 +604,19 @@ function ActivityDialog({
             hint="با ثبت مشتری، این کار در پروندهٔ او هم دیده می‌شود."
             as="div"
           >
-            {customerId ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="min-w-0 truncate text-sm text-foreground">
-                  {customerQuery || "مشتری انتخاب‌شده"}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => {
-                    setCustomerId(null);
-                    setCustomerQuery("");
-                  }}
-                >
-                  تغییر
-                </Button>
-              </div>
-            ) : (
-              <>
-                <input
-                  className={inputClass}
-                  placeholder="جستجوی نام یا شماره…"
-                  aria-label="جستجوی مشتری"
-                  value={customerQuery}
-                  onChange={(e) => setCustomerQuery(e.target.value)}
-                />
-                {matchesLoading ? (
-                  <LoadingSkeleton rows={1} compact className="mt-1" label="در حال جست‌وجوی مشتری" />
-                ) : matches.length > 0 ? (
-                  <ul className="mt-1 flex flex-wrap gap-1.5">
-                    {matches.map((match) => (
-                      <li key={match.id}>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="xs"
-                          onClick={() => {
-                            setCustomerId(match.id);
-                            setCustomerQuery(match.name);
-                            setMatches([]);
-                          }}
-                        >
-                          {match.name}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : searched && customerQuery.trim().length >= 2 ? (
-                  // Silence here read as "still loading"; say so instead.
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    مشتری‌ای با این نام یا شماره پیدا نشد. می‌توانید کار را بدون مشتری ثبت کنید.
-                  </p>
-                ) : null}
-              </>
-            )}
+            <CustomerSearchField
+              selectedId={customerId}
+              selectedName={customerName}
+              onPick={(match) => {
+                setCustomerId(match.id);
+                setCustomerName(match.name);
+              }}
+              onClear={() => {
+                setCustomerId(null);
+                setCustomerName("");
+              }}
+              emptyText="مشتری‌ای با این نام یا شماره پیدا نشد. می‌توانید کار را بدون مشتری ثبت کنید."
+            />
           </Field>
           <Field
             label="موعد (اختیاری)"
