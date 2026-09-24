@@ -28,7 +28,7 @@
  */
 
 import type { AccountingSectionKey } from "./accounting-routes";
-import { accountingSectionHref } from "./accounting-routes";
+import { accountingSectionHref, isAccountingSectionPathname } from "./accounting-routes";
 import { accountingSectionsForRole, type AccountingSectionDef } from "./accounting-nav";
 import { ACCOUNTING_WORKSPACE_HREFS, accountingProductsHref } from "@/lib/app-routes";
 import { partyDirectoryHref } from "@/lib/party-directory";
@@ -352,4 +352,65 @@ export function accountingWorkspaceGroups({
 /** Every href the composed menu offers — what a test and the bottom-nav picker read. */
 export function accountingWorkspaceHrefs(groups: readonly WorkspaceNavGroup[]): string[] {
   return groups.flatMap((group) => group.entries.map((entry) => entry.href));
+}
+
+/**
+ * Is this entry the page we are on? — the ONE rule, for every menu that draws
+ * these groups.
+ *
+ * The dashboard's flat sidebar and the Accounting app's sidebar draw the *same*
+ * `accountingWorkspaceGroups()` output, and each used to carry its own copy of
+ * this function. The copies had already drifted: the Accounting one lacked the
+ * `?tab=` rule, so «اتصال‌ها» and «صورت‌حساب» (which are `/settings?tab=…`
+ * hrefs) matched on the path alone and lit up together, and it lacked the
+ * `/settings` and `/accounting/products` root-exactness rules, so «تنظیمات»
+ * stayed lit on top of every settings sub-page and «محصولات» on top of every
+ * product page. Same menu, two answers to "where am I" depending on which
+ * sidebar you were looking at. One function now, so they cannot disagree.
+ *
+ * Three kinds of entry, three rules:
+ *  - an accounting *section* matches by section key, plus the `?view=` filter
+ *    so a deep link («مشتریان») is only current while that view is showing and
+ *    the parent («اشخاص») owns the default list;
+ *  - a `?tab=` href is a *named* sub-page and matches only that tab;
+ *  - a bare href matches its path prefix, except for the roots that would
+ *    otherwise swallow everything beneath them.
+ */
+export function workspaceEntryIsActive(
+  entry: WorkspaceNavEntry,
+  pathname: string,
+  search: string,
+): boolean {
+  if (entry.section) {
+    if (!isAccountingSectionPathname(pathname, entry.section)) return false;
+    const view = new URLSearchParams(entry.href.split("?")[1] ?? "").get("view");
+    const current = new URLSearchParams(search).get("view");
+    return view ? current === view : !current;
+  }
+
+  const [base, query] = entry.href.split("?");
+  if (query) {
+    if (pathname !== base) return false;
+    const expectedTab = new URLSearchParams(query).get("tab");
+    if (expectedTab) return new URLSearchParams(search).get("tab") === expectedTab;
+    return true;
+  }
+
+  // `/settings` is the hub *and* the prefix of its own sub-pages; the two that
+  // have their own nav rows must not also light their parent.
+  if (base === "/settings") {
+    return (
+      pathname === "/settings" ||
+      (pathname.startsWith("/settings/") &&
+        !pathname.startsWith("/settings/connections") &&
+        !pathname.startsWith("/settings/billing"))
+    );
+  }
+  // Same shape: the products hub has sub-pages (prices, attributes, …) that are
+  // their own destinations, so the hub row is exact.
+  if (base === ACCOUNTING_WORKSPACE_HREFS.products) {
+    return pathname === ACCOUNTING_WORKSPACE_HREFS.products;
+  }
+  if (base === "/dashboard") return pathname === "/dashboard";
+  return pathname === base || pathname.startsWith(`${base}/`);
 }

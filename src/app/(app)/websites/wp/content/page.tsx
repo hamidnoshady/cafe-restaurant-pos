@@ -1,11 +1,8 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { requireWpSection } from "../wp-guard";
 import { WpContentSection } from "../content-section";
 
 /** نوشته‌ها و برگه‌های وردپرس: مشاهده، ویرایش و ایجاد. */
 export default async function WpContentPage() {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  await requireWpSection("content");
   return <WpContentSection />;
 }

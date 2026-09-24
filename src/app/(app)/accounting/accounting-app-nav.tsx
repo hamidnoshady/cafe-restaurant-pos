@@ -32,53 +32,20 @@
  * reader hears the same structure the eye sees.
  */
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
-import {
-  SidebarContent,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
+import { SidebarContent } from "@/components/ui/sidebar";
 import type { AppShellNavProps } from "@/app/dashboard/app-shell-nav";
-import {
-  BACK_TO_WORKSPACE_BUTTON_CLASS,
-  NAV_LABEL_CLASS,
-} from "@/app/dashboard/sidebar-nav-styles";
+import { BackToWorkspaceMenu } from "@/app/dashboard/app-section-nav";
+import { useOpenNavGroups } from "@/app/dashboard/use-open-nav-groups";
 import { NavCollapsibleGroup, NavGroup } from "@/app/dashboard/sidebar-nav-group";
-import { isAccountingSectionPathname } from "./accounting-routes";
 import {
   accountingWorkspaceGroups,
   LEDGER_WORKSPACE_GROUP_KEY,
+  workspaceEntryIsActive,
   type WorkspaceNavEntry,
 } from "./accounting-workspace";
 
 /** Which groups the member left open, remembered per device like the flat nav's. */
 const OPEN_GROUPS_KEY = "accounting-nav-open-groups";
-
-/**
- * Is this entry the page we are on?
- *
- * Two rules, because the menu holds two kinds of entry. An accounting section
- * is matched by its section key (so `/accounting/directory?view=customers`
- * lights «اشخاص» and its «مشتریان» deep link both). A business page is matched
- * by path prefix, the way the flat nav matches — and exactly, for the roots
- * (`/settings`, `/accounting/products`) that would otherwise swallow every page
- * beneath them.
- */
-function entryIsActive(entry: WorkspaceNavEntry, pathname: string, search: string): boolean {
-  if (entry.section) {
-    if (!isAccountingSectionPathname(pathname, entry.section)) return false;
-    const view = new URLSearchParams(entry.href.split("?")[1] ?? "").get("view");
-    const current = new URLSearchParams(search).get("view");
-    // A deep link into a view is only "here" when that view is showing; the
-    // parent «اشخاص» entry owns the default list.
-    return view ? current === view : !current;
-  }
-  const base = entry.href.split("?")[0];
-  return pathname === base || pathname.startsWith(`${base}/`);
-}
 
 export function AccountingAppNav({
   role,
@@ -91,56 +58,20 @@ export function AccountingAppNav({
 
   const inLedger = groups
     .find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY)
-    ?.entries.some((entry) => entryIsActive(entry, pathname, search));
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const [restored, setRestored] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(OPEN_GROUPS_KEY);
-      if (raw) setOpenGroups(JSON.parse(raw) as Record<string, boolean>);
-    } catch {
-      // A hand-edited or quota-broken store is a preference, not an error.
-    }
-    setRestored(true);
-  }, []);
-
-  function toggle(key: string, currentlyOpen: boolean) {
-    setOpenGroups((current) => {
-      const next = { ...current, [key]: !currentlyOpen };
-      try {
-        window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
-      } catch {
-        // Same again: failing to remember is not failing to navigate.
-      }
-      return next;
-    });
-  }
-
-  const backHref = "/dashboard";
-  const backLabel = "بازگشت به میز کار";
+    ?.entries.some((entry) => workspaceEntryIsActive(entry, pathname, search));
+  const { toggleGroup, isOpen } = useOpenNavGroups(OPEN_GROUPS_KEY);
 
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="منوی حسابداری" className="space-y-3">
-        <SidebarMenu className="space-y-1.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip={backLabel} className={BACK_TO_WORKSPACE_BUTTON_CLASS}>
-              <Link href={backHref} onClick={onNavigate}>
-                <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />
-                <span className={NAV_LABEL_CLASS}>{backLabel}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <div aria-hidden="true" className="border-t border-border/80" />
+        <BackToWorkspaceMenu onNavigate={onNavigate} />
 
         {groups.map((group) => {
           if (group.entries.length === 0) return null;
-          const isActive = (entry: WorkspaceNavEntry) => entryIsActive(entry, pathname, search);
+          const isActive = (entry: WorkspaceNavEntry) => workspaceEntryIsActive(entry, pathname, search);
 
           if (group.collapsible) {
-            const open = restored ? (openGroups[group.key] ?? Boolean(inLedger)) : Boolean(inLedger);
+            const open = isOpen(group.key, Boolean(inLedger));
             return (
               <NavCollapsibleGroup
                 key={group.key}
@@ -149,7 +80,7 @@ export function AccountingAppNav({
                 isActive={isActive}
                 onNavigate={onNavigate}
                 open={open}
-                onToggle={() => toggle(group.key, open)}
+                onToggle={() => toggleGroup(group.key, open)}
               />
             );
           }

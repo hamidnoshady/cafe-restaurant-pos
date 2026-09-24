@@ -14,6 +14,8 @@ import {
   LEDGER_WORKSPACE_LABEL,
   LEDGER_WORKSPACE_SECTION_KEYS,
   LEDGER_WORKSPACE_SUBGROUPS,
+  workspaceEntryIsActive,
+  type WorkspaceNavEntry,
 } from "./accounting-workspace";
 import { partyDirectoryHref } from "@/lib/party-directory";
 import {
@@ -294,6 +296,92 @@ describe("the ledger group's own section list", () => {
         accounted,
         `section "${section.key}" is in no Accounting menu group`,
       ).toContain(section.key);
+    }
+  });
+});
+
+
+/**
+ * One «you are here» rule for both sidebars that draw this menu.
+ *
+ * The dashboard's flat sidebar and the Accounting app's sidebar render the
+ * same groups, and each used to carry its own copy of the active test. The
+ * copies had drifted: the Accounting one matched on path alone, so the
+ * `/settings?tab=…` rows lit up together, «تنظیمات» stayed lit over every
+ * settings sub-page, and «محصولات» over every product page. Same menu, two
+ * answers, depending on which sidebar you looked at. These assertions hold the
+ * rules the surviving function keeps.
+ */
+describe("which menu entry is the page you are on", () => {
+  const entry = (href: string, extra: Partial<WorkspaceNavEntry> = {}): WorkspaceNavEntry => ({
+    label: "x",
+    href,
+    ...extra,
+  });
+
+  it("matches a plain entry on its own path and anything nested under it", () => {
+    const orders = entry("/accounting/orders");
+    expect(workspaceEntryIsActive(orders, "/accounting/orders", "")).toBe(true);
+    expect(workspaceEntryIsActive(orders, "/accounting/orders/42", "")).toBe(true);
+    expect(workspaceEntryIsActive(orders, "/accounting/reports", "")).toBe(false);
+  });
+
+  it("does not let a prefix match spill past a path boundary", () => {
+    // `/accounting/order-templates` is a different page, not a child.
+    expect(
+      workspaceEntryIsActive(entry("/accounting/orders"), "/accounting/orders-archive", ""),
+    ).toBe(false);
+  });
+
+  it("gives each `?tab=` row its own tab, never all of them at once", () => {
+    const connections = entry("/settings?tab=connections");
+    const billing = entry("/settings?tab=billing");
+    expect(workspaceEntryIsActive(connections, "/settings", "tab=connections")).toBe(true);
+    // The bug: on one tab, the *other* tab's row lit up too.
+    expect(workspaceEntryIsActive(billing, "/settings", "tab=connections")).toBe(false);
+  });
+
+  it("keeps the «تنظیمات» hub off the sub-pages that have rows of their own", () => {
+    const settings = entry("/settings");
+    expect(workspaceEntryIsActive(settings, "/settings", "")).toBe(true);
+    expect(workspaceEntryIsActive(settings, "/settings/team", "")).toBe(true);
+    expect(workspaceEntryIsActive(settings, "/settings/connections", "")).toBe(false);
+    expect(workspaceEntryIsActive(settings, "/settings/billing", "")).toBe(false);
+  });
+
+  it("keeps the «محصولات» hub exact, so its sub-pages do not light it", () => {
+    const products = entry(ACCOUNTING_WORKSPACE_HREFS.products);
+    expect(workspaceEntryIsActive(products, ACCOUNTING_WORKSPACE_HREFS.products, "")).toBe(true);
+    expect(
+      workspaceEntryIsActive(products, `${ACCOUNTING_WORKSPACE_HREFS.products}/prices`, ""),
+    ).toBe(false);
+  });
+
+  it("keeps «میز کار» exact, so it is not lit by every dashboard page", () => {
+    const home = entry("/dashboard");
+    expect(workspaceEntryIsActive(home, "/dashboard", "")).toBe(true);
+    expect(workspaceEntryIsActive(home, "/dashboard/pos", "")).toBe(false);
+  });
+
+  it("lets a `?view=` deep link own its view, and the parent own the default", () => {
+    const all = entry(partyDirectoryHref(), { section: "directory" });
+    const customers = entry(partyDirectoryHref("customers"), { section: "directory" });
+    const pathname = partyDirectoryHref().split("?")[0];
+    expect(workspaceEntryIsActive(all, pathname, "")).toBe(true);
+    expect(workspaceEntryIsActive(customers, pathname, "")).toBe(false);
+    expect(workspaceEntryIsActive(customers, pathname, "view=customers")).toBe(true);
+    expect(workspaceEntryIsActive(all, pathname, "view=customers")).toBe(false);
+  });
+
+  it("never lights two entries of the real menu at once", () => {
+    const groups = accountingWorkspaceGroups({ role: "owner", navItems: [] });
+    const entries = groups.flatMap((group) => group.entries);
+    for (const current of entries) {
+      const [pathname, search = ""] = current.href.split("?");
+      const lit = entries.filter((candidate) =>
+        workspaceEntryIsActive(candidate, pathname, search),
+      );
+      expect(lit.map((item) => item.href)).toEqual([current.href]);
     }
   });
 });

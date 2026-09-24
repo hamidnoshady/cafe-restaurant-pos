@@ -52,11 +52,10 @@ import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
 import { appForModule, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
-import { ACCOUNTING_SECTION_ICONS } from "@/app/(app)/accounting/accounting-icons";
-import { isAccountingSectionPathname } from "@/app/(app)/accounting/accounting-routes";
 import {
   accountingWorkspaceGroups,
   LEDGER_WORKSPACE_GROUP_KEY,
+  workspaceEntryIsActive,
   type WorkspaceNavEntry,
   type WorkspaceNavGroup,
 } from "@/app/(app)/accounting/accounting-workspace";
@@ -72,6 +71,7 @@ import {
 } from "./sidebar-nav-styles";
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import { NavCollapsibleGroup, NavGroup } from "./sidebar-nav-group";
+import { useOpenNavGroups } from "./use-open-nav-groups";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
 import { toPersianDigits } from "@/lib/digits";
@@ -261,38 +261,6 @@ function isActive(pathname: string, href: string, search?: ReadonlyURLSearchPara
 /** Which collapsible nav groups the member left open, per device. */
 const OPEN_NAV_GROUPS_KEY = "dashboard-sidebar-open-groups";
 
-function entryIsActive(entry: WorkspaceNavEntry, pathname: string, search: string): boolean {
-  if (entry.section) {
-    if (!isAccountingSectionPathname(pathname, entry.section)) return false;
-    const view = new URLSearchParams(entry.href.split("?")[1] ?? "").get("view");
-    const current = new URLSearchParams(search).get("view");
-    return view ? current === view : !current;
-  }
-  const [base, query] = entry.href.split("?");
-  if (query) {
-    if (pathname !== base) return false;
-    const expectedTab = new URLSearchParams(query).get("tab");
-    if (expectedTab) {
-      const actualTab = new URLSearchParams(search).get("tab");
-      return actualTab === expectedTab;
-    }
-    return true;
-  }
-  if (base === "/settings") {
-    return (
-      pathname === "/settings" ||
-      (pathname.startsWith("/settings/") &&
-        !pathname.startsWith("/settings/connections") &&
-        !pathname.startsWith("/settings/billing"))
-    );
-  }
-  if (base === ACCOUNTING_WORKSPACE_HREFS.products) {
-    return pathname === ACCOUNTING_WORKSPACE_HREFS.products;
-  }
-  if (base === "/dashboard") return pathname === "/dashboard";
-  return pathname === base || pathname.startsWith(`${base}/`);
-}
-
 function SidebarNavigation({
   navItems,
   role,
@@ -309,31 +277,8 @@ function SidebarNavigation({
 
   const inLedger = groups
     .find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY)
-    ?.entries.some((entry) => entryIsActive(entry, pathname, searchStr));
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const [restored, setRestored] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(OPEN_NAV_GROUPS_KEY);
-      if (raw) setOpenGroups(JSON.parse(raw) as Record<string, boolean>);
-    } catch {
-      // Storage read fallback
-    }
-    setRestored(true);
-  }, []);
-
-  const toggleGroup = useCallback((key: string, currentlyOpen: boolean) => {
-    setOpenGroups((current) => {
-      const next = { ...current, [key]: !currentlyOpen };
-      try {
-        window.localStorage.setItem(OPEN_NAV_GROUPS_KEY, JSON.stringify(next));
-      } catch {
-        // Storage write fallback
-      }
-      return next;
-    });
-  }, []);
+    ?.entries.some((entry) => workspaceEntryIsActive(entry, pathname, searchStr));
+  const { toggleGroup, isOpen: groupIsOpen } = useOpenNavGroups(OPEN_NAV_GROUPS_KEY);
 
   const onNavigate = useCallback(() => setOpenMobile(false), [setOpenMobile]);
 
@@ -361,10 +306,10 @@ function SidebarNavigation({
 
         {groups.map((group) => {
           if (group.entries.length === 0) return null;
-          const isActive = (entry: WorkspaceNavEntry) => entryIsActive(entry, pathname, searchStr);
+          const isActive = (entry: WorkspaceNavEntry) => workspaceEntryIsActive(entry, pathname, searchStr);
 
           if (group.collapsible) {
-            const open = restored ? (openGroups[group.key] ?? Boolean(inLedger)) : Boolean(inLedger);
+            const open = groupIsOpen(group.key, Boolean(inLedger));
             return (
               <NavCollapsibleGroup
                 key={group.key}

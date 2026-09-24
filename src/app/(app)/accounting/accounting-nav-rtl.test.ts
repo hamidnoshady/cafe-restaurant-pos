@@ -29,6 +29,15 @@ const GROUP_SOURCE = readFileSync(
   fileURLToPath(new URL("../../dashboard/sidebar-nav-group.tsx", import.meta.url)),
   "utf8",
 );
+/**
+ * The «بازگشت» control is shared by every app sidebar (`app-section-nav.tsx`)
+ * rather than respelled in each one, so the rule about its arrow is checked
+ * where the arrow is drawn.
+ */
+const BACK_SOURCE = readFileSync(
+  fileURLToPath(new URL("../../dashboard/app-section-nav.tsx", import.meta.url)),
+  "utf8",
+);
 const FORM_SOURCE = readFileSync(
   fileURLToPath(new URL("../../dashboard/parties/party-form.tsx", import.meta.url)),
   "utf8",
@@ -56,6 +65,7 @@ describe("the Accounting menu is written for RTL", () => {
     // ends up with its rule on the wrong edge.
     expect(physicalClassesIn(NAV_SOURCE)).toEqual([]);
     expect(physicalClassesIn(GROUP_SOURCE)).toEqual([]);
+    expect(physicalClassesIn(BACK_SOURCE)).toEqual([]);
   });
 
   it("ties a group's children to their heading with a start-side rule", () => {
@@ -68,7 +78,7 @@ describe("the Accounting menu is written for RTL", () => {
     // left here, so the LTR rotation needs an `rtl:` counterpart.
     expect(GROUP_SOURCE).toMatch(/-rotate-90 rtl:rotate-90/);
     // The «بازگشت» arrow too: an arrow drawn for LTR points the wrong way.
-    expect(NAV_SOURCE).toMatch(/rtl:rotate-180/);
+    expect(BACK_SOURCE).toMatch(/rtl:rotate-180/);
   });
 
   it("labels every entry in text, never by glyph alone", () => {

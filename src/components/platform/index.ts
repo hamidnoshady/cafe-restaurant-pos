@@ -16,5 +16,4 @@ export * from "./detail-drawer";
 export * from "./dialogs";
 export * from "./secret-field";
 export * from "./form";
-export * from "./sub-nav";
 export * from "./permission-gate";
