@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -8,7 +8,11 @@ import { printLabel } from "@/lib/printing/client";
 import { labelFieldsForTrade, type LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { api, Field, inputClass } from "../ui";
-import { LoadingSkeleton, SectionCardSkeleton, cardClass } from "../page-chrome";
+import {
+  LoadingSkeleton,
+  SectionCardSkeleton,
+  cardClass,
+} from "../page-chrome";
 
 const accInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 
@@ -27,7 +31,12 @@ interface ItemRow {
   kind: string;
   tracking: string;
   attributes: { name: string; value: string }[];
-  batches: { id: string; batchNumber: string; expiryDate: string | null; quantity: string }[];
+  batches: {
+    id: string;
+    batchNumber: string;
+    expiryDate: string | null;
+    quantity: string;
+  }[];
 }
 
 interface BrandRow {
@@ -60,14 +69,22 @@ export function MerchandisingSection() {
       api<{ brands: BrandRow[] }>("/api/cosmetics/brands"),
     ]);
     if (itemsResult.status === "fulfilled" && itemsResult.value.ok) {
-      setItems(itemsResult.value.data.items.filter((i) => i.kind !== "variant_parent"));
+      setItems(
+        itemsResult.value.data.items.filter((i) => i.kind !== "variant_parent"),
+      );
     }
     if (brandsResult.status === "fulfilled" && brandsResult.value.ok) {
       setBrands(brandsResult.value.data.brands);
     }
-    if (itemsResult.status === "rejected" || (itemsResult.status === "fulfilled" && !itemsResult.value.ok)) {
+    if (
+      itemsResult.status === "rejected" ||
+      (itemsResult.status === "fulfilled" && !itemsResult.value.ok)
+    ) {
       setError("بارگذاری کالاهای آرایشی ناموفق بود. دوباره تلاش کنید.");
-    } else if (brandsResult.status === "rejected" || (brandsResult.status === "fulfilled" && !brandsResult.value.ok)) {
+    } else if (
+      brandsResult.status === "rejected" ||
+      (brandsResult.status === "fulfilled" && !brandsResult.value.ok)
+    ) {
       setError("بارگذاری برندها ناموفق بود. دوباره تلاش کنید.");
     }
     setLoaded(true);
@@ -84,15 +101,27 @@ export function MerchandisingSection() {
   if (!loaded) {
     return (
       <div className="grid min-w-0 gap-4 xl:grid-cols-3">
-        {[0, 1, 2].map((item) => <SectionCardSkeleton key={item} rows={4} />)}
+        {[0, 1, 2].map((item) => (
+          <SectionCardSkeleton key={item} rows={4} />
+        ))}
       </div>
     );
   }
 
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-3">
-      <BrandForm busy={busy} setBusy={setBusy} setError={setError} onDone={refreshDone} />
-      <MatrixForm busy={busy} setBusy={setBusy} setError={setError} onDone={refreshDone} />
+      <BrandForm
+        busy={busy}
+        setBusy={setBusy}
+        setError={setError}
+        onDone={refreshDone}
+      />
+      <MatrixForm
+        busy={busy}
+        setBusy={setBusy}
+        setError={setError}
+        onDone={refreshDone}
+      />
       <ItemProfileForm
         items={items}
         brands={brands}
@@ -102,16 +131,42 @@ export function MerchandisingSection() {
         onDone={refreshDone}
       />
 
-      {error ? <p className="text-xs text-rose-700 dark:text-rose-300 xl:col-span-3">{error}</p> : null}
-      {done ? <p className="text-xs text-emerald-700 dark:text-emerald-300 xl:col-span-3">{done}</p> : null}
+      {error ? (
+        <p className="text-xs text-rose-700 dark:text-rose-300 xl:col-span-3">
+          {error}
+        </p>
+      ) : null}
+      {done ? (
+        <p className="text-xs text-emerald-700 dark:text-emerald-300 xl:col-span-3">
+          {done}
+        </p>
+      ) : null}
 
-      <TesterPanel items={items} busy={busy} setBusy={setBusy} setError={setError} onDone={refreshDone} />
-      <BarcodesPanel items={items} busy={busy} setBusy={setBusy} setError={setError} onDone={refreshDone} />
+      <TesterPanel
+        items={items}
+        busy={busy}
+        setBusy={setBusy}
+        setError={setError}
+        onDone={refreshDone}
+      />
+      <BarcodesPanel
+        items={items}
+        busy={busy}
+        setBusy={setBusy}
+        setError={setError}
+        onDone={refreshDone}
+      />
     </div>
   );
 }
 
-function PanelShell({ title, children }: { title: string; children: React.ReactNode }) {
+function PanelShell({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className={`${cardClass} p-4 sm:p-5`}>
       <h2 className="font-semibold text-foreground">{title}</h2>
@@ -140,10 +195,17 @@ function BrandForm({
     if (!name.trim()) return;
     setBusy(true);
     setError("");
-    const { ok, data } = await api<{ error?: string; message?: string }>("/api/cosmetics/brands", {
-      method: "POST",
-      body: JSON.stringify({ name, country: country.trim() || null, productLine: productLine.trim() || null }),
-    });
+    const { ok, data } = await api<{ error?: string; message?: string }>(
+      "/api/cosmetics/brands",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          country: country.trim() || null,
+          productLine: productLine.trim() || null,
+        }),
+      },
+    );
     setBusy(false);
     if (!ok) setError(data.message ?? "ثبت برند ناموفق بود.");
     else {
@@ -158,15 +220,33 @@ function BrandForm({
     <PanelShell title="افزودن برند">
       <form onSubmit={submit}>
         <Field label="نام برند">
-          <input className={accInputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            className={accInputClass}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
         </Field>
         <Field label="کشور سازنده">
-          <input className={accInputClass} value={country} onChange={(e) => setCountry(e.target.value)} />
+          <input
+            className={accInputClass}
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+          />
         </Field>
         <Field label="خط تولید">
-          <input className={accInputClass} value={productLine} onChange={(e) => setProductLine(e.target.value)} />
+          <input
+            className={accInputClass}
+            value={productLine}
+            onChange={(e) => setProductLine(e.target.value)}
+          />
         </Field>
-        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
+        <Button
+          type="submit"
+          disabled={busy}
+          size="lg"
+          className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold"
+        >
           ثبت برند
         </Button>
       </form>
@@ -196,14 +276,20 @@ function MatrixForm({
     if (!parentName.trim() || !axisAName.trim() || !axisAValues.trim()) return;
     setBusy(true);
     setError("");
-    const { ok, data } = await api<{ error?: string; message?: string }>("/api/cosmetics/matrix", {
-      method: "POST",
-      body: JSON.stringify({
-        parentName,
-        axisA: { name: axisAName.trim(), values: parseList(axisAValues) },
-        axisB: axisBName.trim() && axisBValues.trim() ? { name: axisBName.trim(), values: parseList(axisBValues) } : { name: "", values: [] },
-      }),
-    });
+    const { ok, data } = await api<{ error?: string; message?: string }>(
+      "/api/cosmetics/matrix",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          parentName,
+          axisA: { name: axisAName.trim(), values: parseList(axisAValues) },
+          axisB:
+            axisBName.trim() && axisBValues.trim()
+              ? { name: axisBName.trim(), values: parseList(axisBValues) }
+              : { name: "", values: [] },
+        }),
+      },
+    );
     setBusy(false);
     if (!ok) setError(data.message ?? "ساخت ماتریس ناموفق بود.");
     else {
@@ -218,21 +304,52 @@ function MatrixForm({
     <PanelShell title="ویرایشگر ماتریس تنوع">
       <form onSubmit={submit}>
         <Field label="نام خانواده">
-          <input className={accInputClass} value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="مثلاً کرم پودر" required />
+          <input
+            className={accInputClass}
+            value={parentName}
+            onChange={(e) => setParentName(e.target.value)}
+            placeholder="مثلاً کرم پودر"
+            required
+          />
         </Field>
         <Field label="محور اول — نام">
-          <input className={accInputClass} value={axisAName} onChange={(e) => setAxisAName(e.target.value)} />
+          <input
+            className={accInputClass}
+            value={axisAName}
+            onChange={(e) => setAxisAName(e.target.value)}
+          />
         </Field>
         <Field label="محور اول — مقادیر (با کاما)">
-          <input className={accInputClass} dir="ltr" value={axisAValues} onChange={(e) => setAxisAValues(e.target.value)} placeholder="روشن، تیره" />
+          <input
+            className={accInputClass}
+            dir="ltr"
+            value={axisAValues}
+            onChange={(e) => setAxisAValues(e.target.value)}
+            placeholder="روشن، تیره"
+          />
         </Field>
         <Field label="محور دوم — نام (اختیاری)">
-          <input className={accInputClass} value={axisBName} onChange={(e) => setAxisBName(e.target.value)} />
+          <input
+            className={accInputClass}
+            value={axisBName}
+            onChange={(e) => setAxisBName(e.target.value)}
+          />
         </Field>
         <Field label="محور دوم — مقادیر (با کاما)">
-          <input className={accInputClass} dir="ltr" value={axisBValues} onChange={(e) => setAxisBValues(e.target.value)} placeholder="۳۰ میل، ۵۰ میل" />
+          <input
+            className={accInputClass}
+            dir="ltr"
+            value={axisBValues}
+            onChange={(e) => setAxisBValues(e.target.value)}
+            placeholder="۳۰ میل، ۵۰ میل"
+          />
         </Field>
-        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
+        <Button
+          type="submit"
+          disabled={busy}
+          size="lg"
+          className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold"
+        >
           ساخت N×M تنوع
         </Button>
       </form>
@@ -280,24 +397,45 @@ function ItemProfileForm({
     setTags(selected.tags.join("، "));
   }, [selected]);
 
+  // ⚡ Bolt: Compute option arrays using useMemo to prevent per-render reallocation.
+  const itemOptions = React.useMemo(
+    () =>
+      items.map((i) => ({
+        value: i.id,
+        label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}`,
+      })),
+    [items],
+  );
+
+  const brandOptions = React.useMemo(
+    () => [
+      { value: "", label: "بدون برند" },
+      ...brands.map((b) => ({ value: b.id, label: b.name })),
+    ],
+    [brands],
+  );
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!itemId) return;
     setBusy(true);
     setError("");
-    const { ok, data } = await api<{ error?: string; message?: string }>(`/api/cosmetics/items/${itemId}/profile`, {
-      method: "POST",
-      body: JSON.stringify({
-        brandId: brandId || null,
-        ircCode: ircCode.trim() || null,
-        healthPermit: healthPermit.trim() || null,
-        authenticityRegistration: authenticity.trim() || null,
-        tags: tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean),
-      }),
-    });
+    const { ok, data } = await api<{ error?: string; message?: string }>(
+      `/api/cosmetics/items/${itemId}/profile`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          brandId: brandId || null,
+          ircCode: ircCode.trim() || null,
+          healthPermit: healthPermit.trim() || null,
+          authenticityRegistration: authenticity.trim() || null,
+          tags: tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
+        }),
+      },
+    );
     setBusy(false);
     if (!ok) setError(data.message ?? "ذخیره ناموفق بود.");
     else {
@@ -319,10 +457,7 @@ function ItemProfileForm({
             className={accInputClass}
             value={itemId}
             onChange={setItemId}
-            options={items.map((i) => ({
-              value: i.id,
-              label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}`,
-            }))}
+            options={itemOptions}
             placeholder="انتخاب کالا"
           />
         </Field>
@@ -331,27 +466,53 @@ function ItemProfileForm({
             className={accInputClass}
             value={brandId}
             onChange={setBrandId}
-            options={[
-              { value: "", label: "بدون برند" },
-              ...brands.map((b) => ({ value: b.id, label: b.name })),
-            ]}
+            options={brandOptions}
             placeholder="انتخاب برند"
           />
         </Field>
         <Field label="کد IRC">
-          <input className={accInputClass} dir="ltr" value={ircCode} onChange={(e) => setIrcCode(e.target.value)} />
+          <input
+            className={accInputClass}
+            dir="ltr"
+            value={ircCode}
+            onChange={(e) => setIrcCode(e.target.value)}
+          />
         </Field>
         <Field label="پروانه بهداشت">
-          <input className={accInputClass} dir="ltr" value={healthPermit} onChange={(e) => setHealthPermit(e.target.value)} />
+          <input
+            className={accInputClass}
+            dir="ltr"
+            value={healthPermit}
+            onChange={(e) => setHealthPermit(e.target.value)}
+          />
         </Field>
         <Field label="ثبت اصالت کالا">
-          <input className={accInputClass} dir="ltr" value={authenticity} onChange={(e) => setAuthenticity(e.target.value)} />
+          <input
+            className={accInputClass}
+            dir="ltr"
+            value={authenticity}
+            onChange={(e) => setAuthenticity(e.target.value)}
+          />
         </Field>
         <Field label="نوع پوست/مو (با کاما)">
-          <input className={accInputClass} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="پوست چرب، موی رنگ‌شده" />
+          <input
+            className={accInputClass}
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="پوست چرب، موی رنگ‌شده"
+          />
         </Field>
-        {selected?.brandName ? <p className="text-xs text-muted-foreground">برند فعلی: {selected.brandName}</p> : null}
-        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
+        {selected?.brandName ? (
+          <p className="text-xs text-muted-foreground">
+            برند فعلی: {selected.brandName}
+          </p>
+        ) : null}
+        <Button
+          type="submit"
+          disabled={busy}
+          size="lg"
+          className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold"
+        >
           ذخیره
         </Button>
       </form>
@@ -376,13 +537,28 @@ function TesterPanel({
   const [itemId, setItemId] = useState("");
   const selected = items.find((i) => i.id === itemId);
 
+  // ⚡ Bolt: Compute option array using useMemo to prevent per-render reallocation.
+  const itemOptions = React.useMemo(
+    () =>
+      items.map((i) => ({
+        value: i.id,
+        label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}${
+          i.unitCost != null ? ` (بها ${money.format(i.unitCost)})` : ""
+        }`,
+      })),
+    [items, money],
+  );
+
   async function open() {
     if (!itemId) return;
     setBusy(true);
     setError("");
-    const { ok, data } = await api<{ error?: string; message?: string }>(`/api/cosmetics/items/${itemId}/tester`, {
-      method: "POST",
-    });
+    const { ok, data } = await api<{ error?: string; message?: string }>(
+      `/api/cosmetics/items/${itemId}/tester`,
+      {
+        method: "POST",
+      },
+    );
     setBusy(false);
     if (!ok) setError(data.message ?? "باز کردن تستر ناموفق بود.");
     else {
@@ -398,19 +574,21 @@ function TesterPanel({
           className={accInputClass}
           value={itemId}
           onChange={setItemId}
-          options={items.map((i) => ({
-            value: i.id,
-            label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}${
-              i.unitCost != null ? ` (بها ${money.format(i.unitCost)})` : ""
-            }`,
-          }))}
+          options={itemOptions}
           placeholder="انتخاب کالا"
         />
       </Field>
       <p className="text-xs leading-5 text-muted-foreground">
-        یک واحد فروختنی را به‌عنوان تستر باز می‌کند؛ بهای تمام‌شدهٔ آن به هزینهٔ بازاریابی (۵۱۶۰) می‌رود، نه بهای کالای فروخته‌شده.
+        یک واحد فروختنی را به‌عنوان تستر باز می‌کند؛ بهای تمام‌شدهٔ آن به هزینهٔ
+        بازاریابی (۵۱۶۰) می‌رود، نه بهای کالای فروخته‌شده.
       </p>
-      <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold" onClick={() => void open()}>
+      <Button
+        type="button"
+        disabled={busy || !selected}
+        size="lg"
+        className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold"
+        onClick={() => void open()}
+      >
         باز کردن تستر
       </Button>
     </PanelShell>
@@ -447,6 +625,16 @@ function BarcodesPanel({
 
   const selected = items.find((i) => i.id === itemId);
 
+  // ⚡ Bolt: Compute option array using useMemo to prevent per-render reallocation.
+  const itemOptions = React.useMemo(
+    () =>
+      items.map((i) => ({
+        value: i.id,
+        label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}`,
+      })),
+    [items],
+  );
+
   useEffect(() => {
     if (!itemId) {
       setBarcodes([]);
@@ -456,7 +644,9 @@ function BarcodesPanel({
     let cancelled = false;
     setBarcodes([]);
     setBarcodesLoading(true);
-    void api<{ barcodes: BarcodeRow[] }>(`/api/barcodes?itemId=${encodeURIComponent(itemId)}`)
+    void api<{ barcodes: BarcodeRow[] }>(
+      `/api/barcodes?itemId=${encodeURIComponent(itemId)}`,
+    )
       .then(({ ok, data }) => {
         if (!cancelled && ok) setBarcodes(data.barcodes);
       })
@@ -473,9 +663,16 @@ function BarcodesPanel({
     if (!itemId) return;
     setBusy(true);
     setError("");
-    const { ok, data } = await api<{ ok?: boolean; barcode?: BarcodeRow; error?: string; message?: string }>("/api/barcodes", {
+    const { ok, data } = await api<{
+      ok?: boolean;
+      barcode?: BarcodeRow;
+      error?: string;
+      message?: string;
+    }>("/api/barcodes", {
       method: "POST",
-      body: JSON.stringify(generate ? { itemId } : { itemId, code: manualCode }),
+      body: JSON.stringify(
+        generate ? { itemId } : { itemId, code: manualCode },
+      ),
     });
     setBusy(false);
     if (!ok) {
@@ -483,7 +680,11 @@ function BarcodesPanel({
       return;
     }
     setManualCode("");
-    onDone(data.barcode?.code ? `بارکد ${data.barcode.code} ثبت شد.` : "بارکد ثبت شد.");
+    onDone(
+      data.barcode?.code
+        ? `بارکد ${data.barcode.code} ثبت شد.`
+        : "بارکد ثبت شد.",
+    );
   }
 
   function print(code: string) {
@@ -493,10 +694,14 @@ function BarcodesPanel({
       return;
     }
     if (!selected) return;
-    const shade = selected.attributes.find((a) => a.name === "سایه" || a.name === "رنگ")?.value ?? null;
-    const expiry = selected.batches
-      .filter((b) => b.expiryDate)
-      .sort((a, b) => (a.expiryDate! < b.expiryDate! ? -1 : 1))[0]?.expiryDate ?? null;
+    const shade =
+      selected.attributes.find((a) => a.name === "سایه" || a.name === "رنگ")
+        ?.value ?? null;
+    const expiry =
+      selected.batches
+        .filter((b) => b.expiryDate)
+        .sort((a, b) => (a.expiryDate! < b.expiryDate! ? -1 : 1))[0]
+        ?.expiryDate ?? null;
     const label: LabelData = {
       businessName: businessInfo.name || "فروشگاه",
       itemName: selected.name,
@@ -514,7 +719,13 @@ function BarcodesPanel({
     };
     printLabel(printer.id, label).then((res) => {
       if (res.ok) onDone("لیبل چاپ شد.");
-      else setError(res.error === "connector_not_installed" || res.error === "connector_outdated" ? "رابط چاپ روی این کامپیوتر در دسترس نیست؛ از تنظیمات چاپگرها نصب کنید." : "چاپ لیبل ناموفق بود.");
+      else
+        setError(
+          res.error === "connector_not_installed" ||
+            res.error === "connector_outdated"
+            ? "رابط چاپ روی این کامپیوتر در دسترس نیست؛ از تنظیمات چاپگرها نصب کنید."
+            : "چاپ لیبل ناموفق بود.",
+        );
     });
   }
 
@@ -525,10 +736,7 @@ function BarcodesPanel({
           className={accInputClass}
           value={itemId}
           onChange={setItemId}
-          options={items.map((i) => ({
-            value: i.id,
-            label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}`,
-          }))}
+          options={itemOptions}
           placeholder="انتخاب کالا"
         />
       </Field>
@@ -540,31 +748,62 @@ function BarcodesPanel({
           onChange={(e) => setManualCode(e.target.value)}
           placeholder="بارکد فروشنده (اختیاری)"
         />
-        <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] border border-amber-300 dark:border-amber-500/40 px-4 font-semibold" onClick={() => void assign(false)}>
+        <Button
+          type="button"
+          disabled={busy || !selected}
+          size="lg"
+          className="min-h-[52px] border border-amber-300 dark:border-amber-500/40 px-4 font-semibold"
+          onClick={() => void assign(false)}
+        >
           ثبت
         </Button>
       </div>
-      <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold" onClick={() => void assign(true)}>
+      <Button
+        type="button"
+        disabled={busy || !selected}
+        size="lg"
+        className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold"
+        onClick={() => void assign(true)}
+      >
         تولید بارکد داخلی
       </Button>
 
       {barcodesLoading ? (
-        <LoadingSkeleton rows={2} compact label="در حال بارگذاری بارکدهای کالا" />
+        <LoadingSkeleton
+          rows={2}
+          compact
+          label="در حال بارگذاری بارکدهای کالا"
+        />
       ) : barcodes.length > 0 ? (
         <ul className="divide-y divide-border/80 text-sm">
           {barcodes.map((b) => (
-            <li key={b.id} className="flex items-center justify-between gap-2 py-2">
-              <span dir="ltr" className="font-mono text-foreground">{b.code}</span>
-              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => print(b.code)}>
+            <li
+              key={b.id}
+              className="flex items-center justify-between gap-2 py-2"
+            >
+              <span dir="ltr" className="font-mono text-foreground">
+                {b.code}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => print(b.code)}
+              >
                 چاپ لیبل
               </Button>
             </li>
           ))}
         </ul>
       ) : selected ? (
-        <p className="text-xs text-muted-foreground">هنوز بارکدی برای این کالا ثبت نشده است.</p>
+        <p className="text-xs text-muted-foreground">
+          هنوز بارکدی برای این کالا ثبت نشده است.
+        </p>
       ) : (
-        <p className="text-xs text-muted-foreground">برای دیدن بارکدها، یک کالا انتخاب کنید.</p>
+        <p className="text-xs text-muted-foreground">
+          برای دیدن بارکدها، یک کالا انتخاب کنید.
+        </p>
       )}
     </PanelShell>
   );

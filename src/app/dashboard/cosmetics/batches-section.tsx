@@ -1,7 +1,7 @@
 "use client";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -18,7 +18,12 @@ interface BatchItem {
   name: string;
   parentName: string | null;
   tracking: string;
-  batches: { id: string; batchNumber: string; expiryDate: string | null; quantity: string }[];
+  batches: {
+    id: string;
+    batchNumber: string;
+    expiryDate: string | null;
+    quantity: string;
+  }[];
 }
 
 interface NearExpiryRow {
@@ -58,7 +63,9 @@ export function BatchesSection() {
     ]);
     const failures: string[] = [];
     if (itemsResult.status === "fulfilled" && itemsResult.value.ok) {
-      setItems(itemsResult.value.data.items.filter((i) => i.tracking === "batch"));
+      setItems(
+        itemsResult.value.data.items.filter((i) => i.tracking === "batch"),
+      );
     } else {
       failures.push("فهرست کالاها بارگذاری نشد.");
     }
@@ -74,22 +81,36 @@ export function BatchesSection() {
     void load();
   }, [load]);
 
-  const batchItems = items.filter((i) => i.tracking === "batch");
+  // ⚡ Bolt: Compute option array using useMemo to prevent per-render reallocation.
+  // The filtering operation is moved inside useMemo and depends only on `items`.
+  const itemOptions = React.useMemo(() => {
+    return items
+      .filter((i) => i.tracking === "batch")
+      .map((i) => ({
+        value: i.id,
+        label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}`,
+      }));
+  }, [items]);
 
   async function receive(e: React.FormEvent) {
     e.preventDefault();
     if (!itemId || !batchNumber.trim()) return;
     setBusy(true);
     setError("");
-    const { ok, data } = await api<{ error?: string; message?: string }>(`/api/cosmetics/items/${itemId}/batches`, {
-      method: "POST",
-      body: JSON.stringify({
-        batchNumber: batchNumber.trim(),
-        expiryDate: expiryDate.trim() || null,
-        quantity: quantity.trim() || "0",
-        unitCost: money.fromInput(Math.max(0, Math.round(Number(unitCost || 0)))),
-      }),
-    });
+    const { ok, data } = await api<{ error?: string; message?: string }>(
+      `/api/cosmetics/items/${itemId}/batches`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          batchNumber: batchNumber.trim(),
+          expiryDate: expiryDate.trim() || null,
+          quantity: quantity.trim() || "0",
+          unitCost: money.fromInput(
+            Math.max(0, Math.round(Number(unitCost || 0))),
+          ),
+        }),
+      },
+    );
     setBusy(false);
     if (!ok) {
       setError(data.message ?? "ثبت بچ ناموفق بود.");
@@ -104,7 +125,12 @@ export function BatchesSection() {
   }
 
   async function writeOff(itemIdToWriteOff: string) {
-    if (!window.confirm("همه بچ‌های منقضی این کالا از موجودی حذف و هزینه آن‌ها ثبت شود؟")) return;
+    if (
+      !window.confirm(
+        "همه بچ‌های منقضی این کالا از موجودی حذف و هزینه آن‌ها ثبت شود؟",
+      )
+    )
+      return;
     setBusy(true);
     setError("");
     const { ok, data } = await api<{ error?: string; message?: string }>(
@@ -135,21 +161,29 @@ export function BatchesSection() {
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <section className={`min-w-0 overflow-hidden ${cardClass} `}>
         <div className="border-b border-border/80 px-4 py-4 sm:px-5">
-          <h2 className="font-semibold text-foreground">بچ‌های نزدیک به انقضا</h2>
+          <h2 className="font-semibold text-foreground">
+            بچ‌های نزدیک به انقضا
+          </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             بچ‌های منقضی قابل فروش نیستند و با یک کلیک از موجودی حذف می‌شوند.
           </p>
         </div>
         <ul className="divide-y divide-border/80">
           {nearExpiry.map((row, index) => (
-            <li key={`${row.itemId}-${row.batchNumber}-${row.expiryDate ?? "undated"}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+            <li
+              key={`${row.itemId}-${row.batchNumber}-${row.expiryDate ?? "undated"}`}
+              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5"
+            >
               <div className="min-w-0 flex-1">
                 <span className="font-medium text-foreground">
-                  {row.parentName ? `${row.parentName} — ` : ""}{row.itemName}
+                  {row.parentName ? `${row.parentName} — ` : ""}
+                  {row.itemName}
                 </span>
                 <span className="mr-2 text-xs text-muted-foreground">
                   بچ {row.batchNumber} · {formatQuantity(row.quantity)} عدد
-                  {row.expiryDate ? ` · انقضا ${toPersianDigits(formatJalali(row.expiryDate))}` : ""}
+                  {row.expiryDate
+                    ? ` · انقضا ${toPersianDigits(formatJalali(row.expiryDate))}`
+                    : ""}
                 </span>
                 <span
                   className={`ms-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -163,15 +197,29 @@ export function BatchesSection() {
                   {BUCKET_LABELS[row.bucket]}
                 </span>
               </div>
-              {row.bucket === "expired" && nearExpiry.findIndex((candidate) => candidate.itemId === row.itemId && candidate.bucket === "expired") === index ? (
-                <Button type="button" variant="outline" size="sm" className="min-h-10 shrink-0" disabled={busy} onClick={() => writeOff(row.itemId)}>
+              {row.bucket === "expired" &&
+              nearExpiry.findIndex(
+                (candidate) =>
+                  candidate.itemId === row.itemId &&
+                  candidate.bucket === "expired",
+              ) === index ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-10 shrink-0"
+                  disabled={busy}
+                  onClick={() => writeOff(row.itemId)}
+                >
                   حذف منقضی‌های کالا
                 </Button>
               ) : null}
             </li>
           ))}
           {nearExpiry.length === 0 ? (
-            <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">بچی نزدیک به انقضا نیست.</li>
+            <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
+              بچی نزدیک به انقضا نیست.
+            </li>
           ) : null}
         </ul>
       </section>
@@ -185,28 +233,65 @@ export function BatchesSection() {
                 className={accInputClass}
                 value={itemId}
                 onChange={setItemId}
-                options={batchItems.map((i) => ({
-                  value: i.id,
-                  label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}`,
-                }))}
+                options={itemOptions}
                 placeholder="انتخاب کالای بچ‌محور"
               />
             </Field>
             <Field label="شماره بچ">
-              <input className={accInputClass} value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} dir="ltr" />
+              <input
+                className={accInputClass}
+                value={batchNumber}
+                onChange={(e) => setBatchNumber(e.target.value)}
+                dir="ltr"
+              />
             </Field>
             <Field label="تاریخ انقضا">
-              <JalaliDatePicker className={accInputClass} value={expiryDate} onChange={setExpiryDate} />
+              <JalaliDatePicker
+                className={accInputClass}
+                value={expiryDate}
+                onChange={setExpiryDate}
+              />
             </Field>
             <Field label="تعداد">
-              <PersianNumberInput className={accInputClass} value={quantity} onChange={(e) => setQuantity(e.target.value)} dir="ltr" inputMode="decimal" />
+              <PersianNumberInput
+                className={accInputClass}
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                dir="ltr"
+                inputMode="decimal"
+              />
             </Field>
             <Field label={`بهای تمام‌شده هر واحد (${money.unitLabel})`}>
-              <PersianNumberInput className={accInputClass} value={unitCost} onChange={(e) => setUnitCost(e.target.value)} dir="ltr" inputMode="numeric" />
+              <PersianNumberInput
+                className={accInputClass}
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value)}
+                dir="ltr"
+                inputMode="numeric"
+              />
             </Field>
-            {error ? <p role="alert" className="text-xs leading-5 text-rose-700 dark:text-rose-300">{error}</p> : null}
-            {done ? <p role="status" className="text-xs leading-5 text-emerald-700 dark:text-emerald-300">{done}</p> : null}
-            <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
+            {error ? (
+              <p
+                role="alert"
+                className="text-xs leading-5 text-rose-700 dark:text-rose-300"
+              >
+                {error}
+              </p>
+            ) : null}
+            {done ? (
+              <p
+                role="status"
+                className="text-xs leading-5 text-emerald-700 dark:text-emerald-300"
+              >
+                {done}
+              </p>
+            ) : null}
+            <Button
+              type="submit"
+              disabled={busy}
+              size="lg"
+              className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold"
+            >
               ثبت بچ
             </Button>
           </form>
