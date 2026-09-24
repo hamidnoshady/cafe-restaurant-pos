@@ -190,7 +190,8 @@ describe("runMediaEnhance", () => {
       fileName: "p.png",
     });
     expect(result.bytes.equals(outBytes)).toBe(true);
-    expect(fetchMock.mock.calls[1][0]).toBe("https://cdn.example.com/out.png");
+    // SSRF mitigation wrapped the URL string in a URL object
+    expect(fetchMock.mock.calls[1][0].href).toBe("https://cdn.example.com/out.png");
   });
 
   it("maps 404/400 to enhance_unsupported — the graceful «پشتیبانی نمی‌کند» path", async () => {
