@@ -289,8 +289,18 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                   <Button size="sm" variant="outline" onClick={() => void toggle(job)} disabled={busyId === job.id}>
                     {job.enabled ? "خاموش" : "روشن"}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void remove(job)} disabled={busyId === job.id}>
-                    <Trash2Icon className="size-4 text-destructive" />
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => void remove(job)}
+                    disabled={busyId === job.id}
+                    aria-label="حذف این کار"
+                    title="حذف این کار"
+                  >
+                    <Trash2Icon
+                      className="size-4 text-destructive"
+                      aria-hidden="true"
+                    />
                   </Button>
                 </div>
               </li>
