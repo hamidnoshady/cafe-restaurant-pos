@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { canViewGrowthSection, growthSectionHref } from "../growth-routes";
-import { GrowthSettingsSection } from "../settings-section";
+import { GrowthSection } from "../growth-section";
+import { canViewGrowthSection, growthFallbackHref } from "../growth-routes";
 
 /**
  * `/growth/settings` — the Growth app's own settings.
@@ -13,8 +13,7 @@ import { GrowthSettingsSection } from "../settings-section";
 export default async function GrowthSettingsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewGrowthSection(session.role, "settings")) {
-    redirect(growthSectionHref(session.role === "cashier" ? "loyalty" : "overview"));
-  }
-  return <GrowthSettingsSection />;
+  if (!canViewGrowthSection(session.role, "settings")) redirect(growthFallbackHref(session.role));
+
+  return <GrowthSection section="settings" role={session.role} />;
 }

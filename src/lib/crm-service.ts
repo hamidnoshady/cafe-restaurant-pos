@@ -62,7 +62,7 @@ import { isUuid } from "./uuid";
  * was declared as needing to move and then could not is a reason to refuse the
  * whole operation, not a reason to finish it with one table left behind.
  */
-export class PartyMergeBlockedError extends Error {
+class PartyMergeBlockedError extends Error {
   constructor(readonly references: readonly string[]) {
     super(`party_merge_blocked:${references.join(",")}`);
     this.name = "PartyMergeBlockedError";
@@ -265,7 +265,7 @@ export async function getCustomerFile(
 // Notes
 // ---------------------------------------------------------------------------
 
-export interface CustomerNote extends Record<string, unknown> {
+interface CustomerNote extends Record<string, unknown> {
   id: string;
   customerId: string;
   body: string;
@@ -363,7 +363,7 @@ export async function toggleNotePin(
 // Consent — every change is an event
 // ---------------------------------------------------------------------------
 
-export interface ConsentUpdate {
+interface ConsentUpdate {
   channel: ConsentChannel;
   granted: boolean;
   source?: ConsentSource;
@@ -539,7 +539,7 @@ export async function consentCoverage(businessId: string): Promise<{
 // Duplicates and merge
 // ---------------------------------------------------------------------------
 
-export interface DuplicateCandidate {
+interface DuplicateCandidate {
   reason: DuplicateReason;
   confidence: number;
   left: { id: string; name: string; phone: string | null; email: string | null; orderCount: number; createdAt: string };
@@ -876,7 +876,7 @@ export async function previewMerge(
   };
 }
 
-export interface MergeResult {
+interface MergeResult {
   winnerId: string;
   loserId: string;
   moved: Record<string, number>;
@@ -1201,7 +1201,7 @@ async function customerPurchaseRows(
 }
 
 /** Lifetime purchase totals for every live CRM customer, independent of RFM. */
-export interface CustomerPurchaseSummary {
+interface CustomerPurchaseSummary {
   customerId: string;
   name: string;
   orderCount: number;
@@ -1388,7 +1388,7 @@ export async function setCustomerTag(
 // Activities
 // ---------------------------------------------------------------------------
 
-export interface CrmActivity extends Record<string, unknown> {
+interface CrmActivity extends Record<string, unknown> {
   id: string;
   customerId: string | null;
   customerName: string | null;
@@ -1480,7 +1480,7 @@ export async function listActivities(
   return rows;
 }
 
-export interface CreateActivityInput {
+interface CreateActivityInput {
   customerId?: string | null;
   dealId?: string | null;
   caseId?: string | null;
@@ -1533,7 +1533,7 @@ export async function getActivity(businessId: string, activityId: string): Promi
   return rows[0] ?? null;
 }
 
-export interface UpdateActivityInput {
+interface UpdateActivityInput {
   kind?: ActivityKind;
   subject?: string;
   body?: string;
@@ -1583,20 +1583,6 @@ export async function updateActivity(
   return getActivity(businessId, activityId);
 }
 
-export async function completeActivity(
-  businessId: string,
-  activityId: string,
-  completed: boolean,
-): Promise<boolean> {
-  if (!isUuid(activityId)) return false;
-  const { rowCount } = await query(
-    `UPDATE crm_activities SET completed_at = $3, updated_at = now()
-      WHERE business_id = $1 AND id = $2`,
-    [businessId, activityId, completed ? new Date().toISOString() : null],
-  );
-  return (rowCount ?? 0) > 0;
-}
-
 export async function deleteActivity(businessId: string, activityId: string): Promise<boolean> {
   if (!isUuid(activityId)) return false;
   const { rowCount } = await query(`DELETE FROM crm_activities WHERE business_id = $1 AND id = $2`, [
@@ -1610,7 +1596,7 @@ export async function deleteActivity(businessId: string, activityId: string): Pr
 // Deals
 // ---------------------------------------------------------------------------
 
-export interface CrmDeal extends Record<string, unknown> {
+interface CrmDeal extends Record<string, unknown> {
   id: string;
   customerId: string | null;
   customerName: string | null;
@@ -1668,7 +1654,7 @@ export async function listDeals(
   return rows.map((row) => ({ ...row, valueRial: Number(row.valueRial) }));
 }
 
-export interface UpsertDealInput {
+interface UpsertDealInput {
   id?: string;
   customerId?: string | null;
   title: string;
@@ -1798,7 +1784,7 @@ export async function deleteDeal(businessId: string, dealId: string): Promise<bo
 // Cases
 // ---------------------------------------------------------------------------
 
-export interface CrmCase extends Record<string, unknown> {
+interface CrmCase extends Record<string, unknown> {
   id: string;
   customerId: string | null;
   customerName: string | null;
@@ -1851,7 +1837,7 @@ export async function listCases(
   return rows;
 }
 
-export interface UpsertCaseInput {
+interface UpsertCaseInput {
   id?: string;
   customerId?: string | null;
   subject: string;

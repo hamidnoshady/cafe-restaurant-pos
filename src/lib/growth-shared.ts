@@ -20,13 +20,62 @@ export const GROWTH_BRIDGE_CODES = [
   WELL_KNOWN_CODES.commissionExpense, // 5210 — where commission is charged
 ] as const;
 
-export type CampaignState = "live" | "scheduled" | "ended" | "paused";
+/**
+ * The life-cycle states, in the order every Growth surface presents them:
+ * what is running, what is coming, what is held, what is over.
+ *
+ * `growth-overview.ts` sorted its campaign list by a private `STATE_ORDER`
+ * map, the dashboard hard-coded the same four keys inline to draw its badge
+ * row, and the campaigns list spelled them a third time in its filter bar.
+ * One ordered list means a fifth state cannot be added to some of them.
+ */
+export const CAMPAIGN_STATES = ["live", "scheduled", "paused", "ended"] as const;
+
+export type CampaignState = (typeof CAMPAIGN_STATES)[number];
 
 export interface CampaignStateInput {
   isActive: boolean;
   activeFrom: string | null;
   activeTo: string | null;
 }
+
+/**
+ * The four tones `StatusBadge` draws, named here so this framework-free module
+ * can carry the campaign vocabulary without importing a React component.
+ */
+export type CampaignStateTone = "active" | "positive" | "neutral" | "danger";
+
+/**
+ * What each life-cycle state is called, in the app's own words.
+ *
+ * One list, every screen. The dashboard and the campaigns list each used to
+ * keep a private copy, which is how the same campaign came to be labelled from
+ * two tables that nothing kept in step.
+ */
+export const CAMPAIGN_STATE_LABELS: Record<CampaignState, string> = {
+  live: "در حال اجرا",
+  scheduled: "زمان‌بندی‌شده",
+  ended: "پایان‌یافته",
+  paused: "متوقف",
+};
+
+/**
+ * The badge tone each state is drawn in, in the design system's vocabulary:
+ * amber («active») is work in progress, emerald («positive») is ready and
+ * healthy, stone («neutral») is no longer relevant.
+ *
+ * The two copies this replaces genuinely disagreed — the dashboard painted a
+ * running campaign emerald and a scheduled one amber, while the campaigns list
+ * did the exact opposite, so one campaign changed colour depending on which
+ * screen you opened. «متوقف» is a deliberate pause, not a fault, so it is
+ * neutral rather than red.
+ */
+export const CAMPAIGN_STATE_TONES: Record<CampaignState, CampaignStateTone> = {
+  live: "active",
+  scheduled: "positive",
+  paused: "neutral",
+  ended: "neutral",
+};
 
 /**
  * Where a campaign is in its life, from the stored date window (Gregorian ISO,
@@ -41,10 +90,29 @@ export function classifyCampaign(campaign: CampaignStateInput, today: string): C
   return "live";
 }
 
-export function campaignStateCounts(states: CampaignState[]): Record<CampaignState, number> {
-  const counts: Record<CampaignState, number> = { live: 0, scheduled: 0, ended: 0, paused: 0 };
+/**
+ * How many campaigns sit in each state. Seeded from `CAMPAIGN_STATES` rather
+ * than a hand-written object literal, so a new state is counted everywhere the
+ * moment it is added to the list — the campaigns list built this same tally
+ * inline from its own literal, which is one more place to forget.
+ */
+export function campaignStateCounts(
+  states: readonly CampaignState[],
+): Record<CampaignState, number> {
+  const counts = Object.fromEntries(CAMPAIGN_STATES.map((state) => [state, 0])) as Record<
+    CampaignState,
+    number
+  >;
   for (const state of states) counts[state] += 1;
   return counts;
+}
+
+/**
+ * The presentation order of a state — `CAMPAIGN_STATES`'s own index, so the
+ * dashboard's campaign list sorts by the same order the filter bar offers.
+ */
+export function campaignStateOrder(state: CampaignState): number {
+  return CAMPAIGN_STATES.indexOf(state);
 }
 
 /**
@@ -56,16 +124,7 @@ export function accountBalance(type: string, debit: number, credit: number): num
   return type === "asset" || type === "expense" ? debit - credit : credit - debit;
 }
 
-/** The same signed balance for PostgreSQL integer aggregates, without a lossy Number conversion. */
-export function accountBalanceText(type: string, debit: string, credit: string): string {
-  const result =
-    type === "asset" || type === "expense" ? BigInt(debit) - BigInt(credit) : BigInt(credit) - BigInt(debit);
-  return result.toString();
-}
-
-/** A rolling N-day window ending on `today`, inclusive on both ends. */
-export function rollingWindow(today: string, days = 30): { from: string; to: string } {
-  const to = new Date(`${today}T00:00:00Z`);
-  to.setUTCDate(to.getUTCDate() - (days - 1));
-  return { from: to.toISOString().slice(0, 10), to: today };
-}
+// The window maths is `date-window.ts`'s — neither this app nor the CRM owns
+// "the last 30 days", and the two apps used to keep identical copies of it.
+// Re-exported here so every existing Growth caller keeps its one import.
+export { rollingWindow } from "./date-window";

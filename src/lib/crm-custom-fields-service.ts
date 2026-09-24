@@ -269,7 +269,7 @@ export async function saveCustomField(
   });
 }
 
-export async function getCustomField(
+async function getCustomField(
   businessId: string,
   fieldId: string,
 ): Promise<CustomFieldRow | null> {

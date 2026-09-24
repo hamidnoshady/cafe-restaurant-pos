@@ -24,7 +24,7 @@ import {
 } from "@/lib/coa-tree";
 import { AccountHistoryPanel } from "./account-history-panel";
 import { AccountStatementPanel } from "./account-statement-panel";
-import { useOverlayEscape } from "./use-overlay-escape";
+import { OverlayDialog } from "./ledger-ui";
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
 
@@ -760,7 +760,6 @@ function EditAccountPanel({
     }
     onClose();
   }
-  useOverlayEscape(requestClose);
 
   const nextLevel = parentId
     ? nextAccountLevel(parentOptions.find((a) => a.id === parentId)?.level ?? null)
@@ -791,14 +790,11 @@ function EditAccountPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={requestClose}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="edit-account-heading"
-        className={`${overlayPanelClass} max-h-[88vh] w-full max-w-md overflow-y-auto p-4 sm:max-h-[80vh] sm:p-5`}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <OverlayDialog
+      headingId="edit-account-heading"
+      onClose={requestClose}
+      className={`${overlayPanelClass} max-h-[88vh] w-full max-w-md overflow-y-auto p-4 sm:max-h-[80vh] sm:p-5`}
+    >
         <header className="mb-4 border-b border-border pb-4">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ویرایش حساب</p>
           <h3 id="edit-account-heading" className="mt-1 text-lg font-bold break-words">
@@ -854,8 +850,7 @@ function EditAccountPanel({
             {saving ? "در حال ذخیره…" : "ذخیره تغییرات"}
           </PrimaryButton>
         </div>
-      </section>
-    </div>
+      </OverlayDialog>
   );
 }
 
@@ -872,18 +867,16 @@ function DeleteAccountPanel({
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  useOverlayEscape(onClose);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
-      <section
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-account-heading"
-        aria-describedby="delete-account-description"
-        className={`${overlayPanelClass} max-h-[88vh] w-full max-w-md overflow-y-auto p-4 sm:p-5`}
-        onClick={(event) => event.stopPropagation()}
-      >
+    <OverlayDialog
+      headingId="delete-account-heading"
+      describedById="delete-account-description"
+      role="alertdialog"
+      onClose={onClose}
+      dismissible={!busy}
+      className={`${overlayPanelClass} max-h-[88vh] w-full max-w-md overflow-y-auto p-4 sm:p-5`}
+    >
         <p className="text-xs font-semibold text-rose-700 dark:text-rose-300">حذف سرفصل</p>
         <h3 id="delete-account-heading" className="mt-1 text-lg font-bold break-words">
           حذف <span dir="ltr">{account.code}</span> — {account.name}؟
@@ -898,7 +891,6 @@ function DeleteAccountPanel({
             {busy ? "در حال حذف…" : "حذف حساب"}
           </Button>
         </div>
-      </section>
-    </div>
+      </OverlayDialog>
   );
 }

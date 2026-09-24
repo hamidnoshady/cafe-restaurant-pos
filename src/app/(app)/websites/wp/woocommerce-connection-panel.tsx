@@ -1,7 +1,5 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
-
 /**
  * «وردپرس و ووکامرس» — the «اتصال‌های فنی» hub's tab for the store
  * connection. It preserves the connection workflows from the old standalone
@@ -26,7 +24,7 @@ import Link from "next/link";
 import { useFeatureLocked } from "@/components/feature-lock";
 import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
-import { SectionCard } from "@/app/dashboard/page-chrome";
+import { LoadingSkeleton, SectionCard } from "@/app/dashboard/page-chrome";
 import { formatDateTime } from "./format";
 import { SyncSettingsSection } from "./woo-store-sections";
 

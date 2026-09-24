@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { businessToday } from "@/lib/business-day-service";
 import { listCommissionRules } from "@/lib/commission-service";
-import { classifyCampaign, type CampaignState } from "@/lib/growth-shared";
+import { campaignStateCounts, classifyCampaign } from "@/lib/growth-shared";
 import { listPrograms } from "@/lib/loyalty-service";
 import { listMessageTemplates } from "@/lib/message-campaigns-service";
 import { getPublicMessageConfig } from "@/lib/messaging-billing";
@@ -30,15 +30,11 @@ export const GET = withTenantScope(async () => {
     listCommissionRules(session.businessId, undefined, true),
   ]);
 
-  const campaignCounts: Record<CampaignState, number> = {
-    live: 0,
-    scheduled: 0,
-    paused: 0,
-    ended: 0,
-  };
-  for (const promotion of promotions) {
-    campaignCounts[classifyCampaign(promotion, today)] += 1;
-  }
+  // The same tally the dashboard shows, from the same shared helper — the two
+  // screens must never be able to disagree about how many campaigns are live.
+  const campaignCounts = campaignStateCounts(
+    promotions.map((promotion) => classifyCampaign(promotion, today)),
+  );
 
   const defaultProgram = programs.find((program) => program.isDefault && program.isActive) ?? null;
   const activeRules = commissionRules.filter((rule) => rule.isActive);

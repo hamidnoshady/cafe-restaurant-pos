@@ -30,24 +30,17 @@ import {
   type AutomationField,
   type AutomationOperator,
 } from "@/lib/ai-automations";
-import { COWORKER_APPROVAL_LABELS, COWORKER_EVENT_LABELS, COWORKER_TRIGGER_LABELS } from "@/lib/ai-coworker";
-import { ACTION_CATALOG, type ActionType } from "@/lib/ai";
+import {
+  COWORKER_APPROVAL_LABELS,
+  COWORKER_EVENT_LABELS,
+  COWORKER_TRIGGER_LABELS,
+  COWORKER_WEEKDAYS,
+  coworkerTriggerSummary,
+} from "@/lib/ai-coworker";
+import { actionLabel, type ActionType } from "@/lib/ai";
 import { api } from "@/app/dashboard/ui";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { Field, inputClass } from "@/app/dashboard/ui";
-
-// The engine's own weekday convention (0..6 = Saturday..Friday), matching the
-// coworker's picker so the two never disagree on what "3" means.
-const WEEKDAYS = [
-  { value: "", label: "هر روز" },
-  { value: "6", label: "شنبه" },
-  { value: "0", label: "یکشنبه" },
-  { value: "1", label: "دوشنبه" },
-  { value: "2", label: "سه‌شنبه" },
-  { value: "3", label: "چهارشنبه" },
-  { value: "4", label: "پنجشنبه" },
-  { value: "5", label: "جمعه" },
-];
 
 const OPERATOR_LABELS: Record<AutomationOperator, string> = {
   gte: "بزرگ‌تر یا مساوی",
@@ -80,19 +73,6 @@ interface Catalogue {
 interface ProjectOption {
   id: string;
   name: string;
-}
-
-function actionLabel(type: string): string {
-  return (ACTION_CATALOG as Record<string, { label?: string }>)[type]?.label ?? type;
-}
-
-function triggerSummary(a: AutomationView): string {
-  if (a.triggerKind === "event" && a.eventKind) return COWORKER_EVENT_LABELS[a.eventKind];
-  if (a.triggerKind === "schedule" && a.scheduleHour !== null) {
-    const day = WEEKDAYS.find((w) => w.value === String(a.scheduleWeekday ?? ""))?.label ?? "هر روز";
-    return `${day}، ساعت ${a.scheduleHour}`;
-  }
-  return COWORKER_TRIGGER_LABELS.manual;
 }
 
 function conditionSummary(a: AutomationView, fieldLabels: Record<string, string>): string | null {
@@ -254,7 +234,7 @@ export function AutomationsManager({ canAutoApply }: { canAutoApply: boolean }) 
                   <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                     <div className="flex gap-2">
                       <dt className="text-muted-foreground">هر وقت:</dt>
-                      <dd className="font-medium text-foreground">{triggerSummary(a)}</dd>
+                      <dd className="font-medium text-foreground">{coworkerTriggerSummary(a)}</dd>
                     </div>
                     <div className="flex gap-2">
                       <dt className="text-muted-foreground">آنگاه:</dt>
@@ -411,7 +391,7 @@ function AutomationForm({
                 value={scheduleWeekday}
                 onChange={(e) => setScheduleWeekday(e.target.value)}
               >
-                {WEEKDAYS.map((w) => (
+                {COWORKER_WEEKDAYS.map((w) => (
                   <option key={w.value} value={w.value}>
                     {w.label}
                   </option>

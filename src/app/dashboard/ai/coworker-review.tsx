@@ -22,12 +22,7 @@ import {
 } from "@/lib/accounting-review";
 import { toPersianDigits } from "@/lib/digits";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
-
-const SEVERITY_TONE: Record<AccountingFinding["severity"], "danger" | "active" | "neutral"> = {
-  high: "danger",
-  medium: "active",
-  low: "neutral",
-};
+import { SEVERITY_TONE } from "./coworker-types";
 
 export function CoworkerReview() {
   const locked = useFeatureLocked();

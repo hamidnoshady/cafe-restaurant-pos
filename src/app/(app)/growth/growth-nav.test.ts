@@ -4,7 +4,7 @@ import {
   canOpenGrowth,
   canViewGrowthSection,
   GROWTH_SECTION_KEYS,
-  growthCustomerHref,
+  growthFallbackHref,
   growthSectionHref,
   isGrowthSectionPathname,
 } from "./growth-routes";
@@ -73,10 +73,38 @@ describe("growthNavItemsForRole", () => {
 
 describe("customer data projection", () => {
   it("opens the customer section in Growth without moving ownership", () => {
-    expect(growthCustomerHref()).toBe("/growth/customers");
-    expect(growthCustomerHref("customer/42")).toBe("/growth/customers?customerId=customer%2F42");
+    expect(growthSectionHref("customers")).toBe("/growth/customers");
     expect(canViewGrowthSection("accountant", "customers")).toBe(true);
     expect(canOpenGrowth("accountant")).toBe(true);
+  });
+});
+
+describe("growthFallbackHref", () => {
+  it("keeps someone inside the app whenever it has a surface for them", () => {
+    // The per-page gates this replaces sent an accountant who opened
+    // /growth/campaigns to «وفاداری», which an accountant may not open either —
+    // a redirect straight into a second redirect.
+    expect(growthFallbackHref("accountant")).toBe(growthSectionHref("customers"));
+    expect(growthFallbackHref("cashier")).toBe(growthSectionHref("loyalty"));
+    expect(growthFallbackHref("owner")).toBe(growthSectionHref("overview"));
+    expect(growthFallbackHref("manager")).toBe(growthSectionHref("overview"));
+  });
+
+  it("only leaves the app for a role with nothing here", () => {
+    for (const role of ["waiter", "kitchen", ""]) {
+      expect(canOpenGrowth(role)).toBe(false);
+      expect(growthFallbackHref(role)).toBe("/dashboard");
+    }
+  });
+
+  it("never sends anyone to a page they would be bounced off again", () => {
+    // The invariant the eight hand-written gates kept breaking.
+    for (const role of ["owner", "manager", "cashier", "accountant"]) {
+      const target = growthFallbackHref(role);
+      const key = GROWTH_SECTION_KEYS.find((k) => growthSectionHref(k) === target);
+      expect(key).toBeDefined();
+      expect(canViewGrowthSection(role, key!)).toBe(true);
+    }
   });
 });
 

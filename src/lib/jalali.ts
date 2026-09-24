@@ -288,6 +288,21 @@ export function isoDateInTimeZone(
 }
 
 /**
+ * Today, as an ISO calendar date (YYYY-MM-DD), in the given IANA time zone
+ * (default Asia/Tehran).
+ *
+ * The screen-facing spelling of `isoDateInTimeZone(new Date())`: a default due
+ * date, a "today" filter, an issue-date prefill. `new Date().toISOString()
+ * .slice(0, 10)` is the UTC date, which is still yesterday for the first three
+ * and a half hours of every Tehran day — the four ledger screens that each
+ * hand-rolled this exact fallback were all bitten by it. One name here, so the
+ * fallback (`UTC, when the zone could not be read`) is also written once.
+ */
+export function todayIsoDate(timeZone = "Asia/Tehran"): string {
+  return isoDateInTimeZone(new Date(), timeZone) ?? new Date().toISOString().slice(0, 10);
+}
+
+/**
  * The calendar date (YYYY-MM-DD) a node-postgres `date` value names.
  *
  * node-postgres returns a Postgres `date` (no time) as a JS Date at *local*

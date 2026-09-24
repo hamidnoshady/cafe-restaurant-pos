@@ -22,7 +22,7 @@ import {
 import { renderRepairEstimate } from "./repair-estimate";
 import type { MoneyUnit } from "./money";
 
-export interface ServiceReminderRow {
+interface ServiceReminderRow {
   serialId: string;
   serialNumber: string;
   itemName: string;
@@ -90,7 +90,7 @@ export async function recordPreOwnedIntake(
   if (rowCount === 0) throw new Error("سریال یافت نشد.");
 }
 
-export interface RepairEstimateRecord {
+interface RepairEstimateRecord {
   ticketId: string;
   estimatedLaborRial: number;
   estimatedPartsRial: number;

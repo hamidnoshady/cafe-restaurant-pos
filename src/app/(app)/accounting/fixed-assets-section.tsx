@@ -15,7 +15,7 @@ import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api, ErrorBox, errorMessageOrRaw, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
-import { useOverlayEscape } from "./use-overlay-escape";
+import { OverlayDialog } from "./ledger-ui";
 import {
   CalendarIcon,
   CheckCircle2Icon,
@@ -887,7 +887,6 @@ function DepreciateDialog({
   const [localError, setLocalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useOverlayEscape(onClose);
 
   const depreciableBase = Math.max(0, asset.cost - asset.salvageValue);
   const remaining = Math.max(0, depreciableBase - asset.accumulatedDepreciation);
@@ -926,17 +925,12 @@ function DepreciateDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4"
-      onClick={onClose}
+    <OverlayDialog
+      headingId="depreciate-dialog-heading"
+      onClose={onClose}
+      dismissible={!(busy || submitting)}
+      className={`${overlayPanelClass} max-h-[90vh] w-full max-w-lg overflow-y-auto p-4 sm:p-6`}
     >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="depreciate-dialog-heading"
-        className={`${overlayPanelClass} max-h-[90vh] w-full max-w-lg overflow-y-auto p-4 sm:p-6`}
-        onClick={(e) => e.stopPropagation()}
-      >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملیات استهلاک</p>
@@ -1018,8 +1012,7 @@ function DepreciateDialog({
             </PrimaryButton>
           </div>
         </form>
-      </section>
-    </div>
+      </OverlayDialog>
   );
 }
 
@@ -1037,7 +1030,6 @@ function DepreciationHistoryModal({
   const [entries, setEntries] = useState<DepreciationHistoryItem[] | null>(null);
   const [error, setError] = useState("");
 
-  useOverlayEscape(onClose);
 
   useEffect(() => {
     setError("");
@@ -1054,17 +1046,11 @@ function DepreciationHistoryModal({
   }, [entries]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4"
-      onClick={onClose}
+    <OverlayDialog
+      headingId="history-dialog-heading"
+      onClose={onClose}
+      className={`${overlayPanelClass} max-h-[88vh] w-full max-w-2xl overflow-y-auto p-4 sm:p-6`}
     >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="history-dialog-heading"
-        className={`${overlayPanelClass} max-h-[88vh] w-full max-w-2xl overflow-y-auto p-4 sm:p-6`}
-        onClick={(e) => e.stopPropagation()}
-      >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سوابق و اسناد استهلاک</p>
@@ -1125,8 +1111,7 @@ function DepreciationHistoryModal({
             </div>
           </div>
         )}
-      </section>
-    </div>
+      </OverlayDialog>
   );
 }
 
@@ -1145,20 +1130,14 @@ function DeleteConfirmModal({
   onConfirm: () => void;
 }) {
   const money = useMoney();
-  useOverlayEscape(onClose);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4"
-      onClick={onClose}
+    <OverlayDialog
+      headingId="delete-dialog-heading"
+      onClose={onClose}
+      dismissible={!busy}
+      className={`${overlayPanelClass} w-full max-w-md p-4 sm:p-6`}
     >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-dialog-heading"
-        className={`${overlayPanelClass} w-full max-w-md p-4 sm:p-6`}
-        onClick={(e) => e.stopPropagation()}
-      >
         <header className="mb-3">
           <p className="text-xs font-semibold text-destructive">حذف دارایی ثابت</p>
           <h3 id="delete-dialog-heading" className="mt-1 text-base font-bold text-foreground">
@@ -1184,7 +1163,6 @@ function DeleteConfirmModal({
             {busy ? "در حال حذف…" : "تأیید و حذف"}
           </Button>
         </div>
-      </section>
-    </div>
+      </OverlayDialog>
   );
 }

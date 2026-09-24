@@ -193,7 +193,7 @@ export async function saveView(
   return view ? { ok: true, view } : { ok: false, error: "not_found" };
 }
 
-export async function getSavedView(
+async function getSavedView(
   businessId: string,
   viewId: string,
 ): Promise<SavedView | null> {

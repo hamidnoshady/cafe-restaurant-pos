@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   accountBalance,
-  accountBalanceText,
   campaignStateCounts,
   classifyCampaign,
   GROWTH_BRIDGE_CODES,
   rollingWindow,
 } from "./growth-shared";
+import { rollingWindow as sharedRollingWindow } from "./date-window";
 import { WELL_KNOWN_CODES } from "./coa-template";
 
 describe("classifyCampaign", () => {
@@ -61,20 +61,14 @@ describe("accountBalance", () => {
     expect(accountBalance("revenue", 0, 40_000)).toBe(40_000);
   });
 
-  it("keeps large PostgreSQL aggregates exact as text", () => {
-    expect(accountBalanceText("liability", "1", "90071992547409930")).toBe("90071992547409929");
-    expect(accountBalanceText("expense", "90071992547409930", "1")).toBe("90071992547409929");
-  });
 });
 
 describe("rollingWindow", () => {
-  it("spans exactly 30 inclusive days ending today", () => {
+  it("is re-exported, so every Growth caller keeps one import", () => {
+    // The maths itself is proved in `date-window.test.ts`; this only pins the
+    // re-export, which is what the app's callers actually depend on.
+    expect(rollingWindow).toBe(sharedRollingWindow);
     expect(rollingWindow("2026-08-28")).toEqual({ from: "2026-07-30", to: "2026-08-28" });
-  });
-
-  it("crosses a month and a leap February without drifting", () => {
-    expect(rollingWindow("2024-03-15")).toEqual({ from: "2024-02-15", to: "2024-03-15" });
-    expect(rollingWindow("2026-03-01")).toEqual({ from: "2026-01-31", to: "2026-03-01" });
   });
 });
 

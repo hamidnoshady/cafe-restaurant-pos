@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
  * The service desk (Phase 36) — complaints and requests.
@@ -44,6 +44,8 @@ import {
 import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
 import { crmCustomerHref } from "./crm-routes";
+import { CustomerSearchField } from "./customer-search";
+import { CrmCardHeading } from "./crm-card-heading";
 
 interface ServiceCase {
   id: string;
@@ -137,10 +139,7 @@ export function CasesSection({ role }: { role?: string }) {
 
       <SectionCard
         title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">میز خدمت</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">تیکت‌های خدمات</h2>
-          </div>
+          <CrmCardHeading kicker="میز خدمت" title="تیکت‌های خدمات" />
         }
         description="شکایت‌ها و درخواست‌های مشتریان، با زمان هدف رسیدگی بر پایهٔ اولویت."
         actions={
@@ -254,40 +253,12 @@ function CaseDialog({
   const [category, setCategory] = useState(record?.category ?? "");
   const [assignedTo, setAssignedTo] = useState(record?.assignedTo ?? "");
   const [resolution, setResolution] = useState(record?.resolution ?? "");
-  const [customerQuery, setCustomerQuery] = useState(record?.customerName ?? "");
+  // Scoped to the customer slice — a ticket belongs to a customer, and an
+  // unscoped search would offer suppliers and employees as matches.
+  const [customerName, setCustomerName] = useState(record?.customerName ?? "");
   const [customerId, setCustomerId] = useState<string | null>(record?.customerId ?? null);
-  const [matches, setMatches] = useState<{ id: string; name: string }[]>([]);
-  const [matchesLoading, setMatchesLoading] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (customerQuery.trim().length < 2 || customerId) {
-      setMatches([]);
-      setMatchesLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setMatchesLoading(true);
-    const timer = setTimeout(() => {
-      // Scoped to the customer slice — a ticket belongs to a customer, and an
-      // unscoped search would offer suppliers and employees as matches.
-      void api<{ customers: { id: string; name: string }[] }>(
-        `/api/parties?roles=Customer&q=${encodeURIComponent(customerQuery.trim())}`,
-      )
-        .then(({ ok, data }) => {
-          if (!cancelled && ok) setMatches(data.customers.slice(0, 6));
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (!cancelled) setMatchesLoading(false);
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [customerQuery, customerId]);
 
   const save = async () => {
     if (busy) return;
@@ -362,57 +333,19 @@ function CaseDialog({
           />
         </Field>
         <Field label="مشتری (اختیاری)">
-          {customerId ? (
-            <div className="flex items-center gap-2">
-              <span className="break-words text-sm text-foreground">
-                {customerQuery.trim() || "مشتری انتخاب‌شده"}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => {
-                  setCustomerId(null);
-                  setCustomerQuery("");
-                }}
-              >
-                تغییر
-              </Button>
-            </div>
-          ) : (
-            <>
-              <input
-                className={inputClass}
-                placeholder="جستجوی نام یا شماره…"
-                value={customerQuery}
-                onChange={(e) => setCustomerQuery(e.target.value)}
-              />
-              {matchesLoading ? (
-                <LoadingSkeleton rows={1} compact className="mt-1" label="در حال جست‌وجوی مشتری" />
-              ) : customerQuery.trim().length >= 2 && matches.length === 0 ? (
-                <p className="mt-1 text-xs text-muted-foreground">مشتری‌ای با این مشخصات پیدا نشد.</p>
-              ) : matches.length > 0 ? (
-                <ul className="mt-1 flex flex-wrap gap-1.5">
-                  {matches.map((match) => (
-                    <li key={match.id}>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="xs"
-                        onClick={() => {
-                          setCustomerId(match.id);
-                          setCustomerQuery(match.name);
-                          setMatches([]);
-                        }}
-                      >
-                        {match.name}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
-          )}
+          <CustomerSearchField
+            selectedId={customerId}
+            selectedName={customerName}
+            onPick={(match) => {
+              setCustomerId(match.id);
+              setCustomerName(match.name);
+            }}
+            onClear={() => {
+              setCustomerId(null);
+              setCustomerName("");
+            }}
+            emptyText="مشتری‌ای با این مشخصات پیدا نشد."
+          />
         </Field>
         <Field label="وضعیت">
           <select

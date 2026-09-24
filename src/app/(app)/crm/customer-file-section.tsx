@@ -47,10 +47,11 @@ import {
   type TimelineKind,
 } from "@/lib/crm-shared";
 import type { CustomerFile } from "@/lib/crm-service";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
 import { canViewCrmSection, crmCustomerHref, crmSectionHref } from "./crm-routes";
 import { CustomerRelationshipsCard } from "./customer-relationships-card";
+import { CrmCardHeading } from "./crm-card-heading";
 
 interface Note {
   id: string;
@@ -208,10 +209,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
       {file.mergedIntoId ? (
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">وضعیت پرونده</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">این پرونده ادغام شده است</h2>
-            </div>
+            <CrmCardHeading kicker="وضعیت پرونده" title="این پرونده ادغام شده است" />
           }
           description="محتوای آن به پروندهٔ دیگری منتقل شده و اینجا فقط برای سابقه نگه داشته می‌شود."
         >
@@ -223,10 +221,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
 
       <SectionCard
         title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پرونده ۳۶۰ درجه</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">{file.name}</h2>
-          </div>
+          <CrmCardHeading kicker="پرونده ۳۶۰ درجه" title={file.name} />
         }
         description={[
           file.phone ? toPersianDigits(formatPhoneDisplay(file.phone)) : null,
@@ -334,10 +329,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">رضایت ارتباط</h2>
-            </div>
+            <CrmCardHeading kicker="حریم و رضایت" title="رضایت ارتباط" />
           }
           description="پایهٔ هر ارسال آینده؛ تغییرش ثبت می‌شود."
         >
@@ -379,10 +371,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
 
         <SectionCard
           title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یادداشت‌های مشتری</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">یادداشت‌ها</h2>
-            </div>
+            <CrmCardHeading kicker="یادداشت‌های مشتری" title="یادداشت‌ها" />
           }
           description="آنچه دربارهٔ این مشتری باید به یاد بماند."
         >

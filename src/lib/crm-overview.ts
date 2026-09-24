@@ -31,7 +31,7 @@ import { customerPurchasePopulation, scoredPopulation } from "./crm-service";
  * How many segment *names* the overview card previews. Never the total — the
  * total is a separate uncapped count, see `CrmOverview["segments"]`.
  */
-export const SEGMENT_PREVIEW_LIMIT = 20;
+const SEGMENT_PREVIEW_LIMIT = 20;
 
 export interface CrmOverview {
   window: { from: string; to: string };

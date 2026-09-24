@@ -38,6 +38,7 @@ import {
 } from "@/app/dashboard/data-table";
 import { formatToman } from "@/lib/money";
 import { toPersianDigits } from "@/lib/digits";
+import { formatShortDateTime } from "@/app/dashboard/ai/format";
 import {
   AI_USAGE_WINDOWS,
   cacheHitRate,
@@ -58,17 +59,6 @@ const PRICED_BY_TONE: Record<AiUsagePricedBy, "positive" | "neutral" | "active">
   token_rate: "neutral",
   free: "active",
 };
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("fa-IR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
-function fa(value: number): string {
-  return toPersianDigits(String(value));
-}
 
 function percentText(fraction: number): string {
   return `${toPersianDigits(String(Math.round(fraction * 100)))}٪`;
@@ -173,11 +163,11 @@ export function UsageDashboard() {
               : undefined
           }
         />
-        <KpiCard label="تعداد درخواست" value={`${fa(summary.totalTurns)} درخواست`} />
+        <KpiCard label="تعداد درخواست" value={`${toPersianDigits(summary.totalTurns)} درخواست`} />
         <KpiCard
           label="استفاده از حافظهٔ پاسخ"
           value={percentText(hitRate)}
-          hint={`${fa(summary.cacheHits)} پاسخ از حافظه`}
+          hint={`${toPersianDigits(summary.cacheHits)} پاسخ از حافظه`}
         />
         <KpiCard
           label="موجودی کیف پول"
@@ -227,7 +217,7 @@ export function UsageDashboard() {
                   <span className="text-muted-foreground">
                     {formatToman(slice.chargedRial)}
                     <span className="ms-2 text-xs">
-                      ({fa(slice.turns)} درخواست)
+                      ({toPersianDigits(slice.turns)} درخواست)
                     </span>
                   </span>
                 </div>
@@ -299,7 +289,7 @@ export function UsageDashboard() {
                   </Td>
                   <Td muted>
                     {turn.inputTokens != null || turn.outputTokens != null
-                      ? `${fa(turn.inputTokens ?? 0)} / ${fa(turn.outputTokens ?? 0)}`
+                      ? `${toPersianDigits(turn.inputTokens ?? 0)} / ${toPersianDigits(turn.outputTokens ?? 0)}`
                       : "—"}
                   </Td>
                   <Td numeric>{formatToman(turn.chargedRial)}</Td>
@@ -309,7 +299,7 @@ export function UsageDashboard() {
                     </StatusBadge>
                   </Td>
                   <Td muted className="text-xs">
-                    {formatDateTime(turn.createdAt)}
+                    {formatShortDateTime(turn.createdAt)}
                   </Td>
                 </DataTableRow>
               ))}

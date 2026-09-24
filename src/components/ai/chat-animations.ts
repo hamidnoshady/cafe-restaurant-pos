@@ -14,9 +14,8 @@ export function reducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export const EASE_OUT = "power3.out";
-export const EASE_BACK = "back.out(1.5)";
-export const EASE_ELASTIC = "elastic.out(1, 0.55)";
+const EASE_OUT = "power3.out";
+const EASE_BACK = "back.out(1.5)";
 
 /** A chat bubble arriving: drift up, fade in, tiny settle-back scale. */
 export function animateBubbleIn(el: HTMLElement): void {
@@ -26,62 +25,6 @@ export function animateBubbleIn(el: HTMLElement): void {
     { y: 18, opacity: 0, scale: 0.97, transformOrigin: "center bottom" },
     { y: 0, opacity: 1, scale: 1, duration: 0.45, ease: EASE_BACK, clearProps: "all" },
   );
-}
-
-/** The floating window opening from its launcher corner. */
-export function animatePanelIn(
-  el: HTMLElement,
-  opts: { fromBottomSheet: boolean },
-): void {
-  if (reducedMotion()) return;
-  gsap.fromTo(
-    el,
-    opts.fromBottomSheet
-      ? { y: "100%" }
-      : { y: 30, scale: 0.92, opacity: 0, transformOrigin: "bottom left" },
-    {
-      y: 0,
-      scale: 1,
-      opacity: 1,
-      duration: opts.fromBottomSheet ? 0.42 : 0.5,
-      ease: opts.fromBottomSheet ? EASE_OUT : EASE_BACK,
-      clearProps: "all",
-    },
-  );
-}
-
-/** The floating window closing toward its launcher corner. */
-export function animatePanelOut(
-  el: HTMLElement,
-  opts: { fromBottomSheet: boolean },
-  onComplete: () => void,
-): void {
-  if (reducedMotion()) {
-    onComplete();
-    return;
-  }
-  gsap.to(el, {
-    ...(opts.fromBottomSheet
-      ? { y: "100%" }
-      : { y: 24, scale: 0.94, opacity: 0, transformOrigin: "bottom left" }),
-    duration: 0.24,
-    ease: "power2.in",
-    onComplete,
-  });
-}
-
-/** A dimmer fading in behind the mobile bottom sheet. */
-export function animateBackdropIn(el: HTMLElement): void {
-  if (reducedMotion()) return;
-  gsap.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: EASE_OUT, clearProps: "opacity" });
-}
-
-export function animateBackdropOut(el: HTMLElement, onComplete?: () => void): void {
-  if (reducedMotion()) {
-    onComplete?.();
-    return;
-  }
-  gsap.to(el, { opacity: 0, duration: 0.22, ease: "power2.in", onComplete });
 }
 
 /** Welcome hero: cards stagger up one after another. */
@@ -123,16 +66,6 @@ export function animateFloat(el: HTMLElement, drift: { x: number; y: number }, d
     repeat: -1,
     yoyo: true,
   });
-}
-
-/** The launcher badge bumping when it gains a number. */
-export function animateBadgeBump(el: HTMLElement): void {
-  if (reducedMotion()) return;
-  gsap.fromTo(
-    el,
-    { scale: 0.4, opacity: 0 },
-    { scale: 1, opacity: 1, duration: 0.5, ease: EASE_ELASTIC, clearProps: "all" },
-  );
 }
 
 /** The send button popping when a message becomes sendable. */

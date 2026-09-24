@@ -27,7 +27,7 @@ import {
   agentToolLabel,
   customAgentErrorMessage,
 } from "@/lib/ai-custom-agents";
-import { ACTION_CATALOG } from "@/lib/ai";
+import { actionLabel } from "@/lib/ai";
 import { api } from "@/app/dashboard/ui";
 import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { Field, inputClass } from "@/app/dashboard/ui";
@@ -44,10 +44,6 @@ interface AgentView {
 interface Catalogue {
   selectableTools: string[];
   selectableActions: string[];
-}
-
-function actionLabel(type: string): string {
-  return (ACTION_CATALOG as Record<string, { label?: string }>)[type]?.label ?? type;
 }
 
 export function AgentsManager() {

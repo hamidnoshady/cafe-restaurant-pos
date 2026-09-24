@@ -11,7 +11,7 @@ import {
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
+import { todayIsoDate } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
@@ -28,7 +28,8 @@ import {
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import type { InstallmentPlanRow } from "@/lib/installments-service";
-import { useOverlayEscape } from "./use-overlay-escape";
+import { fmtJalali, OverlayDialog } from "./ledger-ui";
+import { FilterChip } from "@/app/dashboard/filters";
 import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 /**
@@ -37,32 +38,6 @@ import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@
  * settlement) but the chrome is the platform's: warm cards, amber selection,
  * teal actions, Persian digits everywhere.
  */
-
-/**
- * `formatJalali`, not a second hand-rolled conversion — the repo keeps one
- * Shamsi formatter so two screens cannot disagree about a date.
- */
-function fmtJalali(iso: string | null): string {
-  if (!iso) return "—";
-  return toPersianDigits(formatJalali(iso.slice(0, 10)));
-}
-
-/**
- * Today as the reader's calendar names it. `new Date().toISOString()` is the
- * UTC date, which is still yesterday for the first three and a half hours of
- * every Tehran day — so the default first due date, and the «تاریخ ثبت» line,
- * were a day behind for anyone opening this before 03:30.
- */
-function todayIso(): string {
-  return isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
-}
-
-const chipClass = (active: boolean) =>
-  `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
-    active
-      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
-  }`;
 
 type Direction = "receivable" | "payable";
 type StatusFilter = "all" | "open" | "overdue" | "settled";
@@ -145,19 +120,19 @@ export function InstallmentsSection() {
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <div className="flex gap-2" role="group" aria-label="جهت اقساط">
-            <button type="button" aria-pressed={direction === "receivable"} className={chipClass(direction === "receivable")} onClick={() => setDirection("receivable")}>
+            <FilterChip dense selected={direction === "receivable"} onClick={() => setDirection("receivable")}>
               دریافتنی
-            </button>
-            <button type="button" aria-pressed={direction === "payable"} className={chipClass(direction === "payable")} onClick={() => setDirection("payable")}>
+            </FilterChip>
+            <FilterChip dense selected={direction === "payable"} onClick={() => setDirection("payable")}>
               پرداختنی
-            </button>
+            </FilterChip>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 lg:ms-auto lg:w-auto">
             <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1" role="group" aria-label="وضعیت">
               {(Object.keys(STATUS_LABEL) as StatusFilter[]).map((key) => (
-                <button key={key} type="button" aria-pressed={status === key} className={chipClass(status === key)} onClick={() => setStatus(key)}>
+                <FilterChip key={key} dense selected={status === key} onClick={() => setStatus(key)}>
                   {STATUS_LABEL[key]}
-                </button>
+                </FilterChip>
               ))}
             </div>
             <input
@@ -306,7 +281,7 @@ function CreateInstallmentPanel({
   const [amount, setAmount] = useState("");
   const [count, setCount] = useState(4);
   const [intervalMonths, setIntervalMonths] = useState(1);
-  const [firstDueDate, setFirstDueDate] = useState(todayIso);
+  const [firstDueDate, setFirstDueDate] = useState(todayIsoDate);
   const [downPayment, setDownPayment] = useState("");
   const [hasDownPayment, setHasDownPayment] = useState(false);
   const [hasInterest, setHasInterest] = useState(false);
@@ -317,7 +292,6 @@ function CreateInstallmentPanel({
   const [moreSettings, setMoreSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useOverlayEscape(onClose, !busy);
 
   useEffect(() => {
     let cancelled = false;
@@ -402,14 +376,13 @@ function CreateInstallmentPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => { if (!busy) onClose(); }}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-installment-heading"
-        className={`${overlayPanelClass} flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-b-none sm:max-h-[90vh] sm:rounded-b-2xl`}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <OverlayDialog
+      headingId="create-installment-heading"
+      onClose={onClose}
+      dismissible={!busy}
+      sheet
+      className={`${overlayPanelClass} flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-b-none sm:max-h-[90vh] sm:rounded-b-2xl`}
+    >
         <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ایجاد اقساط</p>
@@ -425,14 +398,14 @@ function CreateInstallmentPanel({
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex gap-2" role="group" aria-label="جهت قسط">
-              <button type="button" aria-pressed={direction === "receivable"} className={chipClass(direction === "receivable")} onClick={() => { setDirection("receivable"); setSource("party"); setPartyId(""); }}>
+              <FilterChip dense selected={direction === "receivable"} onClick={() => { setDirection("receivable"); setSource("party"); setPartyId(""); }}>
                 دریافتنی
-              </button>
-              <button type="button" aria-pressed={direction === "payable"} className={chipClass(direction === "payable")} onClick={() => { setDirection("payable"); setSource("party"); setPartyId(""); }}>
+              </FilterChip>
+              <FilterChip dense selected={direction === "payable"} onClick={() => { setDirection("payable"); setSource("party"); setPartyId(""); }}>
                 پرداختنی
-              </button>
+              </FilterChip>
             </div>
-            <p className="text-xs text-muted-foreground">تاریخ ثبت: {fmtJalali(todayIso())}</p>
+            <p className="text-xs text-muted-foreground">تاریخ ثبت: {fmtJalali(todayIsoDate())}</p>
           </div>
 
           <div>
@@ -619,8 +592,7 @@ function CreateInstallmentPanel({
             {busy ? "در حال ثبت…" : "ثبت اقساط"}
           </PrimaryButton>
         </footer>
-      </section>
-    </div>
+      </OverlayDialog>
   );
 }
 
@@ -635,7 +607,6 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
   const [method, setMethod] = useState<"cash" | "bank">("cash");
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
-  useOverlayEscape(onClose, !busy);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -680,14 +651,13 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => { if (!busy) onClose(); }}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="installment-detail-heading"
-        className={`${overlayPanelClass} flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-b-none sm:max-h-[90vh] sm:rounded-b-2xl`}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <OverlayDialog
+      headingId="installment-detail-heading"
+      onClose={onClose}
+      dismissible={!busy}
+      sheet
+      className={`${overlayPanelClass} flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-b-none sm:max-h-[90vh] sm:rounded-b-2xl`}
+    >
         <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">کارت اقساط</p>
@@ -783,8 +753,8 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
                 <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4">
                   <p className="text-sm font-semibold text-amber-950 dark:text-amber-200">تسویه این قسط</p>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button type="button" aria-pressed={method === "cash"} className={chipClass(method === "cash")} onClick={() => setMethod("cash")}>نقدی</button>
-                    <button type="button" aria-pressed={method === "bank"} className={chipClass(method === "bank")} onClick={() => setMethod("bank")}>بانکی</button>
+                    <FilterChip dense selected={method === "cash"} onClick={() => setMethod("cash")}>نقدی</FilterChip>
+                    <FilterChip dense selected={method === "bank"} onClick={() => setMethod("bank")}>بانکی</FilterChip>
                     <input className={`${inputClass} h-11 min-w-40 flex-1`} placeholder="شرح (اختیاری)" value={memo} onChange={(e) => setMemo(e.target.value)} />
                   </div>
                   <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">با ثبت پرداخت، سند دریافت/پرداخت این قسط هم در حسابداری ثبت می‌شود.</p>
@@ -797,7 +767,6 @@ function InstallmentDetailPanel({ planId, onClose, onChanged }: { planId: string
             </div>
           )}
         </div>
-      </section>
-    </div>
+      </OverlayDialog>
   );
 }

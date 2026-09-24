@@ -27,6 +27,11 @@
  *   row is a smaller harm than losing the operation. Consent is the one
  *   exception, and it has its own dedicated append-only table
  *   (`crm_consent_events`) written transactionally with the change.
+ *
+ * This module is the write half. The rows it appends are read where they were
+ * decided (the consent register serves `crm_consent_events`); the generic
+ * audit reader that used to live here had no caller and was removed — restore
+ * it from history when an audit screen is actually built.
  */
 
 import { query } from "./db";
@@ -35,7 +40,7 @@ import { query } from "./db";
  * The kinds of decision worth recording. A closed vocabulary rather than free
  * text so reports and filters can be written against it.
  */
-export const CRM_AUDIT_KINDS = [
+const CRM_AUDIT_KINDS = [
   "lead.created",
   "lead.status_changed",
   "lead.converted",
@@ -65,10 +70,6 @@ export const CRM_AUDIT_KINDS = [
 ] as const;
 
 export type CrmAuditKind = (typeof CRM_AUDIT_KINDS)[number];
-
-export function isCrmAuditKind(value: unknown): value is CrmAuditKind {
-  return typeof value === "string" && (CRM_AUDIT_KINDS as readonly string[]).includes(value);
-}
 
 export interface CrmAuditInput {
   businessId: string;
@@ -123,74 +124,4 @@ export async function recordCrmAudit(input: CrmAuditInput): Promise<void> {
     // would be a far worse bug than a missing log line.
     console.error("crm audit write failed", input.kind, error);
   }
-}
-
-export interface CrmAuditEvent extends Record<string, unknown> {
-  id: string;
-  kind: string;
-  entityType: string;
-  entityId: string | null;
-  partyId: string | null;
-  summary: string;
-  detail: Record<string, unknown>;
-  actorUserId: string | null;
-  actorName: string;
-  createdAt: string;
-}
-
-export interface CrmAuditQuery {
-  entityType?: string;
-  entityId?: string;
-  partyId?: string;
-  kinds?: readonly string[];
-  /** Cursor: only events strictly older than this ISO timestamp. */
-  before?: string;
-  limit?: number;
-}
-
-/**
- * Read the audit trail, newest first, with a cursor.
- *
- * Cursor rather than OFFSET because this table only grows and chronology is
- * the access pattern: `OFFSET 10000` re-reads ten thousand rows to skip them.
- */
-export async function listCrmAudit(
-  businessId: string,
-  options: CrmAuditQuery = {},
-): Promise<{ events: CrmAuditEvent[]; nextCursor: string | null }> {
-  const params: unknown[] = [businessId];
-  let where = "business_id = $1";
-  const add = (fragment: string, value: unknown) => {
-    params.push(value);
-    where += ` AND ${fragment.replace("$n", `$${params.length}`)}`;
-  };
-  if (options.entityType) add("entity_type = $n", options.entityType);
-  if (options.entityId) add("entity_id = $n", options.entityId);
-  if (options.partyId) add("party_id = $n", options.partyId);
-  if (options.kinds && options.kinds.length > 0) add("kind = ANY($n::text[])", [...options.kinds]);
-  if (options.before) add("created_at < $n::timestamptz", options.before);
-
-  // Clamped, not trusted: `limit=999999` on a shared endpoint is how one
-  // screen reads a whole table.
-  const limit = Math.min(Math.max(Math.trunc(options.limit ?? 50) || 50, 1), 200);
-  params.push(limit + 1);
-
-  const { rows } = await query<CrmAuditEvent>(
-    `SELECT id, kind, entity_type AS "entityType", entity_id AS "entityId",
-            party_id AS "partyId", summary, detail,
-            actor_user_id AS "actorUserId", actor_name AS "actorName",
-            created_at AS "createdAt"
-       FROM crm_audit_events
-      WHERE ${where}
-      ORDER BY created_at DESC, id DESC
-      LIMIT $${params.length}`,
-    params,
-  );
-  // One row over the limit answers "is there more" without a second COUNT.
-  const hasMore = rows.length > limit;
-  const events = hasMore ? rows.slice(0, limit) : rows;
-  return {
-    events,
-    nextCursor: hasMore ? String(events[events.length - 1]?.createdAt ?? "") || null : null,
-  };
 }

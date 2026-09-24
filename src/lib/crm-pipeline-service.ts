@@ -241,6 +241,11 @@ export interface SaveStageInput {
 /**
  * Replace a pipeline's stage list in one transaction.
  *
+ * Exposed at the service layer only for now — no API route serves it (the
+ * stage-configurator UI was never built; the board runs on the seeded six),
+ * and the integration suite pins its rules. A route that returns should sit
+ * behind `crm.configure` like the configuration it is.
+ *
  * Whole-list rather than per-stage, because ordering is a property of the set:
  * saving stages one at a time means the board is briefly in an order nobody
  * chose, and two people reordering at once interleave into nonsense.
@@ -546,91 +551,5 @@ export async function dealStageHistory(
   return rows.map((row) => ({
     ...row,
     secondsInFromStage: row.secondsInFromStage === null ? null : Number(row.secondsInFromStage),
-  }));
-}
-
-export interface StageVelocity {
-  stageId: string;
-  stageName: string;
-  outcome: StageOutcome;
-  /** Deals currently sitting here. */
-  openCount: number;
-  openValueRial: number;
-  /** Median seconds deals historically spent here before moving on. */
-  medianSeconds: number | null;
-  /** Deals that have been here longer than the median — the stalled ones. */
-  stalledCount: number;
-}
-
-/**
- * Where deals sit and where they stall.
- *
- * Median rather than mean: one deal that sat in «مذاکره» for eight months
- * drags an average far enough to make the number useless, and pipeline dwell
- * times are exactly the kind of long-tailed distribution where that happens.
- */
-export async function pipelineVelocity(
-  businessId: string,
-  pipelineId: string,
-): Promise<StageVelocity[]> {
-  if (!isUuid(pipelineId)) return [];
-  const { rows } = await query<{
-    stage_id: string;
-    stage_name: string;
-    outcome: StageOutcome;
-    open_count: string;
-    open_value: string;
-    median_seconds: string | null;
-    stalled_count: string;
-  }>(
-    `WITH stage AS (
-        SELECT id, name, outcome FROM crm_pipeline_stages
-         WHERE business_id = $1 AND pipeline_id = $2
-    ),
-    live AS (
-        SELECT d.stage_id,
-               count(*)::text AS open_count,
-               COALESCE(sum(d.value_rial), 0)::text AS open_value
-          FROM crm_deals d
-         WHERE d.business_id = $1 AND d.pipeline_id = $2 AND d.closed_at IS NULL
-         GROUP BY d.stage_id
-    ),
-    dwell AS (
-        SELECT h.from_stage_id AS stage_id,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY h.seconds_in_from_stage) AS median_seconds
-          FROM crm_deal_stage_history h
-         WHERE h.business_id = $1 AND h.seconds_in_from_stage IS NOT NULL
-         GROUP BY h.from_stage_id
-    ),
-    stalled AS (
-        SELECT d.stage_id, count(*)::text AS stalled_count
-          FROM crm_deals d
-          JOIN dwell ON dwell.stage_id = d.stage_id
-         WHERE d.business_id = $1 AND d.pipeline_id = $2 AND d.closed_at IS NULL
-           AND d.stage_entered_at IS NOT NULL
-           AND EXTRACT(EPOCH FROM (now() - d.stage_entered_at)) > dwell.median_seconds
-         GROUP BY d.stage_id
-    )
-    SELECT s.id AS stage_id, s.name AS stage_name, s.outcome,
-           COALESCE(live.open_count, '0') AS open_count,
-           COALESCE(live.open_value, '0') AS open_value,
-           dwell.median_seconds::text AS median_seconds,
-           COALESCE(stalled.stalled_count, '0') AS stalled_count
-      FROM stage s
-      LEFT JOIN live ON live.stage_id = s.id
-      LEFT JOIN dwell ON dwell.stage_id = s.id
-      LEFT JOIN stalled ON stalled.stage_id = s.id
-     ORDER BY s.id`,
-    [businessId, pipelineId],
-  );
-
-  return rows.map((row) => ({
-    stageId: row.stage_id,
-    stageName: row.stage_name,
-    outcome: row.outcome,
-    openCount: Number(row.open_count),
-    openValueRial: Number(row.open_value),
-    medianSeconds: row.median_seconds === null ? null : Math.round(Number(row.median_seconds)),
-    stalledCount: Number(row.stalled_count),
   }));
 }

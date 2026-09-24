@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Shared chat core (Wave 2, issue #142) behind both the dashboard/ai hub and
- * the floating launcher (`ai-assistant.tsx`): streaming, cost estimate,
- * propose→confirm and now conversation persistence (Wave 1, issue #141) all
- * live here once so the two surfaces never drift.
+ * Shared chat core behind the assistant's one chat home (`/dashboard`,
+ * Phase 36b/Wave 2 issue #142): streaming, cost display, propose→confirm and
+ * conversation persistence (Wave 1, issue #141) all live here once, so the
+ * page and its management panel can never drift.
  */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -24,7 +24,7 @@ import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 export type AssistantMode = "wizard" | "dashboard" | "floor";
 
 /** Phase E — a typed input request attached to an assistant turn. */
-export interface AiInputRequestState {
+interface AiInputRequestState {
   /** The persisted request id; null when the turn was not persisted. */
   id: string | null;
   spec: InputRequestSpec;
@@ -57,15 +57,6 @@ export interface AiChatMessage {
   attachments?: ChatAttachment[];
 }
 
-export interface TurnEstimate {
-  estimatedCostRial: number;
-  maximumReservationRial: number;
-  estimatedInputTokens: number;
-  estimatedOutputTokens: number;
-  assumedToolRounds: number;
-  hasTools: boolean;
-}
-
 /**
  * Wave 5 (issue #145, extended) — files attached to the next turn only, held
  * client-side as data URLs; never uploaded to storage, never persisted.
@@ -78,9 +69,10 @@ export interface ChatAttachment {
   sizeBytes: number;
 }
 
-export const uid = (): string => crypto.randomUUID();
+/** One client-side id per message/attachment — never persisted as such. */
+const uid = (): string => crypto.randomUUID();
 
-export const CHAT_ERROR: Record<string, string> = {
+const CHAT_ERROR: Record<string, string> = {
   ai_credit_required:
     "اعتبار هوش مصنوعی کافی نیست. از صفحهٔ اعتبار و شارژ، کیف پول کسب‌وکار را شارژ کنید.",
   ai_unavailable: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است.",
@@ -93,9 +85,7 @@ export const CHAT_ERROR: Record<string, string> = {
   empty_messages: "پیامی برای ارسال نیست.",
 };
 
-export { SUGGESTED_PROMPTS } from "@/lib/ai-tasks";
-
-export function greeting(mode: AssistantMode): string {
+function greeting(mode: AssistantMode): string {
   if (mode === "wizard") {
     return "سلام! من دستیار راه‌اندازی هستم. بگویید کسب‌وکارتان چه ویژگی‌هایی دارد تا با هم فیلدهای هر مرحله را کامل کنیم. هر تغییری قبل از ثبت، تأیید شما را لازم دارد.";
   }
@@ -105,23 +95,13 @@ export function greeting(mode: AssistantMode): string {
   return "سلام! می‌توانم گزارش‌های فروش، منو، موجودی و حسابداری را نشان دهم، وضعیت راه‌اندازی را بررسی کنم و کارهای مجاز را با تأیید شما انجام دهم. چه کمکی از من برمی‌آید؟";
 }
 
-export function errorMessage(data: Record<string, unknown>): string {
+function errorMessage(data: Record<string, unknown>): string {
   // The server's own message wins when it sent one: it is the specific,
   // curated Persian explanation (which provider status answered, what to do).
   // The table is the fallback for the failures that never reached it —
   // transport errors and bare codes.
   if (typeof data.message === "string" && data.message.trim()) return data.message;
   return CHAT_ERROR[String(data.error ?? "")] ?? "خطا در ارتباط با دستیار.";
-}
-
-function isEstimate(value: unknown): value is TurnEstimate {
-  if (!value || typeof value !== "object") return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item.estimatedCostRial === "number" &&
-    typeof item.maximumReservationRial === "number" &&
-    typeof item.assumedToolRounds === "number"
-  );
 }
 
 interface ConversationMessagePayload {
@@ -160,9 +140,6 @@ export interface UseAiChatOptions {
   projectId?: string | null;
 }
 
-/** The shape returned by `useAiChat` — shared by the chat panel and the assistant's own nav. */
-export type AiChatState = ReturnType<typeof useAiChat>;
-
 export function useAiChat({
   mode,
   currentStep,
@@ -187,6 +164,17 @@ export function useAiChat({
   // always wins, so the picker can change the lens mid-conversation. Only
   // dashboard mode runs as an agent; the value is ignored otherwise.
   const [agentId, setAgentId] = useState<string | null>(null);
+
+  /**
+   * Patch one message in the thread by id — the single way this hook edits a
+   * turn already on screen (streaming deltas, apply/dismiss flags, input-card
+   * state), so no call site re-spells the map-and-match itself.
+   */
+  function editMessage(id: string, update: (message: AiChatMessage) => AiChatMessage) {
+    setMessages((current) =>
+      current.map((message) => (message.id === id ? update(message) : message)),
+    );
+  }
 
   /** Removes one attachment, or all of them when no id is given. */
   function clearAttachment(id?: string) {
@@ -358,11 +346,7 @@ export function useAiChat({
     setBusy(true);
 
     function setReply(update: (current: AiChatMessage) => AiChatMessage) {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === replyId ? update(message) : message,
-        ),
-      );
+      editMessage(replyId, update);
     }
 
     function receiveEvent(block: string): boolean {
@@ -558,11 +542,7 @@ export function useAiChat({
           auditUpdated = false;
         }
       }
-      setMessages((current) =>
-        current.map((item) =>
-          item.id === message.id ? { ...item, applied: true } : item,
-        ),
-      );
+      editMessage(message.id, (item) => ({ ...item, applied: true }));
       toast.success(
         auditUpdated
           ? `${meta.label} انجام شد.`
@@ -585,11 +565,7 @@ export function useAiChat({
         toast.error("پیشنهاد رد شد، اما ثبت آن در گزارش ممیزی ممکن نشد.");
       });
     }
-    setMessages((current) =>
-      current.map((item) =>
-        item.id === message.id ? { ...item, proposal: null } : item,
-      ),
-    );
+    editMessage(message.id, (item) => ({ ...item, proposal: null }));
   }
 
   /**
@@ -606,12 +582,8 @@ export function useAiChat({
       toast.error("این درخواست دیگر در دسترس نیست.");
       return;
     }
-    setMessages((current) =>
-      current.map((item) =>
-        item.id === message.id && item.inputRequest
-          ? { ...item, inputRequest: { ...item.inputRequest, answered: true } }
-          : item,
-      ),
+    editMessage(message.id, (item) =>
+      item.inputRequest ? { ...item, inputRequest: { ...item.inputRequest, answered: true } } : item,
     );
     try {
       const res = await fetch(
@@ -632,12 +604,8 @@ export function useAiChat({
       await startStream(data.modelMessage);
     } catch (error) {
       // Roll the card back so the user can try again.
-      setMessages((current) =>
-        current.map((item) =>
-          item.id === message.id && item.inputRequest
-            ? { ...item, inputRequest: { ...item.inputRequest, answered: false } }
-            : item,
-        ),
+      editMessage(message.id, (item) =>
+        item.inputRequest ? { ...item, inputRequest: { ...item.inputRequest, answered: false } } : item,
       );
       toast.error(
         error instanceof Error && error.message === "already_answered"
@@ -657,19 +625,14 @@ export function useAiChat({
         { method: "DELETE" },
       ).catch(() => {});
     }
-    setMessages((current) =>
-      current.map((item) =>
-        item.id === message.id && item.inputRequest
-          ? { ...item, inputRequest: { ...item.inputRequest, dismissed: true } }
-          : item,
-      ),
+    editMessage(message.id, (item) =>
+      item.inputRequest ? { ...item, inputRequest: { ...item.inputRequest, dismissed: true } } : item,
     );
   }
 
   return {
     canPropose,
     messages,
-    setMessages,
     input,
     setInput,
     busy,
@@ -691,7 +654,6 @@ export function useAiChat({
     startNewConversation,
     loadConversation,
     sendMessage,
-    startStream,
     askAgain,
     applyProposal,
     dismissProposal,

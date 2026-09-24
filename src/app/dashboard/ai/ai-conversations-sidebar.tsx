@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { LoadingSkeleton } from "../page-chrome";
 import { cn } from "@/lib/utils";
 import { useFeatureLocked } from "@/components/feature-lock";
+import { formatDateTime } from "./format";
 
 interface ConversationSummary {
   id: string;
@@ -34,12 +35,6 @@ interface ConversationSummary {
   title: string;
   lastMessageAt: string;
   createdAt: string;
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
-  );
 }
 
 export function AiConversationsSidebar({
@@ -50,8 +45,6 @@ export function AiConversationsSidebar({
   onDeleted,
   onRenamed,
   onClose,
-  /** `inline` = the desktop column; the mobile sheet renders the same list with a close button. */
-  variant = "inline",
 }: {
   activeId: string | null;
   refreshToken: number;
@@ -59,7 +52,6 @@ export function AiConversationsSidebar({
   onDeleted?: (id: string) => void;
   onRenamed?: (conversation: ConversationSummary) => void;
   onClose?: () => void;
-  variant?: "inline" | "sheet";
 }) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
   const [query, setQuery] = useState("");
@@ -264,7 +256,7 @@ export function AiConversationsSidebar({
                           {item.title}
                         </span>
                         <span className="block text-[10px] leading-4 text-muted-foreground">
-                          {formatDate(item.lastMessageAt)}
+                          {formatDateTime(item.lastMessageAt)}
                         </span>
                       </button>
                       <span className="flex shrink-0 items-center gap-0.5 pt-0.5 opacity-0 transition-opacity group-hover/conv:opacity-100 focus-within:opacity-100">
@@ -309,11 +301,9 @@ export function AiConversationsSidebar({
         )}
       </div>
 
-      {variant === "sheet" ? null : (
-        <p className="border-t border-border/80 px-3 py-2 text-[10px] leading-4 text-muted-foreground">
-          گفتگوها فقط برای شما قابل مشاهده‌اند.
-        </p>
-      )}
+      <p className="border-t border-border/80 px-3 py-2 text-[10px] leading-4 text-muted-foreground">
+        گفتگوها فقط برای شما قابل مشاهده‌اند.
+      </p>
     </div>
   );
 }

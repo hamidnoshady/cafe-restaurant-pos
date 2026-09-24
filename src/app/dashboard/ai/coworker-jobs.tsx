@@ -20,6 +20,8 @@ import { useFeatureLocked } from "@/components/feature-lock";
 import {
   COWORKER_APPROVAL_LABELS,
   COWORKER_EVENT_LABELS,
+  COWORKER_WEEKDAYS,
+  coworkerTriggerSummary,
   type CoworkerApprovalMode,
   type CoworkerEventKind,
   type CoworkerTriggerKind,
@@ -27,18 +29,8 @@ import {
 import type { CoworkerTemplate } from "@/lib/ai-coworker-templates";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 import { Field, inputClass } from "../ui";
-import { formatDateTime, type CoworkerCatalogue, type CoworkerJobView } from "./coworker-types";
-
-const WEEKDAYS = [
-  { value: "", label: "هر روز" },
-  { value: "6", label: "شنبه" },
-  { value: "0", label: "یکشنبه" },
-  { value: "1", label: "دوشنبه" },
-  { value: "2", label: "سه‌شنبه" },
-  { value: "3", label: "چهارشنبه" },
-  { value: "4", label: "پنجشنبه" },
-  { value: "5", label: "جمعه" },
-];
+import type { CoworkerCatalogue, CoworkerJobView } from "./coworker-types";
+import { formatDateTime } from "./format";
 
 interface WasteLine {
   inventoryItemId: string;
@@ -56,13 +48,17 @@ interface TopUpLine {
   totalCostRial: string;
 }
 
-function triggerSummary(job: CoworkerJobView): string {
-  if (job.triggerKind === "event" && job.eventKind) return COWORKER_EVENT_LABELS[job.eventKind];
-  if (job.triggerKind === "schedule" && job.scheduleHour !== null) {
-    const day = WEEKDAYS.find((entry) => entry.value === String(job.scheduleWeekday ?? ""))?.label ?? "هر روز";
-    return `${day}، ساعت ${job.scheduleHour}`;
-  }
-  return "فقط با درخواست شما";
+/**
+ * Patch one row of a per-template line list (waste items, formula runs,
+ * stock top-ups) — the single map-and-match every line editor used to
+ * re-spell for each of its fields.
+ */
+function patchLine<T>(
+  setLines: React.Dispatch<React.SetStateAction<T[]>>,
+  index: number,
+  patch: Partial<T>,
+) {
+  setLines((lines) => lines.map((row, i) => (i === index ? { ...row, ...patch } : row)));
 }
 
 export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean; onChange?: () => void }) {
@@ -282,7 +278,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       {COWORKER_APPROVAL_LABELS[job.approvalMode]}
                     </StatusBadge>
                   </div>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{triggerSummary(job)}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{coworkerTriggerSummary(job)}</p>
                   <p className="mt-1 text-xs text-muted-foreground">آخرین اجرا: {formatDateTime(job.lastRunAt)}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -394,8 +390,8 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                     value={scheduleWeekday}
                     onChange={(event) => setScheduleWeekday(event.target.value)}
                   >
-                    {WEEKDAYS.map((day) => (
-                      <option key={day.label} value={day.value}>
+                    {COWORKER_WEEKDAYS.map((day) => (
+                      <option key={day.value} value={day.value}>
                         {day.label}
                       </option>
                     ))}
@@ -413,11 +409,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       className={inputClass}
                       value={line.inventoryItemId}
                       onChange={(event) =>
-                        setWasteLines((lines) =>
-                          lines.map((row, i) =>
-                            i === index ? { ...row, inventoryItemId: event.target.value } : row,
-                          ),
-                        )
+                        patchLine(setWasteLines, index, { inventoryItemId: event.target.value })
                       }
                     >
                       <option value="">انتخاب کالا…</option>
@@ -431,11 +423,9 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       className={inputClass}
                       value={line.mode}
                       onChange={(event) =>
-                        setWasteLines((lines) =>
-                          lines.map((row, i) =>
-                            i === index ? { ...row, mode: event.target.value as "remaining" | "fixed" } : row,
-                          ),
-                        )
+                        patchLine(setWasteLines, index, {
+                          mode: event.target.value as "remaining" | "fixed",
+                        })
                       }
                     >
                       <option value="remaining">هرچه مانده</option>
@@ -447,18 +437,14 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       disabled={line.mode !== "fixed"}
                       value={line.quantity}
                       onChange={(event) =>
-                        setWasteLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, quantity: event.target.value } : row)),
-                        )
+                        patchLine(setWasteLines, index, { quantity: event.target.value })
                       }
                     />
                     <select
                       className={inputClass}
                       value={line.reason}
                       onChange={(event) =>
-                        setWasteLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, reason: event.target.value } : row)),
-                        )
+                        patchLine(setWasteLines, index, { reason: event.target.value })
                       }
                     >
                       {reasons.map((reason) => (
@@ -494,9 +480,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       className={inputClass}
                       value={line.formulaId}
                       onChange={(event) =>
-                        setFormulaLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, formulaId: event.target.value } : row)),
-                        )
+                        patchLine(setFormulaLines, index, { formulaId: event.target.value })
                       }
                     >
                       <option value="">انتخاب فرمول…</option>
@@ -511,9 +495,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       placeholder="تعداد بچ"
                       value={line.batches}
                       onChange={(event) =>
-                        setFormulaLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, batches: event.target.value } : row)),
-                        )
+                        patchLine(setFormulaLines, index, { batches: event.target.value })
                       }
                     />
                   </div>
@@ -538,11 +520,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       className={inputClass}
                       value={line.inventoryItemId}
                       onChange={(event) =>
-                        setTopUpLines((lines) =>
-                          lines.map((row, i) =>
-                            i === index ? { ...row, inventoryItemId: event.target.value } : row,
-                          ),
-                        )
+                        patchLine(setTopUpLines, index, { inventoryItemId: event.target.value })
                       }
                     >
                       <option value="">انتخاب کالا…</option>
@@ -557,9 +535,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       placeholder="مقدار در واحد خرید"
                       value={line.purchaseQty}
                       onChange={(event) =>
-                        setTopUpLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, purchaseQty: event.target.value } : row)),
-                        )
+                        patchLine(setTopUpLines, index, { purchaseQty: event.target.value })
                       }
                     />
                     <PersianNumberInput
@@ -568,9 +544,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       inputMode="numeric"
                       value={line.totalCostRial}
                       onChange={(event) =>
-                        setTopUpLines((lines) =>
-                          lines.map((row, i) => (i === index ? { ...row, totalCostRial: event.target.value } : row)),
-                        )
+                        patchLine(setTopUpLines, index, { totalCostRial: event.target.value })
                       }
                     />
                   </div>

@@ -55,13 +55,6 @@ export const WOO_TYPE_LABELS: Record<string, string> = {
   unknown: "نامشخص",
 };
 
-export const PRODUCT_STATUS_LABELS: Record<string, string> = {
-  publish: "منتشرشده",
-  draft: "پیش‌نویس",
-  pending: "در انتظار",
-  private: "خصوصی",
-};
-
 const ORDER_STATUS_LABELS: Record<string, string> = {
   pending: "در انتظار پرداخت",
   processing: "در حال پردازش",

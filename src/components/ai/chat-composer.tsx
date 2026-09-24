@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * The ChatGPT-style composer shared by the floating launcher and the
- * /dashboard/ai hub (Phase 36c redesign).
+ * The ChatGPT-style composer pinned under the assistant's chat home
+ * (`/dashboard`, Phase 36c redesign).
  *
  * One rounded field with everything the chat needs: attachment chips with
  * thumbnails, an upload menu (image / PDF), the task dropdown (which app or
@@ -35,7 +35,6 @@ import type { AiTaskId } from "@/lib/ai-tasks";
 import type { AssistantMode, ChatAttachment } from "./use-ai-chat";
 
 interface ChatComposerProps {
-  variant: "popup" | "page";
   mode: AssistantMode;
   input: string;
   setInput: (value: string) => void;
@@ -60,7 +59,6 @@ interface ChatComposerProps {
 }
 
 export function ChatComposer({
-  variant,
   mode,
   input,
   setInput,
@@ -94,8 +92,8 @@ export function ChatComposer({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, variant === "page" ? 160 : 132)}px`;
-  }, [input, variant]);
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
 
   const sendable = Boolean(input.trim()) && !busy;
   useEffect(() => {
@@ -173,8 +171,7 @@ export function ChatComposer({
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         className={cn(
-          "relative rounded-2xl border bg-card shadow-[0_1px_2px_rgb(41_37_36/0.04)] transition-all duration-200",
-          variant === "page" ? "p-3 sm:p-3.5" : "p-2",
+          "relative rounded-2xl border bg-card shadow-[0_1px_2px_rgb(41_37_36/0.04)] transition-all duration-200 p-3 sm:p-3.5",
           dragOver
             ? "border-primary ring-4 ring-primary/20"
             : focused
@@ -195,12 +192,11 @@ export function ChatComposer({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={onKeyDown}
-          rows={variant === "page" ? 2 : 1}
+          rows={2}
           placeholder="پیام خود را بنویسید…"
           aria-label="پیام"
           className={cn(
-            "w-full resize-none bg-transparent px-1.5 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground",
-            variant === "page" ? "min-h-10" : "min-h-8",
+            "w-full resize-none bg-transparent px-1.5 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground min-h-10",
           )}
         />
 

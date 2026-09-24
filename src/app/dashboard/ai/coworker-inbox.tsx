@@ -25,7 +25,8 @@ import { useFeatureLocked } from "@/components/feature-lock";
 import { ACCOUNTING_REVIEW_SEVERITY_LABELS, type AccountingFinding } from "@/lib/accounting-review";
 import { COWORKER_RUN_STATUS_LABELS, type CoworkerRunStatus } from "@/lib/ai-coworker";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
-import { formatDateTime, type CoworkerRunView } from "./coworker-types";
+import { SEVERITY_TONE, type CoworkerRunView } from "./coworker-types";
+import { formatDateTime } from "./format";
 
 const RUN_TONE: Record<CoworkerRunStatus, "active" | "positive" | "neutral" | "danger"> = {
   pending_approval: "active",
@@ -54,12 +55,6 @@ const ACTION_LABEL: Record<CoworkerRunActionStatus, string> = {
 };
 
 type CoworkerRunActionStatus = CoworkerRunView["actions"][number]["status"];
-
-const SEVERITY_TONE: Record<AccountingFinding["severity"], "danger" | "active" | "neutral"> = {
-  high: "danger",
-  medium: "active",
-  low: "neutral",
-};
 
 function FindingList({ findings }: { findings: AccountingFinding[] }) {
   return (
