@@ -79,7 +79,9 @@ export function AiInputRequestCard({
       return choice === OTHER_KEY ? other.trim().length > 0 : Boolean(choice);
     }
     if (spec.kind === "multi_choice") {
-      return multi.size > 0 || (spec.allowOther ? other.trim().length > 0 : false);
+      return (
+        multi.size > 0 || (spec.allowOther ? other.trim().length > 0 : false)
+      );
     }
     // form — every required field must have a value.
     return (spec.fields ?? []).every((field) => {
@@ -109,16 +111,20 @@ export function AiInputRequestCard({
             <div className="mb-2 flex flex-col gap-1.5">
               {(spec.options ?? []).map((option) => {
                 const selected =
-                  spec.kind === "choice" ? choice === option.id : multi.has(option.id);
+                  spec.kind === "choice"
+                    ? choice === option.id
+                    : multi.has(option.id);
                 return (
                   <button
                     key={option.id}
                     type="button"
                     disabled={busy}
                     onClick={() =>
-                      spec.kind === "choice" ? setChoice(option.id) : toggleMulti(option.id)
+                      spec.kind === "choice"
+                        ? setChoice(option.id)
+                        : toggleMulti(option.id)
                     }
-                    className={`rounded-lg border px-3 py-2 text-start transition ${
+                    className={`rounded-lg border px-3 py-2 text-start transition outline-none focus-visible:ring focus-visible:ring-ring/50 ${
                       selected
                         ? "border-primary bg-primary/10 font-medium text-primary"
                         : "border-border hover:bg-muted"
@@ -135,7 +141,7 @@ export function AiInputRequestCard({
                       type="button"
                       disabled={busy}
                       onClick={() => setChoice(OTHER_KEY)}
-                      className={`rounded-lg border px-3 py-2 text-start transition ${
+                      className={`rounded-lg border px-3 py-2 text-start transition outline-none focus-visible:ring focus-visible:ring-ring/50 ${
                         choice === OTHER_KEY
                           ? "border-primary bg-primary/10 font-medium text-primary"
                           : "border-border hover:bg-muted"
@@ -163,7 +169,9 @@ export function AiInputRequestCard({
                 <div key={field.key} className="flex flex-col gap-1">
                   <Label className="text-xs text-foreground/80">
                     {field.label}
-                    {field.required ? <span className="text-destructive"> *</span> : null}
+                    {field.required ? (
+                      <span className="text-destructive"> *</span>
+                    ) : null}
                   </Label>
                   {field.type === "boolean" ? (
                     <label className="flex items-center gap-2">
@@ -172,16 +180,26 @@ export function AiInputRequestCard({
                         disabled={busy}
                         checked={values[field.key] === true}
                         onChange={(e) =>
-                          setValues((v) => ({ ...v, [field.key]: e.target.checked }))
+                          setValues((v) => ({
+                            ...v,
+                            [field.key]: e.target.checked,
+                          }))
                         }
                       />
-                      <span className="text-muted-foreground">{field.placeholder ?? "بله"}</span>
+                      <span className="text-muted-foreground">
+                        {field.placeholder ?? "بله"}
+                      </span>
                     </label>
                   ) : field.type === "select" ? (
                     <select
                       disabled={busy}
                       value={(values[field.key] as string) ?? ""}
-                      onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
+                      onChange={(e) =>
+                        setValues((v) => ({
+                          ...v,
+                          [field.key]: e.target.value,
+                        }))
+                      }
                       className="h-9 rounded-md border border-input bg-background px-3 text-sm"
                     >
                       <option value="">—</option>
@@ -193,11 +211,22 @@ export function AiInputRequestCard({
                     </select>
                   ) : (
                     <Input
-                      type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+                      type={
+                        field.type === "number"
+                          ? "number"
+                          : field.type === "date"
+                            ? "date"
+                            : "text"
+                      }
                       disabled={busy}
                       value={(values[field.key] as string) ?? ""}
                       placeholder={field.placeholder}
-                      onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
+                      onChange={(e) =>
+                        setValues((v) => ({
+                          ...v,
+                          [field.key]: e.target.value,
+                        }))
+                      }
                     />
                   )}
                 </div>
@@ -210,7 +239,12 @@ export function AiInputRequestCard({
               <CheckIcon aria-hidden="true" />
               {busy ? "در حال ارسال…" : "ارسال پاسخ"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={onDismiss} disabled={busy}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onDismiss}
+              disabled={busy}
+            >
               رد
             </Button>
           </div>
