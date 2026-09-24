@@ -36,7 +36,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BanknoteIcon, CreditCardIcon, LandmarkIcon, LockIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
+import { formatJalali, todayIsoDate } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { ledgerSourceLabel } from "@/lib/ledger-source-labels";
 import {
@@ -109,7 +109,7 @@ interface ReconciliationDetail extends ReconciliationSummary {
  */
 function isFutureDate(iso: string): boolean {
   if (!iso) return false;
-  const today = isoDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
+  const today = todayIsoDate();
   return iso > today;
 }
 

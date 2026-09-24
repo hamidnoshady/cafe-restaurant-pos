@@ -9,14 +9,14 @@ import {
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useRef, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { ArrowDownLeftIcon, ArrowUpRightIcon, DownloadIcon, PlusIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
-import { useOverlayEscape } from "./use-overlay-escape";
+import { FilterChip } from "@/app/dashboard/filters";
+import { fmtJalali, OverlayDialog } from "./ledger-ui";
 import { DataTable, DataTableBody, DataTableHead, DataTableRow, Td, Th } from "@/app/dashboard/data-table";
 
 /**
@@ -39,16 +39,6 @@ interface Voucher {
 
 type Side = "receipts" | "payments";
 
-/**
- * `formatJalali` rather than a local re-implementation of the conversion: the
- * repo has one Shamsi formatter on purpose, and a second spelling of it is how
- * two screens end up disagreeing about a date.
- */
-function fmtJalali(iso: string | null): string {
-  if (!iso) return "—";
-  return toPersianDigits(formatJalali(iso.slice(0, 10)));
-}
-
 const METHOD_LABELS: Record<Voucher["method"], string> = {
   cash: "نقدی",
   bank: "بانکی",
@@ -60,13 +50,6 @@ const METHOD_LABELS: Record<Voucher["method"], string> = {
  * «۳۲۰ سند» sat above a list of fifty with nothing said about the rest.
  */
 const VISIBLE_ROWS = 100;
-
-const chipClass = (active: boolean) =>
-  `min-h-[44px] rounded-xl border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ${
-    active
-      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
-      : "border-border bg-card text-foreground  hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-foreground dark:hover:text-stone-100"
-  }`;
 
 export function ReceiptsPaymentsSection() {
   const money = useMoney();
@@ -202,18 +185,18 @@ export function ReceiptsPaymentsSection() {
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <div className="flex gap-2" role="group" aria-label="نوع سند">
-            <button type="button" aria-pressed={side === "receipts"} className={chipClass(side === "receipts")} onClick={() => setSide("receipts")}>
+            <FilterChip dense selected={side === "receipts"} onClick={() => setSide("receipts")}>
               <span className="inline-flex items-center gap-1.5">
                 <ArrowDownLeftIcon aria-hidden="true" className="size-3.5" />
                 دریافتی
               </span>
-            </button>
-            <button type="button" aria-pressed={side === "payments"} className={chipClass(side === "payments")} onClick={() => setSide("payments")}>
+            </FilterChip>
+            <FilterChip dense selected={side === "payments"} onClick={() => setSide("payments")}>
               <span className="inline-flex items-center gap-1.5">
                 <ArrowUpRightIcon aria-hidden="true" className="size-3.5" />
                 پرداختی
               </span>
-            </button>
+            </FilterChip>
           </div>
           <input
             type="search"
@@ -327,7 +310,6 @@ function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => 
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useOverlayEscape(onClose);
 
   /*
    * `?scope=directory`, not the open-balance list. A voucher is not always a
@@ -394,14 +376,11 @@ function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="voucher-form-heading"
-        className={`${overlayPanelClass} flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col`}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <OverlayDialog
+      headingId="voucher-form-heading"
+      onClose={onClose}
+      className={`${overlayPanelClass} flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col`}
+    >
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ثبت تراکنش مالی</p>
@@ -463,8 +442,8 @@ function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => 
             <div className="mb-4">
               <p className="mb-1 text-sm font-medium text-foreground">روش</p>
               <div className="flex gap-2">
-                <button type="button" aria-pressed={method === "cash"} className={chipClass(method === "cash")} onClick={() => setMethod("cash")}>نقدی</button>
-                <button type="button" aria-pressed={method === "bank"} className={chipClass(method === "bank")} onClick={() => setMethod("bank")}>بانکی</button>
+                <FilterChip dense selected={method === "cash"} onClick={() => setMethod("cash")}>نقدی</FilterChip>
+                <FilterChip dense selected={method === "bank"} onClick={() => setMethod("bank")}>بانکی</FilterChip>
               </div>
             </div>
             <Field label="تاریخ (اختیاری)">
@@ -482,7 +461,6 @@ function VoucherForm({ side, onClose, onCreated }: { side: Side; onClose: () => 
             </PrimaryButton>
           </footer>
         </form>
-      </section>
-    </div>
+    </OverlayDialog>
   );
 }

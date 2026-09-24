@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { toPersianDigits } from "./digits";
 import {
   formatJalali,
@@ -14,6 +14,7 @@ import {
   toGregorian,
   toJalali,
   isoDateInTimeZone,
+  todayIsoDate,
 } from "./jalali";
 
 describe("jalali conversion", () => {
@@ -171,6 +172,25 @@ describe("isoDateInTimeZone", () => {
 
   it("returns null for something that isn't a date", () => {
     expect(isoDateInTimeZone("not-a-date")).toBeNull();
+  });
+});
+
+describe("todayIsoDate", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("is the Tehran calendar date, never the UTC one it might still be", () => {
+    // 21:50Z is 01:20 the *next* day in Tehran, so "today" there is one ahead
+    // of the UTC date — the exact gap the ledger's default due dates fell into.
+    vi.useFakeTimers({ now: new Date("2026-08-15T21:50:00Z"), toFake: ["Date"] });
+    expect(todayIsoDate()).toBe("2026-08-16");
+    expect(todayIsoDate("UTC")).toBe("2026-08-15");
+  });
+
+  it("is always a well-formed ISO date the database accepts", () => {
+    expect(isValidIsoDate(todayIsoDate())).toBe(true);
+    expect(isValidIsoDate(todayIsoDate("UTC"))).toBe(true);
   });
 });
 

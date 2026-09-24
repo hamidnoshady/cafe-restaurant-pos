@@ -9,7 +9,7 @@ import { auditActionLabel } from "@/lib/audit";
 import { api, ErrorBox } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { overlayPanelClass } from "@/app/dashboard/page-chrome";
-import { useOverlayEscape } from "./use-overlay-escape";
+import { OverlayDialog } from "./ledger-ui";
 
 interface HistoryEntry {
   id: number;
@@ -58,7 +58,6 @@ export function AccountHistoryPanel({
 }) {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [error, setError] = useState("");
-  useOverlayEscape(onClose);
 
   useEffect(() => {
     setEntries(null);
@@ -72,14 +71,11 @@ export function AccountHistoryPanel({
   }, [accountId]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="account-history-heading"
-        className={`${overlayPanelClass} max-h-[88vh] w-full max-w-2xl overflow-y-auto p-4 sm:max-h-[80vh] sm:p-5`}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <OverlayDialog
+      headingId="account-history-heading"
+      onClose={onClose}
+      className={`${overlayPanelClass} max-h-[88vh] w-full max-w-2xl overflow-y-auto p-4 sm:max-h-[80vh] sm:p-5`}
+    >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تاریخچهٔ تغییرات حساب</p>
@@ -114,7 +110,6 @@ export function AccountHistoryPanel({
             ))}
           </ul>
         )}
-      </section>
-    </div>
+      </OverlayDialog>
   );
 }
