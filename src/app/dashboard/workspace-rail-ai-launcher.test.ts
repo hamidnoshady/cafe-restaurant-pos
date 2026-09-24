@@ -6,8 +6,8 @@
  * beside «حسابداری» would be a door into the room you are already standing in.
  * The «اتصال‌های فنی» technical hub is not one either: it is a shell utility
  * whose door is the platform user menu, not the app rail. What remains in
- * `WORKSPACE_APP_LAUNCHERS` is the four products — حسابداری، رشد و بازاریابی،
- * ارتباط با مشتری، مدیریت وب‌سایت — each keyed by a real `AppKey`, so app
+ * `WORKSPACE_APP_LAUNCHERS` is the four products — حسابداری، ارتباط با مشتری،
+ * رشد و بازاریابی، مدیریت وب‌سایت — each keyed by a real `AppKey`, so app
  * availability can badge every one of them.
  *
  * AI-rebuild Part 1: the rail carries NO chat navigation. The old
@@ -54,7 +54,7 @@ describe("the workspace rail's app launchers", () => {
     const block = launcherBlock();
     // The four products, in rail order.
     const keys = [...block.matchAll(/key: "(\w+)"/g)].map((match) => match[1]);
-    expect(keys).toEqual(["accounting", "growth", "crm", "website"]);
+    expect(keys).toEqual(["accounting", "crm", "growth", "website"]);
     // No assistant launcher: the assistant IS the rail's chat home, and its
     // old `/ai` address redirects there.
     expect(block).not.toContain('key: "ai"');

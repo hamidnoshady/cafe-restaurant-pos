@@ -73,6 +73,19 @@ const WORKSPACE_TOP_ROUTES: readonly string[] = Object.values(WORKSPACE_TOP_HREF
  */
 export const WORKSPACE_MODULE_HOME = "/workspace";
 
+/**
+ * Whether a pathname belongs to My Workspace.
+ *
+ * Keep this segment-aware check beside the module home instead of scattering
+ * `startsWith("/workspace")` checks through shells. In particular,
+ * `/workspace-tools` is not the workspace, while project/detail URLs remain
+ * inside it. The tenant shell uses this to replace global navigation with the
+ * Workspace's contextual navigation.
+ */
+export function isWorkspacePathname(pathname: string): boolean {
+  return pathname === WORKSPACE_MODULE_HOME || pathname.startsWith(`${WORKSPACE_MODULE_HOME}/`);
+}
+
 /** One workspace section's canonical URL. The home is the overview. */
 export function workspaceSectionHref(section: WorkspaceSection): string {
   return `${WORKSPACE_MODULE_HOME}/${section}`;
@@ -423,8 +436,7 @@ export function isCanonicalAppPathname(pathname: string): boolean {
   return (
     appPrefixForPathname(pathname) !== null ||
     isPlatformSettingsPathname(pathname) ||
-    pathname === WORKSPACE_MODULE_HOME ||
-    pathname.startsWith(`${WORKSPACE_MODULE_HOME}/`) ||
+    isWorkspacePathname(pathname) ||
     WORKSPACE_TOP_ROUTES.some(
       (route) => pathname === route || pathname.startsWith(`${route}/`),
     )

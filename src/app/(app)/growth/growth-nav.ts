@@ -44,8 +44,8 @@ export const GROWTH_NAV_ITEMS: readonly GrowthNavItem[] = [
   },
   {
     key: "customers",
-    label: "مشتریان",
-    description: "چرخهٔ حیات و خرید — با افزودن و ویرایش",
+    label: "مخاطبان",
+    description: "نمای چرخهٔ حیات و خرید از پرونده‌های مشترک CRM",
     icon: UsersIcon,
   },
   {

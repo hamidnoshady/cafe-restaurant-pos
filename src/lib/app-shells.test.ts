@@ -7,6 +7,18 @@ import {
 } from "./app-shells";
 
 describe("appShellForPathname", () => {
+  it("hands Accounting's public routes to the one Accounting shell", () => {
+    for (const pathname of [
+      "/accounting",
+      "/accounting/overview",
+      "/accounting/products/prices",
+      "/accounting/directory",
+      "/accounting/settings",
+    ]) {
+      expect(appShellForPathname(pathname)?.app).toBe("accounting");
+    }
+  });
+
   it("hands Growth & Marketing's routes to the growth shell", () => {
     // The app root and every section of it — the sidebar is the app's, at every
     // route under the prefix, so no section page falls back to the business nav.
@@ -58,9 +70,9 @@ describe("appShellForPathname", () => {
     );
   });
 
-  it("leaves every other dashboard route to the business nav", () => {
-    // The point of the change is one-directional: حسابداری keeps the nav the
-    // business knows, and the workspace home keeps its rail.
+  it("leaves platform and legacy routes outside the business-app shell registry", () => {
+    // The global launcher owns shared platform pages; legacy dashboard paths
+    // redirect before a contextual business-app menu is selected.
     for (const pathname of [
       "/dashboard",
       "/dashboard/overview",

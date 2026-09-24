@@ -20,6 +20,7 @@ import { type Permission } from "@/lib/permissions";
 import { memberAccessFor } from "@/lib/member-access";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { visibleSettingsTabs, type ResolvedSettingsTab } from "@/lib/settings-tabs";
+import { visibleWorkspaceSections } from "@/app/(app)/workspace/workspace-routes";
 import { MoneyProvider } from "@/components/money/money-context";
 import { BugReportProvider } from "@/components/bug-report/bug-report-provider";
 import { LockProvider } from "./lock-screen";
@@ -265,7 +266,7 @@ function canSee(
 /**
  * The one dashboard chrome — sidebar, mobile header, bottom bar, availability
  * gate — shared by `/dashboard/*` and by every public app route under
- * `src/app/(app)` (`/accounting`, `/growth`, `/crm`, `/websites`, `/projects`,
+ * `src/app/(app)` (`/accounting`, `/growth`, `/crm`, `/websites`, `/workspace`,
  * `/settings`).
  *
  * It used to *be* `src/app/dashboard/layout.tsx`, which is why the public app
@@ -316,6 +317,14 @@ export async function WorkspaceShell({
   const currencyDisplay = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
   const permissions = member.permissions;
   const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features, industry });
+  // My Workspace is shared platform functionality, but its contextual
+  // navigation must still be permission-honest. Pass only serializable route
+  // data to the client sidebar; the client imports the matching icon registry.
+  const workspaceSections = visibleWorkspaceSections(permissions).map(({ key, label, description }) => ({
+    key,
+    label,
+    description,
+  }));
   const profile = industryProfile(industry);
   const navItems = navItemsFor(industry, { settingsTabs })
     // Phase 42 — group children go through the same role/module/permission
@@ -377,6 +386,7 @@ export async function WorkspaceShell({
           brandTitle={profile.brandTitle}
           brandSubtitle={profile.brandSubtitle}
           industry={industry}
+          workspaceSections={workspaceSections}
         />
         <DashboardMain>
           <AppAvailabilityGate availability={appAvailability}>

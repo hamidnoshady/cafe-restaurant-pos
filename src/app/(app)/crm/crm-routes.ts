@@ -107,8 +107,9 @@ export function crmFallbackHref(role: string): string {
 /**
  * Whether a dashboard path is a given section — the sidebar's idea of "you are
  * here". The overview is the app root, so it matches exactly and nothing else;
- * every other section also owns what nests under it, which is how a customer's
- * file (`/dashboard/crm/persons/<id>`) keeps «پروندهٔ مشتری» lit.
+ * every other section also owns what nests under it. A customer's file
+ * (`/crm/persons/<id>`) belongs to Contacts (`directory`) for navigation, not
+ * to a permanent detail-page sidebar entry.
  *
  * The old `customers` path is kept as an alias for `persons` so bookmarks and
  * external links survive the rename — both the current `/crm/customers/*` and
@@ -117,13 +118,17 @@ export function crmFallbackHref(role: string): string {
 export function isCrmSectionPathname(pathname: string, key: CrmSectionKey): boolean {
   const href = crmSectionHref(key);
   if (key === "overview") return pathname === href;
-  if (key === "persons") {
-    return (
-      pathname === href ||
-      pathname.startsWith(`${href}/`) ||
-      pathname === "/crm/customers" ||
-      pathname.startsWith("/crm/customers/")
-    );
+  const isPersonDetail =
+    pathname === "/crm/persons" ||
+    pathname.startsWith("/crm/persons/") ||
+    pathname === "/crm/customers" ||
+    pathname.startsWith("/crm/customers/");
+  // A person file is reached from Contacts; it is not a second permanent
+  // sidebar destination. Keep the owning Contacts row current on both the
+  // canonical and compatibility detail URLs.
+  if (key === "directory") {
+    return pathname === href || pathname.startsWith(`${href}/`) || isPersonDetail;
   }
+  if (key === "persons") return isPersonDetail;
   return pathname === href || pathname.startsWith(`${href}/`);
 }

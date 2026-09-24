@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { memberAccessFor } from "@/lib/member-access";
 import { PERMISSIONS } from "@/lib/permissions";
-import { workspaceSectionHref } from "@/lib/app-routes";
+import { WORKSPACE_MODULE_HOME } from "@/lib/app-routes";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { WorkspaceManager } from "./workspace-manager";
@@ -38,7 +38,7 @@ export async function WorkspacePageBody({ section }: { section?: WorkspaceSectio
   // section a read-only member does not get; asking for it lands them on the
   // overview instead of on a 403.
   if (section && !member.permissions.has(WORKSPACE_SECTION_META[section].permission)) {
-    redirect(workspaceSectionHref("overview"));
+    redirect(WORKSPACE_MODULE_HOME);
   }
 
   const activeSection: WorkspaceSection = section ?? "overview";

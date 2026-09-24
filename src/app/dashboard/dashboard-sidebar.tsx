@@ -2,35 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import {
-  ArmchairIcon,
-  BarChart3Icon,
-  BookOpenIcon,
   CalendarDaysIcon,
   CalculatorIcon,
   CheckIcon,
-  ChefHatIcon,
-  ChevronDownIcon,
   CircleIcon,
-  ClipboardListIcon,
   ContactIcon,
   FolderIcon,
-  GemIcon,
   GlobeIcon,
-  LayoutDashboardIcon,
   LayoutGridIcon,
-  LifeBuoyIcon,
-  LockIcon,
   SparklesIcon,
-  PackageIcon,
-  SettingsIcon,
-  ShoppingCartIcon,
   TrendingUpIcon,
-  TruckIcon,
   UsersIcon,
-  WalletIcon,
-  WatchIcon,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -47,31 +31,30 @@ import {
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
-import { ACCOUNTING_WORKSPACE_HREFS, WORKSPACE_MODULE_HOME } from "@/lib/app-routes";
+import {
+  ACCOUNTING_WORKSPACE_HREFS,
+  DASHBOARD_HOME,
+  isWorkspacePathname,
+  WORKSPACE_MODULE_HOME,
+  workspaceSectionHref,
+} from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
 import { appForModule, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
-import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
+import { appShellForPathname, type AppShellDef } from "@/lib/app-shells";
 import {
-  accountingWorkspaceGroups,
-  LEDGER_WORKSPACE_GROUP_KEY,
-  workspaceEntryIsActive,
-  type WorkspaceNavEntry,
-  type WorkspaceNavGroup,
-} from "@/app/(app)/accounting/accounting-workspace";
+  WorkspaceAppNav,
+  type WorkspaceSidebarSection,
+} from "@/app/(app)/workspace/workspace-app-nav";
 import { AppStateBadge } from "./app-availability-gate";
 import { CreditBadge } from "./credit-badge";
-import { popoverPanelClass } from "./page-chrome";
 import { NAV_ICONS } from "./sidebar-nav-icons";
 import {
   APP_NAV_BUTTON_CLASS,
-  BACK_TO_WORKSPACE_BUTTON_CLASS,
   NAV_LABEL_CLASS,
   SIDEBAR_FOOTER_BUTTON_CLASS,
 } from "./sidebar-nav-styles";
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
-import { NavCollapsibleGroup, NavGroup } from "./sidebar-nav-group";
-import { useOpenNavGroups } from "./use-open-nav-groups";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
 import { toPersianDigits } from "@/lib/digits";
@@ -99,7 +82,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { BugReportFooterButton } from "@/components/bug-report/report-buttons";
 import { BiometricSettingsButton } from "./biometric-settings";
 import { BranchSwitcher } from "./branch-switcher";
 import { LockButton } from "./lock-screen";
@@ -160,6 +142,14 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     hrefs: ["/accounting/overview", "/accounting/financial-reports", "/accounting/reports"],
   },
   {
+    key: "crm",
+    label: "ارتباط با مشتری",
+    icon: ContactIcon,
+    // `/crm/directory` redirects into the app's directory, so a business
+    // that has customers but has never opened the CRM still gets the launcher.
+    hrefs: ["/crm/overview", "/crm/directory"],
+  },
+  {
     key: "growth",
     label: "رشد و بازاریابی",
     icon: TrendingUpIcon,
@@ -169,14 +159,6 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
       "/growth/campaigns",
       "/growth/commission",
     ],
-  },
-  {
-    key: "crm",
-    label: "ارتباط با مشتری",
-    icon: ContactIcon,
-    // `/crm/directory` redirects into the app's directory, so a business
-    // that has customers but has never opened the CRM still gets the launcher.
-    hrefs: ["/crm/overview", "/crm/directory"],
   },
   {
     key: "website",
@@ -235,6 +217,8 @@ interface SidebarProps {
   brandSubtitle: string;
   /** The business's industry. */
   industry?: Industry;
+  /** Permission-filtered contextual Workspace entries from the server shell. */
+  workspaceSections: readonly WorkspaceSidebarSection[];
 }
 
 /**
@@ -247,7 +231,12 @@ interface SidebarProps {
  * link, are ignored so the «مشتریان» entry stays lit on one customer's file).
  */
 function isActive(pathname: string, href: string, search?: ReadonlyURLSearchParams | null): boolean {
-  if (href === "/dashboard") return pathname === "/dashboard";
+  // Platform and Workspace homes are exact destinations; a prefix match would
+  // make Home active throughout another workspace.
+  if (href === DASHBOARD_HOME || href === WORKSPACE_MODULE_HOME) return pathname === href;
+  if (href === workspaceSectionHref("overview")) {
+    return pathname === WORKSPACE_MODULE_HOME || pathname === href;
+  }
   const q = href.indexOf("?");
   if (q >= 0) {
     const hrefPath = href.slice(0, q);
@@ -258,88 +247,14 @@ function isActive(pathname: string, href: string, search?: ReadonlyURLSearchPara
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** Which collapsible nav groups the member left open, per device. */
-const OPEN_NAV_GROUPS_KEY = "dashboard-sidebar-open-groups";
-
-function SidebarNavigation({
-  navItems,
-  role,
-  pathname,
-}: {
-  navItems: NavItem[];
-  role: string;
-  pathname: string;
-}) {
-  const { setOpenMobile } = useSidebar();
-  const search = useSearchParams();
-  const searchStr = search?.toString() ?? "";
-  const groups = accountingWorkspaceGroups({ role, navItems: flattenNav(navItems) });
-
-  const inLedger = groups
-    .find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY)
-    ?.entries.some((entry) => workspaceEntryIsActive(entry, pathname, searchStr));
-  const { toggleGroup, isOpen: groupIsOpen } = useOpenNavGroups(OPEN_NAV_GROUPS_KEY);
-
-  const onNavigate = useCallback(() => setOpenMobile(false), [setOpenMobile]);
-
-  return (
-    <SidebarContent className="px-3 py-4">
-      <nav aria-label="ناوبری اصلی" className="space-y-3">
-        {/* The flat business nav never forgets where home is: «میز کار» is the
-            dashboard chat, one tap away from every business surface. */}
-        <SidebarMenu className="space-y-1.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={pathname === "/dashboard"}
-              tooltip="بازگشت به میز کار"
-              className={BACK_TO_WORKSPACE_BUTTON_CLASS}
-            >
-              <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
-                <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
-                <span className={NAV_LABEL_CLASS}>بازگشت به میز کار</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <div aria-hidden="true" className="border-t border-border/80" />
-
-        {groups.map((group) => {
-          if (group.entries.length === 0) return null;
-          const isActive = (entry: WorkspaceNavEntry) => workspaceEntryIsActive(entry, pathname, searchStr);
-
-          if (group.collapsible) {
-            const open = groupIsOpen(group.key, Boolean(inLedger));
-            return (
-              <NavCollapsibleGroup
-                key={group.key}
-                group={group}
-                idPrefix="dashboard-nav"
-                isActive={isActive}
-                onNavigate={onNavigate}
-                open={open}
-                onToggle={() => toggleGroup(group.key, open)}
-              />
-            );
-          }
-
-          return <NavGroup key={group.key} group={group} isActive={isActive} onNavigate={onNavigate} />;
-        })}
-      </nav>
-    </SidebarContent>
-  );
-}
-
 /**
  * The workspace rail (Phase 35 Wave 2).
  *
- * Every entry is the same flat button — «دستیار هوشمند», «میز کار من», and the
- * two apps the business works in: «حسابداری» (which owns the day-to-day
- * surfaces: فروش, عملیات, اتصال‌ها and تنظیمات live behind its classic
- * sidebar) and «رشد و بازاریابی» (وفاداری، کمپین‌ها و پورسانت). No dropdowns,
- * no counts. Clicking an app opens the main product — the page plus the
- * classic sidebar — so the rail is a launcher, not a second navigation
- * system.
+ * This is the intentionally small global platform navigation: assistant home,
+ * My Workspace, and exactly four business-app launchers. Shared utilities stay
+ * in the user menu instead of becoming more rail rows. Clicking an app replaces
+ * this launcher with that app's contextual navigation, so the rail never sits
+ * beside a second full application menu.
  *
  * The rail carries NO chat navigation: starting a conversation is the chat
  * header's «گفت‌وگوی جدید» alone, and «گفتگوهای اخیر» is the chat page's own
@@ -385,11 +300,11 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              isActive={pathname === "/dashboard"}
+              isActive={pathname === DASHBOARD_HOME}
               tooltip="دستیار هوشمند"
               className={APP_NAV_BUTTON_CLASS}
             >
-              <Link href="/dashboard">
+              <Link href={DASHBOARD_HOME} aria-current={pathname === DASHBOARD_HOME ? "page" : undefined}>
                 <SparklesIcon aria-hidden="true" className="size-5 shrink-0" />
                 <span className={NAV_LABEL_CLASS}>دستیار هوشمند</span>
               </Link>
@@ -402,7 +317,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
                 but nothing in the product links there any more. */}
             <SidebarMenuButton
               asChild
-              isActive={pathname.startsWith(WORKSPACE_MODULE_HOME)}
+              isActive={isWorkspacePathname(pathname)}
               tooltip="میز کار من"
               className={APP_NAV_BUTTON_CLASS}
             >
@@ -708,28 +623,27 @@ function CloseDrawerOnNavigate({ pathname }: { pathname: string }) {
 }
 
 /**
- * The app that owns the sidebar slot on this route — its registry def and the
- * component that draws its menu, resolved together so the pair can never
- * disagree (a def whose app forgot to register a menu, or a menu with no app).
- * Null means the business's flat nav keeps the slot, which is what every page
- * outside a shell shows.
+ * The business app that owns the contextual sidebar slot on this route.
+ *
+ * Shared platform pages use the compact global launcher and My Workspace has
+ * its own contextual nav; only the four business apps resolve through this
+ * registry. A registered shell without a renderer is treated as a programming
+ * error by falling back to the global launcher rather than a stale flat menu.
  */
 function appShellForSlot(
   pathname: string,
-  showWorkspaceRail: boolean,
 ): { shell: AppShellDef; nav: (props: AppShellNavProps) => React.ReactElement } | null {
-  if (showWorkspaceRail) return null;
   const shell = appShellForPathname(pathname);
   const nav = shell ? appShellNavFor(shell.app) : undefined;
   return shell && nav ? { shell, nav } : null;
 }
 
 /**
- * An app's own main sidebar, in the slot the business nav would otherwise take.
+ * An app's own main sidebar, in the slot the global launcher otherwise takes.
  *
- * Same deal as `SidebarNavigation`: `useSidebar()` is below the provider, so the
- * drawer-closing callback is wired here rather than in the app's component — an
- * app that owns a menu should not have to know the shell's plumbing.
+ * `useSidebar()` is below the provider, so the drawer-closing callback is wired
+ * here rather than in every app component — an app owns route data, not shell
+ * plumbing.
  */
 function AppShellNavigation({
   nav: Nav,
@@ -761,13 +675,36 @@ function AppShellNavigation({
   );
 }
 
-function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
+function WorkspaceNavigation({
+  pathname,
+  sections,
+}: {
+  pathname: string;
+  sections: readonly WorkspaceSidebarSection[];
+}) {
+  const { setOpenMobile } = useSidebar();
+  return (
+    <WorkspaceAppNav
+      pathname={pathname}
+      sections={sections}
+      onNavigate={() => setOpenMobile(false)}
+    />
+  );
+}
+
+function MobileDashboardHeader({
+  navItems,
+  pathname,
+}: {
+  /** Already flattened and contextual to the route currently open. */
+  navItems: readonly { label: string; href: string }[];
+  pathname: string;
+}) {
   const [online, setOnline] = useState(true);
   const search = useSearchParams();
-  // The longest matching href wins, and sub-sections are searched too: on
-  // «لیست قیمت» the header used to fall back to the generic «داشبورد», because
-  // it only scanned the nav's top level and took the first prefix match.
-  const active = bestNavMatch(flattenNav(navItems), (href) => isActive(pathname, href, search));
+  // The longest matching href wins, so a detail page keeps its owning section
+  // label instead of falling back to the platform home.
+  const active = bestNavMatch([...navItems], (href) => isActive(pathname, href, search));
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
 
   useEffect(() => {
@@ -1023,6 +960,7 @@ export function DashboardSidebar({
   fullName,
   brandTitle,
   brandSubtitle,
+  workspaceSections,
 }: SidebarProps) {
   const pathname = usePathname();
   const [preference, setPreference] = useState<DashboardSidebarPreference>("expanded");
@@ -1040,23 +978,17 @@ export function DashboardSidebar({
   // Sub-sections included, so a pinned child page survives the "is this still
   // visible to me?" filter the bottom bar runs on every render.
   const availableHrefs = flattenNav(navItems).map((item) => item.href);
-  // The rail is the workspace *home* — the chat plus the projects surface.
-  // Everywhere else the sidebar is an app's nav: either the app that owns the
-  // route has a shell of its own (رشد و بازاریابی), or it is the business's flat
-  // nav, which is what the accounting suite is.
-  const showWorkspaceRail = pathname === "/dashboard" || pathname.startsWith("/projects");
-  // The app whose routes own the sidebar slot, if this route is one of them.
-  // `app-shells.ts` is the registry, so adding a separate app never means
-  // editing this file again.
-  const appShell = appShellForSlot(pathname, showWorkspaceRail);
-  // The app homes («رشد و بازاریابی», «ارتباط با مشتری», «مدیریت وب‌سایت») are
-  // not entries in the business's flat nav: they are separate products launched
-  // from the rail, each carrying its own main menu. Listing them alongside
-  // حسابداری and گزارش‌ها is what made a separate app read as a page of
-  // accounting.
-  const appNavItems = showWorkspaceRail
-    ? navItems
-    : navItems.filter((item) => !(item.href && isInsideAnyAppShell(item.href)));
+  // `/projects` is a legacy alias that middleware redirects before this shell
+  // renders. The canonical Workspace prefix owns the contextual sidebar.
+  const workspaceRoute = isWorkspacePathname(pathname);
+  const appShell = appShellForSlot(pathname);
+  // Platform home and shared utilities keep the intentionally small launcher;
+  // an app or My Workspace replaces it with focused route navigation.
+  const workspaceHeaderItems = workspaceSections.map((section) => ({
+    label: section.label,
+    href: workspaceSectionHref(section.key),
+  }));
+  const headerNavItems = workspaceRoute ? workspaceHeaderItems : flattenNav(navItems);
 
   useEffect(() => {
     setPreference(window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === "collapsed" ? "collapsed" : "expanded");
@@ -1139,7 +1071,7 @@ export function DashboardSidebar({
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
       <CloseDrawerOnNavigate pathname={pathname} />
-      <MobileDashboardHeader navItems={navItems} pathname={pathname} />
+      <MobileDashboardHeader navItems={headerNavItems} pathname={pathname} />
       <Sidebar
         side="right"
         className={`border-border/80 bg-card text-foreground ${draggingWidth ? "transition-none" : ""}`}
@@ -1150,9 +1082,9 @@ export function DashboardSidebar({
         }
       >
         <SidebarBrand title={brandTitle} subtitle={brandSubtitle} />
-        {showWorkspaceRail ? (
-          <WorkspaceRail navItems={navItems} pathname={pathname} />
-        ) : appShell && appShell.shell.app !== "accounting" ? (
+        {workspaceRoute ? (
+          <WorkspaceNavigation pathname={pathname} sections={workspaceSections} />
+        ) : appShell ? (
           <AppShellNavigation
             nav={appShell.nav}
             shell={appShell.shell}
@@ -1161,11 +1093,7 @@ export function DashboardSidebar({
             navItems={navItems}
           />
         ) : (
-          <SidebarNavigation
-            navItems={navItems}
-            role={role}
-            pathname={pathname}
-          />
+          <WorkspaceRail navItems={navItems} pathname={pathname} />
         )}
         <DashboardSidebarFooter
           role={role}
@@ -1186,7 +1114,7 @@ export function DashboardSidebar({
           />
         ) : null}
       </Sidebar>
-      {!assistantRoute ? (
+      {!assistantRoute && !workspaceRoute ? (
         <MobileBottomNavigation
           navItems={navItems}
           pathname={pathname}

@@ -3,7 +3,7 @@
 /**
  * The CRM app shell (Phase 36).
  *
- * Wraps every `/dashboard/crm` route with the app's own header. The side menu
+ * Wraps every `/crm` route with the app's own header. The side menu
  * is *not* here: `src/lib/app-shells.ts` hands the dashboard's sidebar slot to
  * `crm/crm-app-nav.tsx` for these routes, so the app's menu sits at the level
  * the business's own pages sit at rather than as a sub-menu drawn inside a

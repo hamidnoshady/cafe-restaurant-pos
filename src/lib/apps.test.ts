@@ -4,14 +4,11 @@ import {
   APP_KEYS,
   appForModule,
   appForKey,
-  appsForNav,
   isAppKey,
   modulesForApp,
   unassignedModules,
-  visibleApps,
 } from "./apps";
-import { INDUSTRIES } from "./industries";
-import { hasModule, MODULE_KEYS, type ModuleKey } from "./industry-profile";
+import { MODULE_KEYS } from "./industry-profile";
 
 describe("appForModule", () => {
   it("groups loyalty, promotions and commission under Growth & Marketing", () => {
@@ -81,7 +78,7 @@ describe("APPS registry integrity", () => {
   });
 
   it("declares exactly the four standalone apps and resolves each to a def", () => {
-    expect(APP_KEYS).toEqual(["accounting", "growth", "crm", "website"]);
+    expect(APP_KEYS).toEqual(["accounting", "crm", "growth", "website"]);
     expect(APPS.map((app) => app.key)).toEqual([...APP_KEYS]);
     for (const key of APP_KEYS) {
       expect(appForKey(key).key).toBe(key);
@@ -140,33 +137,6 @@ describe("isAppKey", () => {
   });
 });
 
-describe("visibleApps", () => {
-  it("returns every app when no industry is supplied", () => {
-    expect(visibleApps()).toEqual(APPS);
-    expect(visibleApps({})).toEqual(APPS);
-  });
-
-  it("shows an app only when the trade has at least one of its modules", () => {
-    for (const industry of INDUSTRIES) {
-      const apps = visibleApps({ industry });
-      const expected = APPS.filter((app) => app.modules.some((module) => hasModule(industry, module)));
-      expect(apps.map((app) => app.key).sort()).toEqual(expected.map((app) => app.key).sort());
-    }
-  });
-
-  it("always shows Growth & Marketing — every trade has loyalty", () => {
-    for (const industry of INDUSTRIES) {
-      expect(visibleApps({ industry }).map((app) => app.key)).toContain("growth");
-    }
-  });
-
-  it("always shows the Website app — every trade has the website module", () => {
-    for (const industry of INDUSTRIES) {
-      expect(visibleApps({ industry }).map((app) => app.key)).toContain("website");
-    }
-  });
-});
-
 describe("unassignedModules", () => {
   it("marks only the shell modules as intentionally not apps", () => {
     const unassigned = unassignedModules();
@@ -177,42 +147,5 @@ describe("unassignedModules", () => {
     expect(unassigned).toContain("settings");
     expect(unassigned).not.toContain("crm");
     expect(unassigned).not.toContain("loyalty");
-  });
-});
-
-describe("appsForNav", () => {
-  const items = [
-    { label: "وفاداری", module: "loyalty" as ModuleKey },
-    { label: "کمپین‌ها", module: "promotions" as ModuleKey },
-    { label: "پورسانت", module: "commission" as ModuleKey },
-    { label: "صندوق", module: "pos" as ModuleKey },
-    { label: "حسابداری", module: "ledger" as ModuleKey },
-    // `ai` has no app (it is the chat home) and `stock` is retail-only; both
-    // must be dropped, not grouped under a bogus app.
-    { label: "دستیار", module: "ai" as ModuleKey },
-  ];
-
-  it("groups nav items by their owning app, in APP_KEYS order", () => {
-    const grouped = appsForNav(items);
-    // Selling and ledger entries share the Accounting app.
-    expect(grouped.map((group) => group.app.key)).toEqual(["accounting", "growth"]);
-    expect(grouped[0].items.map((item) => item.label)).toEqual(["صندوق", "حسابداری"]);
-    expect(grouped.find((group) => group.app.key === "growth")?.items.map((item) => item.label)).toEqual([
-      "وفاداری",
-      "کمپین‌ها",
-      "پورسانت",
-    ]);
-  });
-
-  it("drops items whose module is not part of any app", () => {
-    const grouped = appsForNav(items);
-    const allItems = grouped.flatMap((group) => group.items);
-    expect(allItems).toHaveLength(5); // the `ai` item is excluded
-  });
-
-  it("keeps only apps the trade has, given an industry", () => {
-    // Food service has both Accounting and Growth.
-    const grouped = appsForNav(items, "food_service");
-    expect(grouped.map((group) => group.app.key)).toEqual(["accounting", "growth"]);
   });
 });

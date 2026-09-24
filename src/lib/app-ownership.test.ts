@@ -29,13 +29,28 @@ import { CRM_NAV_ITEMS } from "@/app/(app)/crm/crm-nav";
 import { crmSectionHref } from "@/app/(app)/crm/crm-routes";
 import { GROWTH_NAV_ITEMS } from "@/app/(app)/growth/growth-nav";
 import { growthSectionHref } from "@/app/(app)/growth/growth-routes";
+import { CMS_NAV_ITEMS, WP_NAV_ITEMS } from "@/app/(app)/websites/website-nav";
+import { cmsSectionHref, wpSectionHref } from "@/app/(app)/websites/website-routes";
+import { WORKSPACE_SECTIONS } from "@/lib/workspace-shared";
+import { workspaceSectionHref } from "./app-routes";
 
 /** Every app's menu, flattened to the hrefs it offers. */
 const APP_MENUS: Record<string, readonly string[]> = {
   "/accounting": ACCOUNTING_SECTIONS.map((section) => accountingSectionHref(section.key)),
   "/crm": CRM_NAV_ITEMS.map((item) => crmSectionHref(item.key)),
   "/growth": GROWTH_NAV_ITEMS.map((item) => growthSectionHref(item.key)),
+  "/websites": [
+    APP_HOME_HREFS["/websites"],
+    ...CMS_NAV_ITEMS.map((item) => cmsSectionHref(item.key)),
+    ...WP_NAV_ITEMS.map((item) => wpSectionHref(item.key)),
+    APP_SETTINGS_HREFS["/websites"],
+  ],
 };
+
+const CONTEXTUAL_NAV_HREFS = [
+  ...Object.values(APP_MENUS).flat(),
+  ...WORKSPACE_SECTIONS.map(workspaceSectionHref),
+];
 
 describe("each app's menu stays inside its own app", () => {
   it("points every entry at the app's own prefix", () => {
@@ -71,6 +86,17 @@ describe("each app's menu stays inside its own app", () => {
   it("starts at the app's home, which is its overview", () => {
     for (const [prefix, hrefs] of Object.entries(APP_MENUS)) {
       expect(hrefs[0]).toBe(APP_HOME_HREFS[prefix as keyof typeof APP_HOME_HREFS]);
+    }
+  });
+
+  it("does not produce a legacy dashboard, standalone-AI or retired overview URL", () => {
+    // Redirects deliberately keep old URLs alive for bookmarks, but menus must
+    // never make a new internal link to one. This collects the actual menu
+    // href producers for all four apps plus shared Workspace navigation.
+    for (const href of CONTEXTUAL_NAV_HREFS) {
+      expect(href, `${href} must not use a retired dashboard child URL`).not.toMatch(/^\/dashboard\//);
+      expect(href, `${href} must not use the retired standalone AI`).not.toMatch(/^\/ai(?:\/|$)/);
+      expect(href, `${href} must not use the retired overview root`).not.toMatch(/^\/overview(?:\/|$)/);
     }
   });
 });

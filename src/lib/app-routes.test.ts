@@ -24,6 +24,7 @@ import {
   canonicalPathForLegacy,
   isCanonicalAppPathname,
   isPlatformSettingsPathname,
+  isWorkspacePathname,
   legacyRedirectTarget,
 } from "./app-routes";
 
@@ -37,6 +38,13 @@ describe("canonical routes", () => {
       // front page has exactly one address.
       expect(APP_HOME_HREFS[prefix]).toBe(`${prefix}/overview`);
     }
+  });
+
+  it("recognizes My Workspace from its canonical root, not the retired projects alias", () => {
+    expect(isWorkspacePathname("/workspace")).toBe(true);
+    expect(isWorkspacePathname("/workspace/projects/42")).toBe(true);
+    expect(isWorkspacePathname("/projects")).toBe(false);
+    expect(isWorkspacePathname("/workspace-tools")).toBe(false);
   });
 
   it("gives every app its own settings route, never the platform's", () => {

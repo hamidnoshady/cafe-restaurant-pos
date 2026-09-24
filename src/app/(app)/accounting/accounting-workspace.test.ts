@@ -42,7 +42,6 @@ const BUSINESS_NAV = [
   { label: "داشبورد", href: "/overview" },
   { label: "سفارش‌ها", href: ACCOUNTING_WORKSPACE_HREFS.orders },
   { label: "صندوق (فروش)", href: ACCOUNTING_WORKSPACE_HREFS.pos },
-  { label: "ارتباط با مشتری", href: "/crm/overview" },
   { label: "انبار", href: ACCOUNTING_WORKSPACE_HREFS.inventory },
   {
     label: "محصولات",
@@ -51,7 +50,6 @@ const BUSINESS_NAV = [
   },
   { label: "لیست قیمت", href: accountingProductsHref("prices") },
   { label: "گزارش‌ها", href: ACCOUNTING_WORKSPACE_HREFS.reports },
-  { label: "تنظیمات", href: "/settings" },
   { label: "مرکز آموزش", href: "/knowledge" },
 ];
 
@@ -76,7 +74,6 @@ describe("the Accounting workspace menu", () => {
       ACCOUNTING_WORKSPACE_HREFS.inventory,
       ACCOUNTING_WORKSPACE_HREFS.products,
       ACCOUNTING_WORKSPACE_HREFS.reports,
-      "/settings",
     ]) {
       expect(
         hrefs,
@@ -106,22 +103,19 @@ describe("the Accounting workspace menu", () => {
       "payables",
       "receipts",
       "installments",
-      "settings",
     ]) {
       expect(keys).toContain(expected);
     }
   });
 
-  it("moves accounting settings into «فضای کار حسابداری» without duplicating its route", () => {
+  it("keeps Accounting settings in one final app-owned group", () => {
     const groups = groupsFor("owner");
     const settingsHref = accountingSectionHref("settings");
     const containingGroups = groups.filter((group) =>
       group.entries.some((entry) => entry.href === settingsHref),
     );
 
-    expect(containingGroups.map((group) => group.key)).toEqual([
-      LEDGER_WORKSPACE_GROUP_KEY,
-    ]);
+    expect(containingGroups.map((group) => group.key)).toEqual(["settings"]);
     expect(
       containingGroups[0].entries.find((entry) => entry.href === settingsHref)
         ?.label,
@@ -270,32 +264,23 @@ describe("the ledger group's own section list", () => {
     );
   });
 
-  it("leaves app-level areas out while keeping accounting settings in the workspace", () => {
-    // The home, directory and report views remain top-level areas. Accounting
-    // settings is a ledger concern, so its existing route now lives in the one
-    // «فضای کار حسابداری» group instead of a second configuration location.
+  it("leaves app-level areas out of the ledger while keeping every section owned", () => {
+    // Home, people, reports, growth analysis and app settings are focused
+    // groups of their own; none is buried in the financial-tools disclosure.
     for (const outside of [
       "dashboard",
       "directory",
       "financial-reports",
       "growth",
+      "settings",
     ]) {
       expect(LEDGER_WORKSPACE_SECTION_KEYS).not.toContain(outside);
     }
-    expect(LEDGER_WORKSPACE_SECTION_KEYS).toContain("settings");
-    // Together they are exhaustive: nothing in the app is homeless.
-    const accounted = new Set<string>([
-      ...LEDGER_WORKSPACE_SECTION_KEYS,
-      "dashboard",
-      "directory",
-      "financial-reports",
-      "growth",
-    ]);
+    const hrefs = new Set(accountingWorkspaceHrefs(groupsFor("owner")));
     for (const section of ACCOUNTING_SECTIONS) {
-      expect(
-        accounted,
-        `section "${section.key}" is in no Accounting menu group`,
-      ).toContain(section.key);
+      expect(hrefs, `section "${section.key}" is in no Accounting menu group`).toContain(
+        accountingSectionHref(section.key),
+      );
     }
   });
 });
@@ -304,13 +289,9 @@ describe("the ledger group's own section list", () => {
 /**
  * One «you are here» rule for both sidebars that draw this menu.
  *
- * The dashboard's flat sidebar and the Accounting app's sidebar render the
- * same groups, and each used to carry its own copy of the active test. The
- * copies had drifted: the Accounting one matched on path alone, so the
- * `/settings?tab=…` rows lit up together, «تنظیمات» stayed lit over every
- * settings sub-page, and «محصولات» over every product page. Same menu, two
- * answers, depending on which sidebar you looked at. These assertions hold the
- * rules the surviving function keeps.
+ * The Accounting app's contextual sidebar is the one renderer of these groups.
+ * The active rule is still kept separately because filtered directory views and
+ * nested product pages are the places a raw prefix match gets wrong.
  */
 describe("which menu entry is the page you are on", () => {
   const entry = (href: string, extra: Partial<WorkspaceNavEntry> = {}): WorkspaceNavEntry => ({
@@ -331,22 +312,6 @@ describe("which menu entry is the page you are on", () => {
     expect(
       workspaceEntryIsActive(entry("/accounting/orders"), "/accounting/orders-archive", ""),
     ).toBe(false);
-  });
-
-  it("gives each `?tab=` row its own tab, never all of them at once", () => {
-    const connections = entry("/settings?tab=connections");
-    const billing = entry("/settings?tab=billing");
-    expect(workspaceEntryIsActive(connections, "/settings", "tab=connections")).toBe(true);
-    // The bug: on one tab, the *other* tab's row lit up too.
-    expect(workspaceEntryIsActive(billing, "/settings", "tab=connections")).toBe(false);
-  });
-
-  it("keeps the «تنظیمات» hub off the sub-pages that have rows of their own", () => {
-    const settings = entry("/settings");
-    expect(workspaceEntryIsActive(settings, "/settings", "")).toBe(true);
-    expect(workspaceEntryIsActive(settings, "/settings/team", "")).toBe(true);
-    expect(workspaceEntryIsActive(settings, "/settings/connections", "")).toBe(false);
-    expect(workspaceEntryIsActive(settings, "/settings/billing", "")).toBe(false);
   });
 
   it("keeps the «محصولات» hub exact, so its sub-pages do not light it", () => {

@@ -46,7 +46,20 @@ import {
 } from "@/lib/app-routes";
 import { WORKSPACE_SECTIONS } from "@/lib/workspace-shared";
 import { platformUserMenuItems } from "@/lib/platform-user-menu";
-import { settingsTabHref } from "@/lib/settings-routes";
+import { PLATFORM_SETTINGS_PAGES, settingsTabHref } from "@/lib/settings-routes";
+import { SETTINGS_TAB_KEYS } from "@/lib/settings-tabs";
+import {
+  ACCOUNTING_SECTION_KEYS,
+  accountingSectionHref,
+} from "./(app)/accounting/accounting-routes";
+import { CRM_SECTION_KEYS, crmSectionHref } from "./(app)/crm/crm-routes";
+import { GROWTH_SECTION_KEYS, growthSectionHref } from "./(app)/growth/growth-routes";
+import {
+  CMS_SECTION_KEYS,
+  cmsSectionHref,
+  wpSectionHref,
+} from "./(app)/websites/website-routes";
+import { WP_SECTION_KEYS } from "./(app)/websites/wp/wp-routes";
 
 const ORIGIN = "http://localhost:3000";
 
@@ -101,8 +114,19 @@ const JOURNEY: readonly string[] = [
   ...APP_ROUTE_PREFIXES.map((prefix) => APP_HOME_HREFS[prefix]),
   WORKSPACE_MODULE_HOME,
   ...WORKSPACE_SECTIONS.map(workspaceSectionHref),
+  // Every contextual app-menu destination belongs to the signed-in journey,
+  // not merely the app's home. Deriving these from each app's route source
+  // catches a section that is listed in its sidebar but forgotten by a rewrite
+  // or auth boundary.
+  ...ACCOUNTING_SECTION_KEYS.map(accountingSectionHref),
+  ...CRM_SECTION_KEYS.map(crmSectionHref),
+  ...GROWTH_SECTION_KEYS.map(growthSectionHref),
+  ...CMS_SECTION_KEYS.map(cmsSectionHref),
+  ...WP_SECTION_KEYS.map(wpSectionHref),
   PLATFORM_SETTINGS_HOME,
   ...APP_ROUTE_PREFIXES.map((prefix) => APP_SETTINGS_HREFS[prefix]),
+  ...SETTINGS_TAB_KEYS.map(settingsTabHref),
+  ...PLATFORM_SETTINGS_PAGES.map((page) => `/settings/${page}`),
   ...Object.values(ACCOUNTING_WORKSPACE_HREFS),
   ...["new", "prices", "attributes", "barcode-templates", "reports"].map(
     accountingProductsHref,

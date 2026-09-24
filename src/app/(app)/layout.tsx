@@ -2,7 +2,8 @@ import { WorkspaceShell } from "../dashboard/workspace-shell";
 
 /**
  * The platform's public app URLs — `/accounting`, `/growth`, `/crm`,
- * `/websites`, `/projects`, `/settings` — and the workspace's own pages
+ * `/websites` — plus shared platform areas such as `/workspace` and `/settings`,
+ * and the workspace's own pages
  * (`/media`, `/knowledge`, `/support`), plus the compatibility redirects for
  * the retired `/overview` and `/ai` applications.
  *
