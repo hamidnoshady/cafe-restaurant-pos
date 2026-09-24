@@ -62,6 +62,49 @@ export const COWORKER_TRIGGER_LABELS: Record<CoworkerTriggerKind, string> = {
   event: "با یک رویداد کاری",
 };
 
+/**
+ * The weekday picker's options, shared by the coworker job form and the
+ * automation rule form so the two can never disagree on what "3" means.
+ * `value` is the engine's own convention (0..6 = Saturday..Friday, matching
+ * `LocalBusinessClock.weekday`); "" pins nothing — every day.
+ */
+export const COWORKER_WEEKDAYS: readonly { value: string; label: string }[] = [
+  { value: "", label: "هر روز" },
+  { value: "6", label: "شنبه" },
+  { value: "0", label: "یکشنبه" },
+  { value: "1", label: "دوشنبه" },
+  { value: "2", label: "سه‌شنبه" },
+  { value: "3", label: "چهارشنبه" },
+  { value: "4", label: "پنجشنبه" },
+  { value: "5", label: "جمعه" },
+];
+
+/** The common trigger shape both a coworker job and an automation rule carry. */
+export interface CoworkerTriggerLike {
+  triggerKind: CoworkerTriggerKind;
+  eventKind: CoworkerEventKind | null;
+  scheduleHour: number | null;
+  scheduleWeekday: number | null;
+}
+
+/**
+ * One human sentence for a trigger — the job list, the automation list and
+ * any future surface read the same summary, so «هر وقت» never renders two
+ * different wordings for the same rule.
+ */
+export function coworkerTriggerSummary(trigger: CoworkerTriggerLike): string {
+  if (trigger.triggerKind === "event" && trigger.eventKind) {
+    return COWORKER_EVENT_LABELS[trigger.eventKind];
+  }
+  if (trigger.triggerKind === "schedule" && trigger.scheduleHour !== null) {
+    const day =
+      COWORKER_WEEKDAYS.find((entry) => entry.value === String(trigger.scheduleWeekday ?? ""))
+        ?.label ?? "هر روز";
+    return `${day}، ساعت ${trigger.scheduleHour}`;
+  }
+  return COWORKER_TRIGGER_LABELS.manual;
+}
+
 export type CoworkerApprovalMode = "ask" | "auto";
 
 export const COWORKER_APPROVAL_LABELS: Record<CoworkerApprovalMode, string> = {

@@ -614,6 +614,16 @@ export function isKnownAction(type: unknown): type is ActionType {
   return typeof type === "string" && Object.prototype.hasOwnProperty.call(ACTION_CATALOG, type);
 }
 
+/**
+ * The Persian label for any action type id — the one lookup every management
+ * surface (the agents editor, the automation rules) uses, so an action is
+ * never named two different ways in two lists. Unknown ids fall back to the
+ * raw id rather than hiding the row.
+ */
+export function actionLabel(type: string): string {
+  return (ACTION_CATALOG as Record<string, { label?: string }>)[type]?.label ?? type;
+}
+
 export function resolveActionEndpoint(meta: ActionMeta, payload: Record<string, unknown>): string | null {
   let missing = false;
   const resolved = meta.endpoint.replace(/\{(\w+)\}/g, (_match, key: string) => {

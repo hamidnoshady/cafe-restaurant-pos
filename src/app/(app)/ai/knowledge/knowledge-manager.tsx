@@ -28,20 +28,11 @@ import {
 } from "@/app/dashboard/page-chrome";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/digits";
+import { formatShortDateTime } from "@/app/dashboard/ai/format";
 import type {
   AiKnowledgeReindexResult,
   AiKnowledgeStatus,
 } from "@/lib/ai-knowledge-shared";
-
-function formatDateTime(value: string | null): string {
-  if (!value) return "هنوز نمایه نشده";
-  return new Intl.DateTimeFormat("fa-IR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
-const fa = (n: number): string => toPersianDigits(String(n));
 
 export function KnowledgeManager() {
   const locked = useFeatureLocked();
@@ -89,7 +80,7 @@ export function KnowledgeManager() {
       toast.error("زیرساخت بازیابی (pgvector) در دسترس نیست؛ چیزی نمایه نشد.");
     } else {
       toast.success(
-        `نمایه به‌روزرسانی شد: ${fa(data.embedded)} مورد نمایه، ${fa(data.deleted)} مورد پاک‌سازی شد.`,
+        `نمایه به‌روزرسانی شد: ${toPersianDigits(data.embedded)} مورد نمایه، ${toPersianDigits(data.deleted)} مورد پاک‌سازی شد.`,
       );
     }
     await load();
@@ -142,10 +133,10 @@ export function KnowledgeManager() {
           </span>
           <div>
             <p className="text-lg font-bold text-foreground">
-              {fa(status.totalChunks)} مورد نمایه‌شده
+              {toPersianDigits(status.totalChunks)} مورد نمایه‌شده
             </p>
             <p className="text-xs text-muted-foreground">
-              آخرین به‌روزرسانی: {formatDateTime(status.lastIndexedAt)}
+              آخرین به‌روزرسانی: {status.lastIndexedAt ? formatShortDateTime(status.lastIndexedAt) : "هنوز نمایه نشده"}
             </p>
           </div>
         </div>
@@ -186,7 +177,7 @@ export function KnowledgeManager() {
                     <span className="ms-2 text-xs text-muted-foreground">{slice.hint}</span>
                   </span>
                   <span className="shrink-0 text-muted-foreground">
-                    {fa(slice.count)} مورد
+                    {toPersianDigits(slice.count)} مورد
                   </span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted" role="presentation">

@@ -3,6 +3,7 @@
  * panels that render them. Kept next to the panels rather than in `src/lib`
  * because they describe this screen's own wire format, not domain logic.
  */
+import type { AccountingFinding } from "@/lib/accounting-review";
 import type {
   CoworkerApprovalMode,
   CoworkerEventKind,
@@ -10,7 +11,6 @@ import type {
   CoworkerTriggerKind,
 } from "@/lib/ai-coworker";
 import type { CoworkerTemplate, CoworkerTemplateKey } from "@/lib/ai-coworker-templates";
-import type { AccountingFinding } from "@/lib/accounting-review";
 
 export interface CoworkerJobView {
   id: string;
@@ -72,7 +72,13 @@ export interface CoworkerCatalogue {
   };
 }
 
-export function formatDateTime(value: string | null): string {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
+/**
+ * The badge tone for a review finding's severity — shared by the inbox (a
+ * run's carried findings) and the on-demand review list, so the two never
+ * disagree on what «مهم» looks like.
+ */
+export const SEVERITY_TONE: Record<AccountingFinding["severity"], "danger" | "active" | "neutral"> = {
+  high: "danger",
+  medium: "active",
+  low: "neutral",
+};

@@ -11,6 +11,7 @@ import { ACTION_CATALOG, type ActionType } from "@/lib/ai";
 import { AUTOPILOT_CATEGORY_LABELS, type AutopilotCategory } from "@/lib/ai-autopilot";
 import { applyProposalRequest } from "@/components/ai/apply-proposal";
 import { SectionCard, StatusBadge } from "../page-chrome";
+import { formatDateTime } from "./format";
 
 interface Entry {
   id: string;
@@ -53,10 +54,6 @@ const DEFERRED_REASON: Record<string, string> = {
   unbalanced_entry: "بدهکار و بستانکار سند برابر نبود.",
   payload_touches_other_fields: "پیشنهاد فیلدهایی بیرون از یادداشت را تغییر می‌داد.",
 };
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
 
 export function AiAutopilotActivity() {
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -189,7 +186,7 @@ export function AiAutopilotActivity() {
                       {AUTOPILOT_CATEGORY_LABELS[entry.category]}
                     </span>
                   ) : null}
-                  <span className="ms-auto text-[11px] text-muted-foreground">{formatDate(entry.createdAt)}</span>
+                  <span className="ms-auto text-[11px] text-muted-foreground">{formatDateTime(entry.createdAt)}</span>
                 </div>
                 {entry.actionSummary ? (
                   <p className="mt-1 text-xs leading-6 text-muted-foreground">{entry.actionSummary}</p>
