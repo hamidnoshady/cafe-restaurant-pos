@@ -4,9 +4,11 @@
  */
 import { NextResponse } from "next/server";
 import { getSession, type Role, type SessionPayload } from "./auth";
+import { authorize, denialResponse } from "./authorize";
 import { query, withTenant, withoutTenantScope } from "./db";
 import {
   accessibleLocationIds,
+  isLocationScope,
   canAccessLocation,
   canSwitchBranches,
   defaultAccessibleLocationId,
@@ -53,25 +55,36 @@ export interface TaxSetting {
   defaultRate: number;
 }
 
-/** Owner/Manager guard for setup API routes. Returns a response to short-circuit with, or the session. */
+/**
+ * Owner/Admin/Manager guard for the setup and configuration API routes.
+ *
+ * ## It used to check nothing
+ *
+ * The previous implementation compared `session.role` — the role baked into
+ * the JWT at login — against two literals, and that was the whole guard. No
+ * `is_active`, no business status, no `token_version`, no re-read of the role.
+ * A deactivated manager kept full access to every one of its ~57 endpoints
+ * until their token expired, and a demoted one kept their old role's access.
+ *
+ * It now delegates to the canonical evaluator, which enforces the full chain.
+ * The allow case is unchanged for existing tenants, so no call site needed
+ * editing — `admin` is added because a tenant administrator is exactly who
+ * this guard is for, and no existing membership holds that role.
+ *
+ * It remains role-based rather than permission-based on purpose: these are the
+ * wizard/bootstrap routes that *establish* a business's configuration, several
+ * of them before the permission model has anything to say about the tenant.
+ * Capability-shaped configuration endpoints belong on `settings.manage`
+ * instead, and the ones that have been moved there are listed in
+ * docs/authorization/ARCHITECTURE.md.
+ */
 export async function requireManager(): Promise<
   | { session: SessionPayload; error: null }
   | { session: null; error: NextResponse }
 > {
-  const session = await getSession();
-  if (!session) {
-    return {
-      session: null,
-      error: NextResponse.json({ error: "unauthorized" }, { status: 401 }),
-    };
-  }
-  if (session.role !== "owner" && session.role !== "manager") {
-    return {
-      session: null,
-      error: NextResponse.json({ error: "forbidden" }, { status: 403 }),
-    };
-  }
-  return { session, error: null };
+  const decision = await authorize(await getSession(), { roles: ["owner", "admin", "manager"] });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, error: null };
 }
 
 async function count(sql: string, params: unknown[]): Promise<number> {
@@ -199,8 +212,8 @@ async function locationAccessContext(
   userId: string,
 ): Promise<LocationAccessContext> {
   const [{ rows: userRows }, { rows: assignmentRows }] = await Promise.all([
-    query<{ role: Role; location_id: string | null }>(
-      "SELECT role, location_id FROM users WHERE id = $1",
+    query<{ role: Role; location_id: string | null; location_scope: string }>(
+      "SELECT role, location_id, location_scope::text AS location_scope FROM users WHERE id = $1",
       [userId],
     ),
     query<{ location_id: string }>(
@@ -212,6 +225,10 @@ async function locationAccessContext(
     role: userRows[0]?.role ?? "cashier",
     defaultLocationId: userRows[0]?.location_id ?? null,
     assignedLocationIds: assignmentRows.map((r) => r.location_id),
+    // The stored policy, which is what makes the widening fallback in the old
+    // resolution unreachable. A row that somehow holds an unrecognised value
+    // degrades to the narrowest scope rather than to the widest.
+    scope: isLocationScope(userRows[0]?.location_scope) ? userRows[0].location_scope : "home",
   };
 }
 

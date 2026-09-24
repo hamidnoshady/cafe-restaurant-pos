@@ -17,7 +17,7 @@
  * - «میز کار» is the way out, so owning a sidebar does not mean trapping the
  *   member in it.
  *
- * The entries come from `growth-nav.ts` and are filtered by the app's own role
+ * The entries come from `growth-nav.ts` and are filtered by the app's own capability
  * gate, so a cashier's sidebar holds the one section they may open — exactly
  * what the page redirects already assume. The arrangement is `AppSectionNav`,
  * shared with CRM, so the two apps' menus cannot drift apart.
@@ -25,20 +25,20 @@
 
 import type { AppShellNavProps } from "@/app/dashboard/app-shell-nav";
 import { AppSectionNav } from "@/app/dashboard/app-section-nav";
-import { growthNavItemsForRole } from "./growth-nav";
+import { growthNavItemsFor } from "./growth-nav";
 import {
   growthSectionHref,
   isGrowthSectionPathname,
   type GrowthSectionKey,
 } from "./growth-routes";
 
-export function GrowthAppNav({ shell, role, pathname, onNavigate }: AppShellNavProps) {
+export function GrowthAppNav({ shell, permissions, pathname, onNavigate }: AppShellNavProps) {
   return (
     <AppSectionNav<GrowthSectionKey>
       ariaLabel="بخش‌های رشد و بازاریابی"
       title={shell.label}
       description={shell.description}
-      items={growthNavItemsForRole(role)}
+      items={growthNavItemsFor(permissions)}
       hrefFor={growthSectionHref}
       isActive={(key) => isGrowthSectionPathname(pathname, key)}
       onNavigate={onNavigate}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { disconnectCmsWebsite } from "@/lib/cms/website-service";
 
 /**
@@ -7,7 +8,7 @@ import { disconnectCmsWebsite } from "@/lib/cms/website-service";
  * The CMS site and its content stay; only this app's stored key is removed.
  */
 export const DELETE = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteConfigure);
   if (error) return error;
 
   await disconnectCmsWebsite(session.businessId);

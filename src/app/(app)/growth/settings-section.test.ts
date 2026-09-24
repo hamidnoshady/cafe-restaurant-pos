@@ -68,9 +68,23 @@ describe("Growth settings", () => {
 });
 
 describe("the Growth settings read route", () => {
-  it("is tenant-scoped and management-only", () => {
+  /**
+   * Was `requireRole("owner", "manager")`. The authorization refactor moved
+   * Growth onto capability keys, so the assertion moves with it: what the
+   * route must prove is that opening the app's configuration needs a named
+   * capability, not that the caller happens to hold one of two role strings.
+   *
+   * The capability is `growth.manage` rather than `growth.view` on purpose.
+   * `growth.manage`'s audience is exactly the owner/manager pair the old
+   * `requireRole` call named, whereas `growth.view` also reaches the
+   * accountant — who could read Growth's customer screen but never its
+   * settings. Reusing the read key here would have been a widening wearing a
+   * refactor's clothes.
+   */
+  it("is tenant-scoped and gated on the growth management capability", () => {
     expect(ROUTE_SOURCE).toMatch(/withTenantScope/);
-    expect(ROUTE_SOURCE).toMatch(/requireRole\(\"owner\", \"manager\"\)/);
+    expect(ROUTE_SOURCE).toMatch(/requirePermission\(PERMISSIONS\.growthManage\)/);
+    expect(ROUTE_SOURCE).not.toMatch(/requireRole\(/);
   });
 
   it("reports the four engines from their own services", () => {

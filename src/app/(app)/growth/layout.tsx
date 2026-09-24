@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { canOpenGrowth } from "./growth-routes";
 import { GrowthAppShell } from "./growth-app-shell";
 
@@ -25,7 +26,11 @@ import { GrowthAppShell } from "./growth-app-shell";
 export default async function GrowthLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canOpenGrowth(session.role)) redirect("/dashboard");
+  // The member's live effective permissions — the same set the API enforces,
+  // so the page and the fetches inside it can never disagree about access.
+  const access = await memberAccessFor(session);
+  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  if (!canOpenGrowth(permissions)) redirect("/dashboard");
 
   return <GrowthAppShell>{children}</GrowthAppShell>;
 }

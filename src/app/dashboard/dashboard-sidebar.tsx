@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import {
@@ -211,6 +211,12 @@ export interface NavItem {
 interface SidebarProps {
   navItems: NavItem[];
   role: string;
+  /**
+   * The acting member's effective permission keys, resolved once by the server
+   * shell (`memberAccessFor`). Passed as an array because this crosses the
+   * server/client boundary, where a `Set` is not serialisable.
+   */
+  permissions: readonly string[];
   fullName: string;
   /** From the business's industry profile — a jewellery shop is not «کافه و رستوران». */
   brandTitle: string;
@@ -649,12 +655,14 @@ function AppShellNavigation({
   nav: Nav,
   shell,
   role,
+  permissions,
   pathname,
   navItems,
 }: {
   nav: (props: AppShellNavProps) => React.ReactElement;
   shell: AppShellDef;
   role: string;
+  permissions: ReadonlySet<string>;
   pathname: string;
   /** The business nav, for an app menu that arranges business pages (Accounting). */
   navItems: NavItem[];
@@ -665,6 +673,7 @@ function AppShellNavigation({
     <Nav
       shell={shell}
       role={role}
+      permissions={permissions}
       pathname={pathname}
       search={search.toString()}
       // Flattened, so a child page (لیست قیمت under محصولات) can be adopted by
@@ -957,6 +966,7 @@ function SidebarResizeHandle({
 export function DashboardSidebar({
   navItems,
   role,
+  permissions,
   fullName,
   brandTitle,
   brandSubtitle,
@@ -978,6 +988,9 @@ export function DashboardSidebar({
   // Sub-sections included, so a pinned child page survives the "is this still
   // visible to me?" filter the bottom bar runs on every render.
   const availableHrefs = flattenNav(navItems).map((item) => item.href);
+  // Rebuilt from the serialised array once per render rather than on every
+  // lookup inside an app's menu.
+  const permissionSet = useMemo(() => new Set(permissions), [permissions]);
   // `/projects` is a legacy alias that middleware redirects before this shell
   // renders. The canonical Workspace prefix owns the contextual sidebar.
   const workspaceRoute = isWorkspacePathname(pathname);
@@ -1089,6 +1102,7 @@ export function DashboardSidebar({
             nav={appShell.nav}
             shell={appShell.shell}
             role={role}
+            permissions={permissionSet}
             pathname={pathname}
             navItems={navItems}
           />

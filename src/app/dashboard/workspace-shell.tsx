@@ -382,6 +382,10 @@ export async function WorkspaceShell({
         <DashboardSidebar
           navItems={navItems}
           role={member.role}
+          // The member's effective permissions, so an app's own menu can gate
+          // on the same capabilities its API enforces instead of on a parallel
+          // list of role names.
+          permissions={[...permissions]}
           fullName={session.fullName}
           brandTitle={profile.brandTitle}
           brandSubtitle={profile.brandSubtitle}

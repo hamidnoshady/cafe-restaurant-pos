@@ -34,6 +34,13 @@ export interface AppShellNavProps {
   /** The shell that owns this route — its label and description head the menu. */
   shell: AppShellDef;
   role: string;
+  /**
+   * The acting member's effective permissions. An app menu should gate on
+   * these — the same set the API enforces — so that a page the member may open
+   * is always listed and a page they may not is never offered. `role` remains
+   * for the menus whose grouping genuinely depends on role identity.
+   */
+  permissions: ReadonlySet<string>;
   pathname: string;
   /**
    * The current query string (without `?`).

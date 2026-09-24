@@ -14,6 +14,7 @@ import { BCRYPT_COST } from "@/lib/password-hashing";
 import type { PoolClient } from "pg";
 import { getPool, query, withoutTenantScope } from "./db";
 import type { Role } from "./auth-edge";
+import { derivedLocationScope, isLocationScope, type LocationScope } from "./location-access";
 import {
   effectivePermissions,
   parseOverrides,
@@ -64,6 +65,12 @@ export interface TeamMember {
   phoneVerified: boolean;
   locationIds: string[];
   defaultLocationId: string | null;
+  /**
+   * The member's explicit branch policy (migration 0170). The team UI renders
+   * this rather than inferring «همه شعبه‌ها» from an empty assignment list, which
+   * is what made the old roaming case invisible.
+   */
+  locationScope: LocationScope;
   overrides: PermissionOverrides;
   effectivePermissions: string[];
   createdAt: string;
@@ -80,6 +87,7 @@ interface MemberRow extends Record<string, unknown> {
   phone_e164: string | null;
   phone_verified_at: Date | null;
   default_location_id: string | null;
+  location_scope: string;
   permissions: unknown;
   location_ids: string[] | null;
   created_at: Date;
@@ -99,6 +107,7 @@ function toMember(row: MemberRow): TeamMember {
     phoneVerified: row.phone_verified_at !== null,
     locationIds: row.location_ids ?? [],
     defaultLocationId: row.default_location_id,
+    locationScope: isLocationScope(row.location_scope) ? row.location_scope : "home",
     overrides,
     effectivePermissions: [...effectivePermissions(row.role, overrides)].sort(),
     createdAt: row.created_at.toISOString(),
@@ -113,6 +122,7 @@ export async function listMembers(businessId: string): Promise<TeamMember[]> {
             (u.platform_user_id IS NOT NULL) AS has_login,
             u.phone_e164, u.phone_verified_at,
             u.location_id AS default_location_id,
+            u.location_scope::text AS location_scope,
             u.permissions, u.created_at,
             coalesce(
               (SELECT array_agg(ul.location_id) FROM user_locations ul WHERE ul.user_id = u.id),
@@ -200,6 +210,14 @@ export interface CreateMembershipInput {
   phoneE164?: string | null;
   locationIds?: string[];
   defaultLocationId?: string | null;
+  /**
+   * The branch policy to store. Omitted means "derive it from the assignment
+   * shape", which reproduces exactly what migration 0170's backfill would have
+   * written — so a caller that predates the column still produces a coherent
+   * row rather than a member silently left on the narrow default after being
+   * handed a list of branches.
+   */
+  locationScope?: LocationScope;
   overrides?: PermissionOverrides;
   actorId: string | null;
 }
@@ -291,8 +309,8 @@ export async function createMembership(
     const { rows: created } = await client.query<{ id: string }>(
       `INSERT INTO users
          (business_id, platform_user_id, role, full_name, email, pin_hash,
-          phone_e164, location_id, permissions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+          phone_e164, location_id, permissions, location_scope)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::location_scope) RETURNING id`,
       [
         input.businessId,
         platformUserId,
@@ -303,6 +321,17 @@ export async function createMembership(
         input.phoneE164 ?? null,
         locations.defaultLocationId,
         JSON.stringify(input.overrides ?? {}),
+        // Owners are whole-business by definition; everybody else gets the
+        // policy the caller asked for, or the one their assignment shape
+        // implies. Never a silent "all" for a member created with neither.
+        input.role === "owner"
+          ? "all"
+          : (input.locationScope ??
+            derivedLocationScope({
+              role: input.role,
+              defaultLocationId: locations.defaultLocationId,
+              assignedLocationIds: locations.locationIds,
+            })),
       ],
     );
     const userId = created[0].id;
@@ -390,6 +419,14 @@ export interface UpdateMembershipInput {
   overrides?: PermissionOverrides;
   locationIds?: string[];
   defaultLocationId?: string | null;
+  /**
+   * The branch policy to store. Omitted means "derive it from the assignment
+   * shape", which reproduces exactly what migration 0170's backfill would have
+   * written — so a caller that predates the column still produces a coherent
+   * row rather than silently leaving the narrow default in place after being
+   * handed a list of branches.
+   */
+  locationScope?: LocationScope;
 }
 
 /**
@@ -449,7 +486,8 @@ export async function updateMembership(
     await client.query("BEGIN");
 
     const { rows: beforeRows } = await client.query(
-      `SELECT role, full_name, email, is_active, permissions, location_id
+      `SELECT role, full_name, email, is_active, permissions, location_id,
+              location_scope::text AS location_scope
          FROM users WHERE id = $1 AND business_id = $2`,
       [input.userId, input.businessId],
     );
@@ -492,6 +530,7 @@ export async function updateMembership(
               is_active   = coalesce($5, is_active),
               permissions = coalesce($6, permissions),
               location_id = CASE WHEN $7::boolean THEN $8::uuid ELSE location_id END,
+              location_scope = coalesce($9::location_scope, location_scope),
               updated_at  = now()
         WHERE id = $1 AND business_id = $2`,
       [
@@ -503,6 +542,20 @@ export async function updateMembership(
         input.overrides ? JSON.stringify(input.overrides) : null,
         defaultLocationId !== undefined,
         defaultLocationId ?? null,
+        // An explicit scope wins. Otherwise, a write that *replaces* the branch
+        // assignment also re-derives the policy — leaving a member on 'home'
+        // after being handed three branches would silently ignore the edit —
+        // while a write that touches neither leaves the stored policy alone.
+        input.locationScope ??
+          (input.role === "owner"
+            ? "all"
+            : locationIds !== null
+              ? derivedLocationScope({
+                  role: input.role ?? before.role,
+                  defaultLocationId: defaultLocationId ?? before.location_id,
+                  assignedLocationIds: locationIds,
+                })
+              : null),
       ],
     );
 

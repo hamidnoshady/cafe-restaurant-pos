@@ -19,7 +19,7 @@ describe("tenant contextual-nav route guards", () => {
   it("has a server-side app-door guard for every contextual app", () => {
     const apps = [
       { path: "./(app)/crm/layout.tsx", gate: "canOpenCrm" },
-      { path: "./(app)/growth/layout.tsx", gate: "canOpenGrowth" },
+
       { path: "./(app)/websites/layout.tsx", gate: "canOpenWebsiteApp" },
     ] as const;
 
@@ -50,17 +50,49 @@ describe("tenant contextual-nav route guards", () => {
     expect(detail).toContain("crmFallbackHref(session.role)");
   });
 
-  it("has a section-level Growth guard on every canonical page", () => {
+  /**
+   * Growth is asserted separately from CRM because it has already been moved
+   * off role strings. Its gates take the member's effective permission set —
+   * the very set `memberAccessFor` resolves and the API enforces — so the
+   * assertion checks for `permissions`, and additionally checks that
+   * `session.role` is *not* what the gate is fed. That negative is the point:
+   * it is what stops the app drifting back to a menu that asks a different
+   * question from the route it opens.
+   */
+  it("has a server-side app-door guard on the Growth layout", () => {
+    const layout = source("./(app)/growth/layout.tsx");
+    expect(layout, "growth/layout.tsx must require a signed-in member").toContain(
+      'redirect("/login")',
+    );
+    expect(layout).toContain("memberAccessFor(session)");
+    expect(layout).toContain("canOpenGrowth(permissions)");
+    expect(layout).not.toContain("canOpenGrowth(session.role)");
+    expect(layout, "growth/layout.tsx must reject a member without the app").toContain(
+      'redirect("/dashboard")',
+    );
+  });
+
+  it("has a permission-based section guard on every canonical Growth page", () => {
     for (const section of GROWTH_SECTION_KEYS) {
       const page = source(
         section === "overview"
           ? "./(app)/growth/overview/page.tsx"
           : `./(app)/growth/${section}/page.tsx`,
       );
-      expect(page, `/growth/${section} must check its own section gate`).toContain(
-        `canViewGrowthSection(session.role, "${section}")`,
+      expect(page, `/growth/${section} must resolve effective permissions`).toContain(
+        "memberAccessFor(session)",
       );
-      expect(page).toContain("growthFallbackHref(session.role)");
+      expect(page, `/growth/${section} must check its own section gate`).toContain(
+        `canViewGrowthSection(permissions, "${section}")`,
+      );
+      expect(page).toContain("growthFallbackHref(permissions)");
+      // Narrowly: the *gates* must not be fed a role. `session.role` may still
+      // travel onward into the view as presentation (labels, an empty-state
+      // hint); what must never come back is an authorization decision made
+      // from it, because that is the divergence this whole file exists to stop.
+      expect(page, `/growth/${section} must not re-introduce a role gate`).not.toMatch(
+        /(canViewGrowthSection|growthFallbackHref|canOpenGrowth)\(\s*session\.role/,
+      );
     }
   });
 

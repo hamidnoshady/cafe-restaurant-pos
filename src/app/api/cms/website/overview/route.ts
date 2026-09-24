@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { cmsWebsiteOverview } from "@/lib/cms/website-service";
 
 /**
@@ -7,7 +8,7 @@ import { cmsWebsiteOverview } from "@/lib/cms/website-service";
  * descriptor (theme, locales, store currency) + pages + products + orders.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
   if (error) return error;
 
   const result = await cmsWebsiteOverview(session.businessId);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { quoteWebsiteDomain } from "@/lib/website/domain-service";
 
 /**
@@ -12,7 +13,7 @@ import { quoteWebsiteDomain } from "@/lib/website/domain-service";
  * price a domain at its very first step.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
   if (error) return error;
 
   const params = new URL(request.url).searchParams;

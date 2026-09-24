@@ -32,8 +32,23 @@ const REALM = "tenant";
  *
  * `accountant` arrived with Phase 12 for the accounting suite in Phase 16: it
  * works the books without touching the till or the floor.
+ *
+ * `admin` and `viewer` arrived with the authorization refactor. `admin` is the
+ * tenant administrator that `manager` had been standing in for — everything
+ * short of the owner-only capabilities — so that running the business and
+ * administering the tenant stop being the same grant. `viewer` is the
+ * read-only auditor. Both are additive: no existing membership holds either,
+ * so no tenant's behaviour changes until somebody assigns one.
  */
-export type Role = "owner" | "manager" | "accountant" | "cashier" | "waiter" | "kitchen";
+export type Role =
+  | "owner"
+  | "admin"
+  | "manager"
+  | "accountant"
+  | "cashier"
+  | "waiter"
+  | "kitchen"
+  | "viewer";
 
 export interface SessionPayload {
   /** users.id — the *membership* acting, not the person. See migration 0020. */

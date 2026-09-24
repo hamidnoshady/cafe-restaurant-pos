@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { buildWebsite } from "@/lib/website/setup-service";
 
 /**
@@ -17,7 +18,7 @@ import { buildWebsite } from "@/lib/website/setup-service";
  * business's platform credit and puts a public site on the internet.
  */
 export const POST = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteConfigure);
   if (error) return error;
 
   const result = await buildWebsite(session.businessId);

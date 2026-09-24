@@ -87,9 +87,12 @@ export const GROWTH_NAV_ITEMS: readonly GrowthNavItem[] = [
 ];
 
 /**
- * The entries a role may open — `canViewGrowthSection` is the only gate, so a
+ * The entries a member may open — `canViewGrowthSection` is the only gate, so a
  * section that becomes floor-safe changes the menu by changing that one function.
  */
-export function growthNavItemsForRole(role: string | null | undefined): GrowthNavItem[] {
-  return GROWTH_NAV_ITEMS.filter((item) => canViewGrowthSection(role ?? "", item.key));
+export function growthNavItemsFor(
+  permissions: ReadonlySet<string> | null | undefined,
+): GrowthNavItem[] {
+  const held = permissions ?? new Set<string>();
+  return GROWTH_NAV_ITEMS.filter((item) => canViewGrowthSection(held, item.key));
 }

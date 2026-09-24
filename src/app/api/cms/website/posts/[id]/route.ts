@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { deleteCmsPost, updateCmsPost, type CmsPostInput } from "@/lib/cms/website-service";
 
 function statusFor(error: string): number {
@@ -12,7 +13,7 @@ function statusFor(error: string): number {
 
 /** `PATCH /api/cms/website/posts/[id]` — edit a post on the connected CMS site. */
 export const PATCH = withTenantScope(async (request: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteManage);
   if (error) return error;
 
   const { id } = await ctx.params;
@@ -37,7 +38,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, ctx: { params:
 
 /** `DELETE /api/cms/website/posts/[id]` — remove a post from the connected CMS site. */
 export const DELETE = withTenantScope(async (_request: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteManage);
   if (error) return error;
 
   const { id } = await ctx.params;

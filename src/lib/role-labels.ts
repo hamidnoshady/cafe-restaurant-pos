@@ -17,15 +17,17 @@ import type { Role } from "./auth-edge";
 /** What each system role is called in the UI. */
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "مالک",
+  admin: "مدیر ارشد",
   manager: "مدیر",
   accountant: "حسابدار",
   cashier: "صندوق‌دار",
   waiter: "گارسون",
   kitchen: "آشپزخانه",
+  viewer: "بازبین",
 };
 
 /**
- * A role's label, or the raw value when it is none of the six — platform-level
+ * A role's label, or the raw value when it is none of the built-in roles — platform-level
  * strings and stale tokens should degrade to readable text, never to
  * `undefined` rendered as nothing.
  */

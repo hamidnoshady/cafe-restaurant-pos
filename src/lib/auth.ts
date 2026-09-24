@@ -17,7 +17,8 @@ import { featureForApiPath, isFeatureEnabled } from "./features";
 import { isModuleEnabled } from "./industry-guard";
 import { moduleForApiPath } from "./industry-profile";
 import { holooGuardedEntityType, holooLocalIdFromPath, holooOwnedIds, HOLOO_GUARDED_PREFIXES } from "./integrations/holoo/holoo-ownership";
-import { hasPermission, parseOverrides, PERMISSIONS, type Permission } from "./permissions";
+import { PERMISSIONS, type Permission } from "./permissions";
+import { authorize, denialResponse, withAuthorizationMemo } from "./authorize";
 import { activeGrant } from "./platform-service";
 import { platformAudit } from "./platform-auth";
 import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
@@ -152,7 +153,7 @@ export function withTenantScope<Args extends unknown[]>(
     const scope = session
       ? businessScope(session.businessId, session.locationId, session.sub)
       : NO_SCOPE;
-    return runInTenantScope(scope, async () => {
+    return runInTenantScope(scope, () => withAuthorizationMemo(async () => {
       const request = args[0] as NextRequest | undefined;
 
       // Phase 17 — feature-flag enforcement. Only checked once a session
@@ -231,7 +232,7 @@ export function withTenantScope<Args extends unknown[]>(
       }
 
       return handler(...args);
-    });
+    }));
   };
 }
 
@@ -251,87 +252,80 @@ export function withTenantScope<Args extends unknown[]>(
 export async function requireMember(): Promise<
   { session: SessionPayload; error: null } | { session: null; error: NextResponse }
 > {
-  const session = await getSession();
-  if (!session) {
-    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  }
-  return { session, error: null };
+  // Goes through `authorize()` with no capability requirement so that "any
+  // signed-in member" still means an *active* member of an *active* business
+  // holding a *non-revoked* identity. Before the consolidation it meant only
+  // "a token that verifies", which let a deactivated member keep managing
+  // their notification rules and reading their own inbox.
+  const decision = await authorize(await getSession());
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, error: null };
 }
 
-/** Session + role guard for API routes. Returns a response to short-circuit with, or the session. */
+/**
+ * Session + role guard for API routes.
+ *
+ * ## This is no longer a role comparison against the JWT
+ *
+ * It used to be, and that was the single largest security hole in the
+ * platform: `session.role` is the role that was baked into the token *at
+ * login*, so across the ~500 endpoints guarded this way a member who had since
+ * been deactivated, demoted, or whose business had been suspended kept the
+ * access they had that morning until their token expired. The guard never
+ * looked at `users.is_active`, never looked at `businesses.status`, and never
+ * re-read the role.
+ *
+ * It now delegates to `authorize()` like every other guard, which re-reads the
+ * membership and enforces the full chain (identity → membership → tenant →
+ * role/permission). The `roles` list still does what it always did — the
+ * signature and the semantics of the *allow* case are unchanged, so no call
+ * site needed editing — but the *deny* cases it was missing are now covered.
+ *
+ * New code should prefer `requirePermission`. This remains for role identity
+ * that is genuinely semantic, and for the legacy endpoints not yet migrated;
+ * both are inventoried in docs/authorization/ARCHITECTURE.md.
+ */
 export async function requireRole(
   ...roles: Role[]
 ): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
-  const session = await getSession();
-  if (!session) {
-    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  }
-  
-  if (session.platformUserId && session.tokenVersion) {
-    const { rows } = await query<{ token_version: number }>(
-      `SELECT token_version FROM platform_users WHERE id = $1`,
-      [session.platformUserId]
-    );
-    if (rows.length === 0 || rows[0].token_version !== session.tokenVersion) {
-      return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-    }
-  }
-
-  if (!roles.includes(session.role)) {
-    return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-  }
-  return { session, error: null };
+  const decision = await authorize(await getSession(), { roles });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, error: null };
 }
 
 /**
  * Fine-grained guard: does this member hold `permission` right now?
  *
- * Unlike `requireRole`, this re-reads the membership from the database rather
- * than trusting the token. That costs one indexed lookup and buys three
- * things: an owner revoking a permission takes effect on the member's next
- * request instead of at their next login, deactivating a member ends their
- * session's usefulness immediately, and a suspended business stops serving
- * traffic without waiting for tokens to expire.
+ * The preferred guard for ordinary application authorization. Re-reads the
+ * membership rather than trusting the token, so revoking a permission takes
+ * effect on the member's next request rather than at their next login.
+ *
+ * Since the consolidation it additionally performs the `token_version` check
+ * it used to lack — the password-reset kill switch previously worked on
+ * `requireRole` endpoints but not on `requirePermission` ones.
  */
 export async function requirePermission(
   permission: Permission,
 ): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
-  const session = await getSession();
-  if (!session) {
-    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  }
-
-  const { rows } = await query<{
-    role: Role;
-    permissions: unknown;
-    is_active: boolean;
-    business_status: string;
-  }>(
-    `SELECT u.role, u.permissions, u.is_active, b.status::text AS business_status
-       FROM users u
-       JOIN businesses b ON b.id = u.business_id
-      WHERE u.id = $1 AND u.business_id = $2`,
-    [session.sub, session.businessId],
-  );
-
-  const membership = rows[0];
-  if (!membership || !membership.is_active) {
-    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  }
-  if (membership.business_status !== "active") {
-    return {
-      session: null,
-      error: NextResponse.json({ error: "business_suspended" }, { status: 403 }),
-    };
-  }
-  if (!hasPermission(membership.role, parseOverrides(membership.permissions), permission)) {
-    return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-  }
-
-  // The token's role can lag a role change; the database is the authority.
-  return { session: { ...session, role: membership.role }, error: null };
+  const decision = await authorize(await getSession(), { permission });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, error: null };
 }
 
+/**
+ * As `requirePermission`, but any one of `permissions` is enough.
+ *
+ * For endpoints that serve both a reader and an editor: `GET /api/team` wants
+ * `team.view`, but a member who holds only the broader `team.manage` must not
+ * be locked out of the list they are allowed to edit.
+ */
+export async function requireAnyPermission(
+  ...permissions: Permission[]
+): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
+  const decision = await authorize(await getSession(), { anyPermission: permissions });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, error: null };
+}
 
 /**
  * Wave 3 floor-assistant guard. It is intentionally separate from

@@ -172,8 +172,72 @@ export const PERMISSIONS = {
   dataImport: "data.import",
   dataExport: "data.export",
 
+  /**
+   * Website & CMS — «مدیریت وب‌سایت».
+   *
+   * Before these keys existed every `/api/cms/website/*` route gated on
+   * `requireRole("owner", "manager")`, which made "may edit a blog post" and
+   * "may re-point the business's DNS" the same act. They are not: the first is
+   * daily content work a business delegates to a junior marketer, the second
+   * can take the public site off the internet. Split by blast radius, the same
+   * way the CRM block above is:
+   */
+  /** Read the website state, overview, catalogue and drafts. */
+  websiteView: "website.view",
+  /** Day-to-day content work: drafts, posts, products, media, orders. */
+  websiteManage: "website.manage",
+  /**
+   * Push a draft live. Its own key because publishing is the only content act
+   * the public sees instantly and cannot be quietly undone before anyone
+   * notices.
+   */
+  websitePublish: "website.publish",
+  /**
+   * Structural website administration: domains, DNS, CDN, provisioning,
+   * connector settings. Whoever holds this can take the site offline.
+   */
+  websiteConfigure: "website.configure",
+
+  /**
+   * Growth — «رشد»: the marketing and customer-development app.
+   *
+   * Split into two pairs rather than one, because the app has two audiences
+   * that were never the same people. The management surfaces — the growth
+   * dashboard, campaigns, messaging, commission, the app's own settings — were
+   * `requireRole("owner", "manager")`. The loyalty lookups are till work: a
+   * cashier reads a customer's points and the programme list on every shift,
+   * and `requireRole("owner", "manager", "cashier")` is what said so.
+   *
+   * One `growth.view` covering both would have handed the cashier the
+   * management dashboard and the accountant the loyalty desk — a widening
+   * disguised as a refactor. Two pairs reproduce the four existing audiences
+   * exactly.
+   */
+  /** Read the growth dashboards and Growth's own customer screen. */
+  growthView: "growth.view",
+  /** Run campaigns, send messages, pay commission, configure the app. */
+  growthManage: "growth.manage",
+  /** Till-level loyalty reads: programmes, a customer's points, repurchase. */
+  loyaltyView: "loyalty.view",
+  /** Redeem points, grant store credit, define programmes. Moves value. */
+  loyaltyManage: "loyalty.manage",
+
   // Administration
+  /**
+   * Read the team list and a member's access profile without being able to
+   * change it. Carved out of `team.manage` so an auditor or a shift lead can
+   * answer "who works here and what can they do" without also being able to
+   * hand out permissions.
+   */
+  teamView: "team.view",
   teamManage: "team.manage",
+  /**
+   * Change a member's role or permission overrides. Separate from
+   * `team.manage` (which covers creating staff, resetting a PIN, suspending)
+   * because granting permissions is how a delegated team administrator would
+   * escalate their own access.
+   */
+  teamPermissionsManage: "team.permissions_manage",
   settingsManage: "settings.manage",
   locationsManage: "locations.manage",
   backupManage: "backup.manage",
@@ -207,7 +271,10 @@ const {
   ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
   reportsView, reportsExport,
   dataImport, dataExport,
-  teamManage, settingsManage, locationsManage, backupManage,
+  websiteView, websiteManage, websitePublish, websiteConfigure,
+  growthView, growthManage, loyaltyView, loyaltyManage,
+  teamView, teamManage, teamPermissionsManage,
+  settingsManage, locationsManage, backupManage,
 } = PERMISSIONS;
 
 /**
@@ -217,7 +284,7 @@ const {
  * `roleBasePermissions`). Giving the owner an enumerated set would mean every
  * new permission added later silently excludes them.
  */
-const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
+const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
   manager: [
     ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
     tablesManage, reservationsManage, kitchenView, deliveryManage,
@@ -244,8 +311,38 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // the access they had rather than handing them a new capability. The
     // engine still intersects them with each entity's own permission.
     dataImport, dataExport,
+    // Website & Growth: every `/api/cms/website/*` and `/api/growth|loyalty/*`
+    // route gated on requireRole("owner","manager") before these keys existed,
+    // so the manager preset grants what the manager already reached. The one
+    // `websiteConfigure` is included even though it is the highest-risk key of
+    // the four: the manager could already reach the DNS, CDN, domain and
+    // provisioning routes, and splitting a role-only gate into graded keys must
+    // not be the thing that takes access away. The split's value is that the
+    // capability is now *separable* — an owner can revoke it from one manager,
+    // or grant website content work to a marketer who is not a manager at all.
+    // The one website route that was owner-only (purchasing a domain, a
+    // financial commitment) stays owner-only as a role gate.
+    websiteView, websiteManage, websitePublish, websiteConfigure,
+    growthView, growthManage, loyaltyView, loyaltyManage,
     settingsManage, backupManage,
   ],
+  /**
+   * Phase A — the tenant administrator, introduced by this refactor.
+   *
+   * Admin exists because `manager` had been doing two unrelated jobs: running
+   * the business (orders, stock, the floor) and administering the tenant
+   * (staff, branches, integrations). Bundling them meant a shift manager who
+   * needed to void an order also got the ability to reconfigure the business.
+   *
+   * Admin is defined as a *rule* rather than a list, like the owner: every
+   * capability except the ones the owner may not delegate. That way a
+   * permission added in a later release does not silently exclude the role
+   * whose entire purpose is "everything short of ownership".
+   *
+   * No existing tenant has an admin, so this preset cannot regress anybody.
+   *
+   * Computed in `roleBasePermissions`, not listed here.
+   */
   // Phase 16's role: the books, and only the books. No till, no floor. Manages
   // the «اشخاص» file inside the Accounting app (its own customers, suppliers
   // and staff view with the ledger's columns) — the CRM app itself stays
@@ -263,6 +360,11 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // for. Which entities they may actually move is still decided by the
     // entity permissions above — no crm.export here, so no customer dump.
     dataImport, dataExport,
+    // `/api/growth/accounting` and `/api/growth/customers` were
+    // requireRole("owner","manager","accountant"), so the accountant keeps the
+    // read they had. No growth.manage and no loyalty.*: running a campaign and
+    // working the loyalty desk were never theirs.
+    growthView,
     // A project is a cost centre the books post against (journal_entries
     // .project_id), so the accountant must be able to read the workspace and
     // the contracts whose values they are accruing. Read only: recording a
@@ -284,6 +386,12 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // Sees the projects they are a member of and works the tasks on them —
     // the floor-staff case the workspace is for. No contracts, no approvals.
     workspaceView, workspaceManage,
+    // The loyalty lookups the till needs — a customer's points, the programme
+    // list, the repurchase prompt — were requireRole("owner","manager",
+    // "cashier"). Read only: redeeming points and granting store credit were
+    // owner/manager routes and are now loyalty.manage. No growth.view either:
+    // the growth dashboard and Growth's customer screen were never a cashier's.
+    loyaltyView,
   ],
   waiter: [
     ordersCreate,
@@ -297,7 +405,44 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     kitchenView,
     menuView,
   ],
+  /**
+   * Phase A — the read-only auditor, introduced by this refactor.
+   *
+   * Broad sight, no mutation: every `*.view`-shaped capability and nothing
+   * else. Deliberately WITHOUT `reports.export`, `crm.export` and
+   * `data.export` — being allowed to read a figure on screen and being allowed
+   * to walk out with the dataset behind it are different acts, and an external
+   * accountant or a due-diligence reviewer is exactly the case where the
+   * difference matters. A tenant that wants an exporting auditor grants the
+   * export keys to that member individually.
+   */
+  viewer: [
+    menuView,
+    inventoryView,
+    partiesView,
+    crmView,
+    workspaceView,
+    ledgerView,
+    reportsView,
+    kitchenView,
+    websiteView,
+    growthView,
+    loyaltyView,
+    teamView,
+  ],
 };
+
+/**
+ * Roles whose permission set is a rule rather than a list, and what that rule
+ * is. Keeping these out of ROLE_PRESETS is the point: a permission added in a
+ * later release must be picked up automatically instead of silently excluding
+ * the two roles defined as "everything (short of ownership)".
+ */
+function absolutePresetFor(role: Role): Permission[] | null {
+  if (role === "owner") return [...ALL_PERMISSIONS];
+  if (role === "admin") return ALL_PERMISSIONS.filter((p) => !isOwnerOnlyPermission(p));
+  return null;
+}
 
 /** Per-member adjustments layered on top of the role preset. */
 export interface PermissionOverrides {
@@ -312,8 +457,7 @@ export function isAbsoluteRole(role: Role): role is "owner" {
 
 /** The preset for a role, before any per-member overrides. */
 export function roleBasePermissions(role: Role): Permission[] {
-  if (isAbsoluteRole(role)) return [...ALL_PERMISSIONS];
-  return [...(ROLE_PRESETS[role] ?? [])];
+  return absolutePresetFor(role) ?? [...(ROLE_PRESETS[role as keyof typeof ROLE_PRESETS] ?? [])];
 }
 
 function isPermission(value: string): value is Permission {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { growthOverviewForSession } from "@/lib/growth-overview";
 
 /**
@@ -17,7 +18,7 @@ import { growthOverviewForSession } from "@/lib/growth-overview";
  * business reading the repurchase list or the growth activity feed.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.growthView);
   if (error) return error;
 
   const overview = await growthOverviewForSession(session);

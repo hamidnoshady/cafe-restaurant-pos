@@ -1,3 +1,5 @@
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
@@ -55,8 +57,21 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     body.width !== undefined ||
     body.height !== undefined ||
     body.shape !== undefined;
-  if (isEdit && session.role !== "owner" && session.role !== "manager") {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // Seating a guest and redrawing the floor plan are different acts, and the
+  // guard on this route only covers the first. `tables.manage` is held by
+  // waiters and cashiers because they move parties between tables; changing a
+  // table's name, position, size or active state is configuration, so it takes
+  // `settings.manage` — which is exactly the owner/manager audience this line
+  // used to hard-code, read from the member's live permissions instead of from
+  // their token's role.
+  if (isEdit) {
+    const editor = await memberAccessFor(session);
+    if (!editor?.permissions.has(PERMISSIONS.settingsManage)) {
+      return NextResponse.json(
+        { error: "forbidden", code: "MISSING_PERMISSION", permission: PERMISSIONS.settingsManage },
+        { status: 403 },
+      );
+    }
   }
 
   const fields: string[] = [];

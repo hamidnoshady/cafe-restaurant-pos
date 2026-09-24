@@ -7,11 +7,11 @@
  * rather than a second menu drawn inside the page next to the accounting nav.
  *
  * These keys are the single source of truth for that menu (`growth-nav.ts`
- * labels them) and for the server-side role gate: a cashier may open only
- * `loyalty`, the one floor surface the old flat pages gave them; the management
- * dashboard and the compensation data stay owner/manager, exactly the way the
- * ledger's payroll tab draws its line.
+ * labels them) and for the server-side gate. That gate is now expressed in the
+ * same `growth.*` capabilities the API enforces rather than in a parallel list
+ * of role names — see `canViewGrowthSection`.
  */
+import { PERMISSIONS, type Permission } from "@/lib/permissions";
 
 export const GROWTH_SECTION_KEYS = [
   "overview",
@@ -42,25 +42,60 @@ export function growthSectionHref(key: GrowthSectionKey): string {
 }
 
 /**
- * Whether a given role may open a section. The Growth app mirrors the
- * accounting suite's rule: compensation data (commission, the management
- * dashboard) is owner/manager, while loyalty is the one surface a cashier works
- * in.
+ * What a member must hold to open each section.
+ *
+ * ## This used to be a role list, and it disagreed with the API
+ *
+ * Every section was gated on `["owner", "manager"].includes(role)` with two
+ * hard-coded exceptions, while the routes behind them are gated on
+ * `growth.view` / `growth.manage`. The two rules agreed only by coincidence,
+ * and the coincidence broke the moment anything moved: an owner who granted
+ * `growth.manage` to a salesperson got an API that accepted the request and a
+ * menu that never showed the page, and revoking `growth.view` from a manager
+ * left every screen visible and every fetch inside it failing with 403.
+ *
+ * Navigation now asks the same question the API asks. The mapping below
+ * reproduces the previous audience exactly for the built-in roles — the
+ * accountant and cashier presets carry `growth.view`, and only the owner and
+ * manager presets carry `growth.manage` — so nobody's menu changes, but the
+ * menu is now *derived* from access rather than parallel to it.
  */
-export function canViewGrowthSection(role: string, key: GrowthSectionKey): boolean {
-  // The app's own settings are management work, like every other configuration
-  // surface in the product.
-  if (key === "settings") return ["owner", "manager"].includes(role);
-  // The customers screen is managed here on the shared record. Accountants keep
-  // their read of it; only the 360° file (notes, tags, timeline) remains CRM's.
-  if (key === "customers") return ["owner", "manager", "accountant"].includes(role);
-  if (role === "cashier") return key === "loyalty";
-  return ["owner", "manager"].includes(role);
+const SECTION_PERMISSION: Record<GrowthSectionKey, Permission> = {
+  // The growth dashboard aggregates revenue and campaign performance; it was
+  // owner/manager, and `growth.manage` is exactly that audience.
+  overview: PERMISSIONS.growthManage,
+  // Growth's customer screen is the back-office read the accountant had.
+  customers: PERMISSIONS.growthView,
+  // The loyalty desk is till work, which is why it is a separate capability.
+  loyalty: PERMISSIONS.loyaltyView,
+  // Acting: running a campaign, sending messages, issuing gift cards, paying
+  // commission, and reconfiguring the app.
+  campaigns: PERMISSIONS.growthManage,
+  messaging: PERMISSIONS.growthManage,
+  "gift-cards": PERMISSIONS.growthManage,
+  commission: PERMISSIONS.growthManage,
+  settings: PERMISSIONS.growthManage,
+};
+
+/** The capability a section needs, for callers that want to state it themselves. */
+export function growthSectionPermission(key: GrowthSectionKey): Permission {
+  return SECTION_PERMISSION[key];
 }
 
-/** Whether a role has at least one Growth surface to open. */
-export function canOpenGrowth(role: string): boolean {
-  return GROWTH_SECTION_KEYS.some((key) => canViewGrowthSection(role, key));
+/**
+ * Whether a member may open a section, given their effective permissions —
+ * the same set `memberAccessFor` resolves and the same one the API enforces.
+ */
+export function canViewGrowthSection(
+  permissions: ReadonlySet<string>,
+  key: GrowthSectionKey,
+): boolean {
+  return permissions.has(SECTION_PERMISSION[key]);
+}
+
+/** Whether a member has at least one Growth surface to open. */
+export function canOpenGrowth(permissions: ReadonlySet<string>): boolean {
+  return GROWTH_SECTION_KEYS.some((key) => canViewGrowthSection(permissions, key));
 }
 
 /**
@@ -81,8 +116,8 @@ export function canOpenGrowth(role: string): boolean {
  * `/dashboard` only when there is not. Being bounced to `/dashboard` from a
  * page you were linked to reads as a bug, not as a permission.
  */
-export function growthFallbackHref(role: string): string {
-  const section = GROWTH_SECTION_KEYS.find((key) => canViewGrowthSection(role, key));
+export function growthFallbackHref(permissions: ReadonlySet<string>): string {
+  const section = GROWTH_SECTION_KEYS.find((key) => canViewGrowthSection(permissions, key));
   return section ? growthSectionHref(section) : "/dashboard";
 }
 

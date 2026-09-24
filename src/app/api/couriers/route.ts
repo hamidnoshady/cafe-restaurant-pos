@@ -1,3 +1,5 @@
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { createCourier, listCouriers } from "@/lib/delivery-service";
@@ -11,8 +13,15 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ couriers: [] });
 
+  // `delivery.manage` is what maintaining the courier roster is. This is a
+  // deliberate, documented widening: a cashier already holds `delivery.manage`
+  // and already assigns couriers, so letting them also *see the retired ones*
+  // in the same picker is the capability working as named rather than a new
+  // privilege. Nothing sensitive is behind the flag — it is the same rows with
+  // `is_active = false`.
+  const access = await memberAccessFor(session);
   const includeInactive =
-    (session.role === "owner" || session.role === "manager") &&
+    (access?.permissions.has(PERMISSIONS.deliveryManage) ?? false) &&
     request.nextUrl.searchParams.get("includeInactive") === "true";
   const couriers = await listCouriers(location.id, { includeInactive });
   return NextResponse.json({ couriers });

@@ -16,12 +16,12 @@
  * could only be fixed by removing and re-adding the person.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { roleBasePermissions } from "@/lib/permissions";
 import {
-  ALL_PERMISSIONS,
-  isOwnerOnlyPermission,
-  roleBasePermissions,
-  type Permission,
-} from "@/lib/permissions";
+  AccessChangeSummary,
+  PermissionEditor,
+} from "@/components/team/permission-editor";
+import { isLocationScope, type LocationScope } from "@/lib/location-access";
 import { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin } from "@/lib/pin-policy";
 import { roleLabel } from "@/lib/role-labels";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
@@ -55,47 +55,22 @@ const INVITABLE_ROLES = ["manager", "accountant", "owner"] as const;
 /** Roles that sign in with a PIN on a shared device, so are created directly. */
 const PIN_ROLES = ["cashier", "waiter", "kitchen"] as const;
 
-const PERMISSION_LABELS: Record<string, string> = {
-  "orders.create": "ثبت سفارش",
-  "orders.void": "ابطال سفارش",
-  "orders.amend_closed": "ویرایش یا حذف سفارش بسته‌شده",
-  "orders.discount": "اعمال تخفیف",
-  "payments.take": "دریافت وجه",
-  "payments.refund": "بازپرداخت",
-  "tables.manage": "مدیریت میزها",
-  "reservations.manage": "مدیریت رزرو",
-  "kitchen.view": "نمایش آشپزخانه",
-  "delivery.manage": "مدیریت ارسال",
-  "menu.view": "مشاهدهٔ منو",
-  "menu.edit": "ویرایش منو",
-  "inventory.view": "مشاهدهٔ انبار",
-  "inventory.adjust": "اصلاح موجودی",
-  "purchases.manage": "مدیریت خرید",
-  // The party permission covers all three roles, so the label says «اشخاص» — a
-  // manager granting it to a cashier is also letting them edit suppliers and
-  // personnel, and the label must not hide that.
-  "parties.view": "مشاهدهٔ اشخاص",
-  "parties.manage": "مدیریت اشخاص",
-  // Phase G — «میز کار من». The two carved-out keys say what they commit the
-  // business to, not which screen they open: a member reading «مدیریت
-  // قراردادها» must understand it means signing, not filing.
-  "workspace.view": "مشاهدهٔ میز کار",
-  "workspace.manage": "مدیریت پروژه‌ها و وظایف",
-  "workspace.contracts_manage": "مدیریت قراردادهای اجرایی",
-  "workspace.approve": "تأیید درخواست‌ها",
-  "ledger.view": "مشاهدهٔ دفتر",
-  "ledger.post": "ثبت سند",
-  "ledger.approve": "تأیید سند",
-  "ledger.close_period": "بستن دوره",
-  "accounts.edit": "ویرایش سرفصل‌ها",
-  "reports.view": "مشاهدهٔ گزارش",
-  "reports.export": "خروجی گزارش",
-  "team.manage": "مدیریت تیم",
-  "settings.manage": "تنظیمات",
-  "locations.manage": "مدیریت شعبه",
-  "backup.manage": "پشتیبان‌گیری",
-  "api.manage": "مدیریت کلیدهای API",
-};
+
+/** How a member's branch reach reads in the list. One sentence, from the policy. */
+function branchSummary(member: Member, locationName: Map<string, string>): string {
+  switch (member.locationScope) {
+    case "all":
+      return "همهٔ شعبه‌ها";
+    case "home":
+      return member.defaultLocationId
+        ? `فقط ${locationName.get(member.defaultLocationId) ?? "شعبهٔ اصلی"}`
+        : "بدون شعبه";
+    case "selected":
+      return member.locationIds.length > 0
+        ? `شعبه‌ها: ${member.locationIds.map((id) => locationName.get(id) ?? "—").join("، ")}`
+        : "بدون شعبه";
+  }
+}
 
 interface Member {
   id: string;
@@ -109,6 +84,8 @@ interface Member {
   phone: string | null;
   phoneVerified: boolean;
   locationIds: string[];
+  /** The explicit branch policy (migration 0170); see LocationScope. */
+  locationScope: LocationScope;
   defaultLocationId: string | null;
   overrides: { granted?: string[]; revoked?: string[] };
   effectivePermissions: string[];
@@ -245,11 +222,15 @@ export function TeamManager({
                     {roleLabel(member.role)}
                     {member.email ? ` · ${member.email}` : ""}
                     {member.hasPin ? " · ورود با رمز عددی" : ""}
-                    {member.locationIds.length > 0
-                      ? ` · شعبه‌ها: ${member.locationIds
-                          .map((id) => locationName.get(id) ?? "—")
-                          .join("، ")}`
-                      : " · همهٔ شعبه‌ها"}
+                    {/*
+                      * Rendered from the stored policy, not from "is the
+                      * assignment list empty". The old inference printed
+                      * «همهٔ شعبه‌ها» for a member with no assignment *and* no
+                      * home branch — which was true, and was the bug: the row
+                      * said it casually rather than flagging that somebody had
+                      * business-wide reach nobody had chosen to give them.
+                      */}
+                    {` · ${branchSummary(member, locationName)}`}
                   </p>
                   <p className="mt-1 text-xs">
                     {member.phone ? (
@@ -382,6 +363,14 @@ function MemberEditorDialog({
   const [role, setRole] = useState(member.role);
   const [selected, setSelected] = useState<Set<string>>(new Set(member.effectivePermissions));
   const [branchIds, setBranchIds] = useState<string[]>(member.locationIds);
+  /**
+   * The branch policy, chosen explicitly rather than inferred from whether the
+   * list below happens to be empty. That inference is exactly what used to let
+   * a member silently reach every shop in the business (migration 0170).
+   */
+  const [locationScope, setLocationScope] = useState<LocationScope>(
+    isLocationScope(member.locationScope) ? member.locationScope : "home",
+  );
   const [defaultLocationId, setDefaultLocationId] = useState(member.defaultLocationId ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -432,6 +421,7 @@ function MemberEditorDialog({
         ...(isOwnerRole ? {} : { permissions: { granted, revoked } }),
         locationIds: branchIds,
         defaultLocationId: defaultLocationId || null,
+        locationScope,
       }),
     });
     setBusy(false);
@@ -467,28 +457,63 @@ function MemberEditorDialog({
           </Field>
         </div>
 
-        <Field label="شعبه‌ها" hint="بدون انتخاب، عضو به همهٔ شعبه‌ها دسترسی دارد (به‌جز نقش‌های صندوق و آشپزخانه که به شعبهٔ پیش‌فرض وصل می‌شوند).">
-          {locations.length === 0 ? (
-            <p className="text-xs text-muted-foreground">شعبه‌ای ثبت نشده است.</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {locations.map((location) => (
-                <label key={location.id} className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={branchIds.includes(location.id)}
-                    onCheckedChange={(checked) => toggleBranch(location.id, checked === true)}
+        <Field
+          label="دامنهٔ شعبه"
+          hint="مشخص کنید این عضو در کدام شعبه‌ها کار می‌کند. پیش‌فرض، محدودترین حالت است."
+        >
+          <div className="grid gap-2 sm:grid-cols-3">
+            {(
+              [
+                ["all", "همهٔ شعبه‌ها", "شعبه‌های آینده را هم شامل می‌شود."],
+                ["selected", "شعبه‌های انتخاب‌شده", "فقط مواردی که تیک می‌زنید."],
+                ["home", "فقط شعبهٔ اصلی", "فقط شعبهٔ پیش‌فرض این عضو."],
+              ] as const
+            ).map(([value, label, hint]) => (
+              <label
+                key={value}
+                className={`flex cursor-pointer flex-col gap-1 rounded-lg border p-3 text-sm ${
+                  locationScope === value ? "border-primary bg-primary/5" : ""
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="location-scope"
+                    checked={locationScope === value}
+                    onChange={() => setLocationScope(value)}
                   />
-                  <span>
-                    {location.name}
-                    {!location.isActive ? (
-                      <span className="ms-1 text-xs text-muted-foreground">(غیرفعال)</span>
-                    ) : null}
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
+                  <span className="font-medium">{label}</span>
+                </span>
+                <span className="text-xs text-muted-foreground">{hint}</span>
+              </label>
+            ))}
+          </div>
         </Field>
+
+        {locationScope === "selected" ? (
+          <Field label="شعبه‌ها" hint="عضو فقط در شعبه‌های تیک‌خورده کار می‌کند.">
+            {locations.length === 0 ? (
+              <p className="text-xs text-muted-foreground">شعبه‌ای ثبت نشده است.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {locations.map((location) => (
+                  <label key={location.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={branchIds.includes(location.id)}
+                      onCheckedChange={(checked) => toggleBranch(location.id, checked === true)}
+                    />
+                    <span>
+                      {location.name}
+                      {!location.isActive ? (
+                        <span className="ms-1 text-xs text-muted-foreground">(غیرفعال)</span>
+                      ) : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </Field>
+        ) : null}
 
         <Field label="شعبهٔ پیش‌فرض" hint="شعبه‌ای که ورود این عضو با آن باز می‌شود؛ از میان شعبه‌های انتخاب‌شده.">
           <SearchableSelect
@@ -497,7 +522,13 @@ function MemberEditorDialog({
             options={[
               { value: "", label: "— انتخاب نشده —" },
               ...locations
-                .filter((location) => branchIds.includes(location.id))
+                // Only the 'selected' policy constrains the home branch to the
+                // ticked list; under 'all' or 'home' any branch of the business
+                // is a legitimate home, and filtering by a list that is not
+                // being used would offer an empty picker.
+                .filter(
+                  (location) => locationScope !== "selected" || branchIds.includes(location.id),
+                )
                 .map((location) => ({ value: location.id, label: location.name })),
             ]}
           />
@@ -506,26 +537,20 @@ function MemberEditorDialog({
         {isOwnerRole ? (
           <InfoBox>مالک به همهٔ بخش‌ها دسترسی دارد و دسترسی‌هایش قابل محدود کردن نیست.</InfoBox>
         ) : (
-          <Field label="دسترسی‌ها" hint="تیک‌ها نسبت به نقش پایه خوانده می‌شوند: برداشتن تیکِ پیش‌فرض یعنی گرفتن آن دسترسی، و تیکِ اضافه یعنی اعطای آن.">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)).map((permission: Permission) => (
-                <label key={permission} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(permission)}
-                    onChange={(e) => {
-                      const next = new Set(selected);
-                      if (e.target.checked) next.add(permission);
-                      else next.delete(permission);
-                      setSelected(next);
-                    }}
-                  />
-                  <span>{PERMISSION_LABELS[permission] ?? permission}</span>
-                </label>
-              ))}
-            </div>
+          <Field
+            label="دسترسی‌ها"
+            hint="تیک‌ها نسبت به نقش پایه خوانده می‌شوند: برداشتن تیکِ پیش‌فرض یعنی گرفتن آن دسترسی، و تیکِ اضافه یعنی اعطای آن."
+          >
+            <PermissionEditor preset={preset} selected={selected} onChange={setSelected} />
           </Field>
         )}
+
+        {!isOwnerRole ? (
+          <AccessChangeSummary
+            before={new Set(member.effectivePermissions)}
+            after={selected}
+          />
+        ) : null}
 
         <DialogFooter>
           <SecondaryButton onClick={onClose}>انصراف</SecondaryButton>

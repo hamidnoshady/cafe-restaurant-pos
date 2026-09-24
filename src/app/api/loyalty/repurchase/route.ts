@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { customersDueForRepurchase } from "@/lib/loyalty-service";
 
 /** The «مشتریان آماده خرید مجدد» list for the caller's branch. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

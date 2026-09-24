@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
+import { isLocationScope } from "@/lib/location-access";
 import { lockoutMessage, sanitizeOverrides } from "@/lib/team";
 import {
   TeamError,
@@ -12,7 +13,7 @@ import { canonicalMemberPhone } from "@/lib/phone-otp";
 import { query } from "@/lib/db";
 import type { Role } from "@/lib/auth";
 
-const ASSIGNABLE_ROLES: Role[] = ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"];
+const ASSIGNABLE_ROLES: Role[] = ["owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen", "viewer"];
 
 function errorResponse(err: unknown): NextResponse {
   if (err instanceof TeamError) {
@@ -36,6 +37,8 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     isActive?: boolean;
     locationIds?: string[];
     defaultLocationId?: string | null;
+    /** 'all' | 'selected' | 'home' — the explicit branch policy (migration 0170). */
+    locationScope?: string;
     permissions?: unknown;
     /** Phase 42 — set (or, with "", clear) the member's login phone. Stored unverified. */
     phone?: string;
@@ -48,6 +51,25 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
   if (body.role !== undefined && !ASSIGNABLE_ROLES.includes(body.role)) {
     return NextResponse.json({ error: "invalid_role" }, { status: 400 });
+  }
+  // Refused rather than ignored: silently dropping an unrecognised scope would
+  // leave the member on a policy the caller did not ask for and believes they
+  // changed.
+  if (body.locationScope !== undefined && !isLocationScope(body.locationScope)) {
+    return NextResponse.json({ error: "invalid_location_scope" }, { status: 400 });
+  }
+
+  // Changing WHAT somebody may do is a different act from administering them,
+  // and needs the key carved out for it. `team.manage` alone covers creating
+  // staff, renaming them, moving them between branches, suspending them and
+  // resetting their credentials; handing out capability is how a delegated
+  // team administrator would escalate their own access, so it is gated
+  // separately. Only the fields that actually change access are affected —
+  // a suspend, a rename or a branch move still needs nothing more than
+  // `team.manage`, so nobody's existing workflow breaks.
+  if (body.role !== undefined || body.permissions !== undefined) {
+    const escalation = await requirePermission(PERMISSIONS.teamPermissionsManage);
+    if (escalation.error) return escalation.error;
   }
 
   // Managing routine team details may be delegated; managing an owner or
@@ -92,6 +114,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       isActive: body.isActive,
       locationIds: body.locationIds,
       defaultLocationId: body.defaultLocationId,
+      locationScope: isLocationScope(body.locationScope) ? body.locationScope : undefined,
       overrides: body.permissions === undefined ? undefined : sanitizeOverrides(body.permissions),
     });
     /*

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { cmsSiteCdn } from "@/lib/cms/website-service";
 
 /**
@@ -13,7 +14,7 @@ import { cmsSiteCdn } from "@/lib/cms/website-service";
  * cache, which is the part that is safely theirs.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
   if (error) return error;
   const result = await cmsSiteCdn(session.businessId);
   if (!result.ok) {
