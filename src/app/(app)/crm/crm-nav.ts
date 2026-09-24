@@ -13,7 +13,6 @@
  */
 
 import {
-  ContactIcon,
   CopyCheckIcon,
   HeadsetIcon,
   LayoutDashboardIcon,
@@ -47,15 +46,9 @@ export const CRM_NAV_ITEMS: readonly CrmNavItem[] = [
   },
   {
     key: "directory",
-    label: "اشخاص",
-    description: "جست‌وجو، افزودن و ویرایش",
+    label: "مخاطبان",
+    description: "جست‌وجو، افزودن، و پروندهٔ هر شخص",
     icon: UsersIcon,
-  },
-  {
-    key: "persons",
-    label: "پروندهٔ شخص",
-    description: "تاریخچهٔ کامل یک مشتری",
-    icon: ContactIcon,
   },
   {
     key: "leads",

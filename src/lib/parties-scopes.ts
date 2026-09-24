@@ -130,7 +130,7 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     defaultRole: "Customer",
     label: "اشخاص",
     description: "مشتریان، تأمین‌کنندگان، فروشندگان و کارکنان — یک فهرست، با کد حسابداری و اطلاعات مالی",
-    // The Accounting app has its own route prefix now (`/dashboard/accounting`),
+    // The Accounting app has its own route prefix now (`/accounting`),
     // one route per section — this is its persons directory, and the `?party=`
     // a deep link from another app (an A/R row, an AI answer) carries is read
     // by the section it opens.

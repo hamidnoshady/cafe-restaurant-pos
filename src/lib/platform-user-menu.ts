@@ -3,7 +3,7 @@
  *
  * The menu is the platform's utility drawer: the things that belong to the
  * *person and the platform* rather than to whichever app they happen to have
- * open — platform settings, the knowledge base, technical connections,
+ * open — business settings, technical connections, billing, media, knowledge,
  * support, reporting a bug, and the way out. Every app has its own settings
  * page now, so keeping this list explicit is what stops an app's concern from
  * drifting into it (and stops «تنظیمات پلتفرم» from drifting into an app).
@@ -15,7 +15,11 @@
  * back to the staff door when they sign out.
  */
 
-import { PLATFORM_SETTINGS_HOME } from "./app-routes";
+import {
+  PLATFORM_SETTINGS_HOME,
+  PLATFORM_SUBSCRIPTION_HREF,
+  WORKSPACE_TOP_HREFS,
+} from "./app-routes";
 
 /**
  * An entry is either a link or one of two actions. `bug-report` is deliberately
@@ -56,10 +60,12 @@ export function platformUserMenuItems(role: string): PlatformUserMenuItem[] {
       // in the app's menu (`/accounting/settings`, `/growth/settings`, …).
       href: PLATFORM_SETTINGS_HOME,
     },
-    { key: "profile", label: "حساب کاربری", kind: "link", href: "/settings/profile" },
-    { key: "knowledge", label: "پایگاه دانش", kind: "link", href: "/knowledge" },
     { key: "connections", label: "اتصال‌های فنی", kind: "link", href: "/settings/connections" },
-    { key: "support", label: "پشتیبانی", kind: "link", href: "/support" },
+    { key: "billing", label: "اشتراک و پرداخت‌ها", kind: "link", href: PLATFORM_SUBSCRIPTION_HREF },
+    { key: "media", label: "کتابخانهٔ رسانه", kind: "link", href: WORKSPACE_TOP_HREFS.media },
+    { key: "knowledge", label: "پایگاه دانش", kind: "link", href: WORKSPACE_TOP_HREFS.knowledge },
+    { key: "support", label: "پشتیبانی", kind: "link", href: WORKSPACE_TOP_HREFS.support },
+    { key: "profile", label: "حساب کاربری", kind: "link", href: "/settings/profile" },
     { key: "bug-report", label: "گزارش مشکل", kind: "bug-report" },
     { key: "switch-account", label: "تعویض حساب", kind: "switch-account" },
     { key: "logout", label: "خروج", kind: "logout", returnTo: logoutReturnTo(role) },

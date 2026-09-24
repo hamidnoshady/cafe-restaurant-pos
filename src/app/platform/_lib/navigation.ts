@@ -52,9 +52,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "درآمد",
     items: [
-      { label: "پرداخت‌ها", href: "/platform/billing" },
       { label: "پلن‌ها", href: "/platform/plans" },
-      { label: "پیام‌رسانی", href: "/platform/messaging" },
+      { label: "صورت‌حساب و پرداخت‌ها", href: "/platform/billing" },
     ],
   },
   {
@@ -62,7 +61,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "برنامه‌ها", href: "/platform/apps" },
       { label: "هوش مصنوعی", href: "/platform/ai", cap: "ai.read" },
-      { label: "سایت‌ساز", href: "/platform/cms" },
+      { label: "پلتفرم وب‌سایت", href: "/platform/cms" },
+      { label: "پیام‌رسانی", href: "/platform/messaging" },
       { label: "پایگاه دانش", href: "/platform/knowledge" },
     ],
   },

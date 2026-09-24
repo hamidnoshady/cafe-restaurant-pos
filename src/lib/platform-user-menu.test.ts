@@ -6,10 +6,12 @@ describe("the sidebar's identity menu", () => {
   it("offers the platform utilities the member expects, in order", () => {
     expect(platformUserMenuItems("owner").map((item) => item.key)).toEqual([
       "platform-settings",
-      "profile",
-      "knowledge",
       "connections",
+      "billing",
+      "media",
+      "knowledge",
       "support",
+      "profile",
       "bug-report",
       "switch-account",
       "logout",

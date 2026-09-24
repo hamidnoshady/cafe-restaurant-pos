@@ -30,8 +30,24 @@ import {
   isWorkspaceSection,
   type WorkspaceSection,
 } from "@/lib/workspace-shared";
+import { WORKSPACE_MODULE_HOME, workspaceSectionHref } from "@/lib/app-routes";
 
 export { WORKSPACE_SECTIONS, isWorkspaceSection, type WorkspaceSection };
+
+/**
+ * Active-state rule for the contextual Workspace navigation.
+ *
+ * The root and `/workspace/overview` describe the same overview surface; every
+ * other section owns its nested detail routes (for example a project keeps
+ * «پروژه‌ها» current at `/workspace/projects/:id`).
+ */
+export function isWorkspaceSectionPathname(pathname: string, key: WorkspaceSection): boolean {
+  if (key === "overview") {
+    return pathname === WORKSPACE_MODULE_HOME || pathname === workspaceSectionHref("overview");
+  }
+  const href = workspaceSectionHref(key);
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export interface WorkspaceSectionMeta {
   key: WorkspaceSection;
@@ -123,17 +139,20 @@ export const WORKSPACE_SECTION_META: Record<WorkspaceSection, WorkspaceSectionMe
 };
 
 /**
- * The rail's groups. Ten flat entries is a wall; these four headings are the
- * same device `SETTINGS_GROUPS` uses, and every section appears in exactly one.
+ * The contextual menu's groups. Ten flat entries are a wall; these headings
+ * follow the Workspace information architecture, and every section appears in
+ * exactly one.
  */
 export const WORKSPACE_SECTION_GROUPS: ReadonlyArray<{
   label: string;
   keys: readonly WorkspaceSection[];
 }> = [
-  { label: "خلاصه", keys: ["overview"] },
-  { label: "اجرا", keys: ["projects", "tasks", "calendar"] },
-  { label: "پرونده‌ها", keys: ["documents", "contracts"] },
-  { label: "سازمان", keys: ["teams", "approvals", "reports", "templates"] },
+  { label: "نمای کلی", keys: ["overview"] },
+  { label: "کار", keys: ["projects", "tasks", "calendar"] },
+  { label: "اسناد", keys: ["documents", "contracts"] },
+  { label: "سازمان", keys: ["teams", "approvals"] },
+  { label: "بینش", keys: ["reports"] },
+  { label: "پیکربندی", keys: ["templates"] },
 ];
 
 /** The sections a member with this permission set may open, in rail order. */

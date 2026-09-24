@@ -11,10 +11,13 @@ import {
 } from "./crm-routes";
 
 describe("CRM_NAV_ITEMS", () => {
-  it("lists every section of the app, exactly once, in menu order", () => {
-    // A section added to the router without a menu entry is a page nobody can
-    // find; this fails until it is seated in the app's rail.
-    expect(CRM_NAV_ITEMS.map((item) => item.key)).toEqual([...CRM_SECTION_KEYS]);
+  it("lists every navigation destination once and keeps detail pages out of the rail", () => {
+    const keys = CRM_NAV_ITEMS.map((item) => item.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).not.toContain("persons");
+    // Every permanent item remains a real CRM route; the person profile is
+    // reached from Contacts and therefore intentionally is not one.
+    for (const key of keys) expect(CRM_SECTION_KEYS).toContain(key);
   });
 
   it("gives each entry a label and a line of help", () => {
@@ -40,9 +43,10 @@ describe("CRM_NAV_ITEMS", () => {
 });
 
 describe("crmNavItemsForRole", () => {
-  it("shows owner and manager the whole app", () => {
+  it("shows owner and manager every permanent CRM destination", () => {
+    const permanentKeys = CRM_SECTION_KEYS.filter((key) => key !== "persons");
     for (const role of ["owner", "manager"]) {
-      expect(crmNavItemsForRole(role).map((item) => item.key)).toEqual([...CRM_SECTION_KEYS]);
+      expect(crmNavItemsForRole(role).map((item) => item.key)).toEqual(permanentKeys);
     }
   });
 
@@ -52,7 +56,6 @@ describe("crmNavItemsForRole", () => {
     // not get segments, the pipeline, merge or the consent register.
     expect(crmNavItemsForRole("cashier").map((item) => item.key)).toEqual([
       "directory",
-      "persons",
       "activities",
       "cases",
     ]);
@@ -69,14 +72,13 @@ describe("crmNavItemsForRole", () => {
     }
   });
 
-  it("is the same gate the pages enforce", () => {
-    // The menu and the server-side redirect must agree exactly: an entry that
-    // leads to a redirect is a button that does nothing.
+  it("is permission-honest while treating person files as a Contacts detail", () => {
     for (const role of ["owner", "manager", "cashier", "accountant"]) {
       const shown = new Set(crmNavItemsForRole(role).map((item) => item.key));
-      for (const key of CRM_SECTION_KEYS) {
+      for (const key of CRM_SECTION_KEYS.filter((key) => key !== "persons")) {
         expect(shown.has(key)).toBe(canViewCrmSection(role, key));
       }
+      expect(shown.has("persons")).toBe(false);
     }
   });
 });
@@ -107,13 +109,11 @@ describe("isCrmSectionPathname", () => {
     expect(isCrmSectionPathname("/dashboard/ledger", "directory")).toBe(false);
   });
 
-  it("keeps «پروندهٔ مشتری» lit on one customer's file", () => {
-    // The file is the reason the nesting rule exists: it is reached by id from
-    // half the app, and an unlit sidebar there would make it feel like a
-    // different place each time.
+  it("keeps Contacts lit on one customer's file", () => {
+    // A profile is a detail of Contacts, not a permanent peer in the sidebar.
     const href = crmCustomerHref("c-42");
     expect(href).toBe("/crm/persons/c-42");
     expect(isCrmSectionPathname(href, "persons")).toBe(true);
-    expect(isCrmSectionPathname(href, "directory")).toBe(false);
+    expect(isCrmSectionPathname(href, "directory")).toBe(true);
   });
 });

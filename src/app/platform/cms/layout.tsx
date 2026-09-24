@@ -6,7 +6,7 @@
  * Everything an operator does to eshobe-cms lives here, because that is what the
  * repository layout rule asks for: functionality that supervises clients *across*
  * businesses belongs in the super-admin console, not in a per-business dashboard.
- * The business-facing half («مدیریت وب‌سایت», `/dashboard/website`) is unchanged
+ * The business-facing half («مدیریت وب‌سایت», `/websites`) is unchanged
  * and is a different job — one owner, one site.
  *
  * Five pages, in the order an operator actually works in them: the report, the

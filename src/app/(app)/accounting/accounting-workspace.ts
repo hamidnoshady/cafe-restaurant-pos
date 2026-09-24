@@ -111,7 +111,6 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
     slots: [
       { href: "/accounting/orders" },
       { href: ACCOUNTING_WORKSPACE_HREFS.pos },
-      { href: "/crm/overview", label: "ارتباط با مشتری" },
     ],
   },
   {
@@ -123,7 +122,9 @@ const WORKSPACE_GROUP_SLOTS: readonly { key: string; label: string; description?
       { href: accountingProductsHref() },
       { href: accountingProductsHref("new") },
       { href: accountingProductsHref("prices") },
-      { href: "/settings/menu" },
+      { href: accountingProductsHref("attributes") },
+      { href: accountingProductsHref("barcode-templates") },
+      { href: accountingProductsHref("reports") },
     ],
   },
   {
@@ -148,27 +149,17 @@ const REPORTS_SLOTS: readonly WorkspaceSlot[] = [
   { href: ACCOUNTING_WORKSPACE_HREFS.reports, label: "گزارش‌های کسب‌وکار" },
 ];
 
-/** The configuration group's business entries. */
-const CONFIG_SLOTS: readonly WorkspaceSlot[] = [
-  { href: "/settings", label: "تنظیمات کسب‌وکار" },
-  { href: "/settings/connections" },
-  { href: "/websites/overview", label: "وب‌سایت" },
-  { href: "/settings/billing" },
-];
-
 /**
  * The ledger's own sections — everything «فضای کار حسابداری» holds.
  *
  * Membership lives here; the *order* and the headings live in
  * `LEDGER_WORKSPACE_SUBGROUPS` below, which arranges exactly these keys.
  *
- * Everything `ACCOUNTING_SECTIONS` holds except the four app-level areas: the
+ * Everything `ACCOUNTING_SECTIONS` holds except the app-level areas: the
  * app's home (a group of its own at the top), the directory (the people
- * group), and the reports index and growth view (the reports group).
- *
- * Accounting settings belongs here as the final ledger tool. It is the same
- * `/accounting/settings` route as before — moved, not copied — so there is one
- * place named «فضای کار حسابداری» for both daily ledger work and its setup.
+ * group), reports, the cross-domain growth analysis, and app settings. Those
+ * destinations have their own focused groups rather than being buried among
+ * ledger tools.
  */
 export const LEDGER_WORKSPACE_SECTION_KEYS: readonly AccountingSectionKey[] = [
   "trial-balance",
@@ -186,7 +177,6 @@ export const LEDGER_WORKSPACE_SECTION_KEYS: readonly AccountingSectionKey[] = [
   "fiscal-periods",
   "vat",
   "payroll",
-  "settings",
 ];
 
 /**
@@ -217,7 +207,6 @@ export const LEDGER_WORKSPACE_SUBGROUPS: readonly {
   },
   { key: "ledger-funds", label: "وجوه و هزینه", keys: ["receipts", "expenses", "reconciliation", "fixed-assets"] },
   { key: "ledger-periods", label: "دوره، مالیات و حقوق", keys: ["fiscal-periods", "vat", "payroll"] },
-  { key: "ledger-config", label: "پیکربندی حسابداری", keys: ["settings"] },
 ];
 
 /** The label «فضای کار حسابداری» wears wherever it is drawn — menu and page alike. */
@@ -338,12 +327,13 @@ export function accountingWorkspaceGroups({
     groups.push({ key: "reports", label: "گزارش و تحلیل", entries: reports });
   }
 
-  // 6. Platform configuration, last. Accounting's own settings was moved into
-  // «فضای کار حسابداری» above; keep only the business/platform destinations
-  // here so `/accounting/settings` has exactly one row in this menu.
-  const config = businessEntries(CONFIG_SLOTS);
-  if (config.length > 0) {
-    groups.push({ key: "config", label: "پیکربندی", entries: config });
+  // 6. App settings, last. Shared business settings, technical connections,
+  // billing and Website Management deliberately stay out of Accounting's menu:
+  // they are reached through the platform user menu or an explicit contextual
+  // link, not represented as Accounting sub-workspaces.
+  const settings = sectionEntry("settings");
+  if (settings.length > 0) {
+    groups.push({ key: "settings", label: "تنظیمات", entries: settings });
   }
 
   return groups;
@@ -358,21 +348,16 @@ export function accountingWorkspaceHrefs(groups: readonly WorkspaceNavGroup[]): 
  * Is this entry the page we are on? — the ONE rule, for every menu that draws
  * these groups.
  *
- * The dashboard's flat sidebar and the Accounting app's sidebar draw the *same*
- * `accountingWorkspaceGroups()` output, and each used to carry its own copy of
- * this function. The copies had already drifted: the Accounting one lacked the
- * `?tab=` rule, so «اتصال‌ها» and «صورت‌حساب» (which are `/settings?tab=…`
- * hrefs) matched on the path alone and lit up together, and it lacked the
- * `/settings` and `/accounting/products` root-exactness rules, so «تنظیمات»
- * stayed lit on top of every settings sub-page and «محصولات» on top of every
- * product page. Same menu, two answers to "where am I" depending on which
- * sidebar you were looking at. One function now, so they cannot disagree.
+ * Accounting's contextual sidebar draws `accountingWorkspaceGroups()` through
+ * this one rule. Earlier copies had already drifted: separate product
+ * destinations could light their parent and a filtered people directory could
+ * lose its selected view. Keeping the answer beside the menu composition makes
+ * those states consistent wherever the group is rendered.
  *
  * Three kinds of entry, three rules:
  *  - an accounting *section* matches by section key, plus the `?view=` filter
  *    so a deep link («مشتریان») is only current while that view is showing and
  *    the parent («اشخاص») owns the default list;
- *  - a `?tab=` href is a *named* sub-page and matches only that tab;
  *  - a bare href matches its path prefix, except for the roots that would
  *    otherwise swallow everything beneath them.
  */
@@ -388,25 +373,9 @@ export function workspaceEntryIsActive(
     return view ? current === view : !current;
   }
 
-  const [base, query] = entry.href.split("?");
-  if (query) {
-    if (pathname !== base) return false;
-    const expectedTab = new URLSearchParams(query).get("tab");
-    if (expectedTab) return new URLSearchParams(search).get("tab") === expectedTab;
-    return true;
-  }
+  const [base] = entry.href.split("?");
 
-  // `/settings` is the hub *and* the prefix of its own sub-pages; the two that
-  // have their own nav rows must not also light their parent.
-  if (base === "/settings") {
-    return (
-      pathname === "/settings" ||
-      (pathname.startsWith("/settings/") &&
-        !pathname.startsWith("/settings/connections") &&
-        !pathname.startsWith("/settings/billing"))
-    );
-  }
-  // Same shape: the products hub has sub-pages (prices, attributes, …) that are
+  // The products hub has sub-pages (prices, attributes, …) that are
   // their own destinations, so the hub row is exact.
   if (base === ACCOUNTING_WORKSPACE_HREFS.products) {
     return pathname === ACCOUNTING_WORKSPACE_HREFS.products;

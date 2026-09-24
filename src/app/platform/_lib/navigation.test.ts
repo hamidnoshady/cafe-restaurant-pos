@@ -92,7 +92,7 @@ describe("console navigation IA", () => {
       const crumbs = breadcrumbsForPath("/platform/billing");
       expect(crumbs[0].label).toBe("نمای کلی");
       expect(crumbs.map((c) => c.label)).toContain("درآمد");
-      expect(crumbs[crumbs.length - 1].label).toBe("پرداخت‌ها");
+      expect(crumbs[crumbs.length - 1].label).toBe("صورت‌حساب و پرداخت‌ها");
     });
 
     it("falls back to just the overview on an unknown path", () => {

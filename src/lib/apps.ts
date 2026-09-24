@@ -9,13 +9,12 @@
  * `workspace` entry either: the rail around these four apps is the product's
  * one shell, not a gated app of its own.)
  */
-import type { Industry } from "./industries";
-import { hasModule, MODULE_KEYS, type ModuleKey } from "./industry-profile";
+import { MODULE_KEYS, type ModuleKey } from "./industry-profile";
 
 export const APP_KEYS = [
   "accounting",
-  "growth",
   "crm",
+  "growth",
   "website",
 ] as const;
 export type AppKey = (typeof APP_KEYS)[number];
@@ -48,21 +47,6 @@ export const APPS: AppDef[] = [
     ],
   },
   {
-    key: "growth",
-    label: "رشد و بازاریابی",
-    description:
-      "برنامهٔ نگه‌داشتن و رشد مشتریان: میز کار رشد، وفاداری، کمپین‌ها و کارت هدیه، و پورسانت فروشندگان.",
-    // Since Phase 36b this app has a home of its own (/growth) with
-    // a management dashboard and one section per engine — the same shape the
-    // accounting suite has — over the same services and posting rules the
-    // three old flat pages used.
-    // `messaging` remains a forward reference here: it acts *on* an audience
-    // rather than owning the customer record, so it stays with the engines
-    // that will use it. `crm` and `customers` left for the CRM app above —
-    // see the note there. `website` left too, below — see its own note.
-    modules: ["loyalty", "promotions", "commission", "messaging"],
-  },
-  {
     key: "crm",
     label: "ارتباط با مشتری",
     description:
@@ -89,6 +73,21 @@ export const APPS: AppDef[] = [
     modules: ["crm", "customers"],
   },
   {
+    key: "growth",
+    label: "رشد و بازاریابی",
+    description:
+      "برنامهٔ نگه‌داشتن و رشد مشتریان: میز کار رشد، وفاداری، کمپین‌ها و کارت هدیه، و پورسانت فروشندگان.",
+    // Since Phase 36b this app has a home of its own (/growth) with
+    // a management dashboard and one section per engine — the same shape the
+    // accounting suite has — over the same services and posting rules the
+    // three old flat pages used.
+    // `messaging` remains a forward reference here: it acts *on* an audience
+    // rather than owning the customer record, so it stays with the engines
+    // that will use it. `crm` and `customers` left for the CRM app above —
+    // see the note there. `website` left too, below — see its own note.
+    modules: ["loyalty", "promotions", "commission", "messaging"],
+  },
+  {
     key: "website",
     label: "مدیریت وب‌سایت",
     description:
@@ -101,7 +100,7 @@ export const APPS: AppDef[] = [
     // website live?" — and a business that runs a WordPress shop today and
     // moves to the platform site tomorrow had to learn a second app to do the
     // same job. So the app is «مدیریت وب‌سایت» and the two systems are its two
-    // *managers*: /dashboard/website/cms and /dashboard/website/wp, each with
+    // *managers*: /websites/cms and /websites/wp, each with
     // its own sections and its own settings. They are never folded into each
     // other — that is the rule CLAUDE.md's prompt vocabulary states — they
     // are peers inside one door.
@@ -185,60 +184,7 @@ export function isAppKey(value: string | null | undefined): value is AppKey {
   return typeof value === "string" && (APP_KEYS as readonly string[]).includes(value);
 }
 
-export interface AppVisibilityOptions {
-  /**
-   * The business's industry. Omitted where no business is in hand (the platform
-   * console, say); then every app is returned. Apps whose modules the trade
-   * does not have are dropped, the same way a module-gated nav entry is.
-   */
-  industry?: Industry;
-}
-
-/**
- * The apps this business sees — those with at least one module its trade has.
- *
- * Note what is *not* here: role, permission and feature-flag checks. Those are
- * applied per *page* by the caller (the rail renders each app's pages through
- * the same `canSee` rule the flat nav used), because an app with, say, only
- * owner-only pages is still an app the manager should see the name of — its
- * pages simply do not list for them. Module presence is the only industry-level
- * question, and it is the only thing decided here.
- */
-export function visibleApps(options: AppVisibilityOptions = {}): AppDef[] {
-  if (!options.industry) return APPS;
-  return APPS.filter((app) => app.modules.some((module) => hasModule(options.industry!, module)));
-}
-
 /** Defensive check, mostly for tests: every declared module key is either assigned to an app or intentionally unassigned. */
 export function unassignedModules(): ModuleKey[] {
   return MODULE_KEYS.filter((module) => MODULE_APP_MAP[module] === undefined);
-}
-
-/**
- * Group arbitrary nav-like items — anything carrying a `module: ModuleKey` — by
- * the app that owns each item's module. This is what turns the flat nav list
- * into the workspace rail: the caller hands in the same `navItems` the flat
- * sidebar used and gets them back as `{ app, items }` pairs, in `APP_KEYS`
- * order, with apps that have no items (or whose modules the trade entirely
- * lacks) dropped.
- *
- * Generic over the item shape so it works for `NavItem` (a client component's
- * type) without this pure module importing a `"use client"` file.
- */
-export function appsForNav<T extends { module: ModuleKey }>(
-  items: T[],
-  industry?: Industry,
-): { app: AppDef; items: T[] }[] {
-  const byApp = new Map<AppKey, T[]>();
-  for (const item of items) {
-    const app = appForModule(item.module);
-    if (!app) continue;
-    const list = byApp.get(app);
-    if (list) list.push(item);
-    else byApp.set(app, [item]);
-  }
-  return APPS.filter((def) => {
-    if (!byApp.has(def.key)) return false;
-    return industry ? def.modules.some((module) => hasModule(industry, module)) : true;
-  }).map((def) => ({ app: def, items: byApp.get(def.key)! }));
 }
