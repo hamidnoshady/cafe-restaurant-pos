@@ -5,5 +5,11 @@
  */
 export function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" });
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" });
+  } catch {
+    return "—";
+  }
 }

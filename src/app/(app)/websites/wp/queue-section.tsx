@@ -38,7 +38,7 @@ import { PluginWaitNote } from "./plugin-wait-note";
 import { useWpStore } from "./wp-store-context";
 import type { WpQueueRow, WpQueueSummary } from "@/lib/integrations/wp-manager-service";
 
-const KIND_LABELS: Record<string, { label: string; desc: string; link?: string }> = {
+export const KIND_LABELS: Record<string, { label: string; desc: string; link?: string }> = {
   stock: { label: "به‌روزرسانی موجودی انبار", desc: "ارسال تعداد موجودی کالا به فروشگاه", link: "/websites/wp/products" },
   price: { label: "به‌روزرسانی قیمت کالا", desc: "ارسال قیمت ریالی/تومانی به فروشگاه", link: "/websites/wp/products" },
   product_update: { label: "ویرایش و تغییر محصول", desc: "تغییر عنوان، قیمت، موجودی یا وضعیت محصول", link: "/websites/wp/products" },
@@ -66,7 +66,7 @@ const KIND_LABELS: Record<string, { label: string; desc: string; link?: string }
   "content.deleted": { label: "رویداد: حذف دائمی محتوا", desc: "حذف نوشته، برگه یا رسانه از آینهٔ محلی", link: "/websites/wp/content" },
 };
 
-const STATUS_CONFIG: Record<string, { label: string; tone: "positive" | "active" | "danger" | "neutral"; desc: string }> = {
+export const STATUS_CONFIG: Record<string, { label: string; tone: "positive" | "active" | "danger" | "neutral"; desc: string }> = {
   pending: { label: "در انتظار ارسال", tone: "neutral", desc: "آماده برای ارسال به فروشگاه در نوبت بعدی" },
   deferred: { label: "متوقف تا خروج از مکث", tone: "neutral", desc: "در حالت مکث دریافت و ذخیره شده و پس از فعال‌سازی پردازش می‌شود" },
   processing: { label: "در حال پردازش", tone: "active", desc: "در حال حاضر در فرآیند ارسال یا اعمال توسط افزونه" },
@@ -80,7 +80,7 @@ const STATUS_CONFIG: Record<string, { label: string; tone: "positive" | "active"
 type StatusFilter = "all" | "open" | "failed" | "pending" | "deferred" | "sent";
 type DirectionFilter = "all" | "out" | "in";
 
-function describePersianError(raw: string | null): string {
+export function describePersianError(raw: string | null): string {
   if (!raw) return "";
   const lower = raw.toLowerCase();
   if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("econnrefused") || lower.includes("fetch failed")) {

@@ -581,3 +581,23 @@ export function StatusBadge({
 export function CardEyebrow({ children }: { children: ReactNode }) {
   return <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">{children}</p>;
 }
+
+/**
+ * The eyebrow + heading pair a `SectionCard` takes as its `title`.
+ *
+ * `CardEyebrow` already owned the amber line, but the *pair* — eyebrow over an
+ * `<h2>` — was still being hand-written, and the two halves drifted: some cards
+ * spelled the heading `text-base sm:text-lg`, others `text-base … sm:text-lg`
+ * with the responsive step in a different position, and the Growth dashboard
+ * kept a private `CardTitle` helper with `text-stone-950 dark:text-stone-100`
+ * where every neighbour used the `text-foreground` token. Composing this means
+ * a card title cannot be styled two ways again.
+ */
+export function CardTitle({ eyebrow, title }: { eyebrow: ReactNode; title: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <CardEyebrow>{eyebrow}</CardEyebrow>
+      <h2 className="mt-1 text-base font-semibold text-foreground sm:text-lg">{title}</h2>
+    </div>
+  );
+}

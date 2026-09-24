@@ -1,7 +1,5 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
-
 /**
  * «تنظیمات همگام‌سازی» — what the POS pushes to the CMS site, and the queue
  * it pushes through (Phase 38, issues #379 / #381).
@@ -36,7 +34,7 @@ import {
   Td,
   Th,
 } from "@/app/dashboard/data-table";
-import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 interface ConnectionSummary {

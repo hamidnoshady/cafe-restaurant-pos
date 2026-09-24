@@ -33,13 +33,6 @@ export const GROWTH_SECTION_KEYS = [
 
 export type GrowthSectionKey = (typeof GROWTH_SECTION_KEYS)[number];
 
-/** The route of Growth's customer data projection. */
-export function growthCustomerHref(customerId?: string): string {
-  return customerId
-    ? `/growth/customers?customerId=${encodeURIComponent(customerId)}`
-    : "/growth/customers";
-}
-
 /** Growth's own settings page — never the platform settings page. */
 export const GROWTH_SETTINGS_HREF = "/growth/settings";
 
@@ -71,9 +64,32 @@ export function canOpenGrowth(role: string): boolean {
 }
 
 /**
+ * Where to send someone who lands on a section they may not open — the
+ * counterpart to `crmFallbackHref`.
+ *
+ * Every Growth page used to hand-roll this, and the eight of them did not
+ * agree: `/campaigns`, `/commission` and `/gift-cards` sent a cashier to a
+ * hard-coded `"/growth/loyalty"` and everyone else out to `/dashboard`;
+ * `/customers` sent *everyone* — including an accountant who has no loyalty
+ * access — to `/growth/loyalty`, a page they would immediately be bounced off
+ * again; `/messaging` sent everyone to `/growth/overview`, which an accountant
+ * may not open either. Each of those is a redirect loop or a wrong door opened
+ * by a rule written once per page.
+ *
+ * The rule, stated once: stay inside the app if there is anything here for you
+ * — the first section your role may open, in menu order — and leave for
+ * `/dashboard` only when there is not. Being bounced to `/dashboard` from a
+ * page you were linked to reads as a bug, not as a permission.
+ */
+export function growthFallbackHref(role: string): string {
+  const section = GROWTH_SECTION_KEYS.find((key) => canViewGrowthSection(role, key));
+  return section ? growthSectionHref(section) : "/dashboard";
+}
+
+/**
  * Whether a dashboard path is a given section — the app's own sidebar's idea of
  * "you are here". The overview is the app root, so it is *only* active on
- * `/dashboard/growth` itself; a section lights up on its page and anything
+ * `/growth/overview` itself; a section lights up on its page and anything
  * nested under it. Without the exact match on the root, every section page would
  * highlight «میز کار رشد» as well and the menu would have two answers.
  */

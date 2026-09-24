@@ -1,7 +1,5 @@
 "use client";
 
-import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
-
 /**
  * The Growth app's commission section (Phase 36b) — the old
  * /dashboard/commission page as a section. Each sale line accrues to the
@@ -23,7 +21,14 @@ import { Button } from "@/components/ui/button";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
-import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import {
+  CardTitle,
+  EmptyState,
+  LoadingSkeleton,
+  SectionCard,
+  SectionCardSkeleton,
+  StatusBadge,
+} from "@/app/dashboard/page-chrome";
 import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import { api, ErrorBox, errorMessage, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
 
@@ -180,12 +185,7 @@ export function CommissionSection() {
           }}
         />
         <SectionCard
-          title={
-            <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش پورسانت</p>
-              <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">رتبه‌بندی فروشندگان</h2>
-            </div>
-          }
+          title={<CardTitle eyebrow="گزارش پورسانت" title="رتبه‌بندی فروشندگان" />}
           description="مجموع پورسانت انباشته — همان عددی که به‌عنوان بدهی حقوق ثبت شده است"
         >
           <div className="mb-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end">
@@ -239,12 +239,7 @@ export function CommissionSection() {
       </div>
 
       <SectionCard
-        title={
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مقررات مالی</p>
-            <h2 className="mt-1 text-base sm:text-lg font-semibold text-foreground">قوانین پورسانت</h2>
-          </div>
-        }
+        title={<CardTitle eyebrow="مقررات مالی" title="قوانین پورسانت" />}
         description="هر خط فروش به خاص‌ترین قانون می‌رسد: کالا، بعد برند، بعد دسته و در پایان قانون کلی؛ میان قوانین هم‌سطح، اولویت بزرگ‌تر برنده است. قانون حذف نمی‌شود — غیرفعالش کنید تا تاریخچهٔ تسویه حفظ شود."
       >
         {rules.length === 0 ? (

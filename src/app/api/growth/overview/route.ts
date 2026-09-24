@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { resolveActiveLocation } from "@/lib/setup-state";
-import { businessToday, getBusinessDayStatus } from "@/lib/business-day-service";
-import { growthOverview } from "@/lib/growth-overview";
+import { growthOverviewForSession } from "@/lib/growth-overview";
 
 /**
  * The Growth & Marketing app's dashboard, in one call (Phase 36b). Read-only:
@@ -17,11 +15,5 @@ export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  const location = await resolveActiveLocation(session);
-  const businessDay = location ? await getBusinessDayStatus(location.id) : null;
-  const overview = await growthOverview(session.businessId, {
-    locationId: location?.id ?? null,
-    today: businessDay?.businessDate ?? (await businessToday(session.businessId)),
-  });
-  return NextResponse.json({ overview });
+  return NextResponse.json({ overview: await growthOverviewForSession(session) });
 });
