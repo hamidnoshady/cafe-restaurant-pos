@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CloudIcon, DatabaseIcon, RefreshCwIcon, ServerIcon } from "lucide-react";
 import { cardClass, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import type { ConnectionStatus, PlatformConnectionState } from "@/lib/connection-state";
 import type { DeploymentProfile } from "@/lib/deployment-mode";
 import { Button } from "@/components/ui/button";
+import { useOfflineQueue } from "@/app/dashboard/offline-queue";
 
 interface StatusResponse extends PlatformConnectionState { profile: DeploymentProfile }
 const LABEL: Record<ConnectionStatus, string> = {
@@ -15,19 +15,9 @@ const LABEL: Record<ConnectionStatus, string> = {
 };
 
 export function CloudSyncSettings() {
-  const [state, setState] = useState<StatusResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  async function refresh() {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/connection/status", { cache: "no-store" });
-      if (response.ok) setState(await response.json() as StatusResponse);
-    } finally { setLoading(false); }
-  }
-  useEffect(() => { void refresh(); }, []);
-
-  if (!state && loading) return <SectionCardSkeleton rows={4} label="در حال بررسی وضعیت اتصال" />;
-  if (!state) return <div className={`${cardClass} p-5 text-sm text-muted-foreground`}>وضعیت اتصال در دسترس نیست.</div>;
+  const { serverStatus } = useOfflineQueue();
+  if (!serverStatus) return <SectionCardSkeleton rows={4} label="در حال بررسی وضعیت اتصال" />;
+  const state = serverStatus as StatusResponse;
   const local = state.profile === "local";
   return (
     <div className="space-y-4">
@@ -47,9 +37,9 @@ export function CloudSyncSettings() {
             </p>
           </div>
           {local ? (
-            <Button asChild><Link href="/settings/connections?tab=server_sync"><CloudIcon className="size-4" /> اتصال به ابر</Link></Button>
+            <Button asChild><Link href="/support"><CloudIcon className="size-4" /> درخواست تبدیل امن</Link></Button>
           ) : (
-            <Button variant="outline" onClick={() => void refresh()} disabled={loading}><RefreshCwIcon className="size-4" /> به‌روزرسانی</Button>
+            <Button variant="outline" onClick={() => window.dispatchEvent(new Event("online"))}><RefreshCwIcon className="size-4" /> به‌روزرسانی</Button>
           )}
         </div>
         {!local ? (

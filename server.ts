@@ -111,6 +111,7 @@ app.prepare().then(async () => {
   const { runBackupTick } = await import("./src/lib/backup-service");
   const { BACKUP_TICK_INTERVAL_MS } = await import("./src/lib/backup");
   const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
+  const { runCloudExceptionRelayTick, CLOUD_EXCEPTION_RELAY_INTERVAL_MS } = await import("./src/lib/cloud-exception-relay");
   const { assertRlsEffective, closeDatabasePool } = await import("./src/lib/db");
   const { describeDeploymentRole } = await import("./src/lib/deployment-role");
   const { runWebsiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS } = await import("./src/lib/website/billing-service");
@@ -243,6 +244,13 @@ app.prepare().then(async () => {
   const serverSyncTick = () =>
     runServerSyncTick().catch((err) => console.error("server-sync tick failed:", err));
   scheduleBackgroundTick(serverSyncTick, SERVER_SYNC_INTERVAL_MS, 20_000);
+
+  // Local/Hybrid Support and Bug Report are durable even when nobody leaves a
+  // dashboard open: this site-process worker leases and retries the exception
+  // outbox independently of browser connection-status polling.
+  const cloudExceptionTick = () =>
+    runCloudExceptionRelayTick().catch((err) => console.error("cloud-exception relay tick failed:", err));
+  scheduleBackgroundTick(cloudExceptionTick, CLOUD_EXCEPTION_RELAY_INTERVAL_MS, 10_000);
 
   // Phase J removed the Phase 18 AI subscription renewal tick: the legacy
   // credit-subscription system (ai_business_billing / ai_credit_ledger /

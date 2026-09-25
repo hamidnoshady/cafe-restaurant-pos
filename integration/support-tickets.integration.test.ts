@@ -40,6 +40,7 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let service: typeof import("../src/lib/support-service");
 let platformService: typeof import("../src/lib/platform-service");
+let cloudRelay: typeof import("../src/lib/cloud-exception-relay");
 
 const alpha = { id: "", locationId: "", ownerId: "", cashierId: "" };
 const beta = { id: "", locationId: "", cashierId: "" };
@@ -87,6 +88,7 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   service = await import("../src/lib/support-service");
   platformService = await import("../src/lib/platform-service");
+  cloudRelay = await import("../src/lib/cloud-exception-relay");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -146,6 +148,9 @@ afterAll(async () => {
 
 /** Each test starts from an empty ticket board (fixtures are per-test). */
 beforeEach(async () => {
+  await db.query("DELETE FROM cloud_exception_inbox");
+  await db.query("DELETE FROM cloud_exception_installations");
+  await db.query("DELETE FROM cloud_exception_outbox");
   await db.query("DELETE FROM support_ticket_messages");
   await db.query("DELETE FROM support_tickets");
   await db.query("DELETE FROM platform_audit_log");
@@ -177,6 +182,17 @@ async function seedTicket(
 }
 
 describe("the member lifecycle", () => {
+  it("commits the Local cloud relay envelope atomically with the ticket", async () => {
+    const ticket = await seedTicket(alpha.id, alpha.locationId, alpha.ownerId);
+    const { rows } = await db.query<{ kind: string; aggregate_id: string; payload: { ticketId: string } }>(
+      "SELECT kind,aggregate_id::text,payload FROM cloud_exception_outbox WHERE business_id=$1",
+      [alpha.id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "support.ticket.created", aggregate_id: ticket.id });
+    expect(rows[0].payload.ticketId).toBe(ticket.id);
+  });
+
   it("opens a ticket with its first message and the right shape", async () => {
     const ticket = await asAlpha(() =>
       service.createMemberTicket({
@@ -461,6 +477,94 @@ describe("the member lifecycle", () => {
     expect(
       service.validateTicketInput({ subject: "عنوان", body: "شرح", attachment: "data:text/plain,hello" }).error,
     ).toBe("attachment_invalid");
+  });
+});
+
+describe("standalone-installation cloud relay", () => {
+  it("leases concurrent delivery once and deletes only after central acceptance", async () => {
+    const previousRole = process.env.DEPLOYMENT_ROLE;
+    const previousUrl = process.env.SUPPORT_CLOUD_URL;
+    const previousToken = process.env.SUPPORT_RELAY_TOKEN;
+    const previousInstallation = process.env.SUPPORT_INSTALLATION_ID;
+    const previousFetch = globalThis.fetch;
+    process.env.DEPLOYMENT_ROLE = "site";
+    process.env.SUPPORT_CLOUD_URL = "https://support.example.test";
+    process.env.SUPPORT_RELAY_TOKEN = "test-token";
+    process.env.SUPPORT_INSTALLATION_ID = randomUUID();
+    let requests = 0;
+    globalThis.fetch = async () => { requests += 1; return new Response("{}", { status: 200 }); };
+    try {
+      await db.query(
+        `INSERT INTO cloud_exception_outbox(business_id,kind,aggregate_id,payload)
+         VALUES($1,'bug_report.created',$2,'{}')`, [alpha.id, randomUUID()],
+      );
+      const results = await Promise.all([
+        dbLib.withTenant(alpha.id, () => cloudRelay.deliverCloudExceptions(alpha.id)),
+        dbLib.withTenant(alpha.id, () => cloudRelay.deliverCloudExceptions(alpha.id)),
+      ]);
+      expect(results.reduce((sum, result) => sum + result.delivered, 0)).toBe(1);
+      expect(requests).toBe(1);
+      const pending = await db.query<{ count: string }>("SELECT count(*)::text count FROM cloud_exception_outbox WHERE business_id=$1", [alpha.id]);
+      expect(pending.rows[0].count).toBe("0");
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousRole === undefined) delete process.env.DEPLOYMENT_ROLE; else process.env.DEPLOYMENT_ROLE = previousRole;
+      if (previousUrl === undefined) delete process.env.SUPPORT_CLOUD_URL; else process.env.SUPPORT_CLOUD_URL = previousUrl;
+      if (previousToken === undefined) delete process.env.SUPPORT_RELAY_TOKEN; else process.env.SUPPORT_RELAY_TOKEN = previousToken;
+      if (previousInstallation === undefined) delete process.env.SUPPORT_INSTALLATION_ID; else process.env.SUPPORT_INSTALLATION_ID = previousInstallation;
+    }
+  });
+
+  it("releases failed leases and schedules bounded retry without provider details", async () => {
+    const saved = { role: process.env.DEPLOYMENT_ROLE, url: process.env.SUPPORT_CLOUD_URL, token: process.env.SUPPORT_RELAY_TOKEN, installation: process.env.SUPPORT_INSTALLATION_ID, fetch: globalThis.fetch };
+    process.env.DEPLOYMENT_ROLE = "site";
+    process.env.SUPPORT_CLOUD_URL = "https://support.example.test";
+    process.env.SUPPORT_RELAY_TOKEN = "test-token";
+    process.env.SUPPORT_INSTALLATION_ID = randomUUID();
+    globalThis.fetch = async () => new Response("upstream secret failure", { status: 503 });
+    try {
+      const inserted = await db.query<{ event_id: string }>(
+        `INSERT INTO cloud_exception_outbox(business_id,kind,aggregate_id,payload)
+         VALUES($1,'support.ticket.created',$2,'{}') RETURNING event_id::text`, [alpha.id, randomUUID()],
+      );
+      await dbLib.withTenant(alpha.id, () => cloudRelay.deliverCloudExceptions(alpha.id));
+      const row = await db.query<{ lease_until: string | null; attempt_count: number; last_error_code: string; future: boolean }>(
+        `SELECT lease_until::text,attempt_count,last_error_code,next_attempt_at>now() future
+           FROM cloud_exception_outbox WHERE event_id=$1`, [inserted.rows[0].event_id],
+      );
+      expect(row.rows[0]).toMatchObject({ lease_until: null, attempt_count: 1, last_error_code: "relay_unreachable", future: true });
+      expect(JSON.stringify(row.rows[0])).not.toContain("upstream secret failure");
+    } finally {
+      globalThis.fetch = saved.fetch;
+      if (saved.role === undefined) delete process.env.DEPLOYMENT_ROLE; else process.env.DEPLOYMENT_ROLE = saved.role;
+      if (saved.url === undefined) delete process.env.SUPPORT_CLOUD_URL; else process.env.SUPPORT_CLOUD_URL = saved.url;
+      if (saved.token === undefined) delete process.env.SUPPORT_RELAY_TOKEN; else process.env.SUPPORT_RELAY_TOKEN = saved.token;
+      if (saved.installation === undefined) delete process.env.SUPPORT_INSTALLATION_ID; else process.env.SUPPORT_INSTALLATION_ID = saved.installation;
+    }
+  });
+
+  it("stores only a token hash and deduplicates retried envelopes", async () => {
+    const issued = await dbLib.withoutTenantScope("platform", () =>
+      cloudRelay.provisionCloudExceptionInstallation("Local cafe"),
+    );
+    expect(await cloudRelay.authenticateCloudExceptionInstallation(issued.installationId, issued.token)).toBe(true);
+    expect(await cloudRelay.authenticateCloudExceptionInstallation(issued.installationId, `${issued.token}x`)).toBe(false);
+    const event = {
+      eventId: randomUUID(), kind: "bug_report.created" as const, aggregateId: randomUUID(),
+      payload: { description: "safe diagnostic" }, occurredAt: new Date().toISOString(),
+    };
+    await cloudRelay.acceptCloudExceptionBatch({ installationId: issued.installationId, events: [event] });
+    await cloudRelay.acceptCloudExceptionBatch({ installationId: issued.installationId, events: [event] });
+    const count = await db.query<{ count: string }>(
+      "SELECT count(*)::text count FROM cloud_exception_inbox WHERE installation_id=$1",
+      [issued.installationId],
+    );
+    expect(count.rows[0].count).toBe("1");
+    const credential = await db.query<{ token_hash: string }>(
+      "SELECT token_hash FROM cloud_exception_installations WHERE installation_id=$1",
+      [issued.installationId],
+    );
+    expect(credential.rows[0].token_hash).not.toContain(issued.token);
   });
 });
 

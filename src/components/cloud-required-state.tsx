@@ -3,7 +3,7 @@ import { CloudIcon, LockKeyholeIcon } from "lucide-react";
 import { cardClass, PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 
 /** One deployment lock for every cloud application (distinct from plan locks). */
-export function CloudRequiredState({ featureName }: { featureName: string }) {
+export function CloudRequiredState({ featureName, cloudUrl = null }: { featureName: string; cloudUrl?: string | null }) {
   return (
     <PageShell className="py-6">
       <PageHeader
@@ -21,11 +21,11 @@ export function CloudRequiredState({ featureName }: { featureName: string }) {
               سیستم محلی، حسابداری، CRM، فروش و انبار همچنان فعال‌اند. اتصال به ابر، مدیریت وب‌سایت، رشد و بازاریابی، دستیار هوشمند، گزارش مرکزی و پشتیبان‌گیری ابری را فعال می‌کند.
             </p>
             <Link
-              href="/settings/cloud-sync"
+              href={cloudUrl ?? "/settings/cloud-sync"}
               className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground"
             >
               <CloudIcon className="size-4" aria-hidden="true" />
-              اتصال به ابر
+              {cloudUrl ? "بازکردن نسخهٔ ابری" : "اتصال به ابر"}
             </Link>
           </div>
         </div>

@@ -28,8 +28,11 @@ import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
 import { DashboardMain } from "./dashboard-main";
 import { AppAvailabilityGate } from "./app-availability-gate";
 import { DeploymentCapabilityGate } from "./deployment-capability-gate";
+import { OfflineQueueProvider } from "./offline-queue";
 import { readDeploymentProfile } from "@/lib/deployment-mode";
 import { resolveCapability, type CapabilityKey } from "@/lib/capabilities";
+import { deploymentRole } from "@/lib/deployment-role";
+import { getServerSyncConfig } from "@/lib/server-sync";
 
 /**
  * The dashboard nav.
@@ -331,12 +334,14 @@ export async function WorkspaceShell({
           effectiveAppAvailability(session.businessId),
           effectiveFeatures(session.businessId),
           readDeploymentProfile(session.businessId),
+          getServerSyncConfig(session.businessId),
         ]),
       { locationId: session.locationId, userId: session.sub },
     ),
   ]);
   if (!member?.isActive) redirect("/login");
-  const [industryResult, prefs, appAvailability, features, deployment] = tenantReads;
+  const [industryResult, prefs, appAvailability, features, deployment, serverSyncConfig] = tenantReads;
+  const runtimeRole = deploymentRole();
   const industry = industryResult.rows[0]?.industry ?? "food_service";
   const currencyDisplay = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
   const permissions = member.permissions;
@@ -387,6 +392,7 @@ export async function WorkspaceShell({
   return (
     <LockProvider fullName={session.fullName}>
       <MoneyProvider unit={currencyDisplay}>
+        <OfflineQueueProvider>
         <BugReportProvider>
         {/*
           A *definite* height, not `min-h-screen` — this is the fix for "the app
@@ -421,13 +427,18 @@ export async function WorkspaceShell({
         />
         <DashboardMain>
           <AppAvailabilityGate availability={appAvailability}>
-            <DeploymentCapabilityGate profile={deployment.profile}>
+            <DeploymentCapabilityGate
+              profile={deployment.profile}
+              runtimeRole={runtimeRole}
+              cloudUrl={serverSyncConfig?.enabled ? serverSyncConfig.remoteUrl : null}
+            >
               {children}
             </DeploymentCapabilityGate>
           </AppAvailabilityGate>
         </DashboardMain>
         </div>
         </BugReportProvider>
+        </OfflineQueueProvider>
       </MoneyProvider>
     </LockProvider>
   );

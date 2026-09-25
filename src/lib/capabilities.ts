@@ -33,6 +33,7 @@ export type CapabilityKey =
   | "operation.pos"
   | "operation.local_reporting"
   | "operation.local_backup"
+  | "operation.site_sync"
   | "cloud.multi_location"
   | "cloud.integrations"
   | "cloud.sync";
@@ -48,6 +49,7 @@ export interface CapabilityContext {
   permissions?: ReadonlySet<string> | readonly string[];
   businessType?: string;
   runtime?: RuntimeCapabilityState;
+  runtimeRole?: "central" | "site";
 }
 
 export interface CapabilityDefinition {
@@ -75,7 +77,8 @@ export type CapabilityErrorCode =
   | "CLOUD_TEMPORARILY_UNAVAILABLE"
   | "INTERNET_REQUIRED"
   | "DEPLOYMENT_UNSUPPORTED"
-  | "BUSINESS_TYPE_UNSUPPORTED";
+  | "BUSINESS_TYPE_UNSUPPORTED"
+  | "WRONG_EXECUTION_TARGET";
 
 export const CAPABILITY_REGISTRY: Readonly<Record<CapabilityKey, CapabilityDefinition>> = {
   "app.accounting": { key: "app.accounting", executionTarget: "either", profiles: ["cloud", "hybrid", "local"] },
@@ -93,7 +96,8 @@ export const CAPABILITY_REGISTRY: Readonly<Record<CapabilityKey, CapabilityDefin
   "operation.pos": { key: "operation.pos", executionTarget: "local", profiles: ["hybrid", "local"], requiredAnyPermission: ["orders.create"] },
   "operation.local_reporting": { key: "operation.local_reporting", executionTarget: "local", profiles: ["hybrid", "local"] },
   "operation.local_backup": { key: "operation.local_backup", executionTarget: "local", profiles: ["hybrid", "local"], requiredAnyPermission: ["backup.manage"] },
-  "cloud.multi_location": { key: "cloud.multi_location", executionTarget: "cloud", profiles: ["cloud", "hybrid"], planCapability: "multi_location", cloudDependency: "cloud" },
+  "operation.site_sync": { key: "operation.site_sync", executionTarget: "either", profiles: ["cloud", "hybrid"], planCapability: "site_cloud_sync" },
+  "cloud.multi_location": { key: "cloud.multi_location", executionTarget: "either", profiles: ["cloud", "hybrid"], planCapability: "multi_location", cloudDependency: "cloud" },
   "cloud.integrations": { key: "cloud.integrations", executionTarget: "cloud", profiles: ["cloud", "hybrid"], planCapability: "integrations", cloudDependency: "cloud" },
   "cloud.sync": { key: "cloud.sync", executionTarget: "cloud", profiles: ["cloud", "hybrid"], planCapability: "site_cloud_sync", cloudDependency: "cloud" },
 };
@@ -114,9 +118,15 @@ export function resolveCapability(key: CapabilityKey, context: CapabilityContext
   });
 
   if (!definition.profiles.includes(context.deployment)) {
-    return context.deployment === "local" && definition.executionTarget === "cloud"
+    return context.deployment === "local" && (definition.executionTarget === "cloud" || definition.cloudDependency === "cloud")
       ? result("requires_cloud", "REQUIRES_CLOUD_CONNECTION")
       : result("unavailable_by_deployment", "DEPLOYMENT_UNSUPPORTED");
+  }
+  // A Hybrid site's local process is authoritative for operations, but it is
+  // not a substitute Cloud runtime. Support/Bug Report are deliberate relay
+  // exceptions; every other cloud target executes only on the central role.
+  if (context.runtimeRole === "site" && definition.executionTarget === "cloud" && key !== "app.support" && key !== "support.bug_report") {
+    return result("unavailable_by_deployment", "WRONG_EXECUTION_TARGET");
   }
   if (definition.businessTypes && context.businessType && !definition.businessTypes.includes(context.businessType)) {
     return result("unavailable_by_business_type", "BUSINESS_TYPE_UNSUPPORTED");
@@ -154,9 +164,13 @@ const API_CAPABILITIES: readonly [string, CapabilityKey][] = [
   ["/api/connections/website", "app.website"],
   ["/api/integrations", "cloud.integrations"],
   ["/api/mcp", "app.ai"],
+  ["/api/connections/mcp", "app.ai"],
   ["/api/branches", "cloud.multi_location"],
+  ["/api/rollup/push", "operation.site_sync"],
   ["/api/rollup", "cloud.multi_location"],
-  ["/api/server-sync", "cloud.sync"],
+  ["/api/server-sync/config/generate-token", "cloud.sync"],
+  ["/api/server-sync/config", "operation.site_sync"],
+  ["/api/server-sync/reconcile", "operation.site_sync"],
 ];
 
 export function capabilityForApiPath(pathname: string): CapabilityKey | null {

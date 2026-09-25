@@ -12,7 +12,8 @@
  * The platform half of the same tables lives in platform-service.ts, which
  * reads and writes through the documented tenant-bypass scope.
  */
-import { query } from "./db";
+import { getPool, query } from "./db";
+import { enqueueCloudException } from "./cloud-exception-relay";
 import type { Role } from "./auth-edge";
 import {
   canSeeAllBusinessTickets,
@@ -247,19 +248,34 @@ export async function createMemberTicket({
   const cleanCategory = isTicketCategory(category) ? category : "other";
   const cleanPriority = isTicketPriority(priority) ? priority : "normal";
 
-  const { rows: ticketRows } = await query<{ id: string }>(
-    `INSERT INTO support_tickets (business_id, location_id, user_id, subject, category, priority)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id`,
-    [businessId, locationId, userId, subject, cleanCategory, cleanPriority],
-  );
-  const ticketId = ticketRows[0].id;
-
-  await query(
-    `INSERT INTO support_ticket_messages (ticket_id, business_id, author_type, user_id, body, attachment)
-     VALUES ($1::uuid, $2, 'member', $3, $4, $5)`,
-    [ticketId, businessId, userId, body, attachment],
-  );
+  const client = await getPool().connect();
+  let ticketId = "";
+  try {
+    await client.query("BEGIN");
+    const { rows: ticketRows } = await client.query<{ id: string }>(
+      `INSERT INTO support_tickets (business_id, location_id, user_id, subject, category, priority)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [businessId, locationId, userId, subject, cleanCategory, cleanPriority],
+    );
+    ticketId = ticketRows[0].id;
+    const { rows: messageRows } = await client.query<{ id: string }>(
+      `INSERT INTO support_ticket_messages (ticket_id, business_id, author_type, user_id, body, attachment)
+       VALUES ($1::uuid, $2, 'member', $3, $4, $5) RETURNING id`,
+      [ticketId, businessId, userId, body, attachment],
+    );
+    await enqueueCloudException(client, {
+      businessId, kind: "support.ticket.created", aggregateId: ticketId,
+      payload: { ticketId, messageId: messageRows[0].id, locationId, userId, subject,
+        category: cleanCategory, priority: cleanPriority, body, attachment },
+    });
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 
   // The inserts above just succeeded under RLS and the ticket is owned by
   // `userId`, so this re-read can only fail on a vanished row.
@@ -291,18 +307,34 @@ export async function addMemberMessage({
   if (!ticket) throw new TicketAccessError();
 
   const nextStatus: TicketStatus = statusAfterMemberReply(ticket.status);
-  const { rows } = await query<{ id: string }>(
-    `INSERT INTO support_ticket_messages (ticket_id, business_id, author_type, user_id, body, attachment)
-     VALUES ($1::uuid, $2, 'member', $3, $4, $5)
-     RETURNING id::text AS id`,
-    [ticketId, businessId, userId, body, attachment],
-  );
-  // A reply means the problem is back on the table: reopen and re-queue.
-  await query(
-    `UPDATE support_tickets SET status = $2, updated_at = now(), closed_at = NULL WHERE id = $1::uuid`,
-    [ticketId, nextStatus],
-  );
-  return getMessageById(ticketId, rows[0].id);
+  const client = await getPool().connect();
+  let messageId = "";
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO support_ticket_messages (ticket_id, business_id, author_type, user_id, body, attachment)
+       VALUES ($1::uuid, $2, 'member', $3, $4, $5)
+       RETURNING id::text AS id`,
+      [ticketId, businessId, userId, body, attachment],
+    );
+    messageId = rows[0].id;
+    // A reply means the problem is back on the table: reopen and re-queue.
+    await client.query(
+      `UPDATE support_tickets SET status = $2, updated_at = now(), closed_at = NULL WHERE id = $1::uuid`,
+      [ticketId, nextStatus],
+    );
+    await enqueueCloudException(client, {
+      businessId, kind: "support.message.created", aggregateId: ticketId,
+      payload: { ticketId, messageId, userId, body, attachment },
+    });
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+  return getMessageById(ticketId, messageId);
 }
 
 /** A member closes or reopens their own ticket. */

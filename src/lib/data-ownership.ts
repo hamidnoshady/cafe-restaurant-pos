@@ -30,6 +30,8 @@ export const DATA_OWNERSHIP_REGISTRY = {
   printer_settings: { domain: "printer_settings", ownership: "device_local", direction: "none", conflictPolicy: "never_sync", deletion: "not_applicable", bootstrap: "none" },
   backup_paths: { domain: "backup_paths", ownership: "device_local", direction: "none", conflictPolicy: "never_sync", deletion: "not_applicable", bootstrap: "none" },
   lan_gateway: { domain: "lan_gateway", ownership: "device_local", direction: "none", conflictPolicy: "never_sync", deletion: "not_applicable", bootstrap: "none" },
+  certificate_paths: { domain: "certificate_paths", ownership: "device_local", direction: "none", conflictPolicy: "never_sync", deletion: "not_applicable", bootstrap: "none" },
+  database_paths: { domain: "database_paths", ownership: "device_local", direction: "none", conflictPolicy: "never_sync", deletion: "not_applicable", bootstrap: "none" },
 } as const satisfies Record<string, DomainOwnershipDefinition>;
 
 export type DataDomain = keyof typeof DATA_OWNERSHIP_REGISTRY;

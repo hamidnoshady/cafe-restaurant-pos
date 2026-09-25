@@ -5,6 +5,7 @@ import { readDeploymentProfile } from "@/lib/deployment-mode";
 import { getServerSyncConfig, getServerSyncState } from "@/lib/server-sync";
 import { query } from "@/lib/db";
 import type { ConnectionStatus, PlatformConnectionState } from "@/lib/connection-state";
+import { deliverCloudExceptions } from "@/lib/cloud-exception-relay";
 
 /**
  * Authenticated, credential-free connection model shared by the global status
@@ -19,6 +20,9 @@ export const GET = withTenantScope(async () => {
 
   const role = deploymentRole();
   const deployment = await readDeploymentProfile(session.businessId, role);
+  const exceptionRelay = role === "site"
+    ? await deliverCloudExceptions(session.businessId).catch(() => ({ delivered: 0, pending: 0, configured: false }))
+    : { delivered: 0, pending: 0, configured: false };
   if (role !== "site" || deployment.profile === "cloud") {
     const state: PlatformConnectionState = {
       localServer: "not_applicable",
@@ -33,7 +37,7 @@ export const GET = withTenantScope(async () => {
       deadLetters: 0,
       lastSuccessfulSyncAt: null,
     };
-    return NextResponse.json({ profile: deployment.profile, ...state, cloudSync: "not_applicable", error: null });
+    return NextResponse.json({ profile: deployment.profile, ...state, cloudSync: "not_applicable", error: null, supportRelay: exceptionRelay });
   }
 
   if (deployment.profile === "local") {
@@ -50,7 +54,7 @@ export const GET = withTenantScope(async () => {
       deadLetters: 0,
       lastSuccessfulSyncAt: null,
     };
-    return NextResponse.json({ profile: "local", ...state, cloudSync: "not_configured", error: null });
+    return NextResponse.json({ profile: "local", ...state, cloudSync: "not_configured", error: null, supportRelay: exceptionRelay });
   }
 
   const syncState = await getServerSyncState(session.businessId);
@@ -105,6 +109,7 @@ export const GET = withTenantScope(async () => {
     // Compatibility field for the bounded IndexedDB queue hook.
     cloudSync: sync === "connected" ? "connected" : sync === "connecting" ? "connecting" : sync === "paused" ? "paused" : "not_configured",
     error: errorText ? "remote_unreachable" : null,
+    supportRelay: exceptionRelay,
   });
 });
 

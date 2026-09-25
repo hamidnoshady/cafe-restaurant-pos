@@ -7,7 +7,7 @@
  * hidden navigation item must never be the only protection for its page/API.
  */
 import { NextRequest } from "next/server";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { middleware } from "@/middleware";
 import { signSession, type SessionPayload } from "@/lib/auth-edge";
 import {
@@ -35,11 +35,17 @@ const TENANT_OWNER: SessionPayload = {
 let platformCookie = "";
 let tenantCookie = "";
 
+const originalDeploymentRole = process.env.DEPLOYMENT_ROLE;
 beforeAll(async () => {
+  process.env.DEPLOYMENT_ROLE = "central";
   [platformCookie, tenantCookie] = await Promise.all([
     signPlatformSession(PLATFORM_ADMIN),
     signSession(TENANT_OWNER),
   ]);
+});
+afterAll(() => {
+  if (originalDeploymentRole === undefined) delete process.env.DEPLOYMENT_ROLE;
+  else process.env.DEPLOYMENT_ROLE = originalDeploymentRole;
 });
 
 function request(
@@ -79,6 +85,15 @@ const PLATFORM_ROUTES: readonly string[] = [
 ];
 
 describe("platform route boundary", () => {
+  it("does not expose the central console from a Local or Hybrid site process", async () => {
+    process.env.DEPLOYMENT_ROLE = "site";
+    try {
+      expect((await visit("/platform/login")).response.status).toBe(404);
+      expect((await visit("/api/platform/auth/me")).response.status).toBe(404);
+    } finally {
+      process.env.DEPLOYMENT_ROLE = "central";
+    }
+  });
   it("serves every console IA and detail route to a platform session", async () => {
     for (const pathname of PLATFORM_ROUTES) {
       const { response } = await visit(pathname, { platform: true });

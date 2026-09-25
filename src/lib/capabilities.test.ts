@@ -40,11 +40,23 @@ describe("deployment capability resolver", () => {
     }
   });
 
+  it("keeps a Hybrid site operational without executing cloud applications locally", () => {
+    expect(resolveCapability("app.ai", { deployment: "hybrid", runtimeRole: "site" })).toMatchObject({
+      available: false, code: "WRONG_EXECUTION_TARGET",
+    });
+    expect(resolveCapability("app.ai", { deployment: "hybrid", runtimeRole: "central" }).available).toBe(true);
+    expect(resolveCapability("app.support", { deployment: "hybrid", runtimeRole: "site" }).available).toBe(true);
+    expect(resolveCapability("support.bug_report", { deployment: "local", runtimeRole: "site" }).available).toBe(true);
+    expect(resolveCapability("app.accounting", { deployment: "hybrid", runtimeRole: "site" }).available).toBe(true);
+  });
+
   it("maps cloud API families and Local exceptions to the same registry", () => {
     expect(capabilityForApiPath("/api/cms/website/posts")).toBe("app.website");
     expect(capabilityForApiPath("/api/website/posts")).toBe("app.website");
     expect(capabilityForApiPath("/api/ai/chat")).toBe("app.ai");
     expect(capabilityForApiPath("/api/workspace/items")).toBe("app.workspace");
+    expect(capabilityForApiPath("/api/server-sync/config")).toBe("operation.site_sync");
+    expect(capabilityForApiPath("/api/server-sync/config/generate-token")).toBe("cloud.sync");
     expect(capabilityForApiPath("/api/support/tickets")).toBe("app.support");
     expect(capabilityForApiPath("/api/bug-report")).toBe("support.bug_report");
     expect(capabilityForApiPath("/api/orders")).toBeNull();

@@ -36,6 +36,7 @@ export const POST = withTenantScope(
         countId: id,
         createdBy: session.sub,
         note: body.note ?? null,
+        sync: { actorRole: session.role },
       });
       await client.query("COMMIT");
       return NextResponse.json({ ok: true, ...result });

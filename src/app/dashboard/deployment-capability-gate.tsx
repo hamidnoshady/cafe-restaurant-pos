@@ -22,8 +22,12 @@ const PAGE_CAPABILITIES: readonly [string, CapabilityKey, string][] = [
 export function DeploymentCapabilityGate({
   profile,
   children,
+  runtimeRole,
+  cloudUrl,
 }: {
   profile: DeploymentProfile;
+  runtimeRole: "central" | "site";
+  cloudUrl: string | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -31,7 +35,12 @@ export function DeploymentCapabilityGate({
     prefix === "/dashboard" ? pathname === prefix : pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
   if (!match) return <>{children}</>;
-  const resolution = resolveCapability(match[1], { deployment: profile });
-  if (resolution.status === "requires_cloud") return <CloudRequiredState featureName={match[2]} />;
+  const resolution = resolveCapability(match[1], { deployment: profile, runtimeRole });
+  if (resolution.status === "requires_cloud" || resolution.code === "WRONG_EXECUTION_TARGET") {
+    const cloudHref = resolution.code === "WRONG_EXECUTION_TARGET" && cloudUrl
+      ? new URL(pathname, cloudUrl).toString()
+      : null;
+    return <CloudRequiredState featureName={match[2]} cloudUrl={cloudHref} />;
+  }
   return <>{children}</>;
 }

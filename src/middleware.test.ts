@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isAuthRateLimitedPath,
+  isCentralExecutionPath,
   isPeerBackupPath,
   isPublicPath,
   isStaffRosterPath,

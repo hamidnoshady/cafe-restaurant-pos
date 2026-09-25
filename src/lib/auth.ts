@@ -23,6 +23,7 @@ import { platformAudit } from "./platform-auth";
 import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
 import { capabilityForApiPath, capabilityHttpStatus, resolveCapability } from "./capabilities";
 import { readDeploymentProfile } from "./deployment-mode";
+import { deploymentRole } from "./deployment-role";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -167,7 +168,7 @@ export function withTenantScope<Args extends unknown[]>(
         const capability = capabilityForApiPath(pathname);
         const deployment = capability ? await readDeploymentProfile(session.businessId) : null;
         if (capability && deployment) {
-          const resolved = resolveCapability(capability, { deployment: deployment.profile });
+          const resolved = resolveCapability(capability, { deployment: deployment.profile, runtimeRole: deploymentRole() });
           if (!resolved.available) {
             return NextResponse.json(
               { error: "capability_unavailable", code: resolved.code, capability, status: resolved.status },

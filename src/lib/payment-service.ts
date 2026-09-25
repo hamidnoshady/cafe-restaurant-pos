@@ -12,6 +12,14 @@ import { rialBigInt, rialText, type RialText } from "./inventory-exact";
 import { markScoringDirtyIn } from "./crm-scoring-freshness";
 import { earnPoints } from "./loyalty-service";
 import { releaseTableAfterOrderSettled } from "./table-session-service";
+import { emitDomainEvent } from "./posting-engine";
+import { enqueueHolooSaleForOrder } from "./integrations/holoo/outbox-producer";
+import {
+  platformCommissionBase,
+  settlementDifference,
+  tendersWithTip,
+  type ResolvedTender,
+} from "./payment-methods";
 
 export const PAYMENT_METHODS = [
   "cash",
@@ -200,9 +208,111 @@ export async function completeOrderPayment(
   // put a full scan of every customer and every order on the path of taking
   // money. The background tick picks this up (crm-scoring-freshness.ts).
   await markScoringDirtyIn(client, businessId);
+  await enqueueHolooSaleForOrder(client, businessId, orderId);
 
   const released = await releaseTableAfterOrderSettled(client, locationId, orderId, receivedBy);
 
+  return { amount, tipAmount, duplicate: false, releasedSessionId: released?.sessionId ?? null };
+}
+
+export interface CompleteSplitOrderPaymentInput {
+  client: PoolClient;
+  businessId: string;
+  locationId: string;
+  orderId: string;
+  tenders: ResolvedTender[];
+  customerId: string | null;
+  tipAmount: number;
+  businessDate?: string;
+  receivedBy: string | null;
+  idempotencyKey: string;
+}
+
+/** Exact split-tender settlement used by server-sync replay. */
+export async function completeSplitOrderPayment(input: CompleteSplitOrderPaymentInput): Promise<CompleteOrderPaymentResult> {
+  const { client, businessId, locationId, orderId, tenders, customerId, tipAmount, businessDate, receivedBy, idempotencyKey } = input;
+  const effectKey = `order-payment:${idempotencyKey}`;
+  const prior = await client.query<{ total: string; tip_amount: number }>(
+    `SELECT o.total::text total,o.tip_amount FROM inventory_events ie JOIN orders o ON o.id=ie.source_id AND o.location_id=ie.location_id
+      WHERE ie.business_id=$1 AND ie.location_id=$2 AND ie.idempotency_key=$3 AND ie.source_type='order' AND ie.posting_status='posted'`,
+    [businessId, locationId, effectKey],
+  );
+  if (prior.rows[0]) return { amount: rialText(prior.rows[0].total), tipAmount: prior.rows[0].tip_amount, duplicate: true };
+  const locked = await lockOpenOrder(client, locationId, orderId);
+  if (!locked.ok) throw Object.assign(new Error(locked.error), { code: locked.error, status: locked.status });
+  if (customerId) {
+    const owned = await client.query(`SELECT 1 FROM parties WHERE id=$1 AND business_id=$2 AND roles && ARRAY['customer']::text[]`, [customerId, businessId]);
+    if (owned.rowCount !== 1) throw Object.assign(new Error("customer_not_found"), { code: "customer_not_found", status: 404 });
+    await client.query("UPDATE orders SET customer_id=$1 WHERE id=$2", [customerId, orderId]);
+  }
+  const amount = rialText(locked.order.total);
+  const difference = settlementDifference(tenders, Number(rialBigInt(amount)));
+  if ((difference.balanceDue > 0 || difference.customerCredit > 0 || tenders.some((t) => t.settlement === "credit")) && !customerId) {
+    throw Object.assign(new Error("customer_required"), { code: "customer_required", status: 400 });
+  }
+  const methodIds = tenders.map((tender) => tender.methodId).filter((id): id is string => Boolean(id));
+  const knownMethods = methodIds.length
+    ? new Set((await client.query<{ id: string }>("SELECT id FROM payment_methods WHERE business_id=$1 AND id=ANY($2::uuid[])", [businessId, methodIds])).rows.map((row) => row.id))
+    : new Set<string>();
+  const event = await client.query<{ id: string }>(
+    `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key,costing_version)
+     VALUES($1,$2,'sale_consumption','order',$3,$4,$5,2) RETURNING id`,
+    [businessId, locationId, orderId, receivedBy, effectKey],
+  );
+  const inventoryEventId = event.rows[0].id;
+  for (const [index, tender] of tenders.entries()) {
+    await client.query(
+      `INSERT INTO payments(location_id,order_id,method,amount,reference,received_by,payment_method_id,settlement_seq)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [locationId, orderId, tender.settlement, String(tender.amount), tender.reference, receivedBy, tender.methodId && knownMethods.has(tender.methodId) ? tender.methodId : null, index + 1],
+    );
+  }
+  if (difference.balanceDue > 0) {
+    const credit = await client.query<{ id: string }>(
+      "SELECT id FROM payment_methods WHERE business_id=$1 AND settlement='credit' AND is_active ORDER BY sort_order LIMIT 1", [businessId],
+    );
+    await client.query(
+      `INSERT INTO payments(location_id,order_id,method,amount,reference,received_by,payment_method_id,settlement_seq)
+       VALUES($1,$2,'credit',$3,NULL,$4,$5,$6)`,
+      [locationId, orderId, String(difference.balanceDue), receivedBy, credit.rows[0]?.id ?? null, tenders.length + 1],
+    );
+  }
+  if (difference.customerCredit > 0 && customerId) {
+    await emitDomainEvent(client, {
+      businessId, locationId, eventType: "order.customer_credit_issued",
+      payload: { customerId, amount: rialText(String(difference.customerCredit)), orderId },
+      sourceType: "order", sourceId: orderId, createdBy: receivedBy,
+    });
+  }
+  const completed = await client.query(
+    "UPDATE orders SET status='completed',closed_by=$2,closed_at=now(),tip_amount=$3 WHERE id=$1 AND status='open' RETURNING id",
+    [orderId, receivedBy, tipAmount],
+  );
+  if (completed.rowCount !== 1) throw Object.assign(new Error("order_not_open"), { code: "order_not_open", status: 409 });
+  const { totalCost } = await deductForOrder(client, businessId, locationId, orderId, receivedBy, inventoryEventId);
+  const platformAmount = rialText(String(platformCommissionBase(tenders)));
+  let platformCommission = "0" as RialText;
+  if (rialBigInt(platformAmount) > 0n) {
+    const { snappfood } = await getOnlinePlatformsConfig(businessId);
+    if (snappfood) platformCommission = commissionAmountFor(platformAmount, snappfood.commissionPercent);
+  }
+  await postExactOrderPaymentEntry(client, {
+    businessId, locationId, orderId, createdBy: receivedBy,
+    tenders: tendersWithTip(tenders, tipAmount).map((tender) => ({ settlement: tender.settlement, amount: rialText(String(tender.amount)) })),
+    amount, tax: rialText(locked.order.tax), inventoryEventId, orderChannel: locked.order.type,
+    tip: rialText(String(tipAmount)), platformCommission,
+    balanceDue: rialText(String(difference.balanceDue)), customerCredit: rialText(String(difference.customerCredit)),
+  });
+  await postExactCogsEntry(client, { businessId, locationId, orderId, createdBy: receivedBy, totalCost, inventoryEventId });
+  const loyaltyCustomerId = customerId || locked.order.customer_id;
+  if (loyaltyCustomerId) {
+    const owned = await client.query(`SELECT 1 FROM parties WHERE id=$1 AND business_id=$2 AND roles && ARRAY['customer']::text[]`, [loyaltyCustomerId, businessId]);
+    if (owned.rowCount === 1) await earnPoints(client, { businessId, customerId: loyaltyCustomerId, amountRial: amount, sourceType: "order", sourceId: orderId, earnedOn: businessDate, createdBy: receivedBy });
+  }
+  await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
+  await markScoringDirtyIn(client, businessId);
+  await enqueueHolooSaleForOrder(client, businessId, orderId);
+  const released = await releaseTableAfterOrderSettled(client, locationId, orderId, receivedBy);
   return { amount, tipAmount, duplicate: false, releasedSessionId: released?.sessionId ?? null };
 }
 
