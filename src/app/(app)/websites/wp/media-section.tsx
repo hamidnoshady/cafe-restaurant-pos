@@ -12,6 +12,7 @@ import {
   FileTextIcon,
   ImageIcon,
   ImageOffIcon,
+  ImagePlusIcon,
   Music2Icon,
   RefreshCwIcon,
   SearchIcon,
@@ -35,9 +36,11 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import {
   WP_MEDIA_KINDS,
+  WP_MEDIA_TITLE_MAX,
   wpMediaKindForMime,
   type WpMediaKind,
 } from "@/lib/integrations/wp-media";
+import { pluginSupportsJobType } from "@/lib/integrations/plugin-capabilities";
 import { ConnectionPicker } from "./connection-lite";
 import { PluginWaitNote } from "./plugin-wait-note";
 import { useWpStore } from "./wp-store-context";
@@ -247,6 +250,11 @@ export function WpMediaSection() {
   const [loadError, setLoadError] = useState("");
   const [syncError, setSyncError] = useState("");
   const [notice, setNotice] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [addUrl, setAddUrl] = useState("");
+  const [addTitle, setAddTitle] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState("");
   const listAbortRef = useRef<AbortController | null>(null);
   const listRequestRef = useRef(0);
   const selectedIdRef = useRef(selectedId);
@@ -318,6 +326,11 @@ export function WpMediaSection() {
     // screen after the picker moves to another store is actively misleading.
     setNotice("");
     setSyncError("");
+    // The add form too: a half-typed URL for store A must not queue on store B.
+    setAddOpen(false);
+    setAddUrl("");
+    setAddTitle("");
+    setAddError("");
   }, [selectedId]);
 
   async function syncContent() {
@@ -357,6 +370,33 @@ export function WpMediaSection() {
     await load(connectionId);
   }
 
+  async function submitAddMedia() {
+    if (!selectedId || addBusy) return;
+    const connectionId = selectedId;
+    setAddBusy(true);
+    setAddError("");
+    setNotice("");
+    const response = await api<{ queued?: boolean; error?: string }>(
+      "/api/integrations/wp-manager/media",
+      {
+        method: "POST",
+        body: JSON.stringify({ connectionId, url: addUrl.trim(), title: addTitle.trim() || undefined }),
+      },
+    );
+    setAddBusy(false);
+    if (connectionId !== selectedIdRef.current) return;
+    if (!response.ok) {
+      setAddError(errorMessageOrRaw(response.data?.error) || "افزودن رسانه ناموفق بود.");
+      return;
+    }
+    setAddOpen(false);
+    setAddUrl("");
+    setAddTitle("");
+    setNotice(
+      "درخواست افزودن تصویر در صف قرار گرفت؛ افزونهٔ وردپرس در اجرای بعدی آن را از نشانی داده‌شده دریافت و در کتابخانهٔ سایت ثبت می‌کند. پس از آن، فایل در همین فهرست ظاهر می‌شود.",
+    );
+  }
+
   function clearFilters() {
     setSearchInput("");
     setSearchQuery("");
@@ -387,13 +427,40 @@ export function WpMediaSection() {
   const filtered = Boolean(searchQuery) || kind !== "all";
   const shown = rows?.length ?? 0;
 
+  // Capability-driven: the add action exists only where the transport can
+  // actually perform it — a plugin connection whose handshake advertised
+  // `media_create`. A REST store (wp/v2 has no sideload-by-URL) and an older
+  // plugin are simply not offered the button, rather than shown one that fails.
+  const selectedConnection = connections.find((connection) => connection.id === selectedId) ?? null;
+  const canAddMedia =
+    selectedConnection?.linkMode === "plugin" &&
+    pluginSupportsJobType(selectedConnection.pluginCapabilities ?? null, "media_create");
+
   return (
     <div className="space-y-4 sm:space-y-5">
       <SectionCard
         title="کتابخانهٔ رسانه‌های وردپرس"
-        description="فایل‌های همگام‌شدهٔ سایت را جستجو و بر اساس نوع مرور کنید. این صفحه فایل‌ها را تغییر یا حذف نمی‌کند."
+        description={
+          canAddMedia
+            ? "فایل‌های همگام‌شدهٔ سایت را مرور کنید؛ افزودن تصویر جدید از نشانی اینترنتی از همین‌جا انجام می‌شود."
+            : "فایل‌های همگام‌شدهٔ سایت را جستجو و بر اساس نوع مرور کنید. این صفحه فایل‌ها را تغییر یا حذف نمی‌کند."
+        }
         actions={
           <div className="flex flex-wrap gap-2">
+            {canAddMedia ? (
+              <Button
+                variant="outline"
+                aria-expanded={addOpen}
+                disabled={!selectedId}
+                onClick={() => {
+                  setAddError("");
+                  setAddOpen((open) => !open);
+                }}
+              >
+                <ImagePlusIcon aria-hidden="true" className="size-4" />
+                افزودن تصویر از نشانی
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               disabled={!selectedId || rows === null || loadingMore}
@@ -463,6 +530,70 @@ export function WpMediaSection() {
             </div>
           </div>
         </div>
+        {canAddMedia && addOpen ? (
+          <form
+            className="mt-4 space-y-3 rounded-xl border border-border bg-muted/40 p-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitAddMedia();
+            }}
+          >
+            <p className="text-xs leading-5 text-muted-foreground">
+              نشانی عمومی یک تصویر را وارد کنید؛ خود سایت وردپرس فایل را از این نشانی دریافت و در
+              کتابخانه‌اش ثبت می‌کند. عملیات در صف افزونه قرار می‌گیرد و معمولاً ظرف چند دقیقه انجام می‌شود.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="wp-media-add-url" className="mb-1.5 block text-sm font-medium text-foreground">
+                  نشانی فایل تصویر
+                </label>
+                <input
+                  id="wp-media-add-url"
+                  type="url"
+                  dir="ltr"
+                  required
+                  className={inputClass}
+                  value={addUrl}
+                  onChange={(event) => setAddUrl(event.target.value)}
+                  placeholder="https://example.com/banner.jpg"
+                  disabled={addBusy}
+                />
+              </div>
+              <div>
+                <label htmlFor="wp-media-add-title" className="mb-1.5 block text-sm font-medium text-foreground">
+                  عنوان (اختیاری)
+                </label>
+                <input
+                  id="wp-media-add-title"
+                  type="text"
+                  className={inputClass}
+                  value={addTitle}
+                  maxLength={WP_MEDIA_TITLE_MAX}
+                  onChange={(event) => setAddTitle(event.target.value)}
+                  placeholder="مثلاً بنر تخفیف پاییزی"
+                  disabled={addBusy}
+                />
+              </div>
+            </div>
+            <ErrorBox>{addError}</ErrorBox>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={addBusy || !addUrl.trim()}>
+                {addBusy ? "در حال ثبت…" : "افزودن به صف افزونه"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={addBusy}
+                onClick={() => {
+                  setAddOpen(false);
+                  setAddError("");
+                }}
+              >
+                انصراف
+              </Button>
+            </div>
+          </form>
+        ) : null}
       </SectionCard>
 
       <PluginWaitNote connections={connections} selectedId={selectedId} />

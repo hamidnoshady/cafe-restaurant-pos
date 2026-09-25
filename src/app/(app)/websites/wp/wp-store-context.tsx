@@ -12,6 +12,8 @@ const STORAGE_KEY = "wp-manager:selected-connection";
 export type WpManagerConnection = ConnectionLite & {
   baseUrl?: string;
   pluginVersion?: string | null;
+  /** The capability set the plugin's last handshake reported; null before it, and for REST stores. */
+  pluginCapabilities?: Record<string, unknown> | null;
   lastError?: string | null;
   lastSyncAt?: string | null;
   lastCatalogueSyncAt?: string | null;

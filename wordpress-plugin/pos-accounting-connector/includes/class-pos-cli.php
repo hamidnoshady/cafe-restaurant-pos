@@ -36,7 +36,7 @@ class POS_Connector_CLI {
 	private static function require_configured() {
 		$settings = pos_connector_settings();
 		if ( empty( $settings['enabled'] ) ) {
-			WP_CLI::error( 'همگام‌سازی غیرفعال است. ابتدا در ووکامرس ← اتصال حسابداری آن را فعال کنید.' );
+			WP_CLI::error( 'همگام‌سازی غیرفعال است. ابتدا در منوی «اشوبه» در پیشخوان وردپرس، بخش «اتصال»، آن را فعال کنید.' );
 		}
 		if ( empty( $settings['base_url'] ) || empty( $settings['token'] ) ) {
 			WP_CLI::error( 'آدرس سامانه یا توکن وارد نشده است.' );
