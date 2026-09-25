@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getLedgerOverview } from "@/lib/ledger-reports-service";
 
 /**
@@ -12,7 +13,7 @@ import { getLedgerOverview } from "@/lib/ledger-reports-service";
  * Owner/manager/accountant only: it is the ledger's own door.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   return NextResponse.json({ overview: await getLedgerOverview(session.businessId) });

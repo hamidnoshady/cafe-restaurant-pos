@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { isLowStock } from "@/lib/inventory";
 import { getStockLevels } from "@/lib/inventory-service";
@@ -7,7 +8,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Items at or below their reorder threshold — feeds the dashboard's low-stock banner/badge. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

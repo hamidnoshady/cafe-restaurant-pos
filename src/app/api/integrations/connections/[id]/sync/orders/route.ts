@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { enqueueExport } from "@/lib/integrations/woo-ops-service";
 import { syncOrders } from "@/lib/integrations/sync-service";
@@ -20,7 +21,7 @@ import { syncOrders } from "@/lib/integrations/sync-service";
  */
 export const POST = withTenantScope(
   async (request: Request, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
     if (error) return error;
     const { id } = await context.params;
 

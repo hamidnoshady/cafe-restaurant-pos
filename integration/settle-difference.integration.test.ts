@@ -51,6 +51,16 @@ vi.mock("../src/lib/auth", async (importOriginal) => {
       },
       error: null,
     })),
+    requirePermission: vi.fn(async () => ({
+      session: {
+        businessId: sessionState.businessId,
+        locationId: sessionState.locationId,
+        activeLocationId: sessionState.locationId,
+        sub: sessionState.sub,
+        role: "owner",
+      },
+      error: null,
+    })),
     withTenantScope:
       // The same scope wrapper the app runs handlers under, bound to the
       // seeded business — the route's own queries then meet the RLS the

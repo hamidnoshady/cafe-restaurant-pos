@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { validateDecimalText } from "@/lib/numeric-validation";
@@ -10,7 +11,7 @@ import { validateDecimalText } from "@/lib/numeric-validation";
  * positive = adds), on top of the menu item's own recipe.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   let body: { modifierId?: string; inventoryItemId?: string; quantityDelta?: number | string };
@@ -50,7 +51,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 });
 
 export const DELETE = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   const { searchParams } = new URL(request.url);

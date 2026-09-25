@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { addRepairPart, getRepairTicket } from "@/lib/repairs-service";
 
 /** Records a part consumed on a ticket: what it cost the shop, and what the customer is billed for it (zero on a warranty job). */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "repairs");
   if (capabilityError) return capabilityError;

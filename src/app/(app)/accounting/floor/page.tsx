@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { requireFeatureForPage } from "@/lib/features";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { FloorPlan } from "@/app/dashboard/floor/floor-plan";
@@ -10,5 +11,6 @@ export default async function FloorPage() {
   await requireModuleForPage(session.businessId, "tables");
   await requireFeatureForPage(session.businessId, "reservations");
 
-  return <FloorPlan canEdit={session.role === "owner" || session.role === "manager"} />;
+  const access = await memberAccessFor(session);
+  return <FloorPlan canEdit={access?.permissions.has("tables.edit") ?? false} />;
 }

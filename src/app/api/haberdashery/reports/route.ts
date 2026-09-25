@@ -1,6 +1,7 @@
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { tradeGoodsReportsGet } from "@/lib/trade-goods-routes";
 
-const readGuard = () => requireRole("owner", "manager");
+const readGuard = () => requirePermission(PERMISSIONS.reportsView);
 
 export const GET = tradeGoodsReportsGet("haberdashery", readGuard);

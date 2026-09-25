@@ -34,6 +34,7 @@ export interface AppShellNavProps {
   /** The shell that owns this route — its label and description head the menu. */
   shell: AppShellDef;
   role: string;
+  permissions: readonly string[];
   pathname: string;
   /**
    * The current query string (without `?`).

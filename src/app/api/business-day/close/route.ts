@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import {
   BusinessDayError,
   closeBusinessDay,
@@ -19,7 +20,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * transaction.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerClosePeriod);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -52,7 +53,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
 /** Undoes a close taken by mistake, putting the window back to the day's scheduled start. */
 export const DELETE = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerClosePeriod);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

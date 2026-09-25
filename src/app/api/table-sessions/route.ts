@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { openSession } from "@/lib/table-session-service";
@@ -7,7 +8,7 @@ import { broadcast } from "@/lib/realtime";
 
 /** Open table sessions (with their tables), for a management/list view. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -33,7 +34,7 @@ export const GET = withTenantScope(async () => {
 
 /** Seat a walk-in: open a session on one or more free tables. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
 
   let body: { tableIds?: string[]; tableId?: string; partySize?: number; guestName?: string; guestPhone?: string };

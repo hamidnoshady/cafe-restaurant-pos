@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { addSerial, getItem } from "@/lib/items-service";
@@ -11,7 +12,7 @@ import { recordItemEvent } from "@/lib/item-audit-service";
   // means listing what is in stock, exactly as /api/menu's GET is readable by
   // every floor role. The write handlers below stay owner/manager.
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "watch");
   if (industryError) return industryError;
@@ -25,7 +26,7 @@ export const GET = withTenantScope(async () => {
 
 /** Registers one physical unit of a model, with the cost the shop paid and the warranty term it will be sold with. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "watch");
   if (industryError) return industryError;

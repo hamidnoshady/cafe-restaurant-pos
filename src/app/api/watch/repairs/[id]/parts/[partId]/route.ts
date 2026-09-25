@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getRepairTicket, removeRepairPart } from "@/lib/repairs-service";
 
 export const DELETE = withTenantScope(
   async (_request: NextRequest, context: { params: Promise<{ id: string; partId: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
     if (error) return error;
     const capabilityError = await requireCapabilityForApi(session, "repairs");
     if (capabilityError) return capabilityError;

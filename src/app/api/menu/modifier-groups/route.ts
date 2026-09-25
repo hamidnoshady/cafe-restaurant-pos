@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { validateModifierGroupCreate } from "@/lib/menu-validation";
 import { createModifierGroup } from "@/lib/menu-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
 
   let body: unknown;

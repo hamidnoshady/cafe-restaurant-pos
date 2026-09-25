@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { GrowthSection } from "../growth-section";
 import { canViewGrowthSection, growthFallbackHref } from "../growth-routes";
 
@@ -21,13 +22,15 @@ export default async function GrowthCustomersPage({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewGrowthSection(session.role, "customers")) redirect(growthFallbackHref(session.role));
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set();
+  if (!canViewGrowthSection(permissions, "customers")) redirect(growthFallbackHref(permissions));
 
   const { customer, customerId } = await searchParams;
   return (
     <GrowthSection
       section="customers"
-      role={session.role}
+      permissions={[...permissions]}
       selectedCustomerId={customer ?? customerId}
     />
   );

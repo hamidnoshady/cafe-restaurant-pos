@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { mergeCustomers, previewMerge } from "@/lib/crm-service";
 
 /**
@@ -23,7 +24,7 @@ import { mergeCustomers, previewMerge } from "@/lib/crm-service";
  * before and after. The integration test asserts exactly that.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmView);
   if (error) return error;
 
   const search = request.nextUrl.searchParams;
@@ -38,7 +39,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmMerge);
   if (error) return error;
 
   let body: { winnerId?: string; loserId?: string };

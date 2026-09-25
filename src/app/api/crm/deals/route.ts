@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { listDeals, upsertDeal } from "@/lib/crm-service";
 import { isDealStage, type DealStage } from "@/lib/crm-shared";
 import { tomanToRial } from "@/lib/money";
@@ -17,7 +18,7 @@ import { tomanToRial } from "@/lib/money";
  * optional `orderId` is how a won deal points *at* the sale that realised it.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmView);
   if (error) return error;
 
   const search = request.nextUrl.searchParams;
@@ -48,7 +49,7 @@ interface DealBody {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmManage);
   if (error) return error;
 
   let body: DealBody;

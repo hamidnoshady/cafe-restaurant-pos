@@ -55,10 +55,26 @@ describe("accessibleLocationIds", () => {
   });
 
   it("gives every branch to a roaming member with neither a default nor an assignment", () => {
-    // Pre-Phase-14 meaning of location_id = NULL, and what makes a
-    // single-location business behave exactly as it did before this phase.
+    // Compatibility for a pre-migration fixture. Migration 0170 persists
+    // this inferred result as an explicit `all` policy.
     expect(accessibleLocationIds(ctx({}), BRANCHES)).toEqual(BRANCHES);
     expect(accessibleLocationIds(ctx({}), ["only-branch"])).toEqual(["only-branch"]);
+  });
+
+  it("honours every explicit branch policy without fallback broadening", () => {
+    expect(accessibleLocationIds(ctx({ locationScope: "all" }), BRANCHES)).toEqual(BRANCHES);
+    expect(accessibleLocationIds(ctx({ locationScope: "none" }), BRANCHES)).toEqual([]);
+    expect(accessibleLocationIds(ctx({ locationScope: "selected" }), BRANCHES)).toEqual([]);
+    expect(
+      accessibleLocationIds(
+        ctx({ locationScope: "selected", assignedLocationIds: ["south", "foreign"] }),
+        BRANCHES,
+      ),
+    ).toEqual(["south"]);
+    expect(
+      accessibleLocationIds(ctx({ locationScope: "home", defaultLocationId: "north" }), BRANCHES),
+    ).toEqual(["north"]);
+    expect(accessibleLocationIds(ctx({ locationScope: "home" }), BRANCHES)).toEqual([]);
   });
 });
 

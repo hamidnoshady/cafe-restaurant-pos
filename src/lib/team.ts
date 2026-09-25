@@ -67,7 +67,7 @@ export function invitationStatus(
  * Roles that authenticate with an email and password (and therefore need a
  * global identity), versus roles that use a numeric PIN on a shared device.
  */
-export const PASSWORD_ROLES: Role[] = ["owner", "manager", "accountant"];
+export const PASSWORD_ROLES: Role[] = ["owner", "admin", "manager", "accountant"];
 export const PIN_ROLES: Role[] = ["cashier", "waiter", "kitchen"];
 
 export function isPasswordRole(role: Role): boolean {

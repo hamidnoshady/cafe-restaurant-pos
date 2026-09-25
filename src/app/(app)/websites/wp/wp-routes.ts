@@ -33,11 +33,13 @@ export const WP_SECTION_KEYS = [
 
 export type WpSectionKey = (typeof WP_SECTION_KEYS)[number];
 
+import type { Permission } from "@/lib/permissions";
+
 /**
  * Role gate. Like the integrations panel this manager supersedes, everything
  * here is owner/manager work — it writes to a live shopfront and sees every
  * customer record. Cashiers see the launcher but land on the dashboard.
  */
-export function canViewWpSection(role: string, _key: WpSectionKey): boolean {
-  return ["owner", "manager"].includes(role);
+export function canViewWpSection(permissions: ReadonlySet<Permission>, _key: WpSectionKey): boolean {
+  return permissions.has("woocommerce.view");
 }

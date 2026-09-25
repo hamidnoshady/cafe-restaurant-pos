@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPaymentById, verifyPayment } from "@/lib/wallet-service";
 import { activatePurchasedPlan, fulfilPurchasedEntitlement } from "@/lib/billing-service";
 import { listPlanFeatures } from "@/lib/billing-plans-service";
@@ -14,7 +15,7 @@ import { GatewayError, gatewayErrorMessage } from "@/lib/payment-gateway";
  * the feature unlocks immediately.
  */
 export const POST = withTenantScope(async (req: Request) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.billingManage);
   if (error) return error;
 
   let body: { paymentId?: string; authority?: string; status?: string };

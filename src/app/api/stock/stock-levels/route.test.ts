@@ -10,7 +10,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    requireRole: vi.fn(),
+    requirePermission: vi.fn(),
     withTenantScope: (handler: (...args: unknown[]) => Promise<NextResponse>) => handler,
   };
 });
@@ -30,7 +30,7 @@ const LOCATION_ID = "c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(auth.requireRole).mockResolvedValue({ session: SESSION, error: null } as never);
+  vi.mocked(auth.requirePermission).mockResolvedValue({ session: SESSION, error: null } as never);
   vi.mocked(setupState.resolveActiveLocation).mockResolvedValue({ id: LOCATION_ID } as never);
 });
 

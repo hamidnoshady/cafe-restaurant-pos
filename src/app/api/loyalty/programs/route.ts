@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { listPrograms, upsertProgram } from "@/lib/loyalty-service";
 
 /** The business's loyalty programs (at most a handful), default first. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyView);
   if (error) return error;
   return NextResponse.json({ programs: await listPrograms(session.businessId) });
 });
 
 /** Creates or edits one program by name. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyManage);
   if (error) return error;
 
   let body: Record<string, unknown>;

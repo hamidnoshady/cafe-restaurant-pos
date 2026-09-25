@@ -30,27 +30,27 @@ import { growthSectionHref, type GrowthSectionKey } from "./growth-routes";
 
 export function GrowthSection({
   section,
-  role,
+  permissions,
   /** The record a deep link (`/growth/customers?customer=…`) asks to open. */
   selectedCustomerId,
 }: {
   section: GrowthSectionKey;
-  role: string;
+  permissions: readonly string[];
   selectedCustomerId?: string;
 }) {
   const router = useRouter();
   const goToSection = (key: GrowthSectionKey) => router.push(growthSectionHref(key));
-  const canManage = role === "owner" || role === "manager";
+  const permissionSet = new Set(permissions);
 
   const screens = {
     overview: () => <OverviewSection onGoToSection={goToSection} />,
     customers: () => (
-      <GrowthCustomersSection role={role} selectedCustomerId={selectedCustomerId} />
+      <GrowthCustomersSection canManage={permissionSet.has("parties.manage")} selectedCustomerId={selectedCustomerId} />
     ),
     campaigns: () => <CampaignsSection />,
     messaging: () => <MessagingSection />,
     "gift-cards": () => <GiftCardsSection />,
-    loyalty: () => <LoyaltySection canManage={canManage} />,
+    loyalty: () => <LoyaltySection canManage={permissionSet.has("loyalty.manage")} />,
     commission: () => <CommissionSection />,
     settings: () => <GrowthSettingsSection />,
   } satisfies Record<GrowthSectionKey, () => React.ReactElement>;

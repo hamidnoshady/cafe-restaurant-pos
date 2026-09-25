@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import type { CartItemInput } from "@/lib/order-cart";
 import { addItemsToOrder } from "@/lib/order-mutations";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -7,7 +8,7 @@ import { broadcast } from "@/lib/realtime";
 
 /** Add one or more items to an already-submitted order, while it's still 'open'. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.ordersCreate);
   if (error) return error;
   const { id } = await context.params;
 

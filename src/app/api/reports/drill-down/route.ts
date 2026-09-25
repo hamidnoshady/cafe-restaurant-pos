@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getAccountDrillDown } from "@/lib/reports-service";
 
 /**
@@ -9,7 +10,7 @@ import { getAccountDrillDown } from "@/lib/reports-service";
  * see exactly which postings sum to it.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
 
   const { searchParams } = new URL(request.url);

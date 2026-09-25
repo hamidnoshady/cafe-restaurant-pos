@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { validateBackupConfig } from "@/lib/backup";
 import { getBackupConfig, getBackupConfigMasked, setBackupConfig } from "@/lib/backup-service";
 import { isLocalOnly } from "@/lib/deployment-mode";
 
 /** Backup schedule/retention/cloud settings — Owner-only (they hold the keys). */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.backupConfigure);
   if (error) return error;
 
   return NextResponse.json({
@@ -18,7 +19,7 @@ export const GET = withTenantScope(async () => {
 });
 
 export const PUT = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.backupConfigure);
   if (error) return error;
 
   let body: Record<string, unknown>;

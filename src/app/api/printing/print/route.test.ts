@@ -27,7 +27,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    requireRole: vi.fn(),
+    requirePermission: vi.fn(),
     withTenantScope: (handler: (...args: unknown[]) => Promise<NextResponse>) => handler,
   };
 });
@@ -70,7 +70,7 @@ function request(body: unknown, method = "POST"): NextRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(auth.requireRole).mockResolvedValue({ session: SESSION, error: null } as never);
+  vi.mocked(auth.requirePermission).mockResolvedValue({ session: SESSION, error: null } as never);
   vi.mocked(setupState.resolveActiveLocation).mockResolvedValue({ id: "loc-1" } as never);
   vi.mocked(renderService.loadPrinterForJob).mockResolvedValue(PRINTERS_ROW as never);
   vi.mocked(renderService.buildJobBytes).mockResolvedValue(Buffer.from([0x1b, 0x40, 0x1d, 0x56]) as never);
@@ -79,12 +79,12 @@ beforeEach(() => {
 describe("guards", () => {
   it("lets every print-triggering role through the gate", async () => {
     await POST(request({ printerId: "printer-1", job: { type: "test", kind: "receipt" } }));
-    expect(auth.requireRole).toHaveBeenCalledWith("owner", "manager", "cashier", "waiter", "kitchen");
+    expect(auth.requirePermission).toHaveBeenCalledWith("printing.execute");
   });
 
   it("returns the role gate's error untouched", async () => {
     const denied = NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    vi.mocked(auth.requireRole).mockResolvedValue({ session: null, error: denied } as never);
+    vi.mocked(auth.requirePermission).mockResolvedValue({ session: null, error: denied } as never);
     const response = await POST(request({ printerId: "printer-1", job: { type: "test" } }));
     expect(response.status).toBe(401);
     expect(renderService.buildJobBytes).not.toHaveBeenCalled();

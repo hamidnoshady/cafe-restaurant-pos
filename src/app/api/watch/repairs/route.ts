@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { createRepairTicket, listRepairTickets } from "@/lib/repairs-service";
@@ -9,7 +10,7 @@ import { REPAIR_STATUSES, type RepairStatus } from "@/lib/watch";
 // clasp raises the same ticket a watch shop does, so the guard is the
 // `repairs` capability (both trades have it) rather than `industry === watch`.
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "repairs");
   if (capabilityError) return capabilityError;
@@ -28,7 +29,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 
 /** Intake: takes a piece in and resolves whether the job is under warranty, once, from the linked unit's live window. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "repairs");
   if (capabilityError) return capabilityError;

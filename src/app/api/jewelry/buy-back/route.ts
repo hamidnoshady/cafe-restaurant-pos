@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { getPool } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -9,7 +10,7 @@ import { isPurity } from "@/lib/gold";
 
 /** Buys scrap/second-hand gold at the day's buy rate, creating a scrap weight item. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;

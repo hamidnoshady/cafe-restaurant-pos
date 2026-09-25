@@ -87,7 +87,7 @@ describe("invitationStatus", () => {
 
 describe("role families", () => {
   it("separates password roles from PIN roles exhaustively", () => {
-    for (const role of ["owner", "manager", "accountant"] as const) {
+    for (const role of ["owner", "admin", "manager", "accountant"] as const) {
       expect(isPasswordRole(role)).toBe(true);
       expect(isPinRole(role)).toBe(false);
     }

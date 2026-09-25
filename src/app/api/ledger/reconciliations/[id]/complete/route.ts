@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { completeReconciliation, ReconciliationError } from "@/lib/reconciliation-service";
 
 interface Ctx {
@@ -8,7 +9,7 @@ interface Ctx {
 
 /** Locks a reconciliation — only once its cleared lines exactly account for the statement balance. */
 export const POST = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerApprove);
   if (error) return error;
 
   const { id } = await ctx.params;

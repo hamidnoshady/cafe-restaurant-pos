@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import {type SessionPayload, withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -14,7 +15,7 @@ async function ownedItem(session: SessionPayload, id: string) {
 }
 
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const { id } = await context.params;
 
@@ -111,7 +112,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
 /** Items referenced by a recipe, purchase, or stock movement are deactivated, not deleted. */
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const { id } = await context.params;
 

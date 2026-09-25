@@ -21,6 +21,7 @@ import type { Role } from "./auth";
  */
 export const PERMISSIONS = {
   // Point of sale
+  ordersView: "orders.view",
   ordersCreate: "orders.create",
   ordersVoid: "orders.void",
   /**
@@ -36,9 +37,11 @@ export const PERMISSIONS = {
 
   // Floor
   tablesManage: "tables.manage",
+  tablesEdit: "tables.edit",
   reservationsManage: "reservations.manage",
   kitchenView: "kitchen.view",
   deliveryManage: "delivery.manage",
+  deliveryConfigure: "delivery.configure",
 
   // Catalogue
   menuView: "menu.view",
@@ -177,28 +180,127 @@ export const PERMISSIONS = {
   settingsManage: "settings.manage",
   locationsManage: "locations.manage",
   backupManage: "backup.manage",
+  backupConfigure: "backup.configure",
+  backupExport: "backup.export",
+  backupRestore: "backup.restore",
+  rollupManage: "rollup.manage",
   // Phase 19: long-lived third-party credentials remain owner-only in V1.
   apiManage: "api.manage",
+
+  // Website, growth and integration applications
+  websiteView: "website.view",
+  websiteManage: "website.manage",
+  websiteSettingsManage: "website.settings_manage",
+  cmsView: "cms.view",
+  cmsContentManage: "cms.content_manage",
+  cmsPublish: "cms.publish",
+  cmsConfigure: "cms.configure",
+  woocommerceView: "woocommerce.view",
+  woocommerceManage: "woocommerce.manage",
+  woocommerceSync: "woocommerce.sync",
+  woocommerceConfigure: "woocommerce.configure",
+  growthView: "growth.view",
+  campaignsView: "campaigns.view",
+  campaignsManage: "campaigns.manage",
+  loyaltyView: "loyalty.view",
+  loyaltyManage: "loyalty.manage",
+  marketingConfigure: "marketing.configure",
+  integrationsView: "integrations.view",
+  integrationsManage: "integrations.manage",
+  mediaView: "media.view",
+  mediaManage: "media.manage",
+  printingExecute: "printing.execute",
+  billingView: "billing.view",
+  billingManage: "billing.manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 export const ALL_PERMISSIONS: Permission[] = Object.values(PERMISSIONS);
 
+export type PermissionRisk = "low" | "medium" | "high" | "critical";
+export interface PermissionMetadata {
+  key: Permission;
+  group: string;
+  label: string;
+  description: string;
+  risk: PermissionRisk;
+  delegatable: boolean;
+  ownerOnly: boolean;
+  requiresReason: boolean;
+  audit: boolean;
+}
+
+const HIGH_RISK = new Set<Permission>([
+  PERMISSIONS.ordersAmendClosed,
+  PERMISSIONS.paymentsRefund,
+  PERMISSIONS.crmMerge,
+  PERMISSIONS.crmExport,
+  PERMISSIONS.ledgerApprove,
+  PERMISSIONS.ledgerClosePeriod,
+  PERMISSIONS.reportsExport,
+  PERMISSIONS.dataExport,
+  PERMISSIONS.teamManage,
+  PERMISSIONS.backupManage,
+]);
+const REASON_REQUIRED = new Set<Permission>([
+  PERMISSIONS.ordersAmendClosed,
+  PERMISSIONS.paymentsRefund,
+  PERMISSIONS.crmMerge,
+  PERMISSIONS.ledgerClosePeriod,
+]);
+
+/**
+ * Canonical permission catalogue consumed by guards and access-management UI.
+ * Labels deliberately default to stable keys until translated product copy is
+ * supplied; metadata must never be independently recreated by a feature.
+ */
+export const PERMISSION_DEFINITIONS: readonly PermissionMetadata[] = ALL_PERMISSIONS.map((key) => {
+  const ownerOnly = new Set<Permission>([
+    PERMISSIONS.apiManage,
+    PERMISSIONS.backupConfigure,
+    PERMISSIONS.backupExport,
+    PERMISSIONS.backupRestore,
+    PERMISSIONS.rollupManage,
+  ]).has(key);
+  const risk: PermissionRisk = ownerOnly ? "critical" : HIGH_RISK.has(key) ? "high" : "medium";
+  return {
+    key,
+    group: key.split(".")[0],
+    label: key,
+    description: key,
+    risk,
+    delegatable: !ownerOnly,
+    ownerOnly,
+    requiresReason: REASON_REQUIRED.has(key),
+    audit: risk === "high" || risk === "critical",
+  };
+});
+
+export const PERMISSION_METADATA: ReadonlyMap<Permission, PermissionMetadata> = new Map(
+  PERMISSION_DEFINITIONS.map((definition) => [definition.key, definition]),
+);
+
 /**
  * Permissions that must never be delegated through member overrides. A leaked
  * API credential has a larger and more durable blast radius than ordinary
  * back-office access, so V1 keeps its lifecycle exclusively with the owner.
  */
-export const OWNER_ONLY_PERMISSIONS: readonly Permission[] = [PERMISSIONS.apiManage];
+export const OWNER_ONLY_PERMISSIONS: readonly Permission[] = [
+  PERMISSIONS.apiManage,
+  PERMISSIONS.backupConfigure,
+  PERMISSIONS.backupExport,
+  PERMISSIONS.backupRestore,
+  PERMISSIONS.rollupManage,
+];
 
 export function isOwnerOnlyPermission(permission: Permission): boolean {
   return OWNER_ONLY_PERMISSIONS.includes(permission);
 }
 
 const {
-  ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
-  tablesManage, reservationsManage, kitchenView, deliveryManage,
+  ordersView, ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
+  tablesManage, tablesEdit, reservationsManage, kitchenView, deliveryManage, deliveryConfigure,
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
   partiesView, partiesManage,
@@ -208,6 +310,11 @@ const {
   reportsView, reportsExport,
   dataImport, dataExport,
   teamManage, settingsManage, locationsManage, backupManage,
+  websiteView, websiteManage, websiteSettingsManage,
+  cmsView, cmsContentManage, cmsPublish, cmsConfigure,
+  woocommerceView, woocommerceManage, woocommerceSync, woocommerceConfigure,
+  growthView, campaignsView, campaignsManage, loyaltyView, loyaltyManage, marketingConfigure,
+  integrationsView, integrationsManage, mediaView, mediaManage, printingExecute, billingView, billingManage,
 } = PERMISSIONS;
 
 /**
@@ -218,9 +325,12 @@ const {
  * new permission added later silently excludes them.
  */
 const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
+  // Tenant administrator: every delegatable operational capability, but never
+  // ownership, destructive recovery, master API or cross-location trust keys.
+  admin: ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)),
   manager: [
-    ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
-    tablesManage, reservationsManage, kitchenView, deliveryManage,
+    ordersView, ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
+    tablesManage, tablesEdit, reservationsManage, kitchenView, deliveryManage, deliveryConfigure,
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,
     partiesView, partiesManage,
@@ -245,6 +355,11 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // engine still intersects them with each entity's own permission.
     dataImport, dataExport,
     settingsManage, backupManage,
+    websiteView, websiteManage, websiteSettingsManage,
+    cmsView, cmsContentManage, cmsPublish, cmsConfigure,
+    woocommerceView, woocommerceManage, woocommerceSync, woocommerceConfigure,
+    growthView, campaignsView, campaignsManage, loyaltyView, loyaltyManage, marketingConfigure,
+    integrationsView, integrationsManage, mediaView, mediaManage, printingExecute, billingView, billingManage,
   ],
   // Phase 16's role: the books, and only the books. No till, no floor. Manages
   // the «اشخاص» file inside the Accounting app (its own customers, suppliers
@@ -271,7 +386,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     workspaceView,
   ],
   cashier: [
-    ordersCreate, ordersDiscount, paymentsTake,
+    ordersView, ordersCreate, ordersDiscount, paymentsTake,
     tablesManage, reservationsManage,
     menuView, deliveryManage,
     inventoryView,
@@ -281,20 +396,22 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // crmView: the 360° file, segments and pipeline are not. No merge, no
     // consent, no export.
     crmManage,
+    // Till staff historically earned/redeemed loyalty and gift-card value.
+    growthView, loyaltyView, loyaltyManage, campaignsView, printingExecute,
     // Sees the projects they are a member of and works the tasks on them —
     // the floor-staff case the workspace is for. No contracts, no approvals.
     workspaceView, workspaceManage,
   ],
   waiter: [
-    ordersCreate,
+    ordersView, ordersCreate,
     tablesManage, reservationsManage,
     menuView,
     // Read-only: a waiter may be a contributor on a project (a refit, an
     // event) and needs to see the tasks assigned to them.
-    workspaceView,
+    workspaceView, printingExecute,
   ],
   kitchen: [
-    kitchenView,
+    kitchenView, printingExecute,
     menuView,
   ],
 };
@@ -331,18 +448,71 @@ function isPermission(value: string): value is Permission {
  * `team.manage` on its only owner would be permanently locked out of itself,
  * so overrides are simply not applied to an absolute role.
  */
+const PERMISSION_DEPENDENCIES: Partial<Record<Permission, readonly Permission[]>> = {
+  [PERMISSIONS.crmManage]: [PERMISSIONS.crmView],
+  [PERMISSIONS.crmMerge]: [PERMISSIONS.crmView],
+  [PERMISSIONS.crmConsentManage]: [PERMISSIONS.crmView],
+  [PERMISSIONS.crmConfigure]: [PERMISSIONS.crmView],
+  [PERMISSIONS.inventoryAdjust]: [PERMISSIONS.inventoryView],
+  [PERMISSIONS.purchasesManage]: [PERMISSIONS.inventoryView],
+  [PERMISSIONS.menuEdit]: [PERMISSIONS.menuView],
+  [PERMISSIONS.ledgerPost]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.ledgerApprove]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.accountsEdit]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.reportsExport]: [PERMISSIONS.reportsView],
+  [PERMISSIONS.websiteManage]: [PERMISSIONS.websiteView],
+  [PERMISSIONS.websiteSettingsManage]: [PERMISSIONS.websiteView],
+  [PERMISSIONS.cmsContentManage]: [PERMISSIONS.cmsView],
+  [PERMISSIONS.cmsPublish]: [PERMISSIONS.cmsView],
+  [PERMISSIONS.cmsConfigure]: [PERMISSIONS.cmsView],
+  [PERMISSIONS.campaignsManage]: [PERMISSIONS.campaignsView, PERMISSIONS.growthView],
+  [PERMISSIONS.loyaltyManage]: [PERMISSIONS.loyaltyView, PERMISSIONS.growthView],
+  [PERMISSIONS.integrationsManage]: [PERMISSIONS.integrationsView],
+  [PERMISSIONS.mediaManage]: [PERMISSIONS.mediaView],
+  [PERMISSIONS.billingManage]: [PERMISSIONS.billingView],
+};
+
 export function effectivePermissions(
   role: Role,
   overrides: PermissionOverrides | null | undefined,
+  customRolePermissions?: readonly string[] | null,
 ): Set<Permission> {
-  const base = new Set(roleBasePermissions(role));
-  if (isAbsoluteRole(role) || !overrides) return base;
+  const base = new Set<Permission>(
+    role === "owner" || customRolePermissions == null
+      ? roleBasePermissions(role)
+      : customRolePermissions.filter(isPermission).filter((permission) => !isOwnerOnlyPermission(permission)),
+  );
+  if (isAbsoluteRole(role)) return base;
 
-  for (const key of overrides.granted ?? []) {
+  for (const key of overrides?.granted ?? []) {
     if (isPermission(key) && !isOwnerOnlyPermission(key)) base.add(key);
   }
-  for (const key of overrides.revoked ?? []) {
+
+  // Convenience grants include their read prerequisites. Explicit revocation
+  // is applied afterwards and therefore remains authoritative.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const permission of [...base]) {
+      for (const dependency of PERMISSION_DEPENDENCIES[permission] ?? []) {
+        if (!base.has(dependency)) { base.add(dependency); changed = true; }
+      }
+    }
+  }
+  for (const key of overrides?.revoked ?? []) {
     if (isPermission(key)) base.delete(key);
+  }
+
+  // A revoked prerequisite also disables dependent mutation capabilities.
+  changed = true;
+  while (changed) {
+    changed = false;
+    for (const permission of [...base]) {
+      if ((PERMISSION_DEPENDENCIES[permission] ?? []).some((dependency) => !base.has(dependency))) {
+        base.delete(permission);
+        changed = true;
+      }
+    }
   }
   return base;
 }
@@ -352,9 +522,10 @@ export function hasPermission(
   role: Role,
   overrides: PermissionOverrides | null | undefined,
   permission: Permission,
+  customRolePermissions?: readonly string[] | null,
 ): boolean {
   if (isAbsoluteRole(role)) return true;
-  return effectivePermissions(role, overrides).has(permission);
+  return effectivePermissions(role, overrides, customRolePermissions).has(permission);
 }
 
 /**

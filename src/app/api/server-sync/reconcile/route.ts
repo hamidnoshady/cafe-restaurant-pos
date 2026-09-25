@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { reconcileDeferredSyncEvents } from "@/lib/sync-events";
 import { updateSyncDeadLetter } from "@/lib/server-sync";
 
 /** Owner-only operational controls; event payloads and credentials never leave the server. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   let body: { action?: "retry-deferred" | "retry-dead-letter" | "discard-dead-letter"; id?: number; note?: string };
   try {

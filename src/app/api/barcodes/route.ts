@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem } from "@/lib/items-service";
@@ -14,7 +15,7 @@ import { assignBarcode, listBarcodes } from "@/lib/item-barcodes-service";
  * four trades switch it on.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "barcode");
   if (capabilityError) return capabilityError;
@@ -51,7 +52,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
 /** Every code stuck to one item, for the label/management screen. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "barcode");
   if (capabilityError) return capabilityError;

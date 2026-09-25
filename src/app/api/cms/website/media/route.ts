@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { uploadWebsiteMedia, websiteStatusFor } from "@/lib/website/content-service";
 
 /** Upload one featured image through the server; the CMS key never reaches the browser. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.cmsContentManage);
   if (error) return error;
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");

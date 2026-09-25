@@ -719,8 +719,15 @@ interface OutboxRow extends Record<string, unknown> {
 /** Every active member of the business, with the branches they may act in. */
 async function businessMembers(businessId: string): Promise<NotificationMember[]> {
   const [{ rows: users }, { rows: locations }, { rows: assignments }] = await Promise.all([
-    query<{ id: string; role: Role; location_id: string | null }>(
-      `SELECT id, role, location_id FROM users WHERE business_id = $1 AND is_active`,
+    query<{
+      id: string;
+      role: Role;
+      location_id: string | null;
+      location_scope: "all" | "selected" | "home" | "none";
+    }>(
+      `SELECT id, role, location_id, location_scope
+         FROM users
+        WHERE business_id = $1 AND is_active AND membership_status = 'active'`,
       [businessId],
     ),
     query<{ id: string }>(
@@ -750,6 +757,7 @@ async function businessMembers(businessId: string): Promise<NotificationMember[]
     locationIds: accessibleLocationIds(
       {
         role: user.role,
+        locationScope: user.location_scope,
         defaultLocationId: user.location_id,
         assignedLocationIds: assigned.get(user.id) ?? [],
       },

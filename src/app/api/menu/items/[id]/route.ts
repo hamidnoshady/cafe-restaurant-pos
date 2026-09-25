@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { updateMenuItem } from "@/lib/menu-service";
 import { validateMenuItemPatch } from "@/lib/menu-validation";
@@ -14,7 +15,7 @@ async function ownedItem(locationId: string, id: string) {
 }
 
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
   const { id } = await context.params;
 
@@ -40,7 +41,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
 /** Items referenced by an order are deactivated, not deleted, to keep order history intact. */
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
   const { id } = await context.params;
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import { positiveQuantityText } from "@/lib/inventory-exact";
@@ -7,7 +8,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 import { isWasteReason, recordWaste } from "@/lib/waste-service";
 
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -40,7 +41,7 @@ export const GET = withTenantScope(async () => {
  * request to hang a session on — see Phase 32.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   let body: { inventoryItemId?: string; quantity?: number | string; reason?: string; note?: string };

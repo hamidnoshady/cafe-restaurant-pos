@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { audienceForSegment } from "@/lib/campaign-audience";
 import { query } from "@/lib/db";
 import { getMessageTemplate, buildMessageVariables, renderRecipientBody } from "@/lib/message-campaigns-service";
@@ -13,7 +14,7 @@ import { storeCreditBalance } from "@/lib/loyalty-service";
  * row and intentionally returns no phone/email address to the browser.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.campaignsManage);
   if (error) return error;
   const body = await request.json().catch(() => null) as { templateId?: unknown; segmentId?: unknown } | null;
   if (!body || typeof body.templateId !== "string" || typeof body.segmentId !== "string") {

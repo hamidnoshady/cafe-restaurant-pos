@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import {
@@ -15,7 +16,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * posts COGS = اول دوره + خرید − پایان دوره (periodic-closing-service.ts).
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -31,7 +32,7 @@ export const GET = withTenantScope(async () => {
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   let body: { periodEnd?: string; note?: string; lines?: PeriodicClosingLineInput[] };

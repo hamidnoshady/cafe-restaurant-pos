@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { deploymentRole } from "@/lib/deployment-role";
 import {
   getDesktopLinkView,
@@ -28,7 +29,7 @@ import { revokeSiteDevice, rotateSiteCredential } from "@/lib/site-device-servic
  * business that never buys that must still be able to install the desktop app.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
 
   return NextResponse.json({
@@ -41,7 +42,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   // Only a central server holds the business configuration a desktop install
@@ -79,7 +80,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 });
 
 export const PATCH = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   if (deploymentRole() !== "central") {
     return NextResponse.json({ error: "not_central_server" }, { status: 409 });
@@ -115,7 +116,7 @@ export const PATCH = withTenantScope(async (request: NextRequest) => {
 });
 
 export const DELETE = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   let body: { codeId?: string };

@@ -302,7 +302,7 @@ describe("versioned transactional domain-event registry", () => {
   async function actorForBusiness(
     businessId: string,
     locationId: string,
-    role: "owner" | "manager" | "cashier" = "manager",
+    role: "owner" | "manager" | "cashier" = "owner",
   ): Promise<string> {
     const id = randomUUID();
     await db.query(
@@ -321,7 +321,7 @@ describe("versioned transactional domain-event registry", () => {
       const result = await dbLib.withTenant(bizA.id, () =>
         syncEvents.applySyncEvent(
           bizA.locationId,
-          { userId: actorId, role: "manager" },
+          { userId: actorId, role: "owner" },
           {
             clientEventId,
             type: definition.type,
@@ -348,7 +348,7 @@ describe("versioned transactional domain-event registry", () => {
     const result = await dbLib.withTenant(bizA.id, () =>
       syncEvents.applySyncEvent(
         bizA.locationId,
-        { userId: actorId, role: "manager" },
+        { userId: actorId, role: "owner" },
         {
           clientEventId: randomUUID(),
           type: "order.payment.completed",
@@ -398,7 +398,7 @@ describe("versioned transactional domain-event registry", () => {
     const injected = await dbLib.withTenant(bizA.id, () =>
       syncEvents.applySyncEvent(
         bizA.locationId,
-        { userId: actorId, role: "manager" },
+        { userId: actorId, role: "owner" },
         event,
         "remote",
         { schemaVersion: 1, failureInjection: "after_domain_effect" },
@@ -413,7 +413,7 @@ describe("versioned transactional domain-event registry", () => {
     const first = await dbLib.withTenant(bizA.id, () =>
       syncEvents.applySyncEvent(
         bizA.locationId,
-        { userId: actorId, role: "manager" },
+        { userId: actorId, role: "owner" },
         event,
         "remote",
         { schemaVersion: 1 },
@@ -423,7 +423,7 @@ describe("versioned transactional domain-event registry", () => {
     const second = await dbLib.withTenant(bizA.id, () =>
       syncEvents.applySyncEvent(
         bizA.locationId,
-        { userId: actorId, role: "manager" },
+        { userId: actorId, role: "owner" },
         event,
         "remote",
         { schemaVersion: 1 },
@@ -448,7 +448,7 @@ describe("versioned transactional domain-event registry", () => {
     const result = await dbLib.withTenant(bizA.id, () =>
       syncEvents.applySyncEvent(
         bizA.locationId,
-        { userId: actorId, role: "manager" },
+        { userId: actorId, role: "owner" },
         {
           clientEventId: randomUUID(),
           type: "order.payment.completed",
@@ -507,7 +507,7 @@ describe("versioned transactional domain-event registry", () => {
     const result = await dbLib.withTenant(bizA.id, () =>
       syncEvents.applySyncEvent(
         bizA.locationId,
-        { userId: actorId, role: "manager" },
+        { userId: actorId, role: "owner" },
         {
           clientEventId,
           type: "inventory.waste.recorded",
@@ -528,7 +528,7 @@ describe("versioned transactional domain-event registry", () => {
     const result = await dbLib.withTenant(bizA.id, () =>
       syncEvents.applySyncEvent(
         bizA.locationId,
-        { userId: actorId, role: "manager" },
+        { userId: actorId, role: "owner" },
         {
           clientEventId,
           type: "accounting.manual_journal.reversed",

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { buildJobBytes, loadPrinterForJob, printerRefusal, type PrintJob } from "@/lib/printing/render-service";
 import { printerTargetOf } from "@/lib/printing/types";
@@ -34,7 +35,7 @@ interface PrintRequestBody {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
+  const { session, error } = await requirePermission(PERMISSIONS.printingExecute);
   if (error) return error;
 
   let body: PrintRequestBody;

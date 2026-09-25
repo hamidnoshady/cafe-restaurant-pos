@@ -1,11 +1,12 @@
 import { NextRequest,NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { positiveQuantityText } from "@/lib/inventory-exact";
 import { createInventoryTransfer } from "@/lib/transfer-service";
 
 export const GET = withTenantScope(async () => {
- const {session,error}=await requireRole("owner","manager"); if(error)return error;
+ const {session,error}=await requirePermission(PERMISSIONS.inventoryView); if(error)return error;
  const pool = getPool();
  const { rows: transfers } = await pool.query(
   `SELECT t.id, t.status::text AS status, t.note, t.created_at,
@@ -22,7 +23,7 @@ export const GET = withTenantScope(async () => {
 });
 
 export const POST = withTenantScope(async (request:NextRequest) => {
- const {session,error}=await requireRole("owner","manager"); if(error)return error;
+ const {session,error}=await requirePermission(PERMISSIONS.inventoryAdjust); if(error)return error;
  let body:{sourceLocationId?:string;destinationLocationId?:string;note?:string;idempotencyKey?:string;
  lines?:Array<{sourceInventoryItemId?:string;destinationInventoryItemId?:string;quantity?:string}>};
  try{body=await request.json();}catch{return NextResponse.json({error:"bad_request"},{status:400});}

@@ -1,5 +1,7 @@
+import { effectivePermissions } from "@/lib/permissions";
+import type { Role } from "@/lib/auth-edge";
 import { describe, expect, it } from "vitest";
-import { GROWTH_NAV_ITEMS, growthNavItemsForRole } from "./growth-nav";
+import { GROWTH_NAV_ITEMS, growthNavItemsForPermissions } from "./growth-nav";
 import {
   canOpenGrowth,
   canViewGrowthSection,
@@ -8,6 +10,8 @@ import {
   growthSectionHref,
   isGrowthSectionPathname,
 } from "./growth-routes";
+
+const permissionsFor = (role: string) => role ? effectivePermissions(role as Role, null) : new Set<import("@/lib/permissions").Permission>();
 
 describe("GROWTH_NAV_ITEMS", () => {
   it("lists every section of the app, exactly once, in menu order", () => {
@@ -38,10 +42,10 @@ describe("GROWTH_NAV_ITEMS", () => {
   });
 });
 
-describe("growthNavItemsForRole", () => {
+describe("growthNavItemsForPermissions", () => {
   it("shows owner and manager the whole app", () => {
     for (const role of ["owner", "manager"]) {
-      expect(growthNavItemsForRole(role).map((item) => item.key)).toEqual([...GROWTH_SECTION_KEYS]);
+      expect(growthNavItemsForPermissions(permissionsFor(role)).map((item) => item.key)).toEqual([...GROWTH_SECTION_KEYS]);
     }
   });
 
@@ -49,23 +53,23 @@ describe("growthNavItemsForRole", () => {
     // The menu and the route guard must agree exactly: an entry that leads to a
     // redirect is a button that does nothing. The customers screen is a
     // management surface, not a cashier Growth workflow.
-    expect(growthNavItemsForRole("cashier").map((item) => item.key)).toEqual(["loyalty"]);
+    expect(growthNavItemsForPermissions(effectivePermissions("cashier" as Role, null)).map((item) => item.key)).toEqual(["loyalty"]);
   });
 
   it("shows a role the app does not admit nothing at all", () => {
     // `growth/layout.tsx` redirects these roles out of the app; a menu with
     // entries that all redirect away would be the same door with extra steps.
     for (const role of ["waiter", "kitchen", ""]) {
-      expect(growthNavItemsForRole(role)).toEqual([]);
+      expect(growthNavItemsForPermissions(permissionsFor(role))).toEqual([]);
     }
-    expect(growthNavItemsForRole("accountant").map((item) => item.key)).toEqual(["customers"]);
+    expect(growthNavItemsForPermissions(effectivePermissions("accountant" as Role, null)).map((item) => item.key)).toEqual(["customers"]);
   });
 
   it("is the same gate the pages enforce", () => {
     for (const role of ["owner", "manager", "cashier", "accountant"]) {
-      const shown = new Set(growthNavItemsForRole(role).map((item) => item.key));
+      const shown = new Set(growthNavItemsForPermissions(permissionsFor(role)).map((item) => item.key));
       for (const key of GROWTH_SECTION_KEYS) {
-        expect(shown.has(key)).toBe(canViewGrowthSection(role, key));
+        expect(shown.has(key)).toBe(canViewGrowthSection(permissionsFor(role), key));
       }
     }
   });
@@ -74,8 +78,8 @@ describe("growthNavItemsForRole", () => {
 describe("customer data projection", () => {
   it("opens the customer section in Growth without moving ownership", () => {
     expect(growthSectionHref("customers")).toBe("/growth/customers");
-    expect(canViewGrowthSection("accountant", "customers")).toBe(true);
-    expect(canOpenGrowth("accountant")).toBe(true);
+    expect(canViewGrowthSection(effectivePermissions("accountant" as Role, null), "customers")).toBe(true);
+    expect(canOpenGrowth(effectivePermissions("accountant" as Role, null))).toBe(true);
   });
 });
 
@@ -84,26 +88,26 @@ describe("growthFallbackHref", () => {
     // The per-page gates this replaces sent an accountant who opened
     // /growth/campaigns to «وفاداری», which an accountant may not open either —
     // a redirect straight into a second redirect.
-    expect(growthFallbackHref("accountant")).toBe(growthSectionHref("customers"));
-    expect(growthFallbackHref("cashier")).toBe(growthSectionHref("loyalty"));
-    expect(growthFallbackHref("owner")).toBe(growthSectionHref("overview"));
-    expect(growthFallbackHref("manager")).toBe(growthSectionHref("overview"));
+    expect(growthFallbackHref(effectivePermissions("accountant" as Role, null))).toBe(growthSectionHref("customers"));
+    expect(growthFallbackHref(effectivePermissions("cashier" as Role, null))).toBe(growthSectionHref("loyalty"));
+    expect(growthFallbackHref(effectivePermissions("owner" as Role, null))).toBe(growthSectionHref("overview"));
+    expect(growthFallbackHref(effectivePermissions("manager" as Role, null))).toBe(growthSectionHref("overview"));
   });
 
   it("only leaves the app for a role with nothing here", () => {
     for (const role of ["waiter", "kitchen", ""]) {
-      expect(canOpenGrowth(role)).toBe(false);
-      expect(growthFallbackHref(role)).toBe("/dashboard");
+      expect(canOpenGrowth(permissionsFor(role))).toBe(false);
+      expect(growthFallbackHref(permissionsFor(role))).toBe("/dashboard");
     }
   });
 
   it("never sends anyone to a page they would be bounced off again", () => {
     // The invariant the eight hand-written gates kept breaking.
     for (const role of ["owner", "manager", "cashier", "accountant"]) {
-      const target = growthFallbackHref(role);
+      const target = growthFallbackHref(permissionsFor(role));
       const key = GROWTH_SECTION_KEYS.find((k) => growthSectionHref(k) === target);
       expect(key).toBeDefined();
-      expect(canViewGrowthSection(role, key!)).toBe(true);
+      expect(canViewGrowthSection(permissionsFor(role), key!)).toBe(true);
     }
   });
 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { findDuplicates } from "@/lib/crm-service";
 
 /**
@@ -13,7 +14,7 @@ import { findDuplicates } from "@/lib/crm-service";
  * anywhere else merges automatically at any score.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmView);
   if (error) return error;
 
   const limitParam = Number(request.nextUrl.searchParams.get("limit"));

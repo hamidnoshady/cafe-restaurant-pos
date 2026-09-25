@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import { type SessionPayload, withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -14,7 +15,7 @@ async function ownedSupplier(session: SessionPayload, id: string) {
 }
 
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -65,7 +66,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 });
 
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
   const { id } = await context.params;
 

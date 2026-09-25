@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { enqueueOperation, storeOrderKnownFor, storeOrdersPageFor } from "@/lib/integrations/woo-ops-service";
 
@@ -13,7 +14,7 @@ import { enqueueOperation, storeOrderKnownFor, storeOrdersPageFor } from "@/lib/
  * retry, backoff and a visible trail for free.
  */
 export const GET = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
   const { id } = await context.params;
 
@@ -46,7 +47,7 @@ export const GET = withTenantScope(async (request: Request, context: { params: P
  * store's.
  */
 export const POST = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getInventoryOverview } from "@/lib/inventory-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -9,7 +10,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * resolve the staff member's active branch first.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

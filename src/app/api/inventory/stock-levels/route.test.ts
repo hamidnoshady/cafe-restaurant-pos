@@ -10,7 +10,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    requireRole: vi.fn(),
+    requirePermission: vi.fn(),
     withTenantScope: (handler: (...args: unknown[]) => Promise<NextResponse>) => handler,
   };
 });
@@ -30,7 +30,7 @@ const LOCATION_ID = "c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(auth.requireRole).mockResolvedValue({ session: SESSION, error: null } as never);
+  vi.mocked(auth.requirePermission).mockResolvedValue({ session: SESSION, error: null } as never);
   vi.mocked(setupState.resolveActiveLocation).mockResolvedValue({ id: LOCATION_ID } as never);
 });
 
@@ -128,7 +128,7 @@ describe("GET /api/inventory/stock-levels", () => {
 
   it("returns authentication error when role check fails", async () => {
     const errorResponse = NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    vi.mocked(auth.requireRole).mockResolvedValue({ session: null, error: errorResponse } as never);
+    vi.mocked(auth.requirePermission).mockResolvedValue({ session: null, error: errorResponse } as never);
 
     const response = await GET(getRequest("http://localhost:3000/api/inventory/stock-levels"));
     expect(response.status).toBe(401);

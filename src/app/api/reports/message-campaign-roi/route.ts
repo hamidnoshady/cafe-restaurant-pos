@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { listMessageCampaignRoiReport } from "@/lib/message-campaigns-service";
 
 /**
@@ -8,7 +9,7 @@ import { listMessageCampaignRoiReport } from "@/lib/message-campaigns-service";
  * an eventual customer purchase.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
   const rows = await listMessageCampaignRoiReport(session.businessId);
   return NextResponse.json({ rows });

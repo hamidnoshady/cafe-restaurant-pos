@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getWallet, listLedger } from "@/lib/wallet-service";
 
 /**
@@ -9,7 +10,7 @@ import { getWallet, listLedger } from "@/lib/wallet-service";
  * spending decisions are always made server-side regardless.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.billingView);
   if (error) return error;
 
   const [wallet, ledger] = await Promise.all([

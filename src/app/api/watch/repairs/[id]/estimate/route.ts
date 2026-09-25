@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import { type SessionPayload, withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getRepairTicket } from "@/lib/repairs-service";
@@ -15,7 +16,7 @@ async function ownedTicket(session: SessionPayload, id: string) {
 
 /** Records (or replaces) the labour/parts estimate the customer is asked to approve. */
 export const PUT = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "repairs");
   if (capabilityError) return capabilityError;
@@ -44,7 +45,7 @@ export const PUT = withTenantScope(async (request: NextRequest, context: { param
 
 /** The customer's approval stamps the ticket, so work can start and the ticket can close. */
 export const POST = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "repairs");
   if (capabilityError) return capabilityError;

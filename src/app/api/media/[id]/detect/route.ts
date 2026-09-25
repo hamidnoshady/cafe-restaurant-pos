@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { isPlatformAiConfigured, logAiRuntimeUnavailable } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
@@ -21,7 +22,7 @@ import { getMediaConfig, isMediaStorageReady, readMediaObject } from "@/lib/medi
  * with user confirmation, per the product rule.
  */
 export const POST = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaManage);
   if (error) return error;
   const { id } = await context.params;
 

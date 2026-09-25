@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { industryProfile, labelFor } from "@/lib/industry-profile";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
@@ -15,8 +16,8 @@ export default async function SetupLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager")
-    redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  if (!access?.permissions.has("settings.manage")) redirect("/dashboard");
   // The platform settings area's canonical address. `/dashboard/settings`
   // still 308s here, but a redirect the app issues itself should land on the
   // real URL rather than spend a hop.

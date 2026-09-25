@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { reportShape, standardReportsFor } from "@/lib/reports";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -33,7 +34,7 @@ import { runTradeReport } from "@/lib/trade-reports-service";
  * from the list would be decoration — the route would still run it.
  */
 export const GET = withTenantScope(async (request: NextRequest, context: { params: Promise<{ key: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
   const { key } = await context.params;
 

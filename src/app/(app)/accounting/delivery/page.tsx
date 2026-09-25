@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { requireFeatureForPage } from "@/lib/features";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
@@ -10,7 +11,8 @@ export default async function DeliveryPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   await requireModuleForPage(session.businessId, "delivery");
-  if (!["owner", "manager", "cashier"].includes(session.role)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  if (!access?.permissions.has("delivery.manage")) redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "delivery");
 
   return (
@@ -20,7 +22,7 @@ export default async function DeliveryPage() {
         description="تخصیص سفارش‌های ارسالی به پیک‌ها و پیگیری وضعیت تحویل."
         actions={<KnowledgeHelpButton section="delivery" />}
       />
-      <DeliveryBoard canManageCouriers={session.role === "owner" || session.role === "manager"} />
+      <DeliveryBoard canManageCouriers={access.permissions.has("delivery.configure")} />
     </PageShell>
   );
 }

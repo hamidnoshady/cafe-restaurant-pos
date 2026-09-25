@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { deploymentRole } from "@/lib/deployment-role";
 import { getServerSyncConfig, getServerSyncState } from "@/lib/server-sync";
 
@@ -12,7 +13,7 @@ import { getServerSyncConfig, getServerSyncState } from "@/lib/server-sync";
 export const dynamic = "force-dynamic";
 
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant", "cashier", "waiter", "kitchen");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
 
   if (deploymentRole() !== "site") {

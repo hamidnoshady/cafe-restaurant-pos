@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 
 /** Rename or delete one folder. Assets in a deleted folder fall back to the root (FK SET NULL). */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -31,7 +32,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 });
 
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaManage);
   if (error) return error;
   const { id } = await context.params;
 

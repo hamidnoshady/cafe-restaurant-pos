@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { ApError, MissingLedgerAccountError, payBill } from "@/lib/ap-service";
 import { listPayments } from "@/lib/installments-service";
@@ -8,7 +9,7 @@ import { isValidIsoDate } from "@/lib/iso-date";
 
 /** The «پرداخت‌ها» ledger slice — every payment voucher, newest first. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
   const q = request.nextUrl.searchParams.get("q") ?? undefined;
   const payments = await listPayments(session.businessId, q);
@@ -27,7 +28,7 @@ const METHODS = ["cash", "bank"] as const;
 
 /** Records the business paying down a supplier's AP balance. Same access as posting a manual journal entry. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
   if (error) return error;
 
   let body: PaymentBody;

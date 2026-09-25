@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { isFeatureEnabled } from "@/lib/features";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { originFromHeaders } from "@/lib/desktop-link-service";
@@ -26,7 +27,7 @@ import {
  * connections and using existing ones.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
 
   const enabled = await isFeatureEnabled(session.businessId, "api_platform");
@@ -63,7 +64,7 @@ interface CreateBody {
  * The token is in this response body and nowhere else, ever again.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   if (!(await isFeatureEnabled(session.businessId, "api_platform"))) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { listCustomerBalances, listCustomerDirectory } from "@/lib/ar-service";
 
 /**
@@ -13,7 +14,7 @@ import { listCustomerBalances, listCustomerDirectory } from "@/lib/ar-service";
  * rest of the ledger surface either way.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   if (request.nextUrl.searchParams.get("scope") === "directory") {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getBusinessDayStatus, type BusinessDayStatus } from "@/lib/business-day-service";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -49,7 +50,7 @@ interface ActiveOrderRow extends Record<string, unknown> {
  * rather than nowhere.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

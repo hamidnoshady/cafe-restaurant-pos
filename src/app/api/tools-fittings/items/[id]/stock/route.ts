@@ -1,6 +1,7 @@
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { tradeGoodsItemStockPost } from "@/lib/trade-goods-routes";
 
-const writeGuard = () => requireRole("owner", "manager");
+const writeGuard = () => requirePermission(PERMISSIONS.inventoryAdjust);
 
 export const POST = tradeGoodsItemStockPost("tools_fittings", writeGuard);

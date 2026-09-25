@@ -235,52 +235,105 @@ export function withTenantScope<Args extends unknown[]>(
   };
 }
 
-/**
- * Session guard with no role restriction — any signed-in member of a business.
- *
- * Deliberately narrow in what it may be used for: endpoints where every member
- * acts only on **their own** rows, so the role that would gate the screen has
- * nothing left to gate. Phase 35's notification devices, rules and inbox are
- * the case it exists for — a kitchen member choosing which of their own alerts
- * reach their own phone is not a manager-level act, and listing all six roles
- * to say "everyone" reads as an oversight rather than as a decision.
- *
- * The handler is still responsible for scoping every query to
- * `session.sub`; this guard proves who is asking, not what they may touch.
- */
-export async function requireMember(): Promise<
-  { session: SessionPayload; error: null } | { session: null; error: NextResponse }
-> {
-  const session = await getSession();
-  if (!session) {
-    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  }
-  return { session, error: null };
+type GuardResult =
+  | { session: SessionPayload; error: null; membership: CurrentMembership }
+  | { session: null; error: NextResponse; membership?: never };
+
+interface CurrentMembership {
+  role: Role;
+  permissions: unknown;
+  isActive: boolean;
+  status: string;
+  businessStatus: string;
+  customRolePermissions: string[] | null;
 }
 
-/** Session + role guard for API routes. Returns a response to short-circuit with, or the session. */
-export async function requireRole(
-  ...roles: Role[]
-): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
+const unauthorized = (): GuardResult => ({
+  session: null,
+  error: NextResponse.json({ error: "unauthorized", code: "INVALID_SESSION" }, { status: 401 }),
+});
+
+/**
+ * The single live security-context read used by every tenant guard.
+ *
+ * JWT claims select a membership; they never prove that it is still usable.
+ * Re-reading the membership means suspension/offboarding, role changes,
+ * permission changes, password resets and tenant suspension take effect on
+ * the next request for password, PIN and impersonated sessions alike.
+ */
+async function currentMembership(): Promise<GuardResult> {
   const session = await getSession();
-  if (!session) {
-    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  }
-  
-  if (session.platformUserId && session.tokenVersion) {
-    const { rows } = await query<{ token_version: number }>(
-      `SELECT token_version FROM platform_users WHERE id = $1`,
-      [session.platformUserId]
-    );
-    if (rows.length === 0 || rows[0].token_version !== session.tokenVersion) {
-      return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-    }
+  if (!session) return unauthorized();
+
+  const { rows } = await query<{
+    role: Role;
+    permissions: unknown;
+    is_active: boolean;
+    membership_status: string;
+    business_status: string;
+    identity_token_version: number | null;
+    custom_role_permissions: string[] | null;
+  }>(
+    `SELECT u.role, u.permissions, u.is_active,
+            u.membership_status::text AS membership_status,
+            b.status::text AS business_status,
+            pu.token_version AS identity_token_version,
+            CASE WHEN tr.is_active THEN ARRAY(SELECT jsonb_array_elements_text(tr.permissions)) ELSE NULL END AS custom_role_permissions
+       FROM users u
+       JOIN businesses b ON b.id = u.business_id
+       LEFT JOIN platform_users pu ON pu.id = u.platform_user_id
+       LEFT JOIN tenant_roles tr ON tr.id = u.custom_role_id AND tr.business_id = u.business_id
+      WHERE u.id = $1 AND u.business_id = $2`,
+    [session.sub, session.businessId],
+  );
+  const row = rows[0];
+  if (!row || !row.is_active || row.membership_status !== "active") return unauthorized();
+  if (session.platformUserId && (
+    row.identity_token_version === null ||
+    session.tokenVersion === undefined ||
+    row.identity_token_version !== session.tokenVersion
+  )) return unauthorized();
+  if (row.business_status !== "active") {
+    return {
+      session: null,
+      error: NextResponse.json(
+        { error: "forbidden", code: "TENANT_INACTIVE" },
+        { status: 403 },
+      ),
+    };
   }
 
-  if (!roles.includes(session.role)) {
-    return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
+  const membership: CurrentMembership = {
+    role: row.role,
+    permissions: row.permissions,
+    isActive: row.is_active,
+    status: row.membership_status,
+    businessStatus: row.business_status,
+    customRolePermissions: row.custom_role_permissions,
+  };
+  return { session: { ...session, role: row.role }, membership, error: null };
+}
+
+/** Any currently active member. Only use for resources scoped to session.sub. */
+export async function requireMember(): Promise<GuardResult> {
+  return currentMembership();
+}
+
+/**
+ * Semantic role guard. Ordinary capabilities must use requirePermission.
+ * Kept for owner protection, login-method policy and intentionally role-shaped
+ * workflows; unlike the legacy implementation it still uses the live context.
+ */
+export async function requireRole(...roles: Role[]): Promise<GuardResult> {
+  const guard = await currentMembership();
+  if (guard.error) return guard;
+  if (!roles.includes(guard.membership.role)) {
+    return {
+      session: null,
+      error: NextResponse.json({ error: "forbidden", code: "ROLE_REQUIRED" }, { status: 403 }),
+    };
   }
-  return { session, error: null };
+  return guard;
 }
 
 /**
@@ -293,43 +346,50 @@ export async function requireRole(
  * session's usefulness immediately, and a suspended business stops serving
  * traffic without waiting for tokens to expire.
  */
-export async function requirePermission(
-  permission: Permission,
-): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
-  const session = await getSession();
-  if (!session) {
-    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  }
-
-  const { rows } = await query<{
-    role: Role;
-    permissions: unknown;
-    is_active: boolean;
-    business_status: string;
-  }>(
-    `SELECT u.role, u.permissions, u.is_active, b.status::text AS business_status
-       FROM users u
-       JOIN businesses b ON b.id = u.business_id
-      WHERE u.id = $1 AND u.business_id = $2`,
-    [session.sub, session.businessId],
-  );
-
-  const membership = rows[0];
-  if (!membership || !membership.is_active) {
-    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  }
-  if (membership.business_status !== "active") {
+export async function requirePermission(permission: Permission): Promise<GuardResult> {
+  const guard = await currentMembership();
+  if (guard.error) return guard;
+  if (!hasPermission(
+    guard.membership.role,
+    parseOverrides(guard.membership.permissions),
+    permission,
+    guard.membership.customRolePermissions,
+  )) {
     return {
       session: null,
-      error: NextResponse.json({ error: "business_suspended" }, { status: 403 }),
+      error: NextResponse.json(
+        { error: "forbidden", code: "MISSING_PERMISSION", permission },
+        { status: 403 },
+      ),
     };
   }
-  if (!hasPermission(membership.role, parseOverrides(membership.permissions), permission)) {
-    return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-  }
+  return guard;
+}
 
-  // The token's role can lag a role change; the database is the authority.
-  return { session: { ...session, role: membership.role }, error: null };
+/** All listed capabilities are required; useful for bulk transfer boundaries. */
+export async function requirePermissions(...permissions: Permission[]): Promise<GuardResult> {
+  const guard = await currentMembership();
+  if (guard.error) return guard;
+  const overrides = parseOverrides(guard.membership.permissions);
+  const missing = permissions.find(
+    (permission) =>
+      !hasPermission(
+        guard.membership.role,
+        overrides,
+        permission,
+        guard.membership.customRolePermissions,
+      ),
+  );
+  if (missing) {
+    return {
+      session: null,
+      error: NextResponse.json(
+        { error: "forbidden", code: "MISSING_PERMISSION", permission: missing },
+        { status: 403 },
+      ),
+    };
+  }
+  return guard;
 }
 
 

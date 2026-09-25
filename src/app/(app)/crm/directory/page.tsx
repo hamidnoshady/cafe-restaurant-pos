@@ -15,7 +15,9 @@ import { canViewCrmSection, crmFallbackHref } from "../crm-routes";
 export default async function CrmDirectoryPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewCrmSection(session.role, "directory")) redirect(crmFallbackHref(session.role));
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set();
+  if (!canViewCrmSection(permissions, "directory")) redirect(crmFallbackHref(permissions));
 
   const member = await memberAccessFor(session);
   return (

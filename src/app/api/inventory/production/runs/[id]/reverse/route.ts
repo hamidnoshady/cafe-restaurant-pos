@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import { ProductionError, reverseProductionRun } from "@/lib/production-service";
@@ -19,7 +20,7 @@ import "@/lib/production-posting-rules";
  */
 export const POST = withTenantScope(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
     if (error) return error;
     const { id } = await context.params;
 

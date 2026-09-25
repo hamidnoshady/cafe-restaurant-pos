@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { MissingLedgerAccountError, PayrollError, voidPayrollRun } from "@/lib/payroll-service";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
@@ -15,7 +16,7 @@ interface Ctx {
  * paying, since a void is an equally ledger-altering action.
  */
 export const POST = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
   if (error) return error;
 
   const { id } = await ctx.params;

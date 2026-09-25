@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { FixedAssetError, postDepreciation } from "@/lib/fixed-assets-service";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
@@ -11,7 +12,7 @@ interface Ctx {
 
 /** Posts one period's straight-line depreciation for this asset. */
 export const POST = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
   if (error) return error;
 
   const { id } = await ctx.params;

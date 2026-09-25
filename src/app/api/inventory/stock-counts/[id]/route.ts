@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -34,7 +35,7 @@ function errorFor(err: unknown): NextResponse {
 }
 
 export const GET = withTenantScope(async (_request: NextRequest, context: Context) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const { id } = await context.params;
   const location = await resolveActiveLocation(session);
@@ -56,7 +57,7 @@ export const GET = withTenantScope(async (_request: NextRequest, context: Contex
 
 /** Correct a posted count: reverse it, then re-record the edited lines (if any). */
 export const PATCH = withTenantScope(async (request: NextRequest, context: Context) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const { id } = await context.params;
 
@@ -96,7 +97,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: Conte
 
 /** Remove a posted count: a full reversal that restores stock and ledger. */
 export const DELETE = withTenantScope(async (_request: NextRequest, context: Context) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const { id } = await context.params;
   const location = await resolveActiveLocation(session);

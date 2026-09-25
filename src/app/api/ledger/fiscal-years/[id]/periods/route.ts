@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { FiscalPeriodError, listPeriods } from "@/lib/fiscal-periods-service";
 
 interface Ctx {
@@ -8,7 +9,7 @@ interface Ctx {
 
 /** A fiscal year's twelve periods, in calendar order. */
 export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const { id } = await ctx.params;

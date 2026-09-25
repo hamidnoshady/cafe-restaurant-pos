@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { isPlatformAiConfigured, logAiRuntimeUnavailable } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import { MediaAiError, runMediaEnhance } from "@/lib/ai-media-service";
@@ -26,7 +27,7 @@ import { chargeFeatureUse, WalletInsufficientFundsError } from "@/lib/wallet-ser
  * enhanced bytes are in hand, so the business never pays for a failure.
  */
 export const POST = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaManage);
   if (error) return error;
   const { id } = await context.params;
 

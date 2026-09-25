@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { listBillingPlans } from "@/lib/billing-plans-service";
 
 /**
@@ -7,7 +8,7 @@ import { listBillingPlans } from "@/lib/billing-plans-service";
  * pricing is business-facing but not something a cashier needs.
  */
 export const GET = withTenantScope(async () => {
-  const { error } = await requireRole("owner", "manager");
+  const { error } = await requirePermission(PERMISSIONS.billingView);
   if (error) return error;
   return NextResponse.json({ plans: await listBillingPlans(true) });
 });

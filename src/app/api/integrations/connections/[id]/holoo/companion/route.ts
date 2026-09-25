@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { isHoloo } from "@/lib/integrations/provider-registry";
 import { activateHolooCompanion, deactivateHolooCompanion } from "@/lib/integrations/holoo/connection-service";
@@ -7,7 +8,7 @@ import { isFeatureEnabled } from "@/lib/features";
 
 /** Set or clear the companion-mode cutover timestamp for one Holoo connection. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
   const connection = await getConnection(session.businessId, id);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -14,7 +15,7 @@ import { getSetting, SETTING_KEYS } from "@/lib/settings";
  * domain layer still refuses one, whatever the client does).
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
+  const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
 
   const [{ rows }, location, profile, features] = await Promise.all([

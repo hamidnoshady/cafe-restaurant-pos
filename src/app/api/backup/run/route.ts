@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { runBackupNow } from "@/lib/backup-service";
 import { chargeForFeature } from "@/lib/billing-guard";
 
@@ -14,7 +15,7 @@ import { chargeForFeature } from "@/lib/billing-guard";
  * feature flag entitlement is all that applies.
  */
 export const POST = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.backupManage);
   if (error) return error;
 
   const gate = await chargeForFeature(session.businessId, "backup", {

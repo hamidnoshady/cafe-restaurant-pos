@@ -13,7 +13,7 @@ import { PIN_ROLES, PASSWORD_ROLES } from "./team";
  */
 
 /** Every role the type admits — the assignable set of `api/team`'s guard. */
-const EVERY_ROLE: readonly Role[] = ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"];
+const EVERY_ROLE: readonly Role[] = ["owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen"];
 
 describe("role labels", () => {
   it("labels every system role, including the ones a preset-less screen forgot", () => {

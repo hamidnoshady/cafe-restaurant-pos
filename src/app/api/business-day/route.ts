@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { isValidStartMinutes, parseStartTime } from "@/lib/business-day";
 import {
   BusinessDayError,
@@ -23,12 +23,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * sits with `settings.manage` rather than with the till.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole(
-    "owner",
-    "manager",
-    "cashier",
-    "waiter",
-  );
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -51,8 +46,8 @@ export const GET = withTenantScope(async () => {
   // opens the «شیفت‌ها و روز کاری» tab) without `settings.manage` was shown a
   // «فعال‌سازی روز کاری» button whose only possible outcome was «دسترسی مجاز
   // نیست». Saying which is which here is what lets the panel draw the truth.
-  const canClose = session.role === "owner" || session.role === "manager";
   const member = await memberAccessFor(session);
+  const canClose = member?.permissions.has(PERMISSIONS.ledgerClosePeriod) ?? false;
   const canConfigure = member?.permissions.has(PERMISSIONS.settingsManage) ?? false;
   const closures = canClose ? await listBusinessDayClosures(location.id) : [];
   return NextResponse.json({

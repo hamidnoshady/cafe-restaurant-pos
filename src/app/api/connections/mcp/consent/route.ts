@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { isFeatureEnabled } from "@/lib/features";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getMcpClient, issueAuthorizationCode, validateAuthorizationRequest } from "@/lib/mcp/oauth-service";
@@ -19,7 +20,7 @@ import { parseMcpScopes, isMcpWriteMode } from "@/lib/mcp/scopes";
  * `code_challenge` on the consent URL can only produce a refusal.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
 
   if (!(await isFeatureEnabled(session.businessId, "api_platform"))) {
@@ -52,7 +53,7 @@ interface ConsentBody {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   if (!(await isFeatureEnabled(session.businessId, "api_platform"))) {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import {
   createPayment,
   getPaymentConfig,
@@ -14,7 +15,7 @@ import { GatewayError, gatewayErrorMessage } from "@/lib/payment-gateway";
  * The business's own payments (top-ups and purchases), newest first.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.billingView);
   if (error) return error;
   const [payments, config] = await Promise.all([
     listPayments({ businessId: session.businessId, limit: 100 }),
@@ -36,7 +37,7 @@ export const GET = withTenantScope(async () => {
  * manual gateway (payment waits for admin approval).
  */
 export const POST = withTenantScope(async (req: Request) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.billingManage);
   if (error) return error;
 
   let body: Record<string, unknown>;

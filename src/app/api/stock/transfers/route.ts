@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { createItemTransfer, RetailStockError } from "@/lib/retail-stock-service";
 
 /** This business's item transfers, newest first. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const { rows } = await query<{
@@ -45,7 +46,7 @@ export const GET = withTenantScope(async () => {
 
 /** Creates a draft transfer between two branches. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   let body: {

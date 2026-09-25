@@ -64,15 +64,12 @@ interface CustomersResponse {
 /** Growth's own customers screen: its columns, its add/edit, the shared record. */
 export function GrowthCustomersSection({
   selectedCustomerId,
-  role,
+  canManage,
 }: {
   selectedCustomerId?: string;
-  role: string;
+  canManage: boolean;
 }) {
   const money = useMoney();
-  // The page admits owner/manager/accountant; all three hold `parties.manage`,
-  // so the buttons below are drawn for everyone who can open this screen.
-  const canManage = ["owner", "manager", "accountant"].includes(role);
 
   const [customers, setCustomers] = useState<GrowthCustomer[] | null>(null);
   const [pinned, setPinned] = useState<GrowthCustomer | null>(null);

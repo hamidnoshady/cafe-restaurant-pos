@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import {
   flushWpOutbox,
@@ -17,7 +18,7 @@ import {
  * رویدادها» section reads this so «چرا این سفارش نیامد؟» has one place to look.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
 
   const url = new URL(request.url);
@@ -54,7 +55,7 @@ export const GET = withTenantScope(async (request: Request) => {
 
 /** Action handler: retry single, retry all failed, flush outbox queue. */
 export const POST = withTenantScope(async (request: Request) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   let body: {

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { CrmSection } from "../crm-section";
 import { canViewCrmSection, crmFallbackHref } from "../crm-routes";
 
@@ -17,7 +18,9 @@ import { canViewCrmSection, crmFallbackHref } from "../crm-routes";
 export default async function CrmOverviewPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewCrmSection(session.role, "overview")) redirect(crmFallbackHref(session.role));
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set();
+  if (!canViewCrmSection(permissions, "overview")) redirect(crmFallbackHref(permissions));
 
-  return <CrmSection section="overview" role={session.role} />;
+  return <CrmSection section="overview" role={access?.role ?? session.role} permissions={[...permissions]} />;
 }

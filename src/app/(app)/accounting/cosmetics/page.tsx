@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { requireIndustryForPage } from "@/lib/industry-guard";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
@@ -11,7 +12,8 @@ import { Button } from "@/components/ui/button";
 export default async function CosmeticsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  const member = await memberAccessFor(session);
+  if (!member?.isActive || !member.permissions.has("inventory.view")) redirect("/dashboard");
   await requireIndustryForPage(session.businessId, "cosmetics");
 
   return (

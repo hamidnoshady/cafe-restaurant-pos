@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { GrowthSection } from "../growth-section";
 import { canViewGrowthSection, growthFallbackHref } from "../growth-routes";
 
@@ -7,7 +8,9 @@ import { canViewGrowthSection, growthFallbackHref } from "../growth-routes";
 export default async function GrowthCommissionPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewGrowthSection(session.role, "commission")) redirect(growthFallbackHref(session.role));
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set();
+  if (!canViewGrowthSection(permissions, "commission")) redirect(growthFallbackHref(permissions));
 
-  return <GrowthSection section="commission" role={session.role} />;
+  return <GrowthSection section="commission" permissions={[...permissions]} />;
 }

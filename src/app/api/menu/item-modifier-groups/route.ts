@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import {
   attachModifierGroupToItem,
   detachModifierGroupFromItem,
@@ -20,7 +21,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * same rule guards every later re-configuration.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
 
   let body: unknown;
@@ -52,7 +53,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
 /** Re-configure one item's attachment: per-item bounds, order, on/off. */
 export const PATCH = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -85,7 +86,7 @@ export const PATCH = withTenantScope(async (request: NextRequest) => {
 
 /** Detach a modifier group from a menu item. */
 export const DELETE = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
 
   const menuItemId = request.nextUrl.searchParams.get("menuItemId");

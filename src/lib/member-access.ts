@@ -42,8 +42,12 @@ export async function memberAccessFor(
   const { rows } = await withTenant(
     session.businessId,
     () =>
-      query<{ role: Role; permissions: unknown; is_active: boolean }>(
-        "SELECT role, permissions, is_active FROM users WHERE id = $1 AND business_id = $2",
+      query<{ role: Role; permissions: unknown; is_active: boolean; custom_role_permissions: string[] | null }>(
+        `SELECT u.role, u.permissions, u.is_active,
+                CASE WHEN tr.is_active THEN ARRAY(SELECT jsonb_array_elements_text(tr.permissions)) ELSE NULL END AS custom_role_permissions
+           FROM users u
+           LEFT JOIN tenant_roles tr ON tr.id = u.custom_role_id AND tr.business_id = u.business_id
+          WHERE u.id = $1 AND u.business_id = $2`,
         [session.sub, session.businessId],
       ),
     { locationId: session.locationId, userId: session.sub },
@@ -53,6 +57,10 @@ export async function memberAccessFor(
   return {
     role: member.role,
     isActive: member.is_active,
-    permissions: effectivePermissions(member.role, parseOverrides(member.permissions)),
+    permissions: effectivePermissions(
+      member.role,
+      parseOverrides(member.permissions),
+      member.custom_role_permissions,
+    ),
   };
 }

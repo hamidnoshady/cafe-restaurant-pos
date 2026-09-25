@@ -49,7 +49,7 @@ import {
 import type { CustomerFile } from "@/lib/crm-service";
 import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
-import { canViewCrmSection, crmCustomerHref, crmSectionHref } from "./crm-routes";
+import { crmCustomerHref, crmSectionHref } from "./crm-routes";
 import { CustomerRelationshipsCard } from "./customer-relationships-card";
 import { CrmCardHeading } from "./crm-card-heading";
 
@@ -61,13 +61,14 @@ interface Note {
   createdAt: string;
 }
 
-export function CustomerFileSection({ customerId, role }: { customerId: string; role: string }) {
+export function CustomerFileSection({ customerId, permissions }: { customerId: string; permissions: readonly string[] }) {
   const money = useMoney();
-  const canManageConsent = role === "owner" || role === "manager";
+  const permissionSet = new Set(permissions);
+  const canManageConsent = permissionSet.has("crm.consent_manage");
   // A cashier can open this file (it's floor work) but not the CRM
   // «میز کار» — `overview` is management-only in `crm-routes.ts`. Telling
   // them to go recompute there anyway would be a dead end.
-  const canOpenOverview = canViewCrmSection(role, "overview");
+  const canOpenOverview = permissionSet.has("crm.view");
 
   const [file, setFile] = useState<CustomerFile | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -441,7 +442,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
       <CustomerRelationshipsCard
         customerId={customerId}
         // A merged file is a tombstone; its links belong to the winner.
-        canManage={canViewCrmSection(role, "directory") && !isMerged}
+        canManage={(permissionSet.has("crm.manage") || permissionSet.has("parties.manage")) && !isMerged}
       />
 
       <SectionCard
